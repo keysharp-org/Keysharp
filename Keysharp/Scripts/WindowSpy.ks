@@ -57,9 +57,6 @@ WinSpyGui() {
     oGui.Add("Text","w320 r1 vCtrl_Freeze",(txtNotFrozen := "(Hold Ctrl or Shift to suspend updates)"))
 
     oGui.Show("NoActivate")
-    WinGetClientPos(&x_temp, &y_temp2,,,"ahk_id " oGui.hwnd)
-
-    ; oGui.horzMargin := x_temp*96//A_ScreenDPI - 320 ; now using oGui.MarginX
 
     oGui.txtNotFrozen := txtNotFrozen       ; create properties for future use
     oGui.txtFrozen    := "(Updates suspended)"
@@ -75,16 +72,12 @@ WinSpySize(GuiObj, MinMax, Width, Height) {
     If !oGui.HasProp("txtNotFrozen") ; WinSpyGui() not done yet, return until it is
         return
 
-    SetTimer Update, (MinMax=0)?250:0 ; suspend updates on minimize
+    SetTimer Update, (MinMax=-1)?0:250 ; suspend updates on minimize
 
-    ctrlW := Width - (oGui.MarginX * 2) ; ctrlW := Width - horzMargin
+    ctrlW := Width - (oGui.MarginX * 2)
     list := "Title,MousePos,Ctrl,Pos,SBText,VisText,AllText,Freeze"
     Loop Parse list, ","
-	{
-		ctrl := oGui["Ctrl_" A_LoopField]
-
-		ctrl.Move(,,ctrlW)
-	}
+        oGui["Ctrl_" A_LoopField].Move(,,ctrlW)
 }
 
 WinSpyClose(GuiObj) {

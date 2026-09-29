@@ -1188,7 +1188,10 @@ namespace Keysharp.Builtins
 		{
 			var alphaText = n.As();
 
-			if (alphaText.Length > 0 && !alphaText.Equals("Off", StringComparison.OrdinalIgnoreCase))
+			// AHK removes transparency for a blank N exactly as for Off, so backends only ever see Off.
+			if (alphaText.Length == 0)
+				n = "Off";
+			else if (!alphaText.Equals("Off", StringComparison.OrdinalIgnoreCase))
 			{
 				if (!n.TryParseLong(out var alpha) || alpha is < 0 or > 255)
 					return Errors.ValueErrorOccurred("N must be from 0 through 255, blank or Off.", n);

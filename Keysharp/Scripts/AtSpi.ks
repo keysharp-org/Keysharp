@@ -664,6 +664,8 @@ class AtSpi {
             try {
                 loc := el.Location
                 if loc.Width > 0 && loc.Height > 0 && x >= loc.X && y >= loc.Y && x <= loc.X + loc.Width && y <= loc.Y + loc.Height {
+                    if this.__IsHiddenByAncestor(el)
+                        continue
                     inPt := true
                     area := loc.Width * loc.Height
                     if area < bestArea || (area = bestArea && depth > bestDepth) {
@@ -693,6 +695,21 @@ class AtSpi {
             return el.RoleId == AtSpi.Role.PageTab
         catch
             return false
+    }
+
+    ; Visible without Showing marks content an ancestor hides, such as a browser's preloaded or
+    ; background tab document, whose extents still cover the active page.
+    static __IsHiddenByAncestor(el) {
+        visible := false, showing := false
+        try {
+            for id in el.StateIds {
+                if id = this.StateType.Visible
+                    visible := true
+                else if id = this.StateType.Showing
+                    showing := true
+            }
+        }
+        return visible && !showing
     }
 
     static __NewCoordinateContext(hwnd := 0) => { hwnd: hwnd, dx: 0, dy: 0, scale: 1, chromium: false,
@@ -762,8 +779,12 @@ class AtSpi {
             WinGetClientPos(&cx, &cy, &cw, &ch, hWnd)
             if cw > 0 && ch > 0 && Abs(raw.Width - cw) <= tol && Abs(raw.Height - ch) <= tol {
                 ctx.dx := cx, ctx.dy := cy
+                return ctx
             }
         }
+        ; A tiling compositor clips a client narrower than its minimum size, but the surface still
+        ; starts at the window origin; without an offset every child would miss by the window position.
+        ctx.dx := wx, ctx.dy := wy
         return ctx
     }
 
@@ -3430,13 +3451,17 @@ class AtSpi {
                 loc := oContext.Location
                 if loc.X == -2147483648 || loc.Y == -2147483648
                     return false
+                ; Showing excludes content an ancestor hides, as AtSpi.__IsHiddenByAncestor does for hit-testing.
+                visible := false, showing := false
                 for _, id in oContext.StateIds {
                     if id = AtSpi.StateType.Visible
-                        return true
+                        visible := true
+                    else if id = AtSpi.StateType.Showing
+                        showing := true
                 }
+                return visible && showing
             } catch
                 return false
-            return false
         }
 
         JoinArray(arr, delim) {

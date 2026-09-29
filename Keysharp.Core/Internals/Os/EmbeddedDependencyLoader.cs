@@ -53,6 +53,11 @@ namespace Keysharp.Internals.Os
 #if LINUX
 				if (libName is "libkeysharp-input.so.0" or "libkeysharp-desktop.so.0")
 				{
+					//The loader's own search goes first so that LD_LIBRARY_PATH, or a copy beside the executable,
+					//still wins; NixOS keeps its system libraries where that search never looks.
+					if (NativeLibrary.TryLoad(libName, asm, path, out var searchedLibrary))
+						return searchedLibrary;
+
 					var systemProfilePath = Path.Combine(
 						"/run/current-system/sw/lib", libName);
 					if (NativeLibrary.TryLoad(systemProfilePath, out var systemProfileLibrary))

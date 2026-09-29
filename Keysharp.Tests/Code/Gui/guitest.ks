@@ -5634,6 +5634,11 @@ RunForeignWindowMutations() {
 		(*) => WinGetTransparent(gWindowPrimaryHwnd) = 128, 128)
 	WindowChange("Attributes", "Transparency off", (*) => WinSetTransparent("Off", gWindowPrimaryHwnd),
 		(*) => WinGetTransparent(gWindowPrimaryHwnd) = "", "opaque")
+	; A blank N removes transparency like Off, as in AutoHotkey.
+	WindowChange("Attributes", "Transparency 64", (*) => WinSetTransparent(64, gWindowPrimaryHwnd),
+		(*) => WinGetTransparent(gWindowPrimaryHwnd) = 64, 64)
+	WindowChange("Attributes", "Transparency blank", (*) => WinSetTransparent("", gWindowPrimaryHwnd),
+		(*) => WinGetTransparent(gWindowPrimaryHwnd) = "", "opaque")
 
 	WindowChange("Attributes", "WinSetTitle", (*) => WinSetTitle(gWindowFixturePrefix " Parent Retitle", gWindowPrimaryHwnd),
 		(*) => WinGetTitle(gWindowPrimaryHwnd) = gWindowFixturePrefix " Parent Retitle",

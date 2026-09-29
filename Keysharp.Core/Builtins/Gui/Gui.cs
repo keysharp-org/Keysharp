@@ -50,7 +50,6 @@ namespace Keysharp.Builtins
 		internal MenuBar menuBar;
 		bool marginsInit = false;
 		internal Size requestedSize = new(int.MinValue, int.MinValue);
-		internal Point requestedLocation = new(int.MinValue, int.MinValue);
 		// "+MinSize"/"+MaxSize" with no dimensions pins the limit to the window's size; if the window has not
 		// been shown yet, the size is captured at the first Gui.Show (see ApplyDeferredSizeLimits).
 		private bool pinMinSizeToShowSize, pinMaxSizeToShowSize;
@@ -3147,6 +3146,8 @@ namespace Keysharp.Builtins
 			var s = options.As();
 			bool /*center = false, cX = false, cY = false,*/ auto = false, min = false, max = false, restore = true, hide = false, cX = false, cY = false;
 			var dpiscale = DpiScale;
+			// Per call: a Show without X or Y leaves a shown window where it is, as in AHK.
+			var requestedLocation = new Point(int.MinValue, int.MinValue);
 
 			foreach (Range r in s.AsSpan().SplitAny(Spaces))
 			{
