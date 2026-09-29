@@ -41,6 +41,13 @@ namespace Keysharp.Internals.Threading
 		internal int ActivePseudoThreadCount => ThreadVariableManagerForCurrentThread.PseudoThreadCount;
 
 		/// <summary>
+		/// Whether a new pseudo-thread may interrupt the ones on this real thread, AHK's g_AllowInterruption. It is per real
+		/// thread, as AHK's is per its one thread, so a Send sleeping on a RealThread does not hold off the main thread's
+		/// hotkeys.
+		/// </summary>
+		internal bool allowInterruption = true;
+
+		/// <summary>
 		/// Whether timers may run in the current pseudo-thread. This is the runtime's own state, so the
 		/// scheduler and Flow read it here; the script-facing <c>A_Thread.AllowTimers</c> wraps this property.
 		/// </summary>
@@ -94,13 +101,13 @@ namespace Keysharp.Internals.Threading
 
 		public bool TryBeginThread(out ThreadVariables tv)
 		{
-			var skip = script.FlowData.allowInterruption == false;
+			var skip = !allowInterruption;
 			return TryPushThreadVariables(0, skip, false, true, false, out tv);
 		}
 
 		public bool TryBeginEmergencyThread(out ThreadVariables tv)
 		{
-			var skip = script.FlowData.allowInterruption == false;
+			var skip = !allowInterruption;
 			return TryPushThreadVariables(0, skip, false, true, true, out tv);
 		}
 
@@ -130,6 +137,7 @@ namespace Keysharp.Internals.Threading
 				return;
 
 			tv.task = false;
+			tv.IsPaused = false;   // A thread exited while paused no longer holds off timers.
 
 			var autoExecute = tv.kind == ThreadKind.Auto;         // read before the pop recycles the slot
 			var stack = CallStack.Current;
@@ -272,7 +280,7 @@ namespace Keysharp.Internals.Threading
 
 		internal bool IsInterruptible()
 		{
-			if (!script.FlowData.allowInterruption)
+			if (!allowInterruption)
 				return false;
 
 			if (Volatile.Read(ref script.totalExistingThreads) == 0)//Before _ks_UserMainCode() starts to run.1

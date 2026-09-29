@@ -72,8 +72,8 @@ Loop Reg "HKEY_CURRENT_USER\SOFTWARE\KeysharpTest", "kvr" ; this is a comment
 		AssertEq(A_LoopRegType, "KEY", A_LineNumber)
 			
 		AssertEq(A_LoopRegName, "ks_sub2", A_LineNumber)
-			
-		AssertEq(A_LoopRegKey, "HKEY_CURRENT_USER\SOFTWARE\KeysharpTest\ks_sub2", A_LineNumber)
+
+		AssertEq(A_LoopRegKey, "HKEY_CURRENT_USER\SOFTWARE\KeysharpTest", A_LineNumber)
 	}
 	else if (i == 3)
 	{
@@ -92,8 +92,8 @@ Loop Reg "HKEY_CURRENT_USER\SOFTWARE\KeysharpTest", "kvr" ; this is a comment
 		AssertEq(A_LoopRegType, "KEY", A_LineNumber)
 			
 		AssertEq(A_LoopRegName, "ks_sub1", A_LineNumber)
-			
-		AssertEq(A_LoopRegKey, "HKEY_CURRENT_USER\SOFTWARE\KeysharpTest\ks_sub1", A_LineNumber)
+
+		AssertEq(A_LoopRegKey, "HKEY_CURRENT_USER\SOFTWARE\KeysharpTest", A_LineNumber)
 	}
 	else if (i == 5)
 	{
@@ -112,8 +112,8 @@ Loop Reg "HKEY_CURRENT_USER\SOFTWARE\KeysharpTest", "kvr" ; this is a comment
 		AssertEq(A_LoopRegType, "KEY", A_LineNumber)
 			
 		AssertEq(A_LoopRegName, "ks_sub1_sub1", A_LineNumber)
-			
-		AssertEq(A_LoopRegKey, "HKEY_CURRENT_USER\SOFTWARE\KeysharpTest\ks_sub1\ks_sub1_sub1", A_LineNumber)
+
+		AssertEq(A_LoopRegKey, "HKEY_CURRENT_USER\SOFTWARE\KeysharpTest\ks_sub1", A_LineNumber)
 	}
 	else if (i == 7)
 	{
@@ -138,6 +138,42 @@ Loop Reg "HKEY_CURRENT_USER\SOFTWARE\KeysharpTest", "kvr" ; this is a comment
 
 	i++
 }
+
+; Without K, A_LoopRegKey still names the key that holds each value.
+keys := ""
+Loop Reg "HKEY_CURRENT_USER\SOFTWARE\KeysharpTest\ks_sub1", "VR"
+	keys .= A_LoopRegName "=" A_LoopRegKey "|"
+AssertEq(keys, "=HKEY_CURRENT_USER\SOFTWARE\KeysharpTest\ks_sub1|qword1=HKEY_CURRENT_USER\SOFTWARE\KeysharpTest\ks_sub1\ks_sub1_sub1|dword1=HKEY_CURRENT_USER\SOFTWARE\KeysharpTest\ks_sub1\ks_sub1_sub1|", A_LineNumber)
+
+; With KeyName omitted, a value item names its key, value name and type.
+Loop Reg "HKEY_CURRENT_USER\SOFTWARE\KeysharpTest\ks_sub1\ks_sub1_sub1"
+	if (A_LoopRegName = "dword1")
+		RegWrite(7)
+AssertEq(RegRead("HKEY_CURRENT_USER\SOFTWARE\KeysharpTest\ks_sub1\ks_sub1_sub1", "dword1"), 7, A_LineNumber)
+
+; A value keeps the spelling it was written with.
+RegWrite("x", "REG_SZ", "HKCU\SOFTWARE\KeysharpTest", "MixedCase")
+names := "|"
+Loop Reg "HKCU\SOFTWARE\KeysharpTest"
+	names .= A_LoopRegName "|"
+Assert(InStr(names, "|MixedCase|", true), A_LineNumber)
+RegDelete("HKCU\SOFTWARE\KeysharpTest", "MixedCase")
+
+; Reading or deleting in a missing key neither creates it nor ignores an empty Default.
+AssertEq(RegRead("HKCU\SOFTWARE\KeysharpTest\missing", "v", ""), "", A_LineNumber)
+Throws(() => RegRead("HKCU\SOFTWARE\KeysharpTest\missing", "v"), A_LineNumber, OSError)
+Throws(() => RegDelete("HKCU\SOFTWARE\KeysharpTest\missing", "v"), A_LineNumber, OSError)
+n := 0
+Loop Reg "HKCU\SOFTWARE\KeysharpTest", "K"
+	n += A_LoopRegName = "missing"
+AssertEq(n, 0, A_LineNumber)
+
+; A root key on its own is a valid key name.
+n := 0
+Loop Reg "HKCU", "K"
+	n++
+Assert(n > 0, A_LineNumber)
+AssertEq(RegRead("HKCU", "ks-no-such-value", "none"), "none", A_LineNumber)
 
 RegDelete("HKEY_CURRENT_USER\SOFTWARE\KeysharpTest", "testval")
 RegDelete("HKEY_CURRENT_USER\SOFTWARE\KeysharpTest\ks_sub1", "")

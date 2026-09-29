@@ -53,4 +53,22 @@ AssertEq(attr, "N", A_LineNumber)
 if (DirExist("./FileSetAttrib"))
 	DirDelete("./FileSetAttrib", true)
 
+; A folder named without wildcards is changed in the default mode, and with R that name is changed in every folder.
+attribRoot := A_Temp "\ks-setattrib"
+try DirDelete attribRoot, true
+DirCreate attribRoot "\sub"
+FileSetAttrib "+H", attribRoot "\sub"
+Assert(InStr(FileGetAttrib(attribRoot "\sub"), "H"), A_LineNumber)
+FileAppend "x", attribRoot "\t.txt"
+FileAppend "x", attribRoot "\sub\t.txt"
+FileAppend "x", attribRoot "\sub\u.txt"
+FileSetAttrib "+R", attribRoot "\t.txt", "R"
+Assert(InStr(FileGetAttrib(attribRoot "\sub\t.txt"), "R") && !InStr(FileGetAttrib(attribRoot "\sub\u.txt"), "R"), A_LineNumber)
+FileSetAttrib "-R", attribRoot "\t.txt", "R"
+; An unknown attribute letter is an error rather than clearing every attribute.
+Throws(() => FileSetAttrib("Q", attribRoot "\sub\u.txt"), A_LineNumber, ValueError)
+Assert(InStr(FileGetAttrib(attribRoot "\sub\u.txt"), "A"), A_LineNumber)
+DirDelete attribRoot, true
+
+
 FileAppend "pass", "*"

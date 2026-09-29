@@ -25,31 +25,25 @@ namespace Keysharp.Builtins
 			ThreadAccessors.A_LastError = 0;
 			var keyname = keyName.As();
 			var valname = valueName.As();
+			var valtype = "";
 
 			try
 			{
-				if (keyname?.Length == 0)
-					if (A_LoopRegKey is string k)
-						keyname = k;
+				keyname = LoopItem(keyname, valueName == null, ref valname, ref valtype);
+				var (root, subkey) = Conversions.ToRegRootKey(keyname);
 
-				if (valname?.Length == 0)
+				if (root == null)
+					return DefaultObject;
+
+				using (root)
+				using (var key = root.OpenSubKey(subkey, true))
 				{
-					if (A_LoopRegType is string t)
-					{
-						if (t == "KEY")
-						{
-						}
-						else if (t != "" && valname?.Length == 0)//Wasn't overridden with passed in parameter.
-							valname = A_LoopRegName;
-					}
+					if (key == null)
+						return NotFound(keyname);
+
+					key.DeleteValue(ValueName(valname), true);
 				}
 
-				var val = valname.ToLowerInvariant();
-
-				if (val == "(default)" || val == "ahk_default")
-					val = string.Empty;
-
-				Conversions.ToRegKey(keyname, true).Item1.DeleteValue(val, true);
 				return DefaultObject;
 			}
 			catch (Exception ex)
@@ -73,15 +67,28 @@ namespace Keysharp.Builtins
 		{
 			ThreadAccessors.A_LastError = 0;
 			var keyname = keyName.As();
+			string valname = "", valtype = "";
 
 			try
 			{
-				if (keyname?.Length == 0)
-					if (A_LoopRegKey is string k)
-						keyname = k;
+				keyname = LoopItem(keyname, false, ref valname, ref valtype);
+				var (root, subkey) = Conversions.ToRegRootKey(keyname);
 
-				var (reg, comp, key) = Conversions.ToRegRootKey(keyname);
-				reg.DeleteSubKeyTree(key, true);
+				if (root == null)
+					return DefaultObject;
+
+				using (root)
+				{
+					if (subkey.Length == 0)
+						return Errors.ValueErrorOccurred("Cannot delete root key");
+
+					using (var key = root.OpenSubKey(subkey, false))
+						if (key == null)
+							return NotFound(keyname);
+
+					root.DeleteSubKeyTree(subkey, true);
+				}
+
 				return DefaultObject;
 			}
 			catch (Exception ex)
@@ -105,57 +112,40 @@ namespace Keysharp.Builtins
 		/// Otherwise, specify the name of the value to retrieve.<br/>
 		/// If there is no default value (that is, if RegEdit displays "value not set"), an <see cref="OSError"/> exception is thrown.
 		/// </param>
-		/// <param name="valueName">If omitted, an <see cref="OSError"/> is thrown instead of returning a default value. Otherwise, specify the value to return if the specified key or value does not exist.</param>
-		/// <returns>The value retrieved. If the value cannot be retrieved, the variable is made blank and <see cref="Accessors.A_ErrorLevel"/> is set to 1.</returns>
+		/// <param name="default">If omitted, an <see cref="OSError"/> is thrown instead of returning a default value. Otherwise, specify the value to return if the specified key or value does not exist.</param>
+		/// <returns>The value retrieved.</returns>
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown on failure.</exception>
 		public static object RegRead(object keyName = null, object valueName = null, object @default = null)
 		{
 			ThreadAccessors.A_LastError = 0;
 			var keyname = keyName.As();
 			var valname = valueName.As();
-			var def = @default.As();
+			var valtype = "";
 
 			try
 			{
-				if (keyname.Length == 0)
-					if (A_LoopRegKey is string k)
-						keyname = k;
+				keyname = LoopItem(keyname, valueName == null, ref valname, ref valtype);
+				var (root, subkey) = Conversions.ToRegRootKey(keyname);
 
-				if (valname.Length == 0)
-				{
-					if (A_LoopRegType is string t)
-					{
-						if (t == "KEY")
-						{
-						}
-						else if (t != "" && valname?.Length == 0)//Wasn't overridden with passed in parameter.
-							valname = A_LoopRegName;
-					}
-				}
+				if (root == null)
+					return DefaultObject;
 
-				valname = valname.ToLowerInvariant();
+				object reg;
 
-				if (valname == "(default)" || valname == "ahk_default")
-					valname = string.Empty;
+				using (root)
+				using (var key = root.OpenSubKey(subkey, false))
+					reg = key?.GetValue(ValueName(valname), null, RegistryValueOptions.DoNotExpandEnvironmentNames);
 
-				var reg = Conversions.ToRegKey(keyname, false).Item1.GetValue(valname);
+				// As in AutoHotkey, Default stands in only for a key or value that does not exist.
+				if (reg == null)
+					return @default ?? NotFound(keyname);
 
 				if (reg is int i)//All integer numbers need to be longs.
-					reg = (long)i;
-				else if (reg is uint ui)
-					reg = (long)ui;
+					reg = (long)(uint)i;
 				else if (reg is string[] sa)
 					reg = new Array(sa);
 				else if (reg is byte[] ba)
 					return new Buffer(ba);
-				else if (reg is null)
-				{
-					if (!string.IsNullOrEmpty(def))
-						return def;
-
-					ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
-					return Errors.OSErrorOccurred("", $"Registry key {keyname} and value {valname} was not found and no default was specified.");
-				}
 
 				return reg;
 			}
@@ -194,54 +184,25 @@ namespace Keysharp.Builtins
 
 			try
 			{
-				var sub = keyname;
+				keyname = LoopItem(keyname, valueName == null, ref valname, ref valtype);
+				var (root, subkey) = Conversions.ToRegRootKey(keyname);
 
-				if (keyname?.Length == 0)
+				if (root == null)
+					return DefaultObject;
+
+				var regtype = Conversions.GetRegistryType(valtype);
+
+				if (val is string vs)
 				{
-					if (valtype?.Length == 0)
-					{
-						if (A_LoopRegType is string t)
-						{
-							if (t == "KEY")
-							{
-							}
-							else if (t != "")
-							{
-								valtype = t;//In this case, value type should be gotten from the current loop.
-
-								if (valname?.Length == 0)//Wasn't overridden with passed in parameter.
-									valname = A_LoopRegName;
-							}
-						}
-					}
-
-					if (A_LoopRegKey is string k)
-						if (A_LoopRegType is string t)
-							if (t == "KEY")
-								keyname = k;
+					if (regtype == RegistryValueKind.Binary)
+						val = Conversions.StringToByteArray(vs);
+					else if (regtype == RegistryValueKind.MultiString)
+						val = vs.Split('\n');
 				}
 
-				valname = valname.ToLowerInvariant();
-
-				if (valname == "(default)" || valname == "ahk_default")
-					valname = string.Empty;
-
-				var (reg, comp, key) = Conversions.ToRegKey(keyname, true);
-
-				if (reg != null)
-				{
-					var regtype = Conversions.GetRegistryType(valtype);
-
-					if (val is string vs)
-					{
-						if (regtype == RegistryValueKind.Binary)
-							val = Conversions.StringToByteArray(vs);
-						else if (regtype == RegistryValueKind.MultiString)
-							val = vs.Split('\n');
-					}
-
-					reg.SetValue(valname, val, regtype);
-				}
+				using (root)
+				using (var key = root.CreateSubKey(subkey, true))
+					key.SetValue(ValueName(valname), val, regtype);
 
 				return DefaultObject;
 			}
@@ -271,6 +232,37 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <returns>The <see cref="RegistryView"> for the currently selected mode.</returns>
 		internal static RegistryView GetRegView() => ThreadAccessors.A_RegView.Al() == 32L ? RegistryView.Registry32 : RegistryView.Registry64;
+
+		/// <summary>
+		/// With KeyName omitted inside a registry loop, the key the loop's current item names, as in AutoHotkey: a subkey
+		/// item names that subkey, and a value item the key holding it, with the value's name and type standing in for an
+		/// omitted ValueName and ValueType.
+		/// </summary>
+		private static string LoopItem(string keyname, bool valueNameOmitted, ref string valname, ref string valtype)
+		{
+			if (keyname.Length != 0 || Loops.Peek(LoopType.Registry) is not { } item)
+				return keyname;
+
+			if (item.regType == Keyword_Key)
+				return item.regKeyName + "\\" + item.regName;
+
+			if (valueNameOmitted)
+				valname = item.regName;
+
+			if (valtype.Length == 0)
+				valtype = item.regType;
+
+			return item.regKeyName;
+		}
+
+		private static object NotFound(string keyname)
+		{
+			ThreadAccessors.A_LastError = 2;//ERROR_FILE_NOT_FOUND
+			return Errors.OSErrorOccurred(2L, $"Registry key {keyname} or its value was not found.");
+		}
+
+		private static string ValueName(string valname) =>
+			valname.Equals("(default)", StringComparison.OrdinalIgnoreCase) || valname.Equals("ahk_default", StringComparison.OrdinalIgnoreCase) ? "" : valname;
 	}
 }
 

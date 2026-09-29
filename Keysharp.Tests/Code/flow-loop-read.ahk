@@ -34,4 +34,30 @@ Loop Read  "../../../Keysharp.Tests/Code/test-text-file-out.txt" ; another comme
 
 AssertEq(x, z, A_LineNumber)
 
+; Leaving the loop early closes the file.
+Loop Read "../../../Keysharp.Tests/Code/test-text-file-out.txt"
+	break
+
+FileDelete "../../../Keysharp.Tests/Code/test-text-file-out.txt"
+
+; A missing file raises OSError, unless an Else handles it.
+ReadMissing() {
+	Loop Read "missing-loop-read-input.txt"
+		return
+}
+
+Throws(ReadMissing, A_LineNumber, OSError)
+x := ""
+
+Loop Read "missing-loop-read-input.txt"
+	x := "body"
+else
+	x := "else"
+
+AssertEq(x, "else", A_LineNumber)
+
+; An output file of * is standard output, which the loop leaves open.
+Loop Read "../../../Keysharp.Tests/Code/test-text-file.txt", "*"
+	FileAppend ""
+
 FileAppend "pass", "*"

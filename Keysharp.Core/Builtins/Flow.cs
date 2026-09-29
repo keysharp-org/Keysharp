@@ -124,21 +124,23 @@ namespace Keysharp.Builtins
 
 			if (!script.hasExited)//This can be called multiple times, so ensure it only runs through once.
 			{
+				var vetoed = false;
+
 				try
 				{
 					if (script.mainWindow != null)
-						script.InvokeOnUIThread(() => _ = Keysharp.Internals.Flow.ExitAppInternal(script, ExitReasons.Exit, exitCode, true));
+						script.InvokeOnUIThread(() => vetoed = Keysharp.Internals.Flow.ExitAppInternal(script, ExitReasons.Exit, exitCode, true));
 					else
-						_ = Keysharp.Internals.Flow.ExitAppInternal(script, ExitReasons.Exit, exitCode, true);
+						vetoed = Keysharp.Internals.Flow.ExitAppInternal(script, ExitReasons.Exit, exitCode, true);
 				}
 				catch (Exception ex) when (Keysharp.Internals.Flow.TryGetException(ex, out UserRequestedExitException userExit))
 				{
 					throw userExit;
 				}
-				var start = DateTime.UtcNow;
 
-				while (!script.hasExited && (DateTime.UtcNow - start).TotalSeconds < 5)
-					_ = Sleep(500);
+				// An OnExit callback that vetoes the exit ends the calling thread instead, as AHK's EARLY_EXIT does.
+				if (vetoed)
+					return script.Threads.RequestExit(exitCode.Ai());
 			}
 
 			return DefaultObject;
@@ -398,12 +400,17 @@ namespace Keysharp.Builtins
 		///     0: Re-enables the hotkeys and hotstrings that were disable above.<br/>
 		///    -1: Changes to the opposite of its previous state (On or Off).
 		/// </param>
-		public static object Suspend(object newState)
+		public static object Suspend(object newState = null)
 		{
-			var state = Conversions.ConvertOnOffToggle(newState.As());
+			// As in AHK, an omitted NewState toggles, like -1.
+			var state = Conversions.ConvertOnOffToggle(newState.As(), ToggleValueType.Invalid);
+
+			if (state == ToggleValueType.Invalid)
+				return Errors.ValueErrorOccurred($"Invalid NewState \"{newState.As()}\". Expected 1, 0 or -1.");
+
 			var script = Script.TheScript;
 			var fd = script.FlowData;
-			script.SetSuspended(state == ToggleValueType.Toggle ? !fd.suspended : state == ToggleValueType.On);
+			script.SetSuspended(state is ToggleValueType.Toggle or ToggleValueType.Neutral ? !fd.suspended : state == ToggleValueType.On);
 
 			return DefaultObject;
 		}
@@ -422,7 +429,7 @@ namespace Keysharp.Builtins
 			if (underlyingThreadState == null)
 			{
 				var tv = TheScript.Threads.CurrentThread;
-				tv.isPaused = true;
+				tv.IsPaused = true;
 				Keysharp.Internals.Flow.WaitWhilePaused(tv);
 			}
 			else
@@ -482,10 +489,6 @@ namespace Keysharp.Builtins
 			timers = new();
 		}
 
-		/// <summary>
-		/// Whether a thread can be interrupted/preempted by subsequent thread.
-		/// </summary>
-		internal bool allowInterruption = true;
 		internal bool callingCritical;
 		// True while OnExit callbacks are being invoked. A nested exit request during that window (a callback that
 		// throws, errors, or calls ExitApp/Reload) must terminate directly instead of re-running the callbacks — see
@@ -500,7 +503,7 @@ namespace Keysharp.Builtins
 		internal Timer1 mainTimer;
 		internal int NoSleep = -1;
 		internal bool persistentValueSetByUser;
-		internal HashSet<object> initializedUserStaticVariables = new();
+		internal readonly ConcurrentDictionary<string, bool> initializedUserStaticVariables = new();
 
 		/// <summary>
 		/// Internal property to track whether the script's hotkeys and hotstrings are suspended.

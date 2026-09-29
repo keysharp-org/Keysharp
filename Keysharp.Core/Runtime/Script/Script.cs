@@ -345,6 +345,7 @@ namespace Keysharp.Runtime
 		internal DateTime timeLastInputKeyboard;
 		internal DateTime timeLastInputMouse;
 		internal DateTime timeLastInputPhysical = DateTime.UtcNow;
+		internal int pausedThreadCount;
 		internal int totalExistingThreads;//Even though the thread stacks are on a per-real-thread basis, we keep a global count of threads. This may need to change in the future.
 		// The reason of the exit check waiting on the UI thread, or None. A second request joins it rather than asking
 		// OnExit twice, and Close, which AHK reports when the last window goes, replaces Exit.
@@ -722,9 +723,12 @@ namespace Keysharp.Runtime
 			return tv != null ? tv.configData.peekFrequency : ThreadVariables.DefaultPeekFrequency;
 		}
 
-		internal bool IsCurrentThreadPreemptiveCheckDue()
+		internal bool IsCurrentThreadPreemptiveCheckDue() => IsPreemptiveCheckDue(Threads.CurrentThread);
+
+		// Loops ask this on every iteration, so they pass the [ThreadStatic] Threads.Current rather than resolving the
+		// pseudo-thread through the ThreadLocal behind Script.Threads.
+		internal static bool IsPreemptiveCheckDue(ThreadVariables tv)
 		{
-			var tv = Threads.CurrentThread;
 			var freq = tv.configData.peekFrequency;
 
 			if (freq < 0L)

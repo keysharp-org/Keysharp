@@ -668,6 +668,10 @@ namespace Keysharp.Internals.Strings
 					case 'T':
 						mask = (uint)FileAttributes.Temporary;
 						break;
+
+					default:
+						_ = Errors.ValueErrorOccurred($"Invalid file attribute \"{flag}\" in \"{set}\". Expected R, A, S, H, N, O or T, each optionally after +, - or ^.");
+						return attribs;
 				}
 
 				switch (op)
@@ -697,67 +701,28 @@ namespace Keysharp.Internals.Strings
 			return (FileAttributes)(((uint)attribs & attrMask.and_mask) ^ attrMask.xor_mask);
 		}
 
-		internal static string[] ToFiles(string path, bool files, bool dirs, bool recurse)
+		/// <summary>
+		/// The files and folders a pattern names for FileSetAttrib and FileSetTime, as AutoHotkey's FilePatternApply
+		/// finds them: the walk of Loop Files, except that a name without wildcards is that one item whether it is a file
+		/// or a folder, and with recursion the item of that name in every subfolder.
+		/// </summary>
+		internal static IEnumerable<string> ToFiles(string path, bool files, bool dirs, bool recurse)
 		{
 			if (string.IsNullOrEmpty(path))
 				return [];
 
 			var fullPath = Path.GetFullPath(path);
-			var hasWildcard = fullPath.AsSpan().IndexOfAny("*?".AsSpan()) != -1;
-			var option = recurse ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly;
-			var results = new List<string>();
+			var pattern = Path.GetFileName(fullPath);
 
-			try
+			if (pattern.AsSpan().IndexOfAny('*', '?') < 0)
 			{
-				if (!hasWildcard)
-				{
-					if (System.IO.File.Exists(fullPath))
-					{
-						if (files)
-							results.Add(fullPath);
+				if (!recurse)
+					return System.IO.File.Exists(fullPath) || System.IO.Directory.Exists(fullPath) ? [fullPath] : [];
 
-						return results.ToArray();
-					}
-
-					if (System.IO.Directory.Exists(fullPath))
-					{
-						if (dirs)
-							results.Add(fullPath);
-
-						if (recurse)
-						{
-							if (files)
-								results.AddRange(System.IO.Directory.GetFiles(fullPath, "*", SearchOption.AllDirectories));
-
-							if (dirs)
-								results.AddRange(System.IO.Directory.GetDirectories(fullPath, "*", SearchOption.AllDirectories));
-						}
-
-						return results.ToArray();
-					}
-
-					// Treat as a literal path that currently does not exist.
-					return [];
-				}
-
-				var root = Path.GetDirectoryName(fullPath);
-				root = string.IsNullOrEmpty(root) ? "./" : root;
-				var pattern = Path.GetFileName(fullPath);
-
-				if (string.IsNullOrEmpty(pattern))
-					pattern = "*";
-
-				if (files)
-					results.AddRange(System.IO.Directory.GetFiles(root, pattern, option));
-
-				if (dirs)
-					results.AddRange(System.IO.Directory.GetDirectories(root, pattern, option));
-			}
-			catch
-			{
+				files = dirs = true;
 			}
 
-			return results.ToArray();
+			return Loops.GetFiles(Path.GetDirectoryName(fullPath) ?? fullPath, pattern, dirs, files, recurse);
 		}
 
 		internal static PcreRegexSettings ToRegexOptions(ReadOnlySpan<char> sequence)
@@ -871,48 +836,49 @@ namespace Keysharp.Internals.Strings
 
 
 #if WINDOWS
-		internal static (RegistryKey, string, string) ToRegKey(string root, bool writable = false)
+		/// <summary>
+		/// Splits a key name such as "HKCU\Software\App", "HKLM" or "\\Computer\HKLM\Software" into its root key, opened
+		/// on that computer when one is named, and the subkey path below it. An invalid name raises a ValueError and
+		/// yields a null root. The caller disposes the root.
+		/// </summary>
+		internal static (RegistryKey Root, string Subkey) ToRegRootKey(string name)
 		{
-			var (reg, comp, key) = ToRegRootKey(root);
-			var regkey = reg.OpenSubKey(key, writable);
+			var computer = "";
 
-			if (regkey == null)
-				regkey = reg.CreateSubKey(key, writable);
-
-			return (regkey, comp, key);
-		}
-
-		internal static (RegistryKey, string, string) ToRegRootKey(string name)
-		{
-			var computername = "";
-
-			if (name.StartsWith("\\\\"))
+			if (name.StartsWith(@"\\"))
 			{
-				var index = name.IndexOf("\\", 2);
-				computername = name.Substring(2, index - 2);
-				name = name.Substring(index + 1);
+				var end = name.IndexOf('\\', 2);
+
+				if (end < 0)
+				{
+					_ = Errors.ValueErrorOccurred($"{name} does not name a registry root key after the computer name.");
+					return (null, "");
+				}
+
+				computer = name.Substring(2, end - 2);
+				name = name.Substring(end + 1);
 			}
 
-			var index2 = name.IndexOf("\\");
-			var root = name.Substring(0, index2).ToLowerInvariant();
-			var key = name.Substring(index2 + 1);
+			var separator = name.IndexOf('\\');
+			var root = (separator < 0 ? name : name.Substring(0, separator)).ToLowerInvariant();
+			var subkey = separator < 0 ? "" : name.Substring(separator + 1);
+			RegistryHive hive;
 
-			(RegistryKey, string, string) HandleError()//Hack to work around pattern matching switch statements not supporting multiple lines in the default case.
+			switch (root)
 			{
-				_ = Errors.ValueErrorOccurred($"{root} was not a valid registry type. Expected HKEY_LOCAL_MACHINE (HKLM), HKEY_USERS (HKU), HKEY_CURRENT_USER (HKCU), HKEY_CLASSES_ROOT (HKCR), HKEY_CURRENT_CONFIG (HKCC) or HKEY_PERFORMANCE_DATA (HKPD).");
-				return (default, default, default);
+				case Keyword_HKey_Local_Machine or Keyword_HKLM: hive = RegistryHive.LocalMachine; break;
+				case Keyword_HKey_Users or Keyword_HKU: hive = RegistryHive.Users; break;
+				case Keyword_HKey_Current_User or Keyword_HKCU: hive = RegistryHive.CurrentUser; break;
+				case Keyword_HKey_Classes_Root or Keyword_HKCR: hive = RegistryHive.ClassesRoot; break;
+				case Keyword_HKey_Current_Config or Keyword_HKCC: hive = RegistryHive.CurrentConfig; break;
+				case Keyword_HKey_Performance_Data or Keyword_HKPD: hive = RegistryHive.PerformanceData; break;
+				default:
+					_ = Errors.ValueErrorOccurred($"{root} was not a valid registry type. Expected HKEY_LOCAL_MACHINE (HKLM), HKEY_USERS (HKU), HKEY_CURRENT_USER (HKCU), HKEY_CLASSES_ROOT (HKCR), HKEY_CURRENT_CONFIG (HKCC) or HKEY_PERFORMANCE_DATA (HKPD).");
+					return (null, "");
 			}
 
-			return root switch
-			{
-				Keyword_HKey_Local_Machine or Keyword_HKLM => (RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, Registrys.GetRegView()), computername, key),
-				Keyword_HKey_Users or Keyword_HKU => (RegistryKey.OpenBaseKey(RegistryHive.Users, Registrys.GetRegView()), computername, key),
-				Keyword_HKey_Current_User or Keyword_HKCU => (RegistryKey.OpenBaseKey(RegistryHive.CurrentUser, Registrys.GetRegView()), computername, key),
-				Keyword_HKey_Classes_Root or Keyword_HKCR => (RegistryKey.OpenBaseKey(RegistryHive.ClassesRoot, Registrys.GetRegView()), computername, key),
-				Keyword_HKey_Current_Config or Keyword_HKCC => (RegistryKey.OpenBaseKey(RegistryHive.CurrentConfig, Registrys.GetRegView()), computername, key),
-				Keyword_HKey_Performance_Data or Keyword_HKPD => (RegistryKey.OpenBaseKey(RegistryHive.PerformanceData, Registrys.GetRegView()), computername, key),
-				_ => HandleError()
-			};
+			var view = Registrys.GetRegView();
+			return (computer.Length > 0 ? RegistryKey.OpenRemoteBaseKey(hive, computer, view) : RegistryKey.OpenBaseKey(hive, view), subkey);
 		}
 #endif
 		internal static string ToStringCaseSense(StringComparison type)

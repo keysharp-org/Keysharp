@@ -57,12 +57,18 @@ namespace Keysharp.Builtins
 			var sf = subFunction.As();
 			var script = Script.TheScript;
 
+			// As AHK's Thread: NoTimers without a value disallows timers, and an omitted value leaves a setting as it was.
 			if (string.Compare(sf, "notimers", true) == 0)
-				script.Threads.AllowTimers = !(Options.OnOff(value1.As()) ?? false);
+				script.Threads.AllowTimers = value1 != null && value1.Al() == 0;
 			else if (string.Compare(sf, "priority", true) == 0)
-				script.Threads.SetPriority(script.Threads.CurrentThread, value1.Al());
+			{
+				if (value1 != null)
+					script.Threads.SetPriority(script.Threads.CurrentThread, value1.Al());
+			}
 			else if (string.Compare(sf, "interrupt", true) == 0)
 				script.uninterruptibleTime = value1.Ai(script.uninterruptibleTime);
+			else
+				return Errors.ValueErrorOccurred($"Invalid sub-function \"{sf}\". Expected NoTimers, Priority or Interrupt.");
 
 			return DefaultObject;
 		}
@@ -171,8 +177,8 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public object Paused
 		{
-			get => Live().isPaused;
-			set => Mutable().isPaused = value.Ab();
+			get => Live().IsPaused;
+			set => Mutable().IsPaused = value.Ab();
 		}
 
 		/// <summary>

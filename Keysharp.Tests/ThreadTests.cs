@@ -118,7 +118,7 @@ namespace Keysharp.Tests
 			try
 			{
 				_ = Keysharp.Builtins.Flow.Critical();
-				s.FlowData.allowInterruption = false;
+				s.Threads.allowInterruption = false;
 
 				try
 				{
@@ -127,7 +127,7 @@ namespace Keysharp.Tests
 				}
 				finally
 				{
-					s.FlowData.allowInterruption = true;
+					s.Threads.allowInterruption = true;
 				}
 			}
 			finally

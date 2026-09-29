@@ -216,6 +216,20 @@ namespace Keysharp.Tests
 						FileAppend(' fail reason ' reason, '*')
 				}
 			", "exit-request-persistent", true, false, 0));
+			// An ExitApp which OnExit vetoes ends the thread which called it, at once, as AHK's EARLY_EXIT does.
+			Passes(RunScript(@"
+				after := '', start := A_TickCount
+				OnExit(Veto)
+				SetTimer(VetoedExit, -1)
+				Sleep(100)
+				OnExit(Veto, 0)
+				FileAppend(after = '' && A_TickCount - start < 2000 ? 'pass' : 'fail: ' after, '*')
+				Veto(*) => 1
+				VetoedExit() {
+					ExitApp()
+					global after := 'continued'
+				}
+			", "exit-request-veto", true, false, 0));
 			// SetTimer(f, 0): a timer that stops itself ends the script when its thread ends.
 			Passes(RunScript(@"
 				SetTimer(Tick, 10)
@@ -358,6 +372,9 @@ namespace Keysharp.Tests
 
         [Test, Category("Flow")]
         public void FlowLoopParse() => Assert.IsTrue(TestScript("flow-loop-parse", true));
+
+        [Test, Category("Flow")]
+        public void FlowLoopFiles() => Assert.IsTrue(TestScript("flow-loop-files", true));
 
         [Test, Category("Flow")]
         public void FlowLoopRead() => Assert.IsTrue(TestScript("flow-loop-read", true));

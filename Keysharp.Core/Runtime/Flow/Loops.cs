@@ -1,4 +1,5 @@
 using Keysharp.Builtins;
+using System.IO.Enumeration;
 using System.Security.AccessControl;
 using EnumerationOptions = System.IO.EnumerationOptions;
 
@@ -28,7 +29,7 @@ namespace Keysharp.Runtime
 		/// The inner loops can be broken out of by the calling if the program exits because it will be calling IsTrueAndRunning()
 		/// on each iteration.
 		/// </summary>
-		/// <param name="n">How many times (iterations) to perform the loop. -1 to iterate indefinitely.</param>
+		/// <param name="n">How many times (iterations) to perform the loop. A count below 1 performs none.</param>
 		/// <returns>Yield return an <see cref="IEnumerable"/> which allows the caller can run the loop.</returns>
 		public static IEnumerable Loop(object obj)
 		{
@@ -36,10 +37,16 @@ namespace Keysharp.Runtime
 			if (obj is string ss && ss == string.Empty)
 				return System.Array.Empty<object>();
 
-			var n = obj.Al();
+			// A negative count runs no iterations, which leaves -1 to mean the infinite form of Loop().
+			var n = Math.Max(obj.Al(), 0L);
 			var info = Peek(LoopType.Normal); // The calling code must have called Push() with this type.
 			return new NormalLoopEnumerable(info, n);
 		}
+
+		/// <summary>
+		/// The loop with no count, which iterates until break is encountered.
+		/// </summary>
+		public static IEnumerable Loop() => new NormalLoopEnumerable(Peek(LoopType.Normal), -1);
 
 		/// <summary>
 		/// Custom enumerable/enumerator for the normal counted loop.
@@ -111,15 +118,13 @@ namespace Keysharp.Runtime
 			var info = Peek(LoopType.Directory);//The calling code must have called Push() with this type.
 			var path = filePattern.As();
 			var m = mode.As();
-			//Dialogs.MsgBox(Path.GetFullPath(path));
-			//Dialogs.MsgBox(Accessors.A_WorkingDir);
 
 			// As in AutoHotkey, an empty pattern matches nothing.
 			if (path.Length == 0)
 				yield break;
 
-			//Convert something like "*.txt" to "./*.txt".
-			if (!path.StartsWith("\\\\") && !char.IsLetter(path[0]) && path[0] != '.' && path[0] != '/')
+			// A pattern with no folder part, such as "*.txt" or "data*.txt", searches the working directory.
+			if (Path.GetDirectoryName(path) is "")
 				path = "." + Path.DirectorySeparatorChar + path;
 
 			if (!string.IsNullOrEmpty(m))
@@ -165,8 +170,6 @@ namespace Keysharp.Runtime
 			var omit = omitChars.As();
 			var info = Peek(LoopType.Parse);//The calling code must have called Push() with this type.
 			var script = Script.TheScript;
-			//Trim(char[]) removes white space when given no characters, so an empty OmitChars must skip it.
-			var remove = omit.Length > 0 ? omit.ToCharArray() : null;
 
 			if (i.Length == 0)
 				yield break;
@@ -225,11 +228,16 @@ namespace Keysharp.Runtime
 					continue;
 					collect:
 					next = false;
-					var result = part.ToString();
-					part.Length = 0;
+					int first = 0, last = part.Length;
 
-					if (remove != null)
-						result = result.Trim(remove);
+					while (first < last && omit.Contains(part[first]))
+						first++;
+
+					while (last > first && omit.Contains(part[last - 1]))
+						last--;
+
+					var result = part.ToString(first, last - first);
+					part.Length = 0;
 
 					info.result = result;
 					info.index++;
@@ -244,7 +252,7 @@ namespace Keysharp.Runtime
 				//Each character is a field, and one in OmitChars is not seen at all.
 				foreach (var ch in i)
 				{
-					if (remove != null && omit.Contains(ch))
+					if (omit.Contains(ch))
 						continue;
 
 					var part = ch.ToString();
@@ -261,10 +269,7 @@ namespace Keysharp.Runtime
 				for (var start = 0; ;)
 				{
 					var end = i.IndexOfAny(delims, start);
-					var part = i.Substring(start, (end < 0 ? i.Length : end) - start);
-
-					if (remove != null)
-						part = part.Trim(remove);
+					var part = Field(i, start, (end < 0 ? i.Length : end) - start, omit);
 
 					info.result = part;
 					info.index++;
@@ -280,6 +285,18 @@ namespace Keysharp.Runtime
 			//Caller must call Pop() after the loop exits.
 		}
 
+		// One allocation per field, the trim applying to the span. An empty OmitChars must not reach Trim, which would then
+		// remove white space.
+		private static string Field(string s, int start, int length, string omit)
+		{
+			var span = s.AsSpan(start, length);
+
+			if (omit.Length != 0)
+				span = span.Trim(omit);
+
+			return span.Length == s.Length ? s : span.ToString();
+		}
+
 		/// <summary>
 		/// Retrieves the lines in a text file, one at a time.
 		/// </summary>
@@ -289,25 +306,27 @@ namespace Keysharp.Runtime
 		/// <param name="outputFile">The optional name of the file to be kept open for the duration of the loop<br/>
 		/// which is assumed to be in <see cref="A_WorkingDir"/> if an absolute path isn't specified.<br/>
 		/// If "*", then write to standard output.</param>
+		/// <param name="hasElse">Whether an Else follows the loop, in which case a file that is not found runs the Else
+		/// instead of raising an error, as in AutoHotkey.</param>
 		/// <returns>Yield return an <see cref="IEnumerable"/> for each line in the input file so the caller can run the loop.</returns>
-		public static IEnumerable LoopRead(object inputFile, object outputFile = null)
+		public static IEnumerable LoopRead(object inputFile, object outputFile = null, bool hasElse = false)
 		{
 			var input = inputFile.As();
 			var output = outputFile.As();
 			var info = Peek(LoopType.File);//The calling code must have called Push() with this type.
-			//Dialogs.MsgBox(Path.GetFullPath(input));
 
 			if (output.Length > 0)
 				info.filename = output;
-
-			if (!File.Exists(input))
-				yield break;
 
 			StreamReader reader;
 
 			try
 			{
 				reader = File.OpenText(input);
+			}
+			catch (Exception ex) when (hasElse && ex is FileNotFoundException or DirectoryNotFoundException)
+			{
+				yield break;
 			}
 			catch (Exception ex)
 			{
@@ -361,71 +380,28 @@ namespace Keysharp.Runtime
 				v = true;
 
 			var info = Peek(LoopType.Registry);//The calling code must have called Push() with this type.
-			var (reg, compname, key) = Conversions.ToRegRootKey(keyname);
+			RegistryKey root, subkey;
 
-			if (reg != null)
+			try
 			{
-				info.regVal = string.Empty;
-				info.regName = reg.Name;
-				info.regKeyName = keyname;
-				info.regType = Keyword_Key;
-				using var subkey = reg.OpenSubKey(key, false);
+				(root, var key) = Conversions.ToRegRootKey(keyname);
+				subkey = root != null ? OpenRegKey(root, key) : null;
+			}
+			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+			{
+				_ = Errors.OSErrorOccurred(ex, $"Error opening registry key {keyname}");
+				yield break;
+			}
 
+			using (root)
+			using (subkey)
+			{
 				// As in AutoHotkey, a missing subkey runs no iterations.
 				if (subkey == null)
 					yield break;
 
-				var l = QueryInfoKey(subkey);
-				var dt = DateTime.FromFileTimeUtc(l);
-				var script = Script.TheScript;
-				info.regDate = Conversions.ToYYYYMMDDHH24MISS(dt);
-
-				if (r)
-				{
-					foreach (var val in GetSubKeys(info, subkey, k, v))
-					{
-						yield return val;
-					}
-				}
-				else
-				{
-					if (v)
-					{
-						foreach (var valueName in subkey.GetValueNames().Reverse())
-						{
-							info.index++;
-							info.regVal = subkey.GetValue(valueName, string.Empty, RegistryValueOptions.DoNotExpandEnvironmentNames);
-
-							if (info.regVal is byte[] ro)
-								info.regVal = BitConverter.ToString(ro).Replace("-", string.Empty);
-
-							info.regName = valueName;
-							info.regType = Conversions.GetRegistryTypeName(subkey.GetValueKind(valueName));
-							yield return valueName;
-						}
-					}
-
-					if (k)
-					{
-						foreach (var subKeyName in subkey.GetSubKeyNames().Reverse())//AHK spec says the subkeys and values are returned in reverse.
-						{
-							using (var tempKey = subkey.OpenSubKey(subKeyName, false))
-							{
-								info.index++;
-								info.regVal = string.Empty;
-								info.regName = subKeyName.Substring(subKeyName.LastIndexOf('\\') + 1);
-								info.regKeyName = tempKey.Name;//The full key path.
-								info.regType = Keyword_Key;
-								l = QueryInfoKey(tempKey);
-								dt = DateTime.FromFileTimeUtc(l);
-								info.regDate = Conversions.ToYYYYMMDDHH24MISS(dt);
-								yield return info.regKeyName;
-							}
-						}
-					}
-
-					info.regDate = string.Empty;//Date is empty outside of keys.
-				}
+				foreach (var val in GetSubKeys(info, subkey, k, v, r))
+					yield return val;
 			}
 
 			//Caller must call Pop() after the loop exits.
@@ -712,166 +688,112 @@ namespace Keysharp.Runtime
 		}
 
 		/// <summary>
-		/// Internal helper to recursively traverse a file path based on a pattern.
+		/// The files and folders of a Loop Files, in AutoHotkey's order: the entries of a folder that match the pattern,
+		/// then with recursion the same search in each of its subfolders, whether or not their names match.
 		/// </summary>
-		/// <param name="path">See parameters for <see cref="LoopFile"/>.</param>
-		/// <param name="pattern">See parameters for <see cref="LoopFile"/>.</param>
-		/// <param name="d">See parameters for <see cref="LoopFile"/>.</param>
-		/// <param name="f">See parameters for <see cref=See parameters An Yield return aref="LoopFile"/>."IEnumerable{string}"/>.</pa of the filesram>
-		/// <param name="r">See parameters for <see cref=See parameters An Yield return aref="LoopFile"/>."IEnumerable{string}"/>.</pa of the filesram>
-		/// <returns>Yield return an <see cref="IEnumerable{string}"/> of the files and folders found.</returns>
-		private static IEnumerable<string> GetFiles(string path, string pattern, bool d, bool f, bool r)
+		internal static IEnumerable<string> GetFiles(string dir, string pattern, bool d, bool f, bool r)
 		{
-			var queue = new Queue<string>();
-			queue.Enqueue(path);
-			var enumopts = new EnumerationOptions
+			var options = new EnumerationOptions
 			{
-				AttributesToSkip = FileAttributes.Normal,
+				AttributesToSkip = 0,
 				IgnoreInaccessible = true,
 				MatchCasing = MatchCasing.CaseInsensitive,
-				RecurseSubdirectories = r
+				MatchType = MatchType.Win32
 			};
+			var expression = FileSystemName.TranslateWin32Expression(pattern);
+			return GetFiles(dir, expression, d, f, r, options);
+		}
 
-			while (queue.Count > 0)
+		private static IEnumerable<string> GetFiles(string dir, string expression, bool d, bool f, bool r, EnumerationOptions options)
+		{
+			foreach (var entry in Entries(dir, options, (ref FileSystemEntry e) =>
+				(e.IsDirectory ? d : f) && FileSystemName.MatchesWin32Expression(expression, e.FileName, true)))
+				yield return entry;
+
+			if (!r)
+				yield break;
+
+			foreach (var sub in Entries(dir, options, static (ref FileSystemEntry e) => e.IsDirectory))
+				foreach (var entry in GetFiles(sub, expression, d, f, r, options))
+					yield return entry;
+		}
+
+		// As in AutoHotkey, a folder that cannot be searched contributes nothing rather than raising an error.
+		private static IEnumerable<string> Entries(string dir, EnumerationOptions options, FileSystemEnumerable<string>.FindPredicate include)
+		{
+			try
 			{
-				path = queue.Dequeue();
-
-				if (d)
+				return new FileSystemEnumerable<string>(dir, static (ref FileSystemEntry e) => e.ToSpecifiedFullPath(), options)
 				{
-					IEnumerable<string> subdirs = null;
-
-					try
-					{
-						subdirs = Directory.EnumerateDirectories(path, pattern, enumopts);
-					}
-					catch (Exception ex)
-					{
-						_ = Diagnostics.Debug.WriteLine(ex);
-					}
-
-					if (subdirs != null)
-					{
-						foreach (var subdir in subdirs)
-						{
-							queue.Enqueue(subdir);
-							yield return subdir;
-						}
-					}
-				}
-
-				if (f)
-				{
-					IEnumerable<string> files = null;
-
-					try
-					{
-						files = Directory.EnumerateFiles(path, pattern, enumopts);
-					}
-					catch (Exception ex)
-					{
-						_ = Diagnostics.Debug.WriteLine(ex);
-					}
-
-					if (files != null)
-					{
-						foreach (var file in files)
-						{
-							yield return file;
-						}
-					}
-				}
-
-				if (!enumopts.RecurseSubdirectories)
-					break;
+					ShouldIncludePredicate = include
+				};
+			}
+			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+			{
+				return [];
 			}
 		}
 
 #if WINDOWS
 
 		/// <summary>
-		/// Internal helper to get registry subkeys.
+		/// The items of a Loop Reg, in AutoHotkey's order: the key's values, then each subkey, both newest first, and with
+		/// recursion the same walk of each subkey after the subkey itself. A_LoopRegKey is the key that holds the item.
 		/// </summary>
-		/// <param name="info">The current loop object.</param>
-		/// <param name="key">The key to examine.</param>
-		/// <param name="k">Whether to get keys.</param>
-		/// <param name="v">Whether to get values.</param>
-		/// <returns>An <see cref="IEnumerable"/> of the registry keys and values.</returns>
-		private static IEnumerable GetSubKeys(LoopInfo info, RegistryKey key, bool k, bool v)
+		private static IEnumerable GetSubKeys(LoopInfo info, RegistryKey key, bool k, bool v, bool r)
 		{
-			//try
+			if (v)
 			{
-				if (v)
-				{
-					foreach (var val in ProcessRegValues(info, key))
-						yield return val;
-				}
-
-				var subkeynames = key.GetSubKeyNames();
-
-				if (subkeynames?.Length > 0)
-				{
-					foreach (var keyname in subkeynames.Reverse())
-					{
-						//try
-						{
-							using (var key2 = key.OpenSubKey(keyname, false))
-							{
-								if (k)
-								{
-									info.index++;
-									info.regVal = string.Empty;
-									info.regName = key2.Name.Substring(key2.Name.LastIndexOf('\\') + 1);
-									info.regKeyName = key2.Name;//The full key path.
-									info.regType = Keyword_Key;
-									var l = QueryInfoKey(key2);
-									var dt = DateTime.FromFileTimeUtc(l);
-									info.regDate = Conversions.ToYYYYMMDDHH24MISS(dt);
-									yield return info.regKeyName;
-								}
-
-								foreach (var val in GetSubKeys(info, key2, k, v))
-									yield return val;
-							}
-						}
-						//catch (Exception e)
-						//{
-						//  //error, do something
-						//}
-					}
-				}
-			}
-			//catch (Exception e)
-			//{
-			//  //error, do something
-			//}
-		}
-
-		/// <summary>
-		/// Internal helper to get registry values as strings.
-		/// </summary>
-		/// <param name="info">The current loop object.</param>
-		/// <param name="key">They key to get values for.</param>
-		/// <returns>An <see cref="IEnumerable"/> of the values as strings.</returns>
-		private static IEnumerable ProcessRegValues(LoopInfo info, RegistryKey key)
-		{
-			var valuenames = key.GetValueNames();
-
-			if (valuenames?.Length > 0)
-			{
-				info.regDate = string.Empty;
-
-				foreach (var valueName in valuenames.Reverse())
+				foreach (var valueName in key.GetValueNames().Reverse())
 				{
 					info.index++;
-					info.regVal = key.GetValue(valueName, string.Empty, RegistryValueOptions.None);
+					info.regKeyName = key.Name;
+					info.regName = valueName;
+					info.regDate = string.Empty;
+					info.regVal = key.GetValue(valueName, string.Empty, RegistryValueOptions.DoNotExpandEnvironmentNames);
 
 					if (info.regVal is byte[] ro)
 						info.regVal = BitConverter.ToString(ro).Replace("-", string.Empty);
 
-					info.regName = valueName;
 					info.regType = Conversions.GetRegistryTypeName(key.GetValueKind(valueName));
 					yield return valueName;
 				}
+			}
+
+			if (!k && !r)
+				yield break;
+
+			foreach (var subKeyName in key.GetSubKeyNames().Reverse())
+			{
+				using var sub = OpenRegKey(key, subKeyName);
+
+				if (k)
+				{
+					info.index++;
+					info.regKeyName = key.Name;
+					info.regName = subKeyName;
+					info.regVal = string.Empty;
+					info.regType = Keyword_Key;
+					info.regDate = sub != null ? Conversions.ToYYYYMMDDHH24MISS(DateTime.FromFileTime(QueryInfoKey(sub))) : string.Empty;
+					yield return subKeyName;
+				}
+
+				if (r && sub != null)
+					foreach (var val in GetSubKeys(info, sub, k, v, r))
+						yield return val;
+			}
+		}
+
+		// A key the script may not read contributes nothing, as a failed RegOpenKeyEx does in AutoHotkey.
+		private static RegistryKey OpenRegKey(RegistryKey parent, string name)
+		{
+			try
+			{
+				return parent.OpenSubKey(name, false);
+			}
+			catch (System.Security.SecurityException)
+			{
+				return null;
 			}
 		}
 

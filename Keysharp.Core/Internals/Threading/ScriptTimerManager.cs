@@ -43,6 +43,7 @@ namespace Keysharp.Internals.Threading
 	internal sealed class ScriptTimerManager : IDisposable
 	{
 		private readonly object gate = new();
+		private const long MinRepeatPeriodMs = 10;
 		private readonly Dictionary<(object Callback, ScriptEventScheduler OwnerScheduler), ScriptTimerState> timers = new(ScriptTimerKeyComparer.Instance);
 		private readonly AutoResetEvent wakeEvent = new(false);
 		private Thread timerThread;
@@ -211,10 +212,12 @@ namespace Keysharp.Internals.Threading
 				timer.Queued = false;
 				timer.WakeRequested = false;
 
+				// AHK checks timers when a thread sleeps or on its 10 ms main timer, so a repeating timer runs at most
+				// that often; without the floor, a period of 1 (stored as 0) would refire back to back on a whole core.
 				if (timer.RunOnce)
 					timer.SetActive(false);
 				else
-					timer.NextDueTick = Environment.TickCount64 + timer.PeriodMs;
+					timer.NextDueTick = Environment.TickCount64 + Math.Max(timer.PeriodMs, MinRepeatPeriodMs);
 
 				timer.RunningCount++;
 			}

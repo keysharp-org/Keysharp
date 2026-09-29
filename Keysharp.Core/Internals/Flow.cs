@@ -111,11 +111,10 @@ namespace Keysharp.Internals
 			if (reasonName.Length == 0)
 				return false;
 
-			Dialogs.CloseDialogs(script);
-			Dialogs.CloseToolTips(script);
 			var ec = exitCode.Ai();
-			var allowInterruptionPrev = fd.allowInterruption;
-			fd.allowInterruption = false;
+			var threads = script.Threads;
+			var allowInterruptionPrev = threads.allowInterruption;
+			threads.allowInterruption = false;
 
 			// Invoke OnExit callbacks — UNLESS a nested exit is requested while they are already running (a callback
 			// that errors or calls ExitApp/Reload): then skip straight to termination so we don't re-run them and loop
@@ -147,15 +146,19 @@ namespace Keysharp.Internals
 			// (non-nested) exit hasExited is still false at this point, so teardown proceeds as before.
 			if (script.hasExited)
 			{
-				fd.allowInterruption = allowInterruptionPrev;
+				threads.allowInterruption = allowInterruptionPrev;
 				return false;
 			}
 
 			if (exitReason >= Keysharp.Builtins.Flow.ExitReasons.None && result.Al() != 0L)
 			{
-				fd.allowInterruption = allowInterruptionPrev;
+				threads.allowInterruption = allowInterruptionPrev;
 				return true;
 			}
+
+			// Only an exit that is certain closes the dialogs of other threads.
+			Dialogs.CloseDialogs(script);
+			Dialogs.CloseToolTips(script);
 
 			// The exit is certain from here: every callback has had its chance to cancel it and none did. Publishing
 			// the reason and arming the exit code at this one point is what lets Ks.App.ExitReason mean "the script
@@ -181,7 +184,7 @@ namespace Keysharp.Internals
 
 			script.hasExited = true;
 			script.ScheduleAllEventSchedulers();
-			fd.allowInterruption = allowInterruptionPrev;
+			threads.allowInterruption = allowInterruptionPrev;
 			HotkeyDefinition.AllDestruct(script);
 			StopMainTimer(script);
 
@@ -280,11 +283,20 @@ namespace Keysharp.Internals
 
 		internal static void SleepWithoutInterruption(int duration = -1)
 		{
-			var fd = Script.TheScript.FlowData;
-			var allowInterruptionPrev = fd.allowInterruption;   // save/restore (matches AHK's g_AllowInterruption_prev)
-			fd.allowInterruption = false;                       // so a caller already uninterruptible (e.g. Critical) stays so
-			Sleep(duration);
-			fd.allowInterruption = allowInterruptionPrev;
+			// Saved and restored, as AHK's g_AllowInterruption_prev, so a caller already uninterruptible stays so, and
+			// restored even when an exit request ends the sleep.
+			var threads = Script.TheScript.Threads;
+			var allowInterruptionPrev = threads.allowInterruption;
+			threads.allowInterruption = false;
+
+			try
+			{
+				Sleep(duration);
+			}
+			finally
+			{
+				threads.allowInterruption = allowInterruptionPrev;
+			}
 		}
 
 		internal static bool PollUntil(Func<bool> condition, int timeoutMs, int pollIntervalMs)
@@ -501,7 +513,8 @@ namespace Keysharp.Internals
 		/// </summary>
 		internal static void WaitWhilePaused(ThreadVariables tv)
 		{
-			if (tv == null || !tv.isPaused)
+			// A thread that ends inside the wait returns to it, rather than starting another wait for the same pause.
+			if (tv == null || !tv.IsPaused || tv.waitingWhilePaused)
 				return;
 
 			var script = Script.TheScript;
@@ -512,10 +525,11 @@ namespace Keysharp.Internals
 			var threads = script.Threads;
 			var prevAllowTimers = threads.AllowTimers;
 			threads.AllowTimers = false;
+			tv.waitingWhilePaused = true;
 
 			try
 			{
-				WaitWithMessagePump(() => tv.isPaused
+				WaitWithMessagePump(() => tv.IsPaused
 									&& tv.requestedExitCode == null
 									&& !script.hasExited
 									&& !script.IsDisposed,
@@ -523,6 +537,7 @@ namespace Keysharp.Internals
 			}
 			finally
 			{
+				tv.waitingWhilePaused = false;
 				threads.AllowTimers = prevAllowTimers;
 			}
 		}

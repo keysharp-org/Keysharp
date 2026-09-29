@@ -105,11 +105,11 @@ namespace Keysharp.Internals.Threading
 		/// </summary>
 		public static bool A_IsPaused
 		{
-			get => Script.TheScript.Threads.UnderlyingThread?.isPaused ?? false;
+			get => Script.TheScript.Threads.UnderlyingThread?.IsPaused ?? false;
 			set
 			{
 				var underlyingThread = Script.TheScript.Threads.UnderlyingThread;
-				if (underlyingThread != null) underlyingThread.isPaused = value;
+				if (underlyingThread != null) underlyingThread.IsPaused = value;
 			}
 		}
 

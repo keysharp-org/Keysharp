@@ -5426,37 +5426,56 @@ namespace Keysharp.Compilation.Syntax
 
 		// ---- control flow ----
 
-		// while cond { body } -> Push; try { while(IsTrueAndRunning(cond)) { Inc(); body [; if(until) break] } } finally { Pop }
-		// (Push/Inc/Pop give the loop a working A_Index, matching AHK.)
+		// while cond { body } -> Push; try { while(true) { Inc(); if (!IsTrueAndRunning(cond)) break; body [; if(until) break] } } finally { Pop }
+		// A_Index is advanced before the condition, as AHK does, so the condition sees the iteration it decides on. A
+		// loop with an Else takes the count back when the condition ends it, so the Else test still sees 0 iterations.
 		// IsTrueAndRunning rather than a bare IfTest, as every other loop form uses: it carries the per-iteration
 		// message check, and without it a `while` whose body calls nothing never polls and never sees the exit.
 		private StatementSyntax LowerWhile(WhileStmt w)
 		{
 			var id = ++_flowCounter;
 			var frame = PushLoop(id);
-			var body = LowerBody(w.Body);
-			body = body.WithStatements(body.Statements.Insert(0, CallStmt("Keysharp.Runtime.Loops.Inc")));
-			body = WrapLoopBody(body, w.Until, frame, w);
+			var body = WrapLoopBody(LowerBody(w.Body), w.Until, frame, w);
 			PopLoop();
-			var loop = SyntaxFactory.WhileStatement(
-						   Inv(Access("Keysharp.Runtime.Flow.IsTrueAndRunning"), LowerExpr(w.Cond)), body);
+			var exit = new List<StatementSyntax>();
+			if (w.Else != null)
+				exit.Add(ExprStmt(SyntaxFactory.PostfixUnaryExpression(SyntaxKind.PostDecrementExpression, Member(Id("KS_loop" + id), "index"))));
+			exit.Add(SyntaxFactory.BreakStatement());
+			var test = SyntaxFactory.IfStatement(
+				SyntaxFactory.PrefixUnaryExpression(SyntaxKind.LogicalNotExpression, Inv(Access("Keysharp.Runtime.Flow.IsTrueAndRunning"), LowerExpr(w.Cond))),
+				SyntaxFactory.Block(exit));
+			body = body.WithStatements(body.Statements.InsertRange(0, [CallStmt("Keysharp.Runtime.Loops.Inc"), test]));
+			var loop = SyntaxFactory.WhileStatement(SyntaxFactory.LiteralExpression(SyntaxKind.TrueLiteralExpression), body);
 			return LoopBlock(id, frame, "Normal", SyntaxFactory.Block(loop), w.Else);
 		}
 
 		private StatementSyntax LowerLoop(LoopStmt lp)
 		{
-			// Both finite and infinite loops use Loops.Loop(count) (count -1 == infinite); its enumerator advances
-			// A_Index on MoveNext and IsTrueAndRunning runs the per-iteration message check.
+			// Loops.Loop(count), or Loops.Loop() for the infinite form; its enumerator advances A_Index on MoveNext and
+			// IsTrueAndRunning runs the per-iteration message check.
 			var id = ++_flowCounter;
 			var ev = "KS_e" + id;
-			var countExpr = lp.Count == null ? Num("-1") : LowerExpr(lp.Count);
-			var enumInit = Inv(Member(Inv(Access("Keysharp.Runtime.Loops.Loop"), countExpr), "GetEnumerator"));
+			var header = new List<StatementSyntax>();
+			var countArgs = lp.Count == null ? [] : new[] { LoopHeader(header, id, LowerExpr(lp.Count)) };
+			var enumInit = Inv(Member(Inv(Access("Keysharp.Runtime.Loops.Loop"), countArgs), "GetEnumerator"));
 			var cond = Inv(Access("Keysharp.Runtime.Flow.IsTrueAndRunning"), Inv(Member(Id(ev), "MoveNext")));
 			var frame = PushLoop(id);
 			var body = WrapLoopBody(LowerBody(lp.Body), lp.Until, frame, lp);
 			PopLoop();
 			var loop = SyntaxFactory.WhileStatement(cond, body);
-			return LoopBlock(id, frame, "Normal", SyntaxFactory.Block(LocalDeclVar(ev, enumInit), loop), lp.Else);
+			return LoopBlock(id, frame, "Normal", SyntaxFactory.Block(LocalDeclVar(ev, enumInit), loop), lp.Else, header);
+		}
+
+		// AHK expands a loop's arguments before the loop sets A_Index, so a header reads the enclosing loop's A_Index and
+		// A_Loop* variables. A header that is not a literal is therefore evaluated into a local ahead of Loops.Push.
+		private static ExpressionSyntax LoopHeader(List<StatementSyntax> header, int id, ExpressionSyntax value)
+		{
+			if (value is LiteralExpressionSyntax)
+				return value;
+
+			var name = "KS_h" + id + "_" + header.Count;
+			header.Add(DeclLocal(ObjType, name, value));
+			return Id(name);
 		}
 
 		// Maps a specialized-loop sub-keyword to its (enumerator method, LoopType) pair.
@@ -5469,20 +5488,29 @@ namespace Keysharp.Compilation.Syntax
 		};
 
 		// Loop Parse/Files/Read/Reg <args>: same Push/while(MoveNext)/Pop shape as LowerLoop, but the enumerator is
-		// the matching Loops.LoopXxx(args) and the pushed LoopType drives A_LoopField/A_LoopFile* accessors.
+		// the matching Loops.LoopXxx(args) and the pushed LoopType drives A_LoopField/A_LoopFile* accessors. The
+		// enumerator is disposed when the loop ends, so leaving it early closes its file, directory or registry handle.
+		// Loop Read also learns whether an Else follows, which takes over from the error for a file that is not found.
 		private StatementSyntax LowerSpecialLoop(SpecialLoopStmt sl)
 		{
 			var (method, loopType) = SpecialLoops[sl.Kind];
 			var id = ++_flowCounter;
 			var ev = "KS_e" + id;
-			var argExprs = sl.Args.Select(a => a == null ? Null : LowerExpr(a)).ToArray();
-			var enumInit = Inv(Member(Inv(Access("Keysharp.Runtime.Loops." + method), argExprs), "GetEnumerator"));
+			var header = new List<StatementSyntax>();
+			var argExprs = sl.Args.Select(a => a == null ? Null : LoopHeader(header, id, LowerExpr(a))).ToList();
+			if (sl.Kind == "read" && sl.Else != null)
+			{
+				while (argExprs.Count < 2)
+					argExprs.Add(Null);
+				argExprs.Add(SyntaxFactory.LiteralExpression(SyntaxKind.TrueLiteralExpression));
+			}
+			var enumInit = Inv(Member(Inv(Access("Keysharp.Runtime.Loops." + method), argExprs.ToArray()), "GetEnumerator"));
 			var cond = Inv(Access("Keysharp.Runtime.Flow.IsTrueAndRunning"), Inv(Member(Id(ev), "MoveNext")));
 			var frame = PushLoop(id);
 			var body = WrapLoopBody(LowerBody(sl.Body), sl.Until, frame, sl);
 			PopLoop();
 			var loop = SyntaxFactory.WhileStatement(cond, body);
-			return LoopBlock(id, frame, loopType, SyntaxFactory.Block(LocalDeclVar(ev, enumInit), loop), sl.Else);
+			return LoopBlock(id, frame, loopType, SyntaxFactory.Block(ExprStmt(Assign(Id(ev), enumInit)), loop), sl.Else, header, ev);
 		}
 
 		private static bool IsLoopStmt(Stmt s) => s is WhileStmt or LoopStmt or SpecialLoopStmt or ForStmt;
@@ -5502,14 +5530,15 @@ namespace Keysharp.Compilation.Syntax
 		// A user label `name:` / goto target -> a mangled, collision-free C# label identifier.
 		private static string UserLabelId(string name) => "KS_lbl_" + name.ToLowerInvariant();
 
-		// Appends the trailing `Until` break and, when a level/label continue targeted this loop, the `_next:` label. Every
-		// iteration then records the loop's own location, as its condition or enumerator runs next.
+		// Appends the `_next:` label a continue of this loop targets, then the trailing `Until` break, which AHK also
+		// evaluates after a continue. Every iteration then records the loop's own location, as its condition or
+		// enumerator runs next.
 		private BlockSyntax WrapLoopBody(BlockSyntax body, Expr until, LoopFrame frame, Stmt loop)
 		{
-			if (until != null)
-				body = body.AddStatements(Stamp(until), SyntaxFactory.IfStatement(IfTest(LowerExpr(until)), SyntaxFactory.BreakStatement()));
 			if (frame.NeedsNext)
 				body = body.WithStatements(body.Statements.Add(NextLabel(frame.Id)));
+			if (until != null)
+				body = body.AddStatements(Stamp(until), SyntaxFactory.IfStatement(IfTest(LowerExpr(until)), SyntaxFactory.BreakStatement()));
 			return body.AddStatements(Stamp(loop));
 		}
 
@@ -5557,17 +5586,26 @@ namespace Keysharp.Compilation.Syntax
 			return result;
 		}
 
-		// { [var KS_loopN =] Push(type); [backups] try { loop } finally { [restores] Pop(); } [if (KS_loopN.index == 0) else] [_end:] }
+		// { [headers] [IEnumerator KS_eN = null;] [var KS_loopN =] Push(type); [backups] try { loop } finally { [Dispose]
+		// [restores] Pop(); } [if (KS_loopN.index == 0) else] [_end:] }
 		// The else follows the try, so it runs only when the loop completed without an iteration, never while an
 		// exception unwinds, and it may return or break. Lowered after PopLoop, so its break targets the outer loop.
 		private BlockSyntax LoopBlock(int id, LoopFrame frame, string loopType, BlockSyntax loop, Stmt elseStmt,
+			List<StatementSyntax> header = null, string disposedEnumerator = null,
 			List<StatementSyntax> backups = null, List<StatementSyntax> restores = null)
 		{
 			var info = "KS_loop" + id;
 			var push = Inv(Access("Keysharp.Runtime.Loops.Push"), Access("Keysharp.Runtime.LoopType." + loopType));
-			var block = new List<StatementSyntax> { elseStmt != null ? LocalDeclVar(info, push) : ExprStmt(push) };
+			var block = new List<StatementSyntax>();
+			if (header != null) block.AddRange(header);
+			if (disposedEnumerator != null) block.Add(DeclLocal(Ty("System.Collections.IEnumerator"), disposedEnumerator, Null));
+			block.Add(elseStmt != null ? LocalDeclVar(info, push) : ExprStmt(push));
 			if (backups != null) block.AddRange(backups);
 			var finallyStmts = new List<StatementSyntax>();
+			if (disposedEnumerator != null)
+				finallyStmts.Add(ExprStmt(SyntaxFactory.ConditionalAccessExpression(
+					SyntaxFactory.ParenthesizedExpression(SyntaxFactory.BinaryExpression(SyntaxKind.AsExpression, Id(disposedEnumerator), Ty("System.IDisposable"))),
+					SyntaxFactory.InvocationExpression(SyntaxFactory.MemberBindingExpression(SyntaxFactory.IdentifierName("Dispose"))))));
 			if (restores != null) finallyStmts.AddRange(restores);
 			finallyStmts.Add(CallStmt("Keysharp.Runtime.Loops.Pop"));
 			block.Add(TryFinally(loop, SyntaxFactory.Block(finallyStmts)));
@@ -5583,9 +5621,12 @@ namespace Keysharp.Compilation.Syntax
 		{
 			var id = ++_flowCounter;
 			var ev = "KS_e" + id;
-			var meArgs = new List<ExpressionSyntax> { LowerExpr(fr.Enumerable) };
+			var header = new List<StatementSyntax>();
+			var meArgs = new List<ExpressionSyntax> { LoopHeader(header, id, LowerExpr(fr.Enumerable)) };
 			// AHK scopes for-loop variables: they're restored to their pre-loop values after the loop. Back each one
 			// up into a temp before the loop and restore it in the finally (matches the canonical backup/restore).
+			// The backup also clears the variable, as AHK's does, so the loop gets the variable's own reference even
+			// when it held one to another variable.
 			var saves = new List<StatementSyntax>();
 			var restores = new List<StatementSyntax>();
 
@@ -5599,6 +5640,7 @@ namespace Keysharp.Compilation.Syntax
 					var backup = NewTemp();
 					meArgs.Add(VariableRef(v.ToLowerInvariant(), target, v));
 					saves.Add(ExprStmt(Assign(Id(backup), target.Read)));
+					saves.Add(ExprStmt(target.Write(Null)));
 					restores.Add(ExprStmt(target.Write(Id(backup))));
 				}
 				else
@@ -5612,7 +5654,7 @@ namespace Keysharp.Compilation.Syntax
 			body = body.WithStatements(body.Statements.Insert(0, CallStmt("Keysharp.Runtime.Loops.Inc")));
 			var cond = Inv(Access("Keysharp.Runtime.Flow.IsTrueAndRunning"), Inv(Member(Id(ev), "MoveNext")));
 			var loop = SyntaxFactory.WhileStatement(cond, WrapLoopBody(body, fr.Until, frame, fr));
-			return LoopBlock(id, frame, "Normal", SyntaxFactory.Block(LocalDeclVar(ev, enumInit), loop), fr.Else, saves, restores);
+			return LoopBlock(id, frame, "Normal", SyntaxFactory.Block(LocalDeclVar(ev, enumInit), loop), fr.Else, header, null, saves, restores);
 		}
 
 		// Lowered as a real C# `switch` (not an if-chain) so that all case bodies share one label scope — a `goto`

@@ -483,10 +483,15 @@ namespace Keysharp.Runtime
 
 		public static void InitStaticVariable(ref object variable, string name, Func<object> initFunc)
 		{
-			if (Script.TheScript.FlowData.initializedUserStaticVariables.Contains(name))
+			var initialized = Script.TheScript.FlowData.initializedUserStaticVariables;
+
+			if (initialized.ContainsKey(name))
 				return;
-			Script.TheScript.FlowData.initializedUserStaticVariables.Add(name);
+
+			// As in AHK, the static counts as initialized only once its initializer has succeeded, so one that throws
+			// runs again on the next call.
 			variable = initFunc();
+			initialized[name] = true;
 		}
 
 		// Publishes a function's scope in its call stack frame. The dispatcher clears it when the frame is popped,

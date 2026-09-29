@@ -102,7 +102,27 @@ namespace Keysharp.Internals.Threading
 		//internal Task<object> task = null;
 		internal bool task = false;
 		internal bool isCritical = false;
-		internal bool isPaused = false;
+		private bool isPaused;
+		// Set while WaitWhilePaused waits on this thread, so the end of a thread that interrupted the wait does not start
+		// a nested wait for the same pause.
+		internal bool waitingWhilePaused;
+
+		/// <summary>
+		/// Whether the pseudo-thread is paused. Each change is counted in the script's pausedThreadCount, AHK's
+		/// g_nPausedThreads, which holds off every timer while any thread is paused, the idle thread included.
+		/// </summary>
+		internal bool IsPaused
+		{
+			get => isPaused;
+			set
+			{
+				if (isPaused == value)
+					return;
+
+				isPaused = value;
+				_ = Interlocked.Add(ref owner.pausedThreadCount, value ? 1 : -1);
+			}
+		}
 		internal bool allowThreadToBeInterrupted = true;
 		internal int UninterruptibleDuration = 17;
 		internal long threadStartTick;
@@ -178,7 +198,8 @@ namespace Keysharp.Internals.Threading
 		{
 			task = false;// null;
 			isCritical = false;
-			isPaused = false;
+			IsPaused = false;
+			waitingWhilePaused = false;
 			allowThreadToBeInterrupted = true;
 			UninterruptibleDuration = owner.uninterruptibleTime;
 			// Stamped unconditionally (not just when the uninterruptible window applies) so KeysharpThread.Elapsed

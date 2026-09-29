@@ -123,22 +123,15 @@ namespace Keysharp.Builtins
 				{
 					var info = Loops.Peek(LoopType.File);
 
+					// The loop owns, and closes when it ends, only an output file it opened, never a standard stream.
 					if (info != null)
 					{
-						if (info.filename != string.Empty)
-						{
-							if (info.sw == null)
-							{
-								if (info.filename == "*")
-									info.sw = Console.Out;
-								else if (info.filename == "**")
-									info.sw = Console.Error;
-								else
-									info.sw = new StreamWriter(info.filename, true, encoding);
-							}
-
-							tw = info.sw;
-						}
+						if (info.filename == "*")
+							tw = Console.Out;
+						else if (info.filename == "**")
+							tw = Console.Error;
+						else if (info.filename != string.Empty)
+							tw = info.sw ??= new StreamWriter(info.filename, true, encoding);
 					}
 				}
 				else if (file == "*")
@@ -1431,6 +1424,9 @@ namespace Keysharp.Builtins
 			if (!dodirs && !dofiles)
 				dofiles = true;
 
+			// An invalid attribute letter is an error for the call, as in AHK, not a failure for each file.
+			_ = Conversions.ToFileAttribs(attr, FileAttributes.None);
+
 			foreach (var path in Conversions.ToFiles(file, dofiles, dodirs, recurse))
 			{
 				try
@@ -1507,7 +1503,10 @@ namespace Keysharp.Builtins
 			if (file?.Length == 0)
 				file = A_LoopFileFullPath;
 
-			var time = Conversions.ToDateTime(timestamp);
+			var time = timestamp.Length == 0 ? DateTime.Now : Conversions.ToDateTime(timestamp);
+
+			if (time == DateTime.MinValue)
+				return Errors.ValueErrorOccurred($"Invalid timestamp \"{timestamp}\".");
 
 			foreach (var path in Conversions.ToFiles(file, dofiles, dodirs, recurse))
 			{

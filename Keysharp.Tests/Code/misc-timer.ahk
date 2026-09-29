@@ -83,4 +83,16 @@ Sleep(100)
 
 AssertEq(x, 1, A_LineNumber)
 
+; A repeating timer with a period of 1 runs at the pace of AHK's timer check, not back to back.
+ticks := 0
+SetTimer(Tick, 1)
+Sleep(200)
+SetTimer(Tick, 0)
+Assert(ticks > 0 && ticks < 60, A_LineNumber)
+
+Tick() {
+	global ticks
+	ticks++
+}
+
 FileAppend "pass", "*"

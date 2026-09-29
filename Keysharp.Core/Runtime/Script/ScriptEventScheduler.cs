@@ -945,7 +945,9 @@ internal bool HasBlockedQueuedWork
 
 				// Keep the overdue callback queued while other eligible events continue. Admission changes and
 				// pseudo-thread completion wake the scheduler without resetting the timer or polling its owner.
+				// As AHK's g_nPausedThreads: no timer runs while any thread is paused, the idle one included.
 				if ((!threads.AllowTimers && script.totalExistingThreads > 0)
+					|| Volatile.Read(ref script.pausedThreadCount) > 0
 					|| timer.Priority < threads.CurrentThread.priority)
 					return ScriptEventExecutionResult.LocalBlocked;
 

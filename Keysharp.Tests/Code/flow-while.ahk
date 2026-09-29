@@ -188,4 +188,13 @@ else
 
 AssertEq(b, true, A_LineNumber)
 
+; The condition sees the A_Index of the iteration it decides on.
+x := []
+
+while (x.Push(A_Index), A_Index <= 3)
+	continue
+
+AssertEq(x.Length, 4, A_LineNumber)
+AssertEq(x[1], 1, A_LineNumber)
+
 FileAppend "pass", "*"

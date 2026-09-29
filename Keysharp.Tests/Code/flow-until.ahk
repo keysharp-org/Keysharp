@@ -123,4 +123,27 @@ until x > 1
 
 AssertEq(x, 2, A_LineNumber)
 
+; Until is also evaluated after an iteration that continue cuts short.
+x := 0
+
+Loop
+{
+	x++
+	continue
+}
+Until x = 3
+
+AssertEq(x, 3, A_LineNumber)
+
+x := 0
+
+for v in [1, 2, 3, 4, 5]
+{
+	x++
+	continue
+}
+Until v = 2
+
+AssertEq(x, 2, A_LineNumber)
+
 FileAppend "pass", "*"

@@ -2497,13 +2497,20 @@ namespace Keysharp.Internals.Input.Keyboard
 				{
 					var errorText = $"{hkd.throttledKeyCount} hotkeys have been received in the last {elapsedSincePrevTick}ms.\n\nDo you want to continue?\n(see A_MaxHotkeysPerInterval in the help file)";
 					hkd.dialogIsDisplayed = true;
-					script.FlowData.allowInterruption = false;
+					var threads = script.Threads;
+					var allowInterruptionPrev = threads.allowInterruption;
+					threads.allowInterruption = false;
 
-					if (Dialogs.MsgBox(errorText, null, "YesNo") == DialogResult.No.ToString())
-						_ = Keysharp.Internals.Flow.ExitAppInternal(script, Keysharp.Builtins.Flow.ExitReasons.Close, null, false);
-
-					script.FlowData.allowInterruption = true;
-					hkd.dialogIsDisplayed = false;
+					try
+					{
+						if (Dialogs.MsgBox(errorText, null, "YesNo") == DialogResult.No.ToString())
+							_ = Keysharp.Internals.Flow.ExitAppInternal(script, Keysharp.Builtins.Flow.ExitReasons.Close, null, false);
+					}
+					finally
+					{
+						threads.allowInterruption = allowInterruptionPrev;
+						hkd.dialogIsDisplayed = false;
+					}
 				}
 			}
 

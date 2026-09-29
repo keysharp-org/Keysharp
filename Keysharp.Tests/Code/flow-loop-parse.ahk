@@ -140,4 +140,13 @@ AssertEq(ParseFields(""), "", A_LineNumber)
 AssertEq(ParseFields("", ","), "", A_LineNumber)
 AssertEq(ParseFields("", "CSV"), "", A_LineNumber)
 
+; The input is evaluated before the loop starts, so a nested loop parses the enclosing loop's field.
+z := ""
+
+Loop Parse "a b,c d", ","
+	Loop Parse A_LoopField, " "
+		z .= A_LoopField "|"
+
+AssertEq(z, "a|b|c|d|", A_LineNumber)
+
 FileAppend "pass", "*"

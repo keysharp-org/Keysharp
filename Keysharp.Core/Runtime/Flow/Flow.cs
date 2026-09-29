@@ -105,7 +105,7 @@ namespace Keysharp.Runtime
 			// Compiled code cannot check the message queue before every line like AHK's interpreter.
 			// Instead, each execution context tracks its own last poll time and only performs
 			// a preemptive check when its current peek frequency says another one is due.
-			if (script.IsCurrentThreadPreemptiveCheckDue())
+			if (Script.IsPreemptiveCheckDue(Keysharp.Internals.Threading.Threads.Current))
 				Keysharp.Internals.Flow.TryDoEvents(true, false);
 
 			return b;

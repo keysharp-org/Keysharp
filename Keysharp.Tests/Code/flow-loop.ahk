@@ -283,10 +283,20 @@ Loop 1 * 2 * 3
 
 AssertEq(x, 6, A_LineNumber)
 
-; As in AutoHotkey, an empty pattern matches nothing.
+; The count is evaluated before the loop starts, so it reads the enclosing loop's A_Index.
 x := 0
 
-Loop Files ""
+Loop 3
+	Loop A_Index
+		x++
+
+AssertEq(x, 6, A_LineNumber)
+
+; -1 is a negative count like any other, not the infinite form.
+x := 0
+arr := []
+
+Loop arr.Length - 1
 	x++
 
 AssertEq(x, 0, A_LineNumber)

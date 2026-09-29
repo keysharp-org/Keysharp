@@ -224,4 +224,24 @@ myfunc() {
 
 myfunc()
 
+; The enumerable is evaluated before the loop starts, so it reads the enclosing loop's A_Index.
+Pair(i) => [i, i]
+x := ""
+
+Loop 2
+	for v in Pair(A_Index)
+		x .= v
+
+AssertEq(x, "1122", A_LineNumber)
+
+; A loop variable holding a reference gets a fresh value, rather than being written through.
+x := "orig"
+r := &x
+
+for r in [1, 2]
+	continue
+
+AssertEq(x, "orig", A_LineNumber)
+Assert(r is VarRef, A_LineNumber)
+
 FileAppend "pass", "*"

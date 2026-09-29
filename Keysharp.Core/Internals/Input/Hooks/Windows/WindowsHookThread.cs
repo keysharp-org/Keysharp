@@ -424,11 +424,20 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 				// to avoid the possibility that the script will continue to call this function recursively, resulting
 				// in an infinite stack of MsgBoxes. This approach is similar to that used in Hotkey::Perform()
 				// for the A_MaxHotkeysPerInterval warning dialog:
-				script.FlowData.allowInterruption = false;
-				// Below is a generic message to reduce code size.  Failure is rare, but has been known to happen when
-				// certain types of games are running).
-				_ = MessageBox.Show("Warning: The keyboard and/or mouse hook could not be activated; some parts of the script will not function.");//AHK has its own MsgBox() function which does things differently. Will need to see if we need to do all of that.
-				script.FlowData.allowInterruption = true;
+				var threads = script.Threads;
+				var allowInterruptionPrev = threads.allowInterruption;
+				threads.allowInterruption = false;
+
+				try
+				{
+					// Below is a generic message to reduce code size.  Failure is rare, but has been known to happen when
+					// certain types of games are running).
+					_ = MessageBox.Show("Warning: The keyboard and/or mouse hook could not be activated; some parts of the script will not function.");//AHK has its own MsgBox() function which does things differently. Will need to see if we need to do all of that.
+				}
+				finally
+				{
+					threads.allowInterruption = allowInterruptionPrev;
+				}
 			}
 		}
 

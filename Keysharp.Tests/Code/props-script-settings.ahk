@@ -16,6 +16,25 @@ AssertEq(A_IsSuspended, 1, A_LineNumber)
 		
 Suspend false
 
+; Suspend with no state toggles, as -1 does.
+Suspend
+AssertEq(A_IsSuspended, 1, A_LineNumber)
+Suspend
+AssertEq(A_IsSuspended, 0, A_LineNumber)
+Throws(() => Suspend("bogus"), A_LineNumber, ValueError)
+
+; Thread "NoTimers" with no value disallows timers, an omitted value leaves a setting as it was, and an unknown
+; sub-function is an error.
+Thread "NoTimers"
+Assert(!A_Thread.AllowTimers, A_LineNumber)
+Thread "NoTimers", false
+Assert(A_Thread.AllowTimers, A_LineNumber)
+Thread "Priority", 5
+Thread "Priority"
+AssertEq(A_Thread.Priority, 5, A_LineNumber)
+Thread "Priority", 0
+Throws(() => Thread("Bogus"), A_LineNumber, ValueError)
+
 AssertEq(A_IsCritical, 0, A_LineNumber)
 		
 Critical true
