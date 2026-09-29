@@ -73,7 +73,7 @@ public sealed class Program
 		//MarkdownExporter.Console.ExportToLog(summary, logger);
 		//summary = BenchmarkRunner.Run<FuncBench>(config);
 		//MarkdownExporter.Console.ExportToLog(summary, logger);
-		RunReflectionBenchmarks(config);
+		//RunReflectionBenchmarks(config);
 		RunReflectionRefBenchmarks(config);
 
 		//ConclusionHelper.Print(logger, summary.BenchmarksCases.First().Config.GetCompositeAnalyser().Analyse(summary).ToList());
