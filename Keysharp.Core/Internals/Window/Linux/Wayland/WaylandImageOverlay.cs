@@ -447,8 +447,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// <paramref name="source"/> 1:1. Falls back to a whole-buffer copy when the bitmap has no Cairo
 		/// surface to read (nothing drawn yet, or a non-GTK backend).
 		/// </summary>
-		private static unsafe void CopyImageRegionToBuffer(Bitmap image, Rectangle source,
-			WaylandShmBuffer target, PixelRect region, byte opacity)
+		internal static unsafe void CopyImageRegionToBuffer(Bitmap image, Rectangle source,
+			IPixelBuffer target, PixelRect region, byte opacity)
 		{
 			if (image == null || target == null || target.Data == 0 || region.IsEmpty)
 				return;
@@ -498,8 +498,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			return (a << 24) | (r << 16) | (g << 8) | b;
 		}
 
-		private static unsafe void CopyImageToBuffer(Bitmap image, Rectangle sourcePixels,
-			WaylandShmBuffer target, int width, int height, byte opacity = 255)
+		internal static unsafe void CopyImageToBuffer(Bitmap image, Rectangle sourcePixels,
+			IPixelBuffer target, int width, int height, byte opacity = 255)
 		{
 			if (image == null || target == null || target.Data == 0)
 				return;
@@ -575,7 +575,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// caller falls back to the pixbuf path.
 		/// </summary>
 		private static unsafe bool CopyFromCairoSurface(Bitmap image, Rectangle source,
-			WaylandShmBuffer target, int width, int height, byte opacity)
+			IPixelBuffer target, int width, int height, byte opacity)
 		{
 			if (image.Handler is not Eto.GtkSharp.Drawing.BitmapHandler handler)
 				return false;

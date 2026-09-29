@@ -15,14 +15,24 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 	/// released this one (via the wl_buffer.release event). Destroying a surface does not make it safe to unmap an
 	/// in-flight buffer immediately; Dispose therefore retires it and lets the release callback finish cleanup.
 	/// </summary>
-	internal sealed class WaylandShmBuffer : IDisposable
+	/// <summary>A mapped ARGB8888 buffer a frame is copied into: a Wayland shm buffer, or a frame shared with a
+	/// shell extension by descriptor.</summary>
+	internal interface IPixelBuffer
 	{
-		internal int Width { get; }
-		internal int Height { get; }
-		internal int Stride { get; }
+		int Width { get; }
+		int Height { get; }
+		int Stride { get; }
+		nint Data { get; }
+	}
+
+	internal sealed class WaylandShmBuffer : IDisposable, IPixelBuffer
+	{
+		public int Width { get; }
+		public int Height { get; }
+		public int Stride { get; }
 		internal uint Format { get; }
 		internal nint Buffer { get; private set; }
-		internal nint Data { get; private set; }
+		public nint Data { get; private set; }
 		private nuint MapLength { get; }
 
 		private int fd;

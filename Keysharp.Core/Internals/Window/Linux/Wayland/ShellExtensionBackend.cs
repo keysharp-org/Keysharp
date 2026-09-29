@@ -1,4 +1,6 @@
 #if LINUX
+using System.Runtime.InteropServices;
+
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
 	// DesktopBackend already implements IWaylandBackend, so it must be redeclared here to map the shell members.
@@ -17,9 +19,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		public bool SupportsImageOverlay => bridge.HasOwner;
 		public bool CanAttemptImageOverlay => true;
 
-		public OverlayShowResult TryShowImageOverlay(uint id, int x, int y, int width,
-			int height, byte[] pngBytes)
-			=> bridge.ShowImageOverlay(id, x, y, width, height, pngBytes);
+		public OverlayShowResult TryShowImageOverlay(uint id, int x, int y, int width, int height,
+			SafeHandle frame, ulong frameSerial, int pixelWidth, int pixelHeight, int stride, PixelRect damage)
+			=> bridge.ShowImageOverlay(id, x, y, width, height, frame, frameSerial, pixelWidth, pixelHeight,
+				stride, damage);
 
 		public bool TryMoveImageOverlay(uint id, int x, int y, int width, int height)
 			=> bridge.MoveImageOverlay(id, x, y, width, height);

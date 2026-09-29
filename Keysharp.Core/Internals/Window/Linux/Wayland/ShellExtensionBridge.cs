@@ -1,4 +1,5 @@
 #if LINUX
+using System.Runtime.InteropServices;
 using Keysharp.Internals.DBus;
 using Tmds.DBus.Protocol;
 using Shell = Keysharp.Internals.DBus.Generated.Shell;
@@ -9,7 +10,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 	internal sealed class ShellExtensionBridge : IDisposable
 	{
 		private const int TimeoutMs = 2000;
-		private const int ImageOverlayTimeoutMs = 10_000;
+		// A frame the shell never answers is not slow but lost: GJS refuses to run the method handler while it is
+		// collecting garbage, and the call is dropped without a reply. Healthy frames answer within tens of
+		// milliseconds, so the wait only needs to cover a slow decode, and the next frame supersedes a lost one.
+		private const int ImageOverlayTimeoutMs = 1_000;
 		private static readonly string HighlightOwnerKey = WaylandOverlayOwner.Key;
 
 		private readonly string diagnosticLabel;
@@ -31,11 +35,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		internal OverlayShowResult ShowImageOverlay(uint id, int x, int y, int width, int height,
-			byte[] pngBytes)
-			=> pngBytes is { Length: > 0 }
-				? RunShow((proxy, owner) => proxy.ShowImageOverlayAsync(id, HighlightOwnerKey,
-					owner, x, y, width, height, pngBytes))
-				: OverlayShowResult.Failed;
+			SafeHandle frame, ulong frameSerial, int pixelWidth, int pixelHeight, int stride, PixelRect damage)
+			=> RunShow((proxy, owner) => proxy.ShowImageOverlayAsync(id, HighlightOwnerKey, owner, x, y, width,
+				height, frame, frameSerial, pixelWidth, pixelHeight, stride,
+				(damage.X, damage.Y, damage.Width, damage.Height)));
 
 		internal bool MoveImageOverlay(uint id, int x, int y, int width, int height)
 			=> Run((proxy, owner) => proxy.MoveImageOverlayAsync(id, HighlightOwnerKey,
