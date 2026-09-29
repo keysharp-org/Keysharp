@@ -573,6 +573,8 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ The following options are different:
 		+ `S`: Studies the pattern to try improve its performance.
 			+ This is not supported. All RegEx objects are internally created with the `PcreOptions.Compiled` option specified, so performance should be reasonable.
+		+ `X`: PCRE_EXTRA, which makes a backslash followed by a letter with no special meaning an error.
+			+ It is accepted and has no effect: PCRE2 always raises that error, so a needle such as `a\yb`, which AutoHotkey reads as `ayb` without `X`, does not compile.
 		+ `u`: This new option disables optimizations PCRE2_NO_AUTO_POSSESS, PCRE2_NO_START_OPTIMIZE, and PCRE2_NO_DOTSTAR_ANCHOR. This option can be useful when using callouts, since these optimizations might prevent some callouts from happening.
 	+ Callouts differ in a few ways:
 		+ A callout names a top-level function, or a nested function or closure held in a variable of the function calling `RegExMatch` or `RegExReplace`.

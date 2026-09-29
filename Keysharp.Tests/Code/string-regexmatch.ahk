@@ -305,4 +305,32 @@ CheckMatches(m, nameMatch, valuesMatch)
 	AssertEq(values, valuesMatch, A_LineNumber)
 }
 
+; Text before the first ')' is options only when all of it is options, so these needles keep their start.
+RegExMatch("x) tail", "[^)]*", &optionMatch)
+AssertEq(optionMatch[0], "x", A_LineNumber)
+RegExMatch("ab12)", "\d+\)", &optionMatch)
+AssertEq(optionMatch[0], "12)", A_LineNumber)
+; S studies the pattern and X is PCRE_EXTRA; neither changes what matches.
+AssertEq(RegExMatch("a`nb", "S)a.b"), 0, A_LineNumber)
+AssertEq(RegExMatch("a`nb", "s)a.b"), 1, A_LineNumber)
+AssertEq(RegExMatch("a b", "X)a b"), 1, A_LineNumber)
+AssertEq(RegExMatch("x`r`ny", "m`r`n)x$"), 1, A_LineNumber)
+
+
+; Without a newline option, CR, LF and CRLF are all newlines, as AutoHotkey builds PCRE; `n makes LF the only one.
+RegExMatch("a=1`r`nb=2", "m)^a=(.*)$", &optionMatch)
+AssertEq(optionMatch[1], "1", A_LineNumber)
+AssertEq(RegExMatch("a`rb", "a.b"), 0, A_LineNumber)
+RegExMatch("a=1`r`nb=2", "m`n)^a=(.*)$", &optionMatch)
+AssertEq(optionMatch[1], "1`r", A_LineNumber)
+; A letter that is not an option makes the text before ')' part of the pattern, where the ')' is unmatched.
+Throws(() => RegExMatch("x", "q)x"), A_LineNumber)
+
+; By default \R matches CR, LF and CRLF only; `a adds the Unicode newlines to it and to what '.' does not match, and
+; `r makes CR the only newline.
+AssertEq(RegExMatch("a" Chr(0x85) "b", "a\Rb"), 0, A_LineNumber)
+AssertEq(RegExMatch("a" Chr(0x85) "b", "`a)a\Rb"), 1, A_LineNumber)
+AssertEq(RegExMatch("a`vb", "`a)a.b"), 0, A_LineNumber)
+AssertEq(RegExMatch("a`nb", "`r)a.b"), 1, A_LineNumber)
+
 FileAppend "pass", "*"

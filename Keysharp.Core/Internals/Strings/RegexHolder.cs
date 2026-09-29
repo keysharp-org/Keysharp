@@ -4,40 +4,18 @@ namespace Keysharp.Internals.Strings
 	internal class RegexHolder
 	{
 		internal PcreRegex regex;
-		internal PcrePatternInfo info;
-		internal string haystack;
-		internal string needle;//Unmodified RegEx pattern.
-		internal string pattern;//RegEx pattern with AHK settings removed.
 		internal string tag = "";
-		internal PcreRegexSettings opts;
 		internal string[] groupNames;
 		internal bool hasCallout;//Whether the pattern uses callouts; if not, matching can skip the callback path.
 
-		internal RegexHolder(string hs, string n)
+		internal RegexHolder(string n)
 		{
-			haystack = hs;
-			needle = n;
-			PcreRegexSettings settings = null;
-			var parenIndex = n.IndexOf(')');
-
-			if (parenIndex != -1)
-			{
-				var leftParenIndex = n.IndexOf('(');
-
-				if (leftParenIndex == -1 || (leftParenIndex > parenIndex))//Make sure it was just a ) for settings and not a ().
-				{
-					var span = n.AsSpan(0, parenIndex);
-					// The A option is PCRE's anchored option and nothing more: it anchors the match at the starting
-					// position, where a \A in the pattern would anchor it at the start of the haystack.
-					settings = Conversions.ToRegexOptions(span);
-					pattern = n.Substring(parenIndex + 1);
-				}
-			}
-
-			settings ??= new PcreRegexSettings();
+			var optionsLength = Conversions.RegexOptionsLength(n);
+			// The A option is PCRE's anchored option and nothing more: it anchors the match at the starting
+			// position, where a \A in the pattern would anchor it at the start of the haystack.
+			var settings = Conversions.ToRegexOptions(n.AsSpan(0, optionsLength > 0 ? optionsLength - 1 : 0));
 			settings.Options |= PcreOptions.Compiled;
-			pattern ??= n;
-			opts = settings;
+			var pattern = n.Substring(optionsLength);
 
 			//Compile as-is first. AutoHotkey's unquoted callout names — (?CName), (?Cn:Name) — are invalid in
 			//PCRE2 and make compilation throw; only then do we rewrite them to the PCRE2 string form and retry.
@@ -45,15 +23,15 @@ namespace Keysharp.Internals.Strings
 			//and avoids scanning callout-free patterns entirely.
 			try
 			{
-				regex = new PcreRegex(pattern, opts);
+				regex = new PcreRegex(pattern, settings);
 			}
 			catch (PcrePatternException) when (pattern.IndexOf("(?C", StringComparison.Ordinal) >= 0)
 			{
 				pattern = TranslateCallouts(pattern);
-				regex = new PcreRegex(pattern, opts);
+				regex = new PcreRegex(pattern, settings);
 			}
 
-			info = regex.PatternInfo;
+			var info = regex.PatternInfo;
 			//Whether matching needs the (slower) callout callback path. Taken from the compiled pattern's callout
 			//list (authoritative — covers numeric, named and translated callouts) plus the auto-callout option.
 			hasCallout = (settings.Options & PcreOptions.AutoCallout) != 0 || info.Callouts.Any();

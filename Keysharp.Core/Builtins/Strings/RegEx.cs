@@ -80,7 +80,7 @@ namespace Keysharp.Builtins
 				{
 					try
 					{
-						exp = new RegexHolder(input, n);//This will not throw PCRE style errors like the documentation says.
+						exp = new RegexHolder(n);//This will not throw PCRE style errors like the documentation says.
 					}
 					catch (Exception ex)
 					{
@@ -235,7 +235,7 @@ namespace Keysharp.Builtins
 				{
 					try
 					{
-						exp = new RegexHolder(input, needle);//This will not throw PCRE style errors like the documentation says.
+						exp = new RegexHolder(needle);//This will not throw PCRE style errors like the documentation says.
 					}
 					catch (Exception ex)
 					{

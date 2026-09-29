@@ -157,4 +157,10 @@ CheckMatches(m, nameMatch, valuesMatch)
 	AssertEq(values, valuesMatch, A_LineNumber)
 }
 
+; Text before the first ')' is options only when all of it is options, so these needles keep their start.
+RegExMatchCs("x) tail", "[^)]*", &optionMatch)
+AssertEq(optionMatch[0], "x", A_LineNumber)
+RegExMatchCs("ab12)", "\d+\)", &optionMatch)
+AssertEq(optionMatch[0], "12)", A_LineNumber)
+
 FileAppend "pass", "*"

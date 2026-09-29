@@ -501,28 +501,48 @@ namespace Keysharp.Internals.Strings
 		{
 			var opts = reverse ? RegexOptions.RightToLeft : RegexOptions.None;
 			opts |= RegexOptions.Compiled;
-			var parenIndex = exp.IndexOf(')');
+			var optionsLength = RegexOptionsLength(exp);
 
-			if (parenIndex != -1)
+			if (optionsLength > 0)
 			{
-				var leftParenIndex = exp.IndexOf('(');
+				var span = exp.AsSpan(0, optionsLength - 1);
+				var substr = exp.Substring(optionsLength);
+				opts |= ToRegexOptionsCs(span);
 
-				if (leftParenIndex == -1 || (leftParenIndex > parenIndex))//Make sure it was just a ) for options and not a ().
+				if (span.Contains('A'))
 				{
-					var span = exp.AsSpan(0, parenIndex);
-					var substr = exp.Substring(parenIndex + 1);
-					opts |= ToRegexOptionsCs(span);
-
-					if (span.Contains('A'))
-					{
-						substr = "\\A" + substr;
-					}
-
-					return new RegexWithTag(substr, opts);
+					substr = "\\A" + substr;
 				}
+
+				return new RegexWithTag(substr, opts);
 			}
 
 			return new RegexWithTag(exp, opts);
+		}
+
+		/// <summary>
+		/// The length of a needle's options prefix including its ')', or 0 when it has none. As in AutoHotkey, what
+		/// precedes the first ')' is options only when every character of it is an option, `a, `n, `r, a space or a tab;
+		/// otherwise, as in "\d+\)" or "[^)]*", the whole needle is the pattern.
+		/// </summary>
+		internal static int RegexOptionsLength(string needle)
+		{
+			for (var i = 0; i < needle.Length; i++)
+			{
+				switch (needle[i])
+				{
+					case ')':
+						return i + 1;
+
+					case 'i' or 'm' or 's' or 'x' or 'A' or 'D' or 'J' or 'U' or 'X' or 'C' or 'S' or 'u' or '\a' or '\n' or '\r' or ' ' or '\t':
+						continue;
+
+					default:
+						return 0;
+				}
+			}
+
+			return 0;
 		}
 
 		/// <summary>
@@ -725,75 +745,44 @@ namespace Keysharp.Internals.Strings
 			return Loops.GetFiles(Path.GetDirectoryName(fullPath) ?? fullPath, pattern, dirs, files, recurse);
 		}
 
+		// AutoHotkey's option letters. S (study) is implied by compiling every pattern, and X (PCRE_EXTRA's strict
+		// escapes) is always in effect in PCRE2. u is Keysharp's own, which turns off the optimizations that can skip
+		// callouts.
 		internal static PcreRegexSettings ToRegexOptions(ReadOnlySpan<char> sequence)
 		{
-			var settings = new PcreRegexSettings();
+			// AutoHotkey builds PCRE to take CR, LF and CRLF as newlines, for \R as well, unless an option says otherwise.
+			var settings = new PcreRegexSettings { NewLine = PcreNewLine.AnyCrLf, BackslashR = PcreBackslashR.AnyCrLf };
 
-			foreach (var modifier in sequence)
+			for (var i = 0; i < sequence.Length; i++)
 			{
-				switch (modifier)
+				switch (sequence[i])
 				{
-					case 'i':
-					case 'I':
-						settings.Options |= PcreOptions.IgnoreCase;
-						break;
+					case 'i': settings.Options |= PcreOptions.IgnoreCase; break;
+					case 'm': settings.Options |= PcreOptions.MultiLine; break;
+					case 's': settings.Options |= PcreOptions.DotAll; break;
+					case 'x': settings.Options |= PcreOptions.Extended; break;
+					case 'A': settings.Options |= PcreOptions.Anchored; break;
+					case 'D': settings.Options |= PcreOptions.DollarEndOnly; break;
+					case 'J': settings.Options |= PcreOptions.DupNames; break;
+					case 'U': settings.Options |= PcreOptions.Ungreedy; break;
+					case 'C': settings.Options |= PcreOptions.AutoCallout; break;
+					case 'u': settings.Options |= PcreOptions.NoAutoPossess | PcreOptions.NoStartOptimize | PcreOptions.NoDotStarAnchor; break;
+					case '\n': settings.NewLine = PcreNewLine.Lf; break;
 
-					case 'm':
-					case 'M':
-						settings.Options |= PcreOptions.MultiLine;
-						break;
-
-					case 's':
-						settings.Options |= PcreOptions.DotAll;
-						break;
-
-					case 'S':
-						settings.Options |= PcreOptions.Singleline;
-						break;
-
-					case 'x':
-						settings.Options |= PcreOptions.IgnorePatternWhitespace;
-						break;
-
-					case 'A':
-						settings.Options |= PcreOptions.Anchored;
-						break;
-
-					case 'D':
-						settings.Options |= PcreOptions.DollarEndOnly;
-						break;
-
-					case 'J':
-						settings.Options |= PcreOptions.DupNames;
-						break;
-
-					case 'U':
-						settings.Options |= PcreOptions.Ungreedy;
-						break;
-
-					case 'X':
-						settings.Options |= PcreOptions.Extended;
-						break;
-
-					case 'c':
-					case 'C':
-						settings.Options |= PcreOptions.AutoCallout;
-						break;
-
-					case 'a':
+					case '\a':
 						settings.NewLine = PcreNewLine.Any;
+						settings.BackslashR = PcreBackslashR.Unicode;
 						break;
 
-					case 'r':
-						settings.NewLine = PcreNewLine.Cr;
-						break;
+					case '\r':
+						if (i + 1 < sequence.Length && sequence[i + 1] == '\n')
+						{
+							i++;
+							settings.NewLine = PcreNewLine.CrLf;
+						}
+						else
+							settings.NewLine = PcreNewLine.Cr;
 
-					case 'n':
-						settings.NewLine = PcreNewLine.Lf;
-						break;
-
-					case 'u':
-						settings.Options |= PcreOptions.NoAutoPossess | PcreOptions.NoStartOptimize | PcreOptions.NoDotStarAnchor;
 						break;
 				}
 			}
@@ -801,6 +790,7 @@ namespace Keysharp.Internals.Strings
 			return settings;
 		}
 
+		// The .NET engine takes i, m, s and x; the prefix's other AutoHotkey options have no counterpart there.
 		internal static RegexOptions ToRegexOptionsCs(ReadOnlySpan<char> sequence)
 		{
 			var options = RegexOptions.None;
@@ -809,25 +799,10 @@ namespace Keysharp.Internals.Strings
 			{
 				switch (modifier)
 				{
-					case 'i':
-					case 'I':
-						options |= RegexOptions.IgnoreCase;
-						break;
-
-					case 'm':
-					case 'M':
-						options |= RegexOptions.Multiline;
-						break;
-
-					case 's':
-					case 'S':
-						options |= RegexOptions.Singleline;
-						break;
-
-					case 'x':
-					case 'X':
-						options |= RegexOptions.IgnorePatternWhitespace;
-						break;
+					case 'i': options |= RegexOptions.IgnoreCase; break;
+					case 'm': options |= RegexOptions.Multiline; break;
+					case 's': options |= RegexOptions.Singleline; break;
+					case 'x': options |= RegexOptions.IgnorePatternWhitespace; break;
 				}
 			}
 
