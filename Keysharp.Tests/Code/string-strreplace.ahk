@@ -67,4 +67,8 @@ AssertEq(y, "A,b,c,d,e,f", A_LineNumber)
 	
 AssertEq(varct, 1, A_LineNumber)
 
+; Locale searches fold one character at a time, so a sharp s does not match "ss".
+x := "Stra" Chr(0xDF) "e"
+AssertEq(StrReplace(x, "ss", "X", "Locale"), x, A_LineNumber)
+
 FileAppend "pass", "*"

@@ -4307,6 +4307,7 @@ namespace Keysharp.Compilation.Syntax
 				case ForStmt fr: foreach (var v in fr.Vars) if (v != null) provided.Add(v.ToLowerInvariant()); CollectProvidedExpr(fr.Enumerable, provided); CollectProvided(fr.Body, provided); break;
 				case SwitchStmt sw:
 					if (sw.Value != null) CollectProvidedExpr(sw.Value, provided);
+					if (sw.CaseSense != null) CollectProvidedExpr(sw.CaseSense, provided);
 					foreach (var c in sw.Cases) { foreach (var v in c.Values) CollectProvidedExpr(v, provided); foreach (var st in c.Body) CollectProvided(st, provided); }
 					if (sw.Default != null) foreach (var st in sw.Default) CollectProvided(st, provided);
 					break;
@@ -4374,6 +4375,7 @@ namespace Keysharp.Compilation.Syntax
 				case ForStmt fr: CheckReadsExpr(fr.Enumerable, provided, warned); CheckReadsStmt(fr.Body, provided, warned); break;
 				case SwitchStmt sw:
 					if (sw.Value != null) CheckReadsExpr(sw.Value, provided, warned);
+					if (sw.CaseSense != null) CheckReadsExpr(sw.CaseSense, provided, warned);
 					foreach (var c in sw.Cases) { foreach (var v in c.Values) CheckReadsExpr(v, provided, warned); foreach (var st in c.Body) CheckReadsStmt(st, provided, warned); }
 					if (sw.Default != null) foreach (var st in sw.Default) CheckReadsStmt(st, provided, warned);
 					break;
@@ -5666,17 +5668,14 @@ namespace Keysharp.Compilation.Syntax
 		}
 
 		// Lowered as a real C# `switch` (not an if-chain) so that all case bodies share one label scope — a `goto`
-		// in one case can target a `name:` label in another (mirrors the canonical visitor). A value switch governs on
-		// `ForceString(value)` with `case string KS_swN when KS_swN.Equals(caseValue)`; a value-less switch governs on
-		// `true` with `case true when IfTest(cond)`. Each section ends with a (switch-)break; AHK user break/continue
-		// inside a case go to the enclosing loop via goto (see LowerBreakContinue).
+		// in one case can target a `name:` label in another (mirrors the canonical visitor). Both forms govern on
+		// `true` and test each case in order in a `when` clause, as AHK evaluates a case only until one matches: a
+		// value-less switch with `IfTest(cond)`, a value switch with `Script.SwitchCase`, against the value and CaseSense
+		// that `Script.Switch` evaluates once beforehand. Each section ends with a (switch-)break; AHK user
+		// break/continue inside a case go to the enclosing loop via goto (see LowerBreakContinue).
 		private StatementSyntax LowerSwitch(SwitchStmt s)
 		{
-			bool valueless = s.Value == null;
-			// Optional CaseSense arg: a literal 0/"off"/false makes string comparison case-insensitive (default: sensitive).
-			bool insensitive = s.CaseSense is LiteralExpr cl &&
-				(cl.Kind == LiteralKind.Number ? cl.Raw is "0" or "0.0"
-				 : DecodeString(cl.Raw) is var cs && (cs.Equals("off", System.StringComparison.OrdinalIgnoreCase) || cs == "0" || cs.Equals("false", System.StringComparison.OrdinalIgnoreCase)));
+			var switchValue = s.Value == null ? null : "KS_swv" + (++_flowCounter);
 
 			// All labels directly inside any case/default body share the switch's (single) C# label scope.
 			var switchLabels = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
@@ -5686,18 +5685,10 @@ namespace Keysharp.Compilation.Syntax
 
 			SwitchLabelSyntax CaseLabel(Expr v)
 			{
-				if (valueless)
-					return SyntaxFactory.CasePatternSwitchLabel(
-						SyntaxFactory.ConstantPattern(SyntaxFactory.LiteralExpression(SyntaxKind.TrueLiteralExpression)),
-						SyntaxFactory.WhenClause(CaseGuard(v, IfTest(LowerExpr(v)))), SyntaxFactory.Token(SyntaxKind.ColonToken));
-				var pv = "KS_sw" + (++_flowCounter);
-				var pattern = SyntaxFactory.DeclarationPattern(
-					SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.StringKeyword)),
-					SyntaxFactory.SingleVariableDesignation(SyntaxFactory.Identifier(pv)));
-				var guard = insensitive
-					? Inv(Member(Id(pv), "Equals"), CaseValueString(v), Access("System.StringComparison.OrdinalIgnoreCase"))
-					: Inv(Member(Id(pv), "Equals"), CaseValueString(v));
-				return SyntaxFactory.CasePatternSwitchLabel(pattern, SyntaxFactory.WhenClause(CaseGuard(v, guard)), SyntaxFactory.Token(SyntaxKind.ColonToken));
+				var test = switchValue == null ? IfTest(LowerExpr(v)) : Op("SwitchCase", Id(switchValue), LowerExpr(v));
+				return SyntaxFactory.CasePatternSwitchLabel(
+					SyntaxFactory.ConstantPattern(SyntaxFactory.LiteralExpression(SyntaxKind.TrueLiteralExpression)),
+					SyntaxFactory.WhenClause(CaseGuard(v, test)), SyntaxFactory.Token(SyntaxKind.ColonToken));
 			}
 
 			SwitchSectionSyntax Section(IEnumerable<SwitchLabelSyntax> labels, List<StatementSyntax> body)
@@ -5714,45 +5705,13 @@ namespace Keysharp.Compilation.Syntax
 
 			_labelScopes.RemoveAt(_labelScopes.Count - 1);
 
-			var govern = valueless
-				? (ExpressionSyntax)SyntaxFactory.LiteralExpression(SyntaxKind.TrueLiteralExpression)
-				: Op("ForceString", LowerExpr(s.Value));
-			return SyntaxFactory.SwitchStatement(govern, SyntaxFactory.List(sections));
-		}
+			var sw = SyntaxFactory.SwitchStatement(SyntaxFactory.LiteralExpression(SyntaxKind.TrueLiteralExpression), SyntaxFactory.List(sections));
 
-		// The string a `case` value compares against. String/integer literals are folded to a constant at
-		// lower-time (no runtime ForceString); everything else is forced to a string at runtime.
-		private ExpressionSyntax CaseValueString(Expr v)
-		{
-			if (v is LiteralExpr l)
-			{
-				if (l.Kind == LiteralKind.String) return Str(DecodeString(l.Raw));
-				if (l.Kind == LiteralKind.Number && TryFoldIntLiteral(l.Raw, out var folded)) return Str(folded);
-			}
-			return Op("ForceString", LowerExpr(v));
-		}
+			if (switchValue == null)
+				return sw;
 
-		// Folds an integer literal (decimal/hex/octal/binary, optional sign/underscores) to its decimal string.
-		// Floats and anything unparseable return false so the caller falls back to a runtime ForceString.
-		private static bool TryFoldIntLiteral(string raw, out string result)
-		{
-			result = null;
-			var t = raw.Replace("_", "");
-			if (t.Length == 0 || t.Contains('.')) return false;
-			bool neg = t.StartsWith("-"); if (neg || t.StartsWith("+")) t = t.Substring(1);
-			bool isHex = t.StartsWith("0x") || t.StartsWith("0X");
-			if (!isHex && (t.Contains('e') || t.Contains('E'))) return false;   // exponent => float in AHK
-			try
-			{
-				long val =
-					isHex ? System.Convert.ToInt64(t.Substring(2), 16) :
-					(t.StartsWith("0b") || t.StartsWith("0B")) ? System.Convert.ToInt64(t.Substring(2), 2) :
-					(t.StartsWith("0o") || t.StartsWith("0O")) ? System.Convert.ToInt64(t.Substring(2), 8) :
-					long.Parse(t);
-				result = (neg ? -val : val).ToString(System.Globalization.CultureInfo.InvariantCulture);
-				return true;
-			}
-			catch { return false; }
+			var value = s.CaseSense == null ? Op("Switch", LowerExpr(s.Value)) : Op("Switch", LowerExpr(s.Value), LowerExpr(s.CaseSense));
+			return SyntaxFactory.Block(LocalDeclVar(switchValue, value), sw);
 		}
 
 		private StatementSyntax LowerTry(TryStmt tr)
@@ -7068,7 +7027,7 @@ namespace Keysharp.Compilation.Syntax
 			LoopStmt lp => AnyExpr(lp.Count, pred) || AnyStmt(lp.Body, pred) || AnyExpr(lp.Until, pred) || (lp.Else != null && AnyStmt(lp.Else, pred)),
 			ForStmt fr => AnyExpr(fr.Enumerable, pred) || AnyStmt(fr.Body, pred) || AnyExpr(fr.Until, pred) || (fr.Else != null && AnyStmt(fr.Else, pred)),
 			SpecialLoopStmt slp => (slp.Args != null && slp.Args.Any(a => AnyExpr(a, pred))) || AnyStmt(slp.Body, pred) || AnyExpr(slp.Until, pred) || (slp.Else != null && AnyStmt(slp.Else, pred)),
-			SwitchStmt sw => AnyExpr(sw.Value, pred) || sw.Cases.Any(c => c.Values.Any(v => AnyExpr(v, pred)) || c.Body.Any(x => AnyStmt(x, pred))) || (sw.Default != null && sw.Default.Any(x => AnyStmt(x, pred))),
+			SwitchStmt sw => AnyExpr(sw.Value, pred) || AnyExpr(sw.CaseSense, pred) || sw.Cases.Any(c => c.Values.Any(v => AnyExpr(v, pred)) || c.Body.Any(x => AnyStmt(x, pred))) || (sw.Default != null && sw.Default.Any(x => AnyStmt(x, pred))),
 			TryStmt tr => AnyStmt(tr.Body, pred) || tr.Catches.Any(cb => AnyStmt(cb.Body, pred)) || (tr.Else != null && AnyStmt(tr.Else, pred)) || (tr.Finally != null && AnyStmt(tr.Finally, pred)),
 			ThrowStmt th => AnyExpr(th.Value, pred),
 			DeclStmt d => d.Items.Any(x => AnyExpr(x, pred)),
@@ -7266,6 +7225,7 @@ namespace Keysharp.Compilation.Syntax
 					break;
 				case SwitchStmt sw:
 					CollectAssignedExpr(sw.Value, acc, seen);
+					CollectAssignedExpr(sw.CaseSense, acc, seen);
 					foreach (var c in sw.Cases) { foreach (var v in c.Values) CollectAssignedExpr(v, acc, seen); foreach (var st in c.Body) CollectAssignedStmt(st, acc, seen); }
 					if (sw.Default != null) foreach (var st in sw.Default) CollectAssignedStmt(st, acc, seen);
 					break;

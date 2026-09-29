@@ -218,7 +218,7 @@ namespace Keysharp.Tests
 			Assert.IsTrue(result.Success, result.ErrorText);
 			StringAssert.Contains("KS_line", result.CompiledCode);
 			StringAssert.DoesNotContain("KS_line", result.GeneratedCode);
-			StringAssert.Contains(".Equals(", result.GeneratedCode);
+			StringAssert.Contains(".SwitchCase(", result.GeneratedCode);
 			var errors = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(result.GeneratedCode).GetDiagnostics()
 				.Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error).ToList();
 			Assert.IsEmpty(errors, string.Join("\n", errors));

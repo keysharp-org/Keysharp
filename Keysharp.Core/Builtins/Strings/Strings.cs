@@ -468,7 +468,7 @@ namespace Keysharp.Builtins
 		/// Negative values count from the end of haystack, so -1 is the last character, -2 is the second-last, and so on.<br/>
 		/// If occurrence is omitted, a negative startingPos causes the search to be conducted from right to left.<br/>
 		/// However, startingPos has no effect on the direction of the search if occurrence is specified.<br/>
-		/// If the absolute value of StartingPos is greater than the length of Haystack, 0 is returned.
+		/// A position beyond either end of haystack is taken as that end.
 		/// </param>
 		/// <param name="occurrence">
 		/// If omitted, it defaults to the first match in haystack.<br/>
@@ -487,33 +487,50 @@ namespace Keysharp.Builtins
 			var input = haystack.As();
 			var n = needle.As();
 			var comp = caseSense.As();
-			var o = occurrence.Ai(1);
-			var startPos = startingPos.Ai(o < 0 ? -1 : 1);
 
 			if (string.IsNullOrEmpty(n))
 				return (long)Errors.ValueErrorOccurred("Search string was empty", null, DefaultErrorLong);
 
-			if (startPos == 0 || o == 0)
+			var offset = startingPos == null ? 1L : startingPos.Al();
+			var o = occurrence == null ? 1 : occurrence.Ai();
+
+			if (offset == 0 || o == 0)
 				return (long)Errors.ValueErrorOccurred("StartingPos and Occurrence must be non-zero", null, DefaultErrorLong);
 
-			// determine direction:
-			//  - if Occurrence was omitted and startPos<0, reverse
-			//  - or if Occurrence was supplied and o<0, reverse
-			bool reverse = (occurrence == null && startPos < 0)    // default-occurrence + negative startPos
-						   || (occurrence != null && o < 0);           // explicit negative occurrence
-			var cs = comp != "" ? Conversions.ParseComparisonOption(comp) : StringComparison.OrdinalIgnoreCase;
-			const int offset = 1;//Everything is 1-based indexing.
+			var cs = comp != "" ? CaseCompare.ForSearch(Conversions.ParseComparisonOption(comp)) : StringComparison.OrdinalIgnoreCase;
 
-			if (reverse)
+			// As AHK's BIF_InStr: a negative StartingPos counts from the end and, with Occurrence omitted, searches right
+			// to left. A position outside the string is clamped to it, and occurrences never overlap. Right to left, a
+			// StartingPos limits the search to the characters up to that position.
+			if (offset < 0)
 			{
-				return offset + input.LastNthIndexOf(n, startPos > 0 ? startPos - input.Length - 1 : startPos, Math.Abs(o), cs);
+				if (occurrence == null)
+					o = -1;
+
+				offset += input.Length + 1;
 			}
-			else
+
+			if (o > 0)
+				offset--;
+
+			var start = (int)Math.Clamp(offset, 0L, input.Length);
+
+			if (o > 0)
+				return input.NthIndexOf(n, start, o, cs) + 1L;
+
+			var span = input.AsSpan(0, startingPos != null ? start : input.Length);
+
+			for (var remaining = -o; ;)
 			{
-				if (startPos > input.Length)
+				var found = span.LastIndexOf(n.AsSpan(), cs);
+
+				if (found < 0)
 					return 0L;
 
-				return offset + input.NthIndexOf(n, startPos > 0 ? startPos - 1 : input.Length + startPos, o, cs);
+				if (--remaining == 0)
+					return found + 1L;
+
+				span = span.Slice(0, found);
 			}
 		}
 
@@ -830,7 +847,7 @@ namespace Keysharp.Builtins
 					else if (numeric && !slash)
 					{
 						return double.TryParse(xs, out var a) && double.TryParse(ys, out var b) ?
-							   a.CompareTo(b) : xs.CompareTo(ys, compl);
+							   a.CompareTo(b) : CaseCompare.Compare(xs, ys, compl);
 					}
 					else
 					{
@@ -850,35 +867,33 @@ namespace Keysharp.Builtins
 								return 0;
 						}
 
-						return xs.CompareTo(ys, comp);
+						return CaseCompare.Compare(xs, ys, comp);
 					}
 				});
 			}
 
+			// As in AHK, the sorted list drops each item equal to the one kept before it, numerically in N mode.
 			if (unique)
 			{
-				var ulist = new List<string>(list.Length);
+				var kept = 0;
 
-				for (var i = 0; i < list.Length; i++)
+				foreach (var item in list)
 				{
-					var item = list[i];
+					if (kept > 0)
+					{
+						var prev = list[kept - 1];
 
-					if (numeric)
-					{
-						if (double.TryParse(item, out var dd))
-							if (!list.Any(val => double.TryParse(val, out var d) && d == dd))
-								ulist.Add(item);
+						if (numeric && sortAt == 0
+								&& double.TryParse(item, NumberStyles.Float, CultureInfo.InvariantCulture, out var a)
+								&& double.TryParse(prev, NumberStyles.Float, CultureInfo.InvariantCulture, out var b)
+								? a == b : CaseCompare.Equals(item, prev, comp))
+							continue;
 					}
-					else if (random || function != null)
-					{
-						if (i == 0 || !item.Equals(list[i - 1], comp))
-							ulist.Add(item);
-					}
-					else if (!ulist.Any(val => item.Equals(val, comp)))
-						ulist.Add(item);
+
+					list[kept++] = item;
 				}
 
-				list = ulist.ToArray();
+				System.Array.Resize(ref list, kept);
 			}
 
 			if (reverse && function == null)
@@ -918,7 +933,7 @@ namespace Keysharp.Builtins
 			if (s3.Equals("Logical", StringComparison.OrdinalIgnoreCase))
 				return NaturalComparer.NaturalCompare(s1, s2);
 
-			return string.Compare(s1, s2, Conversions.ParseComparisonOption(s3, additionalDiagnosticChoice: "Logical"));
+			return CaseCompare.Compare(s1, s2, Conversions.ParseComparisonOption(s3, additionalDiagnosticChoice: "Logical"));
 		}
 
 		/// <summary>
@@ -1276,27 +1291,30 @@ namespace Keysharp.Builtins
 			var replace = replaceText.As();
 			var comp = caseSense.As("Off");
 			var lim = limit.Al(-1);
-			var compare = Conversions.ParseComparisonOption(comp);
+			var compare = CaseCompare.ForSearch(Conversions.ParseComparisonOption(comp));
+			var z = input.Length == 0 || search.Length == 0 || lim == 0 ? -1 : input.IndexOf(search, compare);
 
-			if (IsAnyBlank(input, search))
+			if (z < 0)
 			{
-                if (outputVarCount != null) Refs.SetValue(outputVarCount, 0L);
-                return input;
+				if (outputVarCount != null) Refs.SetValue(outputVarCount, 0L);
+				return input;
 			}
+
+			// Replacing every match without counting is what string.Replace does, in one pass and one allocation.
+			if (lim < 0 && outputVarCount == null)
+				return input.Replace(search, replace, compare);
 
 			var ct = 0L;
 			var buf = new StringBuilder(input.Length);
-			int z = 0, n = 0, l = search.Length;
+			var n = 0;
 
-			while (z < input.Length &&
-					(z = input.IndexOf(search, z, compare)) != -1 &&
-					(lim < 0 || ct < lim))
+			for (; z >= 0 && (lim < 0 || ct < lim); z = input.IndexOf(search, z, compare))
 			{
 				if (n < z)
 					_ = buf.Append(input, n, z - n);
 
 				_ = buf.Append(replace);
-				z += l;
+				z += search.Length;
 				n = z;
 				ct++;
 			}
@@ -1765,20 +1783,6 @@ namespace Keysharp.Builtins
 		/// See above.
 		/// </summary>
 		internal static bool Cisxdigit(char c) => (c & 0x80) == 0 && c.IsHex();
-
-		/// <summary>
-		/// Examines an array of strings, checking if any are null or empty.
-		/// </summary>
-		/// <param name="args">The array of strings to examine.</param>
-		/// <returns>True if any were null or empty, else false.</returns>
-		internal static bool IsAnyBlank(params string[] args)
-		{
-			foreach (var str in args)
-				if (string.IsNullOrEmpty(str))
-					return true;
-
-			return false;
-		}
 
 		/// <summary>
 		/// Returns whether a character is a space or a tab.

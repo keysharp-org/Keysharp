@@ -60,14 +60,13 @@ namespace Keysharp.Builtins
 
 		/// <summary>
 		/// The comparison mode for a <c>CaseSense</c> argument, routed through the same helper InStr and StrCompare
-		/// use rather than inventing a second convention: omitted or Off is case-insensitive, On/1/True is
-		/// case-sensitive, and both are Ordinal (culture-invariant); only the explicit <c>Locale</c> option
-		/// consults the current culture, and it compares case-insensitively.
+		/// use rather than inventing a second convention: omitted or Off is case-insensitive and On/1/True is
+		/// case-sensitive, both Ordinal. Locale is case-insensitive one character at a time, as AutoHotkey's searches are.
 		/// </summary>
 		private static StringComparison CaseSenseComparison(object caseSense)
 		{
 			var opt = caseSense.As();
-			return opt.Length != 0 ? Conversions.ParseComparisonOption(opt) : StringComparison.OrdinalIgnoreCase;
+			return opt.Length != 0 ? CaseCompare.ForSearch(Conversions.ParseComparisonOption(opt)) : StringComparison.OrdinalIgnoreCase;
 		}
 	}
 

@@ -105,4 +105,11 @@ y := Sort(x, "D,P2")
 
 AssertEq(y, "LMN,CWM,BYX,AZB", A_LineNumber)
 
+; U drops each item equal to the one kept before it, numerically with N.
+AssertEq(Sort("3,1,3,2", "N U D,"), "1,2,3", A_LineNumber)
+AssertEq(Sort("10,9,10,9", "N U D,"), "9,10", A_LineNumber)
+AssertEq(Sort("b,a,B,a", "U D,"), "a,b", A_LineNumber)
+AssertEq(Sort("b,a,B,a", "C U D,"), "B,a,b", A_LineNumber)
+
+
 FileAppend "pass", "*"

@@ -74,6 +74,27 @@ namespace Keysharp.Tests
 		[Test, Category("String")]
 		public void StrCompare() => Assert.IsTrue(TestScript("string-strcompare", true));
 
+		// Locale compares in the user's culture, which differs by machine, so the test chooses one: Turkish does not fold i
+		// to I, where the invariant culture the threads run in would. Searches fold one character at a time, as AHK's do.
+		[Test, Category("String"), Category("Internal")]
+		public void LocaleIsUserCulture()
+		{
+			var saved = Keysharp.Internals.Strings.CaseCompare.UserCulture;
+			Keysharp.Internals.Strings.CaseCompare.UserCulture = new System.Globalization.CultureInfo("tr-TR");
+
+			try
+			{
+				Assert.AreNotEqual(0L, Keysharp.Builtins.Strings.StrCompare("i", "I", "Locale"));
+				Assert.AreEqual(0L, Keysharp.Builtins.Strings.StrCompare("i", "I", "Off"));
+				Assert.AreEqual(1L, Keysharp.Builtins.Strings.InStr("I", "i", "Locale"));
+				Assert.AreEqual(0L, Keysharp.Builtins.Strings.InStr("İ", "i", "Locale"));
+			}
+			finally
+			{
+				Keysharp.Internals.Strings.CaseCompare.UserCulture = saved;
+			}
+		}
+
 		[Test, Category("String")]
 		public void String() => Assert.IsTrue(TestScript("string-string", true));
 

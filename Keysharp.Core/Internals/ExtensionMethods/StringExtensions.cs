@@ -407,24 +407,8 @@ namespace System
 		}
 
 		/// <summary>
-		/// Reverse version of <see cref="NthIndexOf"/>.
-		/// </summary>
-		internal static int LastNthIndexOf(this string str, string substr, int pos, int n, StringComparison comp)
-		{
-			pos = str.Length + pos + 1;
-			n = Math.Abs(n);
-
-			do
-			{
-				pos = str.LastIndexOf(substr, pos - 1, comp);
-			} while (--n > 0 && pos != -1);
-
-			return pos;
-		}
-
-		/// <summary>
-		/// Returns the index of the nth occurrence of a substring within a string, starting at a specified index.<br/>
-		/// Gotten from https://stackoverflow.com/questions/186653/get-the-index-of-the-nth-occurrence-of-a-string
+		/// Returns the index of the nth occurrence of a substring within a string, starting at a specified index.
+		/// Occurrences do not overlap: each search resumes after the previous match.
 		/// </summary>
 		/// <param name="str">The string to examine.</param>
 		/// <param name="substr">The string to search for n occurrences of within str.</param>
@@ -434,12 +418,10 @@ namespace System
 		/// <returns>The position of the nth occurrence of substr within str, starting at pos. If n occurrences are not found, -1 is returned.</returns>
 		internal static int NthIndexOf(this string str, string substr, int pos, int n, StringComparison comp)
 		{
-			pos--;
+			pos = str.IndexOf(substr, pos, comp);
 
-			do
-			{
-				pos = str.IndexOf(substr, pos + 1, comp);
-			} while (--n > 0 && pos != -1);
+			while (--n > 0 && pos != -1)
+				pos = str.IndexOf(substr, pos + substr.Length, comp);
 
 			return pos;
 		}

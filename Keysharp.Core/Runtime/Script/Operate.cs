@@ -282,49 +282,101 @@ namespace Keysharp.Runtime
 
 		private static object Equality(object left, object right, OperatorKind kind)
 		{
-			var negate = kind is OperatorKind.ValueInequality or OperatorKind.IdentityInequality;
+			// Tested after the primitive types, which never have an overload, so they pay only exact type checks.
+			if (left is not (long or double or string) && left is Any && right != null && TheScript.Operators.TryInvoke(kind, left, right, out var result))
+				return result;
+
+			return AreEqual(left, right, kind is OperatorKind.IdentityEquality or OperatorKind.IdentityInequality)
+				!= (kind is OperatorKind.ValueInequality or OperatorKind.IdentityInequality);
+		}
+
+		/// <summary>
+		/// What <c>==</c> (<paramref name="identity"/>) or <c>=</c> decides, without operator overloads: numbers numerically,
+		/// a number and a numeric string numerically, two strings as strings, and objects by identity for <c>==</c> or by
+		/// content for <c>=</c>. <c>switch</c> shares it, as AHK's EvaluateSwitchCase matches <c>==</c>.
+		/// </summary>
+		private static bool AreEqual(object left, object right, bool identity)
+		{
 			if (left is long li)
 			{
-				if (right is long ri) return (li == ri) != negate;
-				if (right is double rd) return (li == rd) != negate;
+				if (right is long ri) return li == ri;
+				if (right is double rd) return li == rd;
 			}
 			if (left is double ld)
 			{
-				if (right is double rd) return (ld == rd) != negate;
-				if (right is long ri) return (ld == ri) != negate;
+				if (right is double rd) return ld == rd;
+				if (right is long ri) return ld == ri;
 			}
 			if (left is string ls)
 			{
 				if (right is string rs)
-					return (Strings.StrCmp(ls, rs, kind is OperatorKind.IdentityEquality or OperatorKind.IdentityInequality) == 0) != negate;
+					return Strings.StrCmp(ls, rs, identity) == 0;
 				if (right is long or double)
-					return NumberStringEquality(right, ls, kind) != negate;
+					return NumberStringEquality(right, ls, identity);
 			}
 			else if (right is string rs && left is long or double)
-				return NumberStringEquality(left, rs, kind) != negate;
-			return EqualityOther(left, right, kind);
+				return NumberStringEquality(left, rs, identity);
+
+			if (left == null || right == null)
+				return left == right;
+
+			_ = MatchTypes(ref left, ref right);
+
+			if (left is string a && right is string b)
+				return Strings.StrCmp(a, b, identity) == 0;
+
+			return identity ? Equals(left, right) : StructuralEquality(left, right);
 		}
 
 		// MatchTypes' outcome for a number and a string, without writing boxed operands back.
-		private static bool NumberStringEquality(object number, string s, OperatorKind kind)
+		private static bool NumberStringEquality(object number, string s, bool identity)
 		{
 			if (s.TryParseLong(out long sl))
 				return number is long l ? l == sl : (double)number == sl;
 			if (s.TryParseDouble(out double sd, true))
 				return number is long l ? l == sd : (double)number == sd;
-			return Strings.StrCmp(ForceString(number), s, kind is OperatorKind.IdentityEquality or OperatorKind.IdentityInequality) == 0;
+			return Strings.StrCmp(ForceString(number), s, identity) == 0;
 		}
 
-		private static object EqualityOther(object left, object right, OperatorKind kind)
+		/// <summary>
+		/// The value of a <c>switch</c> and how its cases compare, which AHK settles once for the whole switch.
+		/// </summary>
+		public readonly record struct SwitchValue(object Value, StringComparison? Comparison);
+
+		public static SwitchValue Switch(object value) => new(SwitchText(value), null);
+
+		// A CaseSense makes every case a string comparison, which an object cannot take part in.
+		public static SwitchValue Switch(object value, object caseSense)
 		{
-			var negate = kind is OperatorKind.ValueInequality or OperatorKind.IdentityInequality;
-			if (left == null || right == null) return (left == right) != negate;
-			if (left is Any && TheScript.Operators.TryInvoke(kind, left, right, out var result)) return result;
-			_ = MatchTypes(ref left, ref right);
-			if (left is string ls && right is string rs)
-				return (Strings.StrCmp(ls, rs, kind is OperatorKind.IdentityEquality or OperatorKind.IdentityInequality) == 0) != negate;
-			return (kind is OperatorKind.ValueEquality or OperatorKind.ValueInequality ? StructuralEquality(left, right) : Equals(left, right)) != negate;
+			value = SwitchText(value);
+			var comparison = Conversions.ParseComparisonOption(caseSense);
+
+			if (value is Any)
+				_ = Errors.TypeErrorOccurred(value, typeof(string));
+
+			return new(value, comparison);
 		}
+
+		// AHK's EvaluateSwitchCase: without CaseSense a case matches as `==` would, but never through an operator overload.
+		public static bool SwitchCase(SwitchValue sw, object caseValue)
+		{
+			var value = sw.Value;
+			caseValue = SwitchText(caseValue);
+
+			if (sw.Comparison is { } comparison)
+				return caseValue is Any
+					? (bool)Errors.TypeErrorOccurred(caseValue, typeof(string), false)
+					: CaseCompare.Equals(ForceString(value), ForceString(caseValue), comparison);
+
+			return AreEqual(value, caseValue, true);
+		}
+
+		// A StringBuffer takes part in a switch as its text, as it does in `==`.
+		private static object SwitchText(object value) => value is Builtins.Ks.StringBuffer sb ? sb.ToString() : value;
+
+		// An integer literal case, which the lowerer passes unboxed, compares without allocating against an integer value.
+		public static bool SwitchCase(SwitchValue sw, long caseValue) =>
+			sw.Comparison == null && sw.Value is long value ? value == caseValue : SwitchCase(sw, (object)caseValue);
 
 		// Keysharp's `=` and `!=` compare Arrays and Buffers by content, elements with `=` in turn; unset elements are
 		// equal only to each other.

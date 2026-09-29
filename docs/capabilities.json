@@ -10395,7 +10395,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Keysharp extension. Returns whether a string ends with the specified suffix. The CaseSense parameter matches InStr; comparisons are culture-invariant unless the Locale option is given.",
+                     "notes":  "Keysharp extension. Returns whether a string ends with the specified suffix. The CaseSense parameter matches InStr's, so Locale folds case one character at a time.",
                      "tested-by":  "string-startsendswith.ahk"
                  },
                  {
@@ -10416,7 +10416,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Keysharp extension. Returns whether a string starts with the specified prefix. The CaseSense parameter matches InStr; comparisons are culture-invariant unless the Locale option is given.",
+                     "notes":  "Keysharp extension. Returns whether a string starts with the specified prefix. The CaseSense parameter matches InStr's, so Locale folds case one character at a time.",
                      "tested-by":  "string-startsendswith.ahk"
                  },
                  {

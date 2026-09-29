@@ -546,6 +546,7 @@ namespace Keysharp.Runtime
 			};
 
 			WindowX.SetProcessDPIAware();
+			CaseCompare.CaptureUserCulture();
 			CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
 			CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
 #if !WINDOWS

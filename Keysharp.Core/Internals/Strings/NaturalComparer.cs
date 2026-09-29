@@ -86,7 +86,7 @@ namespace Keysharp.Internals.Strings
 				return 1;
 
 			// otherwise do a straight text comparison
-			return string.Compare(left, right, StringComparison.CurrentCulture);//Spec says to use "locale" with "logical" sorting.
+			return CaseCompare.Compare(left, right, StringComparison.CurrentCulture);//Spec says to use "locale" with "logical" sorting.
 		}
 
 		[GeneratedRegex(@"[\W\.]*([\w-[\d]]+|[\d]+)", RegexOptions.Compiled)]

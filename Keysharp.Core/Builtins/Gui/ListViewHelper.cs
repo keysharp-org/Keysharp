@@ -277,7 +277,7 @@ namespace Keysharp.Builtins
 
 			public override int Compare(object l, object r) =>
 			l is ListViewItem x&& r is ListViewItem y&& col.Index < x.SubItems.Count&& col.Index < y.SubItems.Count
-			? SortOrder()* string.Compare(x.SubItems[col.Index].Text, y.SubItems[col.Index].Text, StringComparison.CurrentCultureIgnoreCase)
+			? SortOrder()* CaseCompare.Compare(x.SubItems[col.Index].Text, y.SubItems[col.Index].Text, StringComparison.CurrentCultureIgnoreCase)
 			: 0;
 		}
 

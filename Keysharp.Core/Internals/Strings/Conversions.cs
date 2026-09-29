@@ -332,7 +332,7 @@ namespace Keysharp.Internals.Strings
 		{
 			eCaseSense.On => StringComparer.Ordinal,
 			eCaseSense.Off => StringComparer.OrdinalIgnoreCase,
-			_ => StringComparer.CurrentCultureIgnoreCase,
+			_ => CaseCompare.LocaleComparer,
 		};
 
 		internal static StringComparison ParseComparisonOption(object option, string additionalDiagnosticChoice = null)
