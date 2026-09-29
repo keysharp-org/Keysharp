@@ -5627,7 +5627,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "On Linux, Control* functions are not supported for foreign apps; use the included AtSpi library for cross-process control interaction. COSMIC supplies native listing, active state, geometry, polling-based events, focus, close, minimize, maximize and restore. wlroots compositors can supply listing, active/state facts and the same actions except geometry. Coordinate hit-testing remains limited without stacking order, and general move/resize is unavailable. macOS currently relies on Accessibility APIs with permission requirements.",
+                     "notes":  "On Linux, Control* functions are not supported for foreign apps; use the included AtSpi library for cross-process control interaction. COSMIC supplies native listing, active state, geometry, polling-based events, focus, close, minimize, maximize and restore. wlroots compositors can supply listing, active/state facts and the same actions except geometry. Hyprland adds geometry, PID, move/resize, WinMoveTop/WinMoveBottom, hit-testing, window capture, transparency, WinKill and pushed window events through its IPC; a floating window stays above tiled ones, so WinMoveBottom cannot place it beneath them. On other wlroots compositors coordinate hit-testing remains limited without stacking order, and general move/resize is unavailable. macOS currently relies on Accessibility APIs with permission requirements.",
                      "tested-by":  "WaylandTests.cs"
                  },
                  {
@@ -8704,7 +8704,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns the selected monitor index and writes its native screen-coordinate work area to the supplied output variables. An out-of-range monitor index raises a ValueError, matching AutoHotkey v2.",
+                     "notes":  "Returns the selected monitor index and writes its native screen-coordinate work area to the supplied output variables. An out-of-range monitor index raises a ValueError, matching AutoHotkey v2. On Wayland the work area comes from KWin, GNOME, Cinnamon or, for the monitor at the layout origin, Hyprland; other monitors and compositors report the full monitor.",
                      "tested-by":  "monitor-monitorgetworkarea.ahk"
                  },
                  {
@@ -11106,7 +11106,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinGetAlwaysOnTop function returns a non-zero value if the specified window is always-on-top. On macOS, only supported for windows owned by the calling process; always returns false for windows owned by other applications."
+                     "notes":  "The WinGetAlwaysOnTop function returns a non-zero value if the specified window is always-on-top. On Hyprland, a window counts as always-on-top while it floats, because floating windows stack above the tiled layout. On macOS, only supported for windows owned by the calling process; always returns false for windows owned by other applications."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11333,7 +11333,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinKill function forces the specified window to close. On Wayland a real force-kill is provided by the Keysharp GNOME or Cinnamon shell extension (compositor-dependent), falling back to a graceful close request.",
+                     "notes":  "The WinKill function forces the specified window to close. On Wayland a real force-kill is provided by the Keysharp GNOME or Cinnamon shell extension or, on Hyprland, by keysharp-desktop; there the window is first asked to close and its process is forced only if the window remains after about 500 ms. Other Wayland compositors receive only a graceful close request.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -11441,7 +11441,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinSetAlwaysOnTop function makes the specified window stay on top of all other windows (except other always-on-top windows). On macOS, only supported for windows owned by the calling process; macOS provides no API to change another process\u0027s window level, and raising it via Accessibility would require repeatedly stealing focus, so it is a no-op for windows owned by other applications. An unimplemented backend operation raises UnsupportedError."
+                     "notes":  "The WinSetAlwaysOnTop function makes the specified window stay on top of all other windows (except other always-on-top windows). Hyprland has no keep-above state, so turning it on floats the window above the tiled layout and raises it, and turning it off returns the window to the layout. On macOS, only supported for windows owned by the calling process; macOS provides no API to change another process\u0027s window level, and raising it via Accessibility would require repeatedly stealing focus, so it is a no-op for windows owned by other applications. An unimplemented backend operation raises UnsupportedError."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11512,7 +11512,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Makes the specified window semi-transparent. N must be blank, Off or from 0 through 255; another value raises ValueError. On Wayland this is provided natively on KWin (compositor scripting) or by the Keysharp GNOME or Cinnamon shell extension (compositor-dependent). On macOS, only supported for windows owned by the calling process, via NSWindow.alphaValue; macOS provides no public API to change another process\u0027s window opacity. An unimplemented backend operation raises UnsupportedError."
+                     "notes":  "Makes the specified window semi-transparent. N must be blank, Off or from 0 through 255; another value raises ValueError. On Wayland this is provided natively on KWin (compositor scripting), by the Keysharp GNOME or Cinnamon shell extension, or on Hyprland by keysharp-desktop through its IPC (compositor-dependent). On macOS, only supported for windows owned by the calling process, via NSWindow.alphaValue; macOS provides no public API to change another process\u0027s window opacity. An unimplemented backend operation raises UnsupportedError."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11792,9 +11792,9 @@
                      "syntax":  "GetKeyboardLayout()",
                      "windows":  "full",
                      "linux_x11":  "full",
-                     "linux_wayland":  "full",
+                     "linux_wayland":  "partial",
                      "macos":  "full",
-                     "notes":  "Returns a readable platform-native keyboard layout identifier, or an empty string when unavailable."
+                     "notes":  "Returns a readable platform-native keyboard layout identifier, or an empty string when unavailable. On Wayland only Hyprland reports which layout of a multi-layout keymap is active; other compositors report the first."
                  },
                  {
                      "category":  "Keysharp Module (Ks)",

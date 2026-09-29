@@ -2661,18 +2661,25 @@ namespace Keysharp.Builtins
 			if (heightVal != int.MinValue)
 				formSize.Height = Convert.ToInt32(heightVal * scale);
 
-			if (xVal != int.MinValue || yVal != int.MinValue)
+			var setPos = xVal != int.MinValue || yVal != int.MinValue;
+			var setSize = widthVal != int.MinValue || heightVal != int.MinValue;
+#if LINUX
+			// Wayland: a client cannot place its own window, so it is moved as WinMove moves it, through the
+			// positioner. IsSupported is checked first to avoid evaluating form.Handle on X11.
+			if ((setPos || setSize) && Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.IsSupported)
+			{
+				_ = Platform.Window.TryMoveResize(form.Handle, new Rectangle(xVal, yVal,
+					widthVal != int.MinValue ? formSize.Width : WindowInfoBase.Unchanged,
+					heightVal != int.MinValue ? formSize.Height : WindowInfoBase.Unchanged), setPos, setSize);
+				return DefaultObject;
+			}
+#endif
+
+			if (setPos)
 				form.SetLocation(formLoc);
-			if (widthVal != int.MinValue || heightVal != int.MinValue)
+			if (setSize)
 				form.SetSize(formSize);
 
-#if LINUX
-			// Wayland: SetLocation above can't move our own window, so drive the compositor backend.
-			// IsSupported is checked first to avoid evaluating form.Handle on X11.
-			if ((xVal != int.MinValue || yVal != int.MinValue)
-					&& Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.IsSupported)
-				Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Position(form, form.Title, xVal, yVal, formSize.Width, formSize.Height);
-#endif
 			return DefaultObject;
 		}
 
@@ -3383,6 +3390,15 @@ namespace Keysharp.Builtins
 #endif
 
 #if LINUX
+
+			//An always-on-top window should map floating at the size it was shown at. Minimized or maximized
+			//windows are left alone, since a fixed-size window may refuse the state change.
+			if (!hide && !min && !max && !form.Visible && form.TopMost)
+				Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.HoldFixedSizeUntilMapped(form, () =>
+				{
+					if (resizable && !form.IsDisposed)
+						form.Resizable = true;
+				});
 
 			//Claim the window with the compositor BEFORE it exists, so the placement that follows can address it
 			//by name instead of searching for it. A window is unrecognisable at the moment it is created - no

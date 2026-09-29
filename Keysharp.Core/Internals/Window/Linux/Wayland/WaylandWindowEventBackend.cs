@@ -216,8 +216,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				WaylandWindowEventKind.Minimized    => (WindowEventType.Minimize, WindowEventMask.Minimize),
 				WaylandWindowEventKind.Restored     => (WindowEventType.Restore, WindowEventMask.Restore),
 				WaylandWindowEventKind.MoveResized  => (WindowEventType.Move, WindowEventMask.Move),
-				// WinEvent has no deactivation event; the following Active event identifies the new window.
-				WaylandWindowEventKind.ActiveStateChanged => (WindowEventType.Active, WindowEventMask.None),
+				// Delivered with the Active hooks because it corrects foreground tracking; see WindowEventType.Deactivate.
+				WaylandWindowEventKind.ActiveStateChanged => (WindowEventType.Deactivate, WindowEventMask.Active),
 				_                                   => (WindowEventType.Create, WindowEventMask.None)
 			};
 

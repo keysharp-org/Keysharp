@@ -258,9 +258,22 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			// A force-kill is compositor-specific on Wayland. Where it is absent, retain WinKill's
 			// documented graceful-close fallback instead of sending an operation the provider rejected.
-			return DesktopClient.ProviderSupportsWindowKill()
-				? DesktopClient.KillWindow(id)
-				: DesktopClient.CloseWindow(id);
+			if (!DesktopClient.ProviderSupportsWindowKill())
+				return DesktopClient.CloseWindow(id);
+
+			// As AHK does, ask first and force only a window still there after about 500 ms, so an app that
+			// would have closed cleanly keeps its shutdown path. The pump-aware sleep lets one of our own
+			// windows dispatch the close it was sent.
+			_ = DesktopClient.CloseWindow(id);
+
+			for (var waited = 0; waited < 500 && TryGetWindow(handle, out _); waited += 25)
+				Keysharp.Internals.Flow.SleepWithoutInterruption(25);
+
+			if (!TryGetWindow(handle, out var remaining))
+				return true;
+
+			// The broker would signal the owning process, which must never be this one.
+			return remaining?.PID != Environment.ProcessId && DesktopClient.KillWindow(id);
 		}
 
 		internal bool TryRedrawWindow(nint handle)

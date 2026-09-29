@@ -35,7 +35,11 @@ namespace Keysharp.Internals.Window
 		NotExist,
 		/// <summary>The foreground window stopped being one that matches the criteria. Derived by
 		/// <see cref="WinEventManager"/> from the Active and TitleChange events; not a native hook.</summary>
-		NotActive
+		NotActive,
+		/// <summary>A window stopped being the foreground window. It keeps the tracked foreground handle from outliving
+		/// focus that went to no window at all, and is never reported to a script: WinEvent has no such event, and
+		/// the Active event that normally follows names the new window.</summary>
+		Deactivate
 	}
 
 	/// <summary>

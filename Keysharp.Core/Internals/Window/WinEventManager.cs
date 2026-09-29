@@ -343,7 +343,7 @@ namespace Keysharp.Internals.Window
 				return;
 
 			if (foregroundTracking
-				&& raw.Type is WindowEventType.Active or WindowEventType.Close)
+				&& raw.Type is WindowEventType.Active or WindowEventType.Close or WindowEventType.Deactivate)
 			{
 				lock (gate)
 				{

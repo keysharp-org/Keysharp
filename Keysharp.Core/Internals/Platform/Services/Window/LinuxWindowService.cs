@@ -396,54 +396,27 @@ namespace Keysharp.Internals
 		// The remaining control verbs reuse the proven X11 read/write logic via the directly-constructed X11
 		// helper (NOT WindowQuery.CreateWindow → no recursion), with the Wayland branches folded in front.
 
+		// Unchanged fields are passed through as they are: the broker fills them from the window's own state, so
+		// no query has to go first to read it.
 		public override bool TryMoveResize(nint h, Rectangle bounds, bool setPos, bool setSize)
 		{
-			if (Backend(h, out var info))
+			if (Known(h))
 			{
-				var rect = info.FrameGeometry;
+				// A compositor handle can name one of our own windows, which is moved as such below.
+				if (!WaylandOwnToplevels.TryGetFormHandle(h, out var formHandle))
+					return Wayland.TryMoveResizeWindow(h, bounds, setPos, setSize);
 
-				if (bounds.X != WindowInfoBase.Unchanged) rect.X = bounds.X;
-				if (bounds.Y != WindowInfoBase.Unchanged) rect.Y = bounds.Y;
-				if (bounds.Width != WindowInfoBase.Unchanged) rect.Width = bounds.Width;
-				if (bounds.Height != WindowInfoBase.Unchanged) rect.Height = bounds.Height;
-
-				if (!Wayland.TryMoveResizeWindow(h, rect, setPos, setSize))
-					return false;
-
-				if (setPos)
-					// If WaylandOwnToplevels is still placing one of our own windows, let it converge here.
-					WaylandOwnToplevels.NotifyExternalMove(h, bounds.X, bounds.Y);
-
-				return true;
+				h = formHandle;
 			}
 
-			if (TryOwnControl(h, out _))
-			{
-				// A Wayland client may resize itself (Eto), but it cannot set its own xdg-toplevel position
-				// (control.SetLocation is a silent no-op), so route the move through the compositor backend the
-				// same way Gui.Move() does. Resize still goes via Eto.
-				if (setSize)
-					_ = base.TryMoveResize(h, bounds, false, true);
+			if (!TryOwnControl(h, out var control))
+				return false;
 
-				if (setPos)
-				{
-					if (!OwnBackend(h, out var own))
-						return false;
-
-					var rect = own.FrameGeometry;
-					if (bounds.X != WindowInfoBase.Unchanged) rect.X = bounds.X;
-					if (bounds.Y != WindowInfoBase.Unchanged) rect.Y = bounds.Y;
-
-					if (!Wayland.TryMoveResizeWindow(own.Handle, rect, true, false))
-						return false;
-
-					WaylandOwnToplevels.NotifyExternalMove(own.Handle, bounds.X, bounds.Y);
-				}
-
-				return true;
-			}
-
-			return false;
+			// The toolkit sizes our windows and keeps its record of where they are, but a Wayland client cannot place
+			// its toplevel and may be ignored resizing it, so a window also goes to the positioner, which holds
+			// everything the compositor is told about it.
+			var done = base.TryMoveResize(h, bounds, setPos, setSize);
+			return control is Form form ? WaylandOwnToplevels.MoveResize(form, bounds, setPos, setSize) : done;
 		}
 
 		public override bool TryActivate(nint h)

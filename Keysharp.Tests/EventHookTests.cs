@@ -598,6 +598,37 @@ namespace Keysharp.Tests
 			}
 		}
 
+		/// <summary>A deactivation clears the tracked foreground only when it names that window, so focus moving to no
+		/// window does not leave a stale foreground behind.</summary>
+		[Test, Category("Internal"), NonParallelizable]
+		public void DeactivateClearsOnlyTheTrackedForeground()
+		{
+			var manager = Script.TheScript.WinEventManager;
+			var tracked = typeof(WinEventManager).GetField("foregroundWindowHandle",
+				System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+			nint Send(WindowEventType type, nint hwnd)
+			{
+				manager.OnNativeEvent(new WindowEventRaw(type, hwnd, 0));
+				return (nint)tracked.GetValue(manager);
+			}
+
+			manager.SetForegroundTracking(true);
+
+			try
+			{
+				if (Send(WindowEventType.Active, 0x1110) != 0x1110)
+					Assert.Ignore("This environment has no window-event source.");
+
+				Assert.AreEqual((nint)0x1110, Send(WindowEventType.Deactivate, 0x2220), "Another window's deactivation is ignored.");
+				Assert.AreEqual((nint)0, Send(WindowEventType.Deactivate, 0x1110), "The foreground window's deactivation clears it.");
+			}
+			finally
+			{
+				manager.SetForegroundTracking(false);
+			}
+		}
+
 		/// <summary>A running WinEvent keeps the real thread that started it running and a display-change hook does not,
 		/// as their AHK counterparts keep a script running or not.</summary>
 		[Test, Category("Internal"), NonParallelizable]

@@ -9,9 +9,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 	/// <summary>
 	/// Positions Keysharp's OWN top-level windows on Wayland. A GTK/Eto client cannot set its own
 	/// xdg-toplevel position (Eto's <c>window.Location</c> is a silent no-op on Wayland), so — just
-	/// like <c>WinMove</c> does for foreign windows — we drive the active compositor backend (KWin
-	/// scripting, the GNOME Shell extension, or Cinnamon eval) to move the window once it has been
-	/// mapped.
+	/// like <c>WinMove</c> does for foreign windows — we drive the active compositor backend to move
+	/// the window once it has been mapped. This is the one place that tells the compositor about our
+	/// windows, so what it holds is never contradicted by another path.
 	///
 	/// <para>The tricky part is correlating our just-shown Eto window with the compositor's window
 	/// id. We first stamp the window with a unique temporary Wayland app_id and match that exact
@@ -20,13 +20,15 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 	/// Resolved compositor ids are claimed so two Keysharp windows cannot resolve to the same one. The id is cached per form, so only
 	/// the first Show pays the correlation/polling cost; later Move calls reuse it.</para>
 	///
-	/// <para>Each move is a compositor round-trip, so moves run on a background thread and are
-	/// coalesced per form (latest position wins). A rapid stream of Moves — e.g. a Highlight
-	/// tracking a moving target — collapses to the most recent position instead of queuing.</para>
+	/// <para>Each move is a compositor round-trip, so moves requested through <see cref="Position"/> run on a
+	/// background thread and are coalesced per form (latest position wins). A rapid stream of Moves — e.g. a
+	/// Highlight tracking a moving target — collapses to the most recent position instead of queuing.
+	/// <c>Gui.Move</c> and <c>WinMove</c> go through <see cref="MoveResize"/> instead, which applies on the
+	/// caller's thread as AutoHotkey's do, serialized with that background pass.</para>
 	///
 	/// <para>This is best-effort: a brief map-then-move is unavoidable (Wayland maps the window
 	/// where the compositor chooses, then we move it), and on compositors that cannot move windows
-	/// (foreign-toplevel-only: sway/Hyprland/COSMIC) it degrades to a no-op.</para>
+	/// (foreign-toplevel-only: sway/COSMIC) it degrades to a no-op.</para>
 	/// </summary>
 	internal static class WaylandOwnToplevels
 	{
@@ -55,10 +57,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			internal Traits Applied = Traits.None;    // ...and what it was told, so a pass only issues what changed
 			internal bool PositionSettled;            // a placement has been verified (or given up on) once; see ApplyPosition
 			internal FormWindowState? PendingWindowState; // maximize/minimize/restore to reassert via the backend
+			internal Action ReleaseFixedSize;         // undoes HoldFixedSizeUntilMapped once the map is past
 			internal Point SurfaceOrigin;             // where the compositor last said this form's surface starts
 			internal long SurfaceTick;                // ...and when, since the user can move the window at any time
 			internal bool SurfaceKnown;               // false = the compositor could not say
 			internal bool Retired;
+			internal readonly object Applying = new(); // held while telling the compositor, by the background pass or a caller
 		}
 
 		/// <summary>
@@ -99,6 +103,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		// hasn't. Bounded: a compositor that genuinely can't move windows costs this fixed delay once, not a spin.
 		private const int PositionVerifyAttempts = 8;
 		private const int PositionVerifyDelayMs = 50;
+		private const int SelfResizeWaitMs = 500;
 		private const int PositionTolerance = 2;
 
 		internal static bool IsSupported => Platform.Desktop.IsWaylandSession && WaylandBackend.Current != null;
@@ -175,6 +180,33 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				pendingReservations[formHandle] = Environment.TickCount64 + ReservationTtlMs;
 
 			return true;
+		}
+
+		/// <summary>
+		/// Shows a resizable window as fixed-size until the compositor has mapped it, then runs
+		/// <paramref name="release"/> on the UI thread to make it resizable again.
+		/// <para>
+		/// A tiling compositor decides whether to tile a window when it maps it, and floats a fixed-size one at
+		/// its own size. Keep-above is floating there, so an always-on-top window that maps resizable is first
+		/// tiled and then floated with the tile's geometry, losing the size it was shown at. The reconcile pass
+		/// that <see cref="Position"/> starts releases the hold once correlation has found the mapped window or
+		/// given up on it, so the caller must follow the Show with a Position for this form.
+		/// </para>
+		/// </summary>
+		internal static void HoldFixedSizeUntilMapped(Eto.Forms.Form form, Action release)
+		{
+			if (!IsSupported || form is not { Resizable: true } || release == null)
+				return;
+
+			var formHandle = form.Handle;
+
+			if (formHandle == 0)
+				return;
+
+			form.Resizable = false;
+
+			lock (sync)
+				Track(formHandle, form, form.Title, 0, 0).ReleaseFixedSize = release;
 		}
 
 		/// <summary>
@@ -473,12 +505,15 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			// WinGetTransparent straight after reads back what was just set rather than racing a background pass.
 			if (StillLive(backend, state))
 			{
-				nint live;
+				lock (state.Applying)
+				{
+					nint live;
 
-				lock (sync)
-					live = state.CompositorHandle;
+					lock (sync)
+						live = state.CompositorHandle;
 
-				return backend.TrySetTransparency(live, alpha);
+					return backend.TrySetTransparency(live, alpha);
+				}
 			}
 
 			// Not mapped yet, so there is nothing to correlate to: the desired state is recorded and the Show that
@@ -490,27 +525,103 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		/// <summary>
-		/// Notify that some other path (e.g. <c>WinMove</c> via the neutral <see cref="WindowInfo"/>) just moved a
-		/// compositor window. If it's one of ours that is still being placed, fold the new position into our
-		/// target so a pending background placement converges to it rather than reverting to the original Show
-		/// position. Harmless for windows we aren't tracking (foreign windows, or ones already settled).
+		/// Moves and sizes one of our own windows for <c>Gui.Move</c> and <c>WinMove</c>, after the toolkit has been
+		/// asked for the size. A client cannot place its toplevel on Wayland, and a compositor may ignore it resizing
+		/// itself, as Hyprland does for a floating window. The position becomes the target, so a window not mapped
+		/// yet is placed when it is. A mapped one is changed now, on the calling thread, so a read straight after
+		/// sees the result, as in AutoHotkey. False when a requested position could not be applied.
 		/// </summary>
-		internal static void NotifyExternalMove(nint compositorHandle, int x, int y)
+		internal static bool MoveResize(Eto.Forms.Form form, Rectangle bounds, bool setPos, bool setSize)
 		{
-			if (compositorHandle == 0 || (x == WindowInfoBase.Unchanged && y == WindowInfoBase.Unchanged))
-				return;
+			var formHandle = form?.Handle ?? 0;
+			var backend = WaylandBackend.Current;
+
+			if (formHandle == 0 || !IsSupported || backend == null)
+				return false;
+
+			var size = form.GetSize();
+			FormState state;
 
 			lock (sync)
 			{
-				foreach (var state in states.Values)
-				{
-					if (state.CompositorHandle != compositorHandle)
-						continue;
+				state = Track(formHandle, form, form.Title, size.Width, size.Height);
 
-					if (x != WindowInfoBase.Unchanged) state.TargetX = x;
-					if (y != WindowInfoBase.Unchanged) state.TargetY = y;
-					break;
+				if (setPos && bounds.X != WindowInfoBase.Unchanged) state.TargetX = bounds.X;
+				if (setPos && bounds.Y != WindowInfoBase.Unchanged) state.TargetY = bounds.Y;
+
+				if (!form.Visible)
+				{
+					if (setPos)
+						Reconcile(state);
+
+					return true;
 				}
+			}
+
+			if (!StillLive(backend, state) && !Correlate(backend, state))
+				return !setPos;
+
+			lock (state.Applying)
+			{
+				nint handle;
+
+				lock (sync)
+				{
+					if (!IsCurrentLocked(state))
+						return false;
+
+					handle = state.CompositorHandle;
+				}
+
+				var resize = setSize && form.Resizable;
+				var place = setPos;
+				var rect = bounds;
+
+				// A fixed-size window resizes itself on the toolkit's next frame, and a compositor that keeps a floating
+				// window's centre as it resizes (Hyprland) would carry it off its corner, so it is placed again once
+				// that has landed, where AutoHotkey keeps it.
+				if (setSize && !resize && backend.TryGetWindow(handle, out var own)
+						&& own.HasKnownField(WaylandWindowFields.Frame))
+				{
+					var frame = own.FrameGeometry;
+
+					if ((bounds.Width != WindowInfoBase.Unchanged && bounds.Width != frame.Width)
+							|| (bounds.Height != WindowInfoBase.Unchanged && bounds.Height != frame.Height))
+					{
+						WaitForSelfResize(backend, handle, frame.Width, frame.Height);
+						place = true;
+						if (rect.X == WindowInfoBase.Unchanged) rect.X = frame.X;
+						if (rect.Y == WindowInfoBase.Unchanged) rect.Y = frame.Y;
+					}
+				}
+
+				if (!place && !resize)
+					return true;
+
+				if (!backend.TryMoveResizeWindow(handle, rect, place, resize))
+					return !setPos;
+
+				if (place)
+				{
+					lock (sync)
+					{
+						if (IsCurrentLocked(state) && state.CompositorHandle == handle)
+						{
+							// A window's first placement can still lose to the compositor's own, so the background pass
+							// verifies it. After that the move stands, and the pass is told it need not repeat it.
+							if (!state.PositionSettled)
+								Reconcile(state);
+							else
+							{
+								state.Applied = (state.AppliedTo == handle ? state.Applied : Traits.None)
+									with { X = state.TargetX, Y = state.TargetY };
+								state.AppliedTo = handle;
+							}
+						}
+					}
+				}
+
+				return true;
 			}
 		}
 
@@ -663,8 +774,15 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 					// Failing to correlate normally just means the window is not mapped yet. The desired state stays
 					// recorded and the Show that maps it reconciles again - the only moment this can succeed.
-					if (backend != null && (StillLive(backend, state) || Correlate(backend, state)))
-						Push(backend, state);
+					var live = backend != null && (StillLive(backend, state) || Correlate(backend, state));
+
+					// Correlation waits for the compositor to list the window, which it does once mapped, so the
+					// tiling decision is behind us whether it found the window or gave up.
+					ReleaseFixedSize(state);
+
+					if (live)
+						lock (state.Applying)
+							Push(backend, state);
 
 					lock (sync)
 					{
@@ -681,6 +799,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 			catch
 			{
+				ReleaseFixedSize(state);
+
 				lock (sync)
 					if (IsCurrentLocked(state))
 						state.Busy = false;
@@ -689,7 +809,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		// Tell the compositor what it does not already know about this window. Skipping what matches Applied keeps a
 		// stream of Moves from re-issuing traits, while a window that was unmapped and shown again has a new handle,
-		// so it is told everything afresh - the flags cannot go stale against a live window.
+		// so it is told everything afresh - the flags cannot go stale against a live window. The caller holds
+		// state.Applying.
 		private static void Push(IWaylandBackend backend, FormState state)
 		{
 			nint handle;
@@ -1059,17 +1180,29 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			return true;
 		}
 
+		// Waits briefly for one of our own windows to stop reporting width x height.
+		private static void WaitForSelfResize(IWaylandBackend backend, nint compositorHandle, int width, int height)
+		{
+			var deadline = Environment.TickCount64 + SelfResizeWaitMs;
+
+			while (Environment.TickCount64 < deadline)
+			{
+				PollWait();
+
+				if (!backend.TryGetWindow(compositorHandle, out var info)
+						|| info.FrameGeometry.Width != width || info.FrameGeometry.Height != height)
+					return;
+			}
+		}
+
 		// One poll interval. On the UI thread this must PUMP rather than sleep: that thread IS the GTK main
 		// loop, and a freshly shown window only gets its compositor toplevel - and its first buffer - once the
-		// loop runs. Sleeping here keeps the very thing being waited for from ever happening. Off the UI
-		// thread a plain sleep is right.
+		// loop runs. Sleeping here keeps the very thing being waited for from ever happening. No script thread
+		// starts meanwhile, as none does during a move or show in AutoHotkey. Off the UI thread a plain sleep is right.
 		private static void PollWait(int ms = CorrelatePollMs)
 		{
 			if (Script.TheScript?.IsOnMainThread == true)
-			{
-				var resume = Environment.TickCount64 + ms;
-				Keysharp.Internals.Flow.WaitWithMessagePump(() => Environment.TickCount64 < resume);
-			}
+				Keysharp.Internals.Flow.SleepWithoutInterruption(ms);
 			else
 				Thread.Sleep(ms);
 		}
@@ -1097,6 +1230,33 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			state.SurfaceKnown = TryGetSurfaceOrigin(state.Form, info, out state.SurfaceOrigin);
 			// A worker cannot read GTK's inset; let the next UI query fill the cache.
 			state.SurfaceTick = state.SurfaceKnown ? Environment.TickCount64 : 0;
+		}
+
+		private static void ReleaseFixedSize(FormState state)
+		{
+			Action release;
+
+			lock (sync)
+			{
+				release = state.ReleaseFixedSize;
+				state.ReleaseFixedSize = null;
+			}
+
+			if (release == null)
+				return;
+
+			try
+			{
+				var app = Eto.Forms.Application.Instance;
+
+				if (app == null || app.IsUIThread)
+					release();
+				else
+					app.AsyncInvoke(release);
+			}
+			catch
+			{
+			}
 		}
 
 		private static bool TrySetAppIdOnUiThread(Eto.Forms.Form form, string appId)

@@ -99,6 +99,19 @@ namespace System.Windows.Forms
 			var width = requestedSize.Width == -1 ? prefSize.Width : newSize.Width;
 			var height = requestedSize.Height == -1 ? prefSize.Height : newSize.Height;
 			var assignSize = new Size(width, height);
+#if LINUX
+			// GTK sizes a window that cannot be resized to fit its content and clamps any other size to that, so such
+			// a window only takes a new size through its content, the way Gui.Show sizes it.
+			if (control is Form { Resizable: false, Loaded: true, Content: { } content } form)
+			{
+				var frame = form.Size;
+				var client = form.ClientSize;
+				client.Width = Math.Max(1, client.Width + (requestedSize.Width == -1 ? 0 : requestedSize.Width - frame.Width));
+				client.Height = Math.Max(1, client.Height + (requestedSize.Height == -1 ? 0 : requestedSize.Height - frame.Height));
+				form.ClientSize = client;
+				content.ClientSize = client;
+			}
+#endif
 			// The control's own size must reflect exactly what was requested: -1 for any dimension the caller left
 			// unspecified. Keeping it -1 (rather than the resolved preferred size) leaves UserPreferredSize "auto",
 			// so the backend re-measures that dimension to fit content - e.g. a label created empty grows when its

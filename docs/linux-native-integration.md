@@ -62,7 +62,10 @@ refresh fence queued output and release synthesized keys before dispatch resumes
 Important platform limits remain explicit:
 
 - Generic Wayland can publish a keymap without exposing the global active layout
-  group. Keysharp uses its first-layout fallback in that case.
+  group. Keysharp uses its first-layout fallback in that case. Hyprland reports
+  the group of the keyboard it marks main; because it keeps a layout per
+  keyboard device, keys Keysharp sends through its virtual keyboard can use a
+  different group from the one reported while a physical keyboard is main.
 - Key translation does not provide IME-committed text. Raw touch data requires
   gesture interpretation, and relative deltas are not accelerated cursor positions.
 - Joystick discovery and state reads access evdev directly and can require membership
