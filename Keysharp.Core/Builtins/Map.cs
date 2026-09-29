@@ -248,14 +248,14 @@ namespace Keysharp.Builtins
 		internal override List<Any> GetEnumerableMembersOrEmpty()
 		{
 			var list = base.GetEnumerableMembersOrEmpty();
-			if (enumerableMap != null)
-			{
-				foreach (var kv in enumerableMap)
+
+			if (map != null)
+				foreach (var kv in map)
 				{
 					if (kv.Key is Any a1) list.Add(a1);
 					if (kv.Value is Any a2) list.Add(a2);
 				}
-			}
+
 			return list;
 		}
 
@@ -265,7 +265,7 @@ namespace Keysharp.Builtins
 		public new object Clone()
 		{
 			var clone = (Map)MemberwiseClone();
-			clone.map = new Dictionary<object, object>(clone.map);
+			clone.map = new Dictionary<object, object>(map, map.Comparer);
 			_ = clone.map.EnsureCapacity(map.Capacity);
 			clone.enumerableMap = null;
 			return clone;

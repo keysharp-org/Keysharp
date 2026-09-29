@@ -276,8 +276,13 @@ namespace Keysharp.Builtins
 		/// <returns>The class name of value.</returns>
 		public static string Type(object value)
 		{
-			if (value == null)
-				return "unset";
+			switch (value)
+			{
+				case null: return "unset";
+				case string: return "String";
+				case long or bool: return "Integer";
+				case double: return "Float";
+			}
 
 			// Every module object is an instance of Module, whichever module it is.
 			if (value is Keysharp.Runtime.Module)

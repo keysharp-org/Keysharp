@@ -532,4 +532,10 @@ for enumKey, enumVal in Map("one", 1, "two", 2, "three", 3)
 
 AssertEq(enumPairs, "one=1,three=3,two=2,", A_LineNumber)
 
+; A clone looks keys up as the original does, not only reporting the same CaseSense.
+ci := Map()
+ci.CaseSense := "Off"
+ci["Key"] := 1
+AssertEq(ci.Clone()["KEY"], 1, A_LineNumber)
+
 FileAppend "pass", "*"
