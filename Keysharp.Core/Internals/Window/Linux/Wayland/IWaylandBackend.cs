@@ -1,4 +1,6 @@
 #if LINUX
+using System.Runtime.InteropServices;
+
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
 	/// <summary>Outcome of a compositor-extension image-overlay Show. The middle state is the important one: a
@@ -216,12 +218,16 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// run. Backends with a purely local capability can use the default.</summary>
 		bool CanAttemptImageOverlay => SupportsImageOverlay;
 
-		/// <summary>Create or update a compositor-owned image overlay. PNG bytes are copied by the compositor service.
-		/// The distinction between <see cref="OverlayShowResult.TimedOut"/> and <see cref="OverlayShowResult.Failed"/>
-		/// matters: a timed-out call most likely still reached the shell and created the actor (so the caller commits
-		/// to the compositor rather than duplicating the overlay with an Eto fallback), whereas a definitive failure
-		/// means the extension is absent or rejected the call (so the caller may fall back).</summary>
-		OverlayShowResult TryShowImageOverlay(uint id, int x, int y, int width, int height, byte[] pngBytes)
+		/// <summary>Create or update a compositor-owned image overlay from memory this process shares with the shell.
+		/// <paramref name="frame"/> is a descriptor of a buffer of premultiplied BGRA pixels, which the shell maps once
+		/// per <paramref name="frameSerial"/> and afterwards reads <paramref name="damage"/> out of on every call, so a
+		/// frame is one texture upload; an empty damage rectangle only applies the geometry. The distinction between
+		/// <see cref="OverlayShowResult.TimedOut"/> and <see cref="OverlayShowResult.Failed"/> matters: a timed-out
+		/// call most likely still reached the shell and created the actor (so the caller commits to the compositor
+		/// rather than duplicating the overlay with an Eto fallback), whereas a definitive failure means the extension
+		/// is absent, out of date or rejected the call (so the caller may fall back).</summary>
+		OverlayShowResult TryShowImageOverlay(uint id, int x, int y, int width, int height, SafeHandle frame,
+			ulong frameSerial, int pixelWidth, int pixelHeight, int stride, PixelRect damage)
 			=> OverlayShowResult.Failed;
 
 		/// <summary>Reposition/resize an existing image overlay by id, reusing the pixels already uploaded to the

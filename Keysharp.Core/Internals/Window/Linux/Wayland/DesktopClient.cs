@@ -26,7 +26,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private const int AuthorizationCheckTimeoutMs = 2_000;
 		private const int ProbeTimeoutMs = 2_000;
 		private const int CapabilityCacheMs = 1_000;
-		private const int EventPollTimeoutMs = 1_000;
+		// The reader can only notice a Dispose between polls, and Dispose waits for it, so the poll length is the
+		// latency of stopping a subscription, which script exit pays on the main thread.
+		private const int EventPollTimeoutMs = 100;
 		private const uint NativeErrorStructSize = 304;
 		private const string AuthorizationPendingMessage =
 			"Desktop authorization is currently being requested.";

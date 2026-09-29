@@ -1,4 +1,6 @@
 #if LINUX
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 using Wl = Keysharp.Internals.Window.Linux.Wayland;
 
 namespace Keysharp.Internals
@@ -483,9 +485,13 @@ namespace Keysharp.Internals
 		}
 	}
 
-	// Compositor-extension backing (GNOME/Cinnamon): hands the pixels to the shell as a PNG. A move asks the shell
-	// to reposition the already-uploaded actor (no re-encode); only when that fast path is unavailable - an older
-	// extension, or the actor was dropped - does it fall back to re-encoding and re-sending the current image.
+	// Compositor-extension backing (GNOME/Cinnamon). A frame reaches the shell as memory this process shares with
+	// it: the shell maps the buffer once, and from then on a frame is the damaged rectangle copied into that buffer
+	// plus one call carrying geometry, which on the shell's side is one texture upload and no allocation. That
+	// matters beyond speed: the shell is a JavaScript process whose garbage collector blocks every callback while
+	// it runs, method calls included, so a transport that left megabytes of garbage per frame had frames dropped
+	// and the script waiting on them. A move asks the shell to reposition the actor already on screen; only when
+	// that fast path is unavailable does it fall back to re-sending the current image.
 	internal sealed class CompositorImageBacking : IImageOverlayBacking
 	{
 		private readonly uint id;
@@ -493,6 +499,12 @@ namespace Keysharp.Internals
 		private bool hidden;
 		private ScreenRect shownBounds;
 		private byte shownOpacity;
+		private SharedFrameBuffer frame;
+
+		// Damage the shell has not acknowledged. A frame it never answered may or may not have reached the texture,
+		// so the next frame covers that region again; an unanswered whole-buffer frame owes the whole buffer.
+		private PixelRect owedDamage;
+		private bool owedAll;
 
 		internal CompositorImageBacking(uint id) => this.id = id;
 
@@ -501,7 +513,7 @@ namespace Keysharp.Internals
 
 		public nint Handle => 0;
 
-		// Actor opacity is folded into the encoded snapshot.
+		// Actor opacity is folded into the pixels handed over.
 		public bool Present(OverlaySurface canvas, ScreenRect bounds, byte opacity, bool clickThrough, DamageList damage)
 		{
 			// Compositor-extension actors are passive. Returning false selects the interactive Eto backing instead of
@@ -525,10 +537,8 @@ namespace Keysharp.Internals
 
 			try
 			{
-				var result = PresentEncoded(canvas, bounds, opacity);
-
 				// A timeout is ambiguous and may mean the actor was created; only a definitive rejection falls back.
-				if (result == Wl.OverlayShowResult.Failed)
+				if (PresentFrame(canvas, bounds, opacity, damage) == Wl.OverlayShowResult.Failed)
 					return false;
 
 				shown = true;
@@ -543,17 +553,78 @@ namespace Keysharp.Internals
 			}
 		}
 
-		/// <summary>Encodes the current frame as a bounded PNG for the compositor extension.</summary>
-		private Wl.OverlayShowResult PresentEncoded(OverlaySurface canvas, ScreenRect bounds, byte opacity)
+		private Wl.OverlayShowResult PresentFrame(OverlaySurface canvas, ScreenRect bounds, byte opacity,
+			DamageList damage)
 		{
-			using var snapshot = EtoImageOverlay.Snapshot(canvas.PrepareForPresent());
-			ImageHelper.ApplyOpacity(snapshot, opacity);
-			var bytes = ImageHelper.ToPngBytes(snapshot);
+			if (Wl.WaylandBackend.Current is not { } backend || canvas.PrepareForPresent() is not { } image)
+				return Wl.OverlayShowResult.Failed;
 
-			return bytes.Length == 0
-				   ? Wl.OverlayShowResult.Failed
-				   : Wl.WaylandBackend.Current?.TryShowImageOverlay(id, bounds.X, bounds.Y, bounds.Width, bounds.Height, bytes)
-					 ?? Wl.OverlayShowResult.Failed;
+			var buffer = EnsureFrameBuffer(image.Width, image.Height, out var created);
+
+			if (buffer == null)
+				return Wl.OverlayShowResult.Failed;
+
+			var whole = new PixelRect(0, 0, buffer.Width, buffer.Height);
+			var source = new Rectangle(0, 0, image.Width, image.Height);
+			PixelRect region;
+
+			// A fresh buffer holds nothing yet and a changed opacity rescales every pixel; either way the whole
+			// canvas goes over. Otherwise the frame is this canvas's damage plus whatever is still owed.
+			if (created || !shown || opacity != shownOpacity || owedAll || damage == null
+					|| damage.Kind == DamageKind.All)
+			{
+				region = whole;
+				Wl.WaylandImageOverlay.CopyImageToBuffer(image, source, buffer, buffer.Width, buffer.Height, opacity);
+			}
+			else
+			{
+				region = damage.Union().Union(owedDamage).Intersect(whole);
+				Wl.WaylandImageOverlay.CopyImageRegionToBuffer(image, source, buffer, region, opacity);
+			}
+
+			// A handle per call, not owning the descriptor: the bus layer disposes the handle it was given once the
+			// message is sent, and the buffer keeps the descriptor for the next frame.
+			var result = backend.TryShowImageOverlay(id, bounds.X, bounds.Y, bounds.Width, bounds.Height,
+				new SafeFileHandle(buffer.Descriptor, ownsHandle: false), buffer.Serial, buffer.Width,
+				buffer.Height, buffer.Stride, region);
+
+			if (result == Wl.OverlayShowResult.Shown)
+			{
+				owedDamage = default;
+				owedAll = false;
+			}
+			else if (result == Wl.OverlayShowResult.TimedOut)
+			{
+				if (region == whole)
+					owedAll = true;
+				else
+					owedDamage = owedDamage.Union(region);
+			}
+
+			return result;
+		}
+
+		// The shell keys its mapping on the buffer's serial, so a resized overlay is a new buffer; a same-size
+		// frame keeps writing into the one both processes already have mapped.
+		private SharedFrameBuffer EnsureFrameBuffer(int width, int height, out bool created)
+		{
+			created = false;
+
+			if (frame != null && frame.Width == width && frame.Height == height)
+				return frame;
+
+			ReleaseFrameBuffer();
+			frame = SharedFrameBuffer.Create(width, height);
+			created = frame != null;
+			return frame;
+		}
+
+		private void ReleaseFrameBuffer()
+		{
+			frame?.Dispose();
+			frame = null;
+			owedDamage = default;
+			owedAll = false;
 		}
 
 		public bool Move(ScreenRect bounds)
@@ -592,6 +663,7 @@ namespace Keysharp.Internals
 				{
 					hidden = true;
 					shown = false;
+					ReleaseFrameBuffer();
 					return true;
 				}
 
@@ -602,6 +674,7 @@ namespace Keysharp.Internals
 				{
 					hidden = true;
 					shown = false;
+					ReleaseFrameBuffer();
 					return true;
 				}
 
@@ -611,7 +684,103 @@ namespace Keysharp.Internals
 		}
 
 		public void Dispose()
-			=> _ = TryHide();
+		{
+			_ = TryHide();
+			ReleaseFrameBuffer();
+		}
+	}
+
+	/// <summary>Premultiplied BGRA pixels in a memfd this process writes and the shell maps read-only, so a frame
+	/// crosses no process boundary. Sealed against resizing: the shell's mapping would fault on a buffer shrunk
+	/// beneath it, so a different size is a different buffer, told apart by its serial.</summary>
+	internal sealed class SharedFrameBuffer : IDisposable, Wl.IPixelBuffer
+	{
+		private const int MFD_ALLOW_SEALING = 0x0002;
+		private const int F_ADD_SEALS = 1033;
+		private const int F_SEAL_SEAL = 0x0001;
+		private const int F_SEAL_SHRINK = 0x0002;
+		private const int F_SEAL_GROW = 0x0004;
+
+		private static ulong serials;
+
+		private int fd;
+		private nint data;
+		private readonly nuint length;
+
+		public int Width { get; }
+		public int Height { get; }
+		public int Stride { get; }
+		public nint Data => data;
+		internal ulong Serial { get; }
+		internal nint Descriptor => fd;
+
+		[DllImport("libc", EntryPoint = "fcntl", SetLastError = true)]
+		private static extern int Fcntl(int fd, int command, int argument);
+
+		private SharedFrameBuffer(int fd, nint data, nuint length, int width, int height, int stride)
+		{
+			this.fd = fd;
+			this.data = data;
+			this.length = length;
+			Width = width;
+			Height = height;
+			Stride = stride;
+			Serial = Interlocked.Increment(ref serials);
+		}
+
+		internal static SharedFrameBuffer Create(int width, int height)
+		{
+			if (width <= 0 || height <= 0)
+				return null;
+
+			var stride = (long)width * 4;
+			var size = stride * height;
+
+			if (stride > int.MaxValue || size > int.MaxValue)
+				return null;
+
+			var fd = Wl.WaylandNative.MemfdCreate("keysharp-overlay", (uint)(Wl.WaylandNative.MFD_CLOEXEC | MFD_ALLOW_SEALING));
+
+			if (fd < 0)
+				return null;
+
+			try
+			{
+				if (Wl.WaylandNative.Ftruncate(fd, size) != 0
+						|| Fcntl(fd, F_ADD_SEALS, F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_SEAL) != 0)
+					return null;
+
+				var mapping = Wl.WaylandNative.Mmap(0, (nuint)size,
+					Wl.WaylandNative.PROT_READ | Wl.WaylandNative.PROT_WRITE, Wl.WaylandNative.MAP_SHARED, fd, 0);
+
+				if (mapping == Wl.WaylandNative.MAP_FAILED)
+					return null;
+
+				var created = new SharedFrameBuffer(fd, mapping, (nuint)size, width, height, (int)stride);
+				fd = -1;
+				return created;
+			}
+			finally
+			{
+				if (fd >= 0)
+					_ = Wl.WaylandNative.Close(fd);
+			}
+		}
+
+		public void Dispose()
+		{
+			if (data != 0)
+			{
+				_ = Wl.WaylandNative.Munmap(data, length);
+				data = 0;
+			}
+
+			if (fd >= 0)
+			{
+				_ = Wl.WaylandNative.Close(fd);
+				fd = -1;
+			}
+		}
 	}
 }
 #endif
