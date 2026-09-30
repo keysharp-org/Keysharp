@@ -1468,7 +1468,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				{
 					return EvaluateCriterion(script, criterion, criterionType, hotkeyName, eventInfo);
 				}
-				catch (Exception ex) when (CallStack.Remember(ex))
+				catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 				{
 					ReportCriterionError(script, ex);
 					return 0L;
@@ -2428,7 +2428,7 @@ namespace Keysharp.Internals.Input.Keyboard
 						_ = Interlocked.Decrement(ref binding.ExistingThreads);
 					}
 				}
-				catch (Exception ex) when (CallStack.Remember(ex))
+				catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 				{
 					_ = Errors.ReportUncaught(ex);
 				}

@@ -50,7 +50,7 @@ namespace Keysharp.Runtime
 						return store.Prototypes[t] = script.Vars.Prototypes[typeof(Module)];
 
 					proto.SetBaseInternal(script.Vars.Prototypes[t.BaseType]);
-					proto.DefinePropInternal("__Class", new OwnPropsDesc(proto, "Module"));
+					proto.DefinePropInternal("__Class", new OwnPropsDesc("Module"));
 					return proto;
 				}
 
@@ -139,12 +139,12 @@ namespace Keysharp.Runtime
 
 					if (isStatic)
 					{
-						staticInst.DefinePropInternal(userDeclaredName ?? methodName, new OwnPropsDesc(staticInst, null, null, null, new KeysharpFunc(method)));
+						staticInst.DefinePropInternal(userDeclaredName ?? methodName, new OwnPropsDesc(null, null, null, new KeysharpFunc(method)));
 						continue;
 					}
 
 					// Wrap method in KeysharpFunc
-					proto.DefinePropInternal(userDeclaredName ??methodName, new OwnPropsDesc(proto, null, null, null, new KeysharpFunc(method)));
+					proto.DefinePropInternal(userDeclaredName ??methodName, new OwnPropsDesc(null, null, null, new KeysharpFunc(method)));
 				}
 
 				// Get all instance and static properties
@@ -225,7 +225,7 @@ namespace Keysharp.Runtime
 
 				if (t == typeof(Any))
 				{
-					proto.DefinePropInternal("Props", new OwnPropsDesc(proto, null, null, null, new KeysharpFunc((Func<object, object>)Builtins.Objects.Props)));
+					proto.DefinePropInternal("Props", new OwnPropsDesc(null, null, null, new KeysharpFunc((Func<object, object>)Builtins.Objects.Props)));
 				}
 
 				if (t != typeof(KeysharpFunc) && t != typeof(Any))
@@ -244,9 +244,9 @@ namespace Keysharp.Runtime
 				}
 
 				if (isBuiltin)
-					proto.DefinePropInternal("__Class", new OwnPropsDesc(proto, className));
+					proto.DefinePropInternal("__Class", new OwnPropsDesc(className));
 
-				staticInst.DefinePropInternal("Prototype", new OwnPropsDesc(staticInst, proto));
+				staticInst.DefinePropInternal("Prototype", new OwnPropsDesc(proto));
 
 				if (t != typeof(KeysharpFunc) && t != typeof(Any))
 					staticInst.SetBaseInternal(script.Vars.Statics[t.BaseType]);
@@ -264,7 +264,7 @@ namespace Keysharp.Runtime
 						continue;
 
 					staticInst.DefinePropInternal(GetUserDeclaredName(nestedType) ?? nestedType.Name,
-						new OwnPropsDesc(staticInst, null,
+						new OwnPropsDesc(null,
 							new KeysharpFunc((params object[] args) => script.Vars.Statics[nestedType]),
 							null,
 							new KeysharpFunc((object @this, params object[] args) => Script.Invoke(script.Vars.Statics[nestedType], null, args))
@@ -280,7 +280,7 @@ namespace Keysharp.Runtime
 							ifo.Call((object)staticInst);
 					}
 
-					proto.DefinePropInternal("__Class", new OwnPropsDesc(proto, className));
+					proto.DefinePropInternal("__Class", new OwnPropsDesc(className));
 
 					_ = Script.InvokeMeta(staticInst, "__Init");
 					_ = Script.InvokeMeta(staticInst, "__New");
@@ -329,10 +329,12 @@ namespace Keysharp.Runtime
 		{
 			object key = null;
 			Type typetouse = null;
+			Any proto = null;
 
 			if (args == null) args = [null];
 			if (args.Length == 0) return Errors.ErrorOccurred($"Attempting to set value on object {item} failed because no value was provided");
 			else if (args.Length == 1) return SetPropertyValue(item, "__Item", args);
+			else if (args.Length == 2 && TrySetBuiltinItem(item, args[0], args[1])) return args[1];
 
 			object value = args[^1];
 
@@ -343,7 +345,7 @@ namespace Keysharp.Runtime
 					typetouse = t; item = o0;
 				} else if (otup[0] is Any a && otup[1] is object o1)
 				{
-                    item = o1; typetouse = a.type;
+                    item = o1; typetouse = a.type; proto = a;
                 }
 			}
 			else if (item != null)
@@ -355,18 +357,6 @@ namespace Keysharp.Runtime
 
 				try
 				{
-					//This excludes types derived from Array so that super can be used.
-					if (typetouse == typeof(Keysharp.Builtins.Array))
-					{
-						((Keysharp.Builtins.Array)item)[key] = value;
-						return value;
-					}
-					else if (typetouse == typeof(Keysharp.Builtins.Map))
-					{
-						((Keysharp.Builtins.Map)item)[key] = value;
-						return value;
-					}
-
 					if (item is object[] objarr)
 					{
 						if (!key.CoerceInt(out var position)) return DefaultObject;
@@ -394,7 +384,8 @@ namespace Keysharp.Runtime
 
 			if (item is Any kso)
 			{
-				if (TryGetOwnPropsMap(kso, "__Item", out var opm, true,
+				// `super[i] := v` looks __Item up from the super prototype, but runs it with the real this.
+				if (TryGetOwnPropsMap(proto ?? kso, "__Item", out var opm, true,
 					OwnPropsMapType.Set | OwnPropsMapType.Call | OwnPropsMapType.Value))
 				{
 					if (opm.Set != null)
@@ -407,7 +398,7 @@ namespace Keysharp.Runtime
 						else
 						{
 							// Callable object setter
-							_ = Invoke(opm.Set, null, kso, args);
+							_ = InvokeOrNull(opm.Set, null, [kso, ..args]);
 						}
 						return value;
 					}
@@ -416,7 +407,7 @@ namespace Keysharp.Runtime
 						if (opm.Call is KeysharpFunc fcall)
 							_ = fcall.CallInst(kso, args);
 						else
-							_ = Invoke(opm.Call, null, kso, args);
+							_ = InvokeOrNull(opm.Call, null, [kso, ..args]);
 						return value;
 					}
 					if (opm.Value != null)
@@ -466,6 +457,61 @@ namespace Keysharp.Runtime
 		public static object GetIndex(object item, params object[] index) =>
 			GetIndexOrNull(item, index) ?? UnsetIndexErrorOccurred(index);
 
+		public static object GetIndex(object item, object key) =>
+			TryGetBuiltinItem(item, key, out var value) ? value : GetIndex(item, new object[] { key });
+
+		public static object GetIndexOrNull(object item, object key) =>
+			TryGetBuiltinItem(item, key, out var value) ? value : GetIndexOrNull(item, new object[] { key });
+
+		public static object SetObject(object item, object key, object value) =>
+			TrySetBuiltinItem(item, key, value) ? value : SetObject(item, new object[] { key, value });
+
+		private static readonly MethodInfo arrayItemGet = typeof(Keysharp.Builtins.Array).GetProperty("Item", [typeof(object)]).GetMethod;
+		private static readonly MethodInfo arrayItemSet = typeof(Keysharp.Builtins.Array).GetProperty("Item", [typeof(object)]).SetMethod;
+		private static readonly MethodInfo mapItemGet = typeof(Keysharp.Builtins.Map).GetProperty("Item", [typeof(object)]).GetMethod;
+		private static readonly MethodInfo mapItemSet = typeof(Keysharp.Builtins.Map).GetProperty("Item", [typeof(object)]).SetMethod;
+
+		// Whether an index on this object reaches the builtin accessor, the only case the fast paths below may answer.
+		private static bool ReachesBuiltinItem(Any obj, MethodInfo accessor, bool set) =>
+			TryGetOwnPropsMap(obj, "__Item", out var opm, true, set
+				? OwnPropsMapType.Set | OwnPropsMapType.Call | OwnPropsMapType.Value
+				: OwnPropsMapType.Get | OwnPropsMapType.Value)
+			&& (set ? opm.Set : opm.Get) is KeysharpFunc f && f.GetType() == typeof(KeysharpFunc) && f.mph.mi == accessor;
+
+		// An element the builtin getter would return, without the dispatch. Everything else (an __Item a script defined, a
+		// missing element, Default, an error) is left to the full path.
+		private static bool TryGetBuiltinItem(object item, object key, out object value)
+		{
+			if (item is Keysharp.Builtins.Array arr)
+			{
+				value = key is long l && l is >= int.MinValue and <= int.MaxValue && arr.TranslateIndex((int)l) is var i and >= 0
+					? arr.array[i] : null;
+				return value != null && ReachesBuiltinItem(arr, arrayItemGet, false);
+			}
+
+			value = null;
+			return item is Keysharp.Builtins.Map map && map.TryGetValue(key, out value) && ReachesBuiltinItem(map, mapItemGet, false);
+		}
+
+		private static bool TrySetBuiltinItem(object item, object key, object value)
+		{
+			if (item is Keysharp.Builtins.Array arr)
+			{
+				if (key is not long l || l is < int.MinValue or > int.MaxValue || arr.TranslateIndex((int)l) is not (var i and >= 0)
+					|| !ReachesBuiltinItem(arr, arrayItemSet, true))
+					return false;
+
+				arr.array[i] = value;
+				return true;
+			}
+
+			if (value == null || item is not Keysharp.Builtins.Map map || !ReachesBuiltinItem(map, mapItemSet, true))
+				return false;
+
+			map[key] = value;
+			return true;
+		}
+
 		// An item with no value, as AutoHotkey reports it. In v2.1 the expression reading it raises the error, with the index
 		// in brackets as Extra, which AutoHotkey takes from the source and this from the values; before that, the
 		// collection's own getter raised it with the key.
@@ -478,6 +524,7 @@ namespace Keysharp.Runtime
 			if (item == null) return Errors.UnsetErrorOccurred($"The base object of indexer");
 			if (index == null) index = new object[] { null };
 			if (index.Length == 0) return GetPropertyValueOrNull(item, "__Item");
+			if (index.Length == 1 && TryGetBuiltinItem(item, index[0], out var element)) return element;
 
 			int len = index.Length;
 			object firstKey = index[0];
@@ -521,7 +568,7 @@ namespace Keysharp.Runtime
 							return fget.CallInst(item, index);
 						} else
 							// Callable object getter
-							return InvokeOrNull(opm.Get, null, item, index);
+							return InvokeOrNull(opm.Get, null, [item, ..index]);
 					}
 					if (opm.Value != null)
 					{
@@ -531,6 +578,17 @@ namespace Keysharp.Runtime
 
 				if (proto is IMetaObject mo)
 					return mo.get_Item(index);
+
+				// Keysharp indexes a String by character, as a String of its own. Anything else with no __Item cannot be
+				// indexed, as in AHK: a member error, not an unset item.
+				if (item is string s && len == 1)
+				{
+					if (!firstKey.CoerceInt(out var position)) return DefaultObject;
+					var actual = position < 0 ? s.Length + position : position - 1;
+					return (uint)actual < (uint)s.Length ? s.Substring(actual, 1) : Errors.InvalidIndexErrorOccurred(position);
+				}
+
+				return Errors.MissingPropertyErrorOccurred(item, "__Item");
 			}
 			else if (Builtins.Primitive.IsNative(item))
 			{
@@ -538,16 +596,9 @@ namespace Keysharp.Runtime
 			}
 
 			// Single-argument index fast paths
-			if (len == 1 && item is string or System.Array)
+			if (len == 1 && item is System.Array)
 			{
 				if (!firstKey.CoerceInt(out int position)) return DefaultObject;
-
-				// Strings
-				if (item is string s)
-				{
-					int actual = position < 0 ? s.Length + position : position - 1;
-					return (uint)actual < (uint)s.Length ? s[actual] : Errors.InvalidIndexErrorOccurred(position);
-				}
 
 				// Vararg array backing for params
 				if (item is object[] objarr)

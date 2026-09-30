@@ -678,8 +678,8 @@ namespace Keysharp.Builtins
 				rt.PointFromPosCore(ClampPos(rt, p), out var x, out var y);
 				var scale = ((Gui)Gui).DpiScale;
 				var o = new KeysharpObject();
-				o.DefinePropInternal("X", new OwnPropsDesc(o, (long)Math.Round(x / scale)));
-				o.DefinePropInternal("Y", new OwnPropsDesc(o, (long)Math.Round(y / scale)));
+				o.DefinePropInternal("X", new OwnPropsDesc((long)Math.Round(x / scale)));
+				o.DefinePropInternal("Y", new OwnPropsDesc((long)Math.Round(y / scale)));
 				return o;
 			}
 

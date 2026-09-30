@@ -619,6 +619,13 @@ namespace Keysharp.Runtime
 			msgFilter = new MessageFilter(this);
 			//Threads.Current resolves through TheScript.Threads, so the lazy holder must exist once TheScript is published.
 			threads = new(() => new Threads(this));
+
+			// Each thread's Threads references its script, which references the ThreadLocal, so the thread-static slot
+			// keeps a retired script's whole graph alive until the ThreadLocal is disposed. A late caller still holding
+			// the retired script gets fresh, empty stacks instead of an ObjectDisposedException.
+			if (TheScript is { IsDisposed: true } retired)
+				Interlocked.Exchange(ref retired.threads, new(() => new Threads(retired))).Dispose();
+
 			Script.TheScript = this;//Everything resolving the current script from here on sees this instance.
 			NativeMainThreadID = CurrentThreadId();
 			ManagedMainThreadID = Environment.CurrentManagedThreadId;

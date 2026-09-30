@@ -11,6 +11,9 @@ namespace Keysharp.Runtime
 	{
 		private readonly Lock eventSchedulerGate = new();
 		private ThreadLocal<ScriptEventScheduler> eventSchedulers;
+		// What the walks below iterate, copy-on-write under the gate. The ThreadLocal does not track its values, so a
+		// finished RealThread leaves nothing behind once ReleaseThreadScheduler drops it here.
+		private ScriptEventScheduler[] liveSchedulers = [];
 		internal ScriptEventScheduler uiEventScheduler;
 
 		/// <summary>
@@ -32,7 +35,7 @@ namespace Keysharp.Runtime
 
 				lock (eventSchedulerGate)
 				{
-					var schedulers = eventSchedulers ??= new(true);
+					var schedulers = eventSchedulers ??= new();
 
 					if (schedulers.Value is { } created)
 						return created;
@@ -40,7 +43,9 @@ namespace Keysharp.Runtime
 					if (IsDisposed)
 						throw new ObjectDisposedException(nameof(Script));
 
-					return schedulers.Value = CreateSchedulerForCurrentThread();
+					var scheduler = CreateSchedulerForCurrentThread();
+					liveSchedulers = [.. liveSchedulers, scheduler];
+					return schedulers.Value = scheduler;
 				}
 			}
 		}
@@ -90,44 +95,43 @@ namespace Keysharp.Runtime
 
 		private void ScheduleEventSchedulers(Predicate<ScriptEventScheduler> shouldSchedule)
 		{
-			var schedulers = Volatile.Read(ref eventSchedulers);
-
-			if (schedulers == null)
-				return;
-
-			foreach (var scheduler in schedulers.Values)
+			foreach (var scheduler in Volatile.Read(ref liveSchedulers))
 			{
-				if (scheduler != null && (shouldSchedule == null || shouldSchedule(scheduler)))
+				if (shouldSchedule == null || shouldSchedule(scheduler))
 					scheduler.SchedulePump();
+			}
+		}
+
+		// Runs on the worker's own thread as it ends, the only thread whose slot it can clear.
+		internal void ReleaseThreadScheduler(ScriptEventScheduler scheduler)
+		{
+			lock (eventSchedulerGate)
+			{
+				var live = liveSchedulers;
+				var i = System.Array.IndexOf(live, scheduler);
+
+				if (i >= 0)
+					liveSchedulers = [.. live.AsSpan(0, i), .. live.AsSpan(i + 1)];
+
+				if (eventSchedulers is { } schedulers && schedulers.Value == scheduler)
+					schedulers.Value = null;
 			}
 		}
 
 		internal void ShutdownEventSchedulers()
 		{
 			ScriptEventScheduler[] shutdown;
-			// Detached, not disposed: trackAllValues pins every thread's value for as long as the ThreadLocal is
-			// reachable, so nulling the field is what releases them. Disposing would additionally make Value throw
-			// for readers still holding the old reference. Readers tolerate null; ThreadScheduler rebuilds only
-			// while the script is alive.
-			ThreadLocal<ScriptEventScheduler> stale;
 
+			// Detached, not disposed: disposing would make Value throw for readers still holding the old reference.
+			// Readers tolerate null; ThreadScheduler rebuilds only while the script is alive.
 			lock (eventSchedulerGate)
 			{
-				var schedulers = new HashSet<ScriptEventScheduler>();
-				stale = eventSchedulers;
+				var schedulers = new HashSet<ScriptEventScheduler>(liveSchedulers);
 				eventSchedulers = null;
+				liveSchedulers = [];
 
 				if (uiEventScheduler != null)
 					_ = schedulers.Add(uiEventScheduler);
-
-				if (stale != null)
-				{
-					foreach (var scheduler in stale.Values)
-					{
-						if (scheduler != null)
-							_ = schedulers.Add(scheduler);
-					}
-				}
 
 				shutdown = [.. schedulers];
 			}
@@ -662,6 +666,7 @@ internal bool HasBlockedQueuedWork
 				return;
 
 			DisposeOwnedResources();
+			script.ReleaseThreadScheduler(this);
 
 			SignalWorkerPump();
 
@@ -980,7 +985,7 @@ internal bool HasBlockedQueuedWork
 							btv.eventInfo = callback;
 							_ = Script.InvokeOrNull(callback, null);
 						}
-						catch (Exception ex) when (CallStack.Remember(ex))
+						catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 						{
 							_ = Errors.ReportUncaught(ex);
 						}

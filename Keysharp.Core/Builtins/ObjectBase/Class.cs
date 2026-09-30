@@ -45,19 +45,13 @@ namespace Keysharp.Builtins
 			staticInst.SetBaseInternal(baseClass);
             staticInst.type = userType;
 
+            // As AHK's Class_New: the prototype inherits the base's members through its base rather than copies of
+            // them, and the base class's static __Init is not run again for the new class, which has none of its own.
             var proto = new Prototype(userType);
             proto.SetBaseInternal(baseProto);
+			proto.DefinePropInternal("__Class", new OwnPropsDesc(name));
+			staticInst.DefinePropInternal("Prototype", new OwnPropsDesc(proto));
 
-            if (baseProto.op != null && !Struct.IsStructType(userType))
-            {
-                proto.EnsureOwnProps();
-                foreach (var (key, value) in baseProto.op)
-                    proto.DefinePropInternal(key, new OwnPropsDesc(proto, value.Value, value.Get, value.Set, value.Call));
-            }
-			proto.DefinePropInternal("__Class", new OwnPropsDesc(proto, name));
-			staticInst.DefinePropInternal("Prototype", new OwnPropsDesc(staticInst, proto));
-
-			_ = Script.InvokeMeta(staticInst, "__Init");
 			_ = Script.InvokeMeta(staticInst, "__New", args);
 
 			return staticInst;
@@ -67,7 +61,10 @@ namespace Keysharp.Builtins
         // not one of Call's (it has none of its own): the container rides the tail of args and binds there.
         public object Call(params object[] args)
         {
-			var proto = (this.op["Prototype"].Value ?? Script.GetPropertyValueOrNull(this, "Prototype")) as Any;
+			var own = op != null && op.TryGetValue("Prototype", out var desc) ? desc.Value : null;
+
+			if ((own ?? Script.GetPropertyValueOrNull(this, "Prototype")) is not Any proto)
+				return Errors.TypeErrorOccurred("This class has no Prototype to create an instance from.");
 
 			var kso = FastCtor.Call(proto.type, null) as Any;
 			kso.type = proto.type;
@@ -93,7 +90,7 @@ namespace Keysharp.Builtins
             isPrototype = true;
             type = typeof(Prototype);
         }
-        internal Prototype(Type t) : base()
+        internal Prototype(Type t) : base(null)
         {
             isPrototype = true;
             type = t;

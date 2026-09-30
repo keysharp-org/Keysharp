@@ -118,4 +118,8 @@ y := SubStr(x, -5, -13)
 
 Assert("" = y, A_LineNumber)
 
+; Keysharp indexes a String by character, which is a String of its own; a negative index counts from the end.
+AssertEq(Type("abc"[2]), "String", A_LineNumber)
+AssertEq("abc"[-1], "c", A_LineNumber)
+
 FileAppend "pass", "*"

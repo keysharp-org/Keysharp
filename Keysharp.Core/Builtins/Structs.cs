@@ -232,11 +232,18 @@ namespace Keysharp.Builtins
 				EnsurePointerTypeInitialized(ptrType.BaseType);
 
 			var vars = Script.TheScript.Vars;
-			if (vars.Prototypes.ContainsKey(ptrType))
-				_ = vars.Prototypes[ptrType];
-			else
-				Script.InitClass(ptrType);
+
+			// Two threads meeting the same new pointer type must not both register it.
+			lock (pointerTypeLock)
+			{
+				if (vars.Prototypes.ContainsKey(ptrType))
+					_ = vars.Prototypes[ptrType];
+				else
+					Script.InitClass(ptrType);
+			}
 		}
+
+		private static readonly object pointerTypeLock = new();
 
 		internal static Type CreateDynamicStructType(string name, Type baseType)
 		{
@@ -454,7 +461,7 @@ namespace Keysharp.Builtins
 			try
 			{
 				var field = RegisterField(structType, fieldName, fieldType, pack, offsetSpec, ignoreExisting);
-				var desc = new OwnPropsDesc(proto);
+				var desc = new OwnPropsDesc();
 				desc.SetStructProperty(field);
 				var op = proto.EnsureOwnProps();
 

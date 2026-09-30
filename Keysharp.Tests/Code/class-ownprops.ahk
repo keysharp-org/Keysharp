@@ -489,4 +489,16 @@ catch as opErr
 
 AssertEq(opUnsetKind, "UnsetError", A_LineNumber)
 
+; GetOwnPropDesc sees only own properties.
+Throws(() => ({}).GetOwnPropDesc("Clone"), A_LineNumber, PropertyError)
+
+; OwnProps gives a callable-object getter's value, not its descriptor.
+class CallableGetter {
+	Call(self) => "gotten"
+}
+withGetter := {}
+withGetter.DefineProp("p", {get: CallableGetter()})
+for , getterValue in withGetter.OwnProps()
+	AssertEq(getterValue, "gotten", A_LineNumber)
+
 FileAppend "pass", "*"

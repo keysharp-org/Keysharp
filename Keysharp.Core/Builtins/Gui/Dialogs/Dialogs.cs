@@ -729,8 +729,8 @@ namespace Keysharp.Builtins
 				_ = input.ShowDialog(GetDialogOwnerHandle(owner));
 
 				var obj = new KeysharpObject();
-				obj.DefinePropInternal("Value", new OwnPropsDesc(obj, input.Message));
-				obj.DefinePropInternal("Result", new OwnPropsDesc(obj, input.Result));
+				obj.DefinePropInternal("Value", new OwnPropsDesc(input.Message));
+				obj.DefinePropInternal("Result", new OwnPropsDesc(input.Result));
 				return obj;
 			});
 		}
@@ -798,8 +798,8 @@ namespace Keysharp.Builtins
 				dlg.Content = layout;
 				var result = ShowEtoDialog(token => dlg.ShowModalAsync(token));
 				var obj = new KeysharpObject();
-				obj.DefinePropInternal("Value", new OwnPropsDesc(obj, passwordSpecified ? passwordBox.Text : textBox.Text));
-				obj.DefinePropInternal("Result", new OwnPropsDesc(obj, result == Eto.Forms.DialogResult.Ok ? "OK" : "Cancel"));
+				obj.DefinePropInternal("Value", new OwnPropsDesc(passwordSpecified ? passwordBox.Text : textBox.Text));
+				obj.DefinePropInternal("Result", new OwnPropsDesc(result == Eto.Forms.DialogResult.Ok ? "OK" : "Cancel"));
 				return obj;
 			});
 			}

@@ -361,6 +361,8 @@ namespace Keysharp.Tests
 		{
 			EnsureUiScheduler();
 			var ready = new ManualResetEventSlim(false);
+			// Holds the worker inside its entry pseudo-thread, which would otherwise have ended by the time it is inspected.
+			var release = new ManualResetEventSlim(false);
 			KeysharpThread foreignThread = null;
 			Ks.RealThread worker = null;
 
@@ -369,8 +371,8 @@ namespace Keysharp.Tests
 				worker = StartWorker(() =>
 				{
 					foreignThread = s.Threads.CurrentThreadObject;
-					_ = Env.OnClipboardChange(new KeysharpFunc((Func<object, object>)(_ => 0L)));
 					ready.Set();
+					_ = release.Wait(10000);
 				});
 
 				Assert.IsTrue(WaitWithUiPump(() => ready.IsSet), "Worker did not expose its pseudo-thread.");
@@ -385,6 +387,7 @@ namespace Keysharp.Tests
 			}
 			finally
 			{
+				release.Set();
 				ShutdownWorker(s, worker);
 			}
 		}

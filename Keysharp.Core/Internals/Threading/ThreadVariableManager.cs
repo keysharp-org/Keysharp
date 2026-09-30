@@ -75,6 +75,8 @@ namespace Keysharp.Internals.Threading
 						_ = Errors.ErrorOccurred($"Severe threading error: ThreadVariables.threadId {tv.threadId} did not match the current thread id {ctid}. This should never happen.", null, ErrorMode.ExitApp);
 						return;
 					}
+
+					tv.Release();
 				}
 			}
 		}

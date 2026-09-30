@@ -210,6 +210,10 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public Map(params object[] args) : base(args) { }
 
+		// A map literal, which AHK builds without __New.
+		[PublicHiddenFromUser]
+		public new static Map Literal(params object[] pairs) => new Map(eCaseSense.On).Set(pairs);
+
 		/// <summary>
 		/// Initializes an empty <see cref="Map"/> whose string-key comparison is fixed at construction.
 		/// The public <see cref="CaseSense"/> setter refuses a map which already holds entries (the AHK v2
@@ -490,12 +494,22 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="key">The key to insert.</param>
 		/// <param name="value">The value to insert.</param>
+		// A new value for a key the map has goes into the sorted enumeration in place; only a new key sorts it again.
+		// MapComparer ranks object keys alike, so the entry found must be checked to be this key.
 		private void Insert(object key, object value)
 		{
-			//if (caseSense != eCaseSense.On && key is string s)
-			//  map[s.ToLower()] = value;
-			//else
-			map[key] = value;
+			ref var slot = ref CollectionsMarshal.GetValueRefOrAddDefault(map, key, out var existed);
+			slot = value;
+
+			if (enumerableMap == null)
+				return;
+
+			var i = existed && mapComparer != null ? System.Array.BinarySearch(enumerableMap, new KeyValuePair<object, object>(key, null), mapComparer) : -1;
+
+			if (i >= 0 && map.Comparer.Equals(enumerableMap[i].Key, key))
+				enumerableMap[i] = new(enumerableMap[i].Key, value);
+			else
+				enumerableMap = null;
 		}
 
 		/// <summary>
@@ -504,7 +518,7 @@ namespace Keysharp.Builtins
 		/// <param name="key">The key to search for.</param>
 		/// <param name="value">The value found.</param>
 		/// <returns>True if key was found else false.</returns>
-		private bool TryGetValue(object key, out object value) => map.TryGetValue(key, out value);
+		internal bool TryGetValue(object key, out object value) => map.TryGetValue(key, out value);
 
 		private Enumerator CreateEnumerator(int count)
 		{
@@ -571,12 +585,11 @@ namespace Keysharp.Builtins
 			}
 			set
 			{
-				if (enumerableMap != null)
-					enumerableMap = null;
-
 				if (value == null)
 				{
-					if (!map.Remove(key) && !Script.CompatReturnsUnsetForMissing)
+					if (map.Remove(key))
+						enumerableMap = null;
+					else if (!Script.CompatReturnsUnsetForMissing)
 						_ = Errors.UnsetItemErrorOccurred(key);
 
 					return;

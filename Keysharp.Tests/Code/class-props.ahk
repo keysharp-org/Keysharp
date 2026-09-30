@@ -194,4 +194,41 @@ x := 0
 T.Len(1)   ; .call with param
 AssertEq(x, 1, A_LineNumber)
 
+; obj.prop[i] := v reaches a parameterized setter with its index, in every assignment form.
+setLog := []
+class IndexedProps {
+	p[i] {
+		get => "get" i
+		set => setLog.Push("set " i "=" value)
+	}
+	q {
+		get => this._q
+		set => this._q := value
+	}
+}
+ip := IndexedProps()
+ip.p[3] := "W"
+AssertEq(setLog.Pop(), "set 3=W", A_LineNumber)
+ip.p[4] .= "x"
+AssertEq(setLog.Pop(), "set 4=get4x", A_LineNumber)
+propName := "p"
+ip.%propName%[5] := "D"
+AssertEq(setLog.Pop(), "set 5=D", A_LineNumber)
+
+; A property without parameters indexes the value its getter returns, and keeps its backing field.
+ip.q := [1, 2, 3]
+ip.q[2] := 20
+AssertEq(ip.q[2], 20, A_LineNumber)
+Assert(ip.HasOwnProp("_q"), A_LineNumber)
+ip.q[2]++
+AssertEq(ip.q[2], 21, A_LineNumber)
+
+; A missing property indexed in an assignment goes to __Set with the index, or is a PropertyError.
+class IndexedMetaSet {
+	__Set(name, params, value) => setLog.Push(name " " params.Length " " value)
+}
+IndexedMetaSet().nope[1] := "Z"
+AssertEq(setLog.Pop(), "nope 1 Z", A_LineNumber)
+Throws(() => ({}).nope[1] := 1, A_LineNumber, PropertyError)
+
 FileAppend "pass", "*"

@@ -151,10 +151,10 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Calls the target function along with any bound arguments.
 		/// <returns>The return value of the bound function.</returns>
-		public override object Call(params object[] args) => mi == null ? Script.Invoke(Inst, mph.Name, CreateArgs(args)) : base.Call(CreateArgs(args));
+		public override object Call(params object[] args) => mi == null ? Script.InvokeOrNull(Inst, mph.Name, CreateArgs(args)) : base.Call(CreateArgs(args));
 
 		[PublicHiddenFromUser]
-		public override object CallInst(object inst, params object[] args) => mi == null ? Script.Invoke(Inst, mph.Name, CreateArgs(args, inst, true)) : base.Call(CreateArgs(args, inst, true));
+		public override object CallInst(object inst, params object[] args) => mi == null ? Script.InvokeOrNull(Inst, mph.Name, CreateArgs(args, inst, true)) : base.Call(CreateArgs(args, inst, true));
 
 		private object[] CreateArgs(object[] args, object firstArg = null, bool hasFirstArg = false)
 		{
@@ -310,43 +310,62 @@ namespace Keysharp.Builtins
 				if (mph?.parameters == null)
 					return null;
 
-				var scan = mph.ParamScan;
-				var items = new List<object>(scan.Count + 1);
-				var receiverIndex = mph.IsStatic ? 0 : -1;
+				var visible = VisibleParams();
+				var items = new List<object>(visible.Count);
 
-				if (mph.receiverInCounts && Inst == null && !IsParamBound(receiverIndex))
-					Add(new MethodPropertyHolder.ParamScanEntry(receiverIndex, "this", false, false, false, false, null));
-
-				foreach (var d in scan)
-				{
-					// A slot Bind already filled is not a parameter of THIS function object (BoundFunc), so Index
-					// numbers only what remains and the report agrees with MinParams/MaxParams. The variadic tail
-					// is never used up: a bound argument at its slot went INTO the tail, which still accepts more.
-					if (!d.Variadic && IsParamBound(d.Index))
-						continue;
-
+				foreach (var d in visible)
 					Add(d);
-				}
 
 				return new Keysharp.Builtins.Array(items);
 
 				void Add(MethodPropertyHolder.ParamScanEntry d)
 				{
 					var info = new KeysharpObject();
-					info.DefinePropInternal("Name", new OwnPropsDesc(info, d.Name));
-					info.DefinePropInternal("Index", new OwnPropsDesc(info, (long)(items.Count + 1)));
-					info.DefinePropInternal("IsOptional", new OwnPropsDesc(info, d.Optional ? 1L : 0L));
-					info.DefinePropInternal("IsByRef", new OwnPropsDesc(info, d.ByRef ? 1L : 0L));
-					info.DefinePropInternal("IsVariadic", new OwnPropsDesc(info, d.Variadic ? 1L : 0L));
+					info.DefinePropInternal("Name", new OwnPropsDesc(d.Name));
+					info.DefinePropInternal("Index", new OwnPropsDesc((long)(items.Count + 1)));
+					info.DefinePropInternal("IsOptional", new OwnPropsDesc(d.Optional ? 1L : 0L));
+					info.DefinePropInternal("IsByRef", new OwnPropsDesc(d.ByRef ? 1L : 0L));
+					info.DefinePropInternal("IsVariadic", new OwnPropsDesc(d.Variadic ? 1L : 0L));
 
 					// Only define Default when there is a real one: a parameter that is merely optional defaults to
 					// unset, and reporting a null would be indistinguishable from "defaults to null".
 					if (d.HasDefault)
-						info.DefinePropInternal("Default", new OwnPropsDesc(info, d.Default));
+						info.DefinePropInternal("Default", new OwnPropsDesc(d.Default));
 
 					items.Add(info);
 				}
 			}
+		}
+
+		// The parameters a caller sees: the receiver an unbound method takes first, and none that Bind already filled,
+		// so the numbering agrees with MinParams and MaxParams. The variadic tail is never used up: a bound argument at
+		// its slot went into the tail, which still accepts more.
+		private List<MethodPropertyHolder.ParamScanEntry> VisibleParams()
+		{
+			var scan = mph.ParamScan;
+			var visible = new List<MethodPropertyHolder.ParamScanEntry>(scan.Count + 1);
+			var receiverIndex = mph.IsStatic ? 0 : -1;
+
+			if (mph.receiverInCounts && Inst == null && !IsParamBound(receiverIndex))
+				visible.Add(new MethodPropertyHolder.ParamScanEntry(receiverIndex, "this", false, false, false, false, null));
+
+			foreach (var d in scan)
+				if (d.Variadic || !IsParamBound(d.Index))
+					visible.Add(d);
+
+			return visible;
+		}
+
+		// As AHK: a parameter index is valid from 1 up to MaxParams, or beyond it for a variadic function.
+		private bool ValidParamIndex(object paramIndex, out long index)
+		{
+			_ = paramIndex.TryCoerceLong(out index);
+
+			if (index >= 1 && (index <= MaxParams || IsVariadic))
+				return true;
+
+			_ = Errors.ValueErrorOccurred($"Invalid parameter index {index}.", Name);
+			return false;
 		}
 
 		/// <summary>Whether the parameter at <paramref name="index"/> has already been supplied (see BoundFunc).</summary>
@@ -413,7 +432,7 @@ namespace Keysharp.Builtins
         {
         }
 
-		internal KeysharpFunc(MethodPropertyHolder m, object o = null) : base()
+		internal KeysharpFunc(MethodPropertyHolder m, object o = null) : base(null)
 		{
 			mph = m;
 			mi = m?.mi;
@@ -471,35 +490,20 @@ namespace Keysharp.Builtins
 		public virtual bool IsByRef(object paramIndex = null)
 		{
 			//No signature, so nothing is ByRef - as AutoHotkey's BoundFunc answers too.
-			if (mi == null)
+			if (mi == null || mph?.parameters == null)
 				return false;
 
-			_ = paramIndex.TryCoerceInt(out var index);
-			var funcParams = mi.GetParameters();
+			var visible = VisibleParams();
 
-			if (index > 0)
-			{
-				index--;
+			if (paramIndex == null)
+				return visible.Any(p => p.ByRef);
 
-				if (index < funcParams.Length)
-					return IsParamByRef(funcParams[index]);
+			if (!ValidParamIndex(paramIndex, out var index))
+				return false;
 
-				// A [ByRef] `params object[]` marks every argument it absorbs, including those past the declared
-				// parameter count -- see Enumerator.Call.
-				var last = funcParams.Length - 1;
-				return last >= 0 && funcParams[last].IsDefined(typeof(ParamArrayAttribute), false) && IsParamByRef(funcParams[last]);
-			}
-			else
-			{
-				for (var i = 0; i < funcParams.Length; i++)
-					if (IsParamByRef(funcParams[i]))
-						return true;
-			}
-
-			return false;
-
-			static bool IsParamByRef(ParameterInfo p)
-			=> p.ParameterType.IsByRef || p.GetCustomAttribute(typeof(ByRefAttribute)) != null;
+			// A [ByRef] `params object[]` marks every argument it absorbs, including those past the declared parameter
+			// count -- see Enumerator.Call.
+			return index <= visible.Count ? visible[(int)index - 1].ByRef : visible.Count > 0 && visible[^1] is { Variadic: true, ByRef: true };
 		}
 
 		public virtual bool IsOptional(object paramIndex = null)
@@ -508,24 +512,10 @@ namespace Keysharp.Builtins
 			if (mi == null)
 				return true;
 
-			_ = paramIndex.TryCoerceInt(out var index);
-			var funcParams = mi.GetParameters();
+			if (paramIndex == null)
+				return MinParams != MaxParams || IsVariadic;
 
-			if (index > 0)
-			{
-				index--;
-
-				if (index < funcParams.Length)
-					return funcParams[index].IsOptional;
-			}
-			else
-			{
-				for (var i = 0; i < funcParams.Length; i++)
-					if (funcParams[i].IsOptional)
-						return true;
-			}
-
-			return false;
+			return ValidParamIndex(paramIndex, out var index) && index > MinParams;
 		}
 	}
 

@@ -37,7 +37,7 @@ namespace Keysharp.Runtime
 			}
 			if (key.Equals("base", StringComparison.OrdinalIgnoreCase))
 			{
-				opm = new OwnPropsDesc(baseObj, baseObj.Base);
+				opm = new OwnPropsDesc(baseObj.Base);
 				return true;
 			}
 			if (!searchBase)
@@ -86,7 +86,7 @@ namespace Keysharp.Runtime
 				// the descriptors along it hold.
 				if (cur == baseObj && key.Equals("base", StringComparison.OrdinalIgnoreCase))
 				{
-					opm = new OwnPropsDesc(baseObj, baseObj.Base);
+					opm = new OwnPropsDesc(baseObj.Base);
 					return true;
 				}
 
@@ -199,7 +199,8 @@ namespace Keysharp.Runtime
 				if (Reflections.FindMethod(key, paramCount) is MethodPropertyHolder mph0)
 					return (null, mph0);
 			}
-			else if (item is not Any)
+			// A primitive has only what its prototype gives it, as the property path already requires, never .NET members.
+			else if (item is not Any && !Builtins.Primitive.IsNative(item))
 			{
 				// ---------- Non-Keysharp object path (CLR / COM RCW) ----------
 				// Cache type once
@@ -319,7 +320,7 @@ namespace Keysharp.Runtime
 						if (opm.Get is KeysharpFunc ifo)
 							return args.Length > 0 && opm.NoParamGet ? GetIndexOrNull(ifo.Call(item), args) : ifo.CallInst(item, args);
 						else
-							return Invoke(opm.Get, null, item, args);
+							return Invoke(opm.Get, null, [item, ..args]);
 					}
 
 					if (opm.Call != null)
@@ -351,6 +352,8 @@ namespace Keysharp.Runtime
 			return null;
 		}
 
+		private static readonly System.Reflection.MethodInfo anyInit = typeof(Any).GetMethod(nameof(Any.__Init), Type.EmptyTypes);
+
 		public static object InvokeMeta(object obj, object meth, params object[] parameters)
 		{
 			if (obj == null)
@@ -376,13 +379,17 @@ namespace Keysharp.Runtime
 
 				if (target is KeysharpFunc f)
 				{
+					// Any's own __Init, which constructing any class without fields reaches, does nothing.
+					if (parameters is null or { Length: 0 } && f.mph.mi == anyInit && f.GetType() == typeof(KeysharpFunc))
+						return "";
+
 					// Direct lifecycle method
 					return parameters == null ? f.Call(actualThis) : f.CallInst(actualThis, parameters);
 				}
 				else if (target != null)
 				{
 					// Callable object (has its own Call). Explicitly call "Call" (still NOT meta).
-					return Invoke(target, null, parameters.Prepend(actualThis));
+					return InvokeOrNull(target, null, [actualThis, ..(parameters ?? [])]);
 				}
 
 				// Found a member but it's not callable.
@@ -724,23 +731,25 @@ namespace Keysharp.Runtime
 				// Direct ownprop first
 				if (kso.op != null && kso.op.TryGetValue(namestr, out var own))
 				{
+					// As the read folds `s.field[i]`, an index applies to the field's value, a structured-array element.
 					if (own.StructField != null && item is Struct setStruct)
-						return setStruct.SetFieldValue(own.StructField, value);
+						return argCount > 1 ? SetObject(setStruct.GetFieldValue(own.StructField), Arguments()) : setStruct.SetFieldValue(own.StructField, value);
+
+					// As in AHK, index parameters pass over a setter that takes none, and index the getter's value instead.
+					if (argCount > 1 && (own.Set == null ? own.Get != null && own.NoParamGet : own.NoParamSet))
+					{
+						_ = SetObject(GetPropertyValue(target, namestr), Arguments());
+						return value;
+					}
 
 					// Setter function or callable object
 					if (own.Set != null)
 					{
 						if (own.Set is KeysharpFunc f)
-						{
-							_ = argCount > 1 && own.NoParamSet
-								? SetObject(f.Call(item), Arguments())
-								: f.CallInst(item, Arguments());
-						}
+							_ = f.CallInst(item, Arguments());
 						else
-						{
-							// callable setter
-							_ = Invoke(own.Set, null, Arguments().Prepend(item));
-						}
+							_ = InvokeOrNull(own.Set, null, [item, ..Arguments()]);
+
 						return value;
 					}
 
@@ -772,18 +781,19 @@ namespace Keysharp.Runtime
 					type: OwnPropsMapType.Set))
 				{
 					if (opm.StructField != null && item is Struct setStruct)
-						return setStruct.SetFieldValue(opm.StructField, value);
+						return argCount > 1 ? SetObject(setStruct.GetFieldValue(opm.StructField), Arguments()) : setStruct.SetFieldValue(opm.StructField, value);
+
+					if (argCount > 1 && opm.NoParamSet)
+					{
+						_ = SetObject(GetPropertyValue(target, namestr), Arguments());
+						return value;
+					}
 
 					if (opm.Set is KeysharpFunc fset)
-					{
-						_ = argCount > 1 && opm.NoParamSet
-							? SetObject(fset.Call(item), Arguments())
-							: fset.CallInst(item, Arguments());
-					}
+						_ = fset.CallInst(item, Arguments());
 					else
-					{
-						_ = Invoke(opm.Set, null, item, Arguments());
-					}
+						_ = InvokeOrNull(opm.Set, null, [item, ..Arguments()]);
+
 					return value;
 				}
 				// Next try to find Get/Value and set __Item[]
@@ -815,7 +825,7 @@ namespace Keysharp.Runtime
 					if (metaSet is KeysharpFunc f)
 						_ = f.Call(item, namestr, new Keysharp.Builtins.Array(GetIndexArgs()), value);
 					else
-						_ = Invoke(metaSet, null, item, namestr, new Keysharp.Builtins.Array(GetIndexArgs()), value);
+						_ = InvokeOrNull(metaSet, null, item, namestr, new Keysharp.Builtins.Array(GetIndexArgs()), value);
 					return value;
 				}
 
@@ -828,7 +838,7 @@ namespace Keysharp.Runtime
 				// Define new own data prop when target is a KeysharpObject and it's a simple assignment
 				if (allowCreate && argCount == 1 && item is KeysharpObject ksoObj)
 				{
-					ksoObj.DefinePropInternal(namestr, new OwnPropsDesc(ksoObj, value));
+					ksoObj.DefinePropInternal(namestr, new OwnPropsDesc(value));
 					return value;
 				}
 			}
@@ -836,7 +846,7 @@ namespace Keysharp.Runtime
 
 			// A reference write reaching here found no property to write, which under allowCreate would have
 			// defined one; say what is actually wrong instead of reporting a failed assignment.
-			return allowCreate
+			return allowCreate && argCount == 1
 				   ? Errors.ErrorOccurred($"Attempting to set property {namestr} on object {item} to value {value} failed.")
 				   : Errors.MissingPropertyErrorOccurred(item, namestr);
 

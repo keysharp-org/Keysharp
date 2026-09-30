@@ -450,17 +450,17 @@ namespace Keysharp.Internals.Invoke
 
 		public static MethodPropertyHolder GetOrAdd(MethodInfo mi)
         {
-            return methodCache.GetOrAdd(mi, key => new MethodPropertyHolder(mi));
+			return methodCache.GetOrAdd(mi, static key => new MethodPropertyHolder(key));
         }
 
 		internal static MethodPropertyHolder GetOrAdd(PropertyInfo pi)
 		{
-            return propertyCache.GetOrAdd(pi, key => new MethodPropertyHolder(pi));
+			return propertyCache.GetOrAdd(pi, static key => new MethodPropertyHolder(key));
         }
 
 		internal static MethodPropertyHolder GetOrAdd(FieldInfo fi)
 		{
-            return fieldCache.GetOrAdd(fi, key => new MethodPropertyHolder(fi));
+			return fieldCache.GetOrAdd(fi, static key => new MethodPropertyHolder(key));
         }
 
         public MethodPropertyHolder() { }
@@ -881,7 +881,7 @@ namespace Keysharp.Internals.Invoke
 				{
 					return core(target, args, start);
 				}
-				catch (Exception ex) when (CallStack.Remember(ex))
+				catch (Exception ex) when (CallStack.RememberAndPass(ex))
 				{
 					throw;
 				}
@@ -967,15 +967,20 @@ namespace Keysharp.Internals.Invoke
 			}
 
 			Expression call;
+			ParameterExpression receiver = null;
 			if (mi.IsStatic)
 			{
 				call = Expression.Call(mi, a);
 			}
+			else if (mi.DeclaringType!.IsValueType)
+			{
+				call = Expression.Call(Expression.Convert(pTarget, mi.DeclaringType), mi, a);
+			}
 			else
 			{
-				var decl = mi.DeclaringType!;
-				var inst = Expression.Convert(pTarget, decl); // castclass/unbox.any semantics
-				call = Expression.Call(inst, mi, a);
+				// A wrong receiver is reported before converting arguments.
+				receiver = Expression.Variable(mi.DeclaringType, "receiver");
+				call = Expression.Call(receiver, mi, a);
 			}
 
 			// An inline member's return crosses the CLR->script boundary, so a declared CLR type -- or an
@@ -1002,6 +1007,14 @@ namespace Keysharp.Internals.Invoke
 															[typeof(object)], ex, Expression.Constant(holder.QualifiedName is { Length: > 0 } name ? name : mi.Name))));
 			}
 
+			if (receiver != null)
+				body = Expression.Block(typeof(object), [receiver],
+						   Expression.Assign(receiver, Expression.TypeAs(pTarget, receiver.Type)),
+						   Expression.Condition(
+							   Expression.Equal(receiver, Expression.Constant(null, receiver.Type)),
+							   Expression.Call(throwReceiverTypeMethod, Expression.Constant(holder.Id), pTarget, Expression.Constant(receiver.Type, typeof(Type))),
+							   Expression.Convert(body, typeof(object))));
+
 			return Expression.Lambda<Func<object, object[], int, object>>(body, pTarget, pArgs, pStart)
 							 .Compile();
 		}
@@ -1017,6 +1030,9 @@ namespace Keysharp.Internals.Invoke
 			if ((paramCount != 1 || start > 0) && count == paramCount
 				&& (offset < 0 ? target : args[offset]) is object[] packed)
 				return packed;
+
+			if (offset == 0 && !setter)
+				return args;
 
 			var length = Math.Max(0, count - index - (setter ? 1 : 0));
 			if (length == 0) return System.Array.Empty<object>();
@@ -1066,6 +1082,15 @@ namespace Keysharp.Internals.Invoke
 			typeof(DelegateFactory).GetMethod(nameof(ThrowMissingArgument), BindingFlags.NonPublic | BindingFlags.Static);
 		private static readonly MethodInfo demandReferenceMethod =
 			typeof(Refs).GetMethod(nameof(Refs.Demand), [typeof(object), typeof(bool), typeof(string)]);
+		private static readonly MethodInfo throwReceiverTypeMethod =
+			typeof(DelegateFactory).GetMethod(nameof(ThrowReceiverType), BindingFlags.NonPublic | BindingFlags.Static);
+
+		[StackTraceHidden]
+		private static object ThrowReceiverType(int function, object target, Type declaring)
+		{
+			CallStack.Current.PopUnstarted(function);
+			throw Errors.ExpectedTypeError(Types.TypeName(declaring), target);
+		}
 
 		// Thrown from the compiled core when a required parameter is missing or unset. Declared in C# (not via
 		// Expression.Throw) so the Error->Exception operator is applied and the error surfaces normally. The function's

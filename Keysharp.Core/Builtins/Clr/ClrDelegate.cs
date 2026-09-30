@@ -385,7 +385,7 @@ namespace Keysharp.Builtins
 				{
 					_ = CallDirect(owned.Callable, args);
 				}
-				catch (Exception ex) when (CallStack.Remember(ex))
+				catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 				{
 					_ = Errors.ReportUncaught(ex);
 				}

@@ -389,8 +389,8 @@ namespace Keysharp.Builtins
 					return Errors.OSErrorOccurredWithMessage(VcpError($"read VCP feature 0x{feature:X2} from"));
 
 				var result = new KeysharpObject();
-				result.DefinePropInternal("Current", new OwnPropsDesc(result, (long)current));
-				result.DefinePropInternal("Maximum", new OwnPropsDesc(result, (long)max));
+				result.DefinePropInternal("Current", new OwnPropsDesc((long)current));
+				result.DefinePropInternal("Maximum", new OwnPropsDesc((long)max));
 				return result;
 			}
 

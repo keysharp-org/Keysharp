@@ -341,7 +341,7 @@ namespace Keysharp.Builtins
 			public void Set(string value)
 			{
 				if (result != null)
-					result.DefinePropInternal(property, new OwnPropsDesc(result, value));
+					result.DefinePropInternal(property, new OwnPropsDesc(value));
 				else
 					Refs.SetValue(reference, value);
 			}

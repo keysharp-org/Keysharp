@@ -23,7 +23,7 @@ namespace Keysharp.Builtins
 
 		public VarRef(Func<object> getter, Action<object> setter) : this(getter, setter, "") { }
 
-		internal VarRef(Func<object> getter, Action<object> setter, string name, bool variable = false) : base()
+		internal VarRef(Func<object> getter, Action<object> setter, string name, bool variable = false) : base(null)
 		{
 			Get = getter;
 			Set = setter;

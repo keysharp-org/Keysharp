@@ -4763,11 +4763,11 @@ namespace Keysharp.Compilation.Syntax
 					var arArgs = ar.Elements.Any(el => el.Spread)
 						? SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(Arg(SpreadParams(ar.Elements))))
 						: ArgList(LowerArgs(ar.Elements));
-					return SyntaxFactory.ObjectCreationExpression(Ty("Keysharp.Builtins.Array")).WithArgumentList(arArgs);
-				case MapExpr mp:   // [k1: v1, k2: v2] -> new Map(k1, v1, k2, v2)
+					return SyntaxFactory.InvocationExpression(Access("Keysharp.Builtins.Array.Literal"), arArgs);
+				case MapExpr mp:   // [k1: v1, k2: v2] -> Map.Literal(k1, v1, k2, v2)
 					var mapArgs = new List<ExpressionSyntax>(mp.Entries.Count * 2);
 					foreach (var (k, v) in mp.Entries) { mapArgs.Add(LowerExpr(k)); mapArgs.Add(LowerExpr(v)); }
-					return SyntaxFactory.ObjectCreationExpression(Ty("Keysharp.Builtins.Map")).WithArgumentList(ArgList(mapArgs));
+					return Inv(Access("Keysharp.Builtins.Map.Literal"), [.. mapArgs]);
 				case ObjectExpr o: return LowerObject(o);
 				case FatArrowExpr fa: return LowerFatArrow(fa);
 				case DerefExpr dr:   // %name% read -> DerefGet(name); the maybe forms rewrite it to DerefGetOrNull
@@ -4834,6 +4834,53 @@ namespace Keysharp.Compilation.Syntax
 				if (dmval == null) { Diag($"compound assignment to a member ('{a.Op}') not yet lowerable"); return Str(""); }
 				return Op("MultiStatement", Assign(Id(dmt), LowerExpr(dme.Target)), Assign(Id(dmn), LowerExpr(dme.NameExpr)),
 					Op("SetPropertyValue", Id(dmt), Id(dmn), dmval));
+			}
+			if (a.Target is IndexExpr mie && IsMemberIndex(mie, out var owner, out var dynamicName, out var propName))
+			{
+				var spread = mie.Args.Any(x => x.Spread);
+
+				if (a.Op == ":=")
+				{
+					ExpressionSyntax SetMember(ExpressionSyntax target)
+					{
+						var name = dynamicName != null ? LowerExpr(dynamicName) : Str(propName);
+						if (spread)
+							return Op("SetPropertyValue", target, name, SpreadParams(mie.Args, trailing: LowerExpr(a.Value)));
+						return Op("SetPropertyValue", [ target, name, ..LowerArgs(mie.Args), LowerExpr(a.Value) ]);
+					}
+					return MayYieldUnset(owner) ? NullCondWrap(owner, SetMember) : SetMember(LowerExpr(owner));
+				}
+
+				if (spread)
+				{ Diag($"compound assignment ('{a.Op}') with a spread index is not yet supported"); return Str(""); }
+
+				// Compound: capture the target, a dynamic name and each index once.
+				ExpressionSyntax UpdateMember(ExpressionSyntax target)
+				{
+					var ops = new List<ExpressionSyntax>();
+					ExpressionSyntax name = Str(propName);
+					if (dynamicName != null)
+					{
+						var nameTemp = NewTemp();
+						ops.Add(Assign(Id(nameTemp), LowerExpr(dynamicName)));
+						name = Id(nameTemp);
+					}
+					var ids = new List<ExpressionSyntax>();
+					foreach (var index in LowerArgs(mie.Args))
+					{
+						var indexTemp = NewTemp();
+						ops.Add(Assign(Id(indexTemp), index));
+						ids.Add(Id(indexTemp));
+					}
+					var updated = CompoundValue(a.Op[..^1], Op("GetPropertyValue", [ target, name, ..ids ]), LowerExpr(a.Value));
+					if (updated == null) { Diag($"compound assignment to a member index ('{a.Op}') not yet lowerable"); return Str(""); }
+					ops.Add(Op("SetPropertyValue", [ target, name, ..ids, updated ]));
+					return Op("MultiStatement", ops.ToArray());
+				}
+				if (MayYieldUnset(owner))
+					return NullCondWrap(owner, UpdateMember);
+				var ownerTemp = NewTemp();
+				return Op("MultiStatement", Assign(Id(ownerTemp), LowerExpr(owner)), UpdateMember(Id(ownerTemp)));
 			}
 			if (a.Target is IndexExpr ie)
 			{
@@ -4999,6 +5046,19 @@ namespace Keysharp.Compilation.Syntax
 			}
 		}
 
+		// `obj.name[args]` and `obj.%name%[args]` address the parameterized property itself, as the read folds them into
+		// GetPropertyValue(obj, name, args), so a write reaches its setter, COM propput or __Set with the index.
+		private static bool IsMemberIndex(IndexExpr ie, out Expr owner, out Expr dynamicName, out string name)
+		{
+			(owner, dynamicName, name) = ie.NullConditional ? default : ie.Target switch
+			{
+				MemberExpr { NullConditional: false } m => (m.Target, (Expr)null, m.Name),
+				DynMemberExpr { NullConditional: false } d => (d.Target, d.NameExpr, null),
+				_ => default((Expr, Expr, string))
+			};
+			return owner != null;
+		}
+
 		// Postfix saves the value before applying the operator; receivers, indices and getters run once.
 		private ExpressionSyntax LowerIncDec(UnaryExpr u)
 		{
@@ -5020,6 +5080,29 @@ namespace Keysharp.Compilation.Syntax
 					setup.Add(Assign(Id(mt), LowerExpr(me.Target)));
 					read = Op("GetPropertyValue", Id(mt), Str(me.Name));
 					write = value => Op("SetPropertyValue", Id(mt), Str(me.Name), value);
+					break;
+				case IndexExpr mie when IsMemberIndex(mie, out var owner, out var dynamicName, out var propName):
+					if (mie.Args.Any(x => x.Spread))
+					{ Diag($"'{u.Op}' with a spread index is not yet supported"); return Str(""); }
+
+					var ownerTemp = NewTemp();
+					setup.Add(Assign(Id(ownerTemp), LowerExpr(owner)));
+					ExpressionSyntax memberName = Str(propName);
+					if (dynamicName != null)
+					{
+						var nameTemp = NewTemp();
+						setup.Add(Assign(Id(nameTemp), LowerExpr(dynamicName)));
+						memberName = Id(nameTemp);
+					}
+					var memberIds = new List<ExpressionSyntax>();
+					foreach (var index in LowerArgs(mie.Args))
+					{
+						var indexTemp = NewTemp();
+						setup.Add(Assign(Id(indexTemp), index));
+						memberIds.Add(Id(indexTemp));
+					}
+					read = Op("GetPropertyValue", [ Id(ownerTemp), memberName, ..memberIds ]);
+					write = value => Op("SetPropertyValue", [ Id(ownerTemp), memberName, ..memberIds, value ]);
 					break;
 				case IndexExpr ie:
 					if (ie.Args.Any(x => x.Spread))
@@ -5328,12 +5411,10 @@ namespace Keysharp.Compilation.Syntax
 
 		private ExpressionSyntax LowerObject(ObjectExpr o)
 		{
-			var i = 2;
-			var args = new ExpressionSyntax[(o.Entries.Count * 2) + 2];
-			args[0] = Id(EnsureTypeField("Keysharp.Builtins.KeysharpObject", "Object"));
-			args[1] = Str("Call");
+			var i = 0;
+			var args = new ExpressionSyntax[o.Entries.Count * 2];
 			foreach (var en in o.Entries) { args[i++] = LiteralKey(en.Key); args[i++] = LowerExpr(en.Value); }
-			return Op("Invoke", args);
+			return Inv(Access("Keysharp.Builtins.KeysharpObject.Literal"), args);
 		}
 
 		// An object-literal key or argument name. A bare identifier and a string literal are literal names; everything else
@@ -5891,7 +5972,9 @@ namespace Keysharp.Compilation.Syntax
 			var classFrame = c.Imports.Count > 0 ? BuildImportScope(c.Imports) : null;
 			if (classFrame != null) _importScopes.Add(classFrame);
 			var members = new List<MemberDeclarationSyntax> { ClassCtor(typeName) };
-			foreach (var m in c.Methods) members.Add(LowerMethod(m, typeName));
+			// An instance method named like a nested class would collide with that nested C# type, as with the class's own.
+			var memberTypeNames = new HashSet<string>(c.Nested.Select(nc => NameMangler.ClassType(nc.Name))) { typeName };
+			foreach (var m in c.Methods) members.Add(LowerMethod(m, memberTypeNames));
 			var operatorType = "Program." + CurrentTypePath;
 			var instanceOperators = new List<ExpressionSyntax>();
 			var staticOperators = new List<ExpressionSyntax>();
@@ -5917,17 +6000,9 @@ namespace Keysharp.Compilation.Syntax
 			// static initializer, so the runtime knows the struct layout.
 			var typedFields = c.Fields.Where(f => f.TypeExpr != null);
 			_structTypeName = typeName;
-			var savedInMethod = _inMethod;
-			var savedMethodStatic = _currentMethodStatic;
-			var savedThisFuncName = _currentThisFuncName;
-			_inMethod = true;
-			_currentMethodStatic = true;
-			_currentThisFuncName = ClassMemberFuncName("__Init", true);
+			// Lowered by InitMethod as the static __Init's prologue, once, inside its scope and static-method context.
 			var staticPre = typedFields.Select(StructFieldDefineProp).Where(s => s != null);
-			_inMethod = savedInMethod;
-			_currentMethodStatic = savedMethodStatic;
-			_currentThisFuncName = savedThisFuncName;
-			if (statFields.Any() || staticPre.Any() || c.StaticInit.Count > 0)
+			if (statFields.Any() || typedFields.Any() || c.StaticInit.Count > 0)
 				members.Add(InitMethod(NameMangler.StaticInit(), null, statFields, staticPre, c.StaticInit, staticCtx: true));
 
 			// Emit this class's collected static-local backing fields as its own members, then restore the sink/path/frame.
@@ -6008,7 +6083,12 @@ namespace Keysharp.Compilation.Syntax
 			// A `%name%` in an initializer must resolve against those locals, as in a function body.
 			_derefScope = InitHas(IsDeref) ? InitHas(IsDerefWrite) : null;
 			var stmts = new List<StatementSyntax>();
-			if (prologue != null) stmts.AddRange(prologue);
+			if (prologue != null)
+			{
+				var savedM = _inMethod; var savedS = _currentMethodStatic; _inMethod = true; _currentMethodStatic = staticCtx;
+				stmts.AddRange(prologue);
+				_inMethod = savedM; _currentMethodStatic = savedS;
+			}
 			if (baseProtoType != null)
 			{
 				var proto = SyntaxFactory.ElementAccessExpression(Access("MainScript.Vars.Prototypes"))
@@ -6098,14 +6178,14 @@ namespace Keysharp.Compilation.Syntax
 			throw new InvalidOperationException($"Invalid operator AST '{method.Name}' with {method.Params.Count} explicit parameters.");
 		}
 
-		private MemberDeclarationSyntax LowerMethod(ClassMethod m, string classType)
+		private MemberDeclarationSyntax LowerMethod(ClassMethod m, HashSet<string> typeNames)
 		{
 			var (paramLowers, byRefParams) = ParamSets(m.Params);
 			var implName = m.IsOperator ? OperatorMethodName(m.Static, ResolveOperator(m)) : m.Static ? NameMangler.StaticMethod(m.Name) : NameMangler.Method(m.Name);
 			var thisFuncName = ClassMemberFuncName(m.Name, m.Static);
-			// A method whose impl name collides with the enclosing type (or its constructor) must be renamed;
-			// the runtime still resolves it via the UserDeclaredName attribute.
-			bool renamed = !m.Static && implName == classType;
+			// A method whose impl name collides with the enclosing type (or its constructor) or a nested type must be
+			// renamed; the runtime still resolves it via the UserDeclaredName attribute.
+			bool renamed = !m.Static && typeNames.Contains(implName);
 			if (renamed) implName += "_KSm";
 			var saved = _inMethod; _inMethod = true;
 			var savedStatic = _currentMethodStatic; _currentMethodStatic = m.Static;
@@ -6760,8 +6840,7 @@ namespace Keysharp.Compilation.Syntax
 					{
 						var lower = p.Name.ToLowerInvariant();
 						body.Add(DeclareVariable(scope, lower,
-							SyntaxFactory.ObjectCreationExpression(Ty("Keysharp.Builtins.Array"))
-								.WithArgumentList(SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(Arg(Id("KS_" + lower)))))));
+							Inv(Access("Keysharp.Builtins.Array.Literal"), Id("KS_" + lower))));
 					}
 
 			// A body using %name% routes it through this scope's FuncScope (KS_scope), which also backs callouts and ListVars.

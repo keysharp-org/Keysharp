@@ -232,6 +232,19 @@ namespace Keysharp.Internals.Threading
 			isCritical = configData.defaultIsCritical;
 		}
 
+		// A popped slot is reset only by its next push, so an ended thread would otherwise keep reporting IsActive and keep
+		// what it referenced reachable until then.
+		internal void Release()
+		{
+			pseudoThreadId = 0L;
+			currentTimer = null;
+			dialogOwner = null;
+			eventInfo = null;
+			caughtException = null;
+			hotCriterion = null;
+			threadObject = null;
+		}
+
 		/// <summary>
 		/// Parks a lazily-built value in A_EventInfo. <paramref name="factory"/> is invoked at most once,
 		/// the first time the script reads A_EventInfo, and not at all if it never does.

@@ -1500,11 +1500,11 @@ break_twice:;
 		private static KeysharpObject MakeKeyInfo(uint vk, uint sc, string name, uint modifiersLR)
 		{
 			var obj = new KeysharpObject();
-			obj.DefinePropInternal("VK", new OwnPropsDesc(obj, (long)vk));
-			obj.DefinePropInternal("SC", new OwnPropsDesc(obj, (long)sc));
-			obj.DefinePropInternal("Name", new OwnPropsDesc(obj, name));
-			obj.DefinePropInternal("Modifiers", new OwnPropsDesc(obj, (long)KeyboardUtils.ConvertModifiersLR(modifiersLR)));
-			obj.DefinePropInternal("Prefix", new OwnPropsDesc(obj, ModifiersLRToPrefix(modifiersLR)));
+			obj.DefinePropInternal("VK", new OwnPropsDesc((long)vk));
+			obj.DefinePropInternal("SC", new OwnPropsDesc((long)sc));
+			obj.DefinePropInternal("Name", new OwnPropsDesc(name));
+			obj.DefinePropInternal("Modifiers", new OwnPropsDesc((long)KeyboardUtils.ConvertModifiersLR(modifiersLR)));
+			obj.DefinePropInternal("Prefix", new OwnPropsDesc(ModifiersLRToPrefix(modifiersLR)));
 			return obj;
 		}
 

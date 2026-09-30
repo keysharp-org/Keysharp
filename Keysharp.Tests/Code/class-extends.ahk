@@ -661,4 +661,20 @@ AssertEq(om.Has("real"), "shadowed", A_LineNumber)
 ; ... and a built-in NOT overridden still resolves to the built-in.
 AssertEq(om.Count, 1, A_LineNumber)
 
+; super[i] := v with a script base class runs the base's __Item rather than recursing into its own.
+superLog := []
+class ItemBase {
+	__Item[i] {
+		get => "B" i
+		set => superLog.Push("B set " i "=" value)
+	}
+}
+class ItemDerived extends ItemBase {
+	__Item[i] {
+		set => super[i] := value
+	}
+}
+ItemDerived()[1] := "Y"
+AssertEq(superLog.Pop(), "B set 1=Y", A_LineNumber)
+
 FileAppend "pass", "*"

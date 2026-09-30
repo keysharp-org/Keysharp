@@ -250,8 +250,19 @@ namespace Keysharp.Internals
 
 			if (mainTimer == null)
 			{
+				// As AHK's POLL_JOYSTICK_IF_NEEDED on each tick of its main timer: joystick hotkeys fire from polling,
+				// which runs on the UI thread, one poll at a time.
+				var pollQueued = 0;
 				mainTimer = new Timer1(10);
-				mainTimer.Elapsed += (o, e) => { };
+				mainTimer.Elapsed += (o, e) =>
+				{
+					if (script.HotkeyData.joyHotkeyCount != 0 && Interlocked.Exchange(ref pollQueued, 1) == 0)
+						script.PostToUIThread(() =>
+						{
+							Volatile.Write(ref pollQueued, 0);
+							Keysharp.Internals.Input.Joystick.Joystick.PollJoysticks();
+						});
+				};
 				script.FlowData.mainTimer = mainTimer;
 				mainTimer.Start();
 			}
@@ -360,6 +371,7 @@ namespace Keysharp.Internals
 			if (mainTimer != null)
 			{
 				mainTimer.Stop();
+				mainTimer.Dispose();
 				script.FlowData.mainTimer = null;
 			}
 		}
@@ -371,7 +383,7 @@ namespace Keysharp.Internals
 				action();
 				return true;
 			}
-			catch (Exception mainex) when (CallStack.Remember(mainex))
+			catch (Exception mainex) when (CallStack.RememberAndCatch(mainex))
 			{
 				return Errors.ReportUncaught(mainex);
 			}

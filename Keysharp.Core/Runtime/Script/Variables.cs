@@ -264,7 +264,7 @@ namespace Keysharp.Runtime
 
 			// Manually define Object static instance prototype property to be the Object prototype
 			var ksoStatic = Statics[typeof(KeysharpObject)];
-			ksoStatic.DefinePropInternal("Prototype", new OwnPropsDesc(ksoStatic, Prototypes[typeof(KeysharpObject)]));
+			ksoStatic.DefinePropInternal("Prototype", new OwnPropsDesc(Prototypes[typeof(KeysharpObject)]));
 			// Object.Base == Any
 			ksoStatic.SetBaseInternal(Statics[typeof(Any)]);
 

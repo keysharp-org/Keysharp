@@ -57,30 +57,30 @@ namespace Keysharp.Internals.Input.Hooks
 		internal object BuildEventInfo()
 		{
 			var obj = new KeysharpObject();
-			obj.DefinePropInternal("Timestamp", new OwnPropsDesc(obj, timestamp));
-			obj.DefinePropInternal("IsInjected", new OwnPropsDesc(obj, isInjected));
-			obj.DefinePropInternal("IsAutoRepeat", new OwnPropsDesc(obj, isAutoRepeat));
+			obj.DefinePropInternal("Timestamp", new OwnPropsDesc(timestamp));
+			obj.DefinePropInternal("IsInjected", new OwnPropsDesc(isInjected));
+			obj.DefinePropInternal("IsAutoRepeat", new OwnPropsDesc(isAutoRepeat));
 
 			var rawExtraInfo = unchecked((long)extraInfo);
 			if (rawExtraInfo >= KeyboardMouseSender.KeyIgnoreMin() && rawExtraInfo <= KeyboardMouseSender.KeyIgnoreLevel(0))
-				obj.DefinePropInternal("SendLevel", new OwnPropsDesc(obj, KeyboardMouseSender.InputLevelFromInfo(rawExtraInfo)));
+				obj.DefinePropInternal("SendLevel", new OwnPropsDesc(KeyboardMouseSender.InputLevelFromInfo(rawExtraInfo)));
 
 			if (deviceId.HasValue)
-				obj.DefinePropInternal("DeviceId", new OwnPropsDesc(obj, (long)deviceId.Value));
+				obj.DefinePropInternal("DeviceId", new OwnPropsDesc((long)deviceId.Value));
 
 			if (isAbsolute.HasValue)
-				obj.DefinePropInternal("IsAbsolute", new OwnPropsDesc(obj, isAbsolute.Value));
+				obj.DefinePropInternal("IsAbsolute", new OwnPropsDesc(isAbsolute.Value));
 
 			// X/Y are an inseparable global-screen snapshot. Events which do not carry that coordinate space
 			// omit both properties rather than publishing device axes or a queried, later cursor position.
 			if (screenPosition is POINT position)
 			{
-				obj.DefinePropInternal("X", new OwnPropsDesc(obj, (long)position.X));
-				obj.DefinePropInternal("Y", new OwnPropsDesc(obj, (long)position.Y));
+				obj.DefinePropInternal("X", new OwnPropsDesc((long)position.X));
+				obj.DefinePropInternal("Y", new OwnPropsDesc((long)position.Y));
 			}
 
 			if (extra != null)
-				obj.DefinePropInternal("Extra", new OwnPropsDesc(obj, extra));
+				obj.DefinePropInternal("Extra", new OwnPropsDesc(extra));
 
 			return obj;
 		}

@@ -95,4 +95,22 @@ Assert(got2 is Map, A_LineNumber)
 ObjRelease(punk3)
 #endif
 
+; GetMethod follows the prototype chain and returns the function object as stored, checking ParamCount against it.
+withMethod := {}
+withMethod.DefineProp("M", {call: (this, a, b := 2) => a + b})
+wm := {base: withMethod}
+method := GetMethod(wm, "M")
+AssertEq(method(wm, 1), 3, A_LineNumber)
+Assert(GetMethod(method) == method, A_LineNumber)
+wm.DefineProp("Extra", {call: (this) => "extra"})
+AssertEq(GetMethod(wm, "Extra")(wm), "extra", A_LineNumber)
+Assert(HasMethod(wm, "M", 1) && HasMethod(wm, "M", 2) && !HasMethod(wm, "M", 3), A_LineNumber)
+Assert(!HasMethod(wm, "Missing") && !HasMethod("abc"), A_LineNumber)
+Throws(() => GetMethod(wm, "M", 5), A_LineNumber, ValueError)
+
+; Indexing an object without __Item is a member error, and an object literal's base is validated as ObjSetBase
+; validates it.
+Throws(() => ({})[1], A_LineNumber, PropertyError)
+Throws(() => {base: 5}, A_LineNumber)
+
 FileAppend "pass", "*"

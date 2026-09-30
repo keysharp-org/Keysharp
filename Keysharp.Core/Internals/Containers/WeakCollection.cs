@@ -18,6 +18,7 @@ namespace Keysharp.Internals.Containers
 		/// The actual collection of strongly-typed weak references.
 		/// </summary>
 		private readonly List<WeakReference<T>> _list = new List<WeakReference<T>>();
+		private int purgeAt = 16;
 
 		/// <summary>
 		/// Gets a list of live objects from this collection, causing a purge.
@@ -26,7 +27,12 @@ namespace Keysharp.Internals.Containers
 		public List<T> GetLiveItems()
 		{
 			var ret = new List<T>(_list.Count);
+			Purge(ret);
+			return ret;
+		}
 
+		private void Purge(List<T> live)
+		{
 			// This implementation uses logic similar to List<T>.RemoveAll, which always has O(n) time.
 			//  Some other implementations seen in the wild have O(n*m) time, where m is the number of dead entries.
 			//  As m approaches n (e.g., mass object extinctions), their running time approaches O(n^2).
@@ -37,7 +43,7 @@ namespace Keysharp.Internals.Containers
 				T item;
 				if (weakReference.TryGetTarget(out item))
 				{
-					ret.Add(item);
+					live?.Add(item);
 
 					if (readIndex != writeIndex)
 						_list[writeIndex] = _list[readIndex];
@@ -47,16 +53,21 @@ namespace Keysharp.Internals.Containers
 			}
 
 			_list.RemoveRange(writeIndex, _list.Count - writeIndex);
-
-			return ret;
 		}
 
 		/// <summary>
-		/// Adds a weak reference to an object to the collection. Does not cause a purge.
+		/// Adds a weak reference to an object to the collection. Once the list has doubled since its last purge, it is
+		/// purged first, which keeps it in proportion to the live items at an amortized constant cost.
 		/// </summary>
 		/// <param name="item">The object to add a weak reference to.</param>
 		public void Add(T item)
 		{
+			if (_list.Count >= purgeAt)
+			{
+				Purge(null);
+				purgeAt = Math.Max(16, _list.Count * 2);
+			}
+
 			_list.Add(new WeakReference<T>(item));
 		}
 

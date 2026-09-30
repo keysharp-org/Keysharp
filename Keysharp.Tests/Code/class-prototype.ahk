@@ -92,4 +92,20 @@ BaseAssignB.Base := oldBase
 
 AssertEq(BaseAssignB.Base, oldBase, A_LineNumber)
 
+; Class() neither copies its base's members nor runs the base's static initializer again.
+initCount := 0
+CountInit() {
+	global initCount
+	return ++initCount
+}
+class Counted {
+	static x := CountInit()
+	Inst() => "inst"
+}
+initBefore := Counted.x
+Sub := Class("Sub", Counted)
+AssertEq(initCount, initBefore, A_LineNumber)
+Assert(!Sub.Prototype.HasOwnProp("Inst"), A_LineNumber)
+AssertEq(Sub().Inst(), "inst", A_LineNumber)
+
 FileAppend "pass", "*"

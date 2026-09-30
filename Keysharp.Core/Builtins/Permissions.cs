@@ -47,13 +47,13 @@ namespace Keysharp.Builtins
 					PermissionStatus.Unsupported => "Unsupported",
 					_ => (string)Errors.ErrorOccurred($"Unknown permission status \"{permission.Status}\". Expected Granted, Denied, NotApplicable or Unsupported.", DefaultErrorString)
 				};
-				result.DefinePropInternal(CapabilityRequests.NameOf(cap), new OwnPropsDesc(result, status));
+				result.DefinePropInternal(CapabilityRequests.NameOf(cap), new OwnPropsDesc(status));
 
 				if (requested == null || requested.Contains(cap))
 					allGranted &= permission.IsGranted;
 			}
 
-			result.DefinePropInternal("IsGranted", new OwnPropsDesc(result, allGranted ? 1L : 0L));
+			result.DefinePropInternal("IsGranted", new OwnPropsDesc(allGranted ? 1L : 0L));
 			return result;
 		}
 	}

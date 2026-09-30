@@ -51,7 +51,7 @@ namespace Keysharp.Builtins
 				// After a continued error the criteria match no window, since null would match every one.
 				if ((!Blank(this.winTitle) || !Blank(this.winText) || !Blank(this.excludeTitle) || !Blank(this.excludeText))
 						&& !SearchCriteria.TryFromString(this.winTitle, this.winText, this.excludeTitle, this.excludeText, out criteria))
-					criteria = new SearchCriteria();
+					criteria = new SearchCriteria { MatchesNothing = true };
 
 				options = WinEventRegistration.CaptureSearchOptions(Script.TheScript);
 				return DefaultObject;

@@ -68,7 +68,7 @@ namespace Keysharp.Internals.Window
 		{
 			WindowInfoBase found = null;
 
-			if (criteria.IsEmpty)
+			if (criteria.IsEmpty || criteria.MatchesNothing)
 				return found;
 
 			var matchOptions = WindowSearchOptions.Merge(criteria.Options);
@@ -197,6 +197,10 @@ namespace Keysharp.Internals.Window
 		public static List<WindowInfoBase> FindWindowGroup(SearchCriteria criteria, bool forceAll = false)
 		{
 			var found = new List<WindowInfoBase>();
+
+			if (criteria.MatchesNothing)
+				return found;
+
 			var matchOptions = WindowSearchOptions.Merge(criteria.Options);
 			var detectHiddenWindows = ShouldDetectHiddenWindows(criteria);
 

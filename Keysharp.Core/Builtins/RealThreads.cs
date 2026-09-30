@@ -241,7 +241,7 @@ namespace Keysharp.Builtins
 								? result
 								: Errors.ErrorOccurred("Unable to execute callback on RealThread.");
 						}
-						catch (Exception ex) when (CallStack.Remember(ex))
+						catch (Exception ex) when (CallStack.RememberAndPass(ex))
 						{
 							throw;
 						}
@@ -331,7 +331,7 @@ namespace Keysharp.Builtins
 					scheduler.RunWorkerEventLoop();
 					return DefaultObject;
 				}
-				catch (Exception ex) when (CallStack.Remember(ex))
+				catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 				{
 					// A failure outside the body; the body settles its own task above. Reported here because the
 					// task this runs on is unobserved, so a rethrow would fault it and .NET would drop the
@@ -388,7 +388,7 @@ namespace Keysharp.Builtins
 					_ = entryCompletion.TrySetCanceled();
 					throw;
 				}
-				catch (Exception ex) when (CallStack.Remember(ex))
+				catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 				{
 					_ = entryCompletion.TrySetException(ex);
 				}
@@ -529,7 +529,7 @@ namespace Keysharp.Builtins
 					{
 						result = RunOnSchedulerThread(scheduler, () => Script.InvokeOrNull(callback, null, args), out value, out exited);
 					}
-					catch (Exception ex) when (CallStack.Remember(ex))
+					catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 					{
 						_ = completion.TrySetException(ex);
 						thread.ForgetPost(this);

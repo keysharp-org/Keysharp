@@ -840,4 +840,7 @@ literalArr := [unset]
 
 Assert(literalArr.Length == 1 && !literalArr.Has(1), A_LineNumber)
 
+; An Array method called on a value of another type is a TypeError.
+Throws(() => Array.Prototype.Push.Call({}, 1), A_LineNumber, TypeError)
+
 FileAppend "pass", "*"

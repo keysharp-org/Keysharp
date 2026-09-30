@@ -13,10 +13,10 @@ namespace Keysharp.Builtins
 		internal static KeysharpObject RectObject(long x, long y, long w, long h)
 		{
 			var o = new KeysharpObject();
-			o.DefinePropInternal("X", new OwnPropsDesc(o, x));
-			o.DefinePropInternal("Y", new OwnPropsDesc(o, y));
-			o.DefinePropInternal("Width", new OwnPropsDesc(o, w));
-			o.DefinePropInternal("Height", new OwnPropsDesc(o, h));
+			o.DefinePropInternal("X", new OwnPropsDesc(x));
+			o.DefinePropInternal("Y", new OwnPropsDesc(y));
+			o.DefinePropInternal("Width", new OwnPropsDesc(w));
+			o.DefinePropInternal("Height", new OwnPropsDesc(h));
 			return o;
 		}
 
@@ -241,7 +241,7 @@ namespace Keysharp.Builtins
 			if (op.TryGetValue(nameVal, out var currProp))
 				currProp.Merge(value, get, set, call);
 			else
-				op[nameVal] = currProp = new OwnPropsDesc(target, value, get, set, call);
+				op[nameVal] = currProp = new OwnPropsDesc(value, get, set, call);
 
 			target.OnPropertyChanged(nameVal);
 
@@ -381,38 +381,34 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public static object ObjFromPtr(object ptr)
 		{
-			// Almost the same as ObjFromPtrAddRef, but decreases the ref count if the object
-			// turned out to be a native COM object
-			Reflections.TryGetPtrProperty(ptr, out var punk);
-			// For COM object this creates or finds the RCW and bumps the ref count,
-			// and once the object is collected then the ref count is decreased.
-			// If it's a managed object then it's just returned without changing the ref count of the RCW.
-			var dispPtr = Marshal.GetObjectForIUnknown((nint)punk);
-			object result = null;
+			// A native COM wrapper takes over the caller's counted reference. A Keysharp object's pointer has no reference.
+			if (ObjectFromPointer(ptr, out var punk) is not { } obj)
+				return DefaultObject;
 
-			if (Marshal.IsComObject(dispPtr))
-				result = new ComValue(VarEnum.VT_UNKNOWN, dispPtr);
-			else
-				return dispPtr;
-
-			// If the result was a COM object not a managed one then decrease the ref count bumped by GetObjectForIUnknown
-			_ = Marshal.Release((nint)dispPtr);
-			return result;
+			return Marshal.IsComObject(obj) ? new ComValue(VarEnum.VT_UNKNOWN, (long)punk) : obj;
 		}
 
 		// Mostly for compatibility with AHK
 		public static object ObjFromPtrAddRef(object ptr)
 		{
-			Reflections.TryGetPtrProperty(ptr, out var punk);
-			// For COM object this creates or finds the RCW and bumps the ref count,
-			// and once the object is collected then the ref count is decreased.
-			// If it's a managed object then it's just returned without changing the ref count of the RCW.
-			var dispPtr = Marshal.GetObjectForIUnknown((nint)punk);
+			if (ObjectFromPointer(ptr, out _) is not { } obj)
+				return DefaultObject;
 
-			if (Marshal.IsComObject(dispPtr))
-				return new ComValue(VarEnum.VT_UNKNOWN, dispPtr);
-			else
-				return dispPtr;
+			return Marshal.IsComObject(obj) ? new ComValue(VarEnum.VT_UNKNOWN, obj) : obj;
+		}
+
+		private static object ObjectFromPointer(object ptr, out nint punk)
+		{
+			Reflections.TryGetPtrProperty(ptr, out var address);
+			punk = (nint)address;
+
+			if (punk == 0)
+			{
+				_ = Errors.ValueErrorOccurred("The pointer was 0.");
+				return null;
+			}
+
+			return Marshal.GetObjectForIUnknown(punk);
 		}
 
 #endif

@@ -1409,7 +1409,7 @@ namespace Keysharp.Builtins
 				if (gui == null || !gui.TryGetTarget(out var g))
 					return Errors.ErrorOccurred("GUI control's parent GUI is no longer available.");
 
-				_ = KeysharpForm.CheckedHandler(callback, g.form.eventObj, addRemove, argCount, out _);
+				_ = KeysharpForm.CheckedHandler(callback, g.form, addRemove, argCount, out _);
 				return DefaultObject;
 			}
 			public object Opt(object options)

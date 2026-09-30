@@ -176,7 +176,7 @@ namespace Keysharp.Builtins.COM
 				{
 					_ = handler();
 				}
-				catch (Exception ex) when (CallStack.Remember(ex))
+				catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 				{
 					_ = Errors.ReportUncaught(ex);
 				}

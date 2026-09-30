@@ -90,7 +90,7 @@ namespace Keysharp.Tests
 			Assert.AreEqual(nameof(ThrowingClrValue), new Error(new ThrowingClrValue()).Message);
 
 			var prototype = new KeysharpObject();
-			prototype.DefinePropInternal("__Class", new OwnPropsDesc(prototype,
+			prototype.DefinePropInternal("__Class", new OwnPropsDesc(
 				set_Get: new KeysharpFunc((Func<object, object>)(_ => { calls++; return "custom"; }))));
 			value.SetBaseInternal(prototype);
 			using var scope = Keysharp.Runtime.Flow.EnterTry();
@@ -146,7 +146,7 @@ namespace Keysharp.Tests
 		private static KeysharpObject WithToString(Func<object> callback)
 		{
 			var value = new KeysharpObject();
-			value.DefinePropInternal("ToString", new OwnPropsDesc(value,
+			value.DefinePropInternal("ToString", new OwnPropsDesc(
 				set_Call: new KeysharpFunc((Func<object, object>)(_ => callback()))));
 			return value;
 		}

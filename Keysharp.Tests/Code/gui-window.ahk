@@ -58,4 +58,45 @@ for opts in ["-Caption +Resize", "+Resize -Caption"] {
 tool.Destroy()
 owned.Destroy()
 owner.Destroy()
+
+; A handler named as a method of the Gui's event sink runs as AutoHotkey runs it: looked up on the sink when the
+; event fires, with the sink as this and the Gui or control first.
+class EventSink {
+	log := []
+	Resized(g, minMax, w, h) => this.log.Push(Type(this) " " (g == win) " size")
+	Clicked(ctrl, info) => this.log.Push(Type(this) " " (ctrl == btn) " click")
+}
+
+sink := EventSink()
+win := Gui(, "Sink test", sink)
+btn := win.AddButton(, "Go")
+win.OnEvent("Size", "Resized")
+btn.OnEvent("Click", "Clicked")
+win.Show("w200 h100 NoActivate")
+Sleep 100
+
+sink.log := []
+win.Move(, , 300, 200)
+Sleep 200
+Assert(sink.log.Length >= 1 && sink.log[1] == "EventSink 1 size", A_LineNumber)
+
+SendMessage 0x00F5, 0, 0, btn   ; BM_CLICK
+Sleep 200
+AssertEq(sink.log[sink.log.Length], "EventSink 1 click", A_LineNumber)
+
+; A method defined on the sink after the registration is the one called, since the name is looked up when the event fires.
+sink.DefineProp("Clicked", {call: (this, ctrl, info) => this.log.Push("redefined")})
+SendMessage 0x00F5, 0, 0, btn
+Sleep 200
+AssertEq(sink.log[sink.log.Length], "redefined", A_LineNumber)
+
+; Removing by name removes what the same name registered.
+win.OnEvent("Size", "Resized", 0)
+sink.log := []
+win.Move(, , 320, 220)
+Sleep 200
+AssertEq(sink.log.Length, 0, A_LineNumber)
+
+win.Destroy()
 FileAppend "pass", "*"
+ExitApp()

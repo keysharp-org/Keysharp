@@ -25,6 +25,10 @@ Assert(IsInteger(callback), A_LineNumber)
 
 CallbackFree(callback)
 
+; A primitive has only what its prototype gives it, never the members of its .NET type.
+Assert(!HasProp("abc", "Chars"), A_LineNumber)
+Throws(() => "abc".Substring(1), A_LineNumber, MethodError)
+
 ; A module is its own scope, so the shared helpers are not visible below. `#IncludeAgain <assert>` ought to
 ; bring them back but fails at run time here, so these two checks write the tag themselves.
 

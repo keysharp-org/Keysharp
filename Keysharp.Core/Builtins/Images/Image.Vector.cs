@@ -659,12 +659,12 @@ namespace Keysharp.Builtins
 			private static KeysharpObject TransformObject(VectorTransform transform)
 			{
 				var result = new KeysharpObject();
-				result.DefinePropInternal("ScaleX", new OwnPropsDesc(result, transform.ScaleX));
-				result.DefinePropInternal("ScaleY", new OwnPropsDesc(result, transform.ScaleY));
-				result.DefinePropInternal("OffsetX", new OwnPropsDesc(result, transform.OffsetX));
-				result.DefinePropInternal("OffsetY", new OwnPropsDesc(result, transform.OffsetY));
-				result.DefinePropInternal("SkewX", new OwnPropsDesc(result, transform.SkewX));
-				result.DefinePropInternal("SkewY", new OwnPropsDesc(result, transform.SkewY));
+				result.DefinePropInternal("ScaleX", new OwnPropsDesc(transform.ScaleX));
+				result.DefinePropInternal("ScaleY", new OwnPropsDesc(transform.ScaleY));
+				result.DefinePropInternal("OffsetX", new OwnPropsDesc(transform.OffsetX));
+				result.DefinePropInternal("OffsetY", new OwnPropsDesc(transform.OffsetY));
+				result.DefinePropInternal("SkewX", new OwnPropsDesc(transform.SkewX));
+				result.DefinePropInternal("SkewY", new OwnPropsDesc(transform.SkewY));
 				return result;
 			}
 

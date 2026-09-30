@@ -13,8 +13,11 @@ namespace Keysharp.Internals.Window
 		internal bool HasID => ID != 0;
 		internal nint ID { get; set; }
 		internal bool HasNonGroupCriteria => Active || HasID || PID != 0L || HasExcludes || !string.IsNullOrEmpty(Title) || !string.IsNullOrEmpty(Text) || !string.IsNullOrEmpty(ClassName) || !string.IsNullOrEmpty(Path);
-		internal bool IsEmpty => !Active && !HasID && PID == 0 && !HasExcludes && string.IsNullOrEmpty(Group) && string.IsNullOrEmpty(Title) && string.IsNullOrEmpty(Text) && string.IsNullOrEmpty(ClassName) && string.IsNullOrEmpty(Path);
+		internal bool IsEmpty => !MatchesNothing && !Active && !HasID && PID == 0 && !HasExcludes && string.IsNullOrEmpty(Group) && string.IsNullOrEmpty(Title) && string.IsNullOrEmpty(Text) && string.IsNullOrEmpty(ClassName) && string.IsNullOrEmpty(Path);
 		internal bool IsOnlyActive => Active && !HasID && PID == 0 && !HasExcludes && string.IsNullOrEmpty(Group) && string.IsNullOrEmpty(Title) && string.IsNullOrEmpty(Text) && string.IsNullOrEmpty(ClassName) && string.IsNullOrEmpty(Path);
+		// Criteria no window can satisfy, such as two different ahk_id values, which AutoHotkey's SetCriteria reports
+		// as FAIL. Such criteria are not empty, so they never fall back to every window or the last found one.
+		internal bool MatchesNothing { get; init; }
 		internal WindowSearchOptions Options { get; private set; }
 		internal string Path { get; set; }
 		internal long PID { get; set; }
@@ -161,7 +164,7 @@ namespace Keysharp.Internals.Window
 			if (!foundFirstCriterion)
 				criteria = new SearchCriteria { Title = mixed };
 			else if (invalidCriteria)
-				criteria = new SearchCriteria();
+				criteria = new SearchCriteria { MatchesNothing = true };
 			else if (string.Equals(criteria.Title, "A", StringComparison.OrdinalIgnoreCase))
 			{
 				criteria.Active = true;

@@ -4,8 +4,8 @@ namespace Keysharp.Internals.Containers
 	[PublicHiddenFromUser]
 	public class LazyDictionary<TKey, TValue>(IEqualityComparer<TKey> comparer)
 	{
-		// internal map: TValue or Func<TValue>
-		private readonly Dictionary<TKey, object> _inner = new(comparer ?? EqualityComparer<TKey>.Default);
+		// TValue or Lazy<TValue>. Concurrent, because a class can register itself while a RealThread reads the map.
+		private readonly ConcurrentDictionary<TKey, object> _inner = new(comparer ?? EqualityComparer<TKey>.Default);
 
 		public LazyDictionary() : this(null) { }
 
@@ -27,7 +27,7 @@ namespace Keysharp.Internals.Containers
 			}
 		}
 
-		public Dictionary<TKey, object>.KeyCollection Keys => _inner.Keys;
+		public ICollection<TKey> Keys => _inner.Keys;
 
 		public bool ContainsKey(TKey key) => _inner.ContainsKey(key);
 
@@ -54,7 +54,8 @@ namespace Keysharp.Internals.Containers
 		public void Add(TKey key, TValue value)
 		{
 			if (key == null) throw new ArgumentNullException(nameof(key));
-			_inner.Add(key, value!);
+			if (!_inner.TryAdd(key, value!))
+				throw new ArgumentException($"An item with the same key has already been added. Key: {key}");
 		}
 
 		/// <summary>
@@ -64,7 +65,8 @@ namespace Keysharp.Internals.Containers
 		{
 			ArgumentNullException.ThrowIfNull(key);
 			ArgumentNullException.ThrowIfNull(factory);
-			_inner.Add(key, new Lazy<TValue>(factory));
+			if (!_inner.TryAdd(key, new Lazy<TValue>(factory)))
+				throw new ArgumentException($"An item with the same key has already been added. Key: {key}");
 		}
 
 		/// <summary>

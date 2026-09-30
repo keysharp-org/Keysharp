@@ -391,7 +391,7 @@ namespace Keysharp.Internals.Scripting
 
 					chainResult = Script.InvokeOrNull(handler, null, args);
 				}
-				catch (Exception ex) when (CallStack.Remember(ex))
+				catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 				{
 					chainResult = null;
 					// ReportUncaught is true only for Exit; anything else is an uncaught error which ended the thread.

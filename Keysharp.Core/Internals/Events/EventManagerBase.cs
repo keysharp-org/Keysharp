@@ -268,7 +268,7 @@ namespace Keysharp.Internals.Events
 				ApplyThreadState(thread.ThreadVariables, reg, payload);
 				_ = Script.InvokeOrNull(callback, null, args);
 			}
-			catch (Exception ex) when (CallStack.Remember(ex))
+			catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 			{
 				_ = Errors.ReportUncaught(ex);
 			}

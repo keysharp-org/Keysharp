@@ -347,11 +347,12 @@ AssertEq(Object(x: 1).x, 1, A_LineNumber)
 o2 := Object("k", 1, v: 2)
 Assert(o2.k == 1 && o2.v == 2, A_LineNumber)
 ; A dangling name errors rather than being dropped -- which is also what happens when a container was meant as
-; a pair's VALUE: a trailing one reads as a named argument, leaving its would-be name unpaired. The literal
-; routes through the same construction, so it errors the same way (loudly, never a silent drop).
+; a pair's VALUE: a trailing one reads as a named argument, leaving its would-be name unpaired. A literal is no
+; call, so there the container is simply the value.
 Throws(() => Object("a"), A_LineNumber)
 Throws(() => Object("a", NamedArgs("x", 5)), A_LineNumber)
-Throws(() => ({a: NamedArgs("x", 5)}), A_LineNumber)
+na := NamedArgs("x", 5)
+Assert(({a: na}).a == na, A_LineNumber)
 class NPNoNew {
 }
 npn := NPNoNew(a: 1)                              ; no __New: the default variadic one absorbs and ignores
@@ -479,5 +480,10 @@ outerFn() {
 }
 AssertEq(outerFn().Name, "nestedFn", A_LineNumber)
 AssertEq(((x) => x).Name, "", A_LineNumber)  ; an anonymous lambda has no name a script could write
+
+; Named arguments bind to the right parameter of a function defined as a method.
+namedHost := {}
+namedHost.DefineProp("m", {call: (self, a := 1, b := 2) => a "-" b})
+AssertEq(namedHost.m(b: 5), "1-5", A_LineNumber)
 
 FileAppend "pass", "*"

@@ -1380,8 +1380,8 @@ namespace Keysharp.Builtins
 			internal static KeysharpObject MakeSize(double w, double h)
 			{
 				var o = new KeysharpObject();
-				o.DefinePropInternal("Width", new OwnPropsDesc(o, w));
-				o.DefinePropInternal("Height", new OwnPropsDesc(o, h));
+				o.DefinePropInternal("Width", new OwnPropsDesc(w));
+				o.DefinePropInternal("Height", new OwnPropsDesc(h));
 				return o;
 			}
 
@@ -2154,8 +2154,8 @@ namespace Keysharp.Builtins
 			private static KeysharpObject MakePoint(long x, long y)
 			{
 				var o = new KeysharpObject();
-				o.DefinePropInternal("X", new OwnPropsDesc(o, x));
-				o.DefinePropInternal("Y", new OwnPropsDesc(o, y));
+				o.DefinePropInternal("X", new OwnPropsDesc(x));
+				o.DefinePropInternal("Y", new OwnPropsDesc(y));
 				return o;
 			}
 
@@ -2163,9 +2163,9 @@ namespace Keysharp.Builtins
 			private static KeysharpObject MakePixel(long x, long y, long color)
 			{
 				var o = new KeysharpObject();
-				o.DefinePropInternal("X", new OwnPropsDesc(o, x));
-				o.DefinePropInternal("Y", new OwnPropsDesc(o, y));
-				o.DefinePropInternal("Color", new OwnPropsDesc(o, color));
+				o.DefinePropInternal("X", new OwnPropsDesc(x));
+				o.DefinePropInternal("Y", new OwnPropsDesc(y));
+				o.DefinePropInternal("Color", new OwnPropsDesc(color));
 				return o;
 			}
 

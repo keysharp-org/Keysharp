@@ -296,7 +296,7 @@ namespace Keysharp.Internals.Window
 
 			var options = WindowSearchOptions.Merge(criteria.Options, inheritedOptions);
 
-			if (criteria.IsEmpty)
+			if (criteria.IsEmpty || criteria.MatchesNothing)
 				return false;
 
 			if (criteria.Active && !Active)

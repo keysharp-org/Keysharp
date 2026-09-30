@@ -1035,7 +1035,8 @@ namespace Keysharp.Builtins
 
 			for (var i = 0; i < parameters.Length; i++)
 			{
-				var value = Expression.ArrayIndex(args, Expression.Constant(i));
+				// ArrayAccess rather than ArrayIndex: a ref parameter's result is written back through it.
+				var value = Expression.ArrayAccess(args, Expression.Constant(i));
 				var type = parameters[i].ParameterType;
 
 				if (type.IsByRef)
@@ -1134,6 +1135,15 @@ namespace Keysharp.Builtins
 			{
 				if (i < argc)
 				{
+					// An out parameter's incoming value is never read, so a reference standing in for one is only
+					// written back: whatever it holds, "" included, must not raise. Its slot stays null, which Invoke
+					// passes as the type's default.
+					if (ps[i].IsOut && Refs.DeclaresValue(src[i]))
+					{
+						(boxes ??= []).Add((i, src[i]));
+						continue;
+					}
+
 					// Convert single arg to this parameter type
 					if (!TryConvertIn(new object[] { src[i] }, new[] { ps[i].ParameterType }, out var arr, out var bx))
 					{
@@ -1472,28 +1482,27 @@ namespace Keysharp.Builtins
 		/// <summary>False when the script continued a conversion error, so the member must not run.</summary>
 		private static bool TryConvertScalarToCLR(object value, Type target, out object result)
 		{
+			// A by-ref parameter converts as its element type. Unwrapped here, before the try below, so that a TypeError
+			// for it is raised rather than swallowed.
+			if (target != null && target.IsByRef)
+				target = target.GetElementType();
+
 			// unwrap our proxies when targeting CLR
 			if (value is Clr.ManagedType mt)
 			{
-				if (target == null || target == typeof(Type) || target.IsByRef && target.GetElementType() == typeof(Type))
+				if (target == null || target == typeof(Type))
 					return Converted(mt._type, out result);
 			}
 			if (value is Clr.ManagedInstance mi)
 			{
 				if (target == null) return Converted(mi._instance, out result);
-				if (target.IsByRef) return TryConvertScalarToCLR(mi._instance, target.GetElementType(), out result);
 				return TryConvertScalarToCLR(mi._instance, target, out result);
 			}
 			// A Ks.Task hands its underlying task to a Task-shaped parameter, so a script task can go back into
 			// Task.WhenAll and friends. Unlike ManagedInstance it stays wrapped for an untyped slot: a Ks.Task
 			// is a script object in its own right, and an `object` parameter should receive it as one.
-			if (value is Ks.KeysharpTask kst && target != null)
-			{
-				var want = target.IsByRef ? target.GetElementType() : target;
-
-				if (want != typeof(object) && want.IsInstanceOfType(kst.Underlying))
-					return Converted(kst.Underlying, out result);
-			}
+			if (value is Ks.KeysharpTask kst && target != null && target != typeof(object) && target.IsInstanceOfType(kst.Underlying))
+				return Converted(kst.Underlying, out result);
 #if WINDOWS
 			if (value is ComValue cv) // allow COM pointer to be passed on
 				return Converted(cv.Ptr, out result);
@@ -1542,8 +1551,6 @@ namespace Keysharp.Builtins
 
 			try
 			{
-				if (target.IsByRef) return TryConvertScalarToCLR(value, target.GetElementType(), out result);
-
 				return Converted(Convert.ChangeType(value, target, CultureInfo.InvariantCulture), out result);
 			}
 			catch

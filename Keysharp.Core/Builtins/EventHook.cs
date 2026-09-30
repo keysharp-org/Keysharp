@@ -8,8 +8,8 @@ namespace Keysharp.Builtins
 			internal EventSubscriptionBase sub;
 			private protected readonly object callback;
 
-			internal EventHook() : base() { }
-			private protected EventHook(object callback) : base() => this.callback = callback;
+			internal EventHook() : base(null) { }
+			private protected EventHook(object callback) : base(null) => this.callback = callback;
 
 			// WinEvent and InputHook are constructed by scripts; the other hooks come from their factories.
 			private protected EventHook(params object[] args) : base(args) { }

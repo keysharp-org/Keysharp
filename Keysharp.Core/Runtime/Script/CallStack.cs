@@ -89,7 +89,7 @@ namespace Keysharp.Runtime
 			{
 				return call(instance, args);
 			}
-			catch (Exception ex) when (Remember(ex))
+			catch (Exception ex) when (RememberAndPass(ex))
 			{
 				throw;
 			}
@@ -142,13 +142,34 @@ namespace Keysharp.Runtime
 		}
 
 		/// <summary>
-		/// Copies the call stack for an exception that is not a Keysharp error, such as one C# code threw. A catch filter at
-		/// the launch of a pseudo-thread calls it in the first pass of the unwind, before any finally block pops a frame.
+		/// <see cref="Remember"/> as the filter of a catch which handles the exception, such as the one at the launch of a
+		/// pseudo-thread.
 		/// </summary>
-		/// <returns>True, so that the catch handles the exception.</returns>
-		internal static bool Remember(Exception ex)
+		/// <returns>True, so that the catch runs.</returns>
+		internal static bool RememberAndCatch(Exception ex)
 		{
-			// A filter which throws counts as false, which would let the exception past the catch.
+			Remember(ex);
+			return true;
+		}
+
+		/// <summary>
+		/// <see cref="Remember"/> as the filter of a frame which only passes the exception on. It declines, so the exception
+		/// is not caught and thrown again at every call level on its way out.
+		/// </summary>
+		/// <returns>False, so that the catch never runs.</returns>
+		internal static bool RememberAndPass(Exception ex)
+		{
+			Remember(ex);
+			return false;
+		}
+
+		/// <summary>
+		/// Copies the call stack for an exception that is not a Keysharp error, such as one C# code threw. A catch filter
+		/// calls it in the first pass of the unwind, before any finally block pops a frame.
+		/// </summary>
+		internal static void Remember(Exception ex)
+		{
+			// A filter which throws counts as false, which would let the exception past a catch meant to handle it.
 			try
 			{
 				if (ex is not (KeysharpException or Keysharp.Builtins.Flow.UserRequestedExitException) && TheScript != null
@@ -164,8 +185,6 @@ namespace Keysharp.Runtime
 			catch (Exception)
 			{
 			}
-
-			return true;
 		}
 
 		/// <summary>What <see cref="Remember"/> copied for an exception, or the current call stack's report when it copied none.</summary>
@@ -293,7 +312,7 @@ namespace Keysharp.Runtime
 			{
 				return section();
 			}
-			catch (Exception ex) when (Remember(ex))
+			catch (Exception ex) when (RememberAndPass(ex))
 			{
 				throw;
 			}

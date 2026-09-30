@@ -2761,7 +2761,7 @@ namespace Keysharp.Builtins
 		public object OnMessage(object msgNumber, object callback, object addRemove = null)
 		{
 			// Called with (Gui, wParam, lParam, Msg).
-			if (KeysharpForm.CheckedHandler(callback, form.eventObj, addRemove, 4, out var addremove) is not { } del)
+			if (KeysharpForm.CheckedHandler(callback, form, addRemove, 4, out var addremove) is not { } del)
 				return DefaultObject;
 
 			if (!msgNumber.CoerceInt(out var msg))
@@ -3607,41 +3607,40 @@ namespace Keysharp.Builtins
 				if (control.Name != "" && control.GetGuiControl() is Gui.Control guictrl)
 				{
 					if (control is KeysharpTextBox || control is KeysharpPasswordBox || control is KeysharpDateTimePicker || control is KeysharpMonthCalendar)//Just use value because it's the same and consolidates the formatting in one place, despite being slightly slower.
-						result.DefinePropInternal(control.Name, new OwnPropsDesc(null, guictrl.Value));
+						result.DefinePropInternal(control.Name, new OwnPropsDesc(guictrl.Value));
 					else if (control is KeysharpRichEdit)
-						result.DefinePropInternal(control.Name,  new OwnPropsDesc(null,
-								!guictrl.AltSubmit || guictrl is not RichEdit re ? guictrl.Value : re.RichText));
+						result.DefinePropInternal(control.Name,  new OwnPropsDesc(!guictrl.AltSubmit || guictrl is not RichEdit re ? guictrl.Value : re.RichText));
 					else if (control is KeysharpNumericUpDown nud)
 					{
 #if WINDOWS
 						decimal v = decimal.Round(nud.Value, nud.DecimalPlaces);
 						if (v == decimal.Truncate(v) && v >= long.MinValue && v <= long.MaxValue)
-							result.DefinePropInternal(nud.Name, new OwnPropsDesc(null, (long)v));
+							result.DefinePropInternal(nud.Name, new OwnPropsDesc((long)v));
 						else
-							result.DefinePropInternal(nud.Name, new OwnPropsDesc(null, (double)v));
+							result.DefinePropInternal(nud.Name, new OwnPropsDesc((double)v));
 #else
 						double v = nud.Value;
 						if (v == double.Truncate(v) && v >= long.MinValue && v <= long.MaxValue)
-							result.DefinePropInternal(nud.Name, new OwnPropsDesc(null, (long)v));
+							result.DefinePropInternal(nud.Name, new OwnPropsDesc((long)v));
 						else
-							result.DefinePropInternal(nud.Name, new OwnPropsDesc(null, v));
+							result.DefinePropInternal(nud.Name, new OwnPropsDesc(v));
 #endif
 					}
 					else if (control is KeysharpCheckBox cb)
 #if WINDOWS
-						result.DefinePropInternal(cb.Name, new OwnPropsDesc(null, cb.Checked ? 1L : 0L));
+						result.DefinePropInternal(cb.Name, new OwnPropsDesc(cb.Checked ? 1L : 0L));
 #else
-						result.DefinePropInternal(cb.Name, new OwnPropsDesc(null, (cb.Checked ?? false) ? 1L : 0L));
+						result.DefinePropInternal(cb.Name, new OwnPropsDesc((cb.Checked ?? false) ? 1L : 0L));
 #endif
 					else if (control is KeysharpTabControl tc)
-						result.DefinePropInternal(tc.Name, new OwnPropsDesc(null, !guictrl.AltSubmit ? tc.SelectedTab != null ? tc.SelectedTab.Text : "" : (long)(tc.SelectedIndex + 1)));
+						result.DefinePropInternal(tc.Name, new OwnPropsDesc(!guictrl.AltSubmit ? tc.SelectedTab != null ? tc.SelectedTab.Text : "" : (long)(tc.SelectedIndex + 1)));
 					else if (control is KeysharpComboBox cmb)
-						result.DefinePropInternal(cmb.Name, new OwnPropsDesc(null, !guictrl.AltSubmit || cmb.Items.IndexOf(cmb.Text) == -1 ? cmb.Text : (long)(cmb.SelectedIndex + 1)));
+						result.DefinePropInternal(cmb.Name, new OwnPropsDesc(!guictrl.AltSubmit || cmb.Items.IndexOf(cmb.Text) == -1 ? cmb.Text : (long)(cmb.SelectedIndex + 1)));
 					else if (control is TrackBar tb)
-						result.DefinePropInternal(tb.Name, new OwnPropsDesc(null, tb.Value));
+						result.DefinePropInternal(tb.Name, new OwnPropsDesc(tb.Value));
 					else if (control is KeysharpListBox lb)
 					{
-						result.DefinePropInternal(lb.Name, new OwnPropsDesc(null, !guictrl.AltSubmit
+						result.DefinePropInternal(lb.Name, new OwnPropsDesc(!guictrl.AltSubmit
 									   ? guictrl.Value
 									   : lb.SelectionMode == SelectionMode.One
 									   ? lb.SelectedItem as string ?? ""
@@ -3661,12 +3660,12 @@ namespace Keysharp.Builtins
 								{
 									if (rbs[i].Checked)
 									{
-										result.DefinePropInternal(named[0].Name, new OwnPropsDesc(null, (long)(i + 1)));
+										result.DefinePropInternal(named[0].Name, new OwnPropsDesc((long)(i + 1)));
 										goto DoneAssigning;
 									}
 								}
 
-								result.DefinePropInternal(named[0].Name, new OwnPropsDesc(null, 0L));
+								result.DefinePropInternal(named[0].Name, new OwnPropsDesc(0L));
 							}
 						}
 					}

@@ -155,7 +155,7 @@ namespace Keysharp.Builtins
 					return Errors.ValueErrorOccurred($"A {Type} control does not support the {Errors.Describe(eventName)} event. Expected {supported}.");
 				}
 
-				if (KeysharpForm.CheckedHandler(callback, g.form.eventObj, addRemove, EventArgCount(e), out var i) is not { } del)
+				if (KeysharpForm.CheckedHandler(callback, g.form, addRemove, EventArgCount(e), out var i) is not { } del)
 					return DefaultObject;
 
 				if (this is WebView wv && WebView.IsWebViewEvent(e))
@@ -304,7 +304,7 @@ namespace Keysharp.Builtins
 				if (gui == null || !gui.TryGetTarget(out var g))
 					return Errors.ErrorOccurred("GUI control's parent GUI is no longer available.");
 
-				if (KeysharpForm.CheckedHandler(callback, g.form.eventObj, addRemove, argCount, out var addremove) is not { } del)
+				if (KeysharpForm.CheckedHandler(callback, g.form, addRemove, argCount, out var addremove) is not { } del)
 					return DefaultObject;
 
 				if (handlers == null)

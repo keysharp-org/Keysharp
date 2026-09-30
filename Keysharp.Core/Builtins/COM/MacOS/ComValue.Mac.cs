@@ -25,14 +25,7 @@ namespace Keysharp.Builtins.COM
 		public object VarType
 		{
 			get => varType ?? DescType;
-			set
-			{
-				DescType = ResolveType(value);
-
-				// The value already converted successfully inside ResolveType above.
-				_ = value.TryCoerceLong(out var vt);
-				varType = value is string ? value : vt;
-			}
+			set => _ = TrySetVarType(value);
 		}
 
 		public ComValue(params object[] args) : base(args) => Init(args);
@@ -45,51 +38,83 @@ namespace Keysharp.Builtins.COM
 
 		private void Init(object[] args)
 		{
-			if (args == null || args.Length == 0)
+			if (args == null || args.Length == 0 || !TrySetVarType(args[0]))
 				return;
 
-			VarType = args[0];
 			Value = args.Length > 1 ? args[1] : null;
 		}
 
-		/// <summary>Maps the caller's type tag to a descriptor type, accepting either notation.</summary>
-		internal static string ResolveType(object varType)
+		private bool TrySetVarType(object value)
 		{
-			if (varType == null)
-				throw new ArgumentException("ComValue needs an Apple event descriptor type.");
+			if (!TryResolveType(value, out var descType, out var tag))
+				return false;
 
-			// A number is a Windows VT_* constant; only the unambiguous ones carry over.
-			if (varType is not string)
+			DescType = descType;
+			varType = tag;
+			return true;
+		}
+
+		/// <summary>
+		/// Maps the caller's type tag, a descriptor type or a Windows VT_* constant, to a descriptor type, with the tag
+		/// as the caller's notation keeps it. False when it raised an error the script continued.
+		/// </summary>
+		private static bool TryResolveType(object varType, out string descType, out object tag)
+		{
+			descType = null;
+			tag = null;
+
+			if (varType == null)
 			{
-				_ = varType.CoerceLong(out var vt);
-				return vt switch
-				{
-					2 => "shor",     // VT_I2
-					3 => "long",     // VT_I4
-					4 => "doub",     // VT_R4: Apple events have no single, so widen
-					5 => "doub",     // VT_R8
-					7 => "ldt ",     // VT_DATE
-					8 => "utxt",     // VT_BSTR
-					11 => "bool",    // VT_BOOL
-					16 => "shor",    // VT_I1: no signed byte type, so widen
-					17 => "shor",    // VT_UI1
-					18 => "long",    // VT_UI2
-					19 => "magn",    // VT_UI4
-					20 => "comp",    // VT_I8
-					21 => "comp",    // VT_UI8
-					22 => "long",    // VT_INT
-					23 => "magn",    // VT_UINT
-					_ => throw new ArgumentException($"VT_ constant {vt} has no Apple event equivalent; pass a descriptor type instead.")
-				};
+				_ = Errors.ValueErrorOccurred("ComValue needs an Apple event descriptor type.");
+				return false;
 			}
 
-			var type = (string)varType;
+			if (varType is string type)
+			{
+				// Validated now so a bad type is reported at construction rather than deep inside marshalling.
+				if (!AEFourCharCode.TryPack(type.AsSpan(), out _))
+				{
+					_ = Errors.ValueErrorOccurred("A descriptor type must be exactly four characters, as in \"utxt\" or \"enum\".", type);
+					return false;
+				}
 
-			// Validate now so a bad type is reported at construction rather than deep inside marshalling.
-			if (!AEFourCharCode.TryPack(type.AsSpan(), out _))
-				throw new ArgumentException($"'{type}' is not a descriptor type: it must be exactly four characters, as in \"utxt\" or \"enum\".");
+				descType = type;
+				tag = type;
+				return true;
+			}
 
-			return type;
+			if (!varType.CoerceLong(out var vt))
+				return false;
+
+			// A number is a Windows VT_* constant; only the unambiguous ones carry over.
+			descType = vt switch
+			{
+				2 => "shor",     // VT_I2
+				3 => "long",     // VT_I4
+				4 => "doub",     // VT_R4: Apple events have no single, so widen
+				5 => "doub",     // VT_R8
+				7 => "ldt ",     // VT_DATE
+				8 => "utxt",     // VT_BSTR
+				11 => "bool",    // VT_BOOL
+				16 => "shor",    // VT_I1: no signed byte type, so widen
+				17 => "shor",    // VT_UI1
+				18 => "long",    // VT_UI2
+				19 => "magn",    // VT_UI4
+				20 => "comp",    // VT_I8
+				21 => "comp",    // VT_UI8
+				22 => "long",    // VT_INT
+				23 => "magn",    // VT_UINT
+				_ => null
+			};
+
+			if (descType == null)
+			{
+				_ = Errors.ValueErrorOccurred($"VT_ constant {vt} has no Apple event equivalent; pass a descriptor type instead.", vt);
+				return false;
+			}
+
+			tag = vt;
+			return true;
 		}
 	}
 }

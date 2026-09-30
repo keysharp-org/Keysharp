@@ -582,7 +582,7 @@ namespace Keysharp.Internals.Input.Keyboard
 							{
 								definition.DoReplace(script, caseMode, endChar, triggerVk, skipChars);
 							}
-							catch (Exception ex) when (CallStack.Remember(ex))
+							catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 							{
 								_ = Errors.ReportUncaught(ex);
 							}
@@ -603,7 +603,7 @@ namespace Keysharp.Internals.Input.Keyboard
 						_ = Interlocked.Decrement(ref definition.existingThreads);
 					}
 				}
-				catch (Exception ex) when (CallStack.Remember(ex))
+				catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 				{
 					_ = Errors.ReportUncaught(ex);
 				}

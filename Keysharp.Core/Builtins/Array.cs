@@ -145,6 +145,20 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// </summary>
 	public Array(params object[] args) : base(args) { }
 
+	// An array literal or a variadic parameter, as AHK's Array::Create: each item as it is, and no __New, whose single
+	// collection argument would be expanded.
+	[PublicHiddenFromUser]
+	public new static Array Literal(params object[] items)
+	{
+		var arr = new Array(null);
+		arr.array = new(Math.Max(arr.capacity, items?.Length ?? 0));
+
+		if (items != null)
+			arr.array.AddRange(items);
+
+		return arr;
+	}
+
 	/// <summary>
 	/// Clones the instance as well as the internal container.
 	/// </summary>
@@ -162,7 +176,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// </summary>
 	/// <param name="i">The index to translate.</param>
 	/// <returns>The translated index, else -1 if out of bounds.</returns>
-	private int TranslateIndex(int i)
+	internal int TranslateIndex(int i)
 	{
 		if (i > 0 && i <= array.Count)
 			return i - 1;

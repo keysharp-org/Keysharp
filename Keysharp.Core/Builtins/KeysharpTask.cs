@@ -257,7 +257,7 @@ namespace Keysharp.Builtins
 					_ = source.Cancel();
 					throw exit;
 				}
-				catch (Exception ex) when (CallStack.Remember(ex))
+				catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 				{
 					_ = source.Fail(ex);
 				}
@@ -317,7 +317,7 @@ namespace Keysharp.Builtins
 						_ = completion.TrySetCanceled();
 						throw exit;
 					}
-					catch (Exception ex) when (CallStack.Remember(ex))
+					catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 					{
 						_ = completion.TrySetException(ex);
 					}
@@ -507,7 +507,7 @@ namespace Keysharp.Builtins
 					{
 						_ = completion.TrySetCanceled();
 					}
-					catch (Exception ex) when (CallStack.Remember(ex))
+					catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 					{
 						Fail(ex);
 					}
@@ -559,7 +559,7 @@ namespace Keysharp.Builtins
 					_ = completion.TrySetCanceled();
 					throw exit;
 				}
-				catch (Exception ex) when (CallStack.Remember(ex))
+				catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 				{
 					_ = completion.TrySetException(ex);
 				}

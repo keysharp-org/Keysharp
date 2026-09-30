@@ -1,8 +1,8 @@
 #if OSX
 namespace Keysharp.Internals.AppleEvents
 {
-	/// <summary>One outgoing Apple event, described in script terms so that every descriptor is built, sent and
-	/// read on the one thread that owns sending.</summary>
+	/// <summary>One outgoing Apple event, described in script terms. Its descriptors are built on the script thread,
+	/// since that converts script values, and sent and read on the one thread that owns sending.</summary>
 	internal sealed class AECallRequest
 	{
 		internal AETarget Target;
@@ -93,17 +93,29 @@ namespace Keysharp.Internals.AppleEvents
 		{
 			EnsurePermitted(request.Target);
 			EnsureWorker();
+
+			// Converting a value can raise an error or run a script's ToString method, so it happens here, on the
+			// script thread. After a continued error nothing is sent.
+			if (BuildParameters(request) is not { } parameters)
+				return Script.DefaultObject;
+
 			var completion = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
 
+			// The sending thread disposes the descriptors, since a timed-out wait below returns while it may still
+			// be using them.
 			queue.Add(() =>
 			{
 				try
 				{
-					completion.SetResult(Execute(request));
+					completion.SetResult(Execute(request, parameters));
 				}
 				catch (Exception ex)
 				{
 					completion.SetException(ex);
+				}
+				finally
+				{
+					Dispose(parameters);
 				}
 			});
 			// The native send has its own deadline; the outer wait allows a little longer so the inner timeout is
@@ -164,41 +176,58 @@ namespace Keysharp.Internals.AppleEvents
 			}
 		}
 
-		private static object Execute(AECallRequest request)
+		/// <summary>
+		/// The event's parameters, the direct object among them, or null when a conversion raised an error the script
+		/// continued. A builder returns a null descriptor for that.
+		/// </summary>
+		private static List<(uint Keyword, AEValue Value)> BuildParameters(AECallRequest request)
+		{
+			var parameters = new List<(uint Keyword, AEValue Value)>();
+			var built = false;
+
+			try
+			{
+				var direct = request.DirectSpecifier != null ? AESpecifiers.Build(request.DirectSpecifier)
+							 : request.HasDirectValue ? AEMarshal.ToDescriptor(request.DirectValue, request.Context, request.DirectTypeName)
+							 : null;
+
+				if (direct != null)
+					parameters.Add((AE.KeyDirectObject, direct));
+				else if (request.DirectSpecifier != null || request.HasDirectValue)
+					return null;
+
+				if (request.Parameters != null)
+					foreach (var (keyword, value, typeName) in request.Parameters)
+					{
+						if (AEMarshal.ToDescriptor(value, request.Context, typeName) is not { } parameter)
+							return null;
+
+						parameters.Add((keyword, parameter));
+					}
+
+				built = true;
+				return parameters;
+			}
+			finally
+			{
+				if (!built)
+					Dispose(parameters);
+			}
+		}
+
+		private static void Dispose(List<(uint Keyword, AEValue Value)> parameters)
+		{
+			foreach (var (_, value) in parameters)
+				value.Dispose();
+		}
+
+		private static object Execute(AECallRequest request, List<(uint Keyword, AEValue Value)> parameters)
 		{
 			using var address = request.Target.MakeAddress();
 			using var @event = AE.NewEvent(request.EventClass, request.EventId, address);
 
-			// A null descriptor means the script continued a conversion error, and the event is not sent.
-			if (request.DirectSpecifier != null)
-			{
-				using var specifier = AESpecifiers.Build(request.DirectSpecifier);
-
-				if (specifier == null)
-					return Script.DefaultObject;
-
-				AE.PutParam(@event, AE.KeyDirectObject, specifier);
-			}
-			else if (request.HasDirectValue)
-			{
-				using var direct = AEMarshal.ToDescriptor(request.DirectValue, request.Context, request.DirectTypeName);
-
-				if (direct == null)
-					return Script.DefaultObject;
-
-				AE.PutParam(@event, AE.KeyDirectObject, direct);
-			}
-
-			if (request.Parameters != null)
-				foreach (var (keyword, value, typeName) in request.Parameters)
-				{
-					using var parameter = AEMarshal.ToDescriptor(value, request.Context, typeName);
-
-					if (parameter == null)
-						return Script.DefaultObject;
-
-					AE.PutParam(@event, keyword, parameter);
-				}
+			foreach (var (keyword, value) in parameters)
+				AE.PutParam(@event, keyword, value);
 
 			// Apple event timeouts are counted in sixtieths of a second, not milliseconds.
 			var ticks = (nint)Math.Max(1, (long)request.TimeoutMs * 60 / 1000);

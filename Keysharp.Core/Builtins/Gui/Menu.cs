@@ -732,12 +732,13 @@ namespace Keysharp.Builtins
 
 			var iconnumber = ImageHelper.PrepareIconNumber(iconNumber);
 
-			if (!iconWidth.CoerceInt(out var width))
+			if (!iconWidth.CoerceInt(out var width, SystemInformation.SmallIconSize.Width))
 				return DefaultObject;
 
 			if (GetExistingMenuItem(name) is ToolStripItem tsmi)
 			{
-				if (ImageHelper.LoadImage(filename, width, 0, iconnumber).Item1 is Bitmap bmp)
+				// A height of -1 follows the aspect ratio, as in AutoHotkey.
+				if (ImageHelper.LoadImage(filename, width, -1, iconnumber).Item1 is Bitmap bmp)
 					tsmi.Image = bmp;
 			}
 

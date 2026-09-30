@@ -89,12 +89,32 @@ namespace Keysharp.Builtins
 			return kso;
 		}
 
+		// An object literal's name/value pairs, as AHK's Object::Create: no Call, __Init or __New.
+		[PublicHiddenFromUser]
+		public static object Literal(params object[] pairs)
+		{
+			var kso = new KeysharpObject(null);
+
+			if (pairs.Length != 0)
+				kso.op = new(pairs.Length / 2, StringComparer.OrdinalIgnoreCase);
+
+			for (var i = 0; i < pairs.Length; i += 2)
+			{
+				if (!pairs[i].CoerceString(out var name))
+					return DefaultObject;
+
+				DefineOne(kso, name, pairs[i + 1]);
+			}
+
+			return kso;
+		}
+
 		private static void DefineOne(KeysharpObject kso, string name, object value)
 		{
 			if (name.Equals("base", StringComparison.OrdinalIgnoreCase))
-				kso.SetBaseInternal((Any)value);
+				_ = Objects.ObjSetBase(kso, value);
 			else
-				kso.DefinePropInternal(name, new OwnPropsDesc(kso, value));
+				kso.DefinePropInternal(name, new OwnPropsDesc(value));
 		}
 
 		/// <summary>
@@ -132,8 +152,9 @@ namespace Keysharp.Builtins
 				return dynProp.GetDesc();
 			}
 
-			// Read without raising: an error raised and caught here would already have reached OnError.
-			if (Script.GetPropertyValueOrNull(obj, nameVal) is { } val)
+			// Only own properties, as AHK looks only at the object's own fields: nothing inherited, and no getter runs. A
+			// module serves its members outside the own-property table.
+			if (obj is Module module && module.TryGetProperty(nameVal, [], out var val))
 				return KeysharpObject.staticCall(TheScript.Vars.Statics[typeof(KeysharpObject)], ["value", val]);
 
 			return Script.CompatReturnsUnsetForMissing ? null

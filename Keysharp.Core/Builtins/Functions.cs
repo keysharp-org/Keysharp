@@ -68,8 +68,11 @@ namespace Keysharp.Builtins
 			}
 		}
 
-		/// <summary>Validates a callback against AHK's functor rules. -1 checks only whether it is callable.</summary>
-		internal static bool ValidateFunctor(object callback, int argCount)
+		/// <summary>
+		/// Validates a callback against AHK's functor rules. -1 checks only whether it is callable. With
+		/// <paramref name="raise"/> false, as HasMethod asks, a failed check returns false instead of raising.
+		/// </summary>
+		internal static bool ValidateFunctor(object callback, int argCount, bool raise = true)
 		{
 			if (callback is KeysharpFunc fo)
 			{
@@ -77,7 +80,7 @@ namespace Keysharp.Builtins
 					return true;
 
 				// QualifiedName rather than Name, which is empty for a bound function and would name nothing.
-				return InvalidCallback(fo.MinParams > argCount ? $"requires {fo.MinParams}" : $"accepts at most {fo.MaxParams}",
+				return raise && InvalidCallback(fo.MinParams > argCount ? $"requires {fo.MinParams}" : $"accepts at most {fo.MaxParams}",
 									   argCount, fo.Mph.QualifiedName);
 			}
 
@@ -93,7 +96,7 @@ namespace Keysharp.Builtins
 					return false;
 
 				if (hasMin && min > argCount)
-					return InvalidCallback($"requires {min}", argCount, Types.Type(obj));
+					return raise && InvalidCallback($"requires {min}", argCount, Types.Type(obj));
 
 				// As AHK, MaxParams is asked only when it could matter, and IsVariadic only when MaxParams falls short.
 				if (argCount > 0 && !(hasMin && min == argCount))
@@ -107,7 +110,7 @@ namespace Keysharp.Builtins
 							return false;
 
 						if (variadic == 0)
-							return InvalidCallback($"accepts at most {max}", argCount, Types.Type(obj));
+							return raise && InvalidCallback($"accepts at most {max}", argCount, Types.Type(obj));
 					}
 				}
 			}
@@ -116,7 +119,9 @@ namespace Keysharp.Builtins
 			if (hasMin || hasMax || IsInvocable(obj))
 				return true;
 
-			_ = Errors.MissingMethodErrorOccurred(obj, "Call");
+			if (raise)
+				_ = Errors.MissingMethodErrorOccurred(obj, "Call");
+
 			return false;
 		}
 
@@ -204,26 +209,30 @@ namespace Keysharp.Builtins
 		private static bool IsInvocable(KeysharpObject obj)
 			=> HasMember(obj, "Call") || HasMember(obj, "__Call") || obj is IMetaObject;
 
-		// Match AHK Object::GetMethod without running a getter; a getter hides inherited values but not methods.
-		private static bool HasMember(Any obj, string name)
+		private static bool HasMember(Any obj, string name) => FindMethod(obj, name) != null;
+
+		// AHK's Object::GetMethod: the first Call up the chain, or an object value that no getter below it hides. No
+		// getter runs. A primitive value starts from its prototype.
+		private static object FindMethod(object value, string name)
 		{
 			var getterSeen = false;
+			var start = value as Any ?? (Primitive.IsNative(value) ? Script.TheScript.Vars.Prototypes[Primitive.MapPrimitiveToNativeType(value)] : null);
 
-			for (var o = obj; o != null; o = o.Base)
+			for (var o = start; o != null; o = o.Base)
 			{
 				if (o.op == null || !o.op.TryGetValue(name, out var desc))
 					continue;
 
 				if (desc.Call != null)
-					return true;
+					return desc.Call;
 
 				if (desc.Get != null)
 					getterSeen = true;
 				else if (desc.Value != null)
-					return !getterSeen && desc.Value is Any;
+					return !getterSeen && desc.Value is Any ? desc.Value : null;
 			}
 
-			return false;
+			return null;
 		}
 
 		/// <summary>
@@ -308,21 +317,21 @@ namespace Keysharp.Builtins
 		/// <exception cref="MethodError">A <see cref="MethodError"/> exception is thrown if the method cannot be found.</exception>
 		public static object GetMethod(object value, object name = null, object paramCount = null)
 		{
-			var v = value;
-
 			if (!name.CoerceString(out var n))
 				return DefaultObject;
 
 			if (!paramCount.CoerceInt(out var count, -1))
 				return DefaultObject;
 
-			var mph = Reflections.FindAndCacheMethod(v.GetType(), n.Length > 0 ? n : "Call", count);
+			// As AHK's BIF_GetMethod: the method is found as a call would find it and returned as it is stored, and
+			// ParamCount, which omits the implicit this, is checked against it.
+			var method = name == null ? value as Any : FindMethod(value, n);
 
-			if (mph?.mi is { } method && method.GetCustomAttribute<PublicHiddenFromUser>() == null)
-				return new KeysharpFunc(mph.mi, null);
+			if (method == null)
+				return Script.CompatReturnsUnsetForMissing ? null : Errors.MissingMethodErrorOccurred(value, name == null ? "Call" : n);
 
-			return Script.CompatReturnsUnsetForMissing ? null
-				: Errors.MethodErrorOccurred($"Unable to retrieve method {n} from object of type {v.GetType()} with parameter count {count}.");
+			var argCount = paramCount == null ? -1 : count + (name != null ? 1 : 0);
+			return ValidateFunctor(method, argCount) ? method : DefaultObject;
 		}
 
 		/// <summary>
@@ -337,27 +346,18 @@ namespace Keysharp.Builtins
 		public static long HasMethod(object value, object name = null, object paramCount = null)
 		{
 			if (!name.CoerceString(out var n)) return 0L;
-			if (n == "") n = "Call";
+
 			if (!paramCount.CoerceInt(out var count, -1))
 				return 0L;
 
-			var mitup = GetMethodOrProperty(value, n, count, checkBase: true, throwIfMissing: false, invokeMeta: false);
-			if (mitup.Item2 == null) return 0L;
-			switch (mitup.Item2)
-			{
-				case KeysharpFunc fn:
-					if (count != -1)
-					{
-						bool hasThis = value is KeysharpFunc ? false : value is KeysharpObject ? true : fn.IsMethod;
-						if (count < (fn.MinParams - (hasThis ? 1 : 0))) return 0L;
-						if (count > (fn.MaxParams - (hasThis ? 1 : 0)) && !fn.IsVariadic) return 0L;
-					}
-					return 1L;
-				case KeysharpObject callable:
-				case MethodPropertyHolder mph:
-					return 1L;
-			}
-			return 0L;
+			var method = name == null ? value as Any : FindMethod(value, n);
+
+			// A COM or CLR object's members are found through its own dispatch.
+			if (method == null && name != null && value is IMetaObject)
+				return GetMethodOrProperty(value, n, count, checkBase: true, throwIfMissing: false, invokeMeta: false).Item2 != null ? 1L : 0L;
+
+			var argCount = paramCount == null ? -1 : count + (name != null ? 1 : 0);
+			return method != null && ValidateFunctor(method, argCount, raise: false) ? 1L : 0L;
 		}
 
 		/// <summary>
@@ -381,7 +381,8 @@ namespace Keysharp.Builtins
 
 			Any nextBase = null;
 
-			if (value is Any kso)
+			// A primitive answers from its prototype, as AHK's ParamToObjectOrBase does, not from its CLR type.
+			if ((value as Any ?? (Primitive.IsNative(value) ? Script.TheScript.Vars.Prototypes[Primitive.MapPrimitiveToNativeType(value)] : null)) is Any kso)
 			{
 				if (kso.op != null && kso.op.ContainsKey(n))
 					return 1L;

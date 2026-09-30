@@ -758,10 +758,10 @@ namespace Keysharp.Builtins
 		/// sink's methods, which is the one place a callback is addressed by name; everywhere else, and at every
 		/// other built-in, a callback is a function object.
 		/// </summary>
-		/// <param name="handler">A function object, or the name of a method on eventObj.</param>
-		/// <param name="eventObj">The Gui's event sink, or null when it was built without one.</param>
+		/// <param name="handler">A function object, or the name of a method on the Gui's event sink.</param>
+		/// <param name="form">The Gui's window, which holds its event sink, if it has one.</param>
 		/// <returns>The handler to register, or null once it has been refused.</returns>
-		internal static object ResolveHandler(object handler, object eventObj)
+		internal static object ResolveHandler(object handler, KeysharpForm form)
 		{
 			if (!IsMethodName(handler))
 				return Functions.ToCallback(handler);
@@ -770,8 +770,8 @@ namespace Keysharp.Builtins
 			if (!handler.CoerceString(out var name))
 				return null;
 
-			if (eventObj != null && name.Length > 0)
-				return new KeysharpFunc(name, eventObj);
+			if (form.eventObj != null && name.Length > 0)
+				return form.SinkMethod(name);
 
 			_ = Errors.ValueErrorOccurred(name.Length > 0 && handler is string
 										  ? $"Cannot use the string \"{name}\" as a function, as this Gui has no event sink. Pass the function itself, or %\"{name}\"% to resolve a name at run time."
@@ -783,13 +783,30 @@ namespace Keysharp.Builtins
 		internal static bool IsMethodName(object handler) => handler is not (Any or Delegate or null);
 
 		/// <summary>
+		/// The handler a method name registers, as AHK's: the method is looked up on the sink when the event fires and runs
+		/// with the sink as <c>this</c> and the Gui or control first. Each name gives one handler, as AHK keeps the name
+		/// itself, so a later registration or removal by the same name finds the one registered.
+		/// </summary>
+		internal KeysharpFunc SinkMethod(string name)
+		{
+			sinkMethods ??= new(StringComparer.OrdinalIgnoreCase);
+
+			if (!sinkMethods.TryGetValue(name, out var method))
+				sinkMethods[name] = method = Functions.ObjBindMethod(eventObj, name) as KeysharpFunc;
+
+			return method;
+		}
+
+		private Dictionary<string, KeysharpFunc> sinkMethods;
+
+		/// <summary>
 		/// The AddRemove and handler of a Gui event registration, both checked as AHK's GuiType::OnEvent checks them:
 		/// AddRemove must be 1, -1 or 0, and a function object being added must take the <paramref name="argCount"/>
 		/// arguments the event passes. A sink method name and a removal are not checked. Null once refused.
 		/// </summary>
-		internal static object CheckedHandler(object handler, object eventObj, object addRemove, int argCount, out long change)
+		internal static object CheckedHandler(object handler, KeysharpForm form, object addRemove, int argCount, out long change)
 		{
-			if (!Functions.TryAddRemove(addRemove, out change) || ResolveHandler(handler, eventObj) is not { } resolved)
+			if (!Functions.TryAddRemove(addRemove, out change) || ResolveHandler(handler, form) is not { } resolved)
 				return null;
 
 			return change == 0 || IsMethodName(handler) || Functions.ValidateFunctor(resolved, argCount) ? resolved : null;
@@ -816,14 +833,8 @@ namespace Keysharp.Builtins
 			if (argCount < 0)
 				return Errors.ValueErrorOccurred($"Unknown EventName \"{Errors.Describe(obj0)}\". Expected Close, ContextMenu, DropFiles, DpiChanged, Escape or Size.", obj0);
 
-			if (CheckedHandler(obj1, eventObj, obj2, argCount, out var i) is not { } del)
+			if (CheckedHandler(obj1, this, obj2, argCount, out var i) is not { } del)
 				return DefaultObject;
-
-			// Only detach the receiver ResolveHandler just attached by resolving a method NAME on the sink, since
-			// the Gui takes the receiver slot at dispatch. A function object the script supplied carries its own
-			// receiver, and is the script's own object, so clearing Inst on it would corrupt every other holder.
-			if (IsMethodName(obj1) && eventObj != null && del is KeysharpFunc named && ReferenceEquals(named.Inst, eventObj))
-				named.Inst = null;
 
 			var registry = e switch
 			{

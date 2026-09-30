@@ -207,16 +207,14 @@ namespace Keysharp.Internals.Invoke
 		/// <list type="bullet">
 		/// <item><c>1</c> -- real instance method whose receiver was passed as <c>args[0]</c>.</item>
 		/// <item><c>0</c> -- receiver supplied out-of-band, or a plain static.</item>
-		/// <item><c>-1</c> -- a static using the explicit <c>object @this</c> convention with the receiver supplied
-		/// out-of-band (the caller prepends it). Safe despite being negative because it is gated on
-		/// <c>receiverInCounts</c>, which tests for that <c>@this</c> parameter with the SAME predicate
-		/// <c>BuildParamIndexMap</c> uses to exclude it from the name map: where this returns -1,
-		/// <c>parameters[0]</c> is provably the receiver and no name can resolve to slot -1. A static without one,
-		/// invoked with an instance from elsewhere (the Clr overload swap in <c>Reflections</c>), gets 0.</item>
+		/// <item><c>-1</c> -- a static given the receiver out-of-band, which the invoke wrapper then passes as
+		/// parameter zero (its <c>start = -1</c>), whatever that parameter is named. An explicit <c>@this</c> is left
+		/// out of the name map; a parameter of another name that receives the receiver resolves to slot -1, which
+		/// <see cref="TryPlace"/> rejects as already supplied.</item>
 		/// </list>
 		/// </summary>
 		internal static int ArgBase(MethodPropertyHolder mph, object instance) =>
-			!mph.IsStatic ? (instance == null ? 1 : 0) : (instance != null && mph.receiverInCounts ? -1 : 0);
+			!mph.IsStatic ? (instance == null ? 1 : 0) : (instance != null ? -1 : 0);
 
 		/// <summary>
 		/// Resolves each name to its argument slot and merges the values into a positional array, or returns null
@@ -268,6 +266,13 @@ namespace Keysharp.Internals.Invoke
 
 				placed++;
 				slots[i] = paramIndex + argBase;
+
+				// The parameter the receiver fills has its value already.
+				if (slots[i] < 0)
+				{
+					failure = entries[i].Name;
+					return null;
+				}
 
 				if (slots[i] >= size)
 					size = slots[i] + 1;

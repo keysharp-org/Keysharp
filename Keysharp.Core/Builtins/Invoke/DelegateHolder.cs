@@ -412,7 +412,7 @@ namespace Keysharp.Builtins
 
 				completed = true;
 			}
-			catch (Exception ex) when (CallStack.Remember(ex))
+			catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 			{
 				_ = Errors.ReportUncaught(ex);
 			}

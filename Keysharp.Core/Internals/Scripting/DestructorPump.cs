@@ -107,9 +107,11 @@ namespace Keysharp.Internals.Scripting
 				}
 
 				var deleted = false;
+				// A batch of Buffers and Files, the usual one, has nothing to order.
+				var anyDelete = batch.Exists(static entry => !entry.Again && entry.Owner.HasDeleteCall);
 
 				// Outside-in (parents before children), and each object's __Delete only the first time it is collected.
-				foreach (var any in OrderOutsideIn([.. batch.Where(entry => !entry.Again).Select(entry => entry.Owner)]))
+				foreach (var any in anyDelete ? OrderOutsideIn([.. batch.Where(entry => !entry.Again).Select(entry => entry.Owner)]) : [])
 				{
 					if (!any.HasDeleteCall)
 						continue;
@@ -189,7 +191,7 @@ namespace Keysharp.Internals.Scripting
 			// Heuristic: if A references B (directly) and both are in the batch,
 			// A should precede B (outside-in).
 			// We build a graph using shallow enumeration of Keysharp-contained children.
-			var set = new HashSet<Any>(batch);
+			var set = new HashSet<Any>(batch, ReferenceEqualityComparer.Instance);
 			var edges = new Dictionary<Any, HashSet<Any>>(ReferenceEqualityComparer.Instance);
 			foreach (var a in batch)
 			{
@@ -199,7 +201,7 @@ namespace Keysharp.Internals.Scripting
 					if (ReferenceEquals(a, c)) continue;
 					if (c is Any child && set.Contains(child))
 					{
-						if (!edges.TryGetValue(a, out var to)) edges[a] = to = new();
+						if (!edges.TryGetValue(a, out var to)) edges[a] = to = new(ReferenceEqualityComparer.Instance);
 						to.Add(child);
 					}
 				}
@@ -237,10 +239,10 @@ namespace Keysharp.Internals.Scripting
 				}
 			}
 
-			// Fallback for cycles or unknown relationships: append remaining in stable order.
+			// Fallback for cycles: append the rest, which still have incoming edges, in stable order.
 			if (result.Count != nodes.Count)
 				foreach (var n in nodes)
-					if (!result.Contains(n)) result.Add(n);
+					if (incoming[n] > 0) result.Add(n);
 
 			return result;
 		}

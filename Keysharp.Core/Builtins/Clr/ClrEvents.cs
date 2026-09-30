@@ -201,7 +201,7 @@ namespace Keysharp.Builtins
 			{
 				_ = Script.InvokeOrNull(Callback, null, args);
 			}
-			catch (Exception ex) when (CallStack.Remember(ex))
+			catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 			{
 				// Reported as an ordinary script error on the owning thread. Letting this escape would put an unhandled
 				// exception on a threadpool thread, which takes the process down.

@@ -969,9 +969,9 @@ namespace Keysharp.Builtins
 		private static KeysharpObject ScriptCheckResult(bool isValid, IEnumerable<string> errors, IEnumerable<string> warnings)
 		{
 			var result = new KeysharpObject();
-			result.DefinePropInternal("IsValid", new OwnPropsDesc(result, isValid ? 1L : 0L));
-			result.DefinePropInternal("Errors", new OwnPropsDesc(result, new Keysharp.Builtins.Array(errors.Cast<object>().ToList())));
-			result.DefinePropInternal("Warnings", new OwnPropsDesc(result, new Keysharp.Builtins.Array(warnings.Cast<object>().ToList())));
+			result.DefinePropInternal("IsValid", new OwnPropsDesc(isValid ? 1L : 0L));
+			result.DefinePropInternal("Errors", new OwnPropsDesc(new Keysharp.Builtins.Array(errors.Cast<object>().ToList())));
+			result.DefinePropInternal("Warnings", new OwnPropsDesc(new Keysharp.Builtins.Array(warnings.Cast<object>().ToList())));
 			return result;
 		}
 	}

@@ -23,18 +23,7 @@ namespace Keysharp.Builtins.COM
 		public object VarType
 		{
 			get => varType ?? DBusSignature;
-			set
-			{
-				DBusSignature = ResolveSignature(value);
-
-				if (value is string)
-					varType = value;
-				else
-				{
-					_ = value.TryCoerceLong(out var vt);
-					varType = vt;
-				}
-			}
+			set => _ = TrySetVarType(value);
 		}
 
 		public ComValue(params object[] args) : base(args) => Init(args);
@@ -47,56 +36,91 @@ namespace Keysharp.Builtins.COM
 
 		private void Init(object[] args)
 		{
-			if (args == null || args.Length == 0)
+			if (args == null || args.Length == 0 || !TrySetVarType(args[0]))
 				return;
 
-			VarType = args[0];
 			Value = args.Length > 1 ? args[1] : null;
 		}
 
-		/// <summary>Maps the caller's type tag to a D-Bus signature, accepting either notation.</summary>
-		internal static string ResolveSignature(object varType)
+		private bool TrySetVarType(object value)
 		{
-			if (varType == null)
-				throw new ArgumentException("ComValue needs a D-Bus type signature.");
+			if (!TryResolveSignature(value, out var signature, out var tag))
+				return false;
 
-			// A number is a Windows VT_* constant; only the unambiguous ones carry over.
-			if (varType is not string)
+			DBusSignature = signature;
+			varType = tag;
+			return true;
+		}
+
+		/// <summary>
+		/// Maps the caller's type tag, a D-Bus signature or a Windows VT_* constant, to a D-Bus signature, with the tag
+		/// as the caller's notation keeps it. False when it raised an error the script continued.
+		/// </summary>
+		private static bool TryResolveSignature(object varType, out string signature, out object tag)
+		{
+			signature = null;
+			tag = null;
+
+			if (varType == null)
 			{
-				_ = varType.TryCoerceLong(out var vt);
-				return vt switch
-				{
-					2 => "n",       // VT_I2
-					3 => "i",       // VT_I4
-					4 => "d",       // VT_R4  -> D-Bus has no single; widen
-					5 => "d",       // VT_R8
-					8 => "s",       // VT_BSTR
-					11 => "b",      // VT_BOOL
-					16 => "y",      // VT_I1  -> no signed byte on the wire; use byte
-					17 => "y",      // VT_UI1
-					18 => "q",      // VT_UI2
-					19 => "u",      // VT_UI4
-					20 => "x",      // VT_I8
-					21 => "t",      // VT_UI8
-					22 => "i",      // VT_INT
-					23 => "u",      // VT_UINT
-					_ => throw new ArgumentException($"VT_ constant {vt} has no D-Bus equivalent; pass a D-Bus signature string instead.")
-				};
+				_ = Errors.ValueErrorOccurred("ComValue needs a D-Bus type signature.");
+				return false;
 			}
 
-			var sig = (string)varType;
+			if (varType is string sig)
+			{
+				// Validated now so a bad signature is reported at construction, not deep inside marshalling. Fully
+				// qualified: the DBusSignature property on this class would otherwise shadow the parser type.
+				try
+				{
+					if (sig.Length == 0 || Keysharp.Internals.DBus.DBusSignature.Parse(sig).Length != 1)
+					{
+						_ = Errors.ValueErrorOccurred("ComValue needs a single complete D-Bus type.", sig);
+						return false;
+					}
+				}
+				catch (FormatException ex)
+				{
+					_ = Errors.ValueErrorOccurred(ex.Message, sig);
+					return false;
+				}
 
-			if (sig.Length == 0)
-				throw new ArgumentException("ComValue needs a non-empty D-Bus type signature.");
+				signature = sig;
+				tag = sig;
+				return true;
+			}
 
-			// Fully qualified: the DBusSignature property on this class would otherwise shadow the parser type.
-			// Validate now so a bad signature is reported at construction, not deep inside marshalling.
-			var nodes = Keysharp.Internals.DBus.DBusSignature.Parse(sig);
+			if (!varType.CoerceLong(out var vt))
+				return false;
 
-			if (nodes.Length != 1)
-				throw new ArgumentException($"'{sig}' is not a single complete D-Bus type.");
+			// A number is a Windows VT_* constant; only the unambiguous ones carry over.
+			signature = vt switch
+			{
+				2 => "n",       // VT_I2
+				3 => "i",       // VT_I4
+				4 => "d",       // VT_R4  -> D-Bus has no single; widen
+				5 => "d",       // VT_R8
+				8 => "s",       // VT_BSTR
+				11 => "b",      // VT_BOOL
+				16 => "y",      // VT_I1  -> no signed byte on the wire; use byte
+				17 => "y",      // VT_UI1
+				18 => "q",      // VT_UI2
+				19 => "u",      // VT_UI4
+				20 => "x",      // VT_I8
+				21 => "t",      // VT_UI8
+				22 => "i",      // VT_INT
+				23 => "u",      // VT_UINT
+				_ => null
+			};
 
-			return sig;
+			if (signature == null)
+			{
+				_ = Errors.ValueErrorOccurred($"VT_ constant {vt} has no D-Bus equivalent; pass a D-Bus signature string instead.", vt);
+				return false;
+			}
+
+			tag = vt;
+			return true;
 		}
 	}
 }

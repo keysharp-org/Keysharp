@@ -170,4 +170,12 @@ optreffunc(,&val2)
 
 Assert(b is unset, A_LineNumber)
 
+; IsOptional counts the parameters a caller passes: an unbound method's receiver among them, and a variadic tail
+; however far it reaches.
+Opt(a, b := 1, c*) => 0
+Assert(!Opt.IsOptional(1) && Opt.IsOptional(2) && Opt.IsOptional(5) && Opt.IsOptional(), A_LineNumber)
+Two(a, b) => 0
+Throws(() => Two.IsOptional(3), A_LineNumber, ValueError)
+Assert(!Array.Prototype.Push.IsOptional(1) && Array.Prototype.Push.IsOptional(2), A_LineNumber)
+
 FileAppend "pass", "*"

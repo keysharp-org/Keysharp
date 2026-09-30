@@ -23,10 +23,14 @@ namespace Keysharp.Builtins
 		public override object __New(params object[] args)
 		{
 			if (args == null || args.Length < 2)
-				throw new System.ArgumentException("PropRef requires at least (target, name).");
+				return Errors.ErrorOccurred(new ArgumentError("Too few parameters passed to function.", null, "PropRef"), DefaultObject);
 
 			var target = args[0];
 			var name = args[1];
+
+			if (name == null)
+				return Errors.UnsetErrorOccurred("PropRef's property name");
+
 			var refArgs = args.Length > 2 ? args[2..] : [];
 
 			Target = target;

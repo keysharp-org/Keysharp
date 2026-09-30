@@ -64,6 +64,10 @@ dynamicKey := {%stringResult%: 1}
 AssertEq(dynamicKey.stringified, 1, A_LineNumber)
 noKey := {}
 Throws(() => ({%noKey%: 1}), A_LineNumber, TypeError)
+numberNamed := {}
+numberNamed.DefineProp("__Call", {call: (this, name, args) => name})
+numberName := 1
+AssertEq(numberNamed.%numberName%(), "1", A_LineNumber)
 
 ; An Array prints as [a, b] and a Map as [key: value], with strings quoted; a collection that contains itself shows [...].
 AssertEq(String([1, 1.0, "s", [unset]]), '[1, 1.0, "s", [unset]]', A_LineNumber)

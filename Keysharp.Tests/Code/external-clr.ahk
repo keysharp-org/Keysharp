@@ -29,8 +29,8 @@ AssertEq("<" sb ">", "<Hello, world>", A_LineNumber)
 i32 := System.Int32(123)
 AssertEq(i32.CompareTo(100), 1, A_LineNumber)
 
-; 4) IndexOf returns integer-like (expect 2)
-AssertEq("abcdef".IndexOf("cd"), 2, A_LineNumber)
+; 4) IndexOf returns integer-like (expect 2). A script string has only String's methods, so the .NET one is wrapped.
+AssertEq(Clr.Wrap("abcdef").IndexOf("cd"), 2, A_LineNumber)
 
 ; 5) Math.Sqrt
 math := System.Math
@@ -300,5 +300,18 @@ stream := System.IO.MemoryStream(System.Convert.FromBase64String("SGkh"))
 dest := Buffer(3, 0)
 AssertEq(stream.Read(dest), 3, A_LineNumber)
 AssertEq(NumGet(dest, 0, "UChar"), 72, A_LineNumber)
+
+; 58) A span method's out parameter is written back, and whatever the reference held beforehand is never converted.
+leBuf := Buffer(4)
+NumPut("Int", 305419896, leBuf)
+box := { __Value: "" }
+AssertEq(System.Buffers.Binary.BinaryPrimitives.TryReadInt32LittleEndian(leBuf, box), 1, A_LineNumber)
+AssertEq(box.__Value, 305419896, A_LineNumber)
+
+; 59) A ref parameter's value converts as its element type does, so a non-number raises a TypeError.
+box := { __Value: 5 }
+AssertEq(System.Threading.Interlocked.Increment(box), 6, A_LineNumber)
+AssertEq(box.__Value, 6, A_LineNumber)
+Throws(() => System.Threading.Interlocked.Increment({ __Value: "abc" }), A_LineNumber, TypeError)
 
 FileAppend "pass", "*"

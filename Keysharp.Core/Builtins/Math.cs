@@ -256,7 +256,7 @@ namespace Keysharp.Builtins
 				return DefaultObject;
 
 			if (n < 0)
-				return Errors.ErrorOccurred($"Ln()argument {n} was negative.");
+				return Errors.ErrorOccurred($"Ln() argument {n} was negative.");
 
 			return Math.Log(n);
 		}

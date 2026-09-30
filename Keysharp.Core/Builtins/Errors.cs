@@ -96,7 +96,7 @@ namespace Keysharp.Builtins
 
 						exit.Restore();
 					}
-					catch (Exception ex) when (CallStack.Remember(ex))
+					catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 					{
 						// The callback's own error gets the default dialog, never these callbacks, and the error they
 						// were called for is dropped.
@@ -419,6 +419,12 @@ namespace Keysharp.Builtins
 		[StackTraceHidden]
 		internal static object ExpectedTypeErrorOccurred(string expectedType, object value, object ret = null)
 		{
+			Error err = ExpectedTypeError(expectedType, value);
+			return ErrorOccurred(err) ? throw err : ret ?? DefaultObject;
+		}
+
+		internal static TypeError ExpectedTypeError(string expectedType, object value)
+		{
 			static string An(string type) => "AEIOUaeiou".Contains(type[0]) ? "an " : "a ";
 			var (actualType, extra) = value switch
 			{
@@ -427,9 +433,7 @@ namespace Keysharp.Builtins
 				string or long or double or bool => (Types.Type(value), Describe(value)),
 				_ => (Types.TypeName(value.GetType()), "")
 			};
-			Error err;
-			return ErrorOccurred(err = new TypeError($"Expected {An(expectedType)}{expectedType} but got {An(actualType)}{actualType}.", null, extra))
-				   ? throw err : ret ?? DefaultObject;
+			return new TypeError($"Expected {An(expectedType)}{expectedType} but got {An(actualType)}{actualType}.", null, extra);
 		}
 
 		/// <summary>
@@ -629,21 +633,21 @@ namespace Keysharp.Builtins
 		private void SetProperties(string message, CallStack.Report report, string extra, object number = null)
 		{
 			var props = op ??= new Dictionary<string, OwnPropsDesc>(number == null ? 6 : 7, StringComparer.OrdinalIgnoreCase);
-			props["Extra"] = new OwnPropsDesc(this, extra);
-			props["File"] = new OwnPropsDesc(this, report.File);
-			props["Line"] = new OwnPropsDesc(this, report.Line);
-			props["Message"] = new OwnPropsDesc(this, message);
+			props["Extra"] = new OwnPropsDesc(extra);
+			props["File"] = new OwnPropsDesc(report.File);
+			props["Line"] = new OwnPropsDesc(report.Line);
+			props["Message"] = new OwnPropsDesc(message);
 
 			if (number != null)
-				props["Number"] = new OwnPropsDesc(this, number);
+				props["Number"] = new OwnPropsDesc(number);
 
-			props["Stack"] = new OwnPropsDesc(this, report.Stack);
-			props["What"] = new OwnPropsDesc(this, report.What);
+			props["Stack"] = new OwnPropsDesc(report.Stack);
+			props["What"] = new OwnPropsDesc(report.What);
 		}
 
 		private protected object Own(string name) => op != null && op.TryGetValue(name, out var desc) ? desc.Value : null;
 
-		private protected void SetOwn(string name, object value) => EnsureOwnProps()[name] = new OwnPropsDesc(this, value);
+		private protected void SetOwn(string name, object value) => EnsureOwnProps()[name] = new OwnPropsDesc(value);
 
 		// A field as text for describing the error, which must not raise or run script code: an object is empty, as AHK's
 		// TokenToString makes it.

@@ -389,8 +389,8 @@ namespace Keysharp.Tests
 			using var surface = OverlaySurface.Plain(new PixelSize(200, 100));
 			var canvas = surface.Image;
 			var transform = new KeysharpObject();
-			transform.DefinePropInternal("OffsetX", new OwnPropsDesc(transform, 30L));
-			transform.DefinePropInternal("SkewX", new OwnPropsDesc(transform, 0.5));
+			transform.DefinePropInternal("OffsetX", new OwnPropsDesc(30L));
+			transform.DefinePropInternal("SkewX", new OwnPropsDesc(0.5));
 			canvas.Transform = transform;
 
 			var path = new Ks.KeysharpImage.KeysharpPath();
@@ -657,7 +657,7 @@ namespace Keysharp.Tests
 
 		[Test, Category("Gui"), NonParallelizable]
 		[Apartment(ApartmentState.STA)]
-		public void OptInPlace() => Assert.IsTrue(TestScript("gui-opt-in-place", false));
+		public void GuiWindow() => Assert.IsTrue(TestScript("gui-window", false));
 
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]
