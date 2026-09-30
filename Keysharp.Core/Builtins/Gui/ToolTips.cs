@@ -345,8 +345,14 @@ namespace Keysharp.Builtins
 			var iconnumber = ImageHelper.PrepareIconNumber(iconNumber);
 			var script = Script.TheScript;
 
+			var freezeChanged = false;
+
 			if (freeze != null)
-				A_IconFrozen = freeze.Ab();
+			{
+				var frozen = freeze.Ab();
+				freezeChanged = frozen != (bool)A_IconFrozen;
+				A_IconFrozen = frozen;
+			}
 
 			if (filename != "*")
 			{
@@ -372,6 +378,9 @@ namespace Keysharp.Builtins
 					script.customIcon = icon;
 					script.PostToUIThread(() => ApplyScriptIcon(script, icon));
 				}
+				// As in AHK, freezing or unfreezing alone shows the icon the new setting picks.
+				else if (freezeChanged)
+					script.PostToUIThread(script.ApplyTrayIcon);
 			}
 			else
 			{
@@ -379,7 +388,7 @@ namespace Keysharp.Builtins
 				A_IconNumber = 1L;
 				script.customIcon = null;
 				//Use the embedded defaults rather than normalIcon: #App Icon and #TrayIcon can each replace one.
-				script.PostToUIThread(() => ApplyScriptIcon(script, script.scriptIcon, script.trayDefaultIcon));
+				script.PostToUIThread(() => ApplyScriptIcon(script, script.scriptIcon));
 			}
 
 			return DefaultObject;
@@ -387,13 +396,13 @@ namespace Keysharp.Builtins
 
 		/// <summary>
 		/// Puts the script's icon on the chrome that follows it: the tray icon and the main window. Guis pick it up
-		/// when they are created, so only windows that already exist are touched here. The tray can differ from the
-		/// windows only on the "*" reset, where a <c>#TrayIcon</c> selection is its default.
+		/// when they are created, so only windows that already exist are touched here. The tray shows what
+		/// <see cref="Script.ApplyTrayIcon"/> picks, which differs from the windows' icon for a <c>#TrayIcon</c>
+		/// selection and while the script is paused or suspended.
 		/// </summary>
-		private static void ApplyScriptIcon(Script script, Icon icon, Icon trayIcon = null)
+		private static void ApplyScriptIcon(Script script, Icon icon)
 		{
-			if (script.Tray != null)
-				script.Tray.Icon = trayIcon ?? icon;
+			script.ApplyTrayIcon();
 
 			if (script.mainWindow != null)
 				script.mainWindow.Icon = icon;

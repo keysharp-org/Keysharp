@@ -1408,9 +1408,11 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ The address of a variable cannot be taken using the reference operator.
 		+ It returns a VarRef object as in AutoHotkey. Its read-only `Name` property contains the referenced variable or property name when one is available.
 * Miscellaneous behavior:
-	+ Pausing the whole *script* is not supported, because a Keysharp script is actually a running program.
-		+ The tray menu's Pause item has been removed. `Pause()` and `A_IsPaused` remain and act on pseudo-threads, as in AHK: `Pause()` suspends the calling pseudo-thread until something clears its flag, and `Pause(1|0|-1)` sets, clears or toggles the flag on the *underlying* thread, which observes it when it resumes.
-		+ A paused thread keeps pumping, so hotkeys and work posted from another real thread still run and can unpause it — but timers are suspended for the duration, matching AHK. An `ExitApp` releases it.
+	+ `Pause`:
+		+ A thread marked by `Pause 1` pauses as soon as it resumes, even inside the function it was interrupted in, such as `WinWait`; AHK lets that function finish first.
+		+ The Pause Script menu item runs as a new thread, so it cannot unpause a thread which is Critical or has a higher priority.
+		+ A paused and suspended script shows the pause icon; there is no combined icon.
+		+ A paused thread holds off only the timers of its own real thread.
 	+ The `/script` command line switch for compiled scripts does not apply and is therefore not implemented.
 	* The `/Debug` command line switch is not implemented.
 	+ The Help menu item is not implemented yet.

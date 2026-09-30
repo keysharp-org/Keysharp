@@ -5,8 +5,16 @@ namespace Keysharp.Runtime
 	{
 		internal ToolStripMenuItem openMenuItem;
 		internal ToolStripMenuItem suspendMenuItem;
+		internal ToolStripMenuItem pauseMenuItem;
 		internal NotifyIcon Tray;
 		internal Keysharp.Builtins.Menu trayMenu;
+
+		/// <summary>
+		/// Whether the main thread's current pseudo-thread is paused, as the tray icon and the Pause Script items show it.
+		/// As in AHK, they follow the current thread, so a thread launched over a paused one shows unpaused until it ends.
+		/// Kept so that a thread launch or end which changes nothing costs only a comparison.
+		/// </summary>
+		internal bool showsPaused;
 
 		/// <summary>
 		/// The tray tooltip, which is the script's and not the icon's: it outlives #NoTrayIcon and a display-less
@@ -145,14 +153,83 @@ namespace Keysharp.Runtime
 				suspendMenuItem?.Checked = suspended;
 				mainWindow?.SuspendHotkeysToolStripMenuItem.Checked = suspended;
 				if (!(bool)A_IconFrozen && !NoTrayIcon && EnsureTrayIcon())
-					Tray.Icon = suspended ? suspendedIcon : trayDefaultIcon;
+					ApplyTrayIcon();
 			});
+		}
+
+		/// <summary>
+		/// Stops treating <paramref name="item"/> as a standard item once a script gives it a callback of its own, as
+		/// AHK does, so that its checkmark and visibility are the script's. AddStandard claims its items afresh.
+		/// </summary>
+		internal void ReleaseStandardItem(ToolStripItem item)
+		{
+			if (ReferenceEquals(item, openMenuItem))
+				openMenuItem = null;
+			else if (ReferenceEquals(item, suspendMenuItem))
+				suspendMenuItem = null;
+			else if (ReferenceEquals(item, pauseMenuItem))
+				pauseMenuItem = null;
 		}
 
 		internal static void SuspendHotkeys()
 		{
 			var script = TheScript;
 			script.SetSuspended(!script.flowData.suspended);
+		}
+
+		/// <summary>
+		/// The Pause Script menu item. As in AHK, it toggles the thread that was running when the item was chosen,
+		/// which is the one beneath the thread this runs in; with no thread running, that pauses the script itself.
+		/// </summary>
+		internal static void TogglePause() => ThreadAccessors.A_IsPaused = !ThreadAccessors.A_IsPaused;
+
+		/// <summary>
+		/// The main window's Pause Script item, which is chosen outside any pseudo-thread and so launches one to toggle
+		/// the thread beneath it.
+		/// </summary>
+		internal void LaunchTogglePause() => Threads.LaunchThreadInMain(TogglePause, kind: ThreadKind.Event);
+
+		/// <summary>
+		/// The tray icon for the pause and suspend states, or null when the script's own icon applies. As AHK's
+		/// UpdateTrayIcon, a paused thread takes precedence; there is no separate icon for both.
+		/// </summary>
+		internal Icon TrayStateIcon => showsPaused ? pausedIcon : flowData.suspended ? suspendedIcon : null;
+
+		/// <summary>
+		/// Shows the tray icon AHK's UpdateTrayIcon picks: the TraySetIcon icon while frozen or while nothing is paused or
+		/// suspended, else the icon of that state, and the script's own when there is neither. A pause or suspend change
+		/// leaves a frozen icon alone by not calling this.
+		/// </summary>
+		internal void ApplyTrayIcon()
+		{
+			if (Tray == null)
+				return;
+
+			var stateIcon = TrayStateIcon;
+			Tray.Icon = customIcon != null && (stateIcon == null || (bool)A_IconFrozen) ? customIcon : stateIcon ?? trayDefaultIcon;
+		}
+
+		/// <summary>
+		/// Brings the tray icon and the Pause Script checkmarks up to date with the main thread's current pseudo-thread.
+		/// Called wherever that can change: a pseudo-thread's launch or end, and a change of a pause flag.
+		/// </summary>
+		internal void UpdatePauseIndicators()
+		{
+			// A paused thread which ExitApp unwinds clears its flag after the tray is gone.
+			if (IsDisposed || !IsOnMainThread)
+				return;
+
+			var paused = Threads.CurrentThread.IsPaused;
+
+			if (paused == showsPaused)
+				return;
+
+			showsPaused = paused;
+			pauseMenuItem?.Checked = paused;
+			mainWindow?.PauseScriptToolStripMenuItem.Checked = paused;
+
+			if (!(bool)A_IconFrozen)
+				ApplyTrayIcon();
 		}
 
 		/// <summary>

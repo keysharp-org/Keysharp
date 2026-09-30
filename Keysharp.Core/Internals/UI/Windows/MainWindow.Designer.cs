@@ -36,6 +36,7 @@ namespace Keysharp.Internals.UI.Windows
 			editScriptToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
 			windowSpyToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
 			toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
+			pauseScriptToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
 			suspendHotkeysToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
 			exitToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
 			viewToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -77,7 +78,7 @@ namespace Keysharp.Internals.UI.Windows
 			//
 			// fileToolStripMenuItem
 			//
-			fileToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] { reloadScriptToolStripMenuItem, editScriptToolStripMenuItem, windowSpyToolStripMenuItem, toolStripSeparator1, suspendHotkeysToolStripMenuItem, exitToolStripMenuItem });
+			fileToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] { reloadScriptToolStripMenuItem, editScriptToolStripMenuItem, windowSpyToolStripMenuItem, toolStripSeparator1, pauseScriptToolStripMenuItem, suspendHotkeysToolStripMenuItem, exitToolStripMenuItem });
 			fileToolStripMenuItem.Name = "fileToolStripMenuItem";
 			fileToolStripMenuItem.Size = new System.Drawing.Size(37, 22);
 			fileToolStripMenuItem.Text = "&File";
@@ -109,6 +110,13 @@ namespace Keysharp.Internals.UI.Windows
 			//
 			toolStripSeparator1.Name = "toolStripSeparator1";
 			toolStripSeparator1.Size = new System.Drawing.Size(181, 6);
+			//
+			// pauseScriptToolStripMenuItem
+			//
+			pauseScriptToolStripMenuItem.Name = "pauseScriptToolStripMenuItem";
+			pauseScriptToolStripMenuItem.Size = new System.Drawing.Size(184, 22);
+			pauseScriptToolStripMenuItem.Text = "&Pause Script";
+			pauseScriptToolStripMenuItem.Click += pauseScriptToolStripMenuItem_Click;
 			//
 			// suspendHotkeysToolStripMenuItem
 			//
@@ -358,6 +366,7 @@ namespace Keysharp.Internals.UI.Windows
 		private System.Windows.Forms.ToolStripMenuItem editScriptToolStripMenuItem;
 		private System.Windows.Forms.ToolStripMenuItem windowSpyToolStripMenuItem;
 		private System.Windows.Forms.ToolStripSeparator toolStripSeparator1;
+		private System.Windows.Forms.ToolStripMenuItem pauseScriptToolStripMenuItem;
 		private System.Windows.Forms.ToolStripMenuItem suspendHotkeysToolStripMenuItem;
 		private System.Windows.Forms.ToolStripMenuItem exitToolStripMenuItem;
 		private System.Windows.Forms.ToolStripMenuItem variablesAndTheirContentsToolStripMenuItem;

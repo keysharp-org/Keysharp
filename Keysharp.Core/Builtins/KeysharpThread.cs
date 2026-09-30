@@ -115,8 +115,9 @@ namespace Keysharp.Builtins
 		/// <c>"Event"</c> covers every other registered handler: GUI events, menu items, OnExit, OnClipboardChange,
 		/// the Monitor, Clipboard and Audio hooks, and Overlay pointer handlers.
 		/// </summary>
-		public string Kind => Live().kind switch
+		public string Kind => Live()?.kind switch
 		{
+			null => DefaultErrorString,
 			ThreadKind.None => "",
 			ThreadKind.Auto => "Auto",
 			ThreadKind.Hotkey => "Hotkey",
@@ -134,7 +135,7 @@ namespace Keysharp.Builtins
 		};
 
 		/// <summary>Milliseconds elapsed since this thread was launched.</summary>
-		public long Elapsed => Environment.TickCount64 - Live().threadStartTick;
+		public long Elapsed => Live() is { } target ? Environment.TickCount64 - target.threadStartTick : 0L;
 
 		/// <summary>
 		/// This thread's priority. Reads back what <c>Thread "Priority", n</c> set; every thread starts at 0
@@ -142,12 +143,10 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public object Priority
 		{
-			get => Live().priority;
+			get => Live() is { } target ? target.priority : DefaultObject;
 			set
 			{
-				var target = Mutable();
-
-				if (value.CoerceLong(out var v))
+				if (Mutable() is { } target && value.CoerceLong(out var v))
 					manager.Owner.Threads.SetPriority(target, v);
 			}
 		}
@@ -158,8 +157,12 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public object AllowTimers
 		{
-			get => Live().configData.allowTimers;
-			set => manager.Owner.Threads.SetAllowTimers(Mutable(), Options.OnOff(value) ?? value.Ab());
+			get => Live() is { } target ? target.configData.allowTimers : DefaultObject;
+			set
+			{
+				if (Mutable() is { } target)
+					manager.Owner.Threads.SetAllowTimers(target, Options.OnOff(value) ?? value.Ab());
+			}
 		}
 
 		/// <summary>
@@ -175,13 +178,15 @@ namespace Keysharp.Builtins
 		// several of them accept more than a Boolean.
 		public object Critical
 		{
-			get => Live().isCritical;
+			get => Live() is { } target ? target.isCritical : DefaultObject;
 			set
 			{
+				if (Mutable() is not { } target)
+					return;
+
 				// Mirrors Flow.Critical: turning it on pins uninterruptibility so it never times out, turning
 				// it off makes the thread immediately interruptible regardless of "Thread Interrupt".
 				var on = value.Ab();
-				var target = Mutable();
 				target.isCritical = on;
 				target.configData.defaultIsCritical = on;
 				target.configData.peekFrequency = on
@@ -202,8 +207,12 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public object Paused
 		{
-			get => Live().IsPaused;
-			set => Mutable().IsPaused = value.Ab();
+			get => Live() is { } target ? target.IsPaused : DefaultObject;
+			set
+			{
+				if (Mutable() is { } target)
+					target.IsPaused = value.Ab();
+			}
 		}
 
 		/// <summary>
@@ -214,7 +223,9 @@ namespace Keysharp.Builtins
 		{
 			get
 			{
-				var target = Live();
+				if (Live() is not { } target)
+					return false;
+
 				// The full interruptibility rule (which also consults the script-wide flow state and can flip the
 				// thread's own flag as the startup window expires) only applies to the running thread.
 				return IsCurrentThread()
@@ -232,7 +243,10 @@ namespace Keysharp.Builtins
 		{
 			get
 			{
-				var position = (int)(Live().pseudoThreadId & 0xFFFF);
+				if (Live() is not { } target)
+					return DefaultObject;
+
+				var position = (int)(target.pseudoThreadId & 0xFFFF);
 
 				if (position <= 0)
 					return DefaultObject;
@@ -252,9 +266,7 @@ namespace Keysharp.Builtins
 		/// <returns>This thread's ID.</returns>
 		public object Exit(object exitCode = null)
 		{
-			var target = Mutable();
-
-			if (!exitCode.CoerceInt(out var ec))
+			if (Mutable() is not { } target || !exitCode.CoerceInt(out var ec))
 				return DefaultObject;
 
 			return manager.Owner.Threads.RequestExit(target, ec);
@@ -283,14 +295,16 @@ namespace Keysharp.Builtins
 			   && ReferenceEquals(manager.Owner.Threads.CurrentThread, tv);
 
 		/// <summary>
-		/// The live thread state, or a <c>TargetError</c> if this wrapper outlived its thread.
+		/// The live thread state, or a <c>TargetError</c> if this wrapper outlived its thread. When the script continues
+		/// that error, the result is null and the caller does nothing, as a built-in whose error is continued does.
 		/// </summary>
 		private ThreadVariables Live()
 		{
-			if (tv.pseudoThreadId != id)
-				_ = Errors.TargetErrorOccurred($"Thread {id} is no longer active.");
+			if (tv.pseudoThreadId == id)
+				return tv;
 
-			return tv;
+			_ = Errors.TargetErrorOccurred($"Thread {id} is no longer active.");
+			return null;
 		}
 
 		/// <summary>
@@ -299,12 +313,14 @@ namespace Keysharp.Builtins
 		/// </summary>
 		private ThreadVariables Mutable()
 		{
-			var target = Live();
+			if (Live() is not { } target)
+				return null;
 
-			if (System.Threading.Thread.CurrentThread.ManagedThreadId != target.threadId)
-				_ = Errors.TargetErrorOccurred($"Thread {id} belongs to another real thread and cannot be modified from this one.");
+			if (System.Threading.Thread.CurrentThread.ManagedThreadId == target.threadId)
+				return target;
 
-			return target;
+			_ = Errors.TargetErrorOccurred($"Thread {id} belongs to another real thread and cannot be modified from this one.");
+			return null;
 		}
 	}
 }

@@ -108,8 +108,9 @@ namespace Keysharp.Internals.Threading
 		internal bool waitingWhilePaused;
 
 		/// <summary>
-		/// Whether the pseudo-thread is paused. Each change is counted in the script's pausedThreadCount, AHK's
-		/// g_nPausedThreads, which holds off every timer while any thread is paused, the idle thread included.
+		/// Whether the pseudo-thread is paused. Each change is counted in its real thread's
+		/// <see cref="Threads.pausedThreadCount"/>, which holds off that thread's timers while any of its pseudo-threads
+		/// is paused. Only the owning real thread changes it, so its <see cref="Script.Threads"/> is the one counting.
 		/// </summary>
 		internal bool IsPaused
 		{
@@ -120,7 +121,15 @@ namespace Keysharp.Internals.Threading
 					return;
 
 				isPaused = value;
-				_ = Interlocked.Add(ref owner.pausedThreadCount, value ? 1 : -1);
+				var threads = owner.Threads;
+
+				// The wake runs an overdue timer once nothing is paused rather than when something next pumps.
+				if (value)
+					threads.pausedThreadCount++;
+				else if (--threads.pausedThreadCount == 0)
+					owner.CurrentSchedulerIfCreated?.WakeForTimerCheck();
+
+				owner.UpdatePauseIndicators();
 			}
 		}
 		internal bool allowThreadToBeInterrupted = true;

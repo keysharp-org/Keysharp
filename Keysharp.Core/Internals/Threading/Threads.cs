@@ -37,7 +37,11 @@ namespace Keysharp.Internals.Threading
 
 		private ThreadVariableManager ThreadVariableManagerForCurrentThread => tvm.Value;
 
-		internal ThreadVariables UnderlyingThread => ThreadVariableManagerForCurrentThread.threadVars.TryPeekSecond();
+		// The thread beneath the current one, which is the idle thread for one launched while the script was idle. The
+		// auto-execute thread is AHK's thread #0, which has nothing beneath it.
+		internal ThreadVariables UnderlyingThread
+			=> CurrentThread.kind == ThreadKind.Auto ? null : ThreadVariableManagerForCurrentThread.threadVars.TryPeekSecond();
+
 		internal int ActivePseudoThreadCount => ThreadVariableManagerForCurrentThread.PseudoThreadCount;
 
 		/// <summary>
@@ -46,6 +50,12 @@ namespace Keysharp.Internals.Threading
 		/// hotkeys.
 		/// </summary>
 		internal bool allowInterruption = true;
+
+		/// <summary>
+		/// How many of this real thread's pseudo-threads are paused, the idle one included: AHK's g_nPausedThreads, which
+		/// holds off every timer while it is above zero. Per real thread for the same reason as <see cref="allowInterruption"/>.
+		/// </summary>
+		internal int pausedThreadCount;
 
 		/// <summary>
 		/// Whether timers may run in the current pseudo-thread. This is the runtime's own state, so the
@@ -159,10 +169,21 @@ namespace Keysharp.Internals.Threading
 			if (remaining == 0 && !script.ExitIfNotPersistent() && !autoExecute)
 				script.ForgetPendingExitCode();
 
-			// The thread beneath this one may have been paused while it was interrupted, by Pause(1), A_IsPaused
-			// or thr.Paused. Those only set a flag; this is the point AHK observes it, when the underlying thread
-			// resumes. Costs one bool read when nothing is paused.
-			Keysharp.Internals.Flow.WaitWhilePaused(CurrentThread);
+			// With nothing paused here and no pause shown, the resumed thread cannot be paused, so the common case
+			// costs these two reads.
+			if (pausedThreadCount != 0 || script.showsPaused)
+			{
+				var resumed = CurrentThread;
+
+				if (resumed.IsPaused != script.showsPaused)
+					script.UpdatePauseIndicators();
+
+				// The thread beneath this one may have been paused while it was interrupted, by Pause(1), A_IsPaused
+				// or thr.Paused. Those only set a flag; this is the point AHK observes it, when the underlying thread
+				// resumes. The idle thread has nothing to resume, so pausing it only holds off timers, as in AHK.
+				if (resumed.IsPaused && ActivePseudoThreadCount != 0)
+					Keysharp.Internals.Flow.WaitWhilePaused(resumed);
+			}
 		}
 
 		internal bool TryPushThreadVariables(long priority, bool skipUninterruptible,
@@ -194,6 +215,11 @@ namespace Keysharp.Internals.Threading
 
 			//We successfully pushed—and if inc == true, we’ve already counted it
 			tv.task = true;
+
+			// A new thread is never paused, so only a paused one it interrupts shows otherwise.
+			if (script.showsPaused)
+				script.UpdatePauseIndicators();
+
 			return true;
 		}
 

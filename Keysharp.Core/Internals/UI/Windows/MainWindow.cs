@@ -13,6 +13,7 @@ namespace Keysharp.Internals.UI.Windows
 		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
 		public bool IsClosing { get; private set; }
 
+		internal ToolStripMenuItem PauseScriptToolStripMenuItem => pauseScriptToolStripMenuItem;
 		internal ToolStripMenuItem SuspendHotkeysToolStripMenuItem => suspendHotkeysToolStripMenuItem;
 
 		internal MainWindow(Script owner) : base(owner)
@@ -375,6 +376,8 @@ namespace Keysharp.Internals.UI.Windows
 			else
 				lastWindowState = WindowState;
 		}
+
+		private void pauseScriptToolStripMenuItem_Click(object sender, EventArgs e) => OwnerScript.LaunchTogglePause();
 
 		private void refreshToolStripMenuItem_Click(object sender, EventArgs e) => RefreshSelectedTab();
 

@@ -4,8 +4,10 @@ namespace Keysharp.Internals.UI.Unix
 {
 	public class MainWindow : KeysharpForm
 	{
+		private readonly ToolStripMenuItem pauseScriptToolStripMenuItem = new ("&Pause Script");
 		private readonly ToolStripMenuItem suspendHotkeysToolStripMenuItem = new ("&Suspend Hotkeys");
 		private readonly Eto.Forms.MenuBar mainMenu = new ();
+		private CheckMenuItem pauseScriptMenuItem;
 		private CheckMenuItem suspendHotkeysMenuItem;
 
 		private readonly TabControl tcMain = new ();
@@ -38,6 +40,7 @@ namespace Keysharp.Internals.UI.Unix
 		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
 		public bool IsClosing { get; private set; }
 
+		internal ToolStripMenuItem PauseScriptToolStripMenuItem => pauseScriptToolStripMenuItem;
 		internal ToolStripMenuItem SuspendHotkeysToolStripMenuItem => suspendHotkeysToolStripMenuItem;
 
 		internal MainWindow(Script owner) : base(owner)
@@ -94,12 +97,24 @@ namespace Keysharp.Internals.UI.Unix
 			//Hidden rather than disabled, to match the WinForms main window.
 			var editScriptItem = new ButtonMenuItem { Text = "&Edit Script", Shortcut = Eto.Forms.Application.Instance.CommonModifier | Eto.Forms.Keys.E, Visible = !A_IsCompiled };
 			var windowSpyItem = new ButtonMenuItem { Text = "&Window Spy" };
+			pauseScriptMenuItem = new CheckMenuItem { Text = "&Pause Script" };
 			suspendHotkeysMenuItem = new CheckMenuItem { Text = "&Suspend Hotkeys" };
 			var exitItem = new ButtonMenuItem { Text = "E&xit" };
 
 			reloadScriptItem.Click += reloadScriptToolStripMenuItem_Click;
 			editScriptItem.Click += editScriptToolStripMenuItem_Click;
 			windowSpyItem.Click += windowSpyToolStripMenuItem_Click;
+			// The toggle runs in a thread launched for it, which updates the checkmark through the stub once it has.
+			pauseScriptMenuItem.Click += (_, _) =>
+			{
+				pauseScriptToolStripMenuItem_Click(this, EventArgs.Empty);
+				pauseScriptMenuItem.Checked = pauseScriptToolStripMenuItem.Checked;
+			};
+			pauseScriptToolStripMenuItem.CheckedChanged += (_, _) =>
+			{
+				if (pauseScriptMenuItem != null)
+					pauseScriptMenuItem.Checked = pauseScriptToolStripMenuItem.Checked;
+			};
 			suspendHotkeysMenuItem.Click += (_, _) =>
 			{
 				suspendHotkeysToolStripMenuItem_Click(this, EventArgs.Empty);
@@ -119,6 +134,7 @@ namespace Keysharp.Internals.UI.Unix
 			fileMenu.Items.Add(editScriptItem);
 			fileMenu.Items.Add(windowSpyItem);
 			fileMenu.Items.Add(new SeparatorMenuItem());
+			fileMenu.Items.Add(pauseScriptMenuItem);
 			fileMenu.Items.Add(suspendHotkeysMenuItem);
 			fileMenu.Items.Add(exitItem);
 
@@ -413,6 +429,8 @@ namespace Keysharp.Internals.UI.Unix
 			//An open About box would otherwise outlive its owner and keep the Eto application running.
 			about?.Close();
 		}
+
+		private void pauseScriptToolStripMenuItem_Click(object sender, EventArgs e) => OwnerScript.LaunchTogglePause();
 
 		private void refreshToolStripMenuItem_Click(object sender, EventArgs e) => RefreshSelectedTab();
 

@@ -64,12 +64,15 @@ namespace Keysharp.Builtins
 				{
 					var script = Script.TheScript;
 					script.AccessorData.allowMainWindow = val.Value;
-					script.openMenuItem.Visible = val.Value;
 
-					if (!A_AllowMainWindow.Ab())
-						script.openMenuItem.Visible = false;
-					else
-						script.trayMenu.Default = "&Open";
+					// Only the standard Open item follows this, as in AHK: one given a callback of the script's own does not.
+					if (script.openMenuItem is { } open)
+					{
+						open.Visible = val.Value;
+
+						if (val.Value)
+							script.trayMenu.Default = "&Open";
+					}
 				}
 			}
 		}

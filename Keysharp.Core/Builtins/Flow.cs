@@ -458,22 +458,25 @@ namespace Keysharp.Builtins
 		/// </param>
 		public static object Pause(object underlyingThreadState = null)
 		{
-			if (underlyingThreadState == null)
+			if (!underlyingThreadState.CoerceString(out var text))
+				return DefaultObject;
+
+			switch (Conversions.ConvertOnOffToggle(text, ToggleValueType.Invalid))
 			{
-				var tv = TheScript.Threads.CurrentThread;
-				tv.IsPaused = true;
-				Keysharp.Internals.Flow.WaitWhilePaused(tv);
+				case ToggleValueType.Neutral:
+					var tv = TheScript.Threads.CurrentThread;
+					tv.IsPaused = true;
+					Keysharp.Internals.Flow.WaitWhilePaused(tv);
+					break;
+
+				case ToggleValueType.Toggle: ThreadAccessors.A_IsPaused = !ThreadAccessors.A_IsPaused; break;
+				case ToggleValueType.On: ThreadAccessors.A_IsPaused = true; break;
+				case ToggleValueType.Off: ThreadAccessors.A_IsPaused = false; break;
+
+				default:
+					return Errors.ValueErrorOccurred($"Invalid UnderlyingThreadState \"{text}\". Expected 1, 0 or -1.");
 			}
-			else
-			{
-				var state = Conversions.ConvertOnOffToggle(underlyingThreadState);
-				switch (state)
-				{
-					case ToggleValueType.Toggle: ThreadAccessors.A_IsPaused = !ThreadAccessors.A_IsPaused; break;
-					case ToggleValueType.Off: ThreadAccessors.A_IsPaused = false; break;
-					default: ThreadAccessors.A_IsPaused = true; break;
-				}
-			}
+
 			return DefaultObject;
 		}
 

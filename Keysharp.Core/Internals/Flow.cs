@@ -517,9 +517,9 @@ namespace Keysharp.Internals
 
 		/// <summary>
 		/// Suspends <paramref name="tv"/> while its paused flag is set, pumping so that a hotkey or posted work can
-		/// clear it, and suspending timers for the duration as AHK does. Shared by <c>Pause()</c>, which sets the
-		/// flag on the calling thread, and by the resume point in <c>Threads.EndThread</c>, which is where a thread
-		/// paused by <c>Pause(1)</c>/<c>A_IsPaused</c>/<c>thr.Paused</c> while it was interrupted observes it.
+		/// clear it, as AHK's MsgWaitUnpause does; the flag itself holds off timers. Shared by <c>Pause()</c>, which
+		/// sets the flag on the calling thread, and by the resume point in <c>Threads.EndThread</c>, which is where a
+		/// thread paused by <c>Pause(1)</c>/<c>A_IsPaused</c>/<c>thr.Paused</c> while it was interrupted observes it.
 		/// <para>
 		/// It never throws. This runs inside <c>EndThread</c>, which is reached during exception unwinds, so
 		/// propagating an exit from here could replace an in-flight exception; the predicate watches for shutdown
@@ -536,9 +536,6 @@ namespace Keysharp.Internals
 			if (script == null)
 				return;
 
-			var threads = script.Threads;
-			var prevAllowTimers = threads.AllowTimers;
-			threads.AllowTimers = false;
 			tv.waitingWhilePaused = true;
 
 			try
@@ -552,7 +549,6 @@ namespace Keysharp.Internals
 			finally
 			{
 				tv.waitingWhilePaused = false;
-				threads.AllowTimers = prevAllowTimers;
 			}
 		}
 	}

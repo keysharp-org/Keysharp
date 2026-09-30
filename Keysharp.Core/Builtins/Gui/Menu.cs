@@ -445,6 +445,11 @@ namespace Keysharp.Builtins
 				Script.SuspendHotkeys();
 				return DefaultObject;
 			};
+			var pause = (params object[] args) =>
+			{
+				Script.TogglePause();
+				return DefaultObject;
+			};
 			var exitfunc = (params object[] args) =>
 			{
 				_ = Keysharp.Internals.Flow.ExitAppInternal(script, Flow.ExitReasons.Menu, null, true);
@@ -544,6 +549,8 @@ namespace Keysharp.Builtins
 			_ = menu.Items.Add(new ToolStripSeparator());
 			script.suspendMenuItem = (ToolStripMenuItem)Add("&Suspend Hotkeys", new KeysharpFunc(suspend.Method, suspend.Target));
 			script.suspendMenuItem.Checked = script.FlowData.suspended;
+			script.pauseMenuItem = (ToolStripMenuItem)Add("&Pause Script", new KeysharpFunc(pause.Method, pause.Target));
+			script.pauseMenuItem.Checked = script.showsPaused;
 			_ = Add("E&xit", new KeysharpFunc(exitfunc.Method, exitfunc.Target));
 			return DefaultObject;
 		}
@@ -1031,6 +1038,8 @@ namespace Keysharp.Builtins
 					var handlers = clickHandlers.GetOrAdd(item, static _ => new(threadName: "Menu"));
 					handlers.Clear();
 					_ = handlers.Add(clickReg);
+					// As AHK's ModifyItem gives the item a new ID, only for a callback and not for a submenu.
+					Script.TheScript.ReleaseStandardItem(item);
 				}
 
 				foreach (Range r in options.AsSpan().SplitAny(Spaces))
