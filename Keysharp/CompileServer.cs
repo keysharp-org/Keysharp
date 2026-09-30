@@ -820,8 +820,8 @@ namespace Keysharp.Main
 
 #else
 
-		// Only Windows needs this. On Unix, .NET opens descriptors close-on-exec, so an exec'd child does not
-		// inherit anything beyond the three standard ones it is explicitly given.
+		// Only Windows needs this. On Unix, .NET opens its own descriptors close-on-exec, and TrySpawnServer replaces the
+		// three standard ones with pipes of the daemon's own.
 		private static IDisposable SuppressStandardHandleInheritance() => null;
 
 #endif
@@ -870,8 +870,8 @@ namespace Keysharp.Main
 				// Keysharp run and reading to EOF hangs long after the script exited (`keysharp x.ks | more`
 				// never returns), and redirecting to a file leaves that file locked.
 				//
-				// Redirecting the child's streams does NOT fix this, which is worth recording because it is
-				// the obvious thing to try. .NET calls CreateProcess with bInheritHandles=TRUE, so the child
+				// On Windows, redirecting the child's streams does not fix this. .NET calls CreateProcess with
+				// bInheritHandles=TRUE, so the child
 				// receives a copy of *every* inheritable handle we hold, whatever its own std handles are set
 				// to - including the pipe someone handed us as our stdout. The handles have to stop being
 				// inheritable instead, which is what this does, restoring them immediately afterwards so
@@ -882,8 +882,22 @@ namespace Keysharp.Main
 				// daemon. That is acceptable only because of where this runs - Program.Main, before any script
 				// is loaded, so the process holds little else - and because the flags are process-global, this
 				// must stay on a path with no concurrent Process.Start.
+#if !WINDOWS
+				psi.RedirectStandardInput = psi.RedirectStandardOutput = psi.RedirectStandardError = true;
+#endif
 				using (SuppressStandardHandleInheritance())
-					return Process.Start(psi) != null;
+				{
+					using var daemon = Process.Start(psi);
+
+					if (daemon == null)
+						return false;
+#if !WINDOWS
+					daemon.StandardInput.Close();
+					daemon.StandardOutput.Close();
+					daemon.StandardError.Close();
+#endif
+					return true;
+				}
 			}
 			catch (Exception ex)
 			{

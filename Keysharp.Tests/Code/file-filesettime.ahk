@@ -1,5 +1,6 @@
 #NoTrayIcon
 #Include <assert>
+#Import Ks { A_DirSeparator }
 
 if (DirExist("./FileSetTime"))
 	DirDelete("./FileSetTime", true)
@@ -34,7 +35,7 @@ if (DirExist("./FileSetTime"))
 	DirDelete("./FileSetTime", true)
 
 ; With the timestamp omitted, the time is set to now.
-touched := A_Temp "\ks-settime.txt"
+touched := A_Temp A_DirSeparator "ks-settime.txt"
 try FileDelete touched
 FileAppend "x", touched
 FileSetTime "20000101000000", touched

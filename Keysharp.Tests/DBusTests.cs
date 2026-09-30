@@ -328,8 +328,8 @@ namespace Keysharp.Tests
 			Assert.That(new Keysharp.Builtins.COM.ComValue("u", 1L).DBusSignature, Is.EqualTo("u"));
 			Assert.That(new Keysharp.Builtins.COM.ComValue("a{sv}", null).DBusSignature, Is.EqualTo("a{sv}"));
 			Assert.That(new Keysharp.Builtins.COM.ComValue(19L, 1L).DBusSignature, Is.EqualTo("u"));   // VT_UI4
-			Assert.Throws<FormatException>(() => new Keysharp.Builtins.COM.ComValue("a{sv", 1L));
-			Assert.Throws<ArgumentException>(() => new Keysharp.Builtins.COM.ComValue("ss", 1L));      // not one type
+			Assert.That(Assert.Throws<Keysharp.Builtins.KeysharpException>(() => new Keysharp.Builtins.COM.ComValue("a{sv", 1L)).UserError, Is.InstanceOf<Keysharp.Builtins.ValueError>());
+			Assert.That(Assert.Throws<Keysharp.Builtins.KeysharpException>(() => new Keysharp.Builtins.COM.ComValue("ss", 1L)).UserError, Is.InstanceOf<Keysharp.Builtins.ValueError>());      // not one type
 		}
 
 		[Test]
@@ -340,7 +340,7 @@ namespace Keysharp.Tests
 			Assert.That(new Keysharp.Builtins.COM.ComValue("a{sv}", null).VarType, Is.EqualTo("a{sv}"));
 			cv.VarType = "t";
 			Assert.That(cv.DBusSignature, Is.EqualTo("t"));
-			Assert.Throws<ArgumentException>(() => cv.VarType = 9L);   // VT_DISPATCH has no D-Bus equivalent
+			Assert.That(Assert.Throws<Keysharp.Builtins.KeysharpException>(() => cv.VarType = 9L).UserError, Is.InstanceOf<Keysharp.Builtins.ValueError>());   // VT_DISPATCH has no D-Bus equivalent
 		}
 
 		[Test]
