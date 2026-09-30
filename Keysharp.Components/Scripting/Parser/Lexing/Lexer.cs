@@ -61,6 +61,7 @@ namespace Keysharp.Parsing.Lexing
 		// nothing in it starts a line (no hotkeys, directives or further sections), and a quoted string runs straight
 		// through a break — which is what lets a section split a name, an operator or a string across its lines.
 		private readonly bool _mergedLine;
+		private int _noSectionBefore;   // where the last probe for a continuation section stopped without finding one
 
 		public Lexer(string source, string file = null) : this(source, file, mergedLine: false) { }
 
@@ -105,6 +106,35 @@ namespace Keysharp.Parsing.Lexing
 			}
 		}
 
+		// Where a block comment whose text starts at `start`, just past its `/*`, ends. On its opening line the first `*/`
+		// ends it, which is what lets `x := 1 /* c */ + 2` work. Past that line, as in AutoHotkey, only a `*/` which begins
+		// or ends a line does, so text such as `src\**/*.ahk` inside the comment is comment text. Unterminated, it runs to
+		// the end of the source.
+		private int BlockCommentEnd(int start)
+		{
+			var lineEnd = _s.IndexOf('\n', start);
+			var first = _s.AsSpan(start, (lineEnd < 0 ? _n : lineEnd) - start).IndexOf("*/", StringComparison.Ordinal);
+
+			if (first >= 0)
+				return start + first + 2;
+
+			while (lineEnd >= 0)
+			{
+				var line = lineEnd + 1;
+				lineEnd = _s.IndexOf('\n', line);
+				var text = _s.AsSpan(line, (lineEnd < 0 ? _n : lineEnd) - line);
+				var body = text.TrimStart(" \t");
+
+				if (body.StartsWith("*/"))
+					return line + (text.Length - body.Length) + 2;
+
+				if (text.TrimEnd(" \t\r").EndsWith("*/"))
+					return line + text.TrimEnd(" \t\r").Length;
+			}
+
+			return _n;
+		}
+
 		private static bool IsDigit(char c) => c >= '0' && c <= '9';
 		private static bool IsHex(char c) => (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 		// AHK identifier rules (docs "Names"): an identifier is made of ASCII letters, digits, underscore and ANY
@@ -127,6 +157,29 @@ namespace Keysharp.Parsing.Lexing
 					return tokens[i].Kind;
 
 			return TokenKind.Newline;   // nothing but trivia so far — still the start of a line
+		}
+
+		// Words an expression follows rather than ends, so that ` .5` after one is a number, as in AutoHotkey; after any
+		// other name it is a member access there too. A member of that name, as in `obj.in .5` or `obj?.in .5`, is still a
+		// value.
+		private static readonly HashSet<string> ExpressionWords = new(System.StringComparer.OrdinalIgnoreCase)
+		{
+			"and", "or", "not", "is", "in", "contains", "return", "throw", "if", "while", "until", "loop", "case", "switch"
+		};
+
+		private static bool EndsWithExpressionWord(List<Token> tokens)
+		{
+			var i = tokens.Count - 1;
+
+			while (i >= 0 && tokens[i].Kind == TokenKind.Comment)
+				i--;
+
+			if (i < 0 || !ExpressionWords.Contains(tokens[i].Text))
+				return false;
+
+			while (--i >= 0 && tokens[i].Kind == TokenKind.Comment) { }
+
+			return i < 0 || tokens[i].Kind is not (TokenKind.Dot or TokenKind.QuestionDot);
 		}
 		private static bool IsInlineWhitespace(char c) =>
 			c == ' ' || c == '\t' || c == '\r' || c == '\f' || c == '\v' || c == ' ';
@@ -189,9 +242,7 @@ namespace Keysharp.Parsing.Lexing
 				if (c == '/' && At(1) == '*')
 				{
 					int cl = _line, cc = _col, co = _pos;
-					Advance(2);
-					while (_pos < _n && !(_s[_pos] == '*' && At(1) == '/')) Advance();
-					if (_pos < _n) Advance(2);   // consume '*/'
+					Advance(BlockCommentEnd(_pos + 2) - _pos);
 					tokens.Add(Tok(TokenKind.Comment, null, cl, cc, co, _pos - co, leadingWs));
 					// Spanned lines still act as a line break, but as an EMPTY token: the text is the comment's.
 					if (!_mergedLine && _line > cl)
@@ -222,7 +273,8 @@ namespace Keysharp.Parsing.Lexing
 					TokenKind.Identifier or TokenKind.Number or TokenKind.String or
 					TokenKind.RParen or TokenKind.RBracket or TokenKind.RBrace;
 
-				if (IsDigit(c) || (c == '.' && IsDigit(At(1)) && !prevIsValue))
+				if (IsDigit(c) || (c == '.' && IsDigit(At(1))
+					&& (!prevIsValue || leadingWs && prevKind == TokenKind.Identifier && EndsWithExpressionWord(tokens))))
 				{
 					ScanNumber(memberName: prevKind == TokenKind.Dot);
 					kind = TokenKind.Number;
@@ -443,10 +495,21 @@ namespace Keysharp.Parsing.Lexing
 				try { sb.Append(Keysharp.Parsing.Parser.MultilineString(code, startLine, "lexer")); }
 				catch (System.Exception ex) { Diagnostics.Add($"{startLine}:{startCol}: {ex.Message}"); }
 
-				// Any text between ')' and the closing quote (or next section) is appended literally (escaped).
+				// Text between ')' and the closing quote (or next section) is the string's own text, escape sequences
+				// included, as in AutoHotkey. Only a bare `"` needs escaping, for a section opened with `'`.
 				while (_pos < _n && Cur != quote && Cur != '\n' && Cur != '\r')
 				{
-					sb.Append(Cur switch { '`' => "``", '"' => "`\"", _ => Cur.ToString() });
+					if (Cur == '`' && At(1) is not ('\n' or '\r' or '\0'))
+					{
+						sb.Append('`').Append(At(1));
+						Advance(2);
+						continue;
+					}
+
+					if (Cur == '"')
+						sb.Append('`');
+
+					sb.Append(Cur);
 					Advance();
 				}
 				if (Cur == quote) { Advance(); break; }   // closing quote — done
@@ -520,11 +583,7 @@ namespace Keysharp.Parsing.Lexing
 				if (Cur == ';')
 					while (_pos < _n && Cur != '\n') Advance();
 				else if (Cur == '/' && At(1) == '*')
-				{
-					Advance(2);
-					while (_pos < _n && !(Cur == '*' && At(1) == '/')) Advance();
-					if (_pos < _n) Advance(2);
-				}
+					Advance(BlockCommentEnd(_pos + 2) - _pos);
 				else
 					break;
 
@@ -562,6 +621,11 @@ namespace Keysharp.Parsing.Lexing
 		// (`(Join` ⏎ `MyV` ⏎ `ar` is the one name `MyVar`), which no amount of token joining reproduces.
 		private bool TryMergeCodeSection(List<Token> tokens, ref bool leadingWs)
 		{
+			// Only blank and comment lines lie between here and where the last probe found no section, so this one would
+			// find none either. Without this, a run of K comment lines is scanned K²/2 times.
+			if (_pos < _noSectionBefore)
+				return false;
+
 			int sp = _pos, sl = _line, sc = _col;
 			// Held back rather than emitted: this runs at every line break, and rewinds when there is no section here.
 			List<Token> trivia = null;
@@ -570,6 +634,7 @@ namespace Keysharp.Parsing.Lexing
 
 			if (!(Cur == '(' && IsCodeSectionOpener(_pos)))
 			{
+				_noSectionBefore = _pos;
 				_pos = sp; _line = sl; _col = sc;
 				return false;
 			}
@@ -1006,12 +1071,15 @@ namespace Keysharp.Parsing.Lexing
 		}
 
 		// Directives whose argument is free-form raw text (may contain quotes, `;`, brackets) — captured verbatim so it
-		// is not lexed as code. Token-needing directives (#if/#include/#import/#HotIf) are deliberately excluded.
+		// is not lexed as code. Token-needing directives (#if/#import/#HotIf) are deliberately excluded.
 		// Internal so the parser can tell which directives arrive as a single verbatim token (commas inside its text)
 		// versus normally-lexed tokens, when it validates per-directive argument counts.
 		internal static readonly HashSet<string> RawArgDirectives = new(System.StringComparer.OrdinalIgnoreCase)
 		{
 			"hotstring", "requires", "dllload", "singleinstance", "warn", "errorstdout", "package",
+			// An #Include path is the rest of the line as written, so an apostrophe or a run of spaces in it is a
+			// literal part of the file name.
+			"include", "includeagain",
 			// #Error/#Warning carry an English sentence, so they are the likeliest of all to contain an apostrophe or a
 			// brace. Lexed as code, `#Warning don't` is an unterminated string and `#Warning fix the {` swallows every
 			// following line until the braces balance — for #Warning silently, since it does not fail the build.
@@ -1160,9 +1228,31 @@ namespace Keysharp.Parsing.Lexing
 			int cs = _pos, cl = _line, cc = _col;
 			while (_pos < _n && Cur != '\n') Advance();  // consume the trailing comment
 			while (re > rs && (_s[re - 1] == ' ' || _s[re - 1] == '\t')) re--;
-			if (re > rs) tokens.Add(Tok(TokenKind.Identifier, _s.Substring(rs, re - rs), rl, rc, rs, re - rs, true));
+			if (re > rs) tokens.Add(Tok(TokenKind.Identifier, UnescapeCommentFlags(_s.Substring(rs, re - rs)), rl, rc, rs, re - rs, true));
 			AddTrivia(tokens, cs, _pos, cl, cc);
 			return true;
+		}
+
+		// As AutoHotkey reads a directive's line: a `;` after an odd number of backticks is a literal one, and the last
+		// of those backticks goes.
+		private static string UnescapeCommentFlags(string text)
+		{
+			if (!text.Contains("`;", StringComparison.Ordinal))
+				return text;
+
+			var sb = new System.Text.StringBuilder(text.Length);
+			var backticks = 0;
+
+			foreach (var ch in text)
+			{
+				if (ch == ';' && backticks % 2 == 1)
+					sb.Length--;
+
+				backticks = ch == '`' ? backticks + 1 : 0;
+				_ = sb.Append(ch);
+			}
+
+			return sb.ToString();
 		}
 
 		// At a line start, if the line is a `#Hotstring <options>` directive, update the defaults it sets for later

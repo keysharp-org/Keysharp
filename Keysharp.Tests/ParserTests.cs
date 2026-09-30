@@ -140,6 +140,35 @@ namespace Keysharp.Tests
 			}
 		}
 
+		// As in AutoHotkey, an unquoted #Include path is the rest of the line as written, and a file is already
+		// included while it is being parsed, so a script which names itself is not spliced in twice.
+		[Test, Category("Parser"), Category("Internal")]
+		public void IncludePathAsWritten()
+		{
+			var dir = Path.Combine(Path.GetTempPath(), "ks_include_" + Guid.NewGuid().ToString("N"));
+			_ = Directory.CreateDirectory(dir);
+
+			try
+			{
+				// A ';' is written escaped when nothing separates it from the text before it.
+				foreach (var (name, written) in new[] { ("O'Brien.ks", "O'Brien.ks"), ("My  Lib.ks", "My  Lib.ks"), ("My;Lib.ks", "My`;Lib.ks") })
+				{
+					File.WriteAllText(Path.Combine(dir, name), "class Included {\n}\n");
+					AssertIncluded(EmitWithInclude($"#Include {written} ; comment\nx := Included()\n", dir));
+					File.Delete(Path.Combine(dir, name));
+				}
+
+				var main = Path.Combine(dir, "main.ks");
+				File.WriteAllText(main, "#Include %A_ScriptName%\nclass Included {\n}\nx := Included()\n");
+				var (bytes, text, _) = new CompilerHelper().CompileCodeToByteArray(main, "include_self");
+				Assert.IsNotNull(bytes, text);
+			}
+			finally
+			{
+				Directory.Delete(dir, true);
+			}
+		}
+
 		// An in-memory script (stdin, or a host handing over text) has no file of its own to resolve #Include
 		// against, so the base is the working directory — what A_ScriptDir reports for it. With no base at all the
 		// preprocessor skipped every #Include and the lowerer took the leftover directive for one handled

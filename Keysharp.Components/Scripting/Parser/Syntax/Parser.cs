@@ -100,6 +100,9 @@ namespace Keysharp.Parsing.Syntax
 		{
 			var diags = new List<string>();
 			var parser = new Parser(includeDir, defines);
+			// As in AutoHotkey, a file counts as included already while it is being parsed, so an #Include of it is skipped.
+			if (!string.IsNullOrWhiteSpace(scriptFile))
+				_ = parser._included.Add(System.IO.Path.GetFullPath(scriptFile));
 			try
 			{
 				var lexer = new Lexer(source, scriptFile);
@@ -384,6 +387,10 @@ namespace Keysharp.Parsing.Syntax
 		{
 			var brace = Current;
 			Expect(TokenKind.LBrace, "block");
+			// A block is a statement context of its own, also as a function expression's body inside brackets, where
+			// skipping newlines would join each statement to the one before it.
+			var outer = (_groupDepth, _inFlowCond, _inDerefInner);
+			(_groupDepth, _inFlowCond, _inDerefInner) = (0, false, false);
 			var body = new List<Stmt>();
 			SkipNewlines();
 			while (!At(TokenKind.RBrace) && !At(TokenKind.EOF))
@@ -398,6 +405,7 @@ namespace Keysharp.Parsing.Syntax
 				SkipNewlines();
 			}
 			Expect(TokenKind.RBrace, "block");
+			(_groupDepth, _inFlowCond, _inDerefInner) = outer;
 			return new Block(body) { Line = brace.Line, Column = brace.Column, File = brace.File };
 		}
 
@@ -414,6 +422,22 @@ namespace Keysharp.Parsing.Syntax
 			var e = ParseExpression(1);
 			_inFlowCond = saved;
 			return e;
+		}
+
+		// Inside brackets newlines are insignificant, and a `(…) {` is a function expression: the flow header around
+		// the brackets cannot take it as its body.
+		private bool EnterGroup()
+		{
+			var inFlowCond = _inFlowCond;
+			_groupDepth++;
+			_inFlowCond = false;
+			return inFlowCond;
+		}
+
+		private void LeaveGroup(bool inFlowCond)
+		{
+			_groupDepth--;
+			_inFlowCond = inFlowCond;
 		}
 
 		private Stmt ParseIf()
@@ -1134,20 +1158,23 @@ namespace Keysharp.Parsing.Syntax
 			lexDiagnostics = null;
 			if (fileToks.Count == 0) return null;
 			string file;
-			if (fileToks.Count == 1 && fileToks[0].Kind == TokenKind.String && fileToks[0].Text.Length >= 2)
-				file = fileToks[0].Text.Substring(1, fileToks[0].Text.Length - 2);   // strip quotes
+			// The lexer takes the rest of the line as one token; only the continuation-section form arrives as code.
+			if (fileToks.Count == 1)
+				file = fileToks[0].Text;
 			else
 			{
 				var sb = new System.Text.StringBuilder();
 				for (int k = 0; k < fileToks.Count; k++) { if (k > 0 && fileToks[k].LeadingWhitespace) sb.Append(' '); sb.Append(fileToks[k].Text); }
 				file = sb.ToString();
 			}
+			// As in AutoHotkey: a matching pair of quote marks around the whole argument is dropped, then a leading "*i"
+			// and the one space or tab after it mean "ignore the file if it cannot be read".
 			file = file.Trim();
-			// An optional leading "*i " flag means "ignore the file if it cannot be read" — only then is a missing
-			// include silent. Strip exactly the flag, never arbitrary leading i/I/* characters (which would corrupt a
-			// filename such as "IncludeFile.ks" -> "ncludeFile.ks").
-			bool ignoreMissing = false;
-			if (file.StartsWith("*i", System.StringComparison.OrdinalIgnoreCase)) { ignoreMissing = true; file = file.Substring(2).TrimStart(); }
+			if (file.Length >= 2 && file[0] is '"' or '\'' && file[^1] == file[0])
+				file = file[1..^1];
+			bool ignoreMissing = file.Length > 2 && file[0] == '*' && file[1] is 'i' or 'I' && file[2] is ' ' or '\t';
+			if (ignoreMissing)
+				file = file[3..];
 			string path;
 			// Library form: `#include <Name>` searches the Lib folders for Name.ks/.ahk (no %var% expansion — AHK
 			// disallows variable references here). Everything else expands %BuiltInVar% and resolves against the
@@ -1899,7 +1926,7 @@ namespace Keysharp.Parsing.Syntax
 		private List<Param> ParseParamList(TokenKind open, TokenKind close)
 		{
 			Expect(open, "parameter list");
-			_groupDepth++;
+			var inFlowCond = EnterGroup();
 			var ps = new List<Param>();
 			SkipNewlines();
 			while (!At(close) && !At(TokenKind.EOF))
@@ -1927,7 +1954,7 @@ namespace Keysharp.Parsing.Syntax
 				SkipNewlines();
 			}
 			Expect(close, "parameter list");
-			_groupDepth--;
+			LeaveGroup(inFlowCond);
 			return ps;
 		}
 
@@ -2185,7 +2212,8 @@ namespace Keysharp.Parsing.Syntax
 						return ParseNameBuild(new LiteralExpr(LiteralKind.String, "\"" + t.Text + "\""));
 					return new NameExpr(t.Text, t.Line) { File = t.File };
 				case TokenKind.LParen:
-					Advance(); _groupDepth++;
+					Advance();
+					var inFlowCond = EnterGroup();
 					var inner = ParseExpression(1);
 					if (At(TokenKind.Comma))   // parenthesized sequence `(a, b)`
 					{
@@ -2193,7 +2221,7 @@ namespace Keysharp.Parsing.Syntax
 						while (Match(TokenKind.Comma)) { SkipNewlines(); items.Add(ParseExpression(1)); }
 						inner = new SequenceExpr(items);
 					}
-					_groupDepth--;
+					LeaveGroup(inFlowCond);
 					Expect(TokenKind.RParen, "parenthesized expression");
 					return inner is SequenceExpr ? inner : new GroupExpr(inner);
 				case TokenKind.LBracket:
@@ -2251,7 +2279,7 @@ namespace Keysharp.Parsing.Syntax
 		private List<Argument> ParseArgs(TokenKind open, TokenKind close, string namedError = null)
 		{
 			Expect(open, "argument list");
-			_groupDepth++;
+			var inFlowCond = EnterGroup();
 			var args = new List<Argument>();
 			var named = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
 			SkipNewlines();
@@ -2283,7 +2311,7 @@ namespace Keysharp.Parsing.Syntax
 				}
 			}
 			Expect(close, "argument list");
-			_groupDepth--;
+			LeaveGroup(inFlowCond);
 			return args;
 		}
 
@@ -2398,7 +2426,7 @@ namespace Keysharp.Parsing.Syntax
 		private Expr ParseMap()
 		{
 			Expect(TokenKind.LBracket, "map literal");
-			_groupDepth++;
+			var inFlowCond = EnterGroup();
 			var entries = new List<(Expr, Expr)>();
 			SkipNewlines();
 			while (!At(TokenKind.RBracket) && !At(TokenKind.EOF))
@@ -2414,7 +2442,7 @@ namespace Keysharp.Parsing.Syntax
 				SkipNewlines();
 			}
 			Expect(TokenKind.RBracket, "map literal");
-			_groupDepth--;
+			LeaveGroup(inFlowCond);
 			return new MapExpr(entries);
 		}
 
@@ -2423,7 +2451,7 @@ namespace Keysharp.Parsing.Syntax
 		private Expr ParseObjectLiteral()
 		{
 			Expect(TokenKind.LBrace, "object literal");
-			_groupDepth++;
+			var inFlowCond = EnterGroup();
 			var entries = new List<ObjectEntry>();
 			SkipNewlines();
 			while (!At(TokenKind.RBrace) && !At(TokenKind.EOF))
@@ -2448,7 +2476,7 @@ namespace Keysharp.Parsing.Syntax
 				SkipNewlines();
 			}
 			Expect(TokenKind.RBrace, "object literal");
-			_groupDepth--;
+			LeaveGroup(inFlowCond);
 			return new ObjectExpr(entries);
 		}
 

@@ -458,4 +458,58 @@ maybeEmpty()
 Discard(*) {
 }
 
+; A block body inside brackets keeps its statements apart, which newlines there would otherwise join.
+Apply(f, v) => f(v)
+x := Apply((v) {
+	a := v + 1
+	a := a * 2
+	return a
+}, 3)
+AssertEq(x, 8, A_LineNumber)
+blocks := [(v) {
+	a := v
+	a .= "b"
+	return a
+}, {f: (v) {
+	a := v
+	a += 3
+	return a
+}}]
+AssertEq(blocks[1](1), "1b", A_LineNumber)
+AssertEq(blocks[2].f.Call(1), 4, A_LineNumber)
+o := {}
+Apply((v) {
+	v.a := 1
+	v.b := 2
+}, o)
+AssertEq(o.a, 1, A_LineNumber)
+
+; A function expression inside the brackets of a flow header is not the header's body.
+Filter(arr, keep) {
+	out := []
+	for v in arr
+		if keep(v)
+			out.Push(v)
+	return out
+}
+count := 0
+for v in Filter([1, -2, 3], (x) {
+	return x > 0
+})
+	count++
+AssertEq(count, 2, A_LineNumber)
+if (Apply((v) {
+	return v * 2
+}, 2) = 4)
+	count++
+while Apply((v) {
+	return v < 5
+}, count) {
+	count++
+}
+AssertEq(count, 5, A_LineNumber)
+for v in Filter([1, -2, 3], (x) { return x > 0 })
+	count++
+AssertEq(count, 7, A_LineNumber)
+
 FileAppend "pass", "*"

@@ -146,6 +146,57 @@ AssertEq(contFlag, true, A_LineNumber)
 
 escaped := "a`"b ; not comment"
 AssertEq(escaped, 'a"b ; not comment', A_LineNumber)
+
+; Past its opening line, a comment ends only at a */ which begins or ends a line, as in AutoHotkey.
+commentProbe := 1
+/*
+text with src\**/*.ahk inside commentProbe := 2
+*/
+AssertEq(commentProbe, 1, A_LineNumber)
+/*
+still a comment
+*/ commentProbe := 3
+AssertEq(commentProbe, 3, A_LineNumber)
+/*
+comment ending at the end */
+AssertEq(commentProbe, 3, A_LineNumber)
+
+; After a word which starts an expression, .5 is a number.
+Dot5() {
+	return .5
+}
+AssertEq(Dot5() "|" (1 and .5) "|" (0 or .5), "0.5|0.5|0.5", A_LineNumber)
+
+; A continuation section keeps an escaped quote as one, and the text after its ) keeps its escapes.
+cont := "
+(
+<a href=`"x`">
+)"
+AssertEq(cont, '<a href="x">', A_LineNumber)
+cont := "
+(
+a
+)`tb"
+AssertEq(cont, "a`tb", A_LineNumber)
+; A Join option's escapes are read once, with the text it joins, in a string and in code alike.
+cont := "
+(Join``
+1
+2
+)"
+AssertEq(cont, "1``2", A_LineNumber)
+cont :=
+(Join``
+"1
+2"
+)
+AssertEq(cont, "1``2", A_LineNumber)
+contArray := [
+(Join`s
+1,
+2
+)]
+AssertEq(contArray.Length "|" contArray[2], "2|2", A_LineNumber)
 Assert(0xFF == 255 && 0b1010 == 10 && 0o17 == 15 && 100_000 == 100000, A_LineNumber)
 
 FileAppend "pass", "*"

@@ -78,6 +78,22 @@ namespace Keysharp.Parsing
 		// AHK stores the Join string in a TCHAR[16], so anything past 15 characters is dropped.
 		private const int MaxJoinLength = 15;
 
+		// AutoHotkey's ConvertSpaceEscapeSequences, which does not skip an escaped backtick either.
+		private static string ConvertSpaceEscapes(ReadOnlySpan<char> text)
+		{
+			var sb = new StringBuilder(text.Length);
+
+			for (var i = 0; i < text.Length; i++)
+			{
+				if (text[i] == Escape && i + 1 < text.Length && text[i + 1] is 's' or 't')
+					_ = sb.Append(text[++i] == 's' ? ' ' : '\t');
+				else
+					_ = sb.Append(text[i]);
+			}
+
+			return sb.ToString();
+		}
+
 		/// <summary>
 		/// Parses the option text to the right of a continuation section's <c>(</c> (the <c>(</c> itself excluded).
 		/// </summary>
@@ -105,11 +121,10 @@ namespace Keysharp.Parsing
 
 				if (option.StartsWith(Keyword_Join, StringComparison.OrdinalIgnoreCase))
 				{
-					// `Join` on its own joins the lines with nothing at all. Not routed through EscapedString: that
-					// answers an empty span with the script's default value, which is null under v2.1 compatibility.
-					var rest = option.Slice(Keyword_Join.Length);
-					var join = rest.IsEmpty ? "" : EscapedString(rest, false);
-					opts.Join = join.Length > MaxJoinLength ? join.Substring(0, MaxJoinLength) : join;
+					// As AutoHotkey keeps it: the text after the word, cut to 15 characters, with only `s and `t replaced.
+					// Every other escape is read once, with the text the Join is put into.
+					var join = option.Slice(Keyword_Join.Length);
+					opts.Join = ConvertSpaceEscapes(join.Length > MaxJoinLength ? join[..MaxJoinLength] : join);
 					continue;
 				}
 
@@ -175,12 +190,6 @@ namespace Keysharp.Parsing
 			var ltrim = opts.LTrim;
 			bool rtrim = opts.RTrim, stripComments = opts.Comments, percentResolve = !opts.PercentLiteral, literalEscape = opts.LiteralEscape;
 			var sb = new StringBuilder(code.Length);
-			var resolve = Resolve.ToString();
-			var escape = Escape.ToString();
-			var cast = Multicast.ToString();
-			var resolveEscaped = string.Concat(escape, resolve);
-			var escapeEscaped = new string(Escape, 2);
-			var castEscaped = string.Concat(escape, cast);
 			// Track default indent from first content line
 			string indentSample = null;
 			bool firstLine = true;
@@ -241,15 +250,29 @@ namespace Keysharp.Parsing
 				else if (rtrim)
 					line = line.TrimEnd(Spaces);
 
-				if (!percentResolve)
-					line = line.Replace(resolve, resolveEscaped);
+				// The result is read back as the text of a double-quoted string, so a bare quote is escaped, as are the
+				// characters an option makes literal. An escape sequence written in the line is copied whole, as in
+				// AutoHotkey, so `" stays one escaped quote.
+				for (var i = 0; i < line.Length; i++)
+				{
+					var ch = line[i];
 
-				if (literalEscape)
-					line = line.Replace(escape, escapeEscaped);
+					if (ch == Escape && !literalEscape)
+					{
+						_ = sb.Append(ch);
 
-				line = line.Replace("\"", Escape + "\"");//Can't use interpolated string here because the AStyle formatter misinterprets it.
-				line = line.Replace(cast, castEscaped);
-				_ = sb.Append(line);
+						if (i + 1 < line.Length)
+							_ = sb.Append(line[++i]);
+
+						continue;
+					}
+
+					if (ch is Escape or '"' or Multicast || ch == Resolve && !percentResolve)
+						_ = sb.Append(Escape);
+
+					_ = sb.Append(ch);
+				}
+
 				_ = sb.Append(join);
 			}
 
