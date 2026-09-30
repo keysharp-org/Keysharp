@@ -54,7 +54,7 @@ namespace Keysharp.Builtins
 						{
 							exp = Conversions.ParseRegExCs(n, reverse);//This will not throw PCRE style errors like the documentation says.
 						}
-						catch (Exception ex)
+						catch (ArgumentException ex)
 						{
 							return (long)Errors.ErrorOccurred("Regular expression compile error", null, ex.Message, DefaultErrorLong);
 						}
@@ -84,7 +84,7 @@ namespace Keysharp.Builtins
 					Refs.SetValue(outputVar, pos > 0 ? new RegExMatchInfo(match) : DefaultObject);
 					return pos;
 				}
-				catch (Exception ex)
+				catch (RegexMatchTimeoutException ex)
 				{
 					return (long)Errors.ErrorOccurred("Regular expression execution error", null, ex.Message, DefaultErrorLong);
 				}
@@ -164,8 +164,10 @@ namespace Keysharp.Builtins
 					}
 				}
 
-				if (l < 1)
-					l = int.MaxValue;
+				// As in RegExReplace, a negative limit replaces every match and 0 replaces none, which is also what .NET's
+				// Replace makes of -1 and 0.
+				if (l < 0)
+					l = -1;
 
 				if (index < 0)
 				{
@@ -189,7 +191,7 @@ namespace Keysharp.Builtins
 					Refs.SetValue(outputVarCount, (long)n);
 					return result;
 				}
-				catch (Exception ex)
+				catch (RegexMatchTimeoutException ex)
 				{
 					return (string)Errors.ErrorOccurred("Regular expression execution error", null, ex.Message, DefaultErrorString);
 				}

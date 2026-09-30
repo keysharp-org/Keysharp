@@ -290,17 +290,16 @@ namespace Keysharp.Builtins
 		{
 			if (text == null)
 				return DefaultObject;
-			System.Diagnostics.Debug.Write(text);//Will print only in debug mode to the debugger so we can see it in Visual Studio.
 
-			//Null before any Script exists (launcher/compiler diagnostics): append into the window's static
-			//buffer inline, exactly as the old static PostToUIThread fell back to doing.
-			var script = Script.TheScript;
-
-			if (script != null)
-				script.PostToUIThread(() => MainWindow.AppendDebugOutput(text, clear));
+			// As AHK's OutputDebug. A managed debugger does not see OutputDebugString, so it is given the text directly.
+			if (Debugger.IsLogging())
+				Debugger.Log(0, null, text);
+#if WINDOWS
 			else
-				MainWindow.AppendDebugOutput(text, clear);
-
+				WindowsAPI.OutputDebugString(text);
+#endif
+			// Before any Script exists (launcher and compiler diagnostics) there is no Debug tab to keep it for.
+			Script.TheScript?.DebugOutput.Append(text, clear);
 			return DefaultObject;
 		}
 

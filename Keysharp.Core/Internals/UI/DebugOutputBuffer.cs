@@ -3,58 +3,93 @@ using Keysharp.Builtins;
 
 namespace Keysharp.Internals.UI
 {
-	// Shared logic behind MainWindow.AppendDebugOutput()/ResetDebugOutputBuffer()/ResetDebugOutputFlush(),
-	// which is otherwise identical between the Windows and Unix MainWindow implementations.
-	internal static class DebugOutputBuffer
+	/// <summary>
+	/// A script's OutputDebug text, which its main window's Debug tab shows. Text is appended from any thread and
+	/// reaches the tab on the UI thread, through one queued refresh however often it arrives.
+	/// </summary>
+	internal sealed class DebugOutputBuffer(Script script)
 	{
-		private static StringBuilder buffer = new StringBuilder();
-		private static bool flushedToWindow;
+		// The tab keeps the most recent output. Past this length the older half is dropped, so a script that logs for
+		// hours holds a bounded amount.
+		private const int MaxLength = 1 << 20;
+		private readonly Lock gate = new();
+		private readonly StringBuilder buffer = new();
+		// How much of the buffer the tab already shows, or -1 when its text must be replaced.
+		private int shown = -1;
+		private bool refreshQueued;
 
-		/// <summary>
-		/// Appends OutputDebug text to the buffered store (the source of truth for OutputDebug
-		/// content, surviving even when no window has been constructed yet) and mirrors it into
-		/// the Debug tab's textbox if and only if the main window is currently visible to the
-		/// user. The first time the window becomes visible after being hidden/not yet
-		/// constructed, the textbox is primed with the entire accumulated buffer.
-		/// </summary>
-		internal static void Append(string text, bool clear)
+		internal void Append(string text, bool clear)
 		{
-			var script = Script.TheScript;
-			var mainWindow = script?.mainWindow;
+			bool post;
 
-			lock (buffer)
+			lock (gate)
 			{
 				if (clear)
+				{
 					buffer.Clear();
+					shown = -1;
+				}
 
 				buffer.Append(text);
 
-				if (mainWindow == null || script.IsTearingDown || !mainWindow.Visible)
-					return;
-
-				if (!flushedToWindow)
+				if (buffer.Length > MaxLength)
 				{
-					flushedToWindow = true;
-					mainWindow.SetText(clear ? text : buffer.ToString(), MainWindow.MainFocusedTab.Debug, false);
-					return;
+					buffer.Remove(0, buffer.Length - MaxLength / 2);
+					shown = -1;
 				}
+
+				post = !refreshQueued;
+				refreshQueued = true;
 			}
 
-			mainWindow.AddText(text, MainWindow.MainFocusedTab.Debug, false);
+			if (post)
+				script.PostToUIThread(Refresh);
 		}
 
-		/// <summary>Clears the buffered OutputDebug text. Called when a new Script instance is created.</summary>
-		internal static void Reset()
+		/// <summary>On the UI thread, empties the buffer and the tab.</summary>
+		internal void Clear()
 		{
-			lock (buffer)
-				buffer = new StringBuilder();
+			lock (gate)
+			{
+				buffer.Clear();
+				shown = -1;
+			}
+
+			Refresh();
 		}
 
-		/// <summary>Marks the Debug tab as not-yet-primed. Called when a new main window handle is realized.</summary>
-		internal static void ResetFlush()
+		/// <summary>
+		/// On the UI thread, brings the tab up to date while the window is visible. Otherwise the text waits until the
+		/// window refreshes the tab on being shown.
+		/// </summary>
+		internal void Refresh()
 		{
-			lock (buffer)
-				flushedToWindow = false;
+			var mainWindow = script.mainWindow;
+			var visible = mainWindow != null && !script.IsTearingDown && mainWindow.Visible;
+			string text;
+			bool replace;
+
+			lock (gate)
+			{
+				refreshQueued = false;
+
+				if (!visible)
+					return;
+
+				replace = shown < 0;
+				text = replace ? buffer.ToString() : buffer.ToString(shown, buffer.Length - shown);
+				shown = buffer.Length;
+			}
+
+			if (replace || text.Length != 0)
+				mainWindow.ShowDebugOutput(text, replace);
+		}
+
+		/// <summary>Called when a new main window handle is realized, whose tab needs the whole buffer.</summary>
+		internal void ResetShown()
+		{
+			lock (gate)
+				shown = -1;
 		}
 	}
 }

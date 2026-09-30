@@ -862,8 +862,7 @@ namespace Keysharp.Runtime
 #endif
 		Directory,
 		Parse,
-		File,
-		Each
+		File
 	}
 }
 

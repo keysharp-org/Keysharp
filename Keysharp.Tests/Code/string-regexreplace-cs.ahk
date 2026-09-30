@@ -21,4 +21,8 @@ AssertEq(match, "", A_LineNumber)
 	
 AssertEq(outputVarCount, 2, A_LineNumber)
 
+; As in RegExReplace, a limit of 0 replaces nothing and a negative one replaces every match.
+for limit, expected in Map(0, "a1a2a3|0", -5, "b1b2b3|3", 2, "b1b2a3|2")
+	AssertEq(RegExReplaceCs("a1a2a3", "a", "b", &outputVarCount, limit) "|" outputVarCount, expected, A_LineNumber)
+
 FileAppend "pass", "*"

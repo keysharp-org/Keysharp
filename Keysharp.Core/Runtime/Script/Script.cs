@@ -423,6 +423,8 @@ namespace Keysharp.Runtime
 		/// <summary>COM event sinks and member type info for this Script; see ComTypeScope.</summary>
 		internal ComMethodData ComMethodData { get; }
 #endif
+		/// <summary>OutputDebug text for the main window's Debug tab.</summary>
+		internal Keysharp.Internals.UI.DebugOutputBuffer DebugOutput { get; }
 		internal DllData DllData => dllData ?? (dllData = new ());
 		internal DestructorPump DestructorPump { get; }
 		internal DriveTypeMapper DriveTypeMapper => driveTypeMapper ?? (driveTypeMapper = new ());
@@ -614,6 +616,7 @@ namespace Keysharp.Runtime
 #if WINDOWS
 			ComMethodData = new(this);
 #endif
+			DebugOutput = new(this);
 			//Create the message filter before publishing TheScript. Windows belonging to a previous script (or forms
 			//owned by another pumping thread) can dispatch a message the instant TheScript points at this instance,
 			//and KeysharpForm.WndProc reads the filter, so it must never observe a half-constructed script.
@@ -663,8 +666,6 @@ namespace Keysharp.Runtime
 #if WINDOWS
 			InitializeScreenSystemEventsOnNeutralContext();
 #endif
-
-			MainWindow.ResetDebugOutputBuffer();
 
 			// Initial GUI theme, applied before runtime chrome and the auto-exec section so script-startup errors
 			// render themed. Skipped headless / under a test host: nothing will paint there,
@@ -1332,7 +1333,7 @@ namespace Keysharp.Runtime
 				return;
 
 			mainWindow = new MainWindow(this);
-			MainWindow.ResetDebugOutputFlush();
+			DebugOutput.ResetShown();
 			mainWindowGui = new Gui(this, null, null, null, mainWindow);
 			mainWindow.AllowShowDisplay = false;
 			// Clipboard monitoring is installed on the main window, so a subscription made before there was one

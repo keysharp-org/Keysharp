@@ -33,7 +33,8 @@ namespace Keysharp.Builtins
 
 			var exitThread = true;
 
-			if (!err.Reported && !Threads.Current.insideTry)
+			// A try hides an error from reporting, but not a critical one, which cannot be caught (AHK's CriticalError).
+			if (!err.Reported && (!Threads.Current.insideTry || mode == ErrorMode.ExitApp))
 			{
 				var retval = script.onErrorHandlers.IsEmpty ? 0L : CallOnErrorHandlers(script, err, mode);
 				// Set after the callbacks, so one which rethrows this error does not report it a second time.
@@ -46,12 +47,12 @@ namespace Keysharp.Builtins
 					// AutoHotkey's standard error form, which editors can jump to the line from.
 					var text = err.File.Length != 0 ? $"{err.File} ({err.Line}) : ==> {err.Message}" : err.Message;
 					System.Console.Error.WriteLine(string.IsNullOrEmpty(err.Extra) ? text : $"{text}{Environment.NewLine}     Specifically: {err.Extra}");
-					return true;
 				}
 				else if (!script.SuppressErrorOccurredDialog)
-					return ErrorDialog.Show(err, mode == ErrorMode.Return) != ErrorDialog.ErrorDialogResult.Continue;
+					exitThread = ErrorDialog.Show(err, mode) != ErrorDialog.ErrorDialogResult.Continue;
 			}
 
+			// However it was reported, a critical error ends the script, as in AHK.
 			if (mode == ErrorMode.ExitApp)
 				_ = Keysharp.Internals.Flow.ExitAppInternal(script, Flow.ExitReasons.Critical, 2L, true);
 
@@ -149,8 +150,8 @@ namespace Keysharp.Builtins
 			var script = Script.TheScript;
 			var scheduler = script.CurrentSchedulerIfCreated ?? script.EventScheduler;
 
-			if (scheduler.TryExecuteThreadLaunch(0, false, false, _ => ErrorDialog.Show(err, false)) != ScriptEventExecutionResult.Executed)
-				_ = ErrorDialog.Show(err, false);
+			if (scheduler.TryExecuteThreadLaunch(0, false, false, _ => ErrorDialog.Show(err, ErrorMode.Exit)) != ScriptEventExecutionResult.Executed)
+				_ = ErrorDialog.Show(err, ErrorMode.Exit);
 		}
 
 		/// <summary>
@@ -170,23 +171,7 @@ namespace Keysharp.Builtins
 				return Script.DefaultObject;
 			}
 
-			// Build the continuable warning dialog directly from the text — not from an Error — so it carries no
-			// exception stack/"thread will exit" framing and shows AHK's warning buttons (Help/Edit/Reload/ExitApp/Continue).
-			using var dlg = new ErrorDialog(msg, ErrorDialogKind.Warning, allowContinue: true, fileToEdit: script.scriptPath);
-			using (Keysharp.Internals.Flow.BeginDialogInterruptibilityScope())
-				dlg.ShowDialog();
-
-			switch (dlg.Result)
-			{
-				case ErrorDialog.ErrorDialogResult.Exit:
-					_ = Keysharp.Internals.Flow.ExitAppInternal(script, Flow.ExitReasons.Critical, 2L, false);
-					break;
-
-				case ErrorDialog.ErrorDialogResult.Reload:
-					_ = Flow.Reload();
-					break;
-			}
-
+			ErrorDialog.ShowWarning(msg);
 			return Script.DefaultObject;
 		}
 
@@ -709,19 +694,34 @@ namespace Keysharp.Builtins
 
 		public long Show(object mode = null)
 		{
-			if (!mode.CoerceString(out var modeText, "Return"))
+			if (!mode.CoerceString(out var name, "Return"))
 				return 0L;
 
-			var modeStr = modeText.Trim();
-			bool allowContinue = modeStr.Equals("return", StringComparison.OrdinalIgnoreCase) || modeStr.Equals("warn", StringComparison.OrdinalIgnoreCase);
-			var result = ErrorDialog.Show(this, allowContinue);
+			// AHK's four modes; Warn uses the #Warn footer unless Hint replaces it.
+			if (name.Equals("Warn", StringComparison.OrdinalIgnoreCase))
+			{
+				ErrorDialog.ShowWarning(Describe(true), Hint ?? "For more details, read the documentation for #Warn.");
+				return 1L;
+			}
+
+			ErrorMode errorMode;
+
+			if (name.Equals("Return", StringComparison.OrdinalIgnoreCase))
+				errorMode = ErrorMode.Return;
+			else if (name.Equals("Exit", StringComparison.OrdinalIgnoreCase))
+				errorMode = ErrorMode.Exit;
+			else if (name.Equals("ExitApp", StringComparison.OrdinalIgnoreCase))
+				errorMode = ErrorMode.ExitApp;
+			else
+				return (long)Errors.InvalidParameterErrorOccurred(1, "Show", mode, 1L);
+
+			var result = ErrorDialog.Show(this, errorMode);
 
 			// A critical error ends the script however its dialog was closed, as in AutoHotkey.
-			if (modeStr.Equals("ExitApp", StringComparison.OrdinalIgnoreCase) && result is ErrorDialog.ErrorDialogResult.Abort or ErrorDialog.ErrorDialogResult.Continue)
+			if (errorMode == ErrorMode.ExitApp && result == ErrorDialog.ErrorDialogResult.Abort)
 				_ = Keysharp.Internals.Flow.ExitAppInternal(Script.TheScript, Flow.ExitReasons.Critical, 2L, true);
 
-			if (result == ErrorDialog.ErrorDialogResult.Continue) return -1L;
-			return 1L;
+			return result == ErrorDialog.ErrorDialogResult.Continue ? -1L : 1L;
 		}
 
 		/// <summary>The exception thrown for this Error, reused when the thrown value matches.</summary>
@@ -1401,34 +1401,55 @@ namespace Keysharp.Builtins
 		internal ErrorDialogResult Result { get; private set; } = ErrorDialogResult.Exit;
 
 		/// <summary>
-		/// Displays an error dialog for the given error and returns whether execution should abort.
+		/// Displays an error dialog for the given error and returns the option the user chose.
 		/// </summary>
 		/// <param name="err">The error to show.</param>
-		/// <param name="allowContinue">
-		/// If <c>true</c>, the dialog offers a “Continue” button. Otherwise, only Abort/Exit/Reload options are shown.
+		/// <param name="mode">
+		/// What the error does to its thread: only <see cref="ErrorMode.Return"/> offers a “Continue” button, and the
+		/// footer says what follows the dialog, as AHK's does.
 		/// </param>
-		/// <returns>
-		/// The ErrorDialogResult value corresponding to the option the user chose.
-		/// </returns>
 		[StackTraceHidden]
-		internal static ErrorDialogResult Show(Error err, bool allowContinue)
+		internal static ErrorDialogResult Show(Error err, ErrorMode mode)
 		{
-			using var dlg = new ErrorDialog(err.Describe(true), ErrorDialogKind.RuntimeError, allowContinue, err.Hint);
-			using (Keysharp.Internals.Flow.BeginDialogInterruptibilityScope())
-				dlg.ShowDialog();
-
-			switch (dlg.Result)
+			var footer = err.Hint ?? mode switch
 			{
-				case ErrorDialogResult.Exit:
-					_ = Keysharp.Internals.Flow.ExitAppInternal(Script.TheScript, Flow.ExitReasons.Critical, 2L, false);
-					break;
+				ErrorMode.Exit => "The current thread will exit.",
+				ErrorMode.ExitApp => "The program is now unstable and will exit.",
+				_ => null
+			};
+			return Run(new ErrorDialog(err.Describe(true), ErrorDialogKind.RuntimeError, mode == ErrorMode.Return, footer));
+		}
 
-				case ErrorDialogResult.Reload:
-					_ = Flow.Reload();
-					break;
+		/// <summary>
+		/// Displays a warning, which never halts the script, with AHK's warning buttons.
+		/// </summary>
+		/// <param name="footer">The text below the warning, or null for none.</param>
+		[StackTraceHidden]
+		internal static void ShowWarning(string text, string footer = null) =>
+			_ = Run(new ErrorDialog(text, ErrorDialogKind.Warning, true, footer, Script.TheScript?.scriptPath));
+
+		// Shows the dialog, then exits or reloads the script when the user chose that.
+		[StackTraceHidden]
+		private static ErrorDialogResult Run(ErrorDialog dlg)
+		{
+			using (dlg)
+			{
+				using (Keysharp.Internals.Flow.BeginDialogInterruptibilityScope())
+					dlg.ShowDialog();
+
+				switch (dlg.Result)
+				{
+					case ErrorDialogResult.Exit:
+						_ = Keysharp.Internals.Flow.ExitAppInternal(Script.TheScript, Flow.ExitReasons.Critical, 2L, false);
+						break;
+
+					case ErrorDialogResult.Reload:
+						_ = Flow.Reload();
+						break;
+				}
+
+				return dlg.Result;
 			}
-
-			return dlg.Result;
 		}
 
 		[StackTraceHidden]
@@ -1446,9 +1467,8 @@ namespace Keysharp.Builtins
 	{
 		internal ErrorDialog(string errorText, ErrorDialogKind kind = ErrorDialogKind.RuntimeError, bool allowContinue = false, string footer = null, string fileToEdit = null)
 		{
-			// The footer is the text given, which may be empty, or else says that the thread will exit when it does.
-			if ((footer ?? (allowContinue ? null : "The current thread will exit.")) is { Length: > 0 } footerText)
-				errorText += $"{Environment.NewLine}{footerText}";
+			if (!string.IsNullOrEmpty(footer))
+				errorText += $"{Environment.NewLine}{footer}";
 
 			var scale = Keysharp.Internals.ScaleFactor.PrimaryScale;
 			this.AutoScaleMode = AutoScaleMode.Dpi;
@@ -1667,9 +1687,8 @@ namespace Keysharp.Builtins
 	{
 		internal ErrorDialog(string errorText, ErrorDialogKind kind = ErrorDialogKind.RuntimeError, bool allowContinue = false, string footer = null, string fileToEdit = null)
 		{
-			// The footer is the text given, which may be empty, or else says that the thread will exit when it does.
-			if ((footer ?? (allowContinue ? null : "The current thread will exit.")) is { Length: > 0 } footerText)
-				errorText += $"{Environment.NewLine}{footerText}";
+			if (!string.IsNullOrEmpty(footer))
+				errorText += $"{Environment.NewLine}{footer}";
 
 			Title = A_ScriptName ?? "Keysharp";
 			Resizable = true;

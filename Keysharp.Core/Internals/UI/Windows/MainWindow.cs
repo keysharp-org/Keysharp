@@ -13,12 +13,6 @@ namespace Keysharp.Internals.UI.Windows
 		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
 		public bool IsClosing { get; private set; }
 
-		internal static void AppendDebugOutput(string text, bool clear) => Internals.UI.DebugOutputBuffer.Append(text, clear);
-
-		internal static void ResetDebugOutputBuffer() => Internals.UI.DebugOutputBuffer.Reset();
-
-		internal static void ResetDebugOutputFlush() => Internals.UI.DebugOutputBuffer.ResetFlush();
-
 		internal ToolStripMenuItem SuspendHotkeysToolStripMenuItem => suspendHotkeysToolStripMenuItem;
 
 		internal MainWindow(Script owner) : base(owner)
@@ -60,6 +54,18 @@ namespace Keysharp.Internals.UI.Windows
 
 		public void ClearText(MainFocusedTab tab) => SetText(string.Empty, tab, false);
 
+		// Writes the Debug tab at once, on the UI thread, so that a replacement and the text appended after it stay in
+		// order; SetText defers and AddText does not.
+		internal void ShowDebugOutput(string text, bool replace)
+		{
+			var s = text.ReplaceLineEndings(Environment.NewLine);
+
+			if (replace)
+				txtDebug.Text = s;
+			else
+				txtDebug.AppendText(s);
+		}
+
 		public void SetText(string s, MainFocusedTab tab, bool focus)
 		{
 			_ = this.BeginInvoke(() => //These need to be BeginInvoke(), otherwise they can freeze if called within a COM event.
@@ -88,9 +94,9 @@ namespace Keysharp.Internals.UI.Windows
 				ShowIfNeeded();
 				SelectTab(tpDebug);
 
-				// Flush any OutputDebug text accumulated while the window was hidden/not yet
-				// shown -- otherwise it only appears once another OutputDebug call comes in.
-				AppendDebugOutput(string.Empty, false);
+				// Show any OutputDebug text accumulated while the window was hidden or not yet shown; otherwise it
+				// only appears once another OutputDebug call comes in.
+				OwnerScript.DebugOutput.Refresh();
 			});
 			return DefaultObject;
 		}
@@ -133,9 +139,8 @@ namespace Keysharp.Internals.UI.Windows
 
 				case MainFocusedTab.History: _ = ShowHistory(); break;
 
-				//Flush any OutputDebug text accumulated while the window was hidden/not yet
-				//shown -- otherwise it only appears once another OutputDebug call comes in.
-				default: AppendDebugOutput(string.Empty, false); break;
+				//Show any OutputDebug text accumulated while the window was hidden or not yet shown.
+				default: OwnerScript.DebugOutput.Refresh(); break;
 			}
 		}
 
@@ -276,11 +281,7 @@ namespace Keysharp.Internals.UI.Windows
 			about.Show();
 		}
 
-		private void clearDebugLogToolStripMenuItem_Click(object sender, EventArgs e)
-		{
-			txtDebug.Text = "";
-			AppendDebugOutput(string.Empty, true);
-		}
+		private void clearDebugLogToolStripMenuItem_Click(object sender, EventArgs e) => OwnerScript.DebugOutput.Clear();
 
 		private void editScriptToolStripMenuItem_Click(object sender, EventArgs e) => Builtins.Debug.Edit();
 

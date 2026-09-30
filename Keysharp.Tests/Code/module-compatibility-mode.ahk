@@ -277,6 +277,9 @@ AssertEq(outExtension?, "", A_LineNumber)
 AssertEq(outNameNoExt?, "", A_LineNumber)
 AssertEq(outDrive?, "", A_LineNumber)
 
+; A_HotIf with no criterion is "", not unset.
+AssertEq(A_HotIf, "", A_LineNumber)
+
 FileAppend "pass", "*"
 
 #Module Compat21
@@ -314,7 +317,9 @@ NestedDefault20() {
 }
 RuntimeDefault20() {
 	#Requires AutoHotkey v2.0
-	return A_HotIf
+	missing := []
+	missing.Length := 1
+	return missing.Pop()
 }
 NestedDefault21() {
 	Inner() {

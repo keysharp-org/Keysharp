@@ -11598,16 +11598,6 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_LoopKey",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Current key exposed by Keysharp loop helpers."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
                      "feature":  "A_MaxThreadsBuffer",
                      "syntax":  "",
                      "windows":  "full",

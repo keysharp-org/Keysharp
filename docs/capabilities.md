@@ -206,7 +206,6 @@ Status legend:
 | A_LoopFileTimeAccessed | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The time the file was last accessed. Format YYYYMMDDHH24MISS. |
 | A_LoopFileTimeCreated | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The time the file was created. Format YYYYMMDDHH24MISS. |
 | A_LoopFileTimeModified | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The time the file was last modified. Format YYYYMMDDHH24MISS. |
-| A_LoopKey | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Current key exposed by Keysharp loop helpers. |
 | A_LoopReadLine | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_LoopRegKey | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_LoopRegName | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |

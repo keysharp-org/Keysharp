@@ -404,7 +404,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The callback (function object) which represents the current HotIf criteria for the Hotkey and Hotstring functions, or blank if none.
 		/// </summary>
-		public static object A_HotIf => Script.TheScript.Threads.CurrentThread.hotCriterion ?? DefaultObject;
+		public static object A_HotIf => Script.TheScript.Threads.CurrentThread.hotCriterion ?? "";
 
 
 		/// <summary>
@@ -703,19 +703,8 @@ namespace Keysharp.Builtins
 
 				foreach (var l in s)//Since loop is a stack, this goes in reverse order, which is what we want.
 				{
-					switch (l.type)
-					{
-						case LoopType.Parse:
-							return l.result ?? "";
-
-						case LoopType.Each:
-							{
-								if (!(l.result is object[] so))
-									return "";
-
-								return so.Length > 0 ? (so[1] ?? "") : "";
-							}
-					}
+					if (l.type == LoopType.Parse)
+						return l.result ?? "";
 				}
 
 				return "";
@@ -1814,37 +1803,6 @@ namespace Keysharp.Builtins
 		{
 			get => TheScript.persistent;
 			set => _ = Keysharp.Builtins.Flow.Persistent(value);
-		}
-
-		/// <summary>
-		/// The current object key in a fpr-each loop.
-		/// </summary>
-		public static object A_LoopKey
-		{
-			get
-			{
-				var s = Loops.LoopStack;
-
-				if (s.Count == 0)
-					return DefaultObject;
-
-				foreach (var l in s)
-				{
-					switch (l.type)
-					{
-						case LoopType.Each:
-							{
-								if (!(l.result is object[]))
-									return DefaultObject;
-
-								var pair = (object[])l.result;
-								return pair[0];
-							}
-					}
-				}
-
-				return DefaultObject;
-			}
 		}
 
 		/// <summary>

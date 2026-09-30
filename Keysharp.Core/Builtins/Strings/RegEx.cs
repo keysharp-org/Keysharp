@@ -69,7 +69,6 @@ namespace Keysharp.Builtins
 			if (!startingPos.CoerceInt(out var index, 1))
 				return 0L;
 
-			KeysharpFunc callout = null;
 			RegexHolder exp;
 			var script = Script.TheScript;
 			var regdkt = script.RegExData.regdkt;
@@ -108,53 +107,9 @@ namespace Keysharp.Builtins
 			else
 				index = Math.Min(Math.Max(0, index - 1), input.Length);
 
-			PcreCalloutResult MatchCalloutHandler(PcreCallout pcre_callout)
-			{
-				if (callout == null)
-				{
-					string calloutString = pcre_callout.Number == 0 ? pcre_callout.String : null;
-					string name = calloutString != null && calloutString != "" ? calloutString : "pcre_callout";
-					callout = Functions.GetKeysharpFuncByName(name);
-				}
-
-				// Expose A_EventInfo as a native PCRE1-layout pcre_callout_block so AHK-compatible callout
-				// scripts can read its fields via NumGet. The block is built lazily (only if the script reads
-				// A_EventInfo) and freed once the callout returns; the previous value is saved and restored.
-				var tv = Script.TheScript.Threads.CurrentThread;
-				var prevEventInfo = tv.eventInfo;
-				using var calloutBlock = new PcreCalloutBlock(pcre_callout, input);
-				tv.SetEventInfo(calloutBlock.Materialize);
-
-				try
-				{
-					var callResult = callout.Call(
-										  new RegExMatchInfo(pcre_callout.Match, exp),
-										  (long)pcre_callout.Number,
-										  (long)pcre_callout.StartOffset + 1, // FoundPos: 1-based offset in haystack where the current match attempt started (AHK's cb->start_match + 1).
-										  haystack,
-										  needleRegEx);
-					_ = callResult.TryCoerceInt(out var result);
-
-					if (result > 1)
-						result = 1;
-					else if (result < -1)
-					{
-						return (PcreCalloutResult)Errors.ErrorOccurred($"PCRE matching error", null, (long)result, PcreCalloutResult.Abort);
-					}
-
-					return (PcreCalloutResult)result;
-				}
-				finally
-				{
-					tv.eventInfo = prevEventInfo;
-				}
-			}
-
 			try
 			{
-				//Only route through the managed callout callback (and allocate its closure) when the pattern
-				//actually has callouts; the common no-callout case uses PCRE.NET's faster handler-less overload.
-				var match = exp.hasCallout ? exp.regex.Match(input, index, MatchCalloutHandler) : exp.regex.Match(input, index);
+				var match = exp.regex.Match(input, index, CalloutHandler(exp, input, haystack, needleRegEx));
 				long pos = match.Success ? match.Index + 1 : 0;
 				if (outputVar != null)
 				{
@@ -162,11 +117,58 @@ namespace Keysharp.Builtins
 				}
 				return pos;
 			}
-			catch (Exception ex)
+			catch (PcreCalloutException ex) when (ex.InnerException != null)
+			{
+				ExceptionDispatchInfo.Throw(ex.InnerException);
+				throw;
+			}
+			catch (PcreException ex)
 			{
 				return (long)Errors.ErrorOccurred("Regular expression execution error", null, ex.Message, DefaultErrorLong);
 			}
 		}
+
+		/// <summary>
+		/// The handler for a pattern's callouts, or null for a pattern without any. As in AutoHotkey, each callout looks up
+		/// its function by name. PCRE.NET wraps what the function raises in a PcreCalloutException, which the callers unwrap.
+		/// </summary>
+		private static Func<PcreCallout, PcreCalloutResult> CalloutHandler(RegexHolder exp, string input, object haystack, object needleRegEx) => !exp.hasCallout ? null : pcreCallout =>
+		{
+			var name = pcreCallout.Number == 0 && !string.IsNullOrEmpty(pcreCallout.String) ? pcreCallout.String : "pcre_callout";
+			var callout = Functions.GetKeysharpFuncByName(name);
+
+			if (callout == null)
+				return (PcreCalloutResult)Errors.ValueErrorOccurred("Invalid callout", name, PcreCalloutResult.Abort);
+
+			// Expose A_EventInfo as a native PCRE1-layout pcre_callout_block so AHK-compatible callout
+			// scripts can read its fields via NumGet. The block is built lazily (only if the script reads
+			// A_EventInfo) and freed once the callout returns; the previous value is saved and restored.
+			var tv = Script.TheScript.Threads.CurrentThread;
+			var prevEventInfo = tv.eventInfo;
+			using var calloutBlock = new PcreCalloutBlock(pcreCallout, input);
+			tv.SetEventInfo(calloutBlock.Materialize);
+
+			try
+			{
+				_ = callout.Call(
+						new RegExMatchInfo(pcreCallout.Match, exp),
+						(long)pcreCallout.Number,
+						(long)pcreCallout.StartOffset + 1, // AHK's cb->start_match + 1.
+						haystack,
+						needleRegEx).TryCoerceInt(out var result);
+
+				if (result > 1)
+					result = 1;
+				else if (result < -1)
+					return (PcreCalloutResult)Errors.ErrorOccurred($"PCRE matching error", null, (long)result, PcreCalloutResult.Abort);
+
+				return (PcreCalloutResult)result;
+			}
+			finally
+			{
+				tv.eventInfo = prevEventInfo;
+			}
+		};
 
 		/// <summary>
 		/// Replaces occurrences of a pattern (regular expression) inside a string.
@@ -211,14 +213,14 @@ namespace Keysharp.Builtins
 				return DefaultErrorString;
 
 			var rd = TheScript.RegExData;
-			object callout = null;
+			object replaceFunc = null;
 			string replace = null;
 			Func<PcreMatch, string> replaceParser = null;
 
 			// Any object is taken as a function called with the match, and refused if it cannot be one, as AHK does.
 			if (replacement is Any)
 			{
-				if ((callout = Functions.CheckedCallback(replacement, 1)) == null)
+				if ((replaceFunc = Functions.CheckedCallback(replacement, 1)) == null)
 					return DefaultErrorString;
 			}
 			else
@@ -258,7 +260,8 @@ namespace Keysharp.Builtins
 				}
 			}
 
-			if (l < 1)
+			// As in AutoHotkey, a negative limit replaces every match and 0 replaces none.
+			if (l < 0)
 				l = int.MaxValue;
 
 			if (index < 0)
@@ -271,40 +274,42 @@ namespace Keysharp.Builtins
 			else
 				index = Math.Min(Math.Max(0, index - 1), input.Length);
 
-			// The callout cannot stop PCRE's Replace, so a continued TypeError skips the remaining calls instead.
-			var aborted = false;
-
-			string CalloutHandler(PcreMatch match)
-			{
-				if (aborted)
-					return "";
-
-				n++;
-
-				if (callout != null)
-				{
-					if (Script.InvokeOrNull(callout, null, new RegExMatchInfo(match, exp)).CoerceString(out var text))
-						return text;
-
-					aborted = true;
-					return "";
-				}
-
-				return replaceParser(match);
-			}
-
 			try
 			{
-				string result = exp.regex.Replace(input, CalloutHandler, l, index);
+				// PCRE.NET's Replace takes no callout handler. As in AutoHotkey, the walk stops at the limit before searching
+				// again.
+				StringBuilder sb = null;
+				var last = 0;
 
-				if (aborted)
-					return DefaultErrorString;
+				if (l > 0)
+				{
+					foreach (var match in exp.regex.Matches(input, index, CalloutHandler(exp, input, haystack, needleRegEx)))
+					{
+						string text;
+
+						if (replaceFunc == null)
+							text = replaceParser(match);
+						else if (!Script.InvokeOrNull(replaceFunc, null, new RegExMatchInfo(match, exp)).CoerceString(out text))
+							return DefaultErrorString;
+
+						_ = (sb ??= new StringBuilder(input.Length)).Append(input, last, match.Index - last).Append(text);
+						last = Math.Max(match.Index, match.EndIndex);
+
+						if (++n == l)
+							break;
+					}
+				}
 
 				if (outputVarCount != null)
 					Refs.SetValue(outputVarCount, (long)n);
-				return result;
+				return sb == null ? input : sb.Append(input, last, input.Length - last).ToString();
 			}
-			catch (Exception ex)
+			catch (PcreCalloutException ex) when (ex.InnerException != null)
+			{
+				ExceptionDispatchInfo.Throw(ex.InnerException);
+				throw;
+			}
+			catch (PcreException ex)
 			{
 				return (string)Errors.ErrorOccurred("Regular expression execution error", null, ex.Message, DefaultErrorString);
 			}

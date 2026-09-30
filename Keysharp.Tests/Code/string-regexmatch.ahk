@@ -333,4 +333,25 @@ AssertEq(RegExMatch("a" Chr(0x85) "b", "`a)a\Rb"), 1, A_LineNumber)
 AssertEq(RegExMatch("a`vb", "`a)a.b"), 0, A_LineNumber)
 AssertEq(RegExMatch("a`nb", "`r)a.b"), 1, A_LineNumber)
 
+; Each named callout calls its own function, and an error raised in one reaches the script as it was raised.
+global calls := ""
+RegExMatch("ab", "a(?C:FirstCallout)b(?C:SecondCallout)")
+AssertEq(calls, "12", A_LineNumber)
+Throws(() => RegExMatch("ab", "a(?C:FailingCallout)"), A_LineNumber, ValueError)
+Throws(() => RegExMatch("ab", "a(?C:NoSuchCallout)"), A_LineNumber, ValueError)
+
+FirstCallout(*) {
+	global calls
+	calls .= "1"
+}
+
+SecondCallout(*) {
+	global calls
+	calls .= "2"
+}
+
+FailingCallout(*) {
+	throw ValueError("raised in a callout")
+}
+
 FileAppend "pass", "*"

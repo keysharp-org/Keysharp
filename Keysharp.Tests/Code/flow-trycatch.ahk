@@ -949,4 +949,7 @@ ro := {}
 ro.DefineProp("x", {get: (*) => 1})
 AssertError(() => ro.x := 2, "Error: Property is read-only. [x]", A_LineNumber)
 
+; Error.Show knows only Return, Exit, ExitApp and Warn.
+Throws(() => Error("x").Show("Continue"), A_LineNumber, ValueError)
+
 FileAppend "pass", "*"
