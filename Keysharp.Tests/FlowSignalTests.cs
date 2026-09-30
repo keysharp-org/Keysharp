@@ -70,6 +70,78 @@ namespace Keysharp.Tests
 				Directory.Delete(directory, true);
 			}
 		}
+
+		[Test, Category("Flow")]
+		public void FlowPosixSignalsQueuedDuringVeto()
+		{
+			var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp");
+
+			if (!File.Exists(launcher))
+				Assert.Ignore($"launcher not built at {launcher}");
+
+			var directory = Path.Combine(Path.GetTempPath(), "keysharp-signals-" + Guid.NewGuid().ToString("N"));
+			Directory.CreateDirectory(directory);
+			var scriptPath = Path.Combine(directory, "signal.ahk");
+			var readyPath = Path.Combine(directory, "ready");
+			var enteredPath = Path.Combine(directory, "veto-entered");
+			var releasePath = Path.Combine(directory, "release");
+			var exitsPath = Path.Combine(directory, "exits");
+			File.WriteAllText(scriptPath, "#ErrorStdOut\n#Warn All, StdOut\n#NoTrayIcon\n" + """
+				exitCount := 0
+				OnExit(Exiting)
+				FileAppend('ready', A_ScriptDir '/ready')
+				Exiting(reason, code) {
+				    global exitCount
+				    exitCount += 1
+				    FileAppend(reason ' ' exitCount ';', A_ScriptDir '/exits')
+				    if exitCount = 1 {
+				        FileAppend('entered', A_ScriptDir '/veto-entered')
+				        Loop {
+				            if FileExist(A_ScriptDir '/release')
+				                break
+				            Sleep(20)
+				        }
+				        return true
+				    }
+				    return false
+				}
+				Loop {
+				    Sleep(20)
+				}
+				""");
+
+			using var process = Process.Start(new ProcessStartInfo(launcher)
+			{
+				UseShellExecute = false,
+				CreateNoWindow = true,
+				RedirectStandardError = true,
+				ArgumentList = { scriptPath },
+			});
+
+			try
+			{
+				Assert.IsTrue(SpinWait.SpinUntil(() => File.Exists(readyPath) || process.HasExited, 30000), "script did not start");
+				Assert.IsTrue(File.Exists(readyPath), process.HasExited ? $"script exited before it was ready: {process.StandardError.ReadToEnd()}" : "script did not become ready");
+				Assert.AreEqual(0, SendSignal(process.Id, 15), "first SIGTERM failed");
+				Assert.IsTrue(SpinWait.SpinUntil(() => File.Exists(enteredPath) || process.HasExited, 10000), "OnExit did not start");
+				Assert.IsFalse(process.HasExited, "OnExit veto was ignored");
+				Assert.AreEqual(0, SendSignal(process.Id, 15), "second SIGTERM failed");
+				File.WriteAllText(releasePath, "release");
+				Assert.IsTrue(process.WaitForExit(20000), "script did not exit after the queued SIGTERM");
+				Assert.AreEqual(0, process.ExitCode, process.StandardError.ReadToEnd());
+				Assert.AreEqual("Close 1;Close 2;", File.ReadAllText(exitsPath));
+			}
+			finally
+			{
+				if (!process.HasExited)
+				{
+					process.Kill(entireProcessTree: true);
+					process.WaitForExit(5000);
+				}
+
+				Directory.Delete(directory, true);
+			}
+		}
 	}
 }
 #endif

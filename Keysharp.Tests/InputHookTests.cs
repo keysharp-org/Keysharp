@@ -62,9 +62,9 @@ namespace Keysharp.Tests
 			}
 
 			var named = (InputHook)new InputHook("V");
-			named.KeyOpt("{Delete}{Insert}{End}", "S");
+			named.KeyOpt("{Delete}{Home}{End}", "S");
 
-			foreach (var key in new[] { "Delete", "Insert", "End" })
+			foreach (var key in new[] { "Delete", "Home", "End" })
 			{
 				var vk = (int)Keyboard.GetKeyVK(key);
 				var sc = (int)Keyboard.GetKeySC(key);

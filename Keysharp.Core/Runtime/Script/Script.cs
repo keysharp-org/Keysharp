@@ -388,6 +388,7 @@ namespace Keysharp.Runtime
 #if !WINDOWS
 		private PosixSignalRegistration sigtermRegistration;
 		private int acceptedTerminationSignal;
+		private readonly System.Collections.Concurrent.ConcurrentQueue<Keysharp.Builtins.Flow.ExitReasons> pendingTerminationSignals = new();
 #endif
 
 		/// <summary>
@@ -1367,29 +1368,43 @@ namespace Keysharp.Runtime
 			{
 				sigtermRegistration = PosixSignalRegistration.Create(PosixSignal.SIGTERM, context =>
 				{
-					if (IsDisposed || hasExited || Interlocked.Exchange(ref acceptedTerminationSignal, 1) != 0)
+					if (IsDisposed || hasExited)
 						return;
 
 					context.Cancel = true;
 					var reason = FlowData.ReloadInProgress ? Keysharp.Builtins.Flow.ExitReasons.Reload : Keysharp.Builtins.Flow.ExitReasons.Close;
-					_ = mainEventScheduler.EnqueueCallback(() =>
-					{
-						try
-						{
-							if (!IsDisposed && !hasExited && FlowData.exitReason == null)
-								_ = Keysharp.Internals.Flow.ExitAppInternal(this, reason, null, false);
-						}
-						finally
-						{
-							if (!IsDisposed && !hasExited && FlowData.exitReason == null)
-								Volatile.Write(ref acceptedTerminationSignal, 0);
-						}
-					}, ScriptEventQueue.Interactive);
+					pendingTerminationSignals.Enqueue(reason);
+
+					if (Interlocked.CompareExchange(ref acceptedTerminationSignal, 1, 0) == 0)
+						_ = mainEventScheduler.EnqueueCallback(ProcessTerminationSignals, ScriptEventQueue.Interactive);
 				});
 			}
 			catch (Exception ex)
 			{
 				_ = Diagnostics.Debug.WriteLine($"Keysharp: could not register SIGTERM: {ex.Message}");
+			}
+		}
+
+		private void ProcessTerminationSignals()
+		{
+			try
+			{
+				while (pendingTerminationSignals.TryDequeue(out var reason))
+				{
+					if (IsDisposed || hasExited || FlowData.exitReason != null)
+						return;
+
+					_ = Keysharp.Internals.Flow.ExitAppInternal(this, reason, null, false);
+				}
+			}
+			finally
+			{
+				Volatile.Write(ref acceptedTerminationSignal, 0);
+
+				// A signal queued during the last drain needs a new callback after this one releases the gate.
+				if (!IsDisposed && !hasExited && !pendingTerminationSignals.IsEmpty
+					&& Interlocked.CompareExchange(ref acceptedTerminationSignal, 1, 0) == 0)
+					_ = mainEventScheduler.EnqueueCallback(ProcessTerminationSignals, ScriptEventQueue.Interactive);
 			}
 		}
 #endif
