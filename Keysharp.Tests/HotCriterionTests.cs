@@ -88,6 +88,36 @@ namespace Keysharp.Tests
 			Assert.That(executor.WorkerCount, Is.EqualTo(1));
 		}
 
+		[Test, Category("Input")]
+		public void HookHotkeyReceipt()
+		{
+			// As in AutoHotkey, a hotkey whose variant the hook does not settle is chosen again on receipt, which is on
+			// the script thread rather than in the hook callback, where a slow #HotIf would hold up every keystroke.
+			var mainContext = UseQueuedMainContext();
+			var evaluatedThread = 0;
+			var criterion = new TestCriterion(() =>
+			{
+				evaluatedThread = Environment.CurrentManagedThreadId;
+				return 1L;
+			});
+			var id = (uint)s.HotkeyData.shk.Length;
+			var hotkey = new HotkeyDefinition(s, id, new KeysharpFunc((Func<object, object>)(_ => "")), 0, "F24", 0);
+			hotkey.firstVariant.hotCriterion = criterion;
+			s.HotkeyData.shk = [.. s.HotkeyData.shk, hotkey];
+
+			using (HookThread.BeginHookCallback(HookThread.HotIfCallbackBudgetMilliseconds))
+				Assert.That(s.HookThread.PostMessage(new KeysharpMsg
+				{
+					message = (uint)UserMessages.AHK_HOOK_HOTKEY,
+					wParam = new nint(id),
+					obj = new HookHotkeyMsg()
+				}), Is.True);
+
+			Assert.That(evaluatedThread, Is.Zero);
+			mainContext.DrainAll();
+			Assert.That(evaluatedThread, Is.EqualTo(Environment.CurrentManagedThreadId));
+		}
+
 		private static long DeadlineAfter(int milliseconds)
 			=> Stopwatch.GetTimestamp() + Stopwatch.Frequency * milliseconds / 1000;
 	}

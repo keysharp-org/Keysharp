@@ -4171,8 +4171,9 @@ namespace Keysharp.Internals.Input.Hooks
 							}
 						}
 
-						// Criterion requires receipt-time recheck: resolve and enqueue directly without UI-thread hop.
-						kbdMsSender.ProcessHotkey(wParamVal, lParamVal, null, msg.message, hhmsg.extraInfo, hhmsg.eventInfo);
+						// The variant is chosen again on receipt, as AutoHotkey's message loop does, where a slow window
+						// search delays only this hotkey rather than every keystroke the hook is holding.
+						script.PostToUIThread(() => kbdMsSender.ProcessHotkey(wParamVal, lParamVal, null, msg.message, hhmsg.extraInfo, hhmsg.eventInfo));
 						return true;
 					}
 

@@ -1545,11 +1545,17 @@ namespace Keysharp.Internals.Input.Keyboard
 				script.Threads.EnsureCurrentThreadVariables();
 				var tv = script.Threads.CurrentThread;
 				var oldEventInfo = tv.eventInfo;
+				var oldConfigData = tv.configData;
 				var stack = CallStack.Current;
 				var depth = stack.PushBoundary("#HotIf");
 				try
 				{
 					tv.eventInfo = eventInfo;
+					// A window criterion uses the settings new threads start with, as AutoHotkey's g_default, whichever thread
+					// evaluates it; an expression runs as script code does.
+					if (criterionType != HotCriterionEnum.IfCallback)
+						tv.configData = script.AccessorData.threadConfigDataPrototype;
+
 					var val = Script.InvokeOrNull(criterion, null, hotkeyName);
 					var foundHwnd = hotExprLastFoundHwnd;
 
@@ -1570,6 +1576,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				{
 					stack.Pop(depth);
 					tv.eventInfo = oldEventInfo;
+					tv.configData = oldConfigData;
 				}
 			}
 			finally
