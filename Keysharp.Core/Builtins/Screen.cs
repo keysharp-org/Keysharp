@@ -5,19 +5,8 @@ namespace Keysharp.Builtins
 	/// <summary>
 	/// Public interface for screen-related functions.
 	/// </summary>
-	public static partial class Screen
+	public static class Screen
 	{
-		private static readonly Dictionary<string, Regex> optsItems = new (StringComparer.OrdinalIgnoreCase)
-		{
-			{ Keyword_Icon, IconRegex() },
-			{ Keyword_Trans, TransRegex() },
-			{ Keyword_Variation, VariationRegex() },
-			{ "w", WidthRegex() },
-			{ "h", HeightRegex() }
-		};
-
-		private static readonly Size size1 = new (1, 1);
-
 		/// <summary>
 		/// Searches a region of the screen for an image.
 		/// </summary>
@@ -54,32 +43,37 @@ namespace Keysharp.Builtins
 		///     (however, icons do not need this option because their transparency is automatically supported).<br/>
 		///     For GIF files, *TransWhite might be most likely to work. For PNG and TIF files, *TransBlack might be best.<br/>
 		///     Otherwise, specify for N some other color name or RGB value (see the color chart for guidance, or use <see cref="PixelGetColor"/> in its RGB<br/>
-		///     mode). Examples: *TransBlack, *TransFFFFAA, *Trans0xFFFFAA<br/>
+		///     mode). Examples: *TransBlack, *TransFFFFAA, *Trans0xFFFFAA. A value that is neither raises a ValueError.<br/>
 		/// *wn and *hn: Width and height to which to scale the image (this width and height also determines which icon to load from a multi-icon .ICO file).<br/>
 		///     If both these options are omitted, icons loaded from ICO, DLL, or EXE files are scaled to the system's default small-icon size,<br/>
 		///     which is usually 16 by 16 (you can force the actual/internal size to be used by specifying *w0 *h0).<br/>
 		///     Images that are not icons are loaded at their actual size. To shrink or enlarge the image while preserving its aspect ratio,<br/>
 		///     specify -1 for one of the dimensions and a positive number for the other.<br/>
 		///     For example, specifying *w200 *h-1 would make the image 200 pixels wide and cause its height to be set automatically.<br/>
-		/// *DirN: Sets the scan order, where N is a digit from 1 to 9 (the parenthesized sweep is the inner axis):<br/>
-		///     1=(Left to Right) Top to Bottom (default), 2=(Right to Left) Top to Bottom, 3=(Left to Right) Bottom to Top, 4=(Right to Left) Bottom to Top,<br/>
-		///     5=(Top to Bottom) Left to Right, 6=(Bottom to Top) Left to Right, 7=(Top to Bottom) Right to Left, 8=(Bottom to Top) Right to Left, 9=from the center outwards.<br/>
-		///     This only changes which match is returned first when several are present. For example, *Dir2 returns the top-right-most match.<br/>
+		/// *DirName: Sets the scan order with the direction names Image.Search takes: *DirTopLeft (default), *DirTopRight, *DirBottomLeft or<br/>
+		///     *DirBottomRight scan rows; *DirLeftTop, *DirLeftBottom, *DirRightTop or *DirRightBottom scan columns; *DirCenter starts nearest<br/>
+		///     the center. The first word is the outer sweep and the second the inner one. Names are case-insensitive, and anything else raises a ValueError.<br/>
+		///     This only changes which match is returned first when several are present. For example, *DirTopRight returns the top-right-most match.<br/>
 		/// </para>
 		/// </param>
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if an internal function call fails.</exception>
 		/// <exception cref="ValueError ">A <see cref="ValueError "/> exception thrown if an invalid parameter was detected or the image could not be loaded.</exception>
 		public static object ImageSearch([ByRef][Optional] object outputVarX, [ByRef][Optional] object outputVarY, object x1, object y1, object x2, object y2, object imageFile)
 		{
-			if (!x1.CoerceInt(out var _x1) || !y1.CoerceInt(out var _y1) ||
-				!x2.CoerceInt(out var _x2) || !y2.CoerceInt(out var _y2))
+			if (!x1.CoerceInt(out var left) || !y1.CoerceInt(out var top) ||
+				!x2.CoerceInt(out var right) || !y2.CoerceInt(out var bottom))
 				return DefaultObject;
 
-			// As in AHK, options are specified as a series of *-prefixed tokens immediately
-			// preceding the file name/handle within the same string, e.g. "*2 *w100 *h-1 C:\Main Logo.bmp".
 			if (!imageFile.CoerceString(out var spec))
 				return DefaultObject;
 
+			// As in AutoHotkey, options are *-prefixed tokens ahead of the file name or handle in the same string, each
+			// read once in order: "*2 *w100 *h-1 C:\Main Logo.bmp".
+			var variation = 0;
+			var trans = -1L;
+			object iconNumber = 0L;
+			int? width = null, height = null;
+			var direction = 1;
 			var idx = 0;
 
 			while (idx < spec.Length)
@@ -97,93 +91,81 @@ namespace Keysharp.Builtins
 					idx = tokenStart;
 					break;
 				}
+
+				var option = spec.AsSpan(tokenStart + 1, idx - tokenStart - 1);
+
+				if (option.Length > 0 && char.ToUpperInvariant(option[0]) == 'W')
+					width = (int)Strings.Atoi(option[1..]);
+				else if (option.Length > 0 && char.ToUpperInvariant(option[0]) == 'H')
+					height = (int)Strings.Atoi(option[1..]);
+				else if (option.StartsWith("Icon", StringComparison.OrdinalIgnoreCase))
+				{
+					if (option.Length > 4)
+						iconNumber = ImageHelper.PrepareIconNumber(option[4..].ToString());
+				}
+				else if (option.StartsWith("Trans", StringComparison.OrdinalIgnoreCase))
+				{
+					var name = option[5..].ToString();
+
+					if (!Conversions.TryParseColor(name, out var color))
+						return Errors.ValueErrorOccurred($"Invalid *Trans color \"{name}\".", name);
+
+					trans = color.ToArgb() & 0xFFFFFF;
+				}
+				else if (option.StartsWith("Dir", StringComparison.OrdinalIgnoreCase))
+				{
+					var name = option[3..].ToString();
+					direction = ImageFinder.ParseDirection(name);
+
+					if (direction == 0)
+						return Errors.ValueErrorOccurred($"Unknown *Dir direction \"{name}\". Expected {ImageFinder.DirectionNames}.", name);
+				}
+				else//The only option without a name.
+					variation = Math.Clamp((int)Strings.Atoi(option), 0, 255);
 			}
 
-			var o = spec[..idx];
-			var filename = spec[idx..].TrimStart();
-			var opts = Options.ParseOptionsRegex(ref o, optsItems, false);
-			Bitmap bmp;
-			object iconnumber = 0L;
-			int w = 0, h = 0;
-			long trans = -1;
-			byte variation = 0;
-			// Direction 1 is the top-left, row-major scan when *Dir is omitted.
-			var direction = 1;
-			var hasDirection = false;
+			var filename = spec[idx..];
 
-			if (opts.TryGetValue(Keyword_Icon, out var iconopt) && iconopt != "")
-				iconnumber = ImageHelper.PrepareIconNumber(iconopt);
-
-			foreach (Match match in DirectionRegex().Matches(o))
+			if (width == null && height == null && Path.GetExtension(filename).ToLowerInvariant() is ".ico" or ".exe" or ".dll")
 			{
-				if (!int.TryParse(match.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedDirection)
-						|| parsedDirection < 1 || parsedDirection > 9)
-					return Errors.ValueErrorOccurred("ImageSearch *Dir requires a direction from 1 to 9.", match.Value);
-
-				if (!hasDirection)
-					direction = parsedDirection;
-
-				hasDirection = true;
+				width = SystemInformation.SmallIconSize.Width;
+				height = SystemInformation.SmallIconSize.Height;
 			}
 
-			if (opts.TryGetValue(Keyword_Variation, out var varopt) && varopt != "")
-				_ = byte.TryParse(varopt, out variation);
+			var (needle, source) = ImageHelper.LoadImage(filename, width ?? 0, height ?? 0, iconNumber, exactPixels: true);
 
-			if (opts.TryGetValue(Keyword_Trans, out var vartrans) && vartrans != "")
-			{
-				var temp = vartrans.ParseLong();
-
-				if (temp.HasValue)
-					trans = temp.Value;
-				else
-					trans = Color.FromName(vartrans).ToArgb();
-			}
-
-			if (opts.TryGetValue("w", out var wopt) && wopt != "")
-				_ = int.TryParse(wopt, out w);
-
-			if (opts.TryGetValue("h", out var hopt) && hopt != "")
-				_ = int.TryParse(hopt, out h);
-
-			try
-			{
-				bmp = ImageHelper.LoadImage(filename, w, h, iconnumber, exactPixels: true).Item1;
-			}
-			catch (Exception ex)
-			{
-				return Errors.ValueErrorOccurred(ex.Message);
-			}
-
-			if (bmp == null)
+			if (needle == null)
 				return Errors.ValueErrorOccurred($"Loading icon or bitmap from {filename} failed.");
 
-			using (bmp)
+			var iconMask = ImageHelper.IsIconSource(filename, source);
+			(source as IDisposable)?.Dispose();
+
+			using (needle)
 			try
 			{
-				int _px1 = _x1, _py1 = _y1;
-				CoordToScreen(ref _x1, ref _y1, CoordMode.Pixel);
-				_x2 += _x1 - _px1; _y2 += _y1 - _py1;
-
-				var boundsFailure = ResolveSearchBounds(_x1, _y1, _x2, _y2, out var searchBounds);
+				// As in AutoHotkey, the origin is read once, so the found point is relative to the window searched.
+				int originX = 0, originY = 0;
+				CoordToScreen(ref originX, ref originY, CoordMode.Pixel);
+				var boundsFailure = ResolveSearchBounds(left + originX, top + originY, right + originX, bottom + originY,
+														out var searchBounds);
 
 				if (boundsFailure != SearchBoundsFailure.None)
 					return Errors.ErrorOccurred(boundsFailure == SearchBoundsFailure.OutsideDesktop
 						? "The ImageSearch rectangle does not intersect the virtual desktop."
 						: "The ImageSearch rectangle is too large to capture as one bitmap.");
 
-				using var capture = GuiHelper.GetScreen(searchBounds.X, searchBounds.Y,
-					searchBounds.Width, searchBounds.Height);
+				using var finder = ImageFinder.FromScreen(searchBounds);
 
-				if (capture == null)
+				if (finder == null)
 					return Errors.ErrorOccurred("Screen capture failed while searching for an image.");
 
-				if (new ImageFinder(capture) { Variation = variation }.Find(bmp, trans, direction) is { } match)
+				finder.Variation = (byte)variation;
+
+				if (finder.Find(needle, trans, direction, iconMask) is { } match)
 				{
-					var location = searchBounds.PixelToScreen(match, new PixelSize(capture.Width, capture.Height));
-					int foundX = location.X, foundY = location.Y;
-					ScreenToCoord(ref foundX, ref foundY, CoordMode.Pixel);
-					if (outputVarX != null) Refs.SetValue(outputVarX, (long)foundX);
-					if (outputVarY != null) Refs.SetValue(outputVarY, (long)foundY);
+					var location = searchBounds.PixelToScreen(match, new PixelSize(finder.Width, finder.Height));
+					if (outputVarX != null) Refs.SetValue(outputVarX, (long)(location.X - originX));
+					if (outputVarY != null) Refs.SetValue(outputVarY, (long)(location.Y - originY));
 					return 1L;
 				}
 
@@ -214,23 +196,16 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if an internal function call fails.</exception>
 		public static string PixelGetColor(object x, object y, object mode = null)
 		{
-			int pixel;
-
 			if (!x.CoerceInt(out var _x) || !y.CoerceInt(out var _y))
 				return "";
 
 			try
 			{
 				CoordToScreen(ref _x, ref _y, CoordMode.Pixel);
+				_ = Script.TheScript?.Permissions?.EnsureScreenCapture(operation: "screen capture");
 
-				var bounds = new ScreenRect(_x, _y, 1, 1);
-				using var capture = GuiHelper.GetScreen(_x, _y, 1, 1);
-
-				if (capture == null)
+				if (!Platform.Screen.TryGetPixel(_x, _y, out var pixel))
 					return (string)Errors.ErrorOccurred($"Screen capture failed at {_x},{_y}.", DefaultErrorString);
-
-				var sample = bounds.ScreenToPixel(_x, _y, new PixelSize(capture.Width, capture.Height));
-				pixel = capture.GetPixel(sample.X, sample.Y).ToArgb() & 0xffffff;
 
 				return $"0x{pixel:X6}";
 			}
@@ -273,11 +248,13 @@ namespace Keysharp.Builtins
 				return 0L;
 
 			variationv = Math.Clamp(variationv, byte.MinValue, byte.MaxValue);
-
-			int px1 = x1v, py1 = y1v;
-			CoordToScreen(ref x1v, ref y1v, CoordMode.Pixel);
-			x2v += x1v - px1; y2v += y1v - py1;
-
+			// As in AutoHotkey, the origin is read once, so the found point is relative to the window searched.
+			int originX = 0, originY = 0;
+			CoordToScreen(ref originX, ref originY, CoordMode.Pixel);
+			x1v += originX;
+			y1v += originY;
+			x2v += originX;
+			y2v += originY;
 			var ltr = x1v <= x2v;
 			var ttb = y1v <= y2v;
 			var x1temp = Math.Min(x1v, x2v);
@@ -299,18 +276,18 @@ namespace Keysharp.Builtins
 						? "The PixelSearch rectangle does not intersect the virtual desktop."
 						: "The PixelSearch rectangle is too large to capture as one bitmap.", DefaultErrorLong);
 
-				using var capture = GuiHelper.GetScreen(bounds.X, bounds.Y, bounds.Width, bounds.Height);
+				using var finder = ImageFinder.FromScreen(bounds);
 
-				if (capture == null)
+				if (finder == null)
 					return (long)Errors.ErrorOccurred("Screen capture failed while searching for a pixel color.", DefaultErrorLong);
 
-				if (new ImageFinder(capture) { Variation = (byte)variationv }.Find(needle, ltr, ttb) is { } match)
+				finder.Variation = (byte)variationv;
+
+				if (finder.Find(needle, ltr, ttb) is { } match)
 				{
-					var location = bounds.PixelToScreen(match, new PixelSize(capture.Width, capture.Height));
-					int foundX = location.X, foundY = location.Y;
-					ScreenToCoord(ref foundX, ref foundY, CoordMode.Pixel);
-					if (outputVarX != null) Refs.SetValue(outputVarX, (long)foundX);
-					if (outputVarY != null) Refs.SetValue(outputVarY, (long)foundY);
+					var location = bounds.PixelToScreen(match, new PixelSize(finder.Width, finder.Height));
+					if (outputVarX != null) Refs.SetValue(outputVarX, (long)(location.X - originX));
+					if (outputVarY != null) Refs.SetValue(outputVarY, (long)(location.Y - originY));
 					return 1L;
 				}
 
@@ -333,11 +310,11 @@ namespace Keysharp.Builtins
 		private static SearchBoundsFailure ResolveSearchBounds(int x1, int y1, int x2, int y2,
 			out ScreenRect bounds)
 		{
-			var (virtualLeft, virtualTop, virtualWidth, virtualHeight) = Monitor.GetVirtualScreenBounds();
-			var left = Math.Max((long)x1, virtualLeft);
-			var top = Math.Max((long)y1, virtualTop);
-			var right = Math.Min((long)x2 + 1, virtualLeft + virtualWidth);
-			var bottom = Math.Min((long)y2 + 1, virtualTop + virtualHeight);
+			var desktop = Platform.Screen.GetVirtualScreenBounds();
+			var left = Math.Max((long)x1, desktop.X);
+			var top = Math.Max((long)y1, desktop.Y);
+			var right = Math.Min((long)x2 + 1, desktop.Right);
+			var bottom = Math.Min((long)y2 + 1, desktop.Bottom);
 			var width = right - left;
 			var height = bottom - top;
 
@@ -356,24 +333,6 @@ namespace Keysharp.Builtins
 			bounds = new ScreenRect((int)left, (int)top, (int)width, (int)height);
 			return SearchBoundsFailure.None;
 		}
-
-		[GeneratedRegex(@"(?:^|\s)\*Dir(\S*)", RegexOptions.IgnoreCase)]
-		private static partial Regex DirectionRegex();
-
-		[GeneratedRegex(@"\*[hH]([-0-9]*)")]
-		private static partial Regex HeightRegex();
-
-		[GeneratedRegex(@"\*Icon([0-9a-zA-Z]*)", RegexOptions.IgnoreCase)]
-		private static partial Regex IconRegex();
-
-		[GeneratedRegex(@"\*Trans([0-9a-zA-Z]*)", RegexOptions.IgnoreCase)]
-		private static partial Regex TransRegex();
-
-		[GeneratedRegex(@"\*([0-9]*)")]
-		private static partial Regex VariationRegex();
-
-		[GeneratedRegex(@"\*[wW]([-0-9]*)")]
-		private static partial Regex WidthRegex();
 	}
 
 	public partial class Ks

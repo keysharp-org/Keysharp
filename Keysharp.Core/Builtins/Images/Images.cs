@@ -34,7 +34,6 @@ namespace Keysharp.Builtins
 			var icon = "";
 			object iconnumber = 0L;
 			var wantType = outImageType != null;
-			long handleValue = 0;
 
 			foreach (Range r in opts.AsSpan().SplitAny(Spaces))
 			{
@@ -48,87 +47,46 @@ namespace Keysharp.Builtins
 				}
 			}
 
-			var ext = Path.GetExtension(file).ToLower();
-
-			if (ext == ".cur")
-			{
 #if WINDOWS
-				if (wantType)
-				{
-					var cur = new Cursor(file);
-
-					if (ImageHandleManager.TryAddCursor(cur, out var cursorHandle))
-					{
-						handleValue = cursorHandle.ToInt64();
-						Refs.SetValue(outImageType, 2L);
-						return handleValue;
-					}
-
-					cur.Dispose();
-				}
-
-				using (var cur = new Cursor(file))
-				{
-					var cursorBmp = ImageHelper.ConvertCursorToBitmap(cur);
-
-					if (ImageHandleManager.TryAddBitmap(cursorBmp, ImageHandleKind.Bitmap, out var bmpHandle))
-						handleValue = bmpHandle.ToInt64();
-				}
-
-				if (wantType)
-					Refs.SetValue(outImageType, 0L);
-#else
-				var cur = new Cursor(file);
-
-				try
-				{
-					var cursorBmp = ImageHelper.ConvertCursorToBitmap(cur);
-					var kind = wantType ? ImageHandleKind.Cursor : ImageHandleKind.Bitmap;
-
-					if (ImageHandleManager.TryAddBitmap(cursorBmp, kind, out var bmpHandle))
-						handleValue = bmpHandle.ToInt64();
-				}
-				finally
-				{
-					if (cur is IDisposable id)
-						id.Dispose();
-				}
-
-				if (wantType)
-					Refs.SetValue(outImageType, 2L);
-#endif
-				return handleValue;
-			}
-
-			var ret = ImageHelper.LoadImage(file, width, height, iconnumber);
-
-			if (ret.Item1 is Bitmap bmp)
+			// A Cursor object destroys its handle with itself, so the cursor handed to the script comes straight from
+			// LoadImage, as in AutoHotkey.
+			if (wantType && Path.GetExtension(file).Equals(".cur", StringComparison.OrdinalIgnoreCase))
 			{
-				var isHandleIcon = file.StartsWith("HICON:", StringComparison.OrdinalIgnoreCase);
-				var isIcon = isHandleIcon || ret.Item2 is Icon || ImageHelper.IsIcon(file);
+				var cursor = WindowsAPI.LoadImage(0, file, WindowsAPI.IMAGE_CURSOR, 0, 0, WindowsAPI.LR_LOADFROMFILE);
 
-#if !WINDOWS
-				if (ret.Item2 is Icon)
+				if (cursor != 0)
 				{
-					var clone = bmp.Clone();
-					bmp.Dispose();
-					bmp = clone;
+					Refs.SetValue(outImageType, 2L);
+					return cursor.ToInt64();
 				}
-#endif
-
-				var kind = wantType && isIcon ? ImageHandleKind.Icon : ImageHandleKind.Bitmap;
-
-				if (ImageHandleManager.TryAddBitmap(bmp, kind, out var bmpHandle))
-					handleValue = bmpHandle.ToInt64();
-
-				if (wantType)
-					Refs.SetValue(outImageType, isIcon ? 1L : 0L);
-
-				if (ret.Item2 is IDisposable disposable && !ReferenceEquals(ret.Item2, bmp))
-					disposable.Dispose();
 			}
 
-			return handleValue;
+#endif
+			var (bmp, source) = ImageHelper.LoadImage(file, width, height, iconnumber);
+
+			if (bmp == null)
+				return 0L;
+
+			var type = source is Cursor ? 2L : ImageHelper.IsIconSource(file, source) ? 1L : 0L;
+#if !WINDOWS
+			if (source is Icon)
+			{
+				var clone = bmp.Clone();
+				bmp.Dispose();
+				bmp = clone;
+			}
+
+#endif
+			(source as IDisposable)?.Dispose();
+
+			// As in AutoHotkey, an icon or cursor is handed out as a bitmap unless the caller asks for the type.
+			if (!ImageHandleManager.TryAddBitmap(bmp, wantType && type != 0 ? ImageHandleKind.Icon : ImageHandleKind.Bitmap, out var handle))
+				return 0L;
+
+			if (wantType)
+				Refs.SetValue(outImageType, type);
+
+			return handle.ToInt64();
 		}
 	}
 }

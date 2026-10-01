@@ -165,6 +165,40 @@ bitmapSource := Image.Create(16, 12, "Blue")
 bitmapCopy := Image.FromBitmap(bitmapSource.ToBitmap())
 Assert(bitmapCopy.Width == 16 && bitmapCopy.Height == 12, A_LineNumber)
 
+; A bitmap handle keeps its alpha, from Image.ToBitmap as from LoadPicture.
+alphaSource := Image.Create(2, 1)
+alphaSource.SetPixel(0, 0, "0xFFFF0000").SetPixel(1, 0, "0x80FF0000")
+alphaCopy := Image.FromBitmap(alphaSource.ToBitmap())
+AssertEq(alphaCopy.GetPixel(0, 0), 0xFFFF0000, A_LineNumber)
+AssertEq(alphaCopy.GetPixel(1, 0) >> 24, 0x80, A_LineNumber)
+
+; IL_Create takes AutoHotkey's counts. With Resize false, IL_Add divides a picture across its width into
+; list-sized images and returns the index of the first; a picture narrower than one image adds none.
+alphaPath := A_Temp A_DirSeparator "keysharp-image-alpha-" A_TickCount ".png"
+stripPath := A_Temp A_DirSeparator "keysharp-image-strip-" A_TickCount ".png"
+try {
+    alphaSource.Save(alphaPath)
+    AssertEq(Image.FromBitmap(LoadPicture(alphaPath)).GetPixel(1, 0) >> 24, 0x80, A_LineNumber)
+
+    Image.Create(256, 1, "Red").Save(stripPath)
+    small := IL_Create(10)
+    large := IL_Create(10, 10, true)
+    AssertEq(IL_Add(small, stripPath, 0xFFFFFF, false), 1, A_LineNumber)
+    smallTiles := IL_Add(small, stripPath, 0xFFFFFF, false) - 1
+    AssertEq(IL_Add(large, stripPath, 0xFFFFFF, false), 1, A_LineNumber)
+    largeTiles := IL_Add(large, stripPath, 0xFFFFFF, false) - 1
+    Assert(largeTiles >= 2 && smallTiles > largeTiles, A_LineNumber)
+    AssertEq(IL_Add(small, alphaPath, 0xFFFFFF, false), 0, A_LineNumber)
+    AssertEq(IL_Add(small, stripPath, 0xFFFFFF, true), 2 * smallTiles + 1, A_LineNumber)
+    AssertEq(IL_Destroy(small), 1, A_LineNumber)
+    AssertEq(IL_Destroy(small), 0, A_LineNumber)
+    IL_Destroy(large)
+} finally {
+    for file in [alphaPath, stripPath]
+        if FileExist(file)
+            FileDelete(file)
+}
+
 haystack := Image.Create(20, 12, "Black")
 haystack.FillRect(2, 2, 3, 3, "Red")
 haystack.FillRect(10, 6, 3, 3, "Red")

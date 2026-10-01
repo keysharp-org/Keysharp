@@ -137,29 +137,6 @@ namespace Keysharp.Internals.Strings
 
 		internal static string[] ParseOptions(string options) => options.Split(Spaces, StringSplitOptions.RemoveEmptyEntries);
 
-		internal static Dictionary<string, string> ParseOptionsRegex(ref string options, Dictionary<string, Regex> items, bool remove = true)
-		{
-			var results = new Dictionary<string, string>();
-
-			foreach (var item in items)
-			{
-				if (item.Value.IsMatch(options))
-				{
-					var match = item.Value.Match(options).Groups[1].Captures[0];
-					results.Add(item.Key, match.Value);
-
-					if (remove)
-						options = options.Substring(0, match.Index) + options.Substring(match.Index + match.Length);
-				}
-				else
-				{
-					results.Add(item.Key, "");
-				}
-			}
-
-			return results;
-		}
-
 		internal static bool TryParse(string opt, string prefix, ref int result, StringComparison comp = StringComparison.OrdinalIgnoreCase, bool allowempty = false, int def = default) =>
 		TryParse(opt.AsSpan(), prefix, ref result, comp, allowempty, def);
 

@@ -262,5 +262,38 @@ namespace Keysharp.Internals
 
 			return true;
 		}
+
+		/// <summary>The smallest rectangle holding every rectangle that has an area, or an empty one when none has.</summary>
+		internal static ScreenRect Union(IEnumerable<ScreenRect> rectangles)
+		{
+			var any = false;
+			long left = 0, top = 0, right = 0, bottom = 0;
+
+			foreach (var rect in rectangles)
+			{
+				if (!rect.HasArea)
+					continue;
+
+				if (!any)
+				{
+					left = rect.X; top = rect.Y; right = rect.Right; bottom = rect.Bottom;
+					any = true;
+				}
+				else
+				{
+					left = Math.Min(left, rect.X); top = Math.Min(top, rect.Y);
+					right = Math.Max(right, rect.Right); bottom = Math.Max(bottom, rect.Bottom);
+				}
+			}
+
+			return any ? new ScreenRect((int)left, (int)top,
+				(int)Math.Min(right - left, int.MaxValue), (int)Math.Min(bottom - top, int.MaxValue)) : default;
+		}
+
+#if !WINDOWS
+		/// <summary>The union of the toolkit's screen bounds.</summary>
+		internal static ScreenRect ToolkitUnion()
+			=> Union((Forms.Screen.Screens ?? []).Where(s => s != null).Select(s => ScreenRect.FromRectangle(s.Bounds)));
+#endif
 	}
 }

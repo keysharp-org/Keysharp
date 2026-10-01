@@ -89,12 +89,12 @@ namespace Keysharp.Internals
 			// last report (normalised across the virtual desktop) scaled onto the virtual-desktop bounds. A_ScreenWidth/
 			// Height are the PRIMARY monitor size and assume a 0 origin, which clamps a second-monitor cursor onto the
 			// primary; the virtual-desktop bounds carry the true size and (possibly negative) origin.
-			var vb = Keysharp.Builtins.Monitor.GetVirtualScreenBounds();
+			var vb = Platform.Screen.GetVirtualScreenBounds();
 
 			if (KeysharpInputManager.TryGetPointerPosition(
 					out var rawX, out var rawY, out var minX, out var maxX, out var minY, out var maxY)
-				&& TryScalePointerAxis(rawX, minX, maxX, (int)vb.Left, (int)vb.Width, out x)
-				&& TryScalePointerAxis(rawY, minY, maxY, (int)vb.Top, (int)vb.Height, out y))
+				&& TryScalePointerAxis(rawX, minX, maxX, vb.X, vb.Width, out x)
+				&& TryScalePointerAxis(rawY, minY, maxY, vb.Y, vb.Height, out y))
 				return true;
 
 			x = 0;

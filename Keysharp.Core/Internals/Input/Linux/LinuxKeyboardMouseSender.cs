@@ -550,9 +550,9 @@ namespace Keysharp.Internals.Input.Linux
 			}
 
 			// uinput fallback maps [0,65535] across the whole virtual desktop.
-			var vb = Keysharp.Builtins.Monitor.GetVirtualScreenBounds();
-			var absTargetX = MouseCoordToAbs(targetX - (int)vb.Left, (int)vb.Width);
-			var absTargetY = MouseCoordToAbs(targetY - (int)vb.Top, (int)vb.Height);
+			var vb = Platform.Screen.GetVirtualScreenBounds();
+			var absTargetX = MouseCoordToAbs(targetX - vb.X, vb.Width);
+			var absTargetY = MouseCoordToAbs(targetY - vb.Y, vb.Height);
 
 			if (sendMode == SendModes.Input)
 			{

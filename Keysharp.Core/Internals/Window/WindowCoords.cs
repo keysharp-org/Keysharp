@@ -38,32 +38,5 @@ namespace Keysharp.Internals.Window
 				}
 			}
 		}
-
-		/// <summary>Inverse of <see cref="CoordToScreen"/>.</summary>
-		public static void ScreenToCoord(ref int aX, ref int aY, CoordMode modeType)
-		{
-			var coordMode = ThreadAccessors.GetCoordMode(modeType);
-
-			if (coordMode == CoordModeType.Screen)
-				return;
-
-			var activeWindow = WindowQuery.ActiveWindow;
-
-			if (activeWindow.Handle != 0 && !activeWindow.IsIconic)
-			{
-				if (coordMode == CoordModeType.Window)
-				{
-					var loc = activeWindow.Location;
-					aX -= loc.X;
-					aY -= loc.Y;
-				}
-				else
-				{
-					var pt = activeWindow.ClientToScreen();
-					aX -= pt.X;
-					aY -= pt.Y;
-				}
-			}
-		}
 	}
 }

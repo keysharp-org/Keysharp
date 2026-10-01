@@ -412,8 +412,8 @@ namespace Keysharp.Builtins
 			/// <summary>Captures the whole virtual desktop (the union of all monitors).</summary>
 			[Static] public static object FromDesktop(object @this)
 			{
-				var (left, top, width, height) = Monitor.GetVirtualScreenBounds();
-				return CaptureRect((int)left, (int)top, (int)width, (int)height, "Capturing the desktop failed.");
+				var desktop = Platform.Screen.GetVirtualScreenBounds();
+				return CaptureRect(desktop.X, desktop.Y, desktop.Width, desktop.Height, "Capturing the desktop failed.");
 			}
 
 			/// <summary>Captures a single monitor (the primary monitor if <paramref name="monitorNumber"/> is omitted).</summary>
@@ -606,17 +606,8 @@ namespace Keysharp.Builtins
 				if (!width.CoerceInt(out var w, 0) || !height.CoerceInt(out var h, 0))
 					return DefaultObject;
 
-				Bitmap bmp;
-
-				try
-				{
-					bmp = ImageHelper.LoadImage(f, w, h, iconNumber == null ? 0L : ImageHelper.PrepareIconNumber(iconNumber), exactPixels: true).Item1;
-				}
-				catch (Exception ex)
-				{
-					return Errors.ValueErrorOccurred(ex.Message);
-				}
-
+				var (bmp, source) = ImageHelper.LoadImage(f, w, h, iconNumber == null ? 0L : ImageHelper.PrepareIconNumber(iconNumber), exactPixels: true);
+				(source as IDisposable)?.Dispose();
 				return Wrap(bmp, failMsg: $"Loading the image from {f} failed.");
 			}
 
@@ -1605,8 +1596,8 @@ namespace Keysharp.Builtins
 			/// <summary>Applies any queued transforms and returns a native bitmap handle (HBITMAP on
 			/// Windows, a Pixbuf/NSImage handle elsewhere) that the "HBITMAP:" consumers (ImageSearch,
 			/// Gui Picture, LoadPicture) accept, as the legacy <c>ImageCapture</c> did. The handle is
-			/// managed independently of this image. Note: on Windows the handle is a GDI HBITMAP, which
-			/// has no alpha channel, so any transparency is lost (fine for opaque screen captures).</summary>
+			/// managed independently of this image. On Windows it is a 32bpp DIB section with premultiplied
+			/// alpha, as LoadPicture returns, which the script owns and frees with DeleteObject.</summary>
 			public object ToBitmap()
 			{
 				ThrowIfDisposed();
@@ -1868,14 +1859,14 @@ namespace Keysharp.Builtins
 					return DefaultObject;
 
 				if (dir < 1)
-					return Errors.ValueErrorOccurred($"Unknown Direction \"{Errors.Describe(direction)}\". Expected TopLeft, TopRight, BottomLeft, BottomRight, LeftTop, LeftBottom, RightTop, RightBottom or Center.", direction);
+					return Errors.ValueErrorOccurred($"Unknown Direction \"{Errors.Describe(direction)}\". Expected {ImageFinder.DirectionNames}.", direction);
 
 				var haystack = PrepareForRead();
 
 				if (haystack == null)
 					return Errors.ValueErrorOccurred("There is no image to search.");
 
-				var (needleBmp, own) = ResolveNeedle(needle);
+				var (needleBmp, _, _) = LoadFromSource(needle);
 
 				if (needleBmp == null)
 					return Errors.ValueErrorOccurred("Could not load the search image.");
@@ -1910,14 +1901,13 @@ namespace Keysharp.Builtins
 					if (!variation.CoerceLong(out var variationL, 0))
 						return DefaultObject;
 
-					var finder = new ImageFinder(surface) { Variation = (byte)Math.Clamp(variationL, 0, 255) };
+					using var finder = new ImageFinder(surface) { Variation = (byte)Math.Clamp(variationL, 0, 255) };
 					var loc = finder.Find(needleBmp, transColor, dir);
 					return loc.HasValue ? MakePoint(loc.Value.X + offX, loc.Value.Y + offY) : "";
 				}
 				finally
 				{
-					if (own)
-						needleBmp.Dispose();
+					needleBmp.Dispose();
 
 					if (ownedSurface)
 						surface.Dispose();
@@ -1944,14 +1934,14 @@ namespace Keysharp.Builtins
 					return DefaultObject;
 
 				if (dir < 1)
-					return Errors.ValueErrorOccurred($"Unknown Direction \"{Errors.Describe(direction)}\". Expected TopLeft, TopRight, BottomLeft, BottomRight, LeftTop, LeftBottom, RightTop, RightBottom or Center.", direction);
+					return Errors.ValueErrorOccurred($"Unknown Direction \"{Errors.Describe(direction)}\". Expected {ImageFinder.DirectionNames}.", direction);
 
 				var haystack = PrepareForRead();
 
 				if (haystack == null)
 					return Errors.ValueErrorOccurred("There is no image to search.");
 
-				var (needleBmp, own) = ResolveNeedle(needle);
+				var (needleBmp, _, _) = LoadFromSource(needle);
 
 				if (needleBmp == null)
 					return Errors.ValueErrorOccurred("Could not load the search image.");
@@ -1987,7 +1977,7 @@ namespace Keysharp.Builtins
 					if (!variation.CoerceLong(out var variationL, 0))
 						return DefaultObject;
 
-					var finder = new ImageFinder(surface) { Variation = (byte)Math.Clamp(variationL, 0, 255) };
+					using var finder = new ImageFinder(surface) { Variation = (byte)Math.Clamp(variationL, 0, 255) };
 					var found = finder.FindAll(needleBmp, transColor, dir);
 
 					foreach (var p in found)
@@ -1997,8 +1987,7 @@ namespace Keysharp.Builtins
 				}
 				finally
 				{
-					if (own)
-						needleBmp.Dispose();
+					needleBmp.Dispose();
 
 					if (ownedSurface)
 						surface.Dispose();
@@ -2058,8 +2047,11 @@ namespace Keysharp.Builtins
 					if (!variation.CoerceLong(out var variationL, 0))
 						return DefaultObject;
 
-					var finder = new ImageFinder(surface) { Variation = (byte)Math.Clamp(variationL, 0, 255) };
-					var loc = finder.Find(ImageHelper.ArgbToColor(target), ltr: dir is 1 or 3, ttb: dir is 1 or 2);
+					Point? loc;
+
+					// The haystack can be the surface the finder locks, so the matched pixel is read after it is released.
+					using (var finder = new ImageFinder(surface) { Variation = (byte)Math.Clamp(variationL, 0, 255) })
+						loc = finder.Find(ImageHelper.ArgbToColor(target), ltr: dir is 1 or 3, ttb: dir is 1 or 2);
 
 					if (loc.HasValue)
 					{
@@ -2086,19 +2078,7 @@ namespace Keysharp.Builtins
 					return false;
 				}
 
-				dir = name.ToLowerInvariant() switch
-				{
-					"topleft" => 1,
-					"topright" => 2,
-					"bottomleft" => 3,
-					"bottomright" => 4,
-					"lefttop" => 5,
-					"leftbottom" => 6,
-					"righttop" => 7,
-					"rightbottom" => 8,
-					"center" => 9,
-					_ => 0
-				};
+				dir = ImageFinder.ParseDirection(name);
 				return true;
 			}
 
@@ -2468,8 +2448,9 @@ namespace Keysharp.Builtins
 
 				if (source is string s)
 				{
-					try { return (ImageHelper.LoadImage(s, 0, 0, 0L, exactPixels: true).Item1, 1.0, 1.0); }
-					catch { return (null, 1.0, 1.0); }
+					var (loaded, icon) = ImageHelper.LoadImage(s, 0, 0, 0L, exactPixels: true);
+					(icon as IDisposable)?.Dispose();
+					return (loaded, 1.0, 1.0);
 				}
 
 				// A backend bitmap, which is what Clr interop (and Keysharp's own internals) hand out. Without this
@@ -2484,32 +2465,11 @@ namespace Keysharp.Builtins
 
 				if (handle != 0)
 				{
-					if (ImageHandleManager.TryGetImage(handle, out var image) && image is Bitmap hb)
-						return (new Bitmap(hb), 1.0, 1.0);
-
 					try { return (ImageHelper.GetBitmapFromHBitmap(handle), 1.0, 1.0); }
 					catch { return (null, 1.0, 1.0); }
 				}
 
 				return (null, 1.0, 1.0);
-			}
-
-			private static (Bitmap bmp, bool own) ResolveNeedle(object needle)
-			{
-				if (needle is KeysharpImage img)
-				{
-					var b = img.PrepareForRead();
-					return (b == null ? null : new Bitmap(b), true);
-				}
-
-				if (needle is string s && s.Length > 0)
-				{
-					try { return (ImageHelper.LoadImage(s, 0, 0, 0L, exactPixels: true).Item1, true); }
-					catch { return (null, false); }
-				}
-
-				var (bmp, _, _) = LoadFromSource(needle);
-				return (bmp, true);
 			}
 
 			// Applies queued work in order. Owned images fold the result into their base; a borrowed base uses a

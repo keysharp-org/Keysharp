@@ -731,6 +731,7 @@ namespace Keysharp.Internals.Os.Windows
 		internal const long ERROR_INVALID_HOOK_HANDLE = 1404L;
 
 		public const int IMAGE_ICON = 1;
+		public const int IMAGE_CURSOR = 2;
 		public const int LR_DEFAULTCOLOR = 0x0000_0000;
 		public const int LR_LOADFROMFILE = 0x0000_0010;
 		public const int LR_CREATEDIBSECTION = 0x0000_2000;

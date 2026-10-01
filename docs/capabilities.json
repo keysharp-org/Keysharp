@@ -6661,17 +6661,19 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Adds an image to an image list, optionally can resize or split the image."
+                     "notes":  "Adds an icon or picture to an image list and returns the index of the first image added. With Resize false, a picture is divided across its width into list-sized images.",
+                     "tested-by":  "image.ahk"
                  },
                  {
                      "category":  "Core Language",
                      "feature":  "IL_Create()",
-                     "syntax":  "val := IL_Create(1)",
+                     "syntax":  "val := IL_Create(10, 5, true)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Creates an image list and returns its unique ID. Differs in that it only takes one parameter, LargeIcons, because the first two parameters, InitialCount and GrowCount, have been omitted because C# handles memory internally."
+                     "notes":  "Creates an image list and returns its unique ID. InitialCount and GrowCount are accepted and ignored, because the list grows as needed.",
+                     "tested-by":  "image.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -6681,7 +6683,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Removes an ImageList from the global list of ImageLists. Note, this does not dispose it, it just removes the reference. The garbage collector will handle final disposal when the reference count goes to 0."
+                     "notes":  "Destroys an image list and the images it holds. A ListView destroys its image lists with itself unless it was created with +0x40.",
+                     "tested-by":  "image.ahk"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -6724,7 +6727,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Searches a screen region for an image, writing the position to ByRef outputs and returning true/false. Only 32-bit color is supported; .ani, .emf, .exif and .wmf files are unsupported. The Keysharp *DirN option uses numeric directions. For searches within an Image, use its Search/SearchAll/SearchPixel methods.",
+                     "notes":  "Searches a screen region for an image, writing the position to ByRef outputs and returning true/false. Only 32-bit color is supported; .ani, .emf, .exif and .wmf files are unsupported. The Keysharp *Dir option takes Image.Search's direction names, such as *DirBottomRight. For searches within an Image, use its Search/SearchAll/SearchPixel methods.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -7591,7 +7594,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Loads an image, icon or cursor. Differs in that instead of writing to a ref argument, it returns a structure whose fields are Handle and ImageType.",
+                     "notes":  "Loads an image, icon or cursor and returns a handle the script owns. On Windows a bitmap is a 32bpp DIB section with premultiplied alpha, as in AutoHotkey.",
                      "tested-by":  "ControlTests/copy_image_to_clipboard2.ahk"
                  },
                  {

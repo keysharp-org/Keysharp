@@ -2440,9 +2440,14 @@ namespace Keysharp.Builtins
 
 #endif
 
-			if (ctrl is KeysharpPictureBox pbox)
+			if (ctrl is KeysharpPictureBox pbox && !string.IsNullOrEmpty(textStr))
 			{
-				if (textStr != null && ImageHelper.LoadImage(textStr, opts.width, opts.height, opts.iconnumber).Item1 is Bitmap bmp)
+				var (bmp, source) = ImageHelper.LoadImage(textStr, opts.width, opts.height, opts.iconnumber);
+				(source as IDisposable)?.Dispose();
+
+				if (bmp == null)
+					_ = Errors.ErrorOccurred("Can't create control.", null, textStr);
+				else
 				{
 					if (pbox.SizeMode == PictureBoxSizeMode.Zoom)
 					{

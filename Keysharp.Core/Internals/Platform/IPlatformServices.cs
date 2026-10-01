@@ -173,6 +173,30 @@ namespace Keysharp.Internals
 		}
 
 		/// <summary>
+		/// The union of every display's bounds in native screen space, without the work areas and metadata a
+		/// <see cref="GetDisplays"/> snapshot gathers, since it is on the path of every search and pointer mapping.
+		/// </summary>
+		ScreenRect GetVirtualScreenBounds();
+
+		/// <summary>The color of one native screen pixel as 0xRRGGBB, or false when it cannot be read.</summary>
+		bool TryGetPixel(int x, int y, out int rgb)
+		{
+			rgb = 0;
+			var bounds = new ScreenRect(x, y, 1, 1);
+
+			if (!TryCaptureRegion(bounds, out var bmp) || bmp == null)
+				return false;
+
+			using (bmp)
+			{
+				var sample = bounds.ScreenToPixel(x, y, new PixelSize(bmp.Width, bmp.Height));
+				rgb = bmp.GetPixel(sample.X, sample.Y).ToArgb() & 0xFFFFFF;
+			}
+
+			return true;
+		}
+
+		/// <summary>
 		/// The expensive per-display metadata for one display out of a <see cref="GetDisplays"/> snapshot — EDID
 		/// identity, model, refresh rate, physical size, orientation, connection kind. Separate from
 		/// <see cref="GetDisplays"/> on purpose: topology enumeration is on the path of every <c>MonitorGet</c>,

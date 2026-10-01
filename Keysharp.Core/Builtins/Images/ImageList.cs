@@ -9,7 +9,7 @@ namespace Keysharp.Builtins
 	}
 
 #if !WINDOWS
-	internal class ImageList
+	internal class ImageList : IDisposable
 	{
 		private static long nextHandle = 0;
 
@@ -23,6 +23,15 @@ namespace Keysharp.Builtins
 		internal Size ImageSize { get; set; }
 
 		internal nint Handle { get; }
+
+		// The collection keeps the bitmaps IL_Add gave it, so they go with the list.
+		public void Dispose()
+		{
+			foreach (var bmp in Images)
+				bmp.Dispose();
+
+			Images.Clear();
+		}
 
 		internal sealed class ImageCollection : IEnumerable<Bitmap>
 		{
@@ -79,7 +88,8 @@ namespace Keysharp.Builtins
 		/// <param name="resize">If true, the picture is scaled to become a single icon.<br/>
 		/// If false, the picture is divided up into however many icons can fit into its actual width.
 		/// </param>
-		/// <returns>On success, it returns the new icon's index (1 is the first icon, 2 is the second, and so on), else 0.</returns>
+		/// <returns>On success, it returns the new icon's index (1 is the first icon, 2 is the second, and so on), else 0.
+		/// A divided picture returns the index of its first icon.</returns>
 		public static long IL_Add(object imageListID, object picFileName, object maskColor = null, object resize = null)
 		{
 			if (!imageListID.CoerceLong(out var id))
@@ -88,55 +98,75 @@ namespace Keysharp.Builtins
 			if (!picFileName.CoerceString(out var filename))
 				return 0L;
 
-			var iconnumber = ImageHelper.PrepareIconNumber(maskColor);
-			var resizeNonIcon = resize.Ab();
-
 			// Mirror AHK: IL_Add requires an ID returned by IL_Create. Auto-creating a list for an unknown id
 			// (the old GetOrAdd) produced a zero-sized non-Windows ImageList whose (0,0) ImageSize made
 			// SplitBitmap spin forever; refuse the unknown id instead.
 			if (!Script.TheScript.ImageListData.imageLists.TryGetValue(id, out var il))
 				return 0L;
 
-			if (ImageHelper.LoadImage(filename, 0, 0, iconnumber).Item1 is Bitmap bmp)
+			// As in AutoHotkey, passing Resize at all makes the third parameter a mask color rather than an icon number,
+			// and Resize false loads the picture at its actual size so it can be divided. The loaded image's type, not the
+			// parameters, chooses between adding an icon and adding a masked picture.
+			var size = il.ImageSize;
+			var divide = resize != null && !resize.Ab();
+			object iconNumber = 0L;
+			int mask;
+
+			if (resize == null)
 			{
-				if (!ImageHelper.IsIcon(filename))
-				{
-					if (!maskColor.CoerceInt(out var maskColorInt))
-						return 0L;
-
-					var color = Color.FromArgb(maskColorInt);
-
-					if (!resizeNonIcon)
-					{
-						var splitbmps = ImageHelper.SplitBitmap(bmp, il.ImageSize.Width, il.ImageSize.Height);
-
-						foreach (var newbmp in splitbmps)
-							_ = il.Images.Add(newbmp, color);
-					}
-					else
-						bmp = ImageHelper.ResizeBitmap(bmp, il.ImageSize.Width, il.ImageSize.Height);
-
-					_ = il.Images.Add(bmp, color);
-				}
-				else
-					il.Images.Add(bmp);
+				iconNumber = ImageHelper.PrepareIconNumber(maskColor);
+				_ = maskColor.TryCoerceInt(out mask);
 			}
+			else if (!maskColor.CoerceInt(out mask))
+				return 0L;
 
-			return il.Images.Count;
+			var (bmp, source) = ImageHelper.LoadImage(filename, divide ? 0 : size.Width, divide ? 0 : size.Height, iconNumber);
+
+			if (bmp == null)
+				return 0L;
+
+			var isIcon = ImageHelper.IsIconSource(filename, source);
+			(source as IDisposable)?.Dispose();
+			// The mask is an RGB color; one with no alpha would be ignored by the toolkit.
+			var transparent = Color.FromArgb(unchecked((int)(((uint)mask & 0x00FFFFFFu) | 0xFF000000u)));
+			List<Bitmap> images = !isIcon && divide ? ImageHelper.SplitBitmap(bmp, size.Width, size.Height) : [bmp];
+			var first = il.Images.Count;
+
+			foreach (var image in images)
+				if (isIcon)
+					il.Images.Add(image);
+				else
+					il.Images.Add(image, transparent);
+
+			// WinForms keeps copies of what it is given, where the Unix list keeps the bitmaps themselves. A divided
+			// picture is not kept either way.
+#if WINDOWS
+			foreach (var image in images)
+				image.Dispose();
+
+#endif
+			if (images.Count == 0 || !ReferenceEquals(images[0], bmp))
+				bmp.Dispose();
+
+			return il.Images.Count > first ? first + 1L : 0L;
 		}
 
 		/// <summary>
 		/// Creates a new <see cref="ImageList"/> that is initially empty.
 		/// </summary>
+		/// <param name="initialCount">Accepted for AutoHotkey compatibility and ignored, because the list grows as needed.</param>
+		/// <param name="growCount">Accepted for AutoHotkey compatibility and ignored.</param>
 		/// <param name="largeIcons">True to use the large icon size, else use small icons.</param>
 		/// <returns>On success, returns the unique ID of the <see cref="ImageList"/>, else 0.</returns>
-		public static long IL_Create(object largeIcons = null)
+		public static long IL_Create(object initialCount = null, object growCount = null, object largeIcons = null)
 		{
-			var li = largeIcons.Ab();
+			if (!initialCount.CoerceInt(out _) || !growCount.CoerceInt(out _))
+				return 0L;
+
 			var il = new ImageList
 			{
-				ImageSize = !li ? SystemInformation.SmallIconSize : SystemInformation.IconSize
-			};//initialCount and growCount are unused. Memory is handled internally.
+				ImageSize = !largeIcons.Ab() ? SystemInformation.SmallIconSize : SystemInformation.IconSize
+			};
 			var ptr = il.Handle.ToInt64();
 			return Script.TheScript.ImageListData.imageLists.TryAdd(ptr, il) ? ptr : 0L;
 		}
@@ -151,7 +181,27 @@ namespace Keysharp.Builtins
 			if (!imageListID.CoerceLong(out var id))
 				return 0L;
 
-			return Script.TheScript.ImageListData.imageLists.TryRemove(id, out _) ? 1L : 0L;
+			if (!Script.TheScript.ImageListData.imageLists.TryRemove(id, out var il))
+				return 0L;
+
+			il.Dispose();
+			return 1L;
+		}
+
+		/// <summary>
+		/// Destroys the lists a ListView holds as it is destroyed, as a native ListView does unless it was created with
+		/// +0x40 (LVS_SHAREIMAGELISTS).
+		/// </summary>
+		internal static void DestroyWithListView(int style, params ImageList[] lists)
+		{
+			if ((style & 0x40) != 0 || Script.TheScript is not { } script)
+				return;
+
+			var imageLists = script.ImageListData.imageLists;
+
+			foreach (var (id, il) in imageLists)
+				if (lists.Contains(il) && imageLists.TryRemove(id, out _))
+					il.Dispose();
 		}
 
 		/// <summary>

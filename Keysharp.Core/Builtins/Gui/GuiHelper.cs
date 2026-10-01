@@ -484,77 +484,69 @@ namespace Keysharp.Builtins
 				return default;
 			}
 
-            try
-            {
-                //Get an .ico file in memory, then split it into separate icons and bitmaps.
-                byte[] src = null;
+			//Get an .ico file in memory, then split it into separate icons and bitmaps.
+			byte[] src = null;
 #if WINDOWS
-                using (var stream = new MemoryStream())
-                {
-                    icon.Save(stream);
-                    src = stream.ToArray();
-                }
+			using (var stream = new MemoryStream())
+			{
+				icon.Save(stream);
+				src = stream.ToArray();
+			}
 #elif LINUX
-				src = icon.ToGdk().PixelBytes.Data;
+			src = icon.ToGdk().PixelBytes.Data;
 #else
-				var bitmap = icon.ToBitmap();
-				if (bitmap != null)
-					return [(icon, bitmap)];
-				return default;
+			var bitmap = icon.ToBitmap();
+			if (bitmap != null)
+				return [(icon, bitmap)];
+			return default;
 #endif
 
-                int count = BitConverter.ToInt16(src, 4);
-                var splitIcons = new List<(Icon, Bitmap)>(count);
+			int count = BitConverter.ToInt16(src, 4);
+			var splitIcons = new List<(Icon, Bitmap)>(count);
 
-                for (var i = 0; i < count; i++)
-                {
-                    var bpp = BitConverter.ToInt16(src, 6 + (16 * i) + 6);//ICONDIRENTRY.wBitCount
-                    var length = BitConverter.ToInt32(src, 6 + (16 * i) + 8);//ICONDIRENTRY.dwBytesInRes
-                    var offset = BitConverter.ToInt32(src, 6 + (16 * i) + 12);//ICONDIRENTRY.dwImageOffset
+			for (var i = 0; i < count; i++)
+			{
+				var bpp = BitConverter.ToInt16(src, 6 + (16 * i) + 6);//ICONDIRENTRY.wBitCount
+				var length = BitConverter.ToInt32(src, 6 + (16 * i) + 8);//ICONDIRENTRY.dwBytesInRes
+				var offset = BitConverter.ToInt32(src, 6 + (16 * i) + 12);//ICONDIRENTRY.dwImageOffset
 
-					using (var dst = new BinaryWriter(new MemoryStream(6 + 16 + length)))
+				using (var dst = new BinaryWriter(new MemoryStream(6 + 16 + length)))
+				{
+					dst.Write(src, 0, 4);//Copy ICONDIR and set idCount to 1.
+					dst.Write((short)1);
+					//Copy ICONDIRENTRY and set dwImageOffset to 22.
+					dst.Write(src, 6 + (16 * i), 12);//ICONDIRENTRY except dwImageOffset.
+					dst.Write(22);
+					dst.Write(src, offset, length);//Copy the image data. This can either be in uncompressed ARGB bitmap format with no header, or compressed PNG with a header.
+					_ = dst.BaseStream.Seek(0, SeekOrigin.Begin);//Create an icon from the in-memory file.
+					var icon2 = new Icon(dst.BaseStream);
+					var bmp = icon2.ToBitmap();
+
+					//If there is an alpha channel on this icon, it needs to be applied here,
+					//because to mimic the behavior of raw Windows API calls, alpha must be pre-multiplied.
+					if (bpp == 32)
 					{
-						dst.Write(src, 0, 4);//Copy ICONDIR and set idCount to 1.
-						dst.Write((short)1);
-						//Copy ICONDIRENTRY and set dwImageOffset to 22.
-						dst.Write(src, 6 + (16 * i), 12);//ICONDIRENTRY except dwImageOffset.
-						dst.Write(22);
-						dst.Write(src, offset, length);//Copy the image data. This can either be in uncompressed ARGB bitmap format with no header, or compressed PNG with a header.
-						_ = dst.BaseStream.Seek(0, SeekOrigin.Begin);//Create an icon from the in-memory file.
-						var icon2 = new Icon(dst.BaseStream);
-						var bmp = icon2.ToBitmap();
-
-						//If there is an alpha channel on this icon, it needs to be applied here,
-						//because to mimic the behavior of raw Windows API calls, alpha must be pre-multiplied.
-						if (bpp == 32)
+						for (var y = 0; y < bmp.Height; ++y)
 						{
-							for (var y = 0; y < bmp.Height; ++y)
+							for (var x = 0; x < bmp.Width; ++x)
 							{
-								for (var x = 0; x < bmp.Width; ++x)
-								{
-									var originalColor = bmp.GetPixel(x, y);
-									var alpha = originalColor.A / 255.0;
+								var originalColor = bmp.GetPixel(x, y);
+								var alpha = originalColor.A / 255.0;
 #if WINDOWS
-									var newColor = Color.FromArgb((int)originalColor.A, Convert.ToInt32(alpha * originalColor.R), Convert.ToInt32(alpha * originalColor.G), Convert.ToInt32(alpha * originalColor.B));
+								var newColor = Color.FromArgb((int)originalColor.A, Convert.ToInt32(alpha * originalColor.R), Convert.ToInt32(alpha * originalColor.G), Convert.ToInt32(alpha * originalColor.B));
 #else
-									var newColor = Color.FromArgb(originalColor.Ab, Convert.ToInt32(alpha * originalColor.Rb), Convert.ToInt32(alpha * originalColor.Gb), Convert.ToInt32(alpha * originalColor.Bb));
+								var newColor = Color.FromArgb(originalColor.Ab, Convert.ToInt32(alpha * originalColor.Rb), Convert.ToInt32(alpha * originalColor.Gb), Convert.ToInt32(alpha * originalColor.Bb));
 #endif
-									bmp.SetPixel(x, y, newColor);
-								}
+								bmp.SetPixel(x, y, newColor);
 							}
 						}
-
-						splitIcons.Add((icon2, bmp));
 					}
-				}
 
-				return splitIcons;
+					splitIcons.Add((icon2, bmp));
+				}
 			}
-			catch (Exception e)
-			{
-				_ = Errors.ErrorOccurred($"Error splitting icon: {e.Message}");
-				return default;
-			}
+
+			return splitIcons;
 		}
 
         private static Control GuiControlGetFocused(Control parent)

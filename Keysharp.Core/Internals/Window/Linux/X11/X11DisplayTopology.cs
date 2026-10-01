@@ -51,6 +51,10 @@ namespace Keysharp.Internals.Window.Linux.X11
 			return MapAcrossDisplays(bounds, snapshot.ToolkitBounds, snapshot.NativeBounds);
 		}
 
+		/// <summary>The union of the native display bounds, from the conversion cache because searches and pointer
+		/// mapping ask on every call.</summary>
+		internal static ScreenRect VirtualBounds => DisplayTopology.Union(CachedSnapshot.NativeBounds);
+
 		private static Snapshot CachedSnapshot
 		{
 			get
@@ -76,8 +80,8 @@ namespace Keysharp.Internals.Window.Linux.X11
 			var matchedNative = MatchNativeScreens(toolkit, native);
 			var mappings = new List<Mapping>();
 			var anyPrimary = toolkit.Any(s => s.IsPrimary);
-			var toolkitUnion = Union(toolkit.Select(s => ScreenRect.FromRectangle(s.Bounds)));
-			var nativeUnion = Union(native.Select(n => n.Bounds));
+			var toolkitUnion = DisplayTopology.Union(toolkit.Select(s => ScreenRect.FromRectangle(s.Bounds)));
+			var nativeUnion = DisplayTopology.Union(native.Select(n => n.Bounds));
 
 			for (var i = 0; i < toolkit.Length; i++)
 			{
@@ -137,8 +141,8 @@ namespace Keysharp.Internals.Window.Linux.X11
 				return result;
 
 			var available = new HashSet<int>(Enumerable.Range(0, native.Count));
-			var toolkitUnion = Union(toolkit.Select(screen => ScreenRect.FromRectangle(screen.Bounds)));
-			var nativeUnion = Union(native.Select(n => n.Bounds));
+			var toolkitUnion = DisplayTopology.Union(toolkit.Select(screen => ScreenRect.FromRectangle(screen.Bounds)));
+			var nativeUnion = DisplayTopology.Union(native.Select(n => n.Bounds));
 
 			for (var i = 0; i < toolkit.Length; i++)
 			{
@@ -218,32 +222,6 @@ namespace Keysharp.Internals.Window.Linux.X11
 			if (output == 0) return (0, 0);
 			var monitor = QueryNativeScreens().Find(m => m.Output == output);
 			return (monitor.RefreshRate, monitor.Orientation);
-		}
-
-		private static ScreenRect Union(IEnumerable<ScreenRect> rectangles)
-		{
-			var any = false;
-			long left = 0, top = 0, right = 0, bottom = 0;
-
-			foreach (var rect in rectangles)
-			{
-				if (!rect.HasArea)
-					continue;
-
-				if (!any)
-				{
-					left = rect.X; top = rect.Y; right = (long)rect.X + rect.Width; bottom = (long)rect.Y + rect.Height;
-					any = true;
-				}
-				else
-				{
-					left = Math.Min(left, rect.X); top = Math.Min(top, rect.Y);
-					right = Math.Max(right, (long)rect.X + rect.Width); bottom = Math.Max(bottom, (long)rect.Y + rect.Height);
-				}
-			}
-
-			return any ? new ScreenRect(ClampToInt(left), ClampToInt(top),
-				Math.Max(0, ClampToInt(right - left)), Math.Max(0, ClampToInt(bottom - top))) : default;
 		}
 
 		/// <summary>Maps the inclusive start and exclusive end of a rectangle using the display which owns each

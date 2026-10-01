@@ -356,7 +356,6 @@ namespace Keysharp.Language
 		internal const string Keyword_Hours = "hours";
 		internal const string Keyword_HScroll = "hscroll";
 		internal const string Keyword_Hwnd = "hwnd";
-		internal const string Keyword_Icon = "Icon";
 		internal const string Keyword_IconRight = "iconright";
 		internal const string Keyword_IconSmall = "iconsmall";
 		internal const string Keyword_ID = "id";
@@ -554,7 +553,6 @@ namespace Keysharp.Language
 		internal const string Keyword_ToolWindow = "toolwindow";
 		internal const string Keyword_Top = "top";
 		internal const string Keyword_Topmost = "topmost";
-		internal const string Keyword_Trans = "Trans";
 		internal const string Keyword_Transcolor = "transcolor";
 		internal const string Keyword_Transparent = "transparent";
 		internal const string Keyword_Tray = "tray";
@@ -572,7 +570,6 @@ namespace Keysharp.Language
 		internal const string Keyword_Upper = "upper";
 		internal const string Keyword_Uppercase = "uppercase";
 		internal const string Keyword_UseErrorLevel = "useerrorlevel";
-		internal const string Keyword_Variation = "variation";
 		internal const string Keyword_Vertical = "vertical";
 		internal const string Keyword_Vis = "vis";
 		internal const string Keyword_VisFirst = "visfirst";

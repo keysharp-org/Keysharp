@@ -121,23 +121,6 @@ namespace Keysharp.Builtins
 			return display.WorkArea.ToRectangle();
 		}
 
-		/// <summary>
-		/// Returns the union of all displays, including its possibly-negative origin, in native screen coordinates.
-		/// </summary>
-		internal static (long Left, long Top, long Width, long Height) GetVirtualScreenBounds()
-		{
-			var displays = AllDisplays;
-
-			if (displays.Length == 0)
-				return (0L, 0L, 0L, 0L);
-
-			var left = displays.Min(s => s.Bounds.X);
-			var top = displays.Min(s => s.Bounds.Y);
-			var right = displays.Max(s => s.Bounds.Right);
-			var bottom = displays.Max(s => s.Bounds.Bottom);
-			return (left, top, right - left, bottom - top);
-		}
-
 		/// <summary>Gets one monitor's native screen-coordinate bounds.</summary>
 		public static object MonitorGet(object n = null, [ByRef] object left = null, [ByRef] object top = null,
 			[ByRef] object right = null, [ByRef] object bottom = null)

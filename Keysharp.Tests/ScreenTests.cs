@@ -40,7 +40,7 @@ namespace Keysharp.Tests
 			using var needle = new Bitmap(1, 1);
 			needle.SetPixel(0, 0, white);
 
-			var finder = new ImageFinder(source) { Variation = 0 };
+			using var finder = new ImageFinder(source) { Variation = 0 };
 			// Expected first match per direction (see ImageFinder.Find): 1-4 are row-major,
 			// 5-8 column-major, 9 returns the match nearest the region center.
 			var expected = new Dictionary<int, Point>

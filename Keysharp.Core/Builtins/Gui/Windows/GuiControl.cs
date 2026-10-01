@@ -316,14 +316,20 @@ namespace Keysharp.Builtins
 							if (height == int.MinValue)
 								height = pic.Height;
 
-							if (ImageHelper.LoadImage(filename, width, height, iconnumber).Item1 is Bitmap bmp)
-							{
-								var oldimage = pic.Image;
-								pic.Image = bmp;
+							var (bmp, source) = ImageHelper.LoadImage(filename, width, height, iconnumber);
+							(source as IDisposable)?.Dispose();
 
-								if (oldimage is Bitmap oldbmp)
-									oldbmp.Dispose();
+							if (bmp == null)
+							{
+								_ = Errors.ValueErrorOccurred("Invalid value.", filename);
+								return;
 							}
+
+							var oldimage = pic.Image;
+							pic.Image = bmp;
+
+							if (oldimage is Bitmap oldbmp)
+								oldbmp.Dispose();
 						}
 					}
 					else if (_control is Forms.Control ctrl)
@@ -1367,12 +1373,17 @@ namespace Keysharp.Builtins
 						return 0;
 
 					part--;
-					(Bitmap, object) ret;
 
-					if (part < ss.Items.Count && (ret = ImageHelper.LoadImage(filename, 0, 0, iconnumber)).Item1 is Bitmap bmp)
+					if (part < ss.Items.Count)
 					{
+						var (bmp, source) = ImageHelper.LoadImage(filename, 0, 0, iconnumber);
+						(source as IDisposable)?.Dispose();
+
+						if (bmp == null)
+							return (nint)(long)Errors.ErrorOccurred("Can't load icon.", null, filename, 0L);
+
 						ss.Items[part].Image = bmp;
-						return ret.Item2 is Icon icon ? icon.Handle : bmp.GetHicon();
+						return bmp.GetHicon();//The script owns the handle, as in AutoHotkey.
 					}
 				}
 

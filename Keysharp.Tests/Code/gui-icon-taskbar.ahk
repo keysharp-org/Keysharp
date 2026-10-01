@@ -35,6 +35,12 @@ AssertEq(Type(g.Icon), "Image", A_LineNumber)
 
 Throws(() => g.SetIcon(A_Temp . "\keysharp-no-such-icon.ico"), A_LineNumber)
 
+; A Picture or menu icon which cannot be loaded raises too, as in AutoHotkey.
+Throws(() => g.AddPicture(, A_Temp . "\keysharp-no-such-icon.ico"), A_LineNumber)
+iconMenu := Menu()
+iconMenu.Add("Item", (*) => 0)
+Throws(() => iconMenu.SetIcon("Item", A_Temp . "\keysharp-no-such-icon.ico"), A_LineNumber)
+
 ; --- Taskbar: the class form ------------------------------------------------------------------------------
 
 Assert(Taskbar.IsBadgeIconSupported = true || Taskbar.IsBadgeIconSupported = false, A_LineNumber)

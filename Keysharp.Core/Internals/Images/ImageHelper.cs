@@ -151,11 +151,10 @@ namespace Keysharp.Internals.Images
 #endif
 		}
 
-		internal static bool IsIcon(string filename)
-		{
-			var ext = Path.GetExtension(filename).ToLower();
-			return ext == ".exe" || ext == ".dll" || ext == ".icl" || ext == ".cpl" || ext == ".scr" || ext == ".ico";
-		}
+		/// <summary>Whether <see cref="LoadImage"/> loaded an icon or a cursor rather than a picture, given the source it
+		/// was passed and the icon or cursor it returned.</summary>
+		internal static bool IsIconSource(string filename, object loaded)
+			=> loaded is Icon or Cursor || filename.StartsWith("HICON:", StringComparison.OrdinalIgnoreCase);
 
 		internal static Icon LoadIconFromAssembly(string path, string iconName)
 		{
@@ -213,228 +212,171 @@ namespace Keysharp.Internals.Images
 			return icon;
 		}
 
+		/// <summary>
+		/// Loads a picture, an icon or a cursor from a file, a module's icon resources, or an "HBITMAP:"/"HICON:" handle,
+		/// which is consumed unless "*" follows the colon. A width or height of 0 keeps the source's own size, and -1
+		/// follows the other dimension's aspect ratio.
+		/// </summary>
 		/// <param name="exactPixels">See <see cref="ResizeBitmap"/>: pixel consumers
 		/// (ImageSearch needles) must pass true so *w/*h options resample real pixels.</param>
+		/// <returns>The bitmap, and the icon or cursor it came from, which the caller disposes, or null for a picture or a
+		/// handle. A null bitmap means the source could not be loaded; nothing is raised, so each caller reports that as
+		/// its own error.</returns>
 		internal static (Bitmap, object) LoadImage(string filename, int w, int h, object iconindex, bool exactPixels = false)
 		{
 			Bitmap bmp = null;
-			object temp = null;
+			object source = null;
+
+			// Every source below is decoded into a bitmap nothing else holds, so the one it is resized from goes.
+			Bitmap Sized(Bitmap loaded)
+			{
+				var resized = loaded == null ? null : ResizeBitmap(loaded, w, h, exactPixels);
+
+				if (!ReferenceEquals(resized, loaded))
+					loaded.Dispose();
+
+				return resized;
+			}
 
 			try
 			{
-				if (filename.StartsWith("HBITMAP:", StringComparison.OrdinalIgnoreCase))
+				if (TryParseHandle(filename, out var handle, out var kind, out var keepHandle))
 				{
-					var hstr = filename.AsSpan(8);
-					var dontClear = hstr[0] == '*';
-
-					if (dontClear)
-						hstr = hstr.Trim('*');
-
-					if (long.TryParse(hstr, out var handle))
+					try
 					{
-						var ptr = new nint(handle);
-
-						try
-						{
-							if (ImageHandleManager.TryGetImage(ptr, out var img) && img is Bitmap cachedBmp)
-								bmp = new Bitmap(cachedBmp);
-							else
-								bmp = GetBitmapFromHBitmap(ptr);
-
-							bmp = ResizeBitmap(bmp, w, h, exactPixels);
-						}
-						finally
-						{
-							if (!dontClear)
-								ImageHandleManager.Dispose(ptr, ImageHandleKind.Bitmap);
-						}
-					}
-				}
-				else if (filename.StartsWith("HICON:", StringComparison.OrdinalIgnoreCase))
-				{
-					var hstr = filename.AsSpan(6);
-					var dontClear = hstr[0] == '*';
-
-					if (dontClear)
-						hstr = hstr.Trim('*');
-
-					if (long.TryParse(hstr, out var handle))
-					{
-						var ptr = new nint(handle);
-
 #if WINDOWS
-						using (var tempico = Icon.FromHandle(ptr))
-							bmp = tempico.ToBitmap();
-						bmp = ResizeBitmap(bmp, w, h, exactPixels);
-
-						if (!dontClear)
-							ImageHandleManager.Dispose(ptr, ImageHandleKind.Icon);
-#else
-						if (ImageHandleManager.TryGetImage(ptr, out var img))
+						if (kind == ImageHandleKind.Icon)
 						{
-							if (img is Icon ico)
-								bmp = ico.ToBitmap();
-							else if (img is Bitmap hBmp)
-								bmp = hBmp.Clone();
+							using var icon = Icon.FromHandle(handle);
+							return (Sized(icon.ToBitmap()), null);
 						}
-
-						if (bmp != null)
-							bmp = ResizeBitmap(bmp, w, h, exactPixels);
-
-						if (!dontClear)
-							ImageHandleManager.Dispose(ptr, ImageHandleKind.Icon);
 #endif
+						return (Sized(GetBitmapFromHBitmap(handle)), null);
+					}
+					finally
+					{
+						if (!keepHandle)
+							ImageHandleManager.Dispose(handle, kind);
 					}
 				}
 
-				if (bmp == null)//Wasn't a handle, and instead was a filename.
+				//Invariant, not the current culture: in tr-TR the dotless i makes ".ICO".ToLower() ".ıco".
+				var ext = Path.GetExtension(filename).ToLowerInvariant();
+
+				if (ext == ".dll"
+#if WINDOWS
+						|| ext == ".exe" || ext == ".icl" || ext == ".cpl" || ext == ".scr"
+#endif
+				   )
 				{
-					var ext = Path.GetExtension(filename).ToLower();
+					Icon ico = null;
 
-					if (ext == ".dll"
-#if WINDOWS
-							|| ext == ".exe" || ext == ".icl" || ext == ".cpl" || ext == ".scr"
-#endif
-					   )
-					{
-						Icon ico = null;
-
-						if (iconindex is string iconstr)
-							ico = LoadIconFromAssembly(filename, iconstr);
+					if (iconindex is string iconstr)
+						ico = LoadIconFromAssembly(filename, iconstr);
 
 #if WINDOWS
-						else
-						{
-							_ = iconindex.TryCoerceInt(out var idx);
-							ico = ExtractIconWithSizeFromModule(filename, idx, w, h) ?? GuiHelper.GetIcon(filename, idx);
-						}
-
-#endif
-
-						if (ico != null)
-						{
-							bmp = ico.ToBitmap();
-
-							if (w > 0 || h > 0)
-							{
-								bmp = ResizeBitmap(bmp, w, h, exactPixels);
-							}
-#if WINDOWS
-							else if (bmp.Size != SystemInformation.IconSize)
-							{
-								bmp = bmp.Resize(SystemInformation.IconSize.Width, SystemInformation.IconSize.Height);
-							}
-#endif
-
-							temp = ico;
-						}
-					}
-					else if (ext == ".ico")
-					{
-						if (w > 0 && h < 0) h = w;
-						if (h > 0 && w < 0) w = h;
-
-#if WINDOWS
-						Icon ico = (w <= 0 || h <= 0) ? new Icon(filename) : new Icon(filename, w, h);
-
-						var icos = GuiHelper.SplitIcon(ico);
-
-						if (w > 0 || h > 0)
-						{
-							var tempIcoBmp = icos.FirstOrDefault(tempico => (w <= 0 || tempico.Item1.Width == w) && (h <= 0 || tempico.Item1.Height == h));
-							var tempIco = tempIcoBmp.Item1;
-
-							if (tempIco == null)
-								tempIco = icos[0].Item1;
-
-							temp = tempIco;
-							bmp = tempIcoBmp.Item2;
-						}
-						else
-						{
-							_ = iconindex.TryCoerceInt(out var iconint, int.MaxValue);
-
-							if (iconint < icos.Count)
-							{
-								var tempIcoBmp = icos[iconint];
-								temp = tempIcoBmp.Item1;
-								bmp = tempIcoBmp.Item2;
-							}
-						}
-
-						if (bmp == null)
-						{
-							var tempIcoBmp = icos[0];
-							temp = tempIcoBmp.Item1;
-							bmp = tempIcoBmp.Item2;
-						}
-
-						if (w > 0 || h > 0)
-							bmp = ResizeBitmap(bmp, w, h, exactPixels);
-						else if (bmp.Size != SystemInformation.IconSize)
-							bmp = bmp.Resize(SystemInformation.IconSize.Width, SystemInformation.IconSize.Height);
-#else
-						using (var ico = new Icon(filename))
-						{
-							var frames = ico.Frames.ToList();
-
-							if (frames.Count > 0)
-							{
-								IconFrame frame;
-								if (w > 0 || h > 0)
-								{
-									var targetSize = new Size(w > 0 ? w : h, h > 0 ? h : w);
-									frame = frames.FirstOrDefault(tempFrame => tempFrame.PixelSize == targetSize) ?? frames[0];
-								}
-								else
-								{
-									_ = iconindex.TryCoerceInt(out var iconint, int.MaxValue);
-									frame = iconint >= 0 && iconint < frames.Count ? frames[iconint] : frames[0];
-								}
-
-								bmp = new Bitmap(frame.Bitmap);
-								temp = new Icon(1f, new Bitmap(frame.Bitmap));
-							}
-						}
-
-						if (bmp != null && (w > 0 || h > 0))
-							bmp = ResizeBitmap(bmp, w, h, exactPixels);
-#endif
-					}
-					else if (ext == ".cur")
-					{
-						var tempcur = new Cursor(filename);
-#if WINDOWS
-						var curbm = new Bitmap(tempcur.Size.Width, tempcur.Size.Height);
-
-						using (var gr = Graphics.FromImage(curbm))
-						{
-							tempcur.Draw(gr, new Rectangle(0, 0, tempcur.Size.Width, tempcur.Size.Height));
-							bmp = curbm;
-							temp = tempcur;
-						}
-#else
-						temp = tempcur;
-						bmp = ImageHelper.ConvertCursorToBitmap(tempcur);
-						bmp = ResizeBitmap(bmp, w, h, exactPixels);
-#endif
-					}
 					else
 					{
-						using (var tempBmp = (Bitmap)Image.FromFile(filename))//Must make a copy because the original will keep the file locked.
-						{
-							bmp = new Bitmap(tempBmp);
-							bmp = ResizeBitmap(bmp, w, h, exactPixels);
-						}
+						_ = iconindex.TryCoerceInt(out var idx);
+						ico = ExtractIconWithSizeFromModule(filename, idx, w, h) ?? GuiHelper.GetIcon(filename, idx);
+					}
+
+#endif
+
+					if (ico != null)
+					{
+						source = ico;
+						bmp = Sized(ico.ToBitmap());
 					}
 				}
+				else if (ext == ".ico")
+				{
+					if (w > 0 && h < 0) h = w;
+					if (h > 0 && w < 0) w = h;
+
+#if WINDOWS
+					List<(Icon, Bitmap)> frames;
+
+					using (var ico = new Icon(filename))
+						frames = GuiHelper.SplitIcon(ico);
+
+					var chosen = w > 0 || h > 0
+								 ? frames.FindIndex(frame => (w <= 0 || frame.Item1.Width == w) && (h <= 0 || frame.Item1.Height == h))
+								 : iconindex.TryCoerceInt(out var iconint) && iconint >= 0 && iconint < frames.Count ? iconint : 0;
+
+					if (chosen < 0)
+						chosen = 0;
+
+					for (var i = 0; i < frames.Count; i++)
+						if (i != chosen)
+						{
+							frames[i].Item1.Dispose();
+							frames[i].Item2.Dispose();
+						}
+
+					source = frames[chosen].Item1;
+					bmp = Sized(frames[chosen].Item2);
+#else
+					using (var ico = new Icon(filename))
+					{
+						var frames = ico.Frames.ToList();
+
+						if (frames.Count > 0)
+						{
+							IconFrame frame;
+							if (w > 0 || h > 0)
+							{
+								var targetSize = new Size(w > 0 ? w : h, h > 0 ? h : w);
+								frame = frames.FirstOrDefault(tempFrame => tempFrame.PixelSize == targetSize) ?? frames[0];
+							}
+							else
+							{
+								_ = iconindex.TryCoerceInt(out var iconint, int.MaxValue);
+								frame = iconint >= 0 && iconint < frames.Count ? frames[iconint] : frames[0];
+							}
+
+							bmp = new Bitmap(frame.Bitmap);
+							source = new Icon(1f, new Bitmap(frame.Bitmap));
+						}
+					}
+
+					bmp = Sized(bmp);
+#endif
+				}
+				else if (ext == ".cur")
+				{
+					var cursor = new Cursor(filename);
+					source = cursor;
+					bmp = Sized(ConvertCursorToBitmap(cursor));
+				}
+				else
+				{
+					//The decoded file keeps the file locked, so a bitmap that is not resized from it is copied.
+					using var file = (Bitmap)Image.FromFile(filename);
+					var resized = ResizeBitmap(file, w, h, exactPixels);
+					bmp = ReferenceEquals(resized, file) ? new Bitmap(file) : resized;
+				}
 			}
-			catch (Exception ex)
+			catch (Exception)
 			{
-				return Errors.ErrorOccurred(new TypeError(ex.Message), ((Bitmap, object))(null, null));
+				bmp?.Dispose();
+				(source as IDisposable)?.Dispose();
+				return (null, null);
 			}
 
-			return (bmp, temp);
+			return (bmp, source);
+		}
+
+		// Reads an "HBITMAP:" or "HICON:" source, whose handle LoadImage consumes unless "*" marks the script as keeping it.
+		private static bool TryParseHandle(string filename, out nint handle, out ImageHandleKind kind, out bool keep)
+		{
+			var prefix = filename.StartsWith("HBITMAP:", StringComparison.OrdinalIgnoreCase) ? 8
+						 : filename.StartsWith("HICON:", StringComparison.OrdinalIgnoreCase) ? 6 : 0;
+			var value = filename.AsSpan(prefix);
+			keep = value.StartsWith("*");
+			kind = prefix == 6 ? ImageHandleKind.Icon : ImageHandleKind.Bitmap;
+			handle = prefix > 0 && long.TryParse(keep ? value[1..] : value, out var number) ? (nint)number : 0;
+			return handle != 0;
 		}
 
 #if OSX
@@ -531,6 +473,53 @@ namespace Keysharp.Internals.Images
 		}
 
 		/// <summary>
+		/// Resizes a <see cref="Bitmap"/> to a new width and height.
+		/// </summary>
+		/// <param name="src">The <see cref="Bitmap"/> to resize.</param>
+		/// <param name="width">The new width to use. Use a number less than 0 to maintain the aspect ratio.</param>
+		/// <param name="height">The new height to use. Use a number less than 0 to maintain the aspect ratio.</param>
+		/// <returns>A new <see cref="Bitmap"/> with the specified size.</returns>
+		internal static Bitmap Resize(this Bitmap src, int width, int height)
+		{
+			// Keep aspect if one dimension is negative
+			if (width < 0)
+				width = (int)((double)src.Width / src.Height * height + 0.5);
+			else if (height < 0)
+				height = (int)((double)src.Height / src.Width * width + 0.5);
+
+			// If same size, return a copy so callers can safely dispose the original
+			if (src.Width == width && src.Height == height)
+				return new Bitmap(src);
+
+#if WINDOWS
+			// Use premultiplied ARGB for best compositing behavior
+			var dst = new Bitmap(width, height, PixelFormat.Format32bppPArgb);
+
+			using (var g = Graphics.FromImage(dst))
+			using (var ia = new ImageAttributes())
+			{
+				// High-quality sampling + edge-safe wrap
+				g.CompositingMode = CompositingMode.SourceOver;
+				g.CompositingQuality = CompositingQuality.HighQuality;
+				g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+				g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+				// Prevent sampling transparent/out-of-bounds pixels at the edges
+				ia.SetWrapMode(WrapMode.TileFlipXY);
+
+				// Start from a transparent canvas
+				g.Clear(Color.Transparent);
+
+				g.DrawImage(src, new Rectangle(0, 0, width, height), 0, 0, src.Width, src.Height, GraphicsUnit.Pixel, ia);
+			}
+
+			return dst;
+#else
+			return new Bitmap(src, width, height, ImageInterpolation.High);
+#endif
+		}
+
+		/// <summary>
 		/// Multiplies every pixel's alpha of <paramref name="bmp"/> by <paramref name="alpha"/>/255 (whole-image
 		/// opacity for overlay fades), in place, and returns the same bitmap. The caller decides whether the
 		/// original must be preserved: if so, clone it and pass the clone (so, e.g., an overlay can fade its live
@@ -601,7 +590,7 @@ namespace Keysharp.Internals.Images
 		/// Returns a NEW bitmap that is <paramref name="src"/> with <paramref name="map"/> applied to every
 		/// pixel. Both the input and output pixels are packed as 0xAARRGGBB, so a caller writes a pure color
 		/// transform without touching backend channel order or premultiplication. The cross-platform
-		/// lock/translate scaffolding mirrors <c>ImageFinder.ToRgbArray</c> (read) and <c>ApplyOpacity</c>
+		/// lock/translate scaffolding mirrors <c>ImageFinder.ReadArgb</c> (read) and <c>ApplyOpacity</c>
 		/// (write) so the three stay consistent across the System.Drawing and Eto backends.
 		/// </summary>
 		internal static Bitmap MapPixelsArgb(Bitmap src, Func<uint, uint> map)
@@ -648,7 +637,7 @@ namespace Keysharp.Internals.Images
 
 #else
 			// Force 32bpp first so the 4-byte reads are valid (Pixbuf is 3bpp for 24-bit images) and so a
-			// premultiplied backend sees A=255, making the translate lossless (mirrors ToRgbArray).
+			// premultiplied backend sees A=255, making the translate lossless (mirrors ImageFinder.ReadArgb).
 			var src32 = EnsureOpaque32Bpp(src);
 
 			try
@@ -1082,9 +1071,28 @@ namespace Keysharp.Internals.Images
 			}
 		}
 
+		/// <summary>
+		/// Copies the bitmap a handle names. On Windows a 32bpp DIB section, the kind LoadPicture and Image.ToBitmap
+		/// hand out, is read with its premultiplied alpha, unless no pixel has any: GDI drawing leaves the alpha bytes
+		/// zero, so such a section is opaque. Any other bitmap goes through FromHbitmap, which reads no alpha.
+		/// </summary>
 		internal static Bitmap GetBitmapFromHBitmap(nint nativeHBitmap)
 		{
 #if WINDOWS
+			var size = Marshal.SizeOf<DIBSECTION>();
+
+			if (WindowsAPI.GetObject(nativeHBitmap, size, out var dib) == size && dib.bmBitsPixel == 32 && dib.bmBits != 0)
+			{
+				int w = dib.bmWidth, h = dib.bmHeight, stride = dib.bmWidthBytes;
+				// A positive header height stores the rows bottom-up, which a negative stride walks from the top row.
+				var topDown = dib.dsBmih.biHeight < 0;
+				_ = WindowsAPI.GdiFlush();//GDI drawing into the section may still be batched.
+				var format = HasAlpha(dib.bmBits, w * h) ? PixelFormat.Format32bppPArgb : PixelFormat.Format32bppRgb;
+				using var view = new Bitmap(w, h, topDown ? stride : -stride, format,
+											topDown ? dib.bmBits : dib.bmBits + (nint)(h - 1) * stride);
+				return view.Clone(new Rectangle(0, 0, w, h), PixelFormat.Format32bppArgb);
+			}
+
 			using var nativeBitmap = Bitmap.FromHbitmap(nativeHBitmap);
 			return nativeBitmap.Clone(new Rectangle(Point.Empty, nativeBitmap.Size), nativeBitmap.PixelFormat);
 #else
@@ -1093,6 +1101,54 @@ namespace Keysharp.Internals.Images
 		}
 
 #if WINDOWS
+		private static unsafe bool HasAlpha(nint bits, int pixels)
+		{
+			var pixel = (uint*)bits;
+
+			for (var i = 0; i < pixels; i++)
+				if (pixel[i] >> 24 != 0)
+					return true;
+
+			return false;
+		}
+
+		/// <summary>
+		/// Copies a bitmap into a new top-down 32bpp DIB section with premultiplied alpha, the HBITMAP AutoHotkey's
+		/// LoadPicture gets from GdipCreateHBITMAPFromBitmap with no background color, so alpha survives the handle.
+		/// The caller owns the section; 0 if GDI cannot create one.
+		/// </summary>
+		internal static nint CreateDibSection(Bitmap bmp)
+		{
+			int w = bmp.Width, h = bmp.Height;
+			var header = new BITMAPINFOHEADER
+			{
+				biSize = Marshal.SizeOf<BITMAPINFOHEADER>(),
+				biWidth = w,
+				biHeight = -h,
+				biPlanes = 1,
+				biBitCount = 32,
+			};
+			var dib = WindowsAPI.CreateDIBSection(0, ref header, 0 /* DIB_RGB_COLORS */, out var bits, 0, 0);
+
+			if (dib == 0)
+				return 0;
+
+			// GDI+ converts the pixels straight into the section's memory.
+			var target = new BitmapData { Width = w, Height = h, Stride = w * 4, PixelFormat = PixelFormat.Format32bppPArgb, Scan0 = bits };
+
+			try
+			{
+				_ = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly | ImageLockMode.UserInputBuffer, PixelFormat.Format32bppPArgb, target);
+				bmp.UnlockBits(target);
+				return dib;
+			}
+			catch
+			{
+				_ = WindowsAPI.DeleteObject(dib);
+				throw;
+			}
+		}
+
 		internal static Icon ExtractIconWithSizeFromModule(string path, int index, int w, int h)
 		{
 			if (w <= 0 && h > 0) w = h;
@@ -1174,10 +1230,16 @@ namespace Keysharp.Internals.Images
 #endif
 				//A module hands back the icon itself at the size asked for, and an image format carries one size,
 				//so LoadImage already resolves both -- it just also produces a bitmap this caller has no use for.
-				var (bmp, icon) = LoadImage(filename, size, size, iconNumber);
+				var (bmp, source) = LoadImage(filename, size, size, iconNumber);
 
 				using (bmp)
-					return icon as Icon ?? IconFromBitmap(bmp);
+				{
+					if (source is Icon icon)
+						return icon;
+
+					(source as IDisposable)?.Dispose();
+					return IconFromBitmap(bmp);
+				}
 			}
 			catch (Exception)
 			{
@@ -1242,27 +1304,20 @@ namespace Keysharp.Internals.Images
 				return iconnumber;
 		}
 
+		/// <summary>
+		/// Divides a strip into w by h images across its width, from its top rows, as ImageList_AddMasked does: only
+		/// whole images, so a strip narrower than one image gives none.
+		/// </summary>
 		internal static List<Bitmap> SplitBitmap(Bitmap bmp, int w, int h)
 		{
 			var list = new List<Bitmap>();
 
-			// A non-positive tile size cannot tile: the `i += h` / `j += w` steps would never advance, spinning
-			// forever (IL_Add on a zero-sized ImageList hit exactly this hang on Linux/macOS). Fall back to a
-			// single tile that is the whole bitmap so no caller can lock up.
+			// A zero step would never advance.
 			if (w <= 0 || h <= 0)
-			{
-				list.Add(new Bitmap(bmp));
 				return list;
-			}
 
-			for (var i = 0; i < bmp.Height; i += h)
-				for (var j = 0; j < bmp.Width; j += w)
-					if (i + h < bmp.Height && j + w < bmp.Width)
-#if WINDOWS
-						list.Add(bmp.Clone(new Rectangle(j, i, w, h), bmp.PixelFormat));
-#else
-						list.Add(bmp.Clone(new Rectangle(j, i, w, h)));
-#endif
+			for (var x = 0; x + w <= bmp.Width; x += w)
+				list.Add(CropBitmap(bmp, x, 0, w, Math.Min(h, bmp.Height)));
 
 			return list;
 		}
@@ -1271,29 +1326,23 @@ namespace Keysharp.Internals.Images
 	internal enum ImageHandleKind
 	{
 		Bitmap = 0,
-		Icon = 1,
-		Cursor = 2
+		Icon = 1
 	}
 
+	/// <summary>
+	/// Hands out native handles for bitmaps and consumes them again. A Windows handle belongs to the script once it is
+	/// handed out, as in AutoHotkey, so nothing is kept for it. On Linux and macOS a handle only names the toolkit image
+	/// kept here until a consumer takes it.
+	/// </summary>
 	internal static class ImageHandleManager
 	{
-		private sealed class ImageHandleEntry
-		{
-			internal ImageHandleEntry(ImageHandleKind kind, IDisposable owner, bool destroyHandle)
-			{
-				Kind = kind;
-				Owner = owner;
-				DestroyHandle = destroyHandle;
-			}
+#if !WINDOWS
+		private static readonly ConcurrentDictionary<nint, Image> handleCache = new ();
+#endif
 
-			internal ImageHandleKind Kind { get; }
-			internal IDisposable Owner { get; }
-			internal bool DestroyHandle { get; }
-		}
-
-		private static readonly ConcurrentDictionary<nint, ImageHandleEntry> handleCache = new ();
-
-		internal static bool TryAddBitmap(Bitmap bmp, ImageHandleKind kind, out nint handle, bool disposeSource = true)
+		/// <summary>Takes ownership of <paramref name="bmp"/> and returns a handle for it: an HICON for an icon, else an
+		/// HBITMAP.</summary>
+		internal static bool TryAddBitmap(Bitmap bmp, ImageHandleKind kind, out nint handle)
 		{
 			handle = 0;
 
@@ -1301,26 +1350,10 @@ namespace Keysharp.Internals.Images
 				return false;
 
 #if WINDOWS
-			try
-			{
-				handle = kind == ImageHandleKind.Icon ? bmp.GetHicon() : bmp.GetHbitmap();
-			}
-			catch
-			{
-				if (disposeSource)
-					bmp.Dispose();
-				throw;
-			}
+			using (bmp)
+				handle = kind == ImageHandleKind.Icon ? bmp.GetHicon() : ImageHelper.CreateDibSection(bmp);
 
-			if (handle == 0)
-			{
-				if (disposeSource)
-					bmp.Dispose();
-				return false;
-			}
-
-			handleCache[handle] = new ImageHandleEntry(kind, disposeSource ? bmp : new Bitmap(bmp), true);
-			return true;
+			return handle != 0;
 #else
 #if LINUX
 			handle = (bmp.ControlObject as Gdk.Pixbuf)?.Handle ?? nint.Zero;
@@ -1330,83 +1363,37 @@ namespace Keysharp.Internals.Images
 
 			if (handle == 0)
 			{
-				if (disposeSource)
-					bmp.Dispose();
+				bmp.Dispose();
 				return false;
 			}
 
-			handleCache[handle] = new ImageHandleEntry(kind, bmp, false);
+			handleCache[handle] = bmp;
 			return true;
 #endif
 		}
 
-		internal static bool TryAddCursor(Cursor cursor, out nint handle)
-		{
-			handle = 0;
-
-			if (cursor == null)
-				return false;
-
-#if WINDOWS
-			handle = cursor.Handle;
-
-			if (handle == 0)
-				return false;
-
-			handleCache[handle] = new ImageHandleEntry(ImageHandleKind.Cursor, cursor, false);
-			return true;
-#else
-			var bmp = ImageHelper.ConvertCursorToBitmap(cursor);
-			var added = TryAddBitmap(bmp, ImageHandleKind.Cursor, out handle);
-
-			if (cursor is IDisposable id)
-				id.Dispose();
-
-			return added;
-#endif
-		}
-
+#if !WINDOWS
 		internal static bool TryGetImage(nint handle, out Image image)
 		{
 			image = null;
-
-			if (handle == 0)
-				return false;
-
-			if (handleCache.TryGetValue(handle, out var entry) && entry.Owner is Image img)
-			{
-				image = img;
-				return true;
-			}
-
-			return false;
+			return handle != 0 && handleCache.TryGetValue(handle, out image);
 		}
+#endif
 
+		/// <summary>Releases a handle a consumer was given without the "*" that keeps it for the script.</summary>
 		internal static void Dispose(nint handle, ImageHandleKind kind)
 		{
 			if (handle == 0)
 				return;
 
-			if (handleCache.TryRemove(handle, out var entry))
-			{
-				entry.Owner?.Dispose();
-				if (entry.DestroyHandle)
-					DestroyHandleForKind(handle, entry.Kind);
-				return;
-			}
-
-#if WINDOWS
-			DestroyHandleForKind(handle, kind);
-#endif
-		}
-
-		private static void DestroyHandleForKind(nint handle, ImageHandleKind kind)
-		{
 #if WINDOWS
 			if (kind == ImageHandleKind.Bitmap)
 				_ = WindowsAPI.DeleteObject(handle);
 			else
 				_ = DestroyIcon(handle);
+#else
+			if (handleCache.TryRemove(handle, out var image))
+				image.Dispose();
 #endif
 		}
 	}

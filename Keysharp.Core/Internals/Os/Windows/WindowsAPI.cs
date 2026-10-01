@@ -439,6 +439,26 @@ namespace Keysharp.Internals.Os.Windows
 		internal int biClrImportant;
 	}
 
+	/// <summary>What GetObject reports for a DIB section: its BITMAP, whose bits are directly addressable, then
+	/// the header that says whether the rows run top-down.</summary>
+	[StructLayout(LayoutKind.Sequential)]
+	internal struct DIBSECTION
+	{
+		internal int bmType;
+		internal int bmWidth;
+		internal int bmHeight;
+		internal int bmWidthBytes;
+		internal short bmPlanes;
+		internal short bmBitsPixel;
+		internal nint bmBits;
+		internal BITMAPINFOHEADER dsBmih;
+		internal uint dsBitfield0;
+		internal uint dsBitfield1;
+		internal uint dsBitfield2;
+		internal nint dshSection;
+		internal uint dsOffset;
+	}
+
 	/// <summary>Arguments for <c>UpdateLayeredWindowIndirect</c>. Every pointer field is optional: leaving
 	/// pptDst/psize null updates the pixels without moving or resizing, and prcDirty limits the transfer to one
 	/// rectangle of the source.</summary>
@@ -1728,6 +1748,15 @@ namespace Keysharp.Internals.Os.Windows
 		[LibraryImport(gdi32, EntryPoint = "DeleteObject")]
 		[return: MarshalAs(UnmanagedType.Bool)]
 		internal static partial bool DeleteObject(nint hObject);
+
+		/// <summary>Returns the bytes written: the size of a <see cref="DIBSECTION"/> only for a DIB section.</summary>
+		[LibraryImport(gdi32, EntryPoint = "GetObjectW")]
+		internal static partial int GetObject(nint h, int c, out DIBSECTION pv);
+
+		/// <summary>Completes batched GDI drawing, which must happen before a DIB section's bits are read directly.</summary>
+		[LibraryImport(gdi32, EntryPoint = "GdiFlush")]
+		[return: MarshalAs(UnmanagedType.Bool)]
+		internal static partial bool GdiFlush();
 
 		[DllImport(user32, CharSet = CharSet.Unicode, SetLastError = true)]
 		internal static extern IntPtr LoadImage(nint hinst, string lpszName, uint uType, int cxDesired, int cyDesired, uint fuLoad);

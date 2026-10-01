@@ -545,6 +545,14 @@ namespace Keysharp.Builtins
 			ColumnClick += KeysharpListView_ColumnClick;
 		}
 
+		protected override void Dispose(bool disposing)
+		{
+			if (disposing)
+				ImageLists.DestroyWithListView(addStyle, LargeImageList, SmallImageList, StateImageList);
+
+			base.Dispose(disposing);
+		}
+
 		internal void RefreshColors(int row = -1)
 		{
 			if (this.GetGuiControl() is not Gui.ListView owner)

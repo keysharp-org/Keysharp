@@ -114,6 +114,8 @@ namespace Keysharp.Internals
 			return result;
 		}
 
+		public virtual ScreenRect GetVirtualScreenBounds() => DisplayTopology.ToolkitUnion();
+
 		// The DRM connector (EDID, model, serial, physical size, connection kind) is readable from sysfs under
 		// every Linux session type, so the shared base answers it. Refresh rate and rotation are session-specific
 		// and stay 0/unknown here; X11Screen and WaylandScreen override to supply them.
@@ -141,6 +143,9 @@ namespace Keysharp.Internals
 			var displays = X11DisplayTopology.GetDisplays();
 			return displays.Count > 0 ? displays : base.GetDisplays();
 		}
+
+		// Toolkit bounds are scaled by GDK, so the union comes from the native root-pixel topology.
+		public override ScreenRect GetVirtualScreenBounds() => X11DisplayTopology.VirtualBounds;
 
 		// NativeId carries the RandR output XID for this display, which owns the current mode and rotation.
 		public override DisplayDetails GetDisplayDetails(DisplayInfo display)
@@ -213,6 +218,11 @@ namespace Keysharp.Internals
 
 			return displays;
 		}
+
+		// The compositor's outputs are held in memory; the work areas GetDisplays merges in cost an IPC round trip.
+		public override ScreenRect GetVirtualScreenBounds()
+			=> Wl.WaylandLayerShellClient.Current?.GetDisplays() is { Count: > 0 } native
+				? DisplayTopology.Union(native.Select(display => display.Bounds)) : base.GetVirtualScreenBounds();
 
 		/// <summary>
 		/// Wayland already delivered this output's physical size, make/model, mode refresh and transform in its
@@ -324,6 +334,30 @@ namespace Keysharp.Internals
 
 		public DisplayDetails GetDisplayDetails(DisplayInfo display) => WindowsMonitorDetails.Get(display);
 
+		// As AutoHotkey reads the virtual screen.
+		public ScreenRect GetVirtualScreenBounds() => new(
+			WindowsAPI.GetSystemMetrics(SystemMetric.SM_XVIRTUALSCREEN), WindowsAPI.GetSystemMetrics(SystemMetric.SM_YVIRTUALSCREEN),
+			WindowsAPI.GetSystemMetrics(SystemMetric.SM_CXVIRTUALSCREEN), WindowsAPI.GetSystemMetrics(SystemMetric.SM_CYVIRTUALSCREEN));
+
+		// AutoHotkey's default PixelGetColor mode: one pixel read through the screen DC.
+		public bool TryGetPixel(int x, int y, out int rgb)
+		{
+			rgb = 0;
+			var hdc = WindowsAPI.GetDC(0);
+
+			if (hdc == 0)
+				return false;
+
+			var color = WindowsAPI.GetPixel(hdc, x, y);
+			_ = WindowsAPI.ReleaseDC(0, hdc);
+
+			if (color == 0xFFFFFFFF)//CLR_INVALID: the point is outside the screen.
+				return false;
+
+			rgb = ColorTranslator.FromWin32((int)color).ToArgb() & 0xFFFFFF;
+			return true;
+		}
+
 		private static double GetScale(ScreenRect bounds)
 		{
 			var rect = new RECT
@@ -344,33 +378,73 @@ namespace Keysharp.Internals
 		public bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
 		{
 			bmp = null;
-			// A PMv2-aware process sees the whole Win32 virtual desktop in physical pixels. Monitor UI scaling
-			// therefore never changes the 1:1 relationship between this rectangle and CopyFromScreen's bitmap.
+			using var dib = CaptureDib(bounds, out var bits);
 
-			if (!bounds.HasArea)
+			if (dib == null)
 				return false;
 
-			var format = Forms.Screen.PrimaryScreen.BitsPerPixel switch
-			{
-				8 or 16 => PixelFormat.Format16bppRgb565,
-				24 => PixelFormat.Format24bppRgb,
-				32 => PixelFormat.Format32bppArgb,
-				_ => PixelFormat.Format32bppArgb,
-			};
+			// BitBlt leaves the alpha bytes undefined, so the pixels are read as RGB and widened to opaque ARGB.
+			using var pixels = new Bitmap(bounds.Width, bounds.Height, bounds.Width * 4, PixelFormat.Format32bppRgb, bits);
+			bmp = pixels.Clone(new Rectangle(0, 0, bounds.Width, bounds.Height), PixelFormat.Format32bppArgb);
+			return true;
+		}
 
-			var result = new Bitmap(bounds.Width, bounds.Height, format);
+		/// <summary>
+		/// Copies a screen rectangle into a top-down 32bpp DIB section, as AutoHotkey's searches capture it, and returns
+		/// the section, whose <paramref name="bits"/> stay readable until it is disposed. A PMv2-aware process sees the
+		/// whole virtual desktop in physical pixels, so the rectangle maps 1:1 onto the bits. Null if a GDI step fails.
+		/// </summary>
+		internal static DibSectionHandle CaptureDib(ScreenRect bounds, out nint bits)
+		{
+			bits = 0;
+
+			if (!bounds.HasArea)
+				return null;
+
+			var header = new BITMAPINFOHEADER
+			{
+				biSize = Marshal.SizeOf<BITMAPINFOHEADER>(),
+				biWidth = bounds.Width,
+				biHeight = -bounds.Height,
+				biPlanes = 1,
+				biBitCount = 32,
+			};
+			nint screenDc = 0, dib = 0, dc = 0, old = 0;
 
 			try
 			{
-				using var graphics = Graphics.FromImage(result);
-				graphics.CopyFromScreen(bounds.X, bounds.Y, 0, 0, new Size(bounds.Width, bounds.Height), CopyPixelOperation.SourceCopy);
-				bmp = result;
-				return true;
+				screenDc = WindowsAPI.GetDC(0);
+
+				if (screenDc == 0)
+					return null;
+
+				dib = WindowsAPI.CreateDIBSection(screenDc, ref header, 0 /* DIB_RGB_COLORS */, out var pixels, 0, 0);
+				dc = dib == 0 ? 0 : WindowsAPI.CreateCompatibleDC(screenDc);
+				old = dc == 0 ? 0 : WindowsAPI.SelectObject(dc, dib);
+
+				if (old == 0 || old == -1
+						|| !WindowsAPI.BitBlt(dc, 0, 0, bounds.Width, bounds.Height, screenDc, bounds.X, bounds.Y, WindowsAPI.SRCCOPY))
+					return null;
+
+				_ = WindowsAPI.GdiFlush();
+				var section = new DibSectionHandle(dib, 0, 0);
+				dib = 0;
+				bits = pixels;
+				return section;
 			}
-			catch
+			finally
 			{
-				result.Dispose();
-				return false;
+				if (old != 0 && old != -1)
+					_ = WindowsAPI.SelectObject(dc, old);
+
+				if (dc != 0)
+					_ = WindowsAPI.DeleteDC(dc);
+
+				if (dib != 0)
+					_ = WindowsAPI.DeleteObject(dib);
+
+				if (screenDc != 0)
+					_ = WindowsAPI.ReleaseDC(0, screenDc);
 			}
 		}
 		public bool TryCaptureWindow(nint h, bool includeDecoration, out Bitmap bmp, out PixelScale pixelScale) { bmp = null; pixelScale = PixelScale.One; return false; }
@@ -407,6 +481,8 @@ namespace Keysharp.Internals
 		}
 
 		public DisplayDetails GetDisplayDetails(DisplayInfo display) => MacMonitorDetails.Get(display);
+
+		public ScreenRect GetVirtualScreenBounds() => DisplayTopology.ToolkitUnion();
 
 		public bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
 			=> EtoScreenCapture.TryCapture(bounds.X, bounds.Y, bounds.Width, bounds.Height, out bmp);

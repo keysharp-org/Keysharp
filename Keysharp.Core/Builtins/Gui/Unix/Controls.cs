@@ -1100,6 +1100,14 @@ namespace Keysharp.Builtins
 			CellFormatting += FormatColors;
 		}
 
+		protected override void Dispose(bool disposing)
+		{
+			if (disposing)
+				ImageLists.DestroyWithListView(addStyle, ImageList);
+
+			base.Dispose(disposing);
+		}
+
 		internal void RefreshColors(int row = -1)
 		{
 			if (row >= 0)

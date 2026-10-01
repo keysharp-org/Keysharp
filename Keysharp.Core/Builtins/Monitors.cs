@@ -82,8 +82,8 @@ namespace Keysharp.Builtins
 			/// </summary>
 			public static object staticget_VirtualScreen(object @this)
 			{
-				var (left, top, width, height) = Monitor.GetVirtualScreenBounds();
-				return Objects.RectObject(left, top, width, height);
+				var desktop = Platform.Screen.GetVirtualScreenBounds();
+				return Objects.RectObject(desktop.X, desktop.Y, desktop.Width, desktop.Height);
 			}
 
 			/// <summary>The monitor containing a native screen point, or the nearest one when the point falls in a
