@@ -1257,10 +1257,7 @@ namespace Keysharp.Internals.Input.Keyboard
 						case 'P':
 						{
 							if (variant != null)
-							{
-								_ = int.TryParse(options.AsSpan(i + 1).BeginNums(allowSign: true), out var val);
-								variant.priority = val;
-							}
+								variant.priority = int.TryParse(options.AsSpan(i + 1).BeginNums(allowSign: true), out var val) ? val : 0;
 						}
 						break;
 
@@ -1274,8 +1271,7 @@ namespace Keysharp.Internals.Input.Keyboard
 						case 'T':
 							if (variant != null)
 							{
-								_ = uint.TryParse(options.AsSpan(i + 1).BeginNums(), out var val);
-								variant.maxThreads = val;
+								variant.maxThreads = uint.TryParse(options.AsSpan(i + 1).BeginNums(), out var val) ? val : 0;
 
 								if (variant.maxThreads > script.MaxThreadsTotal) // To avoid array overflow, this limit must by obeyed except where otherwise documented.
 									// Older comment: Keep this limited to prevent stack overflow due to too many pseudo-
@@ -1289,7 +1285,7 @@ namespace Keysharp.Internals.Input.Keyboard
 						case 'I':
 							if (variant != null)
 							{
-								_ = long.TryParse(options.AsSpan(i + 1).BeginNums(allowSign: true), out var newInputLevel);
+								var newInputLevel = long.TryParse(options.AsSpan(i + 1).BeginNums(allowSign: true), out var level) ? level : 0;
 
 								if (KeyboardMouseSender.SendLevelIsValid(newInputLevel))
 								{

@@ -197,7 +197,7 @@ namespace Keysharp.Internals.Input.Keyboard
 					case 'P':
 					{
 						var number = next.BeginNums(allowSign: true);
-						_ = long.TryParse(number, out var val); // 0 when there are no digits, as AutoHotkey reads it.
+						var val = long.TryParse(number, out var parsed) ? parsed : 0; // 0 when there are no digits, as AutoHotkey reads it.
 
 						if (ch == 'K')
 							_keyDelay = val;
