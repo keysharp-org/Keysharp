@@ -790,7 +790,7 @@ namespace Keysharp.Internals.Os.Windows
 
 		[LibraryImport(user32, EntryPoint = "EnumChildWindows")]
 		[return: MarshalAs(UnmanagedType.Bool)]
-		internal static partial bool EnumChildWindows(nint hwndParent, _EnumWindowsProc lpEnumFunc, nint lParam);
+		internal static unsafe partial bool EnumChildWindows(nint hwndParent, delegate* unmanaged<nint, nint, int> lpEnumFunc, nint lParam);
 
 		[LibraryImport(user32, EntryPoint = "EnumWindows")]
 		internal static partial int EnumWindows(_EnumWindowsProc lpEnumFunc, nint lParam);
@@ -1643,12 +1643,12 @@ namespace Keysharp.Internals.Os.Windows
 		[return: MarshalAs(UnmanagedType.Bool)]
 		internal static partial bool SetThreadPriority(nint hThread, int priority);
 
-		[LibraryImport(kernel32, EntryPoint = "OpenProcess")]
+		[LibraryImport(kernel32, EntryPoint = "OpenProcess", SetLastError = true)]
 		internal static partial nint OpenProcess(ProcessAccessTypes desiredAccess, [MarshalAs(UnmanagedType.Bool)] bool inheritHandle, uint processId);
 
-		[LibraryImport(kernel32, EntryPoint = "QueryFullProcessImageNameW", StringMarshalling = StringMarshalling.Utf16)]
+		[LibraryImport(kernel32, EntryPoint = "QueryFullProcessImageNameW", SetLastError = true)]
 		[return: MarshalAs(UnmanagedType.Bool)]
-		internal static unsafe partial bool QueryFullProcessImageName(nint hProcess, uint dwFlags, [Out] char[] lpExeName, ref uint lpdwSize);
+		internal static unsafe partial bool QueryFullProcessImageName(nint hProcess, uint dwFlags, char* lpExeName, ref uint lpdwSize);
 
 		[LibraryImport(kernel32, EntryPoint = "VirtualAlloc")]
 		internal static partial nint VirtualAlloc(nint lpAddress, nint dwSize, uint flAllocationType, uint flProtect);
@@ -1747,11 +1747,8 @@ namespace Keysharp.Internals.Os.Windows
 		[LibraryImport(user32, EntryPoint = "GetSystemMetrics")]
 		internal static partial int GetSystemMetrics(SystemMetric smIndex);
 
-		[LibraryImport(psapi, EntryPoint = "GetProcessImageFileNameW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
-		internal static partial uint GetProcessImageFileName(nint hProcess, [Out] char[] lpExeName, uint nSize);
-
-		[LibraryImport(kernel32, EntryPoint = "QueryDosDeviceW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
-		internal static partial uint QueryDosDevice(string lpDeviceName, [Out] char[] lpTargetPath, uint ucchMax);
+		[LibraryImport(psapi, EntryPoint = "GetProcessImageFileNameW", SetLastError = true)]
+		internal static unsafe partial uint GetProcessImageFileName(nint hProcess, char* lpExeName, uint nSize);
 
 		[LibraryImport(combase)]
 		internal static partial nint WindowsGetStringRawBuffer(nint hstr, out uint length);

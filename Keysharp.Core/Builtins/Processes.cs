@@ -137,11 +137,8 @@ namespace Keysharp.Builtins
 					return (string)Errors.TargetErrorOccurred($"The specified process {pidOrName} was not found");
 
 #if WINDOWS
-
-				if (GetProcessName((uint)proc.Id, out string result) == 0)
-					return (string)Errors.OSErrorOccurred(new Win32Exception(Marshal.GetLastWin32Error()), "", DefaultErrorString);
-
-				return result;
+				var result = GetProcessImage((uint)proc.Id, true);
+				return result.Length != 0 ? result : (string)Errors.OSErrorOccurred(new Win32Exception(Marshal.GetLastWin32Error()), "", DefaultErrorString);
 #else
 				using var module = proc.MainModule;
 				return module.ModuleName;
@@ -170,12 +167,12 @@ namespace Keysharp.Builtins
 
 			using (var proc = string.IsNullOrEmpty(name) ? Process.GetCurrentProcess() : FindProcess(name))
 			{
+				if (proc == null)
+					return (string)Errors.TargetErrorOccurred($"The specified process {pidOrName} was not found");
+
 #if WINDOWS
-
-				if (GetProcessName((uint)proc.Id, out string result, false) == 0)
-					return (string)Errors.OSErrorOccurred(new Win32Exception(Marshal.GetLastWin32Error()), "", DefaultErrorString);
-
-				return result;
+				var result = GetProcessImage((uint)proc.Id, false);
+				return result.Length != 0 ? result : (string)Errors.OSErrorOccurred(new Win32Exception(Marshal.GetLastWin32Error()), "", DefaultErrorString);
 #else
 				using var module = proc.MainModule;
 				return module.FileName;
@@ -476,62 +473,30 @@ namespace Keysharp.Builtins
 
 #if WINDOWS
 		/// <summary>
-		/// Internal helper to get a process name by PID.
+		/// The process's executable path or, with <paramref name="nameOnly"/>, its file name. Empty when the process
+		/// cannot be queried, with the reason in the last Win32 error.
 		/// </summary>
-		/// <param name="pid">The PID of the process.</param>
-		/// <param name="result">Set to the name of the process, or error string.</param>
-		/// <param name="getNameOnly">When true then only the name is returned (eg "notepad.exe"),
-		/// otherwise the full path.</param>
-		/// <returns>The length of the returned string.</returns>
-		internal static uint GetProcessName(uint pid, out string result, bool getNameOnly = true)
+		internal static unsafe string GetProcessImage(uint pid, bool nameOnly)
 		{
-			const int MAX_PATH = 1024;
-			result = DefaultErrorString;
-			var buf = new char[MAX_PATH];
-			nint hProc = WindowsAPI.OpenProcess(ProcessAccessTypes.PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+			var hProc = WindowsAPI.OpenProcess(ProcessAccessTypes.PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
 
 			if (hProc == 0)
-				return 0;
+				return "";
 
 			try
 			{
-				uint len = WindowsAPI.GetProcessImageFileName(hProc, buf, (uint)buf.Length);
+				const int capacity = 1024;
+				var buf = stackalloc char[capacity];
 
-				if (len == 0)
-					return 0;
-
-				string path = new string(buf, 0, (int)len);
-
-				if (getNameOnly)
+				// GetProcessImageFileName is the faster call, but it gives a device path, so only the name can use it.
+				if (nameOnly)
 				{
-					int idx = path.LastIndexOf('\\');
-					result = (idx >= 0) ? path.Substring(idx + 1) : path;
-					return (uint)result.Length;
+					var path = new ReadOnlySpan<char>(buf, (int)WindowsAPI.GetProcessImageFileName(hProc, buf, capacity));
+					return path[(path.LastIndexOf('\\') + 1)..].ToString();
 				}
 
-				// convert device path (\Device\HarddiskVolumeX\...) to drive letter C:\ï¿½
-				var device = new char[MAX_PATH];
-				var logicalPath = path;
-
-				for (char drv = 'A'; drv <= 'Z'; drv++)
-				{
-					string drive = drv + ":";
-					uint rc = WindowsAPI.QueryDosDevice(drive, device, (uint)device.Length);
-
-					if (rc == 0)
-						continue;
-
-					string devPath = new string(device, 0, (int)rc);
-
-					if (path.StartsWith(devPath + "\\", StringComparison.OrdinalIgnoreCase))
-					{
-						logicalPath = drive + path.Substring(devPath.Length);
-						break;
-					}
-				}
-
-				result = logicalPath;
-				return (uint)result.Length;
+				var size = (uint)capacity;
+				return WindowsAPI.QueryFullProcessImageName(hProc, 0, buf, ref size) ? new string(buf, 0, (int)size) : "";
 			}
 			finally
 			{

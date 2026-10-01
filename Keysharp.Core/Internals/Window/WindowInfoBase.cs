@@ -40,49 +40,19 @@ namespace Keysharp.Internals.Window
 		internal abstract bool Active { get; }
 		internal abstract bool AlwaysOnTop { get; }
 
-		// Child windows, the parent/top-level links, the text lines, and client-origin all route by handle through
-		// Platform.Window, so they are shared here by every subtype (the lazy WindowInfo, the seeded Wayland/Mac
-		// subtypes). ControlInfo overrides them to read its Eto control instead. The scalar getters below stay
-		// abstract — each subtype reads them its own way (lazily via Platform.Window, or from a held batch).
-		internal virtual HashSet<WindowInfoBase> ChildWindows
-		{
-			get
-			{
-				var set = new HashSet<WindowInfoBase>();
-
-				if (IsSpecified && Platform.Window.TryEnumerateChildren(Handle, out var kids))
-					foreach (var k in kids)
-						//Built through the factory rather than as a bare WindowInfo so a child that is one of our
-						//own toolkit controls comes back as the ControlInfo that can read it. A plain WindowInfo
-						//answers by handle, which off Windows reaches nothing for a widget - every control found
-						//by a search rather than by handle then reported no text and a zero rect.
-						set.Add(Platform.Window.CreateWindow(k));
-
-				return set;
-			}
-		}
-
+		// The parent/top-level links, the text lines, and client-origin all route by handle through Platform.Window,
+		// so they are shared here by every subtype (the lazy WindowInfo, the seeded Wayland/Mac subtypes).
+		// ControlInfo overrides them to read its Eto control instead. The scalar getters below stay abstract — each
+		// subtype reads them its own way (lazily via Platform.Window, or from a held batch).
 		internal abstract string ClassName { get; }
 
-		/// <summary>
-		/// Get the ClassName + number of occurrence of this window (control)
-		/// </summary>
-		internal virtual string ClassNN
-		{
-			get
-			{
-				var classNN = ClassName;
-				var parent = ParentWindow;
-
-				if (parent?.IsSpecified == true)
-					return GetClassNN(parent.ChildWindows);
-
-				return classNN;
-			}
-		}
+		/// <summary>The control's ClassNN, numbered within its top-level window; a top-level window's class name.</summary>
+		internal string ClassNN
+			=> Platform.Window.TryGetTopLevel(Handle, out var top) && top != Handle && Platform.Window.TryEnumerateChildren(top, out var controls)
+			   ? WindowQuery.ClassNNs(controls).FirstOrDefault(c => c.Control == Handle).ClassNN ?? ClassName
+			   : ClassName;
 
 		internal abstract Rectangle ClientBounds { get; }
-		internal int Delay { get; set; } = 100;
 		internal abstract bool Enabled { get; }
 		internal abstract bool Exists { get; }
 		internal abstract long ExStyle { get; }
@@ -162,96 +132,29 @@ namespace Keysharp.Internals.Window
 				: new WindowInfo((nint)0);
 		internal virtual bool IsIconic => WindowState == FormWindowState.Minimized;
 
-		internal virtual string Path
-		{
-			get
-			{
-				if (!processPath.IsNullOrEmpty())
-					return processPath;
-
-				var pid = PID;
-
-				if (pid <= 0)
-					return DefaultErrorString;
-
-#if WINDOWS
-				// OpenProcess(QUERY_LIMITED) + GetProcessImageFileName: cheap in matcher loops and
-				// works for elevated processes, where Process.MainModule throws access-denied.
-				if (Processes.GetProcessName((uint)pid, out processPath, false) == 0)
-					return (string)Errors.OSErrorOccurred(new Win32Exception(Marshal.GetLastWin32Error()), "", DefaultErrorString);
-
-				return processPath;
-#else
-				try
-				{
-					using (var proc = Process.GetProcessById((int)pid))
-					{
-						//This will be extremely slow in a loop because MainModule calls an underlying method GetModules()
-						//which does a lot of processing.
-						using var module = proc.MainModule;
-						return processPath = module.FileName;
-					}
-				}
-				catch
-				{
-					return DefaultErrorString;
-				}
-#endif
-			}
-		}
+		/// <summary>The process's executable path, or "" when the process cannot be queried.</summary>
+		internal virtual string Path => processPath ??= QueryProcessImage(false);
 
 		internal abstract long PID { get; }
 
-		internal virtual string ProcessName
-		{
-			get
-			{
-				if (!processName.IsNullOrEmpty())
-					return processName;
-
-				var pid = PID;
-
-				if (pid <= 0)
-					return processName = string.Empty;
-
-#if WINDOWS
-				if (Processes.GetProcessName((uint)pid, out processName) == 0)
-					return (string)Errors.OSErrorOccurred(new Win32Exception(Marshal.GetLastWin32Error()), "", DefaultErrorString);
-#else
-				try
-				{
-					using (var proc = Process.GetProcessById((int)pid))
-					{
-						using var module = proc.MainModule;
-						processName = module.ModuleName;
-					}
-				}
-				catch
-				{
-				}
-#endif
-
-				return processName;
-			}
-		}
+		/// <summary>The process's executable file name, or "" when the process cannot be queried.</summary>
+		internal virtual string ProcessName => processName ??= QueryProcessImage(true);
 
 		/// <summary>The window's outer (decorated) size.</summary>
 		internal Size Size => Bounds.Size;
 		internal abstract long Style { get; }
 
 		private List<string> textCache;
-		private bool textCacheHidden, textCacheSet;
-		internal virtual List<string> Text => GetText(null);
-		internal virtual List<string> GetText(WindowSearchOptions options)
+		private bool textCacheHidden, textCacheFast;
+		internal List<string> Text => GetText(ThreadAccessors.A_DetectHiddenText, ThreadAccessors.A_TitleMatchModeSpeed);
+		internal virtual List<string> GetText(bool detectHidden, bool fast)
 		{
-			var detectHidden = options?.DetectHiddenText ?? ThreadAccessors.A_DetectHiddenText;
-
-			if (textCacheSet && textCacheHidden == detectHidden)
+			if (textCache != null && textCacheHidden == detectHidden && textCacheFast == fast)
 				return textCache;
 
-			textCache = Platform.Window.TryGetText(Handle, detectHidden, out var t) ? t : [];
+			textCache = Platform.Window.TryGetText(Handle, detectHidden, fast, out var t) ? t : [];
 			textCacheHidden = detectHidden;
-			textCacheSet = true;
+			textCacheFast = fast;
 			return textCache;
 		}
 		internal abstract string Title { get; }
@@ -289,14 +192,11 @@ namespace Keysharp.Internals.Window
 			pt.Y += screenPt.Y;
 		}
 
-		internal bool Equals(SearchCriteria criteria, WindowSearchOptions inheritedOptions = null)//Make internal to avoid dupes.
+		/// <summary>Whether this window satisfies <paramref name="criteria"/> under <paramref name="settings"/>, which
+		/// already include the criteria's own ahk_opt.</summary>
+		internal bool Equals(SearchCriteria criteria, WindowSearchSettings settings)
 		{
-			if (!IsSpecified)
-				return false;
-
-			var options = WindowSearchOptions.Merge(criteria.Options, inheritedOptions);
-
-			if (criteria.IsEmpty || criteria.MatchesNothing)
+			if (!IsSpecified || criteria.IsEmpty || criteria.MatchesNothing)
 				return false;
 
 			if (criteria.Active && !Active)
@@ -306,7 +206,7 @@ namespace Keysharp.Internals.Window
 			// window — the common case, and all that enumeration even yields — short-circuits and never pays the
 			// ParentWindow (GetParent) round-trip; the parent check only runs for the rare not-visible candidate.
 			// A bare handle is exempt: it addresses the window directly rather than searching for it.
-			if (criteria.HasNonGroupCriteria && !criteria.IsPureID && !GetDetectHiddenWindows(options) && !Visible && ParentWindow?.IsSpecified != true)
+			if (criteria.HasNonGroupCriteria && !criteria.IsPureID && !settings.DetectHiddenWindows && !Visible && ParentWindow?.IsSpecified != true)
 				return false;
 
 			if (criteria.ID != 0 && Handle != criteria.ID)
@@ -320,121 +220,53 @@ namespace Keysharp.Internals.Window
 			// it across every enumerated window.
 			var windowTitle = !string.IsNullOrEmpty(criteria.Title) || !string.IsNullOrEmpty(criteria.ExcludeTitle) ? Title : null;
 
-			if (!string.IsNullOrEmpty(criteria.Title))//Put title first because it's the most likely.
-			{
-				if (!TitleCompare(windowTitle, criteria.Title, options))
-					return false;
-			}
+			if (!string.IsNullOrEmpty(criteria.Title) && !TitleMatches(windowTitle, criteria.Title, settings.TitleMatchMode))
+				return false;
 
-			if (!string.IsNullOrEmpty(criteria.ClassName))
-			{
-				if (!ExactOrRegExCompare(ClassName, criteria.ClassName, options, StringComparison.OrdinalIgnoreCase))
-					return false;
-			}
+			if (!string.IsNullOrEmpty(criteria.ClassName) && !ClassMatches(ClassName, criteria.ClassName, settings.TitleMatchMode))
+				return false;
 
-			if (!string.IsNullOrEmpty(criteria.Path))
-			{
-				if (!ProcessCompare(Path, ProcessName, criteria.Path, options))
-					return false;
-			}
+			if (!string.IsNullOrEmpty(criteria.Path) && !ProcessMatches(criteria.Path, settings.TitleMatchMode))
+				return false;
 
-			if (!string.IsNullOrEmpty(criteria.Text))
+			if (!string.IsNullOrEmpty(criteria.Text) && !AnyTextMatches(criteria.Text, settings))
+				return false;
+
+			if (!string.IsNullOrEmpty(criteria.ExcludeTitle) && TitleMatches(windowTitle, criteria.ExcludeTitle, settings.TitleMatchMode))
+				return false;
+
+			if (!string.IsNullOrEmpty(criteria.ExcludeText) && AnyTextMatches(criteria.ExcludeText, settings))
+				return false;
+
+			//Potentially the slowest, so match it last. An empty group matches every window. A member's own ahk_opt
+			//applies over this evaluation's settings, as AutoHotkey's IsMember passes them on.
+			if (!string.IsNullOrEmpty(criteria.Group) && TheScript.WindowGroups.TryGetValue(criteria.Group, out var group) && group.sc.Count > 0)
 			{
-				foreach (var text in GetText(options))
-					if (TitleCompare(text, criteria.Text, options))
+				foreach (var member in group.sc)
+					if (Equals(member, settings.With(member)))
 						return true;
 
 				return false;
 			}
 
-			if (!string.IsNullOrEmpty(criteria.ExcludeTitle))
-			{
-				if (TitleCompare(windowTitle, criteria.ExcludeTitle, options))
-					return false;
-			}
-
-			if (!string.IsNullOrEmpty(criteria.ExcludeText))
-			{
-				foreach (var text in GetText(options))
-					if (TitleCompare(text, criteria.ExcludeText, options))
-						return false;
-			}
-
-			//Potentially the slowest, so match it last
-			if (!string.IsNullOrEmpty(criteria.Group))
-			{
-				if (TheScript.WindowGroups.TryGetValue(criteria.Group, out var stack))
-				{
-					if (stack.sc.Count > 0)//An empty group is assumed to want to match all windows.
-					{
-						var anypassed = false;
-
-						foreach (var crit in stack.sc)
-						{
-							if (Equals(crit, options))//If any criteria in the group matched something, then it's considered a valid match.
-							{
-								anypassed = true;
-								break;
-							}
-						}
-
-						if (!anypassed)
-							return false;
-					}
-				}
-			}
-
 			return true;
 		}
 
-		internal virtual WindowInfoBase FirstChild(SearchCriteria sc)
+		/// <summary>AutoHotkey's IsTextMatch: case-sensitive, under the given title match mode.</summary>
+		internal static bool TitleMatches(string text, string criterion, long titleMatchMode)
 		{
-			WindowInfoBase item = null;
+			if (string.IsNullOrEmpty(text))
+				return false;
 
-			foreach (var child in ChildWindows)
+			return titleMatchMode switch
 			{
-				if (child.Equals(sc))
-				{
-					item = child;
-					break;
-				}
-			}
-
-			return item;
+				1 => text.StartsWith(criterion, StringComparison.Ordinal),
+				2 => text.Contains(criterion, StringComparison.Ordinal),
+				3 => text.Equals(criterion, StringComparison.Ordinal),
+				4 => RegExMatches(text, criterion),
+				_ => false
+			};
 		}
-
-		internal string GetClassNN(HashSet<WindowInfoBase> childWindows)
-		{
-			var className = ClassName;
-			var classNN = className;
-			// to get the classNN we must know the enumeration
-			// of our parent window:
-			var nn = 1; // Class NN counter
-
-			// now we must know the position of our "control"
-			foreach (var c in childWindows)
-			{
-				if (c.IsSpecified)
-				{
-					if (c.ClassName == className)
-					{
-						if (c.Equals(this))
-							break;
-						else
-							++nn;  // if its the same class but not our control
-					}
-				}
-			}
-
-			classNN += nn.ToString(); // if its the same class and our control
-			return classNN;
-		}
-
-		// WinClose/WinKill close the window, then wait for it to actually go away. The condition reads LIVE
-		// existence straight from Platform.Window (NOT the memoizing item's Exists, which freezes on first read) —
-		// own Guis are recognised there via Control.FromHandle, so this is one handle-keyed path for every window
-		// kind. (The WinWait*/WinWaitActive builtins re-resolve a fresh item each poll, so they don't use this.)
-		internal bool WaitClose(double seconds) => WindowWaits.Until(() => !Platform.Window.GetExists(Handle), seconds, Delay);
 
 		private static void DoDelay(long delay)
 		{
@@ -442,53 +274,55 @@ namespace Keysharp.Internals.Window
 				Keysharp.Internals.Flow.Sleep((int)delay);
 		}
 
-		private static bool ProcessCompare(string processPath, string processName, string criteriaPath, WindowSearchOptions options)
+		private bool AnyTextMatches(string criterion, WindowSearchSettings settings)
 		{
-			if ((options?.TitleMatchMode ?? ThreadAccessors.A_TitleMatchMode) == 4)
-				return Keysharp.Builtins.RegEx.RegExMatch(processPath, criteriaPath) is long ll && ll > 0L;
-
-			return criteriaPath.IndexOfAny(['\\', '/']) != -1
-				   ? string.Equals(processPath, criteriaPath, StringComparison.OrdinalIgnoreCase)
-				   : string.Equals(processName, criteriaPath, StringComparison.OrdinalIgnoreCase);
-		}
-
-		private static bool ExactOrRegExCompare(string a, string b, WindowSearchOptions options, StringComparison comp)
-		{
-			if (string.IsNullOrEmpty(a))
-				return false;
-
-			if ((options?.TitleMatchMode ?? ThreadAccessors.A_TitleMatchMode) == 4)
-				return Keysharp.Builtins.RegEx.RegExMatch(a, b) is long ll && ll > 0L;
-
-			return a.Equals(b, comp);
-		}
-
-		private static bool TitleCompare(string a, string b, WindowSearchOptions options, StringComparison comp = StringComparison.Ordinal)
-		{
-			if (string.IsNullOrEmpty(a))
-				return false;
-
-			switch (options?.TitleMatchMode ?? ThreadAccessors.A_TitleMatchMode)
-			{
-				case 1:
-					return a.StartsWith(b, comp);
-
-				case 2:
-					return a.Contains(b, comp);
-
-				case 3:
-					return a.Equals(b, comp);
-
-				case 4:
-				{
-					return Keysharp.Builtins.RegEx.RegExMatch(a, b) is long ll && ll > 0L;
-				}
-			}
+			foreach (var text in GetText(settings.DetectHiddenText, settings.TitleMatchModeSpeed))
+				if (TitleMatches(text, criterion, settings.TitleMatchMode))
+					return true;
 
 			return false;
 		}
 
-		private static bool GetDetectHiddenWindows(WindowSearchOptions options)
-			=> options?.DetectHiddenWindows ?? ThreadAccessors.A_DetectHiddenWindows;
+		// A RegEx or a criterion naming a folder compares the full path and anything else the file name, so only that
+		// one is looked up.
+		private bool ProcessMatches(string criterion, long titleMatchMode)
+		{
+			if (titleMatchMode == 4)
+				return RegExMatches(Path, criterion);
+
+			return criterion.IndexOfAny(['\\', '/']) != -1
+				   ? string.Equals(Path, criterion, StringComparison.OrdinalIgnoreCase)
+				   : string.Equals(ProcessName, criterion, StringComparison.OrdinalIgnoreCase);
+		}
+
+		private string QueryProcessImage(bool nameOnly)
+		{
+			var pid = PID;
+
+			if (pid <= 0)
+				return "";
+
+#if WINDOWS
+			return Processes.GetProcessImage((uint)pid, nameOnly);
+#else
+			try
+			{
+				//MainModule is slow, since it enumerates the process's modules.
+				using var proc = Process.GetProcessById((int)pid);
+				using var module = proc.MainModule;
+				return nameOnly ? module.ModuleName : module.FileName;
+			}
+			catch
+			{
+				return "";
+			}
+#endif
+		}
+
+		private static bool ClassMatches(string className, string criterion, long titleMatchMode)
+			=> !string.IsNullOrEmpty(className)
+			   && (titleMatchMode == 4 ? RegExMatches(className, criterion) : className.Equals(criterion, StringComparison.OrdinalIgnoreCase));
+
+		private static bool RegExMatches(string text, string pattern) => Keysharp.Builtins.RegEx.RegExMatch(text, pattern) is long ll && ll > 0L;
 	}
 }

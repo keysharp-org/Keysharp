@@ -35,7 +35,7 @@ namespace Keysharp.Tests
 			var script = Script.TheScript;
 			var callbacks = new object[WinEventManager.typeCount];
 			callbacks[(int)slot] = SlotCallback();
-			return new WinEventRegistration(null, WinEventRegistration.CaptureSearchOptions(script), callbacks,
+			return new WinEventRegistration(null, WindowSearchSettings.Current, callbacks,
 				script.EventScheduler, script.WinEventManager);
 		}
 
@@ -559,9 +559,7 @@ namespace Keysharp.Tests
 			var callbacks = new object[WinEventManager.typeCount];
 			callbacks[(int)WindowEventType.Active] = Record("Active");
 			callbacks[(int)WindowEventType.NotActive] = Record("NotActive");
-			var options = WinEventRegistration.CaptureSearchOptions(script);
-			options.DetectHiddenWindows = true;
-			var reg = new WinEventRegistration(null, options, callbacks, script.EventScheduler, manager);
+			var reg = new WinEventRegistration(null, WindowSearchSettings.Current with { DetectHiddenWindows = true }, callbacks, script.EventScheduler, manager);
 			var hook = new Ks.WinEvent { sub = reg };
 			reg.scriptObject = hook;
 			manager.Register(reg);

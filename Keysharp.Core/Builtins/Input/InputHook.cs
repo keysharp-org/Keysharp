@@ -459,12 +459,12 @@ namespace Keysharp.Builtins
 
 		public object Wait(object maxTime = null)
 		{
-			if (!maxTime.CoerceDouble(out var seconds, double.MaxValue))
+			if (!maxTime.CoerceDouble(out var seconds, double.PositiveInfinity))
 				return DefaultObject;
 
-			var tickStart = DateTime.UtcNow;
 			// Checked on every pump, as AutoHotkey's MsgSleep loop does, rather than after a fixed sleep.
-			Keysharp.Internals.Flow.WaitWithMessagePump(() => input.InProgress() && (DateTime.UtcNow - tickStart).TotalSeconds < seconds);
+			Keysharp.Internals.Flow.WaitUntil(() => !input.InProgress(),
+				double.IsPositiveInfinity(seconds) ? -1 : (int)Math.Clamp(seconds * 1000, 0, int.MaxValue));
 
 			// AHK's InputHook.Wait returns the EndReason (the documented return value).
 			string str = null;

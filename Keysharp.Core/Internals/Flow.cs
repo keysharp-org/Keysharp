@@ -284,14 +284,9 @@ namespace Keysharp.Internals
 				TryDoEvents(true, false);
 			}
 			else if (delay == -2)
-			{
-				WaitWithMessagePump(() => !script.hasExited && script.input != null && script.input.InProgress());
-			}
-			else
-			{
-				var stopTick = Environment.TickCount64 + delay;
-				WaitWithMessagePump(() => !script.hasExited && Environment.TickCount64 < stopTick);
-			}
+				WaitUntil(() => script.hasExited || script.input == null || !script.input.InProgress());
+			else if (delay > 0)
+				WaitUntil(() => script.hasExited, delay);
 		}
 
 		internal static void SleepWithoutInterruption(int duration = -1)
@@ -312,55 +307,38 @@ namespace Keysharp.Internals
 			}
 		}
 
-		internal static bool PollUntil(Func<bool> condition, int timeoutMs, int pollIntervalMs)
-		{
-			var deadline = Environment.TickCount64 + timeoutMs;
-
-			while (true)
-			{
-				if (condition())
-					return true;
-
-				var remainingMs = deadline - Environment.TickCount64;
-
-				if (remainingMs <= 0)
-					return false;
-
-				System.Threading.Thread.Sleep((int)Math.Min(pollIntervalMs, remainingMs));
-			}
-		}
-
-		// Like PollUntil(), but if called on the script's main thread, pumps the UI message loop
-		// while waiting instead of blocking it with Thread.Sleep(). This keeps the app responsive
-		// while waiting for the user to grant a macOS permission (Accessibility, Input Monitoring,
-		// Screen Recording, etc.) in System Settings.
-		internal static bool PollUntilWithMessagePump(Func<bool> condition, int timeoutMs, int pollIntervalMs)
+		/// <summary>
+		/// Waits until <paramref name="condition"/> holds, testing a costly one such as a window search only every
+		/// <paramref name="intervalMs"/>, as AutoHotkey's waits do. A thread that runs script events pumps them meanwhile;
+		/// any other, such as a hook thread, sleeps. False when <paramref name="timeoutMs"/> runs out; negative waits forever.
+		/// </summary>
+		internal static bool WaitUntil(Func<bool> condition, int timeoutMs = -1, int intervalMs = 0)
 		{
 			var script = Script.TheScript;
+			var pump = script != null && (script.IsOnMainThread || script.CurrentSchedulerIfCreated != null);
+			var start = Environment.TickCount64;
 
-			if (!script.IsOnMainThread)
-				return PollUntil(condition, timeoutMs, pollIntervalMs);
-
-			var deadline = Environment.TickCount64 + timeoutMs;
-
-			while (true)
+			for (var nextTest = start; ;)
 			{
-				if (condition())
-					return true;
+				var now = Environment.TickCount64;
 
-				var remainingMs = deadline - Environment.TickCount64;
+				if (now >= nextTest)
+				{
+					if (condition())
+						return true;
 
-				if (remainingMs <= 0)
+					nextTest = now + intervalMs;
+				}
+
+				var remaining = timeoutMs < 0 ? long.MaxValue : start + timeoutMs - now;
+
+				if (remaining <= 0)
 					return false;
 
-				var start = Environment.TickCount64;
-
-				do
-				{
+				if (pump)
 					TryDoEvents();
-					System.Threading.Thread.Sleep(10);
-				}
-				while (!condition() && Environment.TickCount64 - start < pollIntervalMs && Environment.TickCount64 < deadline);
+				else
+					System.Threading.Thread.Sleep((int)Math.Clamp(Math.Min(nextTest - now, remaining), 1, int.MaxValue));
 			}
 		}
 
@@ -509,12 +487,6 @@ namespace Keysharp.Internals
 		// enough that a multi-second wait is not thousands of DoEvents rounds.
 		private const int PumpTickMs = 5;
 
-		internal static void WaitWithMessagePump(Func<bool> keepWaiting, bool propagateExit = true)
-		{
-			while (keepWaiting())
-				TryDoEvents(propagateExit);
-		}
-
 		/// <summary>
 		/// Suspends <paramref name="tv"/> while its paused flag is set, pumping so that a hotkey or posted work can
 		/// clear it, as AHK's MsgWaitUnpause does; the flag itself holds off timers. Shared by <c>Pause()</c>, which
@@ -540,11 +512,8 @@ namespace Keysharp.Internals
 
 			try
 			{
-				WaitWithMessagePump(() => tv.IsPaused
-									&& tv.requestedExitCode == null
-									&& !script.hasExited
-									&& !script.IsDisposed,
-									propagateExit: false);
+				while (tv.IsPaused && tv.requestedExitCode == null && !script.hasExited && !script.IsDisposed)
+					TryDoEvents(propagateExit: false);
 			}
 			finally
 			{

@@ -30,7 +30,7 @@ namespace Keysharp.Builtins
 			private readonly object[] slots = new object[WinEventManager.typeCount];
 			private object winTitle = "", winText = "", excludeTitle = "", excludeText = "";
 			private SearchCriteria criteria;                      // null => match any window
-			private WindowSearchOptions options;
+			private WindowSearchSettings settings;
 			private readonly Lock slotGate = new();               // orders slot assignments with Start's copy of them
 
 			public WinEvent(params object[] args) : base(args) { }
@@ -53,7 +53,7 @@ namespace Keysharp.Builtins
 						&& !SearchCriteria.TryFromString(this.winTitle, this.winText, this.excludeTitle, this.excludeText, out criteria))
 					criteria = new SearchCriteria { MatchesNothing = true };
 
-				options = WinEventRegistration.CaptureSearchOptions(Script.TheScript);
+				settings = WindowSearchSettings.Current;
 				return DefaultObject;
 			}
 
@@ -129,7 +129,7 @@ namespace Keysharp.Builtins
 
 			// A run takes a copy of the slots, so it fixes which events it watches.
 			private protected override EventSubscriptionBase NewRun(ScriptEventScheduler owner)
-				=> NoSlot ? null : new WinEventRegistration(criteria, options, (object[])slots.Clone(), owner, Script.TheScript.WinEventManager);
+				=> NoSlot ? null : new WinEventRegistration(criteria, settings, (object[])slots.Clone(), owner, Script.TheScript.WinEventManager);
 
 			private bool NoSlot => System.Array.TrueForAll(slots, callback => callback == null);
 

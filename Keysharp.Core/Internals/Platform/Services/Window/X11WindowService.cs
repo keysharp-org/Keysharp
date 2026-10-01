@@ -74,9 +74,9 @@ namespace Keysharp.Internals
 			if (TryOwnControl(h, out _)) return base.TryEnumerateChildren(h, out children);
 			return Broker.TryChildren(h, out children);
 		}
-		public override bool TryGetText(nint h, bool detectHidden, out List<string> text)
+		public override bool TryGetText(nint h, bool detectHidden, bool fast, out List<string> text)
 		{
-			if (TryOwnControl(h, out _)) return base.TryGetText(h, detectHidden, out text);
+			if (TryOwnControl(h, out _)) return base.TryGetText(h, detectHidden, fast, out text);
 			text = [];
 			if (!Broker.TryChildren(h, out var children)) return false;
 			var pending = new Queue<nint>(children);
@@ -104,7 +104,7 @@ namespace Keysharp.Internals
 			=> TryOwnControl(id, out _) ? base.CreateWindow(id) : Query(id) is { } window ? window : new WindowInfo(id);
 		public override WindowInfoBase ActiveWindow()
 			=> Broker.TryGetActiveWindow(out var window) ? window : new WindowInfo(0);
-		public override IReadOnlyList<WindowInfoBase> Enumerate(bool includeHidden)
+		public override IEnumerable<WindowInfoBase> Enumerate(bool includeHidden)
 			=> Broker.TryListWindows(includeHidden, out var windows) ? windows.Reverse().Cast<WindowInfoBase>().ToArray() : [];
 		public override bool TryGetAt(int x, int y, out nint child)
 		{

@@ -93,23 +93,26 @@ namespace Keysharp.Internals
 			return pt;
 		}
 
-		public override bool TryGetText(nint h, bool detectHidden, out List<string> text)
+		public override bool TryGetText(nint h, bool detectHidden, bool fast, out List<string> text)
 		{
-			text = GetText(h, detectHidden, ThreadAccessors.A_TitleMatchModeSpeed);
+			text = [];
+
+			if (IsSpecified(h))
+				foreach (var hwnd in CollectHandles(h))
+					if (detectHidden || WindowsAPI.IsWindowVisible(hwnd))
+						text.Add(fast ? WindowsAPI.GetWindowText(hwnd) : WindowsAPI.GetWindowTextTimeout(hwnd, 5000));
+
 			return true;
 		}
 
 		public override void ChildFindPoint(nint h, PointAndHwnd pah)
 		{
-			var rect = new RECT();
-			_ = WindowsAPI.EnumChildWindows(h, (nint hwnd, int lParam) =>
+			foreach (var hwnd in CollectHandles(h))
 			{
 				if (!WindowsAPI.IsWindowVisible(hwnd)
-					|| (pah.ignoreDisabled && !WindowsAPI.IsWindowEnabled(hwnd)))
-					return true;
-
-				if (!WindowsAPI.GetWindowRect(hwnd, out rect))
-					return true;
+					|| (pah.ignoreDisabled && !WindowsAPI.IsWindowEnabled(hwnd))
+					|| !WindowsAPI.GetWindowRect(hwnd, out var rect))
+					continue;
 
 				if (pah.pt.X >= rect.Left && pah.pt.X < rect.Right && pah.pt.Y >= rect.Top && pah.pt.Y < rect.Bottom)
 				{
@@ -136,9 +139,7 @@ namespace Keysharp.Internals
 						pah.distanceFound = distance;
 					}
 				}
-
-				return true;
-			}, 0);
+			}
 		}
 
 		public override bool TryClientToScreen(nint h, ref Point pt)
@@ -150,7 +151,12 @@ namespace Keysharp.Internals
 
 		public override bool TryGetParent(nint h, out nint parent)
 		{
+			// GA_PARENT gives a top-level window the desktop, which is no parent in AutoHotkey's sense.
 			parent = WindowsAPI.GetAncestor(h, gaFlags.GA_PARENT);
+
+			if (parent == (nint)WindowsAPI.GetDesktopWindow())
+				parent = 0;
+
 			return parent != 0;
 		}
 
@@ -162,29 +168,42 @@ namespace Keysharp.Internals
 
 		public override bool TryEnumerateChildren(nint h, out IReadOnlyList<nint> children)
 		{
-			var set = new HashSet<nint>(64);
-
-			if (IsSpecified(h))
-			{
-				_ = WindowsAPI.EnumChildWindows(h, (nint hwnd, int lParam) =>
-				{
-					_ = set.Add(hwnd);
-					return true;
-				}, 0);
-			}
-
-			// EnumChildWindows can miss controls for never-shown WinForms windows.
+			// EnumChildWindows misses the controls of a never-shown WinForms window, whose handles are not created yet.
+			// Creating them first keeps the order the same from one enumeration to the next.
 			if (Control.FromHandle(h) is Form form)
-			{
 				form.Invoke(() =>
 				{
 					foreach (var ctrl in form.GetAllControlsRecursive<Control>())
-						_ = set.Add(ctrl.Handle);
+						_ = ctrl.Handle;
 				});
+
+			children = IsSpecified(h) ? CollectHandles(h) : [];
+			return true;
+		}
+
+		/// <summary>The window's descendants in EnumChildWindows order, or the top-level windows for 0.</summary>
+		private static unsafe List<nint> CollectHandles(nint parent)
+		{
+			var handles = new List<nint>(parent == 0 ? 256 : 64);
+			var gc = GCHandle.Alloc(handles);
+
+			try
+			{
+				_ = WindowsAPI.EnumChildWindows(parent, &CollectHandle, GCHandle.ToIntPtr(gc));
+			}
+			finally
+			{
+				gc.Free();
 			}
 
-			children = set.ToList();
-			return true;
+			return handles;
+		}
+
+		[UnmanagedCallersOnly]
+		private static int CollectHandle(nint hwnd, nint list)
+		{
+			((List<nint>)GCHandle.FromIntPtr(list).Target).Add(hwnd);
+			return 1;
 		}
 
 		// --- control ---
@@ -429,19 +448,17 @@ namespace Keysharp.Internals
 			return threadId;
 		}
 
-		public override IReadOnlyList<WindowInfoBase> Enumerate(bool includeHidden)
+		// EnumWindows copies the window list before its first callback, as AutoHotkey notes, so a snapshot of the
+		// handles costs nothing extra, and filtering each one as it is reached lets a search stop at its match.
+		public override IEnumerable<WindowInfoBase> Enumerate(bool includeHidden)
 		{
-			var list = new List<WindowInfoBase>();
-			_ = WindowsAPI.EnumWindows(delegate (nint hwnd, int lParam)
+			foreach (var hwnd in CollectHandles(0))
 			{
 				if (includeHidden)
-					list.Add(new WindowInfo(hwnd));
+					yield return new WindowInfo(hwnd);
 				else if (WindowsAPI.IsWindowVisible(hwnd) && !WindowsAPI.IsWindowCloaked(hwnd))
-					list.Add(new WindowInfo(hwnd, visible: true));
-
-				return true;
-			}, 0);
-			return list;
+					yield return new WindowInfo(hwnd, visible: true);
+			}
 		}
 
 		public override bool TryGetAt(int x, int y, out nint child)
@@ -475,25 +492,6 @@ namespace Keysharp.Internals
 			_ = WindowsAPI.SetWindowPos(h, 0, 0, 0, 0, 0,
 				(uint)(WindowsAPI.SWP_NOMOVE | WindowsAPI.SWP_NOSIZE | WindowsAPI.SWP_NOZORDER | WindowsAPI.SWP_FRAMECHANGED | WindowsAPI.SWP_NOACTIVATE));
 			_ = WindowsAPI.InvalidateRect(h, 0, true);
-		}
-
-		private static List<string> GetText(nint h, bool detectHiddenText, bool fast)
-		{
-			if (!IsSpecified(h))
-				return [];
-
-			var items = new List<string>(64);
-			_ = WindowsAPI.EnumChildWindows(h, (nint hwnd, int lParam) =>
-			{
-				if (detectHiddenText || WindowsAPI.IsWindowVisible(hwnd))
-				{
-					var text = fast ? WindowsAPI.GetWindowText(hwnd) : WindowsAPI.GetWindowTextTimeout(hwnd, 5000);
-					items.Add(text);
-				}
-
-				return true;
-			}, 0);
-			return items;
 		}
 
 		private static void SetBounds(nint h, Rectangle value)

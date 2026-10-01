@@ -187,7 +187,7 @@ namespace Keysharp.Internals.Window.Windows
 			if (eventType == EVENT_SYSTEM_FOREGROUND && WindowsAPI.GetForegroundWindow() != hwnd)
 				return;
 
-			sink(new WindowEventRaw(type.Value, hwnd, ToMonotonicMs(dwmsEventTime)));
+			sink(new WindowEventRaw(type.Value, hwnd, ToMonotonicMs(dwmsEventTime)) { DestroyConfirmed = eventType == EVENT_OBJECT_DESTROY });
 		}
 
 		/// <summary>

@@ -659,6 +659,10 @@ namespace Keysharp.Tests
 		[Apartment(ApartmentState.STA)]
 		public void GuiWindow() => Assert.IsTrue(TestScript("gui-window", false));
 
+		[Test, Category("Gui"), NonParallelizable]
+		[Apartment(ApartmentState.STA)]
+		public void WindowFunctions() => Assert.IsTrue(TestScript("window-functions", false));
+
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]
 		public void DpiResizeDefaults()

@@ -14,7 +14,7 @@ namespace Keysharp.Internals.Window
 		internal readonly object[] callbacks;                 // indexed by WindowEventType; null where the run has no slot
 		internal readonly WindowEventMask mask;               // the native events the run's slots need
 		internal readonly SearchCriteria criteria;            // null => match any window
-		internal readonly WindowSearchOptions inheritedOptions;
+		internal readonly WindowSearchSettings settings;      // the constructing thread's, with the criteria's ahk_opt
 		internal readonly WinEventManager manager;
 		internal readonly bool detectHidden;                  // effective DetectHiddenWindows for this run
 		internal nint activeReported;                         // the matching window last reported active, or 0
@@ -40,15 +40,15 @@ namespace Keysharp.Internals.Window
 		/// watches are unchanged, so only the callback the next event calls differs.</summary>
 		internal void ReplaceCallback(int slot, object callback) => Volatile.Write(ref callbacks[slot], callback);
 
-		internal WinEventRegistration(SearchCriteria criteria, WindowSearchOptions options, object[] callbacks,
+		internal WinEventRegistration(SearchCriteria criteria, WindowSearchSettings settings, object[] callbacks,
 			ScriptEventScheduler ownerScheduler, WinEventManager manager)
 			: base(null, ownerScheduler, manager.KeepsScriptRunning)
 		{
 			this.criteria = criteria;
 			this.callbacks = callbacks;
 			this.manager = manager;
-			inheritedOptions = options;
-			detectHidden = options.DetectHiddenWindows == true;
+			this.settings = settings.With(criteria);
+			detectHidden = this.settings.DetectHiddenWindows;
 
 			for (var i = 0; i < callbacks.Length; i++)
 				if (callbacks[i] != null)
@@ -68,19 +68,6 @@ namespace Keysharp.Internals.Window
 			}
 		}
 
-		/// <summary>The window-search context of the calling thread, captured once, as the AHK WinEvent library captures
-		/// A_DetectHiddenWindows/Text and the title-match mode when a hook is made.</summary>
-		internal static WindowSearchOptions CaptureSearchOptions(Script script)
-		{
-			var config = script.Threads.CurrentThread.configData;
-			return new WindowSearchOptions
-			{
-				DetectHiddenWindows = config.detectHiddenWindows,
-				DetectHiddenText = config.detectHiddenText,
-				TitleMatchMode = config.titleMatchMode,
-				TitleMatchModeSpeed = config.titleMatchModeSpeed
-			};
-		}
 	}
 
 	/// <summary>
@@ -370,7 +357,8 @@ namespace Keysharp.Internals.Window
 			// criteria stop matching under the subscription's DetectHiddenWindows.
 			if (raw.Type is WindowEventType.Create or WindowEventType.Show or WindowEventType.Restore
 				or WindowEventType.TitleChange or WindowEventType.Close or WindowEventType.Minimize)
-				UpdateMembership(raw.Hwnd, raw.TimeMs, raw.Type == WindowEventType.Close && raw.DestroyConfirmed);
+				UpdateMembership(raw.Hwnd, raw.TimeMs, raw.Type == WindowEventType.Close && raw.DestroyConfirmed,
+								 raw.Type is WindowEventType.Close or WindowEventType.Minimize);
 
 			// Like the reference, Active also re-fires when the active window's title changes (so criteria that
 			// only become true after the title is set are still caught).
@@ -506,7 +494,7 @@ namespace Keysharp.Internals.Window
 			}
 
 			// Criteria matching reads several properties, so build the one item and match against it.
-			return WindowQuery.CreateWindow(hwnd) is WindowInfoBase win && win.Equals(reg.criteria, reg.inheritedOptions);
+			return WindowQuery.CreateWindow(hwnd) is WindowInfoBase win && win.Equals(reg.criteria, reg.settings);
 		}
 
 		/// <summary>Whether <paramref name="hwnd"/> currently satisfies a membership subscription (Exist/NotExist):
@@ -538,7 +526,7 @@ namespace Keysharp.Internals.Window
 			// Criteria matching reads the window's properties, which a destroyed window no longer has, so a genuine
 			// destruction naturally fails the match (the criteria path also applies the captured DetectHiddenWindows).
 			var win = WindowQuery.CreateWindow(hwnd);
-			return win != null && win.IsSpecified && win.Equals(reg.criteria, reg.inheritedOptions);
+			return win != null && win.IsSpecified && win.Equals(reg.criteria, reg.settings);
 		}
 
 		// A window of this script has UI-thread affinity, so it is matched there. Kept apart from the callers so their
@@ -550,7 +538,7 @@ namespace Keysharp.Internals.Window
 		/// transitions: Exist when a window enters a subscription's matching set, NotExist when one leaves it.
 		/// <paramref name="windowGone"/> forces the window out (a confirmed destruction) regardless of
 		/// DetectHiddenWindows and ahead of any window-server list lag.</summary>
-		private void UpdateMembership(nint hwnd, long timeMs, bool windowGone)
+		private void UpdateMembership(nint hwnd, long timeMs, bool windowGone, bool canOnlyLeave)
 		{
 			if (hwnd == 0)
 				return;
@@ -559,18 +547,24 @@ namespace Keysharp.Internals.Window
 			var view = byType;
 
 			foreach (var reg in view[(int)WindowEventType.Exist])
-				UpdateMembershipFor(reg, hwnd, timeMs, windowGone);
+				UpdateMembershipFor(reg, hwnd, timeMs, windowGone, canOnlyLeave);
 
 			// A run with both slots is in both lists and shares one set, so it was handled above.
 			foreach (var reg in view[(int)WindowEventType.NotExist])
 				if (!reg.Has(WindowEventType.Exist))
-					UpdateMembershipFor(reg, hwnd, timeMs, windowGone);
+					UpdateMembershipFor(reg, hwnd, timeMs, windowGone, canOnlyLeave);
 		}
 
-		private void UpdateMembershipFor(WinEventRegistration reg, nint hwnd, long timeMs, bool windowGone)
+		private void UpdateMembershipFor(WinEventRegistration reg, nint hwnd, long timeMs, bool windowGone, bool canOnlyLeave)
 		{
 			if (!reg.IsActive)
 				return;
+
+			// A close or minimize can only take a window out of the set, so one outside it needs no matching.
+			if (canOnlyLeave)
+				lock (reg.matchGate)
+					if (!reg.matchingWindows.Contains(hwnd))
+						return;
 
 			var matches = !windowGone && CurrentlyMatches(reg, hwnd);
 
@@ -592,7 +586,7 @@ namespace Keysharp.Internals.Window
 		/// top-level window, respecting the captured DetectHiddenWindows setting.</summary>
 		private static bool SubscriptionMatches(WinEventRegistration reg, WindowInfoBase win)
 			=> reg.criteria != null
-				? win.Equals(reg.criteria, reg.inheritedOptions)
+				? win.Equals(reg.criteria, reg.settings)
 				: reg.detectHidden || win.Visible;
 
 		// ---- dispatch -----------------------------------------------------------------------

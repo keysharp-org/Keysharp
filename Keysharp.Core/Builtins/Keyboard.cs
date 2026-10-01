@@ -640,9 +640,7 @@ break_twice:;
 			if (!keyName.CoerceString(out var keyname) || !options.CoerceString(out var opts))
 				return DefaultObject;
 
-			bool waitIndefinitely;
-			int sleepDuration;
-			DateTime startTime;
+			int timeout;
 			var vk = 0u; // For GetKeyState; stays 0 if this is a joystick control.
 			bool waitForKeyDown;
 			KeyStateTypes keyStateType;
@@ -663,8 +661,7 @@ break_twice:;
 			// Set defaults:
 			waitForKeyDown = false;  // The default is to wait for the key to be released.
 			keyStateType = KeyStateTypes.Physical;  // Since physical is more often used.
-			waitIndefinitely = true;
-			sleepDuration = 0;
+			timeout = -1;
 
 			for (var i = 0; i < opts.Length; ++i)
 			{
@@ -679,39 +676,20 @@ break_twice:;
 						break;
 
 					case 'T':
-						waitIndefinitely = false;
-						sleepDuration = (int)(Strings.Atof(opts.AsSpan(i + 1)) * 1000);
+						timeout = (int)(Strings.Atof(opts.AsSpan(i + 1)) * 1000);
 
-						if (sleepDuration < 0)
+						if (timeout < 0)
 							return Errors.InvalidParameterErrorOccurred(2, "KeyWait", options);
 
 						break;
 				}
 			}
 
-			for (startTime = DateTime.UtcNow; ;) // start_time is initialized unconditionally for use with v1.0.30.02's new logging feature further below.
-			{
-				// Always do the first iteration so that at least one check is done.
-				if (vk != 0) // Waiting for key or mouse button, not joystick.
-				{
-					if (ScriptGetKeyState(vk, keyStateType) == waitForKeyDown)
-						return true;
-				}
-				else // Waiting for joystick button
-				{
-					// A joystick which is not connected gives blank, which reads as up.
-					if ((Joystick.ScriptGetJoyState(joy, joystickId.Value) is true) == waitForKeyDown)
-						return true;
-				}
+			if (vk != 0)
+				return Keysharp.Internals.Flow.WaitUntil(() => ScriptGetKeyState(vk, keyStateType) == waitForKeyDown, timeout, Script.SLEEP_INTERVAL);
 
-				// Must cast to int or any negative result will be lost due to DWORD type:
-				if (waitIndefinitely || (int)(sleepDuration - (DateTime.UtcNow - startTime).TotalMilliseconds) > Script.SLEEP_INTERVAL_HALF)
-				{
-					_ = Flow.Sleep(Script.SLEEP_INTERVAL);
-				}
-				else // Done waiting.
-					return false; // Since it timed out, we override the default with this.
-			}
+			// A joystick which is not connected gives blank, which reads as up.
+			return Keysharp.Internals.Flow.WaitUntil(() => (Joystick.ScriptGetJoyState(joy, joystickId.Value) is true) == waitForKeyDown, timeout, Script.SLEEP_INTERVAL);
 		}
 
 		/// <summary>

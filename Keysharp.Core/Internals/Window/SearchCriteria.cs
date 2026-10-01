@@ -18,7 +18,8 @@ namespace Keysharp.Internals.Window
 		// Criteria no window can satisfy, such as two different ahk_id values, which AutoHotkey's SetCriteria reports
 		// as FAIL. Such criteria are not empty, so they never fall back to every window or the last found one.
 		internal bool MatchesNothing { get; init; }
-		internal WindowSearchOptions Options { get; private set; }
+		// The words of the ahk_opt, applied over a search's settings by WindowSearchSettings.With.
+		internal string Options { get; private set; }
 		internal string Path { get; set; }
 		internal long PID { get; set; }
 		internal string Text { get; set; }
@@ -127,19 +128,13 @@ namespace Keysharp.Internals.Window
 				}
 				else if (span.StartsWith(Keyword_ahk_opt, StringComparison.OrdinalIgnoreCase))
 				{
-					var optSpan = span[Keyword_ahk_opt.Length..].TrimStart(SpaceTab);
-					criteria.Options ??= new WindowSearchOptions();
+					var options = span[Keyword_ahk_opt.Length..].Trim(SpaceTab);
 
-					foreach (Range r in optSpan.SplitAny(SpaceTabSv))
-					{
-						var opt = optSpan[r];
-
-						if (opt.Length != 0 && !criteria.Options.ApplyToken(opt.ToString()))
-						{
-							invalidCriteria = true;
-							break;
-						}
-					}
+					// Whether a word is valid does not depend on the settings it is applied over.
+					if (!default(WindowSearchSettings).TryApplyOptions(options, out _))
+						invalidCriteria = true;
+					else if (!options.IsEmpty)
+						criteria.Options = criteria.Options == null ? options.ToString() : $"{criteria.Options} {options}";
 
 					recognized = true;
 				}

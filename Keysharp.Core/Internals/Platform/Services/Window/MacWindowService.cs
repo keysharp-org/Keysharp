@@ -90,15 +90,15 @@ namespace Keysharp.Internals
 		public override bool IsWindow(nint h)
 			=> TryItem(h, out var item) ? item.Exists : base.IsWindow(h);
 
-		public override bool TryGetText(nint h, bool detectHidden, out List<string> text)
+		public override bool TryGetText(nint h, bool detectHidden, bool fast, out List<string> text)
 		{
 			if (TryItem(h, out var item, includeTextMetadata: true))
 			{
-				text = item.GetText(new WindowSearchOptions { DetectHiddenText = detectHidden });
+				text = item.GetText(detectHidden, fast);
 				return true;
 			}
 
-			return base.TryGetText(h, detectHidden, out text);
+			return base.TryGetText(h, detectHidden, fast, out text);
 		}
 
 		public override void ChildFindPoint(nint h, PointAndHwnd pah)
@@ -442,7 +442,7 @@ namespace Keysharp.Internals
 				? h
 				: 0;
 
-		public override IReadOnlyList<WindowInfoBase> Enumerate(bool includeHidden)
+		public override IEnumerable<WindowInfoBase> Enumerate(bool includeHidden)
 		{
 			// Snapshot() requests kCGWindowName, omitted for other processes' windows unless Screen Recording
 			// access is granted; without it title-based matching silently finds nothing.

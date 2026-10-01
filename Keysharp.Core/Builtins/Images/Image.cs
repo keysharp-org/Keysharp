@@ -1692,7 +1692,7 @@ namespace Keysharp.Builtins
 					// decide "gone" — both fragile here (and window-id matching is unreliable on Wayland). The
 					// Closing event is a direct, per-window signal with none of those dependencies. A plain
 					// captured bool is enough: the event and the pump both run on the UI thread, and
-					// WaitWithMessagePump re-invokes the predicate each iteration so the read is never hoisted.
+					// WaitUntil re-invokes the predicate each iteration so the read is never hoisted.
 					// Subscribe before Show so a near-instant close can't be missed.
 					var closing = false;
 #if WINDOWS
@@ -1701,7 +1701,7 @@ namespace Keysharp.Builtins
 					gui.form.Closing += (s, e) => closing = true;
 #endif
 					_ = gui.Show();
-					Keysharp.Internals.Flow.WaitWithMessagePump(() => !closing);
+					Keysharp.Internals.Flow.WaitUntil(() => closing);
 					_ = gui.Destroy();
 					return gui;
 				}

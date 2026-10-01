@@ -25,7 +25,7 @@ namespace Keysharp.Internals
 
 		public override WindowInfoBase ActiveWindow() => new WindowInfo(0);
 
-		public override IReadOnlyList<WindowInfoBase> Enumerate(bool includeHidden) => [];
+		public override IEnumerable<WindowInfoBase> Enumerate(bool includeHidden) => [];
 
 		public override bool TryGetAt(int x, int y, out nint child)
 		{
@@ -207,9 +207,9 @@ namespace Keysharp.Internals
 			return new POINT(0, 0);
 		}
 
-		public override bool TryGetText(nint h, bool detectHidden, out List<string> text)
+		public override bool TryGetText(nint h, bool detectHidden, bool fast, out List<string> text)
 		{
-			if (TryOwnControl(h, out _)) return base.TryGetText(h, detectHidden, out text);
+			if (TryOwnControl(h, out _)) return base.TryGetText(h, detectHidden, fast, out text);
 			if (IsWayland(h)) { text = []; return true; }
 			text = [];
 			return false;
@@ -530,7 +530,7 @@ namespace Keysharp.Internals
 			return new WindowInfo(0);
 		}
 
-		public override IReadOnlyList<WindowInfoBase> Enumerate(bool includeHidden)
+		public override IEnumerable<WindowInfoBase> Enumerate(bool includeHidden)
 		{
 			var list = new List<WindowInfoBase>();
 			if (Wayland?.TryListWindows(includeHidden, out var backendWindows) == true)

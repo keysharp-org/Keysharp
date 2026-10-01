@@ -54,7 +54,7 @@ namespace Keysharp.Internals
 			return NotYet<Keysharp.Internals.Window.WindowInfoBase>();
 		}
 		public virtual Keysharp.Internals.Window.WindowInfoBase ActiveWindow() => NotYet<Keysharp.Internals.Window.WindowInfoBase>();
-		public virtual IReadOnlyList<Keysharp.Internals.Window.WindowInfoBase> Enumerate(bool includeHidden) => NotYet<IReadOnlyList<Keysharp.Internals.Window.WindowInfoBase>>();
+		public virtual IEnumerable<Keysharp.Internals.Window.WindowInfoBase> Enumerate(bool includeHidden) => NotYet<IEnumerable<Keysharp.Internals.Window.WindowInfoBase>>();
 		public virtual bool TryGetAt(int x, int y, out nint child) { child = default; return Unsupported(); }
 
 		// At-point query returning the built item. Wayland overrides this to hand back the payload its
@@ -125,7 +125,7 @@ namespace Keysharp.Internals
 		}
 		public virtual uint GetFocusedControlThread(nint window = 0) => NotYet<uint>();
 		public virtual bool IncludeInGroups(nint h) => true;   // default: every window; Windows narrows it
-		public virtual bool TryGetText(nint h, bool detectHidden, out List<string> text)
+		public virtual bool TryGetText(nint h, bool detectHidden, bool fast, out List<string> text)
 		{
 #if !WINDOWS
 			if (TryOwnControl(h, out var control))

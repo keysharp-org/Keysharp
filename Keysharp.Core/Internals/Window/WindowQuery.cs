@@ -54,12 +54,23 @@ namespace Keysharp.Internals.Window
 
 		// === neutral search (moved verbatim from WindowManagerBase, repointed to this class) ===
 
+		/// <summary>
+		/// The Last Found Window, or null when it no longer exists or DetectHiddenWindows hides it, as AutoHotkey's
+		/// GetValidLastUsedWindow: a child window and the script's own Gui are detected regardless.
+		/// </summary>
 		public static WindowInfoBase LastFound
 		{
 			get
 			{
-				var handle = (nint)Script.TheScript.HwndLastUsed;
-				return CreateWindow(handle);   // own Guis route through Platform.Window (the platform service recognises own-toolkit handles)
+				var script = Script.TheScript;
+				var handle = (nint)script.HwndLastUsed;
+
+				if (handle == 0 || !IsWindow(handle))
+					return null;
+
+				var win = CreateWindow(handle);   // own Guis route through Platform.Window (the platform service recognises own-toolkit handles)
+				return ThreadAccessors.A_DetectHiddenWindows || win.Visible || win.ParentWindow?.IsSpecified == true
+					   || script.GuiData.allGuiHwnds.ContainsKey(handle) ? win : null;
 			}
 			set => Script.TheScript.HwndLastUsed = value.Handle;
 		}
@@ -71,17 +82,17 @@ namespace Keysharp.Internals.Window
 			if (criteria.IsEmpty || criteria.MatchesNothing)
 				return found;
 
-			var matchOptions = WindowSearchOptions.Merge(criteria.Options);
-			var detectHiddenWindows = ShouldDetectHiddenWindows(criteria);
+			var settings = WindowSearchSettings.Current.With(criteria);
+			var detectHiddenWindows = ShouldDetectHiddenWindows(criteria, settings);
 
 			if (criteria.Active)
 			{
 				var activeWindow = ActiveWindow;
 
 				if (criteria.IsOnlyActive)
-					return activeWindow is WindowInfoBase activeOnly && activeOnly.IsSpecified ? activeOnly : null;
+					return activeWindow is WindowInfoBase activeOnly && activeOnly.IsSpecified && (settings.DetectHiddenWindows || activeOnly.Visible) ? activeOnly : null;
 
-				return activeWindow is WindowInfoBase active && active.IsSpecified && active.Equals(criteria, matchOptions) ? active : null;
+				return activeWindow is WindowInfoBase active && active.IsSpecified && active.Equals(criteria, settings) ? active : null;
 			}
 
 			if (criteria.ID != 0)
@@ -96,46 +107,41 @@ namespace Keysharp.Internals.Window
 				if (!criteria.IsPureID && !detectHiddenWindows && !temp.Visible)
 					return null;
 
-				return temp.Equals(criteria, matchOptions) ? temp : null;
+				return temp.Equals(criteria, settings) ? temp : null;
 			}
 
 			// Fast path: match by class (or exact title in mode 3) without scanning every window — ask the
 			// platform for a native direct lookup (Win32 FindWindow). A definitive miss (handle 0) means no such
 			// window can exist, so the O(N) enumeration is skipped entirely; a hit still verifies the remaining
 			// criteria. Only for the first match (`last` needs the full z-order scan), and only outside RegEx mode.
-			if (!last)
+			if (!last && settings.TitleMatchMode < 4)
 			{
-				var mm = matchOptions.TitleMatchMode ?? ThreadAccessors.A_TitleMatchMode;
+				var hasTitle = !string.IsNullOrEmpty(criteria.Title);
 
-				if (mm < 4)
+				if (!string.IsNullOrEmpty(criteria.ClassName) || (settings.TitleMatchMode == 3 && hasTitle))
 				{
-					var hasTitle = !string.IsNullOrEmpty(criteria.Title);
+					var exactTitle = settings.TitleMatchMode == 3 && hasTitle ? criteria.Title : null;
 
-					if (!string.IsNullOrEmpty(criteria.ClassName) || (mm == 3 && hasTitle))
+					if (Platform.Window.TryFindWindow(criteria.ClassName ?? "", exactTitle, out var fast))
 					{
-						var exactTitle = mm == 3 && hasTitle ? criteria.Title : null;
+						if (fast == 0)
+							return null;   // no window with this class/title exists → there cannot be a match
 
-						if (Platform.Window.TryFindWindow(criteria.ClassName ?? "", exactTitle, out var fast))
-						{
-							if (fast == 0)
-								return null;   // no window with this class/title exists → there cannot be a match
+						var candidate = CreateWindow(fast);
 
-							var candidate = CreateWindow(fast);
+						if (candidate.IsSpecified
+							&& (settings.DetectHiddenWindows || candidate.Visible)
+							&& candidate.Equals(criteria, settings))
+							return candidate;
 
-							if (candidate.IsSpecified
-								&& ((matchOptions.DetectHiddenWindows ?? ThreadAccessors.A_DetectHiddenWindows) || candidate.Visible)
-								&& candidate.Equals(criteria, matchOptions))
-								return candidate;
-
-							// candidate failed the remaining criteria → fall through to the full scan
-						}
+						// candidate failed the remaining criteria → fall through to the full scan
 					}
 				}
 			}
 
 			foreach (var window in EnumerateWindows(detectHiddenWindows))
 			{
-				if (window.Equals(criteria, matchOptions))
+				if (window.Equals(criteria, settings))
 				{
 					found = window;
 
@@ -165,12 +171,23 @@ namespace Keysharp.Internals.Window
 			if (!TryToCriteria(winTitle, winText, excludeTitle, excludeText, out var criteria))
 				return false;
 
-			found = criteria == null ? LastFound : FindWindow(criteria, last);
+			found = Exist(criteria, last);
+			return true;
+		}
 
-			if (found != null && found.IsSpecified)
+		/// <summary>AutoHotkey's WinExist: the window <paramref name="criteria"/> name, which becomes the Last Found
+		/// Window, or that window itself for null criteria.</summary>
+		internal static WindowInfoBase Exist(SearchCriteria criteria, bool last = false, bool updateLastFound = true)
+		{
+			if (criteria == null)
+				return LastFound;
+
+			var found = FindWindow(criteria, last);
+
+			if (updateLastFound && found != null && found.IsSpecified)
 				LastFound = found;
 
-			return true;
+			return found;
 		}
 
 		/// <summary>
@@ -201,8 +218,8 @@ namespace Keysharp.Internals.Window
 			if (criteria.MatchesNothing)
 				return found;
 
-			var matchOptions = WindowSearchOptions.Merge(criteria.Options);
-			var detectHiddenWindows = ShouldDetectHiddenWindows(criteria);
+			var settings = WindowSearchSettings.Current.With(criteria);
+			var detectHiddenWindows = ShouldDetectHiddenWindows(criteria, settings);
 
 			if (criteria.Active)
 			{
@@ -210,10 +227,10 @@ namespace Keysharp.Internals.Window
 
 				if (criteria.IsOnlyActive)
 				{
-					if (activeWindow is WindowInfoBase activeOnly && activeOnly.IsSpecified)
+					if (activeWindow is WindowInfoBase activeOnly && activeOnly.IsSpecified && (settings.DetectHiddenWindows || activeOnly.Visible))
 						found.Add(activeOnly);
 				}
-				else if (activeWindow is WindowInfoBase active && active.IsSpecified && active.Equals(criteria, matchOptions))
+				else if (activeWindow is WindowInfoBase active && active.IsSpecified && active.Equals(criteria, settings))
 					found.Add(active);
 
 				return found;
@@ -229,7 +246,7 @@ namespace Keysharp.Internals.Window
 
 					//Visibility gate as in FindWindow above.
 					if ((criteria.IsPureID || detectHiddenWindows || window.Visible)
-							&& window.Equals(criteria, matchOptions)) // Other criteria may be present such as ExcludeTitle etc
+							&& window.Equals(criteria, settings)) // Other criteria may be present such as ExcludeTitle etc
 						found.Add(window);
 				}
 
@@ -238,7 +255,7 @@ namespace Keysharp.Internals.Window
 
 			foreach (var window in EnumerateWindows(detectHiddenWindows))
 			{
-				if (criteria.IsEmpty || window.Equals(criteria, matchOptions))
+				if (criteria.IsEmpty || window.Equals(criteria, settings))
 				{
 					found.Add(window);
 
@@ -273,8 +290,8 @@ namespace Keysharp.Internals.Window
 			{
 				foundWindows = [];
 
-				if (LastFound != null)
-					foundWindows.Add(LastFound);
+				if (LastFound is WindowInfoBase lastFound)
+					foundWindows.Add(lastFound);
 			}
 			else
 			{
@@ -287,23 +304,85 @@ namespace Keysharp.Internals.Window
 			return true;
 		}
 
-		internal static bool ShouldDetectHiddenWindows(SearchCriteria criteria, WindowSearchOptions inheritedOptions = null)
+		/// <summary>
+		/// AutoHotkey's ControlExist: a name ending in a digit is first looked up as a ClassNN, then any name is
+		/// matched against each control's own text under SetTitleMatchMode. Zero when none matches.
+		/// </summary>
+		internal static nint ControlExist(nint window, string name)
 		{
-			var matchOptions = WindowSearchOptions.Merge(criteria.Options, inheritedOptions);
-			var detectHiddenWindows = matchOptions.DetectHiddenWindows ?? ThreadAccessors.A_DetectHiddenWindows;
+			if (!Platform.Window.TryEnumerateChildren(window, out var controls))
+				return 0;
 
-			if (detectHiddenWindows || criteria.HasNonGroupCriteria || string.IsNullOrEmpty(criteria.Group))
-				return detectHiddenWindows;
+			if (char.IsDigit(name[^1]))
+			{
+				var found = FindClassNN(controls, name);
 
-			if (RequiresHiddenWindowEnumeration(criteria, matchOptions, new HashSet<string>(StringComparer.OrdinalIgnoreCase)))
-				return true;
+				if (found != 0)
+					return found;
+			}
 
-			return false;
+			var titleMatchMode = ThreadAccessors.A_TitleMatchMode;
+
+			foreach (var control in controls)
+				if (WindowInfoBase.TitleMatches(Platform.Window.GetTitle(control), name, titleMatchMode))
+					return control;
+
+			return 0;
 		}
 
-		private static bool RequiresHiddenWindowEnumeration(SearchCriteria criteria, WindowSearchOptions matchOptions, HashSet<string> visitedGroups)
+		/// <summary>
+		/// The control a ClassNN names. As in AutoHotkey, a class that is a prefix of the name counts toward the
+		/// number, so "SysListView321" matches the first SysListView32 and "List01" matches nothing.
+		/// </summary>
+		internal static nint FindClassNN(IReadOnlyList<nint> controls, string classNN)
 		{
-			if (matchOptions.DetectHiddenWindows ?? ThreadAccessors.A_DetectHiddenWindows)
+			Span<char> number = stackalloc char[11];
+			var count = 0;
+
+			foreach (var control in controls)
+			{
+				var className = Platform.Window.GetClassName(control);
+
+				if (className.Length == 0 || !classNN.StartsWith(className, StringComparison.OrdinalIgnoreCase))
+					continue;
+
+				_ = (++count).TryFormat(number, out var written);
+
+				if (classNN.AsSpan(className.Length).SequenceEqual(number[..written]))
+					return control;
+			}
+
+			return 0;
+		}
+
+		/// <summary>Each control with its ClassNN: its class name followed by its position among the controls of that
+		/// class, in the window's order.</summary>
+		internal static IEnumerable<(nint Control, string ClassNN)> ClassNNs(IReadOnlyList<nint> controls)
+		{
+			var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+
+			foreach (var control in controls)
+			{
+				var className = Platform.Window.GetClassName(control);
+				var count = counts.GetValueOrDefault(className) + 1;
+				counts[className] = count;
+				yield return (control, className + count);
+			}
+		}
+
+		/// <summary>Whether a search must enumerate hidden windows: under <paramref name="settings"/>, which already
+		/// include the criteria's own ahk_opt, or for a group whose members detect them.</summary>
+		internal static bool ShouldDetectHiddenWindows(SearchCriteria criteria, WindowSearchSettings settings)
+		{
+			if (settings.DetectHiddenWindows || criteria.HasNonGroupCriteria || string.IsNullOrEmpty(criteria.Group))
+				return settings.DetectHiddenWindows;
+
+			return RequiresHiddenWindowEnumeration(criteria, settings, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+		}
+
+		private static bool RequiresHiddenWindowEnumeration(SearchCriteria criteria, WindowSearchSettings settings, HashSet<string> visitedGroups)
+		{
+			if (settings.DetectHiddenWindows)
 				return true;
 
 			if (string.IsNullOrEmpty(criteria.Group) || criteria.HasNonGroupCriteria || !visitedGroups.Add(criteria.Group))
@@ -314,7 +393,7 @@ namespace Keysharp.Internals.Window
 
 			foreach (var memberCrit in group.sc)
 			{
-				if (RequiresHiddenWindowEnumeration(memberCrit, WindowSearchOptions.Merge(memberCrit.Options, matchOptions), visitedGroups))
+				if (RequiresHiddenWindowEnumeration(memberCrit, settings.With(memberCrit), visitedGroups))
 					return true;
 			}
 

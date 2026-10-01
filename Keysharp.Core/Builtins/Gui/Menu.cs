@@ -805,9 +805,9 @@ namespace Keysharp.Builtins
 					MenuItem.Closed += handler;
 					MenuItem.Show(pt);
 #if WINDOWS
-					Keysharp.Internals.Flow.WaitWithMessagePump(() => !closed && !MenuItem.IsDisposed && MenuItem.Visible);
+					Keysharp.Internals.Flow.WaitUntil(() => closed || MenuItem.IsDisposed || !MenuItem.Visible);
 #else
-					Keysharp.Internals.Flow.WaitWithMessagePump(() => !closed);
+					Keysharp.Internals.Flow.WaitUntil(() => closed);
 #endif
 				}
 				finally

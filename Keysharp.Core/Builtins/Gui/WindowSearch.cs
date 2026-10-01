@@ -50,97 +50,23 @@ namespace Keysharp.Builtins
 			if (SearchWindow(title, text, excludeTitle, excludeText, true) is not WindowInfoBase parent)
 				return false;
 
-			if (ctrl == null)
+			var s = ctrl as string;
+
+			if (string.IsNullOrEmpty(s))
 			{
 				item = parent;
 				return true;
 			}
 
-			var sc = new SearchCriteria();
-			string classortext = null;
-			string s = ctrl as string;
+			var found = WindowQuery.ControlExist(parent.Handle, s);
 
-			if (!string.IsNullOrEmpty(s))
-			{
-				if (char.IsDigit(s[^1]))
-					sc.ClassName = s;
-				else
-					sc.Text = s;
-
-				classortext = s;
-			}
-
-			var childitem = parent.FirstChild(sc);
-
-			//AHK addresses a control by its ClassNN - the class name followed by its 1-based ordinal among the
-			//siblings sharing that class, which is exactly what WinGetControls reports - but criteria matching
-			//compares the bare class name, so "Edit1" never matches a control whose class is "Edit". Done here
-			//rather than in the criteria match because only a control is ever addressed this way: computing a
-			//ClassNN walks the candidate's siblings, which no top-level window search should have to pay.
-			if (childitem == null && !string.IsNullOrEmpty(sc.ClassName))
-			{
-				foreach (var child in parent.ChildWindows)
-				{
-					if (string.Equals(child.ClassNN, sc.ClassName, StringComparison.OrdinalIgnoreCase))
-					{
-						childitem = child;
-						break;
-					}
-				}
-			}
-
-			if (classortext != null && childitem == null)
-			{
-				if (string.IsNullOrEmpty(sc.Text))
-				{
-					sc.Text = sc.ClassName;
-					sc.ClassName = "";
-				}
-				else
-				{
-					sc.ClassName = sc.Text;
-					sc.Text = "";
-				}
-
-				childitem = parent.FirstChild(sc);
-
-				if (childitem == null)//Final attempt, just use title.
-				{
-					//Set DHW unconditionally to true, because otherwise matching will fail
-					//if the parent window was matched by pure hWnd and DHW was false
-					var tv = Script.TheScript.Threads.CurrentThread.configData;
-					var savedDHW = tv.detectHiddenWindows;
-					tv.detectHiddenWindows = true;
-
-					try
-					{
-						if (string.IsNullOrEmpty(sc.Text))
-						{
-							sc.Title = sc.ClassName;
-							sc.ClassName = "";
-						}
-						else
-						{
-							sc.Title = sc.Text;
-							sc.Text = "";
-						}
-
-						childitem = parent.FirstChild(sc);
-					}
-					finally
-					{
-						tv.detectHiddenWindows = savedDHW;
-					}
-				}
-			}
-
-			if (childitem == null && throwifnull && !script.IsTearingDown)
+			if (found == 0 && throwifnull && !script.IsTearingDown)
 			{
 				_ = Errors.TargetErrorOccurred("Could not find child control using text or class name match \"" + s + $"\"", title, text, excludeTitle, excludeText);//Can't use interpolated string here because the AStyle formatter misinterprets it.
 				return false;
 			}
 
-			item = childitem;
+			item = found != 0 ? WindowQuery.CreateWindow(found) : null;
 			return true;
 		}
 
@@ -184,7 +110,11 @@ namespace Keysharp.Builtins
 			return true;
 		}
 
-		internal static WindowInfoBase SearchActiveWindow(SearchCriteria criteria, bool emptyMatchesActive = false)
+		/// <summary>
+		/// AutoHotkey's WinActive: the active window when it matches <paramref name="criteria"/>, which makes it the
+		/// Last Found Window, or for null criteria when it already is the Last Found Window.
+		/// </summary>
+		internal static WindowInfoBase SearchActiveWindow(SearchCriteria criteria, bool updateLastFound = true)
 		{
 			EnsureWindowMonitoringPermission("active window query");
 			var activeWindow = WindowQuery.ActiveWindow;
@@ -192,7 +122,18 @@ namespace Keysharp.Builtins
 			if (activeWindow == null || !activeWindow.IsSpecified)
 				return null;
 
-			return (emptyMatchesActive && criteria.IsEmpty) || activeWindow.Equals(criteria) ? activeWindow : null;
+			if (criteria == null)
+				return WindowQuery.LastFound?.Handle == activeWindow.Handle ? activeWindow : null;
+
+			var settings = WindowSearchSettings.Current.With(criteria);
+
+			if (criteria.IsOnlyActive ? !settings.DetectHiddenWindows && !activeWindow.Visible : !activeWindow.Equals(criteria, settings))
+				return null;
+
+			if (updateLastFound)
+				WindowQuery.LastFound = activeWindow;
+
+			return activeWindow;
 		}
 
 		/// <summary>
@@ -223,9 +164,7 @@ namespace Keysharp.Builtins
 
 			if (win != null)
 			{
-				var controls = win.ChildWindows;
-
-				if (controls.Count == 0)
+				if (!Platform.Window.TryEnumerateChildren(win.Handle, out var controls) || controls.Count == 0)
 					return DefaultObject;
 
 				var arr = new Array()
@@ -236,13 +175,13 @@ namespace Keysharp.Builtins
 
 				if (nn)
 				{
-					foreach (var ctrl in controls)
-						il.Add(ctrl.GetClassNN(controls));
+					foreach (var (_, classNN) in WindowQuery.ClassNNs(controls))
+						il.Add(classNN);
 				}
 				else
 				{
 					foreach (var ctrl in controls)
-						il.Add(ctrl.Handle.ToInt64());
+						il.Add(ctrl.ToInt64());
 				}
 
 				return arr;

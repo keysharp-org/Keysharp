@@ -621,7 +621,7 @@ namespace Keysharp.Internals.Window.MacOS
 				{
 				}
 
-				if (Keysharp.Internals.Flow.PollUntilWithMessagePump(() => AXIsProcessTrustedWithOptions(0), 60_000, 500))
+				if (Keysharp.Internals.Flow.WaitUntil(() => AXIsProcessTrustedWithOptions(0), 60_000, 500))
 					return true;
 			}
 
@@ -654,7 +654,7 @@ namespace Keysharp.Internals.Window.MacOS
 				{
 				}
 
-				if (Keysharp.Internals.Flow.PollUntilWithMessagePump(CheckListenAccess, 60_000, 500))
+				if (Keysharp.Internals.Flow.WaitUntil(CheckListenAccess, 60_000, 500))
 					return true;
 			}
 
@@ -688,7 +688,7 @@ namespace Keysharp.Internals.Window.MacOS
 				{
 				}
 
-				if (Keysharp.Internals.Flow.PollUntilWithMessagePump(CheckPostAccess, 60_000, 500))
+				if (Keysharp.Internals.Flow.WaitUntil(CheckPostAccess, 60_000, 500))
 					return true;
 			}
 
@@ -722,7 +722,7 @@ namespace Keysharp.Internals.Window.MacOS
 				{
 				}
 
-				if (Keysharp.Internals.Flow.PollUntilWithMessagePump(CheckScreenCaptureAccess, 60_000, 500))
+				if (Keysharp.Internals.Flow.WaitUntil(CheckScreenCaptureAccess, 60_000, 500))
 					return true;
 			}
 

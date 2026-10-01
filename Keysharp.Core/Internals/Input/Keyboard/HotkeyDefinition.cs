@@ -2735,21 +2735,23 @@ namespace Keysharp.Internals.Input.Keyboard
 		}
 
 		// The HotIfWin* criteria go through these, which are null when a parameter raised an error the script
-		// continued, so that such a criterion is satisfied by neither the plain form nor its negation.
+		// continued, so that such a criterion is satisfied by neither the plain form nor its negation. As in
+		// AutoHotkey, evaluating one leaves the running thread's Last Found Window alone.
 		private static long? HotIfWinActiveHwnd(object title, object text)
 		{
-			if (!SearchCriteria.TryFromString(title, text, null, null, out var criteria))
+			if (!WindowQuery.TryToCriteria(title, text, null, null, out var criteria))
 				return null;
 
-			return WindowSearch.SearchActiveWindow(criteria, true) is WindowInfoBase win ? hotExprLastFoundHwnd = win.Handle.ToInt64() : 0L;
+			return WindowSearch.SearchActiveWindow(criteria, false) is WindowInfoBase win ? hotExprLastFoundHwnd = win.Handle.ToInt64() : 0L;
 		}
 
 		private static long? HotIfWinExistHwnd(object title, object text)
 		{
-			if (!WindowSearch.TrySearchWindow(title, text, null, null, out var win))
+			if (!WindowQuery.TryToCriteria(title, text, null, null, out var criteria))
 				return null;
 
-			return win != null && win.Exists ? hotExprLastFoundHwnd = win.Handle.ToInt64() : 0L;
+			WindowHelper.EnsureWindowMonitoringPermission("window query");
+			return WindowQuery.Exist(criteria, updateLastFound: false) is WindowInfoBase win && win.Exists ? hotExprLastFoundHwnd = win.Handle.ToInt64() : 0L;
 		}
 
 		private static long HotIfWinActivePrivate(object title, object text, object hotkey) => HotIfWinActiveHwnd(title, text) ?? 0L;

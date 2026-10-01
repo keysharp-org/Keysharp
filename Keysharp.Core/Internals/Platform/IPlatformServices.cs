@@ -25,7 +25,7 @@ namespace Keysharp.Internals
 
 		/// <summary>All top-level windows, top-of-z-order first — seeded where the platform enumerates in one
 		/// batch (Wayland/macOS), empty/lazy otherwise (X11/Windows).</summary>
-		IReadOnlyList<Keysharp.Internals.Window.WindowInfoBase> Enumerate(bool includeHidden);
+		IEnumerable<Keysharp.Internals.Window.WindowInfoBase> Enumerate(bool includeHidden);
 
 		bool TryGetAt(int x, int y, out nint child);
 
@@ -55,7 +55,7 @@ namespace Keysharp.Internals
 
 		/// <summary>The window's text lines (the title plus, optionally, hidden child text). Not seeded into the
 		/// item's cache because it is a per-call recursive tree-walk, not a cheap batched field — it stays lazy.</summary>
-		bool TryGetText(nint h, bool detectHidden, out List<string> text);
+		bool TryGetText(nint h, bool detectHidden, bool fast, out List<string> text);
 
 		/// <summary>Deepest child window at <see cref="Keysharp.Internals.Window.PointAndHwnd.pt"/> (hit-test used
 		/// by ControlFromPoint); mutates <paramref name="pah"/> in place, mirroring the legacy item method.</summary>

@@ -28,77 +28,7 @@ namespace Keysharp.Internals.Window.Unix
 
 		internal override bool AlwaysOnTop => false;
 
-		internal override HashSet<WindowInfoBase> ChildWindows
-		{
-			get
-			{
-				var set = new HashSet<WindowInfoBase>();
-				if (control == null)
-					return set;
-
-				var seen = new HashSet<Control>();
-
-				void AddChildren(Control parent)
-				{
-					foreach (var child in parent.VisualControls)
-					{
-						if (!seen.Add(child))
-							continue;
-
-						// Skip pure layout containers as search results, but keep walking through them.
-						if (child is not Layout)
-							set.Add(new ControlInfo(child));
-
-						AddChildren(child);
-					}
-				}
-
-				AddChildren(control);
-
-				return set;
-			}
-		}
-
 		internal override string ClassName => control?.GetType().Name ?? DefaultErrorString;
-
-		internal override string ClassNN
-		{
-			get
-			{
-				if (control == null)
-					return ClassName;
-
-				var parentForm = ParentWindow;
-				if (parentForm == null || !parentForm.IsSpecified)
-					return ClassName;
-
-				Form form = Forms.Control.FromHandle(parentForm.Handle) as Form;
-
-				// Walk immediate children of the parent form (including nested controls on the same branch) to determine ordinal.
-				var targetClass = ClassName;
-				var ordinal = 0;
-
-				if (control.Parent != null)
-				{
-					foreach (var sibling in form.Children)
-					{
-						if (sibling is PixelLayout)
-							continue;
-
-						if (sibling.GetType().Name == targetClass)
-							ordinal++;
-
-						if (ReferenceEquals(sibling, control))
-							break;
-					}
-				}
-
-				if (ordinal <= 0)
-					ordinal = 1;
-
-				return $"{targetClass}{ordinal}";
-			}
-		}
 
 		internal override Rectangle ClientBounds => control?.GetClientScreenRect(true) ?? Rectangle.Empty;
 
@@ -136,8 +66,7 @@ namespace Keysharp.Internals.Window.Unix
 
 		internal override long Style => 0;
 
-		internal override List<string> Text => control?.Text is string s && !string.IsNullOrEmpty(s) ? new List<string> { s } : new List<string>();
-		internal override List<string> GetText(WindowSearchOptions options) => Text;
+		internal override List<string> GetText(bool detectHidden, bool fast) => control?.Text is string s && !string.IsNullOrEmpty(s) ? [s] : [];
 
 		internal override string Title => control?.Text ?? string.Empty;
 

@@ -3583,15 +3583,13 @@ namespace Keysharp.Builtins
 				return;
 
 			var win = new Keysharp.Internals.Window.Linux.Proxies.XWindow(Keysharp.Internals.Window.Linux.Proxies.XDisplay.Default, handle.ToInt64());
-			var deadline = Environment.TickCount64 + 2000;
 			//Stop on a failed read rather than treating it as "not mapped yet": the handle may be no X window
 			//at all (a Wayland backend hands out widget pointers, and the session guard reads the session type
 			//rather than the backend actually in use), or the window may already be gone. Attributes would
 			//report the zeroed struct's IsUnmapped for both and burn the whole grace period.
-			Keysharp.Internals.Flow.WaitWithMessagePump(() =>
-				Environment.TickCount64 < deadline
-				&& win.TryGetAttributes(out var attrs)
-				&& attrs.map_state != Keysharp.Internals.Window.Linux.X11.MapState.IsViewable);
+			Keysharp.Internals.Flow.WaitUntil(() =>
+				!win.TryGetAttributes(out var attrs)
+				|| attrs.map_state == Keysharp.Internals.Window.Linux.X11.MapState.IsViewable, 2000);
 		}
 
 #endif
@@ -4315,15 +4313,10 @@ namespace Keysharp.Builtins
 						}
 					}
 
-					//Put the ClassNN searches in a separate loop to be done as a last resort because they're very slow.
-					foreach (var ctrlkv in controls)
-					{
-						if (ctrlkv.Value is Gui.Control gc)
-						{
-							if (string.Compare(gc.ClassNN, s, true) == 0)
-								return gc;
-						}
-					}
+					//The ClassNN and NetClassNN searches are the last resort because they enumerate the window's controls.
+					if (s.Length != 0 && char.IsDigit(s[^1]) && Platform.Window.TryEnumerateChildren((nint)Hwnd, out var children)
+							&& controls.TryGetValue((long)WindowQuery.FindClassNN(children, s), out var byClassNN) && byClassNN is Gui.Control classNNMatch)
+						return classNNMatch;
 
 					foreach (var ctrlkv in controls)
 					{
