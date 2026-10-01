@@ -826,6 +826,9 @@ namespace Keysharp.Internals.Os.Windows
 		[LibraryImport(kernel32, EntryPoint = "GetCurrentThreadId")]
 		internal static partial uint GetCurrentThreadId();
 
+		[LibraryImport(kernel32, EntryPoint = "GetCurrentThread")]
+		internal static partial nint GetCurrentThread();
+
 		[LibraryImport(user32, EntryPoint = "AttachThreadInput")]
 		[return: MarshalAs(UnmanagedType.Bool)]
 		internal static partial bool AttachThreadInput(uint idAttach, uint idAttachTo, [MarshalAs(UnmanagedType.Bool)] bool fAttach);

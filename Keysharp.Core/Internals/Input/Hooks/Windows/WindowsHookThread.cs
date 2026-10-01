@@ -222,8 +222,8 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 			AddScKeyName("PgDn", PgDn);
 			AddScKeyName("PageDown", PgDn);
 			kbdMsSender = new WindowsKeyboardMouseSender(script);
-			kbdHandlerDel = new LowLevelKeyboardProc(LowLevelKeybdHandler);
-			mouseHandlerDel = new LowLevelMouseProc(LowLevelMouseHandler);
+			kbdHandlerDel = new LowLevelKeyboardProc(KeybdHookCallback);
+			mouseHandlerDel = new LowLevelMouseProc(MouseHookCallback);
 		}
 
 		public override void SimulateKeyPress(uint key)
@@ -875,7 +875,35 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 			return active;
 		}
 
-		internal unsafe nint LowLevelMouseHandler(int code, nint param, ref MSDLLHOOKSTRUCT lParam)
+		// An exception escaping into the native hook chain ends the hook thread or the process, so the event
+		// that raised it is passed on unchanged.
+		private nint KeybdHookCallback(int code, nint wParam, ref KBDLLHOOKSTRUCT lParam)
+		{
+			try
+			{
+				return LowLevelKeybdHandler(code, wParam, ref lParam);
+			}
+			catch (Exception ex)
+			{
+				_ = Diagnostics.Debug.WriteLine($"Keyboard hook callback failed: {ex}");
+				return CallNextHookEx(kbdHook, code, wParam, ref lParam);
+			}
+		}
+
+		private nint MouseHookCallback(int code, nint wParam, ref MSDLLHOOKSTRUCT lParam)
+		{
+			try
+			{
+				return LowLevelMouseHandler(code, wParam, ref lParam);
+			}
+			catch (Exception ex)
+			{
+				_ = Diagnostics.Debug.WriteLine($"Mouse hook callback failed: {ex}");
+				return CallNextHookEx(mouseHook, code, wParam, ref lParam);
+			}
+		}
+
+		private unsafe nint LowLevelMouseHandler(int code, nint param, ref MSDLLHOOKSTRUCT lParam)
 		{
 			// code != HC_ACTION should be evaluated PRIOR to considering the values
 			// of wParam and lParam, because those values may be invalid or untrustworthy
@@ -939,7 +967,7 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 				return downstreamResult;
 			}
 
-			using var hotIfBudget = BeginHotIfCallback(HotIfCallbackBudgetMilliseconds);
+			using var callbackScope = BeginHookCallback(HotIfCallbackBudgetMilliseconds);
 
 			// Above: In v1.0.43.11, a new mode was added to block mouse movement only since it's more flexible than
 			// BlockInput (which keybd too, and blocks all mouse buttons too).  However, this mode blocks only
@@ -1072,6 +1100,9 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 				return;
 
 			thread = new StaThreadWithMessageQueue();
+			// As in AutoHotkey: at normal priority, every keystroke and mouse movement on the desktop waits for this
+			// thread's time slice under CPU load. Thread.Priority reaches only THREAD_PRIORITY_HIGHEST.
+			thread.Send(static _ => SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL), null);
 		}
 
 		// Callable from any thread: the hook-API calls below are marshaled onto the dedicated
@@ -1145,7 +1176,7 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 			if (code != HC_ACTION)  // MSDN docs specify that both LL keybd & mouse hook should return in this case.
 				return CallNextHookEx(kbdHook, code, wParam, ref lParam);
 
-			using var hotIfBudget = BeginHotIfCallback(HotIfCallbackBudgetMilliseconds);
+			using var callbackScope = BeginHookCallback(HotIfCallbackBudgetMilliseconds);
 			var wParamVal = wParam.ToInt64();
 
 			// Change the event to be physical if that is indicated in its dwExtraInfo attribute.

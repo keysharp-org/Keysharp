@@ -2532,11 +2532,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			// Since calls from the hook thread could come in even while the SendInput array is being constructed,
 			// don't let those events get interspersed with the script's explicit use of SendInput.
 			var ht = script.HookThread;
-			//Note that the threading model in Keysharp is different than AHK, so this doesn't apply.
-			//In AHK, the low level keyboard proc runs in its own thread, however in Keysharp it turns on the main window thread.
-			//Further, after hours of extreme scrutiny in AHK, there seems to be no code in HookThreadProc() where a keyboard event could be sent here.
-			//So just hard code callerIsKeybdHook to false.
-			var callerIsKeybdHook = false;// WindowsAPI.GetCurrentThreadId() == Keysharp.Builtins.Processes.MainThreadID;//Hook runs on the main window thread.
+			var callerIsKeybdHook = HookThread.InHookCallback;
 			var putEventIntoArray = sendMode != SendModes.Event && !callerIsKeybdHook;
 
 			if (sendMode == SendModes.Input || callerIsKeybdHook) // First check is necessary but second is just for maintainability.
@@ -2600,8 +2596,9 @@ namespace Keysharp.Internals.Input.Keyboard
 				// Users of the below want them updated only for keybd_event() keystrokes (not PostMessage ones):
 				prevEventType = eventType;
 				prevVK = vk;
-				var tempTargetLayoutHasAltGr = (callerIsKeybdHook ? LayoutHasAltGr(Platform.Keys.GetKeyboardLayout()) : targetLayoutHasAltGr) == ResultType.ConditionTrue; // i.e. not CONDITION_FALSE (which is nonzero) or FAIL (zero).
-				var hookableAltGr = (vk == VK_RMENU) && tempTargetLayoutHasAltGr && !putEventIntoArray && ht.HasKbdHook();// hookId != 0;
+				// Asked only about RAlt, since reading it resolves the deferred target layout.
+				bool LayoutHasAltGrKey() => (callerIsKeybdHook ? LayoutHasAltGr(Platform.Keys.GetKeyboardLayout()) : targetLayoutHasAltGr) == ResultType.ConditionTrue;
+				var hookableAltGr = vk == VK_RMENU && !putEventIntoArray && ht.HasKbdHook() && LayoutHasAltGrKey();
 				// Calculated only once for performance (and avoided entirely if not needed):
 				bool? b = null;
 				var keyAsModifiersLR = putEventIntoArray ? ht.KeyToModifiersLR(vk, sc, ref b) : 0;
@@ -2657,7 +2654,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 					// The following is done to avoid an extraneous artificial {LCtrl Up} later on,
 					// since the keyboard driver should insert one in response to this {RAlt Up}:
-					if (targetLayoutHasAltGr == ResultType.ConditionTrue && sc == ht.SC_RALT)
+					if (sc == ht.SC_RALT && LayoutHasAltGrKey())
 						eventModifiersLR &= ~MOD_LCONTROL;
 
 					if (doKeyHistory && ht.keyHistory is KeyHistory kh)

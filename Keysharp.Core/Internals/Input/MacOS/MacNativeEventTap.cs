@@ -314,7 +314,7 @@ namespace Keysharp.Internals.Input.MacOS
 				if (State != MacEventTapState.Running || cgEvent == nint.Zero)
 					return cgEvent;
 
-				using var callbackBudget = HookThread.BeginHotIfCallback(HookThread.HotIfCallbackBudgetMilliseconds);
+				using var callbackScope = HookThread.BeginHookCallback(HookThread.HotIfCallbackBudgetMilliseconds);
 				return processEvent(type, cgEvent) ? nint.Zero : cgEvent;
 			}
 			catch (Exception ex)

@@ -209,7 +209,7 @@ namespace Keysharp.Internals
 
 		public bool TryGetIndicatorStatesLogical(out bool capsOn, out bool numOn, out bool scrollOn)
 		{
-			if (Keysharp.Internals.Input.Hooks.Linux.LinuxHookThread.IsInHookCallback && TryGetIndicatorSnapshot(out capsOn, out numOn, out scrollOn))
+			if (Keysharp.Internals.Input.Hooks.HookThread.InHookCallback && TryGetIndicatorSnapshot(out capsOn, out numOn, out scrollOn))
 				return true;
 
 			return Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetModifierState(

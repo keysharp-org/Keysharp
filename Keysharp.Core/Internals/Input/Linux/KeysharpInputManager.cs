@@ -38,7 +38,7 @@ namespace Keysharp.Internals.Input.Linux
 			// and send once more if it is back. A hook callback cannot wait on a prompt.
 			catch (NativeClientException ex)
 				when (ex.Status is NativeClientStatus.Denied or NativeClientStatus.Revoked
-					&& !Keysharp.Internals.Input.Hooks.Linux.LinuxHookThread.IsInHookCallback)
+					&& !Keysharp.Internals.Input.Hooks.HookThread.InHookCallback)
 			{
 				InvalidateScopesAfterQueryDenial(KeysharpInputClient.RequiredSynthesisOperations(inputs));
 

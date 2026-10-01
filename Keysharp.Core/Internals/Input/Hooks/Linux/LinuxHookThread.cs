@@ -33,7 +33,6 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 		private string pendingRecoveryReason;
 		private HookType inputServiceSubscribedKinds;
 		private bool usingInputServiceHooks;
-		internal static bool IsInHookCallback => callbackContext.Client != null;
 		internal static KeysharpInputClient CurrentHookClient
 			=> callbackContext.Client;
 		internal static ulong CurrentHookEventId
@@ -415,7 +414,7 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 			var block = false;
 
 			callbackContext = new(client, hookEvent.EventId, hookKinds);
-			using var hotIfBudget = BeginHotIfCallback(HotIfCallbackBudgetMilliseconds);
+			using var callbackScope = BeginHookCallback(HotIfCallbackBudgetMilliseconds);
 
 			try
 			{

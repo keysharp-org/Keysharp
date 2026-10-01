@@ -304,10 +304,11 @@ namespace Keysharp.Internals.Input.Hooks
 		}
 
 		/// <summary>
-		/// Gives all #HotIf evaluations performed by one native hook callback a single monotonic deadline.
-		/// Nested native callbacks retain the earliest deadline.
+		/// Opened by every platform's native hook callback, and only there: it marks the thread as running one, for
+		/// <see cref="InHookCallback"/>, and gives all #HotIf evaluations the callback performs a single monotonic
+		/// deadline. Nested native callbacks retain the earliest deadline.
 		/// </summary>
-		internal static HotIfCallbackScope BeginHotIfCallback(int budgetMilliseconds)
+		internal static HookCallbackScope BeginHookCallback(int budgetMilliseconds)
 		{
 			var previous = hotIfCallbackDeadline;
 			var now = Stopwatch.GetTimestamp();
@@ -323,7 +324,10 @@ namespace Keysharp.Internals.Input.Hooks
 			return deadline != 0L;
 		}
 
-		internal readonly struct HotIfCallbackScope(long previousDeadline) : IDisposable
+		/// <summary>True while this thread runs a native hook callback, as AutoHotkey's test of the hook thread's id.</summary>
+		internal static bool InHookCallback => hotIfCallbackDeadline != 0L;
+
+		internal readonly struct HookCallbackScope(long previousDeadline) : IDisposable
 		{
 			public void Dispose() => hotIfCallbackDeadline = previousDeadline;
 		}
@@ -1599,7 +1603,6 @@ namespace Keysharp.Internals.Input.Hooks
 			var activeWindow = state.activeWindow;
 			var activeWindowKeybdLayout = state.keyboardLayout;
 			var ch = state.ch;
-			var sb = new StringBuilder(8);
 			var hm = script.HotstringManager;
 			var hsBuf = hm.hsBuf;
 
@@ -2160,7 +2163,7 @@ namespace Keysharp.Internals.Input.Hooks
 
 		// Returns a factory that builds the script-visible A_EventInfo object only if the script reads it. The
 		// factory flows untouched through the dispatch path and is resolved by ThreadAccessors.A_EventInfo.
-		private static Func<object> CreateEventInfo(HookEventArgs e, ulong extraInfo, uint eventFlags, object extra, uint? deviceId)
+		private static Func<object> CreateEventInfo(HookEventArgs e, bool isAutoRepeat, ulong extraInfo, uint eventFlags, object extra, uint? deviceId)
 		{
 			POINT? screenPosition = null;
 
@@ -2173,7 +2176,7 @@ namespace Keysharp.Internals.Input.Hooks
 				screenPosition = new POINT(wheel.Data.X, wheel.Data.Y);
 
 			return new HookEventInfo(EventTimestamp(e), e.IsEventSimulated || (eventFlags & HOOK_EVENT_INJECTED) != 0,
-				e.IsAutoRepeat, extraInfo, extra, deviceId, screenPosition).BuildEventInfo;
+				isAutoRepeat, extraInfo, extra, deviceId, screenPosition).BuildEventInfo;
 		}
 
 		private static long EventTimestamp(HookEventArgs e)
@@ -2193,8 +2196,12 @@ namespace Keysharp.Internals.Input.Hooks
 			if (script.IsDisposed || script.hasExited)
 				return CallNextHook(e);
 
-			var eventInfo = CreateEventInfo(e, extraInfo, eventFlags, MouseUtils.IsWheelVK(vk) ? (long)(short)sc : null, deviceId);
 			var isKeyboardEvent = e is KeyboardHookEventArgs;
+			// A press of a key that is still down is its auto-repeat. The record is the one this event updates below;
+			// a VK_PACKET event carries a character in place of a key.
+			var isAutoRepeat = e.IsAutoRepeat || isKeyboardEvent && !keyUp && vk != (uint)Keys.Packet
+				&& (ksc[sc].scTakesPrecedence ? ksc[sc] : kvk[vk]).isDown;
+			var eventInfo = CreateEventInfo(e, isAutoRepeat, extraInfo, eventFlags, MouseUtils.IsWheelVK(vk) ? (long)(short)sc : null, deviceId);
 			var hotkeyIdToPost = HotkeyDefinition.HOTKEY_ID_INVALID; // Set default.
 			var isIgnored = IsIgnored(extraInfo);
 
@@ -5046,24 +5053,15 @@ namespace Keysharp.Internals.Input.Hooks
 
 		internal virtual nint GetAltTabMenuHandle() => 0;
 
-		internal virtual void WaitHookIdle()
-		// Wait until the hook has reached a known idle state (i.e. finished any processing
-		// that it was in the middle of, though it could start something new immediately after).
+		/// <summary>
+		/// Waits until the hook has finished any event it was processing, though it could start another at once, by
+		/// a round trip to the hook thread which runs no script threads. A callback waiting on a #HotIf may answer it
+		/// from that wait. A hook with no thread of its own to call into, as on Linux and macOS, returns at once.
+		/// </summary>
+		internal void WaitHookIdle()
 		{
-			if (!IsHookThreadRunning())
-				return;
-
-			if (Thread.CurrentThread.ManagedThreadId == script.ManagedMainThreadID)
-			{
-				Keysharp.Internals.Flow.TryDoEvents(script.UIEventScheduler, propagateExit: true, yieldTick: false, pumpUi: false);
-				return;
-			}
-
-			using var synced = new ManualResetEventSlim(false);
-			script.PostToUIThread(synced.Set);
-
-			while (!synced.Wait(10))
-				Keysharp.Internals.Flow.SleepWithoutInterruption();
+			if (IsHookThreadRunning())
+				_ = Invoke(static () => null); // An empty call: it returns once the hook thread runs it, which is between callbacks.
 		}
 
 		protected internal abstract void DeregisterHooks();

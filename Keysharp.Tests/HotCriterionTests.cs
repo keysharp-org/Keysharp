@@ -81,7 +81,7 @@ namespace Keysharp.Tests
 			Assert.That(executor.WorkerCount, Is.Zero);
 
 			evaluatedThread = 0;
-			using (HookThread.BeginHotIfCallback(HookThread.HotIfCallbackBudgetMilliseconds))
+			using (HookThread.BeginHookCallback(HookThread.HotIfCallbackBudgetMilliseconds))
 				Assert.That(HotkeyDefinition.HotCriterionAllowsFiring(Script.TheScript, criterion, "test"), Is.EqualTo(1L));
 
 			Assert.That(evaluatedThread, Is.Not.EqualTo(callerThread));
