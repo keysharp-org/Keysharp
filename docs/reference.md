@@ -552,8 +552,7 @@ Controlling another application needs **Automation** permission, granted per tar
 * `Goto` statements cannot use any type of variable. They must be labels known at compile time and function just like goto statements in C#.
 * `Goto` statements being called as a function like `Goto("Label")` are not supported. Instead, just use `goto Label`.
 * The `#Requires` directive differs in the following ways:
-	+ In addition to supporting `AutoHotkey`, it also supports `Keysharp`.
-	+ Sub versions such as -alpha and -beta are not supported. Only the four numerical values values contained in the assembly version in the form of `0.0.0.0` are supported.
+	+ In addition to supporting `AutoHotkey`, it also supports `Keysharp`. A `Keysharp` version requirement is checked against `A_KsVersion` by AutoHotkey's rules, and selects the v2.1 compatibility mode whatever version it names.
 	+ A new `capability` form requests one or more platform permissions together at script startup, before hotkeys are registered. A platform can still show one authorization dialog per independent system service:
 		```
 		#Requires capability InputMonitoring, ScreenCapture

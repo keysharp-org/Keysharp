@@ -30,53 +30,92 @@ namespace Keysharp.Runtime
 			return Semver.SemVersion.Parse(core + (suffixIndex >= 0 ? text[suffixIndex..] : ""), Semver.SemVersionStyles.Any);
 		}
 
-		internal static Semver.SemVersion ParseRequirementVersion(string requirement)
+		internal static string ProcessBitness => Environment.Is64BitProcess ? "64-bit" : "32-bit";
+
+		/// <summary>
+		/// Whether <paramref name="version"/> meets the words of a <c>#Requires</c> requirement after its product, as
+		/// AutoHotkey decides it. A word is the process's bitness or a version, which <c>&lt;</c>, <c>&lt;=</c>,
+		/// <c>&gt;</c>, <c>&gt;=</c> or <c>=</c> may precede; without one, it is met by itself or a later version with the
+		/// same major number.
+		/// </summary>
+		internal static bool MeetsRequirement(string version, ReadOnlySpan<string> words)
 		{
-			var span = (requirement ?? string.Empty).AsSpan().Trim();
-			if (span.IsEmpty || span[0] == '<') return null;
-			span = TrimVersionPrefix(span.TrimStart(">=!".AsSpan()));
-			var len = 0;
-			while (len < span.Length && (char.IsLetterOrDigit(span[len]) || span[len] is '.' or '-' or '+')) len++;
-			return len == 0 ? null : ParseVersion(span[..len].ToString());
-		}
-
-		internal static bool RequirementAllowsCompatibilityLine(string requirement, Semver.SemVersion candidate)
-		{
-			if (!TryParseRequirement(requirement, out var op, out var required))
-				return false;
-
-			var lineCompare = CompareCompatibilityLine(candidate, required);
-
-			return op switch
+			foreach (var word in words)
 			{
-				"" or ">=" or ">" => lineCompare >= 0,
-				"=" => lineCompare == 0,
-				"<" => lineCompare < 0 || lineCompare == 0 && required.CompareSortOrderTo(candidate) > 0,
-				"<=" => lineCompare < 0 || lineCompare == 0 && required.CompareSortOrderTo(candidate) >= 0,
-				_ => false
-			};
+				if (word.Equals(ProcessBitness, StringComparison.OrdinalIgnoreCase))
+					continue;
+
+				var op = word[..Math.Max(0, word.AsSpan().IndexOfAnyExcept("<>="))];
+				var required = word[op.Length..];
+				required = required.StartsWith('v') ? required[1..] : required;
+				var order = CompareVersions(version, required);
+				var met = op switch
+				{
+					"<" => order < 0,
+					"<=" => order <= 0,
+					">" => order > 0,
+					">=" => order >= 0,
+					"=" => order == 0,
+					"" => order >= 0 && CompareComponent(version.Split('.', '-', '+')[0], required.Split('.', '-', '+')[0]) == 0,
+					_ => false
+				};
+
+				if (!met)
+					return false;
+			}
+
+			return true;
 		}
 
-		internal static string NormalizeRequirement(string requirement, out bool hasOp)
+		// As AutoHotkey orders versions: a "+" suffix is ignored, a "-" pre-release is below its release, and the
+		// dot-separated components of each part compare in turn.
+		private static int CompareVersions(string a, string b)
 		{
-			requirement = (requirement ?? string.Empty).Trim();
-			if (requirement.EndsWith("+", StringComparison.Ordinal))
-				requirement = ">=" + requirement.TrimEnd('+').Trim();
+			var (releaseA, preA) = SplitVersion(a);
+			var (releaseB, preB) = SplitVersion(b);
+			var order = CompareComponents(releaseA, releaseB);
 
-			hasOp = requirement.Length > 0 && "<>=".Contains(requirement[0]);
-			return requirement;
+			if (order != 0 || preA == preB)
+				return order;
+
+			return preA == null ? 1 : preB == null ? -1 : CompareComponents(preA, preB);
 		}
 
-		private static bool TryParseRequirement(string requirement, out string op, out Semver.SemVersion version)
+		private static (string Release, string PreRelease) SplitVersion(string version)
 		{
-			var ver = NormalizeRequirement(requirement, out _);
-			op = ver.StartsWith("<=", StringComparison.Ordinal) || ver.StartsWith(">=", StringComparison.Ordinal) ? ver[..2]
-				: ver.Length > 0 && "<>=".Contains(ver[0]) ? ver[..1]
-				: "";
+			version = version.Split('+')[0];
+			var dash = version.IndexOf('-');
+			return dash < 0 ? (version, null) : (version[..dash], version[(dash + 1)..]);
+		}
 
-			ver = ver[op.Length..].Trim();
-			version = ver.Length == 0 ? null : ParseRequirementVersion(ver);
-			return version != null;
+		private static int CompareComponents(string a, string b)
+		{
+			var componentsA = a.Split('.');
+			var componentsB = b.Split('.');
+
+			for (var i = 0; i < Math.Max(componentsA.Length, componentsB.Length); i++)
+			{
+				var order = CompareComponent(i < componentsA.Length ? componentsA[i] : "", i < componentsB.Length ? componentsB[i] : "");
+
+				if (order != 0)
+					return order;
+			}
+
+			return 0;
+		}
+
+		// A missing or empty component is 0, numbers compare by value and below any other text, and text by ordinal.
+		private static int CompareComponent(string a, string b)
+		{
+			static long? Number(string component) => component.Length == 0 ? 0
+				: long.TryParse(component, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : null;
+
+			var (numberA, numberB) = (Number(a), Number(b));
+
+			return numberA.HasValue && numberB.HasValue ? numberA.Value.CompareTo(numberB.Value)
+				: numberA.HasValue ? -1
+				: numberB.HasValue ? 1
+				: string.CompareOrdinal(a, b);
 		}
 
 		private static ReadOnlySpan<char> TrimVersionPrefix(string version) => TrimVersionPrefix((version ?? string.Empty).AsSpan());
@@ -86,9 +125,6 @@ namespace Keysharp.Runtime
 			span = span.Trim();
 			return !span.IsEmpty && span[0] is 'v' or 'V' ? span[1..].TrimStart() : span;
 		}
-
-		private static int CompareCompatibilityLine(Semver.SemVersion left, Semver.SemVersion right) =>
-			left.Major != right.Major ? left.Major.CompareTo(right.Major) : left.Minor.CompareTo(right.Minor);
 	}
 
 	/// <summary>

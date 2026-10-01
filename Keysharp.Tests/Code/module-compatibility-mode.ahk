@@ -7,6 +7,8 @@
 #import Compat20 { NoReturn20, OverrideAfterModuleCall }
 #import InheritMain { NoReturnInherited }
 #import ClassMode { ClassNoReturn }
+#import CompatKeysharp { NoReturnKeysharp }
+#import KS { CompileScript }
 #Include <assert>
 
 threw := false
@@ -39,6 +41,26 @@ Assert(!IsSet(x), A_LineNumber)
 
 x := NoReturn20()
 Assert(IsSet(x) && x == "", A_LineNumber)
+
+; A Keysharp requirement selects the newest AutoHotkey line, whatever Keysharp version it names.
+x := (NoReturnKeysharp()?)
+Assert(!IsSet(x), A_LineNumber)
+
+; As in AutoHotkey, a requirement this build does not meet stops the script from loading, and the error names it. An
+; AutoHotkey version is compared with A_AhkVersion, a Keysharp one with A_KsVersion, and a pre-release is below its release.
+RequirementError(requirement)
+{
+	errors := ""
+	for message in CompileScript("#NoTrayIcon`n#Requires " requirement "`nx := 1`n").Errors
+		errors .= message
+	return errors
+}
+
+bitness := A_PtrSize = 8 ? "64-bit" : "32-bit", otherBitness := A_PtrSize = 8 ? "32-bit" : "64-bit"
+for requirement in ["AutoHotkey", "AutoHotkey v2.0", "AutoHotkey v2.0 `; a comment", "AutoHotkey v2.1-alpha " bitness, "AutoHotkey >=2.0 <2.2", "Keysharp >=0.0.0.1"]
+	AssertEq(RequirementError(requirement), "", A_LineNumber)
+for requirement in ["AutoHotkey v2.1", "AutoHotkey v2.2-", "AutoHotkey <2.0", "AutoHotkey v2.0 " otherBitness, "Keysharp >=99", "AHK v2"]
+	Assert(InStr(RequirementError(requirement), "This script requires " requirement "."), A_LineNumber)
 
 ; The caller's function override survives a call into another module, even when its module defaults to v2.0.
 Assert(OverrideAfterModuleCall(), A_LineNumber)
@@ -355,6 +377,11 @@ OverrideAfterModuleCall() {
 
 #Module InheritMain
 NoReturnInherited() {
+}
+
+#Module CompatKeysharp
+#Requires Keysharp >=0.0.0.1
+NoReturnKeysharp() {
 }
 
 #Module ClassMode

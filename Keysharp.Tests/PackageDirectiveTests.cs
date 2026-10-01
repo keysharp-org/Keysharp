@@ -421,9 +421,9 @@ namespace Keysharp.Tests
 		}
 
 		/// <summary>
-		/// Having its own directive is what keeps package names out of `#Requires`'s first-token space, where
-		/// `MapRequires` matches the version form with StartsWith — a package literally named `Keysharp.Extensions`
-		/// would otherwise have been read as a compatibility-version declaration.
+		/// Having its own directive is what keeps package names out of `#Requires`'s first-token space, where the
+		/// product name decides the form — a package literally named `Keysharp.Extensions` would otherwise have been
+		/// read as a version requirement.
 		/// </summary>
 		[Test, Category("Directives")]
 		public void RequiresSeparation()
@@ -433,7 +433,7 @@ namespace Keysharp.Tests
 			AssertEmits(Packages(), "LoadPackages((\"Keysharp.Extensions\", \"[1.2.3]\", false))");
 
 			// The #Requires forms still lower to their own things, and never to a package load.
-			foreach (var other in new[] { "#Requires AutoHotkey v2.0\n", "#Requires Keysharp v2.1\n", "#Requires capability ScreenCapture\n" })
+			foreach (var other in new[] { "#Requires AutoHotkey v2.0\n", "#Requires Keysharp >=0.0.0.1\n", "#Requires capability ScreenCapture\n" })
 			{
 				var (c, d) = Lower(other);
 				Assert.IsEmpty(d, other + " -> " + string.Join("; ", d));

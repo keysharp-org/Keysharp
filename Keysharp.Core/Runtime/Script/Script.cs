@@ -1739,21 +1739,6 @@ namespace Keysharp.Runtime
 			return $"Script {scriptPath} {instanceCount++}";
 		}
 
-		public static void VerifyVersion(string ver, bool reqAhk, int line, string code)
-		{
-			var requirement = CompatibilityVersions.NormalizeRequirement(ver, out var hasOp);
-			var cmp = Strings.VerCompare(A_AhkVersion, requirement);
-			var ok = hasOp ? cmp == 1L : cmp >= 0L;
-
-			if (ok)
-				return;
-
-			if (reqAhk)
-				throw new ParseException($"This script requires AutoHotkey {ver}, but Keysharp supports AutoHotkey v{A_AhkVersion}", line, code);
-
-			throw new ParseException($"This script requires Keysharp {ver}, but you have v{A_AhkVersion}", line, code);
-		}
-
 		public void WaitThreads()
 		{
 			//Check against 1 instead of 0, because this may be launched in a thread as a result of a hotkey.

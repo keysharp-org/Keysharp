@@ -1,6 +1,6 @@
 #NoTrayIcon
 
-#Requires AutoHotkey v2.1
+#Requires AutoHotkey v2.1-alpha
 #Include <assert>
 
 struct AB1 {

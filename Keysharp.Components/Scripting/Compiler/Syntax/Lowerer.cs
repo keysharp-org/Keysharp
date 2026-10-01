@@ -1442,17 +1442,31 @@ namespace Keysharp.Compilation.Syntax
 		// (a Keysharp.Runtime.Module subtype, e.g. "Ks") to a global slot — methods as Func, types as the
 		// type singleton, properties as a direct member access. Script modules / wildcard / aliases are deferred.
 		// Maps a `#Requires` argument (e.g. "AutoHotkey v2.1-alpha") to its compatibility line (2.0.0 or 2.1.0), or null
-		// if the requirement isn't an AutoHotkey/Keysharp version requirement. Mirrors GetCompatibilityModeFromRequirement.
+		// if it names no AutoHotkey or Keysharp version. As in AutoHotkey, v2.0 mode is kept only if 2.0.x would meet the
+		// requirement. A Keysharp requirement selects the newest line, since Keysharp's version numbers say nothing about
+		// AutoHotkey's.
 		private static Semver.SemVersion MapRequires(string args)
 		{
-			var parts = (args ?? "").Split((char[])null, System.StringSplitOptions.RemoveEmptyEntries);
-			if (parts.Length < 2) return null;
-			if (!parts[0].StartsWith("AutoHotkey", System.StringComparison.OrdinalIgnoreCase) &&
-				!parts[0].StartsWith("Keysharp", System.StringComparison.OrdinalIgnoreCase)) return null;
-			var ver = parts[1].TrimStart('v', 'V');
-			foreach (var c in CompatCandidates)
-				if (Keysharp.Runtime.CompatibilityVersions.RequirementAllowsCompatibilityLine(ver, c)) return c;
-			return CompatCandidates[^1];
+			var words = (args ?? "").Split([' ', '\t'], System.StringSplitOptions.RemoveEmptyEntries);
+			if (words.Length < 2) return null;
+			if (words[0].Equals("Keysharp", System.StringComparison.OrdinalIgnoreCase)) return CompatCandidates[^1];
+			if (!words[0].Equals("AutoHotkey", System.StringComparison.OrdinalIgnoreCase)) return null;
+			return Keysharp.Runtime.CompatibilityVersions.MeetsRequirement("2.0.x", words.AsSpan(1)) ? CompatCandidates[0] : CompatCandidates[^1];
+		}
+
+		// AutoHotkey refuses to load a script whose version requirement the running version does not meet.
+		private void ReportUnmetRequirement(string requirement, Node at)
+		{
+			var words = (requirement ?? "").Split([' ', '\t'], System.StringSplitOptions.RemoveEmptyEntries);
+			var product = words.Length > 0 ? words[0] : "";
+			if (product.Equals("capability", System.StringComparison.OrdinalIgnoreCase) || product.Equals("capabilities", System.StringComparison.OrdinalIgnoreCase))
+				return;
+			var version = product.Equals("AutoHotkey", System.StringComparison.OrdinalIgnoreCase) ? Keysharp.Builtins.Accessors.A_AhkVersion
+				: product.Equals("Keysharp", System.StringComparison.OrdinalIgnoreCase) ? Keysharp.Builtins.Ks.A_KsVersion
+				: null;
+			if (version == null || !Keysharp.Runtime.CompatibilityVersions.MeetsRequirement(version, words.AsSpan(1)))
+				Diag($"{NodeAnchor(at)}This script requires {requirement?.Trim()}. Current interpreter: Keysharp v{Keysharp.Builtins.Ks.A_KsVersion} "
+					+ $"(AutoHotkey v{Keysharp.Builtins.Accessors.A_AhkVersion}) {Keysharp.Runtime.CompatibilityVersions.ProcessBitness}.");
 		}
 
 		// The last `#Requires` directive among a statement list (its mode), or null if none — used to resolve a
@@ -2455,9 +2469,11 @@ namespace Keysharp.Compilation.Syntax
 					return null;
 				// Top-level capability requirements are emitted together before hook setup by BuildOuterAuto. Preserve
 				// the existing source-position behavior for one nested in control flow or another unsupported scope.
-				// Version requirements are handled by ScanRequires/MapRequires and remain a no-op here.
+				// A version requirement sets the mode through ScanRequires/MapRequires.
 				case "REQUIRES":
 				{
+					ReportUnmetRequirement(d.Args, d);
+
 					if (TryGetCapabilityRequirement(d, out var caps)
 						&& !_capabilityRequirementsSeen.Contains(d))
 						// RequireCapabilities (not RequestCapabilities): a #Requires directive is a hard
@@ -5957,6 +5973,7 @@ namespace Keysharp.Compilation.Syntax
 			var savedBase = _currentClassBase; _currentClassBase = baseType;
 			var savedCompat = _currentCompat;
 			_currentCompat = (c.Requires != null ? MapRequires(c.Requires) : null) ?? _currentCompat;   // class-level `#Requires`
+			if (c.Requires != null) ReportUnmetRequirement(c.Requires, c);
 			// Static-locals of this class's methods/properties belong to THIS type, not the module class — redirect the
 			// sink so their backing fields are emitted as members of this class (a nested LowerClass redirects again to
 			// its own list and restores to ours). This both scopes them correctly and avoids cross-class name collisions.
