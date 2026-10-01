@@ -1063,7 +1063,7 @@ namespace Keysharp.Internals.Input.MacOS
 
 		protected override void RegisterHook() { }
 
-		internal override int MouseCoordToAbs(int coord, int width_or_height) => ((65536 * coord) / width_or_height) + (coord < 0 ? -1 : 1);
+		internal override int MouseCoordToAbs(int coord, int width_or_height) => width_or_height <= 0 ? 0 : ((65536 * coord) / width_or_height) + (coord < 0 ? -1 : 1);
 
 		#region PlatformKeySimulationBackend
 

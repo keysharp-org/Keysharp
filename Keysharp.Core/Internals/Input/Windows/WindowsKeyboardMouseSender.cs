@@ -13,13 +13,13 @@ namespace Keysharp.Internals.Input.Windows
 		[FieldOffset(0)]
 		internal uint messagetype;
 
-		[FieldOffset(1)]
+		[FieldOffset(4)]
 		internal ScVk scvk;
 
-		[FieldOffset(1)]
+		[FieldOffset(4)]
 		internal Pt pt;
 
-		[FieldOffset(1)]
+		[FieldOffset(4)]
 		internal uint time_to_wait; // This member is present only when message==0; otherwise, a struct is present.
 	}
 
@@ -53,6 +53,8 @@ namespace Keysharp.Internals.Input.Windows
 		//private static readonly byte[] state = new byte[VKMAX];
 		//private readonly nint hookId = 0;
 		private bool thisEventHasBeenLogged, thisEventIsScreenCoord;
+		// Held for as long as the journal hook may call it.
+		private readonly PlaybackProc playbackHandlerDel;
 		//private bool dead;
 		//private List<uint> deadKeys;
 		//private bool ignore;
@@ -63,6 +65,7 @@ namespace Keysharp.Internals.Input.Windows
 
 		internal WindowsKeyboardMouseSender(Script script) : base(script)
 		{
+			playbackHandlerDel = PlaybackHandler;
 		}
 
 		internal override bool MouseButtonsSwapped => GetSystemMetrics(SystemMetric.SM_SWAPBUTTON) != 0;
@@ -73,7 +76,7 @@ namespace Keysharp.Internals.Input.Windows
 		/// </summary>
 		/// <param name="layout"></param>
 		/// <returns></returns>
-		internal override ResultType LayoutHasAltGrDirect(nint layout)
+		internal override unsafe ResultType LayoutHasAltGrDirect(nint layout)
 		{
 			const int KLLF_ALTGR = 0x0001;
 			var result = ResultType.Fail;
@@ -87,10 +90,11 @@ namespace Keysharp.Internals.Input.Windows
 
 				if (kbdLayerDescriptor != 0)
 				{
-					var func = (KbdTables)Marshal.GetDelegateForFunctionPointer(kbdLayerDescriptor, typeof(KbdTables));
-					var kl = func();
-					var flags = kl.fLocaleFlags;
-					result = (flags & KLLF_ALTGR) != 0 ? ResultType.ConditionTrue : ResultType.ConditionFalse;
+					// It returns a pointer to the tables. On 64-bit Windows their pointers are 64-bit in a 32-bit process too, as KBDTABLES64 lays out.
+					var tables = ((delegate* unmanaged<KBDTABLES64*>)kbdLayerDescriptor)();
+
+					if (tables != null)
+						result = (tables->fLocaleFlags & KLLF_ALTGR) != 0 ? ResultType.ConditionTrue : ResultType.ConditionFalse;
 				}
 
 				_ = FreeLibrary(hmod);
@@ -289,7 +293,7 @@ namespace Keysharp.Internals.Input.Windows
 
 						for (thisEventTime = DateTime.UtcNow;
 								eventPb[currentEvent].messagetype == 0;// HC_SKIP has ensured there is a non-delay event, so no need to check sCurrentEvent < sEventCount.
-								thisEventTime.AddMilliseconds(eventPb[currentEvent++].time_to_wait)) ; // Overflow is okay.
+								thisEventTime = thisEventTime.AddMilliseconds(eventPb[currentEvent++].time_to_wait)) ;
 					}
 
 					// Above has ensured that sThisEventTime is valid regardless of whether this is the first call
@@ -297,8 +301,9 @@ namespace Keysharp.Internals.Input.Windows
 					// Copy the current mouse/keyboard event to the EVENTMSG structure (lParam).
 					// MSDN says that HC_GETNEXT can be received multiple times consecutively, in which case the
 					// same event should be copied into the structure each time.
-					var sourceEvent = eventPb[currentEvent];
-					var ev = lParam;  // For convenience, maintainability, and possibly performance.
+					// Both by reference: the event is built in the hook's EVENTMSG, and the stripped offset flag is kept in the array.
+					ref var sourceEvent = ref CollectionsMarshal.AsSpan(eventPb)[currentEvent];
+					ref var ev = ref lParam;
 					// Currently, the following isn't documented entirely accurately at MSDN, but other sources confirm
 					// the below are the proper values to store.  In addition, the extended flag as set below has been
 					// confirmed to work properly by monitoring the resulting WM_KEYDOWN message in a main message loop.
@@ -696,7 +701,7 @@ namespace Keysharp.Internals.Input.Windows
 				if ((activeHooks = ht.GetActiveHooks()) != HookType.None)
 					ht.AddRemoveHooks((HookType)((int)activeHooks & ~hooksToRemoveDuringSendInput), true);
 
-				_ = SendInput((uint)eventSi.Count, eventSi.ToArray(), Marshal.SizeOf(typeof(INPUT))); // Must call dynamically-resolved version for Win95/NT compatibility.
+				_ = SendInput((uint)eventSi.Count, CollectionsMarshal.AsSpan(eventSi), System.Runtime.CompilerServices.Unsafe.SizeOf<INPUT>());
 
 				// The return value is ignored because it never seems to be anything other than sEventCount, even if
 				// the Send seems to partially fail (e.g. due to hitting 5000 event maximum).
@@ -769,7 +774,7 @@ namespace Keysharp.Internals.Input.Windows
 			                return;
 
 			*/
-			_ = ht.Invoke(() => script.playbackHook = SetWindowsHookEx(WH_JOURNALPLAYBACK, PlaybackHandler, Marshal.GetHINSTANCE(typeof(Script).Module), 0));
+			_ = ht.Invoke(() => script.playbackHook = SetWindowsHookEx(WH_JOURNALPLAYBACK, playbackHandlerDel, Marshal.GetHINSTANCE(typeof(Script).Module), 0));
 
 			if (script.playbackHook == 0)
 				return;
@@ -873,7 +878,7 @@ namespace Keysharp.Internals.Input.Windows
 			// won't work, it seems better than sending chars out of order. One possible alternative could
 			// be to "flush" the event array, but since SendInput and SendEvent are probably much more common,
 			// this is left for a future version.
-			var uInput = new INPUT[2];
+			Span<INPUT> uInput = stackalloc INPUT[2];
 			uInput[0].type = INPUT_KEYBOARD;
 			uInput[0].i.k.wVk = 0;
 			uInput[0].i.k.wScan = ch;
@@ -887,7 +892,7 @@ namespace Keysharp.Internals.Input.Windows
 			uInput[1].i.k.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
 			uInput[1].i.k.time = 0;
 			uInput[1].i.k.dwExtraInfo = (ulong)KeyIgnoreLevel(sendLevel);
-			_ = SendInput(2, uInput, 40);// sizeof(INPUT));
+			_ = SendInput(2, uInput, System.Runtime.CompilerServices.Unsafe.SizeOf<INPUT>());
 		}
 
 		internal override int SiEventCount() => eventSi.Count;
@@ -1208,7 +1213,7 @@ namespace Keysharp.Internals.Input.Windows
 		/// <param name="coord"></param>
 		/// <param name="width_or_height"></param>
 		/// <returns></returns>
-		internal override int MouseCoordToAbs(int coord, int width_or_height) => ((65536 * coord) / width_or_height) + (coord < 0 ? -1 : 1);
+		internal override int MouseCoordToAbs(int coord, int width_or_height) => width_or_height <= 0 ? 0 : ((65536 * coord) / width_or_height) + (coord < 0 ? -1 : 1);
 
 		/*  JOURNAL_RECORD_MODE
 		        internal nint PlaybackProc(int nCode, nint wParam, ref KBDLLHOOKSTRUCT lParam)
@@ -1310,8 +1315,6 @@ namespace Keysharp.Internals.Input.Windows
 		    }
 		    }
 		*/
-
-		private delegate KBDTABLES64 KbdTables();
 
 		/*  can also try this from https://stackoverflow.com/questions/318777/c-sharp-how-to-translate-virtual-keycode-to-char/38787314#38787314
 

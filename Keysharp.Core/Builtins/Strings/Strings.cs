@@ -1926,6 +1926,10 @@ namespace Keysharp.Builtins
 			return double.Parse(s[..end], NumberStyles.Float, CultureInfo.InvariantCulture);
 		}
 
+		// As AHK's ATOI for option counts such as Send's {Key N}: Atof's number without its fraction, which is exact up to
+		// 2^53 and saturates beyond the range of a long, where ATOI wraps.
+		internal static long Atoi(ReadOnlySpan<char> s) => (long)Atof(s);
+
 		// FormatTime's picture as a .NET custom format: as in AHK, only the date and time specifiers mean anything, text in
 		// single quotes is literal with '' a quote, and five or more y read as yyyy. Every other character is escaped, and
 		// an empty quoted section is kept, since it separates the specifiers around it.

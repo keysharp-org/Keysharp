@@ -401,7 +401,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			// includes "MouseClick left" somewhere in its subroutine, the script's own main window's
 			// title bar buttons for min/max/close would not properly respond to left-clicks.
 			if (mouseDelay < 11)
-				Keysharp.Internals.Flow.Sleep((int)mouseDelay);
+				System.Threading.Thread.Sleep((int)mouseDelay); // A pumped sleep would hand the script's own window the down alone, and a title-bar button then waits in its modal loop for an up not yet sent.
 			else
 				Keysharp.Internals.Flow.SleepWithoutInterruption((int)mouseDelay);
 		}
@@ -962,8 +962,9 @@ namespace Keysharp.Internals.Input.Keyboard
 			}
 
 			// Find dimensions of primary monitor.
-			var screen_width = (int)A_ScreenWidth;
-			var screen_height = (int)A_ScreenHeight;
+			var (primaryWidth, primaryHeight) = Keysharp.Builtins.Monitor.GetPrimaryScreenSize();
+			var screen_width = (int)primaryWidth;
+			var screen_height = (int)primaryHeight;
 			x = MouseCoordToAbs(x, screen_width);
 			y = MouseCoordToAbs(y, screen_height);
 			// x and aY MUST BE SET UNCONDITIONALLY because the output parameters must be updated for caller.
@@ -1806,30 +1807,24 @@ namespace Keysharp.Internals.Input.Keyboard
 									++endPos;
 									keyTextLength = 1;
 								}
-								else
+								else if (lenok && (sub[endPos + 1] == ' ' || sub[endPos + 1] == '\t')) // v1.0.48: Support "{} down}", "{} downtemp}" and "{} up}".
 								{
-									var nextWord = ReadOnlySpan<char>.Empty;
-									var braceTabIndex = sub.IndexOfAny(SpaceTab);
+									var nextWordIndex = sub.FindFirstNotOf(SpaceTab, endPos + 1);
+									var nextWord = sub.Slice(nextWordIndex);
 
-									if (braceTabIndex != -1)
-										nextWord = sub.Slice(braceTabIndex).TrimStart();
-
-									if (nextWord.Length > 0)// v1.0.48: Support "{} down}", "{} downtemp}" and "{} up}".
+									if (nextWord.StartsWith("Down", StringComparison.OrdinalIgnoreCase) // "Down" or "DownTemp" (or likely enough).
+											|| nextWord.StartsWith("Up", StringComparison.OrdinalIgnoreCase))
 									{
-										if (nextWord.StartsWith("Down", StringComparison.OrdinalIgnoreCase) // "Down" or "DownTemp" (or likely enough).
-												|| nextWord.StartsWith("Up", StringComparison.OrdinalIgnoreCase))
-										{
-											if ((endPos = sub.IndexOf('}', keyIndex + 2)) == -1)//See comments at similar section above.
-												continue;
+										if ((endPos = sub.IndexOf('}', nextWordIndex)) == -1)//See comments at similar section above.
+											continue;
 
-											keyTextLength = endPos - keyIndex; // This result must be non-zero due to the checks above.
-										}
-										else
-											goto bracecaseend;  // The loop's ++aKeys will now skip over the '}', ignoring it.
+										keyTextLength = endPos - keyIndex; // This result must be non-zero due to the checks above.
 									}
-									else // Empty braces {} were encountered (or all whitespace, but literal whitespace isn't sent).
+									else
 										goto bracecaseend;  // The loop's ++aKeys will now skip over the '}', ignoring it.
 								}
+								else // Empty braces {} were encountered (or all whitespace, but literal whitespace isn't sent).
+									goto bracecaseend;  // The loop's ++aKeys will now skip over the '}', ignoring it.
 							}
 
 							var braceSpan = sub.Slice(keyIndex, keyTextLength);
@@ -1913,17 +1908,10 @@ namespace Keysharp.Internals.Input.Keyboard
 										{
 											autoRepeat = true;
 										}
-										else if (!keyTokenSpan.StartsWith("ASC", StringComparison.OrdinalIgnoreCase))
+										else if (splitct == 1 && !keyTokenSpan.StartsWith("ASC", StringComparison.OrdinalIgnoreCase))
 										{
-											if (long.TryParse(nextWord, out var templ))
-											{
-												repeatCount = templ;//.Value;
-											}
-											else
-											{
-												_ = Dialogs.MsgBox($"Invalid character passed to Send(): {nextWord}", null, "16");
-												return;
-											}
+											// As AHK's ATOI: {Tab 5.0} sends 5 tabs, and a word which is not a number sends none.
+											repeatCount = Keysharp.Builtins.Strings.Atoi(nextWord);
 										}
 									}
 
@@ -1934,11 +1922,9 @@ namespace Keysharp.Internals.Input.Keyboard
 								}
 							}
 
-							if (autoRepeat && eventType != KeyEventTypes.KeyDown)
-							{
-								_ = Dialogs.MsgBox("AutoRepeat requires a Down or DownR key event in Send().", null, "16");
-								return;
-							}
+							// Only a key-down repeats, so AutoRepeat with any other event is ignored like an unknown word.
+							if (eventType != KeyEventTypes.KeyDown)
+								autoRepeat = false;
 
 							var keySource = KeySource.None;
 #if !WINDOWS
@@ -2161,11 +2147,8 @@ namespace Keysharp.Internals.Input.Keyboard
 
 									DoKeyDelay();
 								}
-								else
-								{
-									_ = Errors.ErrorOccurred($"Could not parse {hexsub} as a hexadecimal number when trying to send a unicode character.");
-									return;
-								}
+
+								// else a code with no hex digits sends nothing, as an unknown {Name} does.
 							}
 
 							//else do nothing since it isn't recognized as any of the above "else if" cases (see below).

@@ -1232,7 +1232,7 @@ namespace Keysharp.Internals.Os.Windows
 		internal static partial nint RealChildWindowFromPoint(nint hwndParent, POINT ptParentClientCoords);
 
 		[LibraryImport(user32, EntryPoint = "SendInput")]
-		internal static partial uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+		internal static partial uint SendInput(uint nInputs, ReadOnlySpan<INPUT> pInputs, int cbSize);
 
 		[LibraryImport(user32, EntryPoint = "SendMessageW")]
 		internal static partial uint SendMessage(nint hWnd, uint msg, uint wParam, uint lParam);
