@@ -149,6 +149,9 @@ publish_projects() {
   fi
 
   log "Publishing Keysharp and Keyview (CONFIG=${CONFIG}, RID=${RID})..."
+  # Keysharp builds its scripting components through an MSBuild task rather than a project reference,
+  # so its own restore never reaches them.
+  dotnet restore "${ROOT}/Keysharp.Components/Scripting/Compiler/Keysharp.Components.Scripting.Compiler.csproj" --nologo
   for proj in Keysharp Keyview; do
     rm -rf "${PUBLISH_DIR}/${proj}"
     dotnet publish "${ROOT}/${proj}/${proj}.csproj" -c "${CONFIG}" -r "${RID}" \

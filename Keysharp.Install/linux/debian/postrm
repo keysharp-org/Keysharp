@@ -1,0 +1,15 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+  remove|purge)
+    if command -v udevadm >/dev/null 2>&1; then
+      udevadm control --reload-rules || true
+      udevadm trigger --subsystem-match=i2c-dev || true
+    fi
+    ;;
+esac
+
+#DEBHELPER#
+
+exit 0

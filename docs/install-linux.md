@@ -23,6 +23,21 @@ channel. A healthy compatible component also keeps its existing channel, so its
 channel can differ from Keysharp's. Setup prints the selected Keysharp channel and
 the detected channel for each component.
 
+## Install from the Ubuntu PPA
+
+On Ubuntu 24.04 and 26.04, Keysharp and both components are also published to a
+Launchpad PPA for amd64 and arm64, so apt keeps them updated:
+
+```sh
+sudo add-apt-repository ppa:descolada/keysharp
+sudo apt install keysharp
+```
+
+Keysharp recommends both components, so apt installs them too unless told not to
+install recommended packages. On GNOME or Cinnamon, then run
+`keysharp-desktop enable-extension` as yourself, not with `sudo`, and log out and
+back in if it asks you to.
+
 ## Update, repair or customize
 
 Rerun setup to update or reinstall Keysharp and to install or repair missing or
@@ -48,7 +63,7 @@ sudo sh ./keysharp-linux-setup.sh --upgrade-components
   components. Existing components remain on their detected channels.
 
 Downloaded packages do not add an update repository, so rerun setup when you want
-a newer release.
+a newer release, or install from the PPA instead.
 
 ## Diagnose
 

@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+
+# The standalone Linux services can have other clients and are not part of this
+# package's lifecycle. Stop only Keysharp's optional compile daemon.
+if command -v pkill >/dev/null 2>&1; then
+  pkill -f '[Kk]eysharp --daemon' 2>/dev/null || true
+fi
+
+#DEBHELPER#
+
+exit 0

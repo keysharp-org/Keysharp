@@ -26,8 +26,9 @@ Run the packaging script on the target operating system and architecture:
 | Linux | `bash Keysharp.Install/package-linux.sh` | Archive and Debian package in `dist/` |
 | macOS | `bash Keysharp.Install/package-macos.sh` | PKG and DMG in `dist/` |
 
-Windows packaging restores WiX from NuGet. Linux packaging also needs `rsync` and
-`ripgrep`; generating a Debian package requires `dpkg-deb`.
+Windows packaging restores WiX from NuGet. On Linux, generating the Debian package
+requires `dpkg-dev`; the Launchpad source uploads are described in
+[Keysharp.Install/ppa/README.md](../Keysharp.Install/ppa/README.md).
 See [the reference](reference.md) for platform-specific prerequisites and packaging
 options. Use the individual scripts' `--help` (or PowerShell parameter help) for flags.
 

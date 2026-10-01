@@ -1,0 +1,24 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = configure ]; then
+  # The tar installer copies this rule under /etc, where it would shadow the packaged one.
+  packaged_rule=/usr/lib/udev/rules.d/70-keysharp-i2c-uaccess.rules
+  override_rule=/etc/udev/rules.d/70-keysharp-i2c-uaccess.rules
+  if [ -f "${override_rule}" ] && [ ! -L "${override_rule}" ]; then
+    if cmp -s "${override_rule}" "${packaged_rule}"; then
+      rm -f -- "${override_rule}"
+    else
+      echo "Keeping modified ${override_rule}; it overrides the packaged Keysharp rule." >&2
+    fi
+  fi
+  if command -v udevadm >/dev/null 2>&1; then
+    udevadm control --reload-rules || true
+    udevadm trigger --subsystem-match=i2c-dev || true
+  fi
+  . /usr/share/keysharp/component-notice.sh
+fi
+
+#DEBHELPER#
+
+exit 0

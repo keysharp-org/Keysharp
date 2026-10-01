@@ -1,0 +1,43 @@
+Source: keysharp
+Section: utils
+Priority: optional
+Maintainer: Descolada <16986957+Descolada@users.noreply.github.com>
+# The build runs the published host to precompile the bundled scripts, and that loads libX11.
+Build-Depends: debhelper-compat (= 13),
+               dotnet-sdk-10.0,
+               libx11-6
+Standards-Version: 4.7.0
+Homepage: https://github.com/keysharp-org/Keysharp
+Rules-Requires-Root: no
+
+Package: keysharp
+Architecture: amd64 arm64
+Depends: ${misc:Depends},
+         ${shlibs:Depends},
+         dotnet-runtime-10.0,
+         libx11-6,
+         libxtst6,
+         libxinerama1,
+         libxt6,
+         libx11-xcb1,
+         libxkbcommon-x11-0,
+         libxcb-xtest0,
+         libgtk-3-0t64 | libgtk-3-0,
+         libglib2.0-0t64 | libglib2.0-0,
+         libnotify4,
+         libatspi2.0-0t64 | libatspi2.0-0,
+         at-spi2-core,
+         pulseaudio-utils
+Recommends: keysharp-input-client-abi-0 (>= 0.4),
+            keysharp-desktop-client-abi-0 (>= 0.9),
+            libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37
+Description: Cross-platform C# port and enhancement of AutoHotkey
+ Keysharp runs AutoHotkey v2 scripts. It works on its own, but its
+ privileged Linux features live in two standalone components, which it
+ recommends. Full functionality needs both.
+ .
+ keysharp-input supplies global hotkeys and hotstrings, input hooks and
+ synthesis, BlockInput, and idle and device-state queries.
+ .
+ keysharp-desktop supplies authorized screen capture, foreign-window
+ queries and control, and clipboard integration.

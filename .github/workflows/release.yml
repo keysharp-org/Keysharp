@@ -15,6 +15,11 @@ on:
         required: true
         type: boolean
         default: true
+      ppa_revision:
+        description: "PPA upload revision; raise it to upload a version Launchpad already has again"
+        required: false
+        type: string
+        default: "1"
 
 permissions:
   contents: read
@@ -29,6 +34,9 @@ env:
   BUILD_CONFIGURATION: Release
   ETO_REPOSITORY: https://github.com/keysharp-org/Eto.git
   ETO_BRANCH: Keysharp
+  # Each series gets its own source upload and rehearsal.
+  PPA: descolada/keysharp
+  PPA_SERIES: noble resolute
 
 jobs:
   prepare:
@@ -38,8 +46,10 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
       draft: ${{ steps.version.outputs.draft }}
+      ppa_series: ${{ steps.version.outputs.ppa_series }}
       source_sha: ${{ steps.refs.outputs.source_sha }}
       eto_sha: ${{ steps.refs.outputs.eto_sha }}
+      kpm_tag: ${{ steps.refs.outputs.kpm_tag }}
     steps:
       - name: Resolve version
         id: version
@@ -72,13 +82,15 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "draft=$draft" >> "$GITHUB_OUTPUT"
+          echo "ppa_series=$(jq -cn --arg series "$PPA_SERIES" '$series | split(" ")')" >> "$GITHUB_OUTPUT"
 
       - name: Checkout release tag
         uses: actions/checkout@v7
         with:
           ref: refs/tags/${{ steps.version.outputs.tag }}
 
-      - name: Resolve immutable source revisions
+      # The tag fixes every input: flake.lock pins Eto and Keysharp.Payload.proj pins the KPM release.
+      - name: Resolve pinned sources
         id: refs
         shell: bash
         env:
@@ -92,15 +104,21 @@ jobs:
             exit 1
           fi
 
-          read -r eto_sha _ < <(git ls-remote "$ETO_REPOSITORY" "refs/heads/$ETO_BRANCH")
-          if [[ ! "$eto_sha" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "Could not resolve $ETO_REPOSITORY branch $ETO_BRANCH." >&2
+          eto_sha=$(jq -r '.nodes.eto.locked.rev' flake.lock)
+          kpm_tag=$(sed -n 's:.*<KpmVersion[^>]*>\(.*\)</KpmVersion>.*:\1:p' Keysharp.Install/payload/Keysharp.Payload.proj | head -n 1)
+          if [[ ! "$eto_sha" =~ ^[0-9a-f]{40}$ || -z "$kpm_tag" ]]; then
+            echo "flake.lock must pin Eto and Keysharp.Payload.proj must name a KPM release." >&2
             exit 1
+          fi
+          read -r eto_head _ < <(git ls-remote "$ETO_REPOSITORY" "refs/heads/$ETO_BRANCH")
+          if [[ "$eto_head" != "$eto_sha" ]]; then
+            echo "::warning::flake.lock pins Eto $eto_sha, but $ETO_BRANCH is at $eto_head. The release builds the pinned revision."
           fi
 
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
           echo "eto_sha=$eto_sha" >> "$GITHUB_OUTPUT"
-          echo "Resolved release source $source_sha and Eto $ETO_BRANCH at $eto_sha."
+          echo "kpm_tag=$kpm_tag" >> "$GITHUB_OUTPUT"
+          echo "Release source $source_sha, Eto $eto_sha, KPM $kpm_tag."
 
   package:
     needs: prepare
@@ -236,6 +254,8 @@ jobs:
 
           Write-Host "Verified release host $actualArch for ${{ matrix.rid }}."
 
+      # dpkg-dev builds the .deb; libX11 is the one native library the published host loads while it
+      # precompiles the bundled scripts.
       - name: Install Linux package dependencies
         if: ${{ matrix.platform == 'linux' }}
         run: |
@@ -243,31 +263,7 @@ jobs:
           # index and fail the whole update; nothing installed here comes from them.
           sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/microsoft-prod.list
           sudo apt-get update
-          sudo apt-get install -y \
-            curl \
-            dbus-x11 \
-            dpkg-dev \
-            fakeroot \
-            libappindicator3-1 \
-            libatspi2.0-0 \
-            libevdev2 \
-            libgtk-3-0 \
-            libnotify4 \
-            libudev1 \
-            ripgrep \
-            rsync || sudo apt-get install -y \
-            curl \
-            dbus-x11 \
-            dpkg-dev \
-            fakeroot \
-            libayatana-appindicator3-1 \
-            libatspi2.0-0 \
-            libevdev2 \
-            libgtk-3-0 \
-            libnotify4 \
-            libudev1 \
-            ripgrep \
-            rsync
+          sudo apt-get install -y --no-install-recommends dpkg-dev libx11-6
 
       # The installer is a WiX v5 SDK-style project whose toolset restores from NuGet, so the Windows
       # release needs nothing on the runner beyond the .NET SDK. 
@@ -307,8 +303,7 @@ jobs:
           RID: ${{ matrix.rid }}
           CONFIG: Release
         run: |
-          chmod +x Keysharp.Install/package-linux.sh
-          Keysharp.Install/package-linux.sh
+          bash Keysharp.Install/package-linux.sh
           mkdir -p dist/release-assets
           mv "dist/keysharp-${RID}.tar.gz" "dist/release-assets/keysharp-${VERSION}-${RID}.tar.gz"
           # The setup script resolves all three projects from their own releases, so it ships once,
@@ -384,6 +379,94 @@ jobs:
           name: release-assets-${{ matrix.rid }}
           path: dist/release-assets/*
           if-no-files-found: error
+
+  # See Keysharp.Install/ppa/README.md.
+  ppa-source:
+    needs: prepare
+    name: Build PPA sources
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+
+      - name: Checkout pinned Eto
+        uses: actions/checkout@v7
+        with:
+          repository: keysharp-org/Eto
+          ref: ${{ needs.prepare.outputs.eto_sha }}
+          path: .ppa/Eto
+          persist-credentials: false
+
+      - name: Checkout pinned KPM
+        uses: actions/checkout@v7
+        with:
+          repository: keysharp-org/KPM
+          ref: refs/tags/${{ needs.prepare.outputs.kpm_tag }}
+          path: .ppa/KPM
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Debian source tools
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/microsoft-prod.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends debhelper
+
+      - name: Build source uploads
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SERIES: ${{ env.PPA_SERIES }}
+          PPA_REVISION: ${{ inputs.ppa_revision || '1' }}
+          RESTORE_IN: docker
+          ETO_CHECKOUT: ${{ github.workspace }}/.ppa/Eto
+          KPM_CHECKOUT: ${{ github.workspace }}/.ppa/KPM
+          OUTPUT_DIR: ${{ github.workspace }}/dist/ppa
+        run: bash Keysharp.Install/ppa/build-source.sh
+
+      - name: Upload source uploads
+        uses: actions/upload-artifact@v7
+        with:
+          name: ppa-source
+          path: dist/ppa/*
+          if-no-files-found: error
+
+  # Launchpad accepts a version once, so every series and architecture is built here first.
+  ppa-rehearse:
+    needs:
+      - prepare
+      - ppa-source
+    name: Rehearse PPA build (${{ matrix.series }} ${{ matrix.arch }})
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        series: ${{ fromJSON(needs.prepare.outputs.ppa_series) }}
+        arch: [amd64, arm64]
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+
+      - name: Download source uploads
+        uses: actions/download-artifact@v8
+        with:
+          name: ppa-source
+          path: dist/ppa
+
+      - name: Build as Launchpad would
+        env:
+          SERIES: ${{ matrix.series }}
+        run: bash Keysharp.Install/ppa/rehearse.sh dist/ppa/keysharp_*~"$SERIES"*.dsc "$SERIES" dist/rehearsal
+
+      - name: Upload rehearsal packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: ppa-rehearsal-${{ matrix.series }}-${{ matrix.arch }}
+          path: dist/rehearsal/*.deb
+          retention-days: 7
 
   publish-release:
     needs:
@@ -478,3 +561,35 @@ jobs:
             fi
             gh "${args[@]}"
           fi
+
+  # Not after publish-release, which refuses a rerun once the release is published.
+  publish-ppa:
+    needs:
+      - prepare
+      - ppa-rehearse
+    if: ${{ needs.prepare.outputs.draft == 'false' }}
+    name: Upload to Launchpad PPA
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
+
+      - name: Download source uploads
+        uses: actions/download-artifact@v8
+        with:
+          name: ppa-source
+          path: dist/ppa
+
+      - name: Install upload tools
+        run: |
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/microsoft-prod.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends devscripts dput
+
+      - name: Sign and upload
+        env:
+          PPA_GPG_PRIVATE_KEY: ${{ secrets.PPA_GPG_PRIVATE_KEY }}
+          PPA_GPG_PASSPHRASE: ${{ secrets.PPA_GPG_PASSPHRASE }}
+        run: bash Keysharp.Install/ppa/upload.sh "$PPA" dist/ppa/*_source.changes

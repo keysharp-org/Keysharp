@@ -170,7 +170,7 @@ Then use `/home/YOUR_USERNAME/.local/bin/AutoHotkey.exe` as the interpreter path
 * Install the .NET 10 SDK (not just the runtime) as described in "Installing on Linux"
 * In the same parent folder as keysharp, clone the Keysharp branch of [the Keysharp fork of Eto](https://github.com/keysharp-org/Eto/tree/Keysharp); if keysharp is at `foo/keysharp`, clone Eto to `foo/Eto` by running `git clone -b Keysharp https://github.com/keysharp-org/Eto.git` from within `foo`.
 * Run `Keysharp.Install/package-linux.sh`. It packages Keysharp alone; the two components are built and released from their own repositories.
-* The unpacked tree is placed in `dist/staging/linux-x64/keysharp-linux-x64`, and the installable tarball is `dist/keysharp-linux-x64.tar.gz`. If `dpkg-deb` is installed, a Debian package such as `dist/keysharp_<version>_amd64.deb` is also created.
+* The unpacked tree is placed in `dist/staging/linux-x64/keysharp-linux-x64`, and the installable tarball is `dist/keysharp-linux-x64.tar.gz`. If `dpkg-dev` is installed, a Debian package such as `dist/keysharp_<version>_amd64.deb` is also created.
 * The staged folder and tarball are portable, so both source repositories can be safely deleted after packaging.
 * **Alternatively**, on arch-based systems keysharp is provided as an [AUR package](https://aur.archlinux.org/packages/keysharp-git)
 

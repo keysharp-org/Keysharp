@@ -192,15 +192,17 @@ jobs:
         if: ${{ matrix.platform == 'linux' }}
         shell: bash
         run: |
-          bash -n \
-            Keysharp.Install/package-linux.sh \
-            Keysharp.Install/linux/install.sh \
-            Keysharp.Install/linux/uninstall.sh \
-            Keysharp.Install/linux/tests/application-channel-policy.sh \
-            Keysharp.Install/linux/tests/setup-resolution-policy.sh
-          sh -n Keysharp.Install/linux/debian/preinst
-          sh -n Keysharp.Install/linux/component-notice.sh
-          sh -n Keysharp.Install/linux/keysharp-linux-setup.sh
+          # -n checks only the first file it is given, so each script gets its own run.
+          for script in Keysharp.Install/package-linux.sh Keysharp.Install/linux/install.sh \
+            Keysharp.Install/linux/uninstall.sh Keysharp.Install/linux/tests/*.sh Keysharp.Install/ppa/*.sh; do
+            bash -n "$script"
+          done
+          for script in Keysharp.Install/linux/debian/preinst Keysharp.Install/linux/debian/postinst \
+            Keysharp.Install/linux/debian/prerm Keysharp.Install/linux/debian/postrm \
+            Keysharp.Install/linux/component-notice.sh Keysharp.Install/linux/keysharp-linux-setup.sh; do
+            sh -n "$script"
+          done
+          python3 -m py_compile Keysharp.Install/ppa/launchpad.py
           python3 scripts/check-workflow-shell.py .github/workflows/release.yml .github/workflows/ci.yml
           bash Keysharp.Install/package-linux.sh --help >/dev/null
           bash Keysharp.Install/linux/uninstall.sh --help >/dev/null

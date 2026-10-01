@@ -7,7 +7,8 @@ REPOSITORY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 INSTALLER="${REPOSITORY_ROOT}/Keysharp.Install/linux/install.sh"
 UNINSTALLER="${REPOSITORY_ROOT}/Keysharp.Install/linux/uninstall.sh"
 PACKAGER="${REPOSITORY_ROOT}/Keysharp.Install/package-linux.sh"
-PREINST="${REPOSITORY_ROOT}/Keysharp.Install/linux/debian/preinst"
+DEBIAN_DIR="${REPOSITORY_ROOT}/Keysharp.Install/linux/debian"
+PREINST="${DEBIAN_DIR}/preinst"
 
 fail() {
   echo "application-channel-policy: $*" >&2
@@ -38,16 +39,15 @@ for literal in \
   require_literal "${INSTALLER}" "${literal}"
 done
 
-require_literal "${PACKAGER}" 'install -m 0755 "${ASSETS_DIR}/debian/preinst" "$1"'
-require_literal "${PACKAGER}" 'write_deb_preinst "${debian_dir}/preinst"'
-require_literal "${PACKAGER}" '"${debian_dir}/preinst" "${debian_dir}/postinst"'
+# The .deb this script builds and the Launchpad build share one set of maintainer scripts.
+require_literal "${PACKAGER}" 'for script in preinst postinst prerm postrm; do'
+require_literal "${PACKAGER}" '"${DEBIAN_DIR}/${script}" > "${root}/DEBIAN/${script}"'
 require_literal "${PACKAGER}" '-p:PublishDir="${PUBLISH_DIR}/${project}/"'
 # Both channels name the missing standalone components from one shared notice.
-require_literal "${PACKAGER}" 'cat "${ASSETS_DIR}/component-notice.sh" >> "$1"'
-require_literal "${PACKAGER}" '"${ASSETS_DIR}/component-notice.sh" "${PKG_DIR}/"'
+require_literal "${PACKAGER}" '"${ASSETS_DIR}/component-notice.sh" "${dest}/usr/share/keysharp/component-notice.sh"'
+require_literal "${DEBIAN_DIR}/postinst" '. /usr/share/keysharp/component-notice.sh'
+require_literal "${PACKAGER}" '"${ASSETS_DIR}/uninstall.sh" "${ASSETS_DIR}/component-notice.sh"'
 require_literal "${INSTALLER}" '. "${SCRIPT_DIR}/component-notice.sh"'
-require_literal "${PACKAGER}" '${INPUT_CLIENT_ABI_PACKAGE}'
-require_literal "${PACKAGER}" '${DESKTOP_CLIENT_ABI_PACKAGE}'
 
 for literal in \
     'remove_shared_integration_file "${DESKTOP_DIR}/keyview.desktop"' \
@@ -62,20 +62,15 @@ done
 temporary="$(mktemp -d)"
 trap 'rm -rf -- "${temporary}"' EXIT HUP INT TERM
 
-control_function="${temporary}/write-deb-control.sh"
-sed -n '/^write_deb_control() {$/,/^}$/p' "${PACKAGER}" \
-  > "${control_function}"
-# shellcheck source=/dev/null
-source "${control_function}"
-# The packager declares the two capabilities; read them from it so a rename there
-# is compared against the literals below rather than silently agreeing with them.
-eval "$(grep -E '^(INPUT|DESKTOP)_CLIENT_ABI_PACKAGE=' "${PACKAGER}")"
-DEB_PKG_NAME=keysharp
-VERSION=0.0.0.17
-DEB_ARCH=amd64
+# Generate the binary control the way the packager does, so a syntax slip in debian/control
+# fails here rather than in a release.
 control_root="${temporary}/control-package"
-mkdir -p "${control_root}/DEBIAN"
-write_deb_control "${control_root}/DEBIAN/control"
+mkdir -p "${control_root}/DEBIAN" "${temporary}/control-source/debian"
+cp "${DEBIAN_DIR}/control" "${temporary}/control-source/debian/control"
+printf 'keysharp (0.0.0.17) unstable; urgency=medium\n\n  * Test.\n\n -- Test <test@example.invalid>  %s\n' \
+  "$(date -R)" > "${temporary}/control-source/debian/changelog"
+(cd "${temporary}/control-source" && dpkg-gencontrol -pkeysharp -P"${control_root}" \
+  -DArchitecture=amd64 -Vmisc:Depends= -Vshlibs:Depends=)
 dpkg-deb --build --root-owner-group "${control_root}" \
   "${temporary}/control-package.deb" >/dev/null
 recommends="$(dpkg-deb -f "${temporary}/control-package.deb" Recommends)"

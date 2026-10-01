@@ -56,6 +56,9 @@ Prebuilt packages are on the [Releases](https://github.com/keysharp-org/Keysharp
 - Log out and back in if setup reports a newly enabled compositor extension.
 - Run `keysharp hello.ks`.
 
+On Ubuntu 24.04 and 26.04 you can instead install from the Launchpad PPA, which apt
+keeps updated; see [Linux installation](docs/install-linux.md#install-from-the-ubuntu-ppa).
+
 Setup adds the optional `keysharp-input` and `keysharp-desktop` services and keeps
 healthy compatible installations. [Linux installation](docs/install-linux.md) covers
 updates, optional components, diagnosis, portable installs, removal and VS Code.

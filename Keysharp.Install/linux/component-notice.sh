@@ -14,8 +14,9 @@ component_installed keysharp-desktop || missing_components="${missing_components
   keysharp-desktop: authorized screen capture, foreign-window queries and control, clipboard integration"
 
 if [ -n "${missing_components}" ]; then
-  printf '%s%s\n%s\n' \
+  printf '%s%s\n%s\n%s\n' \
     "Keysharp runs without these standalone components, which supply its privileged Linux features:" \
     "${missing_components}" \
-    "keysharp-linux-setup.sh, from https://github.com/keysharp-org/Keysharp/releases, installs them."
+    "keysharp-linux-setup.sh, from https://github.com/keysharp-org/Keysharp/releases, installs them." \
+    "With ppa:descolada/keysharp added, apt installs them: sudo apt install keysharp-input keysharp-desktop"
 fi

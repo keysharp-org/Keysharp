@@ -1,0 +1,45 @@
+#!/usr/bin/make -f
+
+include /usr/share/dpkg/pkg-info.mk
+include /usr/share/dpkg/architecture.mk
+
+RID_amd64 := linux-x64
+RID_arm64 := linux-arm64
+BUILD := $(CURDIR)/debian/.build
+PACKAGE_LINUX = RID=$(RID_$(DEB_HOST_ARCH)) VERSION=$(DEB_VERSION_UPSTREAM) CONFIG=Release \
+	KEYSHARP_DIST_DIR=$(BUILD)/dist bash Keysharp.Install/package-linux.sh
+
+# dotnet and NuGet write below HOME, which a build machine need not provide. dotnet refuses a HOME
+# that does not exist yet unless DOTNET_CLI_HOME names it.
+export HOME := $(BUILD)/home
+export DOTNET_CLI_HOME := $(HOME)
+export DOTNET_NOLOGO := 1
+export DOTNET_CLI_TELEMETRY_OPTOUT := 1
+# Nothing may outlive the build: no MSBuild nodes, compiler server or compile daemon.
+export MSBUILDDISABLENODEREUSE := 1
+export UseSharedCompilation := false
+export KEYSHARP_DAEMON := 0
+
+# The Launchpad source package carries Eto, KPM and a NuGet feed, because its builders have no network.
+ifneq ($(wildcard vendor/nuget),)
+export RestoreSources := $(CURDIR)/vendor/nuget
+export NuGetAudit := false
+export EtoRoot := $(CURDIR)/vendor/Eto
+export KpmSourceDir := $(CURDIR)/vendor/KPM
+endif
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	$(PACKAGE_LINUX) --stage
+
+override_dh_auto_install:
+	$(PACKAGE_LINUX) --install debian/keysharp
+
+# The payload ships as published: managed code, and native libraries prebuilt by their NuGet packages.
+override_dh_strip override_dh_dwz override_dh_makeshlibs:
+
+override_dh_auto_clean:
+	rm -rf debian/.build bin obj Keysharp.Install/payload/obj vendor/Eto/artifacts \
+		vendor/KPM/src/*/bin vendor/KPM/src/*/obj

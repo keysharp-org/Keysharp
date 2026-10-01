@@ -4,36 +4,41 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ASSETS_DIR="${ROOT}/Keysharp.Install/linux"
-CONFIG="${CONFIG:-Release}"
-# The client ABI capabilities the Debian package recommends. Each component
-# provides its own capability; Keysharp only names them.
-INPUT_CLIENT_ABI_PACKAGE="keysharp-input-client-abi-0 (>= 0.4)"
-DESKTOP_CLIENT_ABI_PACKAGE="keysharp-desktop-client-abi-0 (>= 0.9)"
+DEBIAN_DIR="${ASSETS_DIR}/debian"
 
 usage() {
   cat <<'EOF'
-Usage: package-linux.sh [options]
+Usage: package-linux.sh [--restore | --stage | --install DESTDIR]
 
-Options:
-  -h, --help            Show this help.
+Publishes Keysharp and Keyview, then writes dist/keysharp-<rid>.tar.gz and
+dist/keysharp_<version>_<arch>.deb.
 
-KEYSHARP_DIST_DIR selects an alternate output/work directory.
+  --restore          Restore the NuGet packages the publish needs, and stop.
+  --stage            Publish and stage the application tree, and stop.
+  --install DESTDIR  Install the staged tree into DESTDIR in the Debian layout.
+  -h, --help         Show this help.
+
+RID, VERSION and CONFIG select the build. KEYSHARP_DIST_DIR replaces dist/,
+and EtoRoot names the Eto checkout when it is not ../Eto.
 EOF
 }
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      echo "Unknown option: $1" >&2
-      usage >&2
-      exit 2
-      ;;
-  esac
-done
+mode=package
+destdir=
+case "${1:-}" in
+  "") ;;
+  --restore) mode=restore ;;
+  --stage) mode=stage ;;
+  --install)
+    mode=install
+    destdir="${2:-}"
+    [[ -n "${destdir}" ]] || { usage >&2; exit 2; }
+    shift
+    ;;
+  -h|--help) usage; exit 0 ;;
+  *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
+esac
+[[ $# -le 1 ]] || { usage >&2; exit 2; }
 
 detect_default_rid() {
   case "$(uname -m)" in
@@ -46,41 +51,66 @@ detect_default_rid() {
   esac
 }
 
-map_rid_to_deb_arch() {
-  case "$1" in
-    linux-x64) echo amd64 ;;
-    linux-arm64) echo arm64 ;;
-    *) return 1 ;;
-  esac
-}
-
 RID="${RID:-$(detect_default_rid)}"
-DEB_ARCH="$(map_rid_to_deb_arch "${RID}")" || {
-  echo "Unsupported Linux RID: ${RID}" >&2
-  exit 1
-}
-DIST_DIR="${KEYSHARP_DIST_DIR:-${ROOT}/dist}"
-PUBLISH_DIR="${DIST_DIR}/publish/${RID}"
-STAGING_DIR="${DIST_DIR}/staging/${RID}"
-PACKAGE_ROOT_DIR="${DIST_DIR}/package-root"
-PKG_NAME="keysharp-${RID}"
-PKG_DIR="${STAGING_DIR}/${PKG_NAME}"
-APP_DIR="${PKG_DIR}/app"
-DEB_TMP_DIR="${PACKAGE_ROOT_DIR}/${PKG_NAME}-deb"
-DEB_PKG_NAME="${DEB_PKG_NAME:-keysharp}"
-VERSION="${VERSION:-$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' "${ROOT}/Keysharp/Keysharp.csproj" | head -n 1)}"
+case "${RID}" in
+  linux-x64) DEB_ARCH=amd64 ;;
+  linux-arm64) DEB_ARCH=arm64 ;;
+  *) echo "Unsupported Linux RID: ${RID}" >&2; exit 1 ;;
+esac
+CONFIG="${CONFIG:-Release}"
 VERSION="${VERSION:-$(sed -n 's:.*<KeysharpVersion[^>]*>\(.*\)</KeysharpVersion>.*:\1:p' "${ROOT}/Directory.Build.props" | head -n 1)}"
-
 if [[ -z "${VERSION}" ]]; then
   echo "Unable to determine the Keysharp package version. Set VERSION explicitly." >&2
   exit 1
 fi
+# MSBuild reads the environment as properties, so an exported VERSION would become the Version of
+# every project built below, including Eto and KPM.
+export -n RID CONFIG VERSION
 
-ETO_DIR="$(if cd "${ROOT}/../Eto" 2>/dev/null; then pwd; fi)"
+DIST_DIR="${KEYSHARP_DIST_DIR:-${ROOT}/dist}"
+PUBLISH_DIR="${DIST_DIR}/publish/${RID}"
+PKG_NAME="keysharp-${RID}"
+STAGING_DIR="${DIST_DIR}/staging/${RID}"
+PKG_DIR="${STAGING_DIR}/${PKG_NAME}"
+APP_DIR="${PKG_DIR}/app"
+
+ETO_DIR="$(if cd "${EtoRoot:-${ROOT}/../Eto}" 2>/dev/null; then pwd; fi)"
 PATH_MAP="${ROOT}=/_/keysharp"
+# One RID and one Eto target framework, so restore fetches nothing the package does not ship.
+DOTNET_ARGS=(-p:Configuration="${CONFIG}" -p:RuntimeIdentifiers="${RID}" -p:TargetFrameworkOverride=net10.0 --nologo)
 if [[ -n "${ETO_DIR}" ]]; then
   PATH_MAP="${PATH_MAP}%2c${ETO_DIR}=/_/Eto"
+  DOTNET_ARGS+=(-p:EtoRoot="${ETO_DIR}")
 fi
+
+restore() {
+  # Keysharp builds its scripting components through an MSBuild task rather than a project
+  # reference, so its own restore never reaches them.
+  dotnet restore "${ROOT}/Keysharp.Components/Scripting/Compiler/Keysharp.Components.Scripting.Compiler.csproj" \
+    "${DOTNET_ARGS[@]}"
+  for project in Keysharp Keyview; do
+    dotnet restore "${ROOT}/${project}/${project}.csproj" -r "${RID}" "${DOTNET_ARGS[@]}"
+  done
+}
+
+publish() {
+  echo "Publishing Keysharp and Keyview (CONFIG=${CONFIG}, RID=${RID})..."
+  restore
+  rm -rf -- "${PUBLISH_DIR}"
+  for project in Keysharp Keyview; do
+    dotnet publish "${ROOT}/${project}/${project}.csproj" -c "${CONFIG}" -r "${RID}" --no-restore \
+      "${DOTNET_ARGS[@]}" \
+      -p:PublishDir="${PUBLISH_DIR}/${project}/" \
+      -p:KeysharpVersion="${VERSION}" \
+      -p:Deterministic=true \
+      -p:ContinuousIntegrationBuild=true \
+      -p:ShouldUnsetParentConfigurationAndPlatform=false \
+      -p:PathMap="${PATH_MAP}"
+  done
+
+  dotnet msbuild "${ROOT}/Keysharp.Install/payload/Keysharp.Payload.proj" \
+    -p:PayloadDir="${PUBLISH_DIR}/Keysharp" -p:KpmRid="${RID}" --nologo -v:minimal
+}
 
 relocate_library_scripts() {
   if [[ -f "${APP_DIR}/Scripts/AtSpi.ks" ]]; then
@@ -89,226 +119,118 @@ relocate_library_scripts() {
   fi
 }
 
+# Only a cross-architecture build, whose host cannot run, may ship the Dash as source.
 verify_dash_present() {
-  if [[ ! -f "${APP_DIR}/Keysharp.cks" && ! -f "${APP_DIR}/Keysharp.ks" ]]; then
-    echo "Package payload has neither Keysharp.cks nor Keysharp.ks." >&2
-    exit 1
-  fi
-  if [[ ! -f "${APP_DIR}/Keysharp.cks" ]]; then
-    echo "Warning: Keysharp.cks was not produced; the Dash will ship as source." >&2
-  fi
+  [[ -f "${APP_DIR}/Keysharp.cks" || ( -f "${APP_DIR}/Keysharp.ks" && "${RID}" != "$(detect_default_rid)" ) ]] && return 0
+  echo "The payload has no Keysharp.cks: the published host could not precompile the Dash (see above)." >&2
+  exit 1
 }
 
 normalize_app_permissions() {
   find "${APP_DIR}" -type d -exec chmod 0755 {} +
   find "${APP_DIR}" -type f -exec chmod 0644 {} +
-  for exe in Keysharp Keyview; do
-    [[ -f "${APP_DIR}/${exe}" ]] && chmod 0755 "${APP_DIR}/${exe}"
-  done
+  chmod 0755 "${APP_DIR}/Keysharp" "${APP_DIR}/Keyview"
 }
 
 verify_no_local_paths() {
-  local scan_dir="$1"
-  local found=0
-  local patterns=("${ROOT}")
-  [[ -n "${HOME:-}" ]] && patterns+=("${HOME}")
-  [[ -n "${ETO_DIR}" ]] && patterns+=("${ETO_DIR}")
-
-  command -v rg >/dev/null 2>&1 || {
-    echo "ripgrep is required to verify the release payload." >&2
-    return 1
-  }
-  for pattern in "${patterns[@]}"; do
-    if rg -a -F -n --max-count 20 "${pattern}" "${scan_dir}"; then
-      found=1
-    fi
+  local patterns=() pattern
+  for pattern in "${ROOT}" "${HOME:-}" "${ETO_DIR}"; do
+    [[ -n "${pattern}" && "${pattern}" != / ]] && patterns+=(-e "${pattern}")
   done
-  [[ "${found}" -eq 0 ]] || {
+  if grep -rlaF "${patterns[@]}" -- "${APP_DIR}"; then
     echo "Package payload contains local absolute paths." >&2
-    return 1
-  }
-}
-
-rewrite_desktop_exec() {
-  sed -e 's|/usr/local/bin/|/usr/bin/|g' \
-      -e 's|/usr/local/lib/keysharp/|/usr/lib/keysharp/|g' \
-      "$1" > "$2"
-}
-
-write_deb_control() {
-  cat > "$1" <<EOF
-Package: ${DEB_PKG_NAME}
-Version: ${VERSION}
-Section: utils
-Priority: optional
-Architecture: ${DEB_ARCH}
-Maintainer: Descolada <16986957+Descolada@users.noreply.github.com>
-Homepage: https://github.com/keysharp-org/Keysharp
-Depends: dotnet-runtime-10.0, libx11-6, libxtst6, libxinerama1, libxt6, libx11-xcb1, libxkbcommon-x11-0, libxcb-xtest0, libgtk-3-0, libglib2.0-0, libnotify4, libatspi2.0-0, at-spi2-core, pulseaudio-utils
-Recommends: ${INPUT_CLIENT_ABI_PACKAGE}, ${DESKTOP_CLIENT_ABI_PACKAGE}, libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37
-Description: A cross-platform C# port and enhancement of the AutoHotkey program
- Keysharp runs on its own, but its privileged Linux features live in two
- standalone components. Full functionality needs both.
- .
- keysharp-input supplies global hotkeys and hotstrings, input hooks and
- synthesis, BlockInput, and idle and device-state queries.
- .
- keysharp-desktop supplies authorized screen capture, foreign-window queries
- and control, and clipboard integration.
- .
- keysharp-linux-setup.sh, from
- https://github.com/keysharp-org/Keysharp/releases, installs Keysharp together
- with both components.
-EOF
-}
-
-write_deb_preinst() {
-  install -m 0755 "${ASSETS_DIR}/debian/preinst" "$1"
-}
-
-write_deb_postinst() {
-  cat > "$1" <<'EOF'
-#!/bin/sh
-set -e
-command -v update-mime-database >/dev/null 2>&1 && update-mime-database /usr/share/mime || true
-command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database /usr/share/applications || true
-command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -f /usr/share/icons/hicolor || true
-packaged_rule=/usr/lib/udev/rules.d/70-keysharp-i2c-uaccess.rules
-override_rule=/etc/udev/rules.d/70-keysharp-i2c-uaccess.rules
-if [ -f "${override_rule}" ] && [ ! -L "${override_rule}" ]; then
-  if cmp -s "${override_rule}" "${packaged_rule}"; then
-    rm -f -- "${override_rule}"
-  else
-    echo "Keeping modified ${override_rule}; it overrides the packaged Keysharp rule." >&2
+    exit 1
   fi
-fi
-command -v udevadm >/dev/null 2>&1 && udevadm control --reload-rules || true
-command -v udevadm >/dev/null 2>&1 && udevadm trigger --subsystem-match=i2c-dev || true
-EOF
-  cat "${ASSETS_DIR}/component-notice.sh" >> "$1"
-  chmod 0755 "$1"
 }
 
-write_deb_prerm() {
-  cat > "$1" <<'EOF'
-#!/bin/sh
-set -e
-# Standalone Linux services can have other clients and are not part of this
-# package's lifecycle. Stop only Keysharp's optional compile daemon.
-command -v pkill >/dev/null 2>&1 && pkill -f '[Kk]eysharp --daemon' 2>/dev/null || true
-EOF
-  chmod 0755 "$1"
+stage() {
+  publish
+  rm -rf -- "${PKG_DIR}"
+  mkdir -p "${APP_DIR}"
+  cp -a "${PUBLISH_DIR}/Keyview/." "${APP_DIR}/"
+  cp -a "${PUBLISH_DIR}/Keysharp/." "${APP_DIR}/"
+  find "${APP_DIR}" -name '*.pdb' -delete
+  relocate_library_scripts
+  verify_dash_present
+  normalize_app_permissions
+  verify_no_local_paths
 }
 
-write_deb_postrm() {
-  cat > "$1" <<'EOF'
-#!/bin/sh
-set -e
-command -v update-mime-database >/dev/null 2>&1 && update-mime-database /usr/share/mime || true
-command -v update-desktop-database >/dev/null 2>&1 && update-desktop-database /usr/share/applications || true
-command -v gtk-update-icon-cache >/dev/null 2>&1 && gtk-update-icon-cache -f /usr/share/icons/hicolor || true
-command -v udevadm >/dev/null 2>&1 && udevadm control --reload-rules || true
-command -v udevadm >/dev/null 2>&1 && udevadm trigger --subsystem-match=i2c-dev || true
-EOF
-  chmod 0755 "$1"
+# The system layout both Debian builds share: this script's own .deb and debian/rules.
+install_tree() {
+  local dest="$1" entry
+  install -d "${dest}/usr/lib/keysharp" "${dest}/usr/bin" "${dest}/usr/share/applications"
+  cp -a "${APP_DIR}/." "${dest}/usr/lib/keysharp/"
+  ln -sfn ../lib/keysharp/Keysharp "${dest}/usr/bin/keysharp"
+  ln -sfn ../lib/keysharp/Keyview "${dest}/usr/bin/keyview"
+  for entry in keysharp keyview; do
+    sed -e 's|/usr/local/bin/|/usr/bin/|g' -e 's|/usr/local/lib/keysharp/|/usr/lib/keysharp/|g' \
+      "${ASSETS_DIR}/${entry}.desktop" > "${dest}/usr/share/applications/${entry}.desktop"
+    chmod 0644 "${dest}/usr/share/applications/${entry}.desktop"
+  done
+  install -Dm644 "${ASSETS_DIR}/keysharp.xml" "${dest}/usr/share/mime/packages/keysharp.xml"
+  install -Dm644 "${ROOT}/assets/Keysharp.png" "${dest}/usr/share/icons/hicolor/256x256/apps/keysharp.png"
+  install -Dm644 "${ASSETS_DIR}/70-keysharp-i2c-uaccess.rules" \
+    "${dest}/usr/lib/udev/rules.d/70-keysharp-i2c-uaccess.rules"
+  # postinst sources the notice, so both install channels print the same text.
+  install -Dm644 "${ASSETS_DIR}/component-notice.sh" "${dest}/usr/share/keysharp/component-notice.sh"
+  install -Dm644 "${ROOT}/license.txt" "${dest}/usr/share/doc/keysharp/copyright"
 }
 
 build_tarball() {
-  local tarball="${DIST_DIR}/${PKG_NAME}.tar.gz"
-  tar -czf "${tarball}" -C "${STAGING_DIR}" "${PKG_NAME}"
-  echo "Tarball ready at ${tarball}"
+  cp "${ASSETS_DIR}/install.sh" "${ASSETS_DIR}/uninstall.sh" "${ASSETS_DIR}/component-notice.sh" \
+    "${ASSETS_DIR}/keyview.desktop" "${ASSETS_DIR}/keysharp.desktop" "${ASSETS_DIR}/keysharp.xml" \
+    "${ASSETS_DIR}/70-keysharp-i2c-uaccess.rules" "${ROOT}/assets/Keysharp.png" "${PKG_DIR}/"
+  chmod 0644 "${PKG_DIR}"/*.desktop "${PKG_DIR}/keysharp.xml" "${PKG_DIR}/70-keysharp-i2c-uaccess.rules" \
+    "${PKG_DIR}/Keysharp.png" "${PKG_DIR}/component-notice.sh"
+  chmod 0755 "${PKG_DIR}/install.sh" "${PKG_DIR}/uninstall.sh"
+  tar -czf "${DIST_DIR}/${PKG_NAME}.tar.gz" -C "${STAGING_DIR}" "${PKG_NAME}"
+  echo "Tarball ready at ${DIST_DIR}/${PKG_NAME}.tar.gz"
 }
 
 build_deb() {
-  command -v dpkg-deb >/dev/null 2>&1 || {
-    echo "Skipping Debian package creation because dpkg-deb is not installed."
+  if ! command -v dpkg-deb >/dev/null 2>&1 || ! command -v dpkg-gencontrol >/dev/null 2>&1; then
+    echo "Skipping the Debian package: it needs dpkg-deb and dpkg-gencontrol (dpkg-dev)."
     return 0
-  }
-
-  local deb_root="${DEB_TMP_DIR}"
-  local debian_dir="${deb_root}/DEBIAN"
-  local lib_dir="${deb_root}/usr/lib/keysharp"
-  local bin_dir="${deb_root}/usr/bin"
-  local applications_dir="${deb_root}/usr/share/applications"
-  local mime_dir="${deb_root}/usr/share/mime/packages"
-  local icon_dir="${deb_root}/usr/share/icons/hicolor/256x256/apps"
-  local udev_dir="${deb_root}/usr/lib/udev/rules.d"
-  local doc_dir="${deb_root}/usr/share/doc/${DEB_PKG_NAME}"
-  local deb_out="${DIST_DIR}/${DEB_PKG_NAME}_${VERSION}_${DEB_ARCH}.deb"
-
-  rm -rf -- "${deb_root}"
-  mkdir -p "${debian_dir}" "${lib_dir}" "${bin_dir}" "${applications_dir}" \
-    "${mime_dir}" "${icon_dir}" "${udev_dir}" "${doc_dir}"
-
-  rsync -a "${APP_DIR}/" "${lib_dir}/"
-  ln -s ../lib/keysharp/Keysharp "${bin_dir}/keysharp"
-  ln -s ../lib/keysharp/Keyview "${bin_dir}/keyview"
-  rewrite_desktop_exec "${ASSETS_DIR}/keysharp.desktop" "${applications_dir}/keysharp.desktop"
-  rewrite_desktop_exec "${ASSETS_DIR}/keyview.desktop" "${applications_dir}/keyview.desktop"
-	install -Dm644 "${ASSETS_DIR}/keysharp.xml" "${mime_dir}/keysharp.xml"
-	install -Dm644 "${ROOT}/assets/Keysharp.png" "${icon_dir}/keysharp.png"
-	install -Dm644 "${ASSETS_DIR}/70-keysharp-i2c-uaccess.rules" \
-		"${udev_dir}/70-keysharp-i2c-uaccess.rules"
-	install -Dm644 "${ROOT}/license.txt" "${doc_dir}/copyright"
-
-  write_deb_control "${debian_dir}/control"
-  write_deb_preinst "${debian_dir}/preinst"
-  write_deb_postinst "${debian_dir}/postinst"
-  write_deb_prerm "${debian_dir}/prerm"
-  write_deb_postrm "${debian_dir}/postrm"
-
-  find "${deb_root}" -type d -exec chmod 0755 {} +
-  find "${deb_root}" -type f -exec chmod 0644 {} +
-  chmod 0755 "${lib_dir}/Keysharp" "${lib_dir}/Keyview" \
-    "${debian_dir}/preinst" "${debian_dir}/postinst" \
-    "${debian_dir}/prerm" "${debian_dir}/postrm"
-
-  if dpkg-deb --help 2>/dev/null | grep -q -- '--root-owner-group'; then
-    dpkg-deb --build --root-owner-group "${deb_root}" "${deb_out}"
-  elif command -v fakeroot >/dev/null 2>&1; then
-    fakeroot dpkg-deb --build "${deb_root}" "${deb_out}"
-  else
-    dpkg-deb --build "${deb_root}" "${deb_out}"
   fi
-  echo "Debian package ready at ${deb_out}"
+
+  local root="${DIST_DIR}/package-root/${PKG_NAME}"
+  local control_dir="${DIST_DIR}/package-root/control-${RID}"
+  local deb="${DIST_DIR}/keysharp_${VERSION}_${DEB_ARCH}.deb"
+  local script maintainer
+  rm -rf -- "${root}" "${control_dir}"
+  install_tree "${root}"
+  install -d "${root}/DEBIAN" "${control_dir}/debian"
+  for script in preinst postinst prerm postrm; do
+    # The token marks where debhelper inserts its snippets; dpkg-deb inserts none.
+    sed '/^#DEBHELPER#$/d' "${DEBIAN_DIR}/${script}" > "${root}/DEBIAN/${script}"
+    chmod 0755 "${root}/DEBIAN/${script}"
+  done
+  find "${root}" -type d -exec chmod 0755 {} +
+  (cd "${root}" && find usr -type f -exec md5sum {} + | LC_ALL=C sort -k 2) > "${root}/DEBIAN/md5sums"
+
+  # dpkg-gencontrol takes the binary package's fields from the same debian/control the Launchpad
+  # build uses, and needs a changelog beside it for the version.
+  maintainer="$(sed -n 's/^Maintainer: //p' "${DEBIAN_DIR}/control")"
+  cp "${DEBIAN_DIR}/control" "${control_dir}/debian/control"
+  printf 'keysharp (%s) unstable; urgency=medium\n\n  * Release %s.\n\n -- %s  %s\n' \
+    "${VERSION}" "${VERSION}" "${maintainer}" "$(date -R)" > "${control_dir}/debian/changelog"
+  (cd "${control_dir}" && dpkg-gencontrol -pkeysharp -P"${root}" -DArchitecture="${DEB_ARCH}" \
+    -Vmisc:Depends= -Vshlibs:Depends=)
+
+  # xz rather than Ubuntu's zstd default, so dpkg on older Debian releases can unpack it.
+  dpkg-deb --build --root-owner-group -Zxz "${root}" "${deb}"
+  echo "Debian package ready at ${deb}"
 }
 
-echo "Publishing Keysharp and Keyview (CONFIG=${CONFIG}, RID=${RID})..."
-mkdir -p "${DIST_DIR}"
-rm -rf -- "${PUBLISH_DIR}/Keysharp" "${PUBLISH_DIR}/Keyview"
-for project in Keysharp Keyview; do
-  dotnet publish "${ROOT}/${project}/${project}.csproj" -c "${CONFIG}" -r "${RID}" \
-    -p:PublishDir="${PUBLISH_DIR}/${project}/" \
-    -p:KeysharpVersion="${VERSION}" \
-    -p:Deterministic=true \
-    -p:ContinuousIntegrationBuild=true \
-    -p:ShouldUnsetParentConfigurationAndPlatform=false \
-    -p:PathMap="${PATH_MAP}"
-done
-
-dotnet msbuild "${ROOT}/Keysharp.Install/payload/Keysharp.Payload.proj" \
-  -p:PayloadDir="${PUBLISH_DIR}/Keysharp" -p:KpmRid="${RID}" --nologo -v:minimal
-
-rm -rf -- "${PKG_DIR}"
-mkdir -p "${APP_DIR}"
-rsync -a "${PUBLISH_DIR}/Keyview/" "${APP_DIR}/"
-rsync -a "${PUBLISH_DIR}/Keysharp/" "${APP_DIR}/"
-find "${APP_DIR}" -name '*.pdb' -delete
-relocate_library_scripts
-verify_dash_present
-normalize_app_permissions
-verify_no_local_paths "${APP_DIR}"
-
-cp "${ASSETS_DIR}/install.sh" "${ASSETS_DIR}/uninstall.sh" \
-	"${ASSETS_DIR}/component-notice.sh" "${PKG_DIR}/"
-cp "${ASSETS_DIR}/keyview.desktop" "${ASSETS_DIR}/keysharp.desktop" \
-	"${ASSETS_DIR}/keysharp.xml" "${ASSETS_DIR}/70-keysharp-i2c-uaccess.rules" "${PKG_DIR}/"
-cp "${ROOT}/assets/Keysharp.png" "${PKG_DIR}/"
-chmod 0755 "${PKG_DIR}/install.sh" "${PKG_DIR}/uninstall.sh"
-chmod 0644 "${PKG_DIR}/keyview.desktop" "${PKG_DIR}/keysharp.desktop" \
-	"${PKG_DIR}/keysharp.xml" "${PKG_DIR}/70-keysharp-i2c-uaccess.rules" "${PKG_DIR}/Keysharp.png" \
-	"${PKG_DIR}/component-notice.sh"
-
-build_tarball
-build_deb
+case "${mode}" in
+  restore) restore ;;
+  stage) stage ;;
+  install) install_tree "${destdir}" ;;
+  package)
+    stage
+    build_tarball
+    build_deb
+    ;;
+esac
 echo "Done."

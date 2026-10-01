@@ -39,9 +39,9 @@
 		     A change spanning both repos otherwise has to be tagged, released and published before this
 		     side can even be run against it. With this, both sides are developed against the working tree
 		     and one release is cut at the end, with the pin moved once.
-		     A release build must never set it: what ships is the pinned archive, so that a Keysharp release
-		     can say which kpm it carried. Note a source build's version is whatever the checkout declares,
-		     which is not the tag. -->
+		     The Launchpad build also uses it, with the source of the KpmVersion tag, because its builders
+		     cannot download the release archive. Every other release build uses the archive.
+		     A source build's version is whatever the checkout declares, which is not the tag. -->
 		<_KpmProject Condition="'$(KpmSourceDir)' != ''">$([MSBuild]::NormalizePath('$(KpmSourceDir)', 'src', 'KPM.Core', 'KPM.Core.csproj'))</_KpmProject>
 		<!-- No trailing separator: this is passed to `dotnet build -o "..."`, and a path ending in a
 		     backslash would escape the closing quote and break the command line. -->
@@ -68,7 +68,7 @@
 		<Error Condition="!Exists('$(_Out)KPM.Core.dll') and '$(KpmSourceDir)' != ''"
 			   Text="KpmSourceDir=$(KpmSourceDir) built no KPM.Core.dll into $(_KpmSourceOut)." />
 		<Message Importance="high" Condition="Exists('$(_Out)KPM.Core.dll') and '$(KpmSourceDir)' == ''" Text="Bundled kpm $(KpmVersion) (KPM.Core.dll)." />
-		<Message Importance="high" Condition="Exists('$(_Out)KPM.Core.dll') and '$(KpmSourceDir)' != ''" Text="Bundled kpm built from source at $(KpmSourceDir) - NOT the pinned $(KpmVersion) release." />
+		<Message Importance="high" Condition="Exists('$(_Out)KPM.Core.dll') and '$(KpmSourceDir)' != ''" Text="Bundled kpm built from source at $(KpmSourceDir)." />
 	</Target>
 
 	<!-- The pinned release: what every real build uses. -->
@@ -116,7 +116,7 @@
 	<Target Name="StageKpmFromSource" Condition="'$(KpmSourceDir)' != ''">
 		<Error Condition="!Exists('$(_KpmProject)')"
 			   Text="KpmSourceDir=$(KpmSourceDir) does not look like a KPM checkout: $(_KpmProject) does not exist." />
-		<Exec Command="dotnet build &quot;$(_KpmProject)&quot; -c Release -o &quot;$(_KpmSourceOut)&quot; --nologo -v:minimal" />
+		<Exec Command="dotnet build &quot;$(_KpmProject)&quot; -c Release -o &quot;$(_KpmSourceOut)&quot; -p:DebugType=none -p:DebugSymbols=false --nologo -v:minimal" />
 		<Copy SourceFiles="$([System.IO.Path]::Combine('$(_KpmSourceOut)', 'KPM.Core.dll'))" DestinationFolder="$(_Out)" OverwriteReadOnlyFiles="true" />
 	</Target>
 

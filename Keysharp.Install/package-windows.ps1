@@ -335,6 +335,13 @@ function Invoke-Publish {
     # Publish does not prune, so a stale tree would keep shipping files a newer build no longer emits.
     Remove-Item -Path (Join-Path $PublishRoot "Keysharp"), (Join-Path $PublishRoot "Keyview") -Recurse -Force -ErrorAction SilentlyContinue
 
+    # Keysharp builds its scripting components through an MSBuild task rather than a project reference, so
+    # its own restore never reaches them.
+    dotnet restore (Join-Path $root "Keysharp.Components\Scripting\Compiler\Keysharp.Components.Scripting.Compiler.csproj") --nologo
+    if ($LASTEXITCODE -ne 0) {
+        throw "dotnet restore failed for the scripting compiler component with exit code $LASTEXITCODE."
+    }
+
     # Keyview has a non-assembly project reference to Keysharp. Publishing the solution lets MSBuild
     # reach Keysharp both directly and through that reference, and the two invocations can write the
     # same publish directory concurrently. Publish the two deliverables in dependency order instead.
