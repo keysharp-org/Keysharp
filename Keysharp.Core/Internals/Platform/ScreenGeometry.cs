@@ -6,6 +6,8 @@ namespace Keysharp.Internals
 	/// </summary>
 	internal readonly record struct ScreenRect(int X, int Y, int Width, int Height)
 	{
+		internal long Top => Y;
+		internal long Left => X;
 		internal long Right => (long)X + Width;
 		internal long Bottom => (long)Y + Height;
 		internal bool HasArea => Width > 0 && Height > 0;
@@ -87,6 +89,8 @@ namespace Keysharp.Internals
 	/// </summary>
 	internal readonly record struct PixelRect(int X, int Y, int Width, int Height)
 	{
+		internal int Top => Y;
+		internal int Left => X;
 		internal int Right => X + Width;
 		internal int Bottom => Y + Height;
 		internal bool IsEmpty => Width <= 0 || Height <= 0;
