@@ -138,6 +138,11 @@ Throws(() => UnsetLength(), A_LineNumber, TypeError)
 Throws(() => UnsetPtr(), A_LineNumber, ArgumentError)
 Throws(() => StrPtr(5), A_LineNumber, TypeError)
 
+; Any other string has one address for as long as it exists, and a temporary lasts out the statement using it.
+AssertEq(StrPtr("literal"), StrPtr("literal"), A_LineNumber)
+suffix := "def"
+AssertEq(DllCall("msvcrt\wcslen", "Ptr", StrPtr("abc" suffix), "Int", (Collect(), 0), "CDecl Int"), 6, A_LineNumber)
+
 ; StrPtr returns the variable's own memory: an Integer which stays the same while the variable does, and whose
 ; changes reach the variable at VarSetStrCapacity(&v, -1), but not a copy made of it beforehand.
 text := "abc"

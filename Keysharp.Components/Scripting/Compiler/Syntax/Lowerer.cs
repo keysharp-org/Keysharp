@@ -221,6 +221,7 @@ namespace Keysharp.Compilation.Syntax
 		private Settlement _settlement;
 		private int _tempCounter;
 		private List<string> _scopeTemps = new();   // object temps the current scope needs (declared at its top)
+		private List<string> _scopeKeptTemps = new();   // those of them its keep-alive epilogue reads (see KeptStrPtrArgument)
 
 		private string NewTemp(bool hoist = true) { var n = "KS_temp" + (++_tempCounter); if (hoist) _scopeTemps.Add(n); return n; }
 
@@ -862,7 +863,7 @@ namespace Keysharp.Compilation.Syntax
 			_staticFieldSink = _fieldDecls;   // module scope until a class redirects it
 
 			_inlineAliases.Clear(); _wildcardModules.Clear(); _importMembers.Clear(); _classFieldIds.Clear(); _emittedFuncImpls.Clear();
-			_pendingLambdas.Clear(); _hotMembers.Clear(); _inlineFuncNames?.Clear(); _scopeTemps.Clear(); _tempCounter = 0;
+			_pendingLambdas.Clear(); _hotMembers.Clear(); _inlineFuncNames?.Clear(); _scopeTemps.Clear(); _scopeKeptTemps.Clear(); _tempCounter = 0;
 			_importScopes.Clear();   // class/function import frames never straddle a module boundary
 		}
 
@@ -1425,6 +1426,7 @@ namespace Keysharp.Compilation.Syntax
 				}
 			}
 			_labelScopes.RemoveAt(_labelScopes.Count - 1);
+			WrapBodyWithKeepAlive(auto, [], _scopeKeptTemps, 0, auto.Count);
 			// Declare temps introduced by postfix ++/-- in the top-level (auto-execute) scope.
 			for (int i = _scopeTemps.Count - 1; i >= 0; i--) auto.Insert(0, DeclLocal(ObjType, _scopeTemps[i], Null));
 			auto.AddRange(_pendingScopeFuncs);   // top-level fat-arrow local functions (auto-exec scope)
@@ -5293,11 +5295,13 @@ namespace Keysharp.Compilation.Syntax
 			bool isSet = c.Callee is NameExpr ne && ne.Name.Equals("IsSet", System.StringComparison.OrdinalIgnoreCase)
 				&& c.Args.Count == 1 && c.Args[0].Value != null && !c.Args[0].Spread;
 			var callArguments = NativeStringArguments(c);
+			var keptArgument = KeptStrPtrArgument(c, callArguments);
 
 			// The call arguments (shared by both the normal and the null-conditional path).
 			List<ExpressionSyntax> CallArgs() =>
 				callArguments.Any(a => a.Spread) ? new() { SpreadParams(callArguments) }
 				: isSet ? new() { RewriteToOrNull(LowerExpr(c.Args[0].Value)) }
+				: keptArgument != null ? new() { SyntaxFactory.AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, Id(keptArgument), LowerExpr(callArguments[0].Value)) }
 				: LowerArgs(callArguments);
 
 			// `obj?.M(args)` (null-conditional method) / `obj?.()` (null-conditional call): evaluate the target once;
@@ -5354,6 +5358,22 @@ namespace Keysharp.Compilation.Syntax
 				result[i] = new(reference, false, arg.Name, arg.NameExpr);
 			}
 			return result ?? call.Args;
+		}
+
+		// StrPtr pins a value's copy for as long as the string lives, and a temporary must outlive the statement using
+		// its address, as in AutoHotkey, so the scope keeps each call site's latest argument alive. A variable passes
+		// its own memory instead, and a literal lives forever.
+		private string KeptStrPtrArgument(CallExpr call, List<Argument> args)
+		{
+			if (args.Count != 1 || args[0].Spread || args[0].IsNamed
+					|| args[0].Value is null or LiteralExpr or UnaryExpr { Op: "&" }
+					|| (call.Callee as NameExpr)?.Name.Equals("StrPtr", System.StringComparison.OrdinalIgnoreCase) != true
+					|| NativeCallTarget(call.Callee)?.Builtin is not { Name: "StrPtr" } method || method.DeclaringType != typeof(Keysharp.Builtins.Strings))
+				return null;
+
+			var temp = NewTemp();
+			_scopeKeptTemps.Add(temp);
+			return temp;
 		}
 
 		private static bool IsLiteralStringType(Expr type) => type is LiteralExpr { Kind: LiteralKind.String } literal
@@ -6075,6 +6095,7 @@ namespace Keysharp.Compilation.Syntax
 			var savedScopeFuncs = _pendingScopeFuncs; _pendingScopeFuncs = new();   // field-init fat-arrow local funcs
 			var savedClosureInits = _pendingScopeClosureInits; _pendingScopeClosureInits = new();
 			var savedTemps = _scopeTemps; _scopeTemps = new();
+			var savedKept = _scopeKeptTemps; _scopeKeptTemps = new();
 			var savedScope = _scope; var savedDeref = _derefScope;
 			// AutoHotkey parses each field initializer as an expression statement inside __Init, so only the field's
 			// own name becomes a property on `this`; every other name assigned there is a local of this __Init, and a
@@ -6146,7 +6167,7 @@ namespace Keysharp.Compilation.Syntax
 			stmts.InsertRange(setupEnd + _scopeTemps.Count, _pendingScopeClosureInits);
 			execStart += _pendingScopeClosureInits.Count; execEnd += _pendingScopeClosureInits.Count;
 			declared.Add(Receiver());
-			WrapBodyWithKeepAlive(stmts, declared, execStart, execEnd);
+			WrapBodyWithKeepAlive(stmts, declared, _scopeKeptTemps, execStart, execEnd);
 			InitializeParameters(stmts, [Receiver()]);
 			if (_stamped) stmts.Insert(0, LocationDecl);
 			var block = Settle(SyntaxFactory.Block(stmts));
@@ -6154,6 +6175,7 @@ namespace Keysharp.Compilation.Syntax
 			_derefScope = savedDeref;
 			_scope = savedScope;
 			_scopeTemps = savedTemps;
+			_scopeKeptTemps = savedKept;
 			_pendingScopeFuncs = savedScopeFuncs;
 			_pendingScopeClosureInits = savedClosureInits;
 			_currentThisFuncName = savedThisFuncName;
@@ -6815,6 +6837,7 @@ namespace Keysharp.Compilation.Syntax
 			var savedLoweringParamDefault = _loweringParamDefault;
 			_currentThisFuncName = thisFuncName;
 			_loweringParamDefault = false;
+			var savedKept = _scopeKeptTemps; _scopeKeptTemps = new();
 			var savedTemps = _scopeTemps; _scopeTemps = new();
 			var savedScopeFuncs = _pendingScopeFuncs; _pendingScopeFuncs = new();   // fat-arrow local funcs for THIS scope
 			var savedClosureInits = _pendingScopeClosureInits; _pendingScopeClosureInits = new();
@@ -6929,7 +6952,7 @@ namespace Keysharp.Compilation.Syntax
 			body.InsertRange(setupEnd + _scopeTemps.Count, _pendingScopeClosureInits);
 			execStart += _pendingScopeClosureInits.Count; execEnd += _pendingScopeClosureInits.Count;
 			declared.AddRange(paramLowers.Select(scope.Find));
-			WrapBodyWithKeepAlive(body, declared, execStart, execEnd);
+			WrapBodyWithKeepAlive(body, declared, _scopeKeptTemps, execStart, execEnd);
 			InitializeParameters(body, paramLowers.Select(scope.Find));
 			if (_inMethod && !capturing) InitializeParameters(body, [Receiver()]);
 			if (_stamped) body.Insert(0, LocationDecl);
@@ -6939,7 +6962,7 @@ namespace Keysharp.Compilation.Syntax
 			_settlement = savedSettlement;
 			_derefScope = savedDeref;
 			_scope = savedScope;
-			_scopeTemps = savedTemps; _pendingScopeFuncs = savedScopeFuncs; _pendingScopeClosureInits = savedClosureInits;
+			_scopeTemps = savedTemps; _pendingScopeFuncs = savedScopeFuncs; _pendingScopeClosureInits = savedClosureInits; _scopeKeptTemps = savedKept;
 			_currentThisFuncName = savedThisFuncName;
 			_loweringParamDefault = savedLoweringParamDefault;
 			_stamped = savedStamped;
@@ -6952,13 +6975,15 @@ namespace Keysharp.Compilation.Syntax
 
 		// AHK keeps locals alive to scope exit; the JIT may otherwise collect a Buffer after its last managed
 		// read while native code still uses its Ptr. KeepAlive restores that lifetime on every exit path.
-		private static void WrapBodyWithKeepAlive(List<StatementSyntax> body, List<ScopeVar> declared, int execStart, int execEnd)
+		private static void WrapBodyWithKeepAlive(List<StatementSyntax> body, IEnumerable<ScopeVar> declared, List<string> keptTemps, int execStart, int execEnd)
 		{
-			if (declared.Count == 0 || execEnd <= execStart)
+			var roots = declared.Select(LifetimeRoot).Concat(keptTemps.Select(Id)).ToList();
+
+			if (roots.Count == 0 || execEnd <= execStart)
 				return;
 
-			var keep = declared.Select(LifetimeRoot).Chunk(8).Select(roots =>
-				ExprStmt(Inv(Access(roots.Length == 1 ? "System.GC.KeepAlive" : "Keysharp.Runtime.Lifetime.KeepAlive"), roots)));
+			var keep = roots.Chunk(8).Select(chunk =>
+				ExprStmt(Inv(Access(chunk.Length == 1 ? "System.GC.KeepAlive" : "Keysharp.Runtime.Lifetime.KeepAlive"), chunk)));
 
 			var inner = body.GetRange(execStart, execEnd - execStart);
 			body.RemoveRange(execStart, execEnd - execStart);

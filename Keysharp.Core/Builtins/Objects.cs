@@ -412,26 +412,5 @@ namespace Keysharp.Builtins
 		}
 
 #endif
-		/// <summary>
-		/// Frees a managed C# object or string, allowing it to be garbage-collected.
-		/// </summary>
-		public static bool ObjFree(object pointer)
-		{
-			if (pointer is IPointable ip)
-				pointer = ip.Ptr;
-
-			if (pointer is long l)
-			{
-				if (Script.TheScript.StringsData.gcHandles.Remove((nint)l, out var oldGch))
-				{
-					oldGch.Free();
-					return true;
-				}
-			}
-			else
-				_ = Errors.TypeErrorOccurred(pointer, typeof(nint));
-
-			return false;
-		}
 	}
 }

@@ -628,11 +628,7 @@ namespace Keysharp.Internals.Interop
 				case NativeTypeCode.Str:
 				case NativeTypeCode.WStr:
 				case NativeTypeCode.BStr:
-				{
-					var str = value == 0 ? "" : Marshal.PtrToStringUni((nint)value);
-					_ = Objects.ObjFree(value);//If this string came from us, it will be freed, else no action.
-					return str;
-				}
+					return value == 0 ? "" : Marshal.PtrToStringUni((nint)value);
 
 				default: return value;//Int64, UInt64, Ptr and UPtr are already the whole register.
 			}

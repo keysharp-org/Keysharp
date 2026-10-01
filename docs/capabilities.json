@@ -8850,16 +8850,6 @@
                      "notes":  "Returns a property-reference (PropRef) object."
                  },
                  {
-                     "category":  "Core Language",
-                     "feature":  "ObjFree()",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Releases object references associated with a pointer/COM wrapper context."
-                 },
-                 {
                      "category":  "Collections",
                      "feature":  "ObjFromPtr()",
                      "syntax":  "",
@@ -10485,7 +10475,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns the address of memory a variable keeps for native code, stable while its value fits, or of a pinned copy of any other string, which ObjFree releases.",
+                     "notes":  "Returns the address of memory a variable keeps for native code, stable while its value fits, or of a pinned copy of any other string, which lasts as long as the string does.",
                      "tested-by":  "external-dllcall.ahk"
                  },
                  {

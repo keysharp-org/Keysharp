@@ -1607,8 +1607,8 @@ namespace Keysharp.Runtime
 			//thread. None of it may run on the GC finalizer thread -- joining there stalls the whole
 			//finalizer queue, which is precisely what ExitAppInternal's GC.WaitForPendingFinalizers()
 			//then waits on. A Script that reaches its finalizer was never disposed (i.e. it leaked); its
-			//hook thread is a background thread that dies with the process, and StringsData frees its
-			//GCHandles from its own finalizer, so skipping this on that path leaks nothing that matters.
+			//hook thread is a background thread that dies with the process, so skipping this on that path
+			//leaks nothing that matters.
 			if (!disposing)
 				return;
 
@@ -1665,7 +1665,6 @@ namespace Keysharp.Runtime
 #if LINUX
 			Teardown(() => Keysharp.Internals.Input.Linux.KeysharpInputManager.DisconnectClients(this));
 #endif
-			Teardown(() => stringsData?.Free());
 			Teardown(() => flowData?.Dispose());
 
 			// Frees every overlay this script still owns (Highlight/ToolTip/Overlay builtins all register as

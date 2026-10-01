@@ -32,15 +32,8 @@ namespace Keysharp.Builtins
 
 	internal class StringsData
 	{
-		internal ConcurrentDictionary<nint, GCHandle> gcHandles = [];
-
-		~StringsData() => Free();
-
-		internal void Free()
-		{
-			foreach (var kv in gcHandles)
-				kv.Value.Free();
-		}
+		// The pinned copy StrPtr gives a string which is not a variable's, alive as long as the string is.
+		internal readonly ConditionalWeakTable<string, char[]> pinnedCopies = new();
 	}
 
 	/// <summary>
@@ -1095,7 +1088,9 @@ namespace Keysharp.Builtins
 		/// which takes the variable's value here when the variable holds a different string than the memory last did: the
 		/// same string assigned again, such as "" to a variable already empty, leaves what native code wrote there. That
 		/// reaches the variable at VarSetStrCapacity(&amp;v, -1) or its next Str argument, and the address stays the same
-		/// while the variable exists and its value fits. Any other string is copied to pinned memory, which ObjFree releases.
+		/// while the variable exists and its value fits. Any other string is copied to pinned memory, which stays at the
+		/// same address as long as the string exists; a temporary, such as a concatenation, lasts at least until the
+		/// statement that made it finishes.
 		/// </summary>
 		/// <param name="value">A string, a reference to a variable holding one, or a StringBuffer.</param>
 		/// <returns>The address.</returns>
@@ -1120,12 +1115,13 @@ namespace Keysharp.Builtins
 			if (value is not string str)
 				return Errors.TypeErrorOccurred(value, typeof(string), 0L);
 
-			var copy = new char[str.Length + 1];//The last element stays zero: the terminator a native reader looks for.
-			str.CopyTo(copy);
-			var gch = GCHandle.Alloc(copy, GCHandleType.Pinned);
-			var ptr = gch.AddrOfPinnedObject();
-			Script.TheScript.StringsData.gcHandles[ptr] = gch;
-			return (long)ptr;
+			var copy = Script.TheScript.StringsData.pinnedCopies.GetValue(str, static s =>
+			{
+				var chars = GC.AllocateArray<char>(s.Length + 1, true);//The last element stays zero: the terminator a native reader looks for.
+				s.CopyTo(chars);
+				return chars;
+			});
+			return (long)Marshal.UnsafeAddrOfPinnedArrayElement(copy, 0);
 		}
 
 		/// <summary>

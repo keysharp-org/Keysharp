@@ -871,7 +871,6 @@ Status legend:
 | ObjBindMethod() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The ObjBindMethod function creates a BoundFunc object which calls a method of a given object. |
 | Object.__Ref() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a property-reference (PropRef) object. |
 | Object() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a new Object; optional key/value arguments initialize own properties. |
-| ObjFree() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Releases object references associated with a pointer/COM wrapper context. |
 | ObjFromPtr() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Creates or retrieves an object wrapper from a raw pointer. |
 | ObjFromPtrAddRef() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Creates/retrieves an object wrapper from a pointer and increments its reference count. |
 | ObjGetBase | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the value's base object. Differs in that it only returns the name of the base type as a string. |
@@ -1003,7 +1002,7 @@ Status legend:
 | StringBuffer() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a mutable string buffer object. |
 | StrLen() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the count of how many characters are in a string. |
 | StrLower() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Converts a string to lowercase. |
-| StrPtr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the address of memory a variable keeps for native code, stable while its value fits, or of a pinned copy of any other string, which ObjFree releases. |
+| StrPtr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the address of memory a variable keeps for native code, stable while its value fits, or of a pinned copy of any other string, which lasts as long as the string does. |
 | StrPut() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes string data to a buffer/address using specified encoding. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. |
 | StrReplace() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Replaces occurrences of a substring and returns the updated string. |
 | StrSplit() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Separates a string into an array of substrings using the specified delimiters, or into characters. |
