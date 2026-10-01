@@ -183,22 +183,6 @@ namespace Keysharp.Tests
 			}
 		}
 
-		// Bug fix: a trailing I/L/T option (the last char of the options string) must not throw;
-		// AHK reads the C-string null terminator safely and defaults the value.
-		[Test, Category("InputHook")]
-		public void TrailingNumericOption()
-		{
-			Assert.DoesNotThrow(() => new InputHook("I"));
-			Assert.DoesNotThrow(() => new InputHook("L"));
-			Assert.DoesNotThrow(() => new InputHook("T"));
-
-			var i = (InputHook)new InputHook("I");
-			Assert.AreEqual(1L, i.MinSendLevel); // 'I' with no number -> level 1
-
-			var l = (InputHook)new InputHook("L");
-			Assert.AreEqual(0, l.input.bufferLengthMax); // 'L' with no number -> 0
-		}
-
 		// Mouse-event support: VisibleMouseMove defaults to true (movement passes through), and
 		// InputType.MouseIsNeeded becomes true once movement is being suppressed or a mouse button
 		// carries Input key options (e.g. an end key). MouseIsNeeded is what makes Start() install
@@ -305,21 +289,6 @@ namespace Keysharp.Tests
 			}
 		}
 
-		/// <summary>A fresh InputHook is idle and reads EndReason "Stopped", as in AHK, where one Off status covers both
-		/// a hook that never ran and one that was stopped.</summary>
-		[Test, Category("InputHook")]
-		public void FreshHookReadsStopped()
-		{
-			var io = (InputHook)new InputHook("");
-			Assert.IsFalse(io.InProgress);
-			Assert.AreEqual("Stopped", io.EndReason, "A never-started input reads Stopped, as in AHK.");
-			Assert.IsInstanceOf<Ks.EventHook>(io, "InputHook shares the hook vocabulary with every event family.");
-
-			_ = io.Stop();
-			Assert.AreEqual("Stopped", io.EndReason, "Stop on a never-started hook does nothing.");
-			Assert.IsFalse(io.InProgress);
-		}
-
 		/// <summary>A running input has no end reason yet, and says so with "" rather than unset, so
 		/// <c>!ih.EndReason</c> is safe to write while it runs. It used to read null and raise UnsetError.</summary>
 		[Test, Category("InputHook")]
@@ -330,35 +299,6 @@ namespace Keysharp.Tests
 			io.input.Start();
 			Assert.IsTrue(io.InProgress);
 			Assert.AreEqual("", io.EndReason);
-		}
-
-		/// <summary>A callback property takes a callback the input can call with its arguments, as AHK's ValidateFunctor
-		/// checks, and "" or unset clears it; a refused value leaves the property as it was.</summary>
-		[Test, Category("InputHook")]
-		public void CallbackPropertiesValidateAndClear()
-		{
-			var io = (InputHook)new InputHook("");
-			var onChar = new KeysharpFunc((Func<object, object, object>)((_, ch) => 0L));
-			io.OnChar = onChar;
-			Assert.AreSame(onChar, io.OnChar);
-
-			Assert.IsInstanceOf<ValueError>(Assert.Throws<KeysharpException>(() => io.OnEnd = onChar).UserError, "OnEnd is called with one argument.");
-			Assert.IsInstanceOf<TypeError>(Assert.Throws<KeysharpException>(() => io.OnKeyDown = "not a function").UserError);
-			Assert.IsNotInstanceOf<KeysharpFunc>(io.OnEnd);
-			Assert.IsInstanceOf<TypeError>(Assert.Throws<KeysharpException>(() => io.OnChar = "not a function").UserError);
-			Assert.IsInstanceOf<MethodError>(Assert.Throws<KeysharpException>(() => io.OnChar = new KeysharpObject()).UserError);
-			Assert.AreSame(onChar, io.OnChar, "A refused value leaves the callback in place.");
-
-			io.OnChar = null;
-			Assert.IsNotInstanceOf<KeysharpFunc>(io.OnChar, "Unset clears a callback, as in AHK.");
-		}
-
-		/// <summary>The documented argument-less <c>ih.Wait()</c> used to raise a missing-argument error.</summary>
-		[Test, Category("InputHook")]
-		public void WaitTakesNoArgument()
-		{
-			var io = (InputHook)new InputHook("");
-			Assert.AreEqual("Stopped", io.Wait(), "Waiting on a hook that is not running returns at once with its reason.");
 		}
 
 		/// <summary>

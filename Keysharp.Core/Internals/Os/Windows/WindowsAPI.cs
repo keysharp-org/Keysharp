@@ -744,16 +744,10 @@ namespace Keysharp.Internals.Os.Windows
 		[return: MarshalAs(UnmanagedType.Bool)]
 		internal static partial bool DestroyWindow(nint hwnd);
 
-		[DllImport(kernel32, CharSet = CharSet.Unicode, SetLastError = true)]
-		internal static extern bool DeviceIoControl(
-			nint hDevice,
-			uint dwIoControlCode,
-			ref long InBuffer,
-			int nInBufferSize,
-			ref long OutBuffer,
-			int nOutBufferSize,
-			ref int pBytesReturned,
-			[In] ref NativeOverlapped lpOverlapped);
+		[LibraryImport(kernel32, EntryPoint = "DeviceIoControl", SetLastError = true)]
+		[return: MarshalAs(UnmanagedType.Bool)]
+		internal static unsafe partial bool DeviceIoControl(nint hDevice, uint ioControlCode, void* inBuffer, uint inBufferSize,
+			void* outBuffer, uint outBufferSize, out uint bytesReturned, nint overlapped);
 
 		[LibraryImport(user32, EntryPoint = "DestroyIcon")]
 		[return: MarshalAs(UnmanagedType.Bool)]

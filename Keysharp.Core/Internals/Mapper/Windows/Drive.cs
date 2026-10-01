@@ -43,55 +43,37 @@ namespace Keysharp.Internals.Mapper.Windows
 		internal Drive(DriveInfo drv)
 			: base(drv) { }
 
-		internal override void Eject() => EjectRetract(WindowsAPI.IOCTL_STORAGE_EJECT_MEDIA, 0L, 0L);
+		internal override void Eject() => DeviceControl(WindowsAPI.IOCTL_STORAGE_EJECT_MEDIA, WindowsAPI.GENERICREAD | WindowsAPI.GENERICWRITE);
 
-		internal override void Lock() => EjectRetract(WindowsAPI.IOCTL_STORAGE_EJECTION_CONTROL, 1L, 0L);
+		internal override void Lock() => DeviceControl(WindowsAPI.IOCTL_STORAGE_MEDIA_REMOVAL, WindowsAPI.GENERICREAD, preventRemoval: true);
 
-		internal override void Retract() => EjectRetract(WindowsAPI.IOCTL_STORAGE_LOAD_MEDIA, 0L, 0L);
+		internal override void Retract() => DeviceControl(WindowsAPI.IOCTL_STORAGE_LOAD_MEDIA, WindowsAPI.GENERICREAD | WindowsAPI.GENERICWRITE);
 
 		internal override void SetLabel(string label) => drive.VolumeLabel = label;
 
-		internal override void UnLock() => EjectRetract(WindowsAPI.IOCTL_STORAGE_EJECTION_CONTROL, 0L, 0L);
+		internal override void UnLock() => DeviceControl(WindowsAPI.IOCTL_STORAGE_MEDIA_REMOVAL, WindowsAPI.GENERICREAD, preventRemoval: false);
 
-		private void EjectRetract(uint control, long l, long lo)
+		// As in AutoHotkey: the volume is opened shared, since a drive in use can still be ejected or locked, and
+		// the media-removal request takes a one-byte PREVENT_MEDIA_REMOVAL.
+		private unsafe void DeviceControl(uint control, uint access, bool? preventRemoval = null)
 		{
-			nint fileHandle = 0;
-			Exception exception = null;
+			var handle = WindowsAPI.CreateFile(CreateDeviceIOPath, access, WindowsAPI.FILE_SHARE_READ | WindowsAPI.FILE_SHARE_WRITE,
+											   0, WindowsAPI.OPENEXISTING, 0, 0);
 
-			try
+			if (handle == WindowsAPI.INVALID_HANDLE)
 			{
-				//Create an handle to the drive.
-				fileHandle = WindowsAPI.CreateFile(CreateDeviceIOPath,
-												   WindowsAPI.GENERICREAD, 0, 0,
-												   WindowsAPI.OPENEXISTING, 0, 0);
-
-				if ((int)fileHandle != WindowsAPI.INVALID_HANDLE)
-				{
-					//Eject the disk.
-					var returnedBytes = 0;
-					var ovl = new NativeOverlapped();
-					_ = WindowsAPI.DeviceIoControl(fileHandle, control,
-												   ref l, 0,
-												   ref lo, 0,
-												   ref returnedBytes,
-												   ref ovl);
-				}
-			}
-			catch (Exception ex)
-			{
-				exception = ex;
-			}
-			finally
-			{
-				//Close Drive Handle.
-				_ = WindowsAPI.CloseHandle(fileHandle);
-				fileHandle = 0;
+				_ = Errors.OSErrorOccurred(Marshal.GetLastWin32Error());
+				return;
 			}
 
-			if (exception != null)
-			{
-				_ = Errors.OSErrorOccurred(exception, "Error ejecting, retracting, locking or unlocking the drive.");
-			}
+			var prevent = (byte)(preventRemoval == true ? 1 : 0);
+			var ok = WindowsAPI.DeviceIoControl(handle, control, preventRemoval.HasValue ? &prevent : null, preventRemoval.HasValue ? 1u : 0u,
+												null, 0, out _, 0);
+			var error = Marshal.GetLastWin32Error();
+			_ = WindowsAPI.CloseHandle(handle);
+
+			if (!ok)
+				_ = Errors.OSErrorOccurred(error);
 		}
 	}
 }

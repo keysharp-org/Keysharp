@@ -208,7 +208,10 @@ namespace Keysharp.Builtins
 
 			set
 			{
-				input.timeout = (int)(value.ParseDouble() * 1000);
+				if (!value.CoerceDouble(out var seconds))
+					return;
+
+				input.timeout = (int)(seconds * 1000);
 
 				if (input.InProgress() && input.timeout > 0)
 					input.SetTimeoutTimer();
@@ -456,14 +459,12 @@ namespace Keysharp.Builtins
 
 		public object Wait(object maxTime = null)
 		{
-			if (!maxTime.CoerceDouble(out var ms, double.MaxValue))
+			if (!maxTime.CoerceDouble(out var seconds, double.MaxValue))
 				return DefaultObject;
 
-			ms *= 1000.0;
 			var tickStart = DateTime.UtcNow;
-
-			while (input.InProgress() && (DateTime.UtcNow - tickStart).TotalMilliseconds < ms)
-				_ = Flow.Sleep(20);
+			// Checked on every pump, as AutoHotkey's MsgSleep loop does, rather than after a fixed sleep.
+			Keysharp.Internals.Flow.WaitWithMessagePump(() => input.InProgress() && (DateTime.UtcNow - tickStart).TotalSeconds < seconds);
 
 			// AHK's InputHook.Wait returns the EndReason (the documented return value).
 			string str = null;

@@ -511,7 +511,10 @@ namespace Keysharp.Builtins
 				}
 			}
 
-			if (!string.IsNullOrEmpty(relative) && relative != "R")
+			// As in AutoHotkey, only the first letter counts, so "R", "Rel" and "Relative" are the same.
+			var moveOffset = relative.Length > 0 && char.ToUpperInvariant(relative[0]) == 'R';
+
+			if (relative.Length > 0 && !moveOffset)
 			{
 				_ = Errors.ValueErrorOccurred($"Invalid Relative \"{relative}\". Expected R or an empty string.");
 				return;
@@ -527,7 +530,7 @@ namespace Keysharp.Builtins
 											  , repeatCount
 											  , eventType
 											  , speed
-											  , relative.Length > 0 && char.ToUpper(relative[0]) == 'R');
+											  , moveOffset);
 		}
 	}
 

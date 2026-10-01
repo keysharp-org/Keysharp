@@ -44,6 +44,16 @@ for AnyMode in ["P", "", "unknown", 0, 1]
 Throws(() => GetKeyState("NotAKey"), A_LineNumber, ValueError)
 Throws(() => GetKeyState("NotAKey", 1), A_LineNumber, ValueError)
 
+; A controller which is not attached reads blank, and a control is named whole, as in AutoHotkey.
+AssertEq(GetKeyState("16JoyName"), "", A_LineNumber)
+AssertEq(GetKeyState("16JoyX"), "", A_LineNumber)
+Throws(() => GetKeyState("JoyXtra"), A_LineNumber, ValueError)
+
+; KeyWait's T reads the number it starts with, 0 when there is none, and rejects a negative one.
+AssertEq(KeyWait("F24", "D L T"), 0, A_LineNumber)
+AssertEq(KeyWait("F24", "L T0.01"), 1, A_LineNumber)
+Throws(() => KeyWait("F24", "D L T-1"), A_LineNumber, ValueError)
+
 #if !LINUX
 ThrowsMessage(() => GetKeyState("LShift", 1), "Reading one device's key state is supported only on Linux", A_LineNumber)
 #endif

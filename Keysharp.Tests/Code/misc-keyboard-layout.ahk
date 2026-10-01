@@ -25,6 +25,10 @@ AssertEq(esc.VK, GetKeyVK("Esc"), A_LineNumber)
 
 AssertEq(esc.SC, GetKeySC("Esc"), A_LineNumber)
 
+; A key's name is the first one listed for it, as in AutoHotkey, not a later alias such as Click or Spacebar.
+for code, name in Map("vk01", "LButton", "vk08", "Backspace", "vk11", "Control", "vk1B", "Escape", "vk20", "Space", "vk5D", "AppsKey", "vkA2", "LControl")
+	AssertEq(GetKeyName(code), name, A_LineNumber)
+
 ; A letter only resolves on a layout which can type it.
 if GetKeyVK("a")
 {

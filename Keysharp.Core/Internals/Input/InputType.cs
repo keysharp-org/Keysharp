@@ -177,7 +177,7 @@ namespace Keysharp.Internals.Input
 
 			for (var i = 0; i < end; ++i)
 			{
-				if (endChars.Contains(ch[i], caseSensitive ? StringComparison.CurrentCulture : StringComparison.OrdinalIgnoreCase))
+				if (endChars.Contains(ch[i], caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase))
 				{
 					EndByChar(ch[i]);
 					return;
@@ -201,7 +201,7 @@ namespace Keysharp.Internals.Input
 				{
 					for (var i = 0; i < match.Count; ++i)
 					{
-						if (buffer.Contains(match[i], StringComparison.CurrentCulture))
+						if (buffer.Contains(match[i], StringComparison.Ordinal))
 						{
 							EndByMatch(i);
 							return;
@@ -226,7 +226,7 @@ namespace Keysharp.Internals.Input
 				{
 					for (var i = 0; i < match.Count; ++i)
 					{
-						if (string.Compare(buffer, match[i], StringComparison.CurrentCulture) == 0)
+						if (string.Equals(buffer, match[i], StringComparison.Ordinal))
 						{
 							EndByMatch(i);
 							return;
@@ -332,7 +332,7 @@ namespace Keysharp.Internals.Input
 							var active_window_keybd_layout = Platform.Keys.GetKeyboardLayout();
 							var count = ToUnicode(endingVK, KeyCodes.MapVkToSc(endingVK), state // Nothing is done about ToAsciiEx's dead key side-effects here because it seems to rare to be worth it (assuming its even a problem).
 										, ch, script.menuIsVisible != MenuType.None ? 1u : 0u, active_window_keybd_layout); // v1.0.44.03: Changed to call ToAsciiEx() so that active window's layout can be specified (see hook.cpp for details).
-							keyName = keyName.Substring(0, count);
+							keyName = count > 0 ? new string(ch, 0, count) : ""; // A dead key gives a negative count.
 						}
 						else
 						{
@@ -639,6 +639,13 @@ namespace Keysharp.Internals.Input
 						var nextkey = sub.Slice(0, endPos).ToString();
 						var keySource = KeySource.None;
 						_ = ht.TextToVKandSC(nextkey, ref vk, ref sc, ref keySource, ref modifiersLR, keybdLayout, allowVkScPair: false);
+
+						// A code beyond the key tables names no key, so it is ignored like an unknown key name.
+						if (vk > HookThread.VK_MAX || sc > HookThread.SC_MAX)
+						{
+							vk = sc = 0;
+							keySource = KeySource.None;
+						}
 
 						if (vk != 0)
 						{

@@ -59,27 +59,27 @@ namespace Keysharp.Internals.Input.Joystick
 			if (allowOnlyButtons)
 				return JoyControls.Invalid;
 
-			if (rest.StartsWith("JoyX", StringComparison.OrdinalIgnoreCase)) return JoyControls.Xpos;
+			if (rest.Equals("JoyX", StringComparison.OrdinalIgnoreCase)) return JoyControls.Xpos;
 
-			if (rest.StartsWith("JoyY", StringComparison.OrdinalIgnoreCase)) return JoyControls.Ypos;
+			if (rest.Equals("JoyY", StringComparison.OrdinalIgnoreCase)) return JoyControls.Ypos;
 
-			if (rest.StartsWith("JoyZ", StringComparison.OrdinalIgnoreCase)) return JoyControls.Zpos;
+			if (rest.Equals("JoyZ", StringComparison.OrdinalIgnoreCase)) return JoyControls.Zpos;
 
-			if (rest.StartsWith("JoyR", StringComparison.OrdinalIgnoreCase)) return JoyControls.Rpos;
+			if (rest.Equals("JoyR", StringComparison.OrdinalIgnoreCase)) return JoyControls.Rpos;
 
-			if (rest.StartsWith("JoyU", StringComparison.OrdinalIgnoreCase)) return JoyControls.Upos;
+			if (rest.Equals("JoyU", StringComparison.OrdinalIgnoreCase)) return JoyControls.Upos;
 
-			if (rest.StartsWith("JoyV", StringComparison.OrdinalIgnoreCase)) return JoyControls.Vpos;
+			if (rest.Equals("JoyV", StringComparison.OrdinalIgnoreCase)) return JoyControls.Vpos;
 
-			if (rest.StartsWith("JoyPOV", StringComparison.OrdinalIgnoreCase)) return JoyControls.Pov;
+			if (rest.Equals("JoyPOV", StringComparison.OrdinalIgnoreCase)) return JoyControls.Pov;
 
-			if (rest.StartsWith("JoyName", StringComparison.OrdinalIgnoreCase)) return JoyControls.Name;
+			if (rest.Equals("JoyName", StringComparison.OrdinalIgnoreCase)) return JoyControls.Name;
 
-			if (rest.StartsWith("JoyButtons", StringComparison.OrdinalIgnoreCase)) return JoyControls.Buttons;
+			if (rest.Equals("JoyButtons", StringComparison.OrdinalIgnoreCase)) return JoyControls.Buttons;
 
-			if (rest.StartsWith("JoyAxes", StringComparison.OrdinalIgnoreCase)) return JoyControls.Axes;
+			if (rest.Equals("JoyAxes", StringComparison.OrdinalIgnoreCase)) return JoyControls.Axes;
 
-			if (rest.StartsWith("JoyInfo", StringComparison.OrdinalIgnoreCase)) return JoyControls.Info;
+			if (rest.Equals("JoyInfo", StringComparison.OrdinalIgnoreCase)) return JoyControls.Info;
 
 			return JoyControls.Invalid;
 		}
@@ -157,7 +157,7 @@ namespace Keysharp.Internals.Input.Joystick
 
 			// Set default in case of early return.
 			if (joy == JoyControls.Invalid) // Currently never called this way.
-				return false; // And leave aToken set to blank.
+				return "";
 
 			var joyIsButton = IsJoystickButton(joy);
 			var jc = new JOYCAPS();
@@ -177,7 +177,7 @@ namespace Keysharp.Internals.Input.Joystick
 				jie.dwFlags = WindowsAPI.JOY_RETURNALL;
 
 				if (WindowsAPI.joyGetPosEx((int)joystickID, ref jie) != WindowsAPI.JOYERR_NOERROR)
-					return false; // And leave aToken set to blank.
+					return "";
 
 				if (joyIsButton)
 					return ((jie.dwButtons >> ((int)joy - (int)JoyControls.Button1)) & 0x01) != 0;
@@ -223,7 +223,7 @@ namespace Keysharp.Internals.Input.Joystick
 				// No break since above always returns.
 
 				case JoyControls.Name:
-					return jc.szPname;
+					return jc.szPname ?? "";
 
 				case JoyControls.Buttons:
 					return (long)jc.wNumButtons; // wMaxButtons is the *driver's* max supported buttons.
@@ -262,13 +262,10 @@ namespace Keysharp.Internals.Input.Joystick
 #elif LINUX
 			return LinuxJoystick.ScriptGetJoyState(joy, joystickID);
 #else
-			// No joystick backend on this platform. Report the control as unavailable rather than throwing: this is
-			// reachable from ordinary script code (GetKeyState("Joy1"), KeyWait), and false/blank is already the
-			// documented contract for "couldn't determine the position/state" — the same answer the Linux backend
-			// gives when the requested joystick isn't connected. Throwing here surfaced a raw .NET exception type
-			// that isn't part of the script error model and couldn't be handled portably.
+			// No joystick backend on this platform, so the control reports as unavailable: blank, as for a joystick
+			// which is not connected.
 			LogUnsupportedOnce();
-			return false;
+			return "";
 #endif
 		}
 

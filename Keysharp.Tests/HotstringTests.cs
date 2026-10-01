@@ -973,36 +973,6 @@ namespace Keysharp.Tests
 			}
 		}
 
-		[Test, Category("Hotstring"), NonParallelizable]
-		public void InputHookOptions()
-		{
-			var ih = new InputHook("B C H I10 M L1 T2 V * E");
-			Assert.AreEqual(ih.BackspaceIsUndo, false);
-			Assert.AreEqual(ih.CaseSensitive, true);
-			Assert.AreEqual(ih.BeforeHotkeys, true);
-			Assert.AreEqual(ih.MinSendLevel, 10u);
-			Assert.AreEqual(ih.TranscribeModifiedKeys, true);
-			Assert.AreEqual(ih.BufferLengthMax, 1);
-			Assert.AreEqual(ih.Timeout, 2);
-			Assert.AreEqual(ih.VisibleText, true);
-			Assert.AreEqual(ih.VisibleNonText, true);
-			Assert.AreEqual(ih.FindAnywhere, true);
-			Assert.AreEqual(ih.EndCharMode, true);
-			//
-			ih = new InputHook("BCHI10ML123T2V*E");
-			Assert.AreEqual(ih.BackspaceIsUndo, false);
-			Assert.AreEqual(ih.CaseSensitive, true);
-			Assert.AreEqual(ih.BeforeHotkeys, true);
-			Assert.AreEqual(ih.MinSendLevel, 10u);
-			Assert.AreEqual(ih.TranscribeModifiedKeys, true);
-			Assert.AreEqual(ih.BufferLengthMax, 123);
-			Assert.AreEqual(ih.Timeout, 2);
-			Assert.AreEqual(ih.VisibleText, true);
-			Assert.AreEqual(ih.VisibleNonText, true);
-			Assert.AreEqual(ih.FindAnywhere, true);
-			Assert.AreEqual(ih.EndCharMode, true);
-		}
-
 		[Test, Category("Hotstring"), Category("Internal"), NonParallelizable]
 		public void InputHookScanCode()
 		{

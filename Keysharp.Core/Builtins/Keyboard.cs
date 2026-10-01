@@ -681,22 +681,12 @@ break_twice:;
 						break;
 
 					case 'T':
-						// Although ATOF() supports hex, it's been documented in the help file that hex should
-						// not be used (see comment above) so if someone does it anyway, some option letters
-						// might be misinterpreted:
 						waitIndefinitely = false;
-						var numstr = "";
-						var cc = CultureInfo.CurrentCulture;
+						sleepDuration = (int)(Strings.Atof(opts.AsSpan(i + 1)) * 1000);
 
-						for (var numi = i + 1; numi < opts.Length; numi++)
-						{
-							if (char.IsDigit(opts[numi]) || opts[numi] == cc.NumberFormat.NumberDecimalSeparator[0])
-								numstr += opts[numi];
-							else
-								break;
-						}
+						if (sleepDuration < 0)
+							return Errors.InvalidParameterErrorOccurred(2, "KeyWait", options);
 
-						sleepDuration = (int)(numstr.ParseDouble() * 1000);
 						break;
 				}
 			}
@@ -711,7 +701,8 @@ break_twice:;
 				}
 				else // Waiting for joystick button
 				{
-					if (Joystick.ScriptGetJoyState(joy, joystickId.Value) is bool b && b == waitForKeyDown)
+					// A joystick which is not connected gives blank, which reads as up.
+					if ((Joystick.ScriptGetJoyState(joy, joystickId.Value) is true) == waitForKeyDown)
 						return true;
 				}
 
@@ -1477,7 +1468,8 @@ break_twice:;
 			var source = KeySource.None;
 			uint? modifiersLR = 0u;
 
-			if (!ht.TextToVKandSC(keyname, ref vk, ref sc, ref source, ref modifiersLR, KeybdLayoutRef.FromHandle(keybdLayout)))
+			// Without a layout named, the focused window's, which GetKeyboardLayout reports.
+			if (!ht.TextToVKandSC(keyname, ref vk, ref sc, ref source, ref modifiersLR, KeybdLayoutRef.FromHandle(keybdLayout) ?? new KeybdLayoutRef()))
 				return 0L;
 
 			if (vk == 0)

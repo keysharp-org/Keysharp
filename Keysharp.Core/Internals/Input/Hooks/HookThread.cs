@@ -472,16 +472,9 @@ namespace Keysharp.Internals.Input.Hooks
 				};
 				keyToVkAlt = keyToVk.GetAlternateLookup<ReadOnlySpan<char>>();
 
-				var foundEsc = false;
+				// The first name listed for a key is its canonical name, as in AutoHotkey's VKtoKeyName.
 				foreach (var kv in keyToVk)
-				{
-					if (foundEsc)
-						vkToKey[kv.Value] = kv.Key;
-					else if (kv.Key == "Esc")
-						foundEsc = true; // prefer Escape over Esc
-					else
-						vkToKey[kv.Value] = kv.Key;
-				}
+					_ = vkToKey.TryAdd(kv.Value, kv.Key);
 			}
 		}
 
@@ -1672,7 +1665,7 @@ namespace Keysharp.Internals.Input.Hooks
 			return true; // Visible.
 		}
 
-		internal abstract uint CharToVKAndModifiers(char ch, ref uint? modifiersLR, KeybdLayoutRef layout, bool enableAZFallback = false);
+		internal abstract uint CharToVKAndModifiers(char ch, ref uint? modifiersLR, KeybdLayoutRef layout, bool enableAZFallback = true);
 
 		internal static uint ConvertMouseButton(string buf, bool allowWheel = true) => ConvertMouseButton(buf.AsSpan(), allowWheel);
 

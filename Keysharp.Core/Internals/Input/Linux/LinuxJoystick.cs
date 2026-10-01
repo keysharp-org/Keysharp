@@ -182,7 +182,7 @@ namespace Keysharp.Internals.Input.Linux
 		/// <summary>
 		/// Returns the requested joystick state, mirroring the Windows ScriptGetJoyState contract:
 		/// a bool for buttons, a double percentage for axes, a long for POV, and strings for the
-		/// informational queries. Returns false / blank when the joystick or control is unavailable.
+		/// informational queries. Returns blank when the joystick is unavailable, and 0 for its counts.
 		/// </summary>
 		internal static object ScriptGetJoyState(JoyControls joy, uint joystickID)
 		{
@@ -194,17 +194,17 @@ namespace Keysharp.Internals.Input.Linux
 					return TryGetDevice(joystickID, out var named, out _) ? named.Name : "";
 
 				case JoyControls.Buttons:
-					return TryGetDevice(joystickID, out var counted, out _) ? (long)counted.ButtonCount : false;
+					return TryGetDevice(joystickID, out var counted, out _) ? (long)counted.ButtonCount : 0L;
 
 				case JoyControls.Axes:
-					return TryGetDevice(joystickID, out var measured, out _) ? (long)CountAxes(measured) : false;
+					return TryGetDevice(joystickID, out var measured, out _) ? (long)CountAxes(measured) : 0L;
 
 				case JoyControls.Info:
 					return TryGetDevice(joystickID, out var described, out _) ? GetInfo(described) : "";
 			}
 
 			if (!TryGetState(joystickID, out var device, out var state))
-				return false;
+				return "";
 
 			if (JoystickCore.IsJoystickButton(joy))
 			{
@@ -232,7 +232,7 @@ namespace Keysharp.Internals.Input.Linux
 					return GetPov(device, state);
 			}
 
-			return false;
+			return "";
 		}
 
 		private static long GetPov(in KeysharpInputClient.GamepadInfo device,

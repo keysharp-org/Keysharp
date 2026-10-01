@@ -441,7 +441,7 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 			}
 		}
 
-		internal override uint CharToVKAndModifiers(char ch, ref uint? modifiersLR, KeybdLayoutRef layout, bool enableAZFallback = false)
+		internal override uint CharToVKAndModifiers(char ch, ref uint? modifiersLR, KeybdLayoutRef layout, bool enableAZFallback = true)
 		// If non-NULL, pModifiersLR contains the initial set of modifiers provided by the caller, to which
 		// we add any extra modifiers required to realize aChar.
 		{
@@ -451,11 +451,11 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 				return VK_RETURN;
 
 			// Otherwise:
-			var modPlusVk = VkKeyScanEx(ch, layout?.Value ?? Platform.Keys.GetKeyboardLayout()); // Forces the lazy layout resolution here (the single point where the HKL is dereferenced on Windows). v1.0.44.03: Benchmark shows that VkKeyScanEx() is the same speed as VkKeyScan() when the layout has been pre-fetched.
+			var modPlusVk = VkKeyScanEx(ch, layout?.Value ?? Platform.Keys.GetKeyboardLayout(script.NativeMainThreadID)); // Forces the lazy layout resolution here (the single point where the HKL is dereferenced on Windows). v1.0.44.03: Benchmark shows that VkKeyScanEx() is the same speed as VkKeyScan() when the layout has been pre-fetched.
 			var vk = (uint)(modPlusVk & 0xFF);
 			var keyscanModifiers = (char)((modPlusVk >> 8) & 0xFF);
 
-			if (keyscanModifiers == -1 && vk == 0xFF) // No translation could be made.
+			if (modPlusVk == -1) // No translation could be made.
 			{
 				if (!(enableAZFallback && Keysharp.Builtins.Strings.Cisalpha(ch)))
 					return 0;

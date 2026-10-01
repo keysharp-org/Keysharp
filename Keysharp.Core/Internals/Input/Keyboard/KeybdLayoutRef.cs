@@ -7,8 +7,8 @@ namespace Keysharp.Internals.Input.Keyboard
 	/// not even the focused-control-thread lookup.
 	///
 	/// Nothing is resolved until <see cref="Value"/> is first read; the result is then cached for the
-	/// rest of the send. A <c>null</c> reference is the "resolve live" sentinel, replacing the old
-	/// <c>nint 0</c>.
+	/// rest of the send. A <c>null</c> reference stands for the script thread's layout, read at the time of use,
+	/// which AutoHotkey uses for key names outside Send and InputHook, such as GetKeyState's.
 	///
 	/// <see cref="Value"/> is the platform's layout token, resolved lazily and meaning different things
 	/// per platform: the Windows HKL; the active xkb layout <em>group</em> on Linux (the only per-send
@@ -54,8 +54,7 @@ namespace Keysharp.Internals.Input.Keyboard
 		}
 
 		/// <summary>
-		/// Wraps an already-resolved layout handle. A handle of 0 returns <c>null</c> so that
-		/// downstream code falls back to live resolution (matching the old <c>keybdLayout == 0</c> path).
+		/// Wraps an already-resolved layout handle. A handle of 0 returns <c>null</c>, the script thread's layout.
 		/// </summary>
 		internal static KeybdLayoutRef FromHandle(nint h) => h == 0 ? null : new KeybdLayoutRef(h);
 

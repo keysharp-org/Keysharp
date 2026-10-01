@@ -1869,9 +1869,9 @@ namespace Keysharp.Builtins
 		/// </summary>
 		internal static int StrCmp(string left, string right, bool caseSensitive) => string.Compare(left, right, caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
 
-		// As AHK's ATOF, by which Sort's N option compares: the number text starts with after any whitespace, read as
-		// hexadecimal after 0x, or 0 when it starts with none.
-		private static double Atof(ReadOnlySpan<char> s)
+		// As AHK's ATOF, by which Sort's N option and numeric options such as KeyWait's T read a number: the number
+		// text starts with after any whitespace, read as hexadecimal after 0x, or 0 when it starts with none.
+		internal static double Atof(ReadOnlySpan<char> s)
 		{
 			s = s.TrimStart(" \t\n\v\f\r");
 			var i = s.Length != 0 && s[0] is '+' or '-' ? 1 : 0;

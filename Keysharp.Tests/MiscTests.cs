@@ -46,6 +46,9 @@ namespace Keysharp.Tests
 		public void GetKeyStateDeviceArguments() => Assert.IsTrue(TestScript("misc-get-key-state-device", true));
 
 		[Test, Category("Misc"), NonParallelizable]
+		public void InputHookOptions() => Assert.IsTrue(TestScript("misc-input-hook", true));
+
+		[Test, Category("Misc"), NonParallelizable]
 		public void MiscTimer()
 		{
 			Assert.IsTrue(TestScript("misc-timer", false));

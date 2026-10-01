@@ -764,7 +764,7 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 			return true;//Visible.
 		}
 
-		internal override uint CharToVKAndModifiers(char ch, ref uint? modifiersLr, KeybdLayoutRef layout, bool enableAZFallback = false)
+		internal override uint CharToVKAndModifiers(char ch, ref uint? modifiersLr, KeybdLayoutRef layout, bool enableAZFallback = true)
 		{
 			// Delegate to the Unix char mapper used by the sender; add Shift/AltGr if needed. The layout
 			// group is snapshotted once per send in the carrier, so every char reuses it (no per-char query).

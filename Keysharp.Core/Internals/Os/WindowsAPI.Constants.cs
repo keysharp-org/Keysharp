@@ -4,6 +4,9 @@ namespace Keysharp.Internals.Os.Windows
 	{
 		// File / Device IO
 		internal const uint GENERICREAD = 0x80000000;
+		internal const uint GENERICWRITE = 0x40000000;
+		internal const uint FILE_SHARE_READ = 0x1;
+		internal const uint FILE_SHARE_WRITE = 0x2;
 
 		internal const int GW_HWNDFIRST = 0;
 		internal const int GW_HWNDLAST = 1;
@@ -44,7 +47,7 @@ namespace Keysharp.Internals.Os.Windows
 
 		internal const uint IOCTL_STORAGE_EJECT_MEDIA = 2967560;
 
-		internal const uint IOCTL_STORAGE_EJECTION_CONTROL = 0x2d0940;
+		internal const uint IOCTL_STORAGE_MEDIA_REMOVAL = 0x2d4804;
 
 		internal const uint IOCTL_STORAGE_LOAD_MEDIA = 0x2d480c;
 
