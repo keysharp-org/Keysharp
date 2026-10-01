@@ -5671,7 +5671,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Formats a datetime string according to the parameters. All C# formatting options are supported. Supports all V2 functionality except for the Dn and Tn options. If you want to specify a specific format, do it in the format parameter.",
+                     "notes":  "Formats a datetime string according to the parameters. Supports all V2 functionality except for the Dn and Tn options. If you want to specify a specific format, do it in the format parameter.",
                      "tested-by":  "string-formattime.ahk"
                  },
                  {
@@ -7765,8 +7765,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Trims characters from the end of a string.",
-                     "tested-by":  "assign-multiline.ahk"
+                     "notes":  "Trims characters from the beginning of a string.",
+                     "tested-by":  "string-ltrim.ahk"
                  },
                  {
                      "category":  "Collections",
@@ -9075,13 +9075,13 @@
                  {
                      "category":  "Core Language",
                      "feature":  "Ord()",
-                     "syntax":  "x := Ord(\"t\") x:= Ord(\"te\", 2)",
+                     "syntax":  "x := Ord(\"t\")",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns the numeric two byte unicode value for the first character in a string. This differs from V2 in that it also takes an optional second parameter which specified the 1-based index in the string to return the numeric value for, rather than only doing it for the first character.",
-                     "tested-by":  "assign-multiline.ahk"
+                     "notes":  "Returns the code point of the first character in a string: a surrogate pair is decoded, and a lone surrogate is returned as it is.",
+                     "tested-by":  "string-ord.ahk"
                  },
                  {
                      "category":  "Errors",
@@ -9842,8 +9842,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Computes a number rounded to either the nearest integer, a specified number of decimal places, or a specified number of digits.",
-                     "tested-by":  "Gui/guitest.ks"
+                     "notes":  "Computes a number rounded to either the nearest integer, a specified number of decimal places, or a specified number of digits. A positive number of places returns a string with exactly that many decimals; otherwise the result is an integer.",
+                     "tested-by":  "math-round.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -9853,8 +9853,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Trims characters from the beginning of a string.",
-                     "tested-by":  "assign-multiline.ahk"
+                     "notes":  "Trims characters from the end of a string.",
+                     "tested-by":  "string-rtrim.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -10212,7 +10212,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Arranges a variable\u0027s contents in alphabetical, numerical, or random order (optionally removing duplicates). The back slash option also supports specifying a forward slash / so it can be used for paths on non-Windows systems.",
-                     "tested-by":  "class-special-funcs.ahk"
+                     "tested-by":  "string-sort.ahk"
                  },
                  {
                      "category":  "Sound",
@@ -10515,8 +10515,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Retrieves one or more characters from the specified position in a string.",
-                     "tested-by":  "ControlTests/EncodeHTML.ahk"
+                     "notes":  "Separates a string into an array of substrings using the specified delimiters, or into characters.",
+                     "tested-by":  "string-strsplit.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -10899,7 +10899,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Trims characters from the beginning and end of a string.",
-                     "tested-by":  "assign-multiline.ahk"
+                     "tested-by":  "string-trim.ahk"
                  },
                  {
                      "category":  "Core Language",

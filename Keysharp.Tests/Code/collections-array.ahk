@@ -333,6 +333,12 @@ sorted := [-5, -5, 0, 3, 99, 100]
 
 Assert(arr = sorted, A_LineNumber)
 
+; Equal elements keep their order, and an error in the function reaches the script.
+arr := ["b1", "a1", "b2", "a2"]
+arr.Sort((x, y) => StrCompare(SubStr(x, 1, 1), SubStr(y, 1, 1)))
+AssertEq(arr[1] arr[2] arr[3] arr[4], "a1a2b1b2", A_LineNumber)
+Throws(() => [2, 1].Sort((*) => Integer("x")), A_LineNumber, TypeError)
+
 ; Default is not a declared property: it exists only once a script defines one, by assignment or DefineProp,
 ; and from then on it is an ordinary own property. Verified against AutoHotkey v2.1-alpha.30.
 Assert(!Array.Prototype.HasOwnProp("Default"), A_LineNumber)

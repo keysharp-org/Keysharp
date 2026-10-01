@@ -24,7 +24,7 @@ AssertEq(y, "", A_LineNumber)
 x := "ALL CAPS"
 y := StrTitle(x)
 
-AssertEq(y, "ALL CAPS", A_LineNumber)
+AssertEq(y, "All Caps", A_LineNumber)
 	
 x := "all caps"
 y := StrTitle(x)

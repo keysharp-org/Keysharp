@@ -119,4 +119,7 @@ AssertEq(Format("{:s}", "abc"), "abc", A_LineNumber)
 
 AssertEq(Format("{1}", "abc"), "abc", A_LineNumber)
 
+; T title-cases as StrTitle does: only whitespace starts a word.
+AssertEq(Format("{:T}", "hello-world ALL"), "Hello-world All", A_LineNumber)
+
 FileAppend "pass", "*"

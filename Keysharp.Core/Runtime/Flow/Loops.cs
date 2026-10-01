@@ -289,15 +289,10 @@ namespace Keysharp.Runtime
 			//Caller must call Pop() after the loop exits.
 		}
 
-		// One allocation per field, the trim applying to the span. An empty OmitChars must not reach Trim, which would then
-		// remove white space.
+		// One allocation per field, the trim applying to the span.
 		private static string Field(string s, int start, int length, string omit)
 		{
-			var span = s.AsSpan(start, length);
-
-			if (omit.Length != 0)
-				span = span.Trim(omit);
-
+			var span = s.AsSpan(start, length).TrimAnyOf(omit);
 			return span.Length == s.Length ? s : span.ToString();
 		}
 

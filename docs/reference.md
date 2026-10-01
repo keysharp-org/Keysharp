@@ -743,7 +743,7 @@ Controlling another application needs **Automation** permission, granted per tar
 			arr2 := arr.Map(lam) ; [10, 40, 90]
 			```
 		+ `Remove(Value) => Boolean`: Removes the first occurrence of `Value` and returns `true` if one was found and removed, else `false`. Omitting `Value` removes the first element which has no value. A match is decided by `IndexOf`'s rule, which `Contains` uses too.
-		+ `Sort(Callback: (a, b) => Integer) => this`: Sorts the array in place. The callback should use the usual logic of returning -1 when `a < b`, 0 when `a == b` and 1 otherwise.
+		+ `Sort(Callback: (a, b) => Integer) => this`: Sorts the array in place. The callback returns a negative number when `a` belongs before `b`, 0 when they are equal and a positive number otherwise; only the sign counts, and equal elements keep their order, as `Sort`'s callback does.
 		+ `ToString() => String`: Returns the array as `[a, b, c]`, with strings quoted, a missing element as `unset` and an object element as the string its `ToString` method returns or, without one, its type name, and one whose `ToString` raises as `<ERROR>`, the error contained.
 	+ `Buffer`:
 		+ `__Item[]`: Indexer which can be used to read a byte at a 1-based offset.
@@ -1397,9 +1397,7 @@ Controlling another application needs **Automation** permission, granted per tar
 * Removed/reduced functions:
 	+ `Download()`: Supports only the `*0` option; any other numerical value raises a `ValueError`. `http`, `https` and `ftp` URLs are supported; a `gopher` URL raises. An HTTP status outside 2xx saves whatever the server sent, as in AutoHotkey. An FTP directory URL saves the server's own plain-text `LIST` output, where WinInet writes an HTML listing; a path that is neither a file nor a directory raises rather than leaving an empty file.
 	+ `ListLines()`: Non-functional because C# doesn't support it.
-	+ `FormatTime(YYYYMMDDHH24MISS?, Format?)`: The `R`, `Dn` or `Tn` options in `YYYYMMDDHH24MISS` are not supported, except for 0x80000000 to disallow user overrides.
-		+ Specify a particular format or order with `Format`.
-		+ [Here](https://docs.microsoft.com/en-us/dotnet/standard/base-types/custom-date-and-time-format-strings) is a list of the C# style `DateTime` formatters which are supported.
+	+ `FormatTime(YYYYMMDDHH24MISS?, Format?)`: The `Dn` and `Tn` options in `YYYYMMDDHH24MISS` are not supported, except for 0x80000000 to disallow user overrides. Specify a particular format or order with `Format`.
 	+ `ObjAddRef()` and `ObjPtrAddRef()` do not have an effect for non-COM objects. Instead, use the following:
 		+ `newref := theobj ; adds 1 to the reference count`
 		+ `newref := "" ; subtracts 1 from the reference count`

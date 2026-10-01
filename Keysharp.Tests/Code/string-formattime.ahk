@@ -136,6 +136,25 @@ AssertEq(FormatTime(x " L1033", "'Date:' yyyyMMMMdddd"), "Date: 2020JulySaturday
 
 AssertEq(FormatTime(x " L1033", "'Date:' yyyyMMMMdddd ''''"), "Date: 2020JulySaturday '", A_LineNumber)
 
-AssertEq(FormatTime(x " L1033", "'Date:' yyyyMMMMdddd `"''`""), "Date: 2020JulySaturday '", A_LineNumber)
+; As in AutoHotkey, '' outside quoted text is an empty quoted section, and every character which is not a date or time
+; specifier is itself, including those .NET would read as its own.
+AssertEq(FormatTime(x " L1033", "'Date:' yyyyMMMMdddd `"''`""), "Date: 2020JulySaturday `"`"", A_LineNumber)
+AssertEq(FormatTime(x " L1033", "Week of yyyy, hh:mm:ss tt zz f K %\"), "Week of 2020, 08:08:09 PM zz f K %\", A_LineNumber)
+AssertEq(FormatTime(x " L1033", "H 'o''clock'"), "20 o'clock", A_LineNumber)
+AssertEq(FormatTime(x " L1033", "d") "|" FormatTime(x " L1033", "y"), "4|20", A_LineNumber)
+AssertEq(FormatTime(x " L1033", "''") "|" FormatTime(x " L1033", "'") "|" FormatTime(x " L1033", " ''"), "|| ", A_LineNumber)
+AssertEq(FormatTime(x " L1033", "yyy|yyyyy|yyyyyy'x'"), "2020|2020|2020x", A_LineNumber)
+AssertEq(FormatTime(x " L1033", " `tTime") "|" FormatTime(x " L1033", " YDay") "|" FormatTime(x " L1033", "Time "), "8:08 PM|186|Ti8e ", A_LineNumber)
+
+; An empty quoted section separates the specifiers around it.
+AssertEq(FormatTime(x " L1033", "d''d|yyy''yy|dd''|''dd"), "44|202020|04|04", A_LineNumber)
+
+; Options without a timestamp, or after a tab, apply to the current time.
+AssertEq(FormatTime(" L1033", "yyyy"), FormatTime(, "yyyy"), A_LineNumber)
+AssertEq(FormatTime("20200704`tL1031", "MMMM"), "Juli", A_LineNumber)
+AssertEq(FormatTime("20200704 D Tx", "yyyy"), "2020", A_LineNumber)
+AssertEq(FormatTime("20200704 L99999", "yyyy") "|" FormatTime("L-1", "yyyy"), "|", A_LineNumber)
+AssertEq(FormatTime(x " L99999", "YDay") "|" FormatTime(x " L99999", "WDay") "|" FormatTime(x " L99999", "Time"), "186|7|", A_LineNumber)
+AssertEq(FormatTime("20200704 L1024", "MMMM") "|" FormatTime("20200704 L3072", "MMMM"), FormatTime("20200704", "MMMM") "|" FormatTime("20200704", "MMMM"), A_LineNumber)
 
 FileAppend "pass", "*"

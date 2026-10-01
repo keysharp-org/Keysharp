@@ -23,4 +23,8 @@ Assert(y = "`ttest", A_LineNumber)
 
 AssertEq(RTrim(" `ttest`t "), " `ttest", A_LineNumber)
 
+; An empty OmitChars trims nothing.
+AssertEq(RTrim("x ", ""), "x ", A_LineNumber)
+AssertEq(RTrim("--x-y--", "-"), "--x-y", A_LineNumber)
+
 FileAppend "pass", "*"

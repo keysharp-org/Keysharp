@@ -24,7 +24,11 @@ AssertEq(y, "", A_LineNumber)
 x := "ALL CAPS"
 y := StrTitle(x)
 
-AssertEq(y, "ALL CAPS", A_LineNumber)
+AssertEq(y, "All Caps", A_LineNumber)
+
+; Only whitespace starts a word.
+AssertEq(StrTitle("hello-world 3rd o'neil"), "Hello-world 3Rd O'neil", A_LineNumber)
+AssertEq(StrTitle("mIxEd`tcase`nnext"), "Mixed`tCase`nNext", A_LineNumber)
 	
 x := "all caps"
 y := StrTitle(x)

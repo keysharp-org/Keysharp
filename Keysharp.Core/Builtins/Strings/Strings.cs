@@ -55,7 +55,17 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="number">A Unicode value.</param>
 		/// <returns>The string corresponding to number. This is always a single Unicode character.</returns>
-		public static string Chr(object number) => number.CoerceInt(out var n) ? char.ConvertFromUtf32(n) : "";
+		public static string Chr(object number)
+		{
+			if (!number.CoerceInt(out var n))
+				return "";
+
+			if (n < 0 || n > 0x10FFFF)
+				return (string)Errors.InvalidParameterErrorOccurred(1, "Chr", number, "");
+
+			// A surrogate code unit is returned as it is, as in AHK, which ConvertFromUtf32 would refuse.
+			return n < 0x10000 ? ((char)n).ToString() : char.ConvertFromUtf32(n);
+		}
 
 		/// <summary>
 		/// Formats a string using a format string containing placeholders (e.g. "{1:05d}" or "{}")
@@ -246,7 +256,7 @@ namespace Keysharp.Builtins
 							break;
 
 						case 'T':
-							formattedArg = CultureInfo.CurrentCulture.TextInfo.ToTitleCase(formattedArg.ToLower());
+							formattedArg = StrTitle(formattedArg);
 							break;
 					}
 				}
@@ -338,50 +348,54 @@ namespace Keysharp.Builtins
 			if (!timestamp.CoerceString(out var s) || !format.CoerceString(out var f))
 				return "";
 
+			// As in AutoHotkey, options follow the timestamp after spaces or tabs, or stand alone when the first character
+			// is not a digit, and then the time is the current one.
 			DateTime time;
 			var output = string.Empty;
-			var splits = s.Split(' ');
+			var splits = s.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
 			var ci = CultureInfo.CurrentCulture;
+			var hasTimestamp = splits.Length > 0 && char.IsAsciiDigit(splits[0][0]);
+			var unknownLocale = false;
 
-			if (s?.Length == 0)
-			{
-				time = DateTime.Now;
-			}
+			if (splits.Contains("LSys", StringComparer.OrdinalIgnoreCase))
+				ci = new CultureInfo(ci.Name, false);
 			else
-			{
-				s = splits[0];
-				var haslsys = splits.Contains("LSys", StringComparer.OrdinalIgnoreCase);
-
-				if (haslsys)
-					ci = new CultureInfo(ci.LCID, false);
-
-				for (var i = 1; i < splits.Length; i++)
+				for (var i = hasTimestamp ? 1 : 0; i < splits.Length; i++)
 				{
-					if (!haslsys && splits[i].StartsWith("L", StringComparison.OrdinalIgnoreCase))
-					{
-						ci = new CultureInfo((int)splits[i].Substring(1).ParseLong().Value, false);
-					}
-					else if (splits[i].StartsWith("D", StringComparison.OrdinalIgnoreCase))
-					{
-						var di = splits[i].Substring(1).ParseLong().Value;
+					// An option whose number is missing or does not parse is read as 0, which changes nothing.
+					var n = splits[i].Substring(1).ParseLong() ?? 0;
 
-						if (di == 0x80000000)
-							if (!haslsys)
-								ci = new CultureInfo(ci.LCID, false);//No user overrides, if we haven't already done this above.
-					}
-					else if (splits[i].StartsWith("T", StringComparison.OrdinalIgnoreCase))
+					switch (char.ToUpperInvariant(splits[i][0]))
 					{
-						var ti = splits[i].Substring(1).ParseLong().Value;
+						// Windows' system default LCID is the locale LSys names, and 0x80000000 disallows user overrides.
+						case 'L' when n == 0x800L:
+						case 'D' or 'T' when n == 0x80000000:
+							ci = new CultureInfo(ci.Name, false);
+							break;
 
-						if (ti == 0x80000000)
-							if (!haslsys)
-								ci = new CultureInfo(ci.LCID, false);//No user overrides, if we haven't already done this above.
+						// Windows' user, custom and unspecified default LCIDs name the default locale, which .NET knows by no
+						// LCID. A locale .NET does not know gives an empty result, as one Windows does not know does in AHK.
+						case 'L' when n is not (0L or 0x400L or 0xC00L or 0x1000L):
+							try
+							{
+								ci = new CultureInfo((int)n, false);
+							}
+							catch (Exception e) when (e is CultureNotFoundException or ArgumentOutOfRangeException)
+							{
+								unknownLocale = true;
+							}
+
+							break;
 					}
 				}
 
+			if (!hasTimestamp)
+				time = DateTime.Now;
+			else
+			{
 				try
 				{
-					time = Conversions.ToDateTime(s, ci.Calendar);
+					time = Conversions.ToDateTime(splits[0], ci.Calendar);
 				}
 				catch
 				{
@@ -391,9 +405,8 @@ namespace Keysharp.Builtins
 
 			if (f != string.Empty)
 			{
-				var fl = f.ToLowerInvariant();
-
-				switch (fl)
+				// As in AutoHotkey, leading whitespace is ignored when matching a keyword and kept in a picture.
+				switch (f.TrimStart(' ', '\t').ToLowerInvariant())
 				{
 					case Keyword_Time:
 						f = "h:mm tt";
@@ -427,17 +440,14 @@ namespace Keysharp.Builtins
 						return Conversions.ToIsoYearWeek(time);
 
 					default:
-						if (f.Contains('\''))
-						{
-							f = f.Replace("'", "\"");
-							f = f.Replace("\"\"\"\"", "\\'");
-						}
+						f = ToCustomTimeFormat(f);
+
+						// A lone specifier would be read as one of .NET's standard formats.
+						if (f.Length == 1)
+							f = "%" + f;
 
 						break;
 				}
-
-				if (fl.Length == 1)
-					f = "%" + f;
 			}
 			else
 			{
@@ -446,6 +456,9 @@ namespace Keysharp.Builtins
 				else
 					f = "h:mm tt dddd, MMMM d, yyyy";
 			}
+
+			if (unknownLocale)
+				return "";
 
 			try
 			{
@@ -553,7 +566,7 @@ namespace Keysharp.Builtins
 		/// </param>
 		/// <returns>Returns the trimmed version of the specified string.</returns>
 		public static string LTrim(object @string, object omitChars = null) =>
-		@string.CoerceString(out var s) && omitChars.CoerceString(out var omit, " \t") ? s.TrimStart(omit.ToCharArray()) : "";
+		@string.CoerceString(out var s) && omitChars.CoerceString(out var omit, " \t") ? s.TrimAnyOf(omit, end: false) : "";
 
 		/// <summary>
 		/// Returns the ordinal value (numeric character code) of the first character in the specified string.
@@ -569,7 +582,8 @@ namespace Keysharp.Builtins
 			if (!@string.CoerceString(out var s))
 				return 0L;
 
-			return !string.IsNullOrEmpty(s) ? char.ConvertToUtf32(s, 0) : 0L;
+			// A lone surrogate, which splitting emoji text by code unit produces, is its own code unit, as in AHK.
+			return string.IsNullOrEmpty(s) ? 0L : char.IsSurrogatePair(s, 0) ? char.ConvertToUtf32(s[0], s[1]) : s[0];
 		}
 
 		/// <summary>
@@ -581,7 +595,7 @@ namespace Keysharp.Builtins
 		/// </param>
 		/// <returns>Returns the trimmed version of the specified string.</returns>
 		public static string RTrim(object @string, object omitChars = null) =>
-		@string.CoerceString(out var s) && omitChars.CoerceString(out var omit, " \t") ? s.TrimEnd(omit.ToCharArray()) : "";
+		@string.CoerceString(out var s) && omitChars.CoerceString(out var omit, " \t") ? s.TrimAnyOf(omit, start: false) : "";
 
 		/// <summary>
 		/// Arranges a variable's contents in alphabetical, numerical, or random order (optionally removing duplicates).
@@ -667,255 +681,257 @@ namespace Keysharp.Builtins
 		/// <returns>The sorted version of the specified string.</returns>
 		public static string Sort(object @string, object options = null, object callback = null)
 		{
-			object function = null;
-
 			if (!@string.CoerceString(out var input) || !options.CoerceString(out var opts))
 				return "";
 
-			var splits = opts.Split(' ');
+			var delimiter = '\n';
+			var comparison = StringComparison.OrdinalIgnoreCase;
+			var logical = false;
 			var numeric = false;
 			var random = false;
 			var reverse = false;
-			var slash = false;
-			var slashtype = Path.DirectorySeparatorChar;
-			var sortAt = 1;
-			var split = '\n';
 			var unique = false;
-			var withcase = false;
-			var withlocale = false;
-			var zopt = false;
+			var trailingBlank = false;
+			var pathSeparator = '\0';
+			var offset = 0;
 
+			// As AHK's BIF_Sort reads them.
 			for (var i = 0; i < opts.Length; i++)
 			{
-				var c = char.ToLower(opts[i]);
-
-				switch (c)
+				switch (char.ToUpperInvariant(opts[i]))
 				{
-					case ' ':
-						continue;
+					case 'C':
+						var rest = opts.AsSpan(i + 1);
+						logical = false;
 
-					case 'c':
-						if (i < opts.Length - 1)
+						if (rest.Length != 0 && char.ToUpperInvariant(rest[0]) == 'L')
 						{
-							if (char.ToLower(opts[i + 1]) == 'l')
-								withlocale = true;
-
-							i++;
+							if (rest[1..].StartsWith("ogical", StringComparison.OrdinalIgnoreCase))
+							{
+								logical = true;
+								i += 7;
+							}
+							else
+							{
+								comparison = StringComparison.CurrentCultureIgnoreCase;
+								i += rest[1..].StartsWith("ocale", StringComparison.OrdinalIgnoreCase) ? 6 : 1;
+							}
 						}
-
-						if (!withlocale)
-							withcase = true;
-
-						break;
-
-					case 'd':
-						if (i < opts.Length - 1)
+						else if (rest.StartsWith("Off", StringComparison.OrdinalIgnoreCase))
 						{
-							split = opts[i + 1];
-							i++;
+							comparison = StringComparison.OrdinalIgnoreCase;
+							i += 3;
 						}
-
-						break;
-
-					case 'p':
-						if (i < opts.Length - 1)
+						else if (rest.StartsWith("0"))
+							comparison = StringComparison.OrdinalIgnoreCase;
+						else
 						{
-							var digits = opts.AsSpan(i + 1).BeginNums();
+							comparison = StringComparison.Ordinal;
 
-							if (int.TryParse(digits, out var pp))
-								sortAt = pp;
-
-							i += digits.Length;
+							if (rest.StartsWith("On", StringComparison.OrdinalIgnoreCase))
+								i += 2;
 						}
 
 						break;
 
-					case 'n':
+					case 'D':
+						if (i + 1 < opts.Length)
+							delimiter = opts[++i];
+
+						break;
+
+					case 'N':
 						numeric = true;
 						break;
 
-					case 'r':
-						if (opts.AsSpan(i).StartsWith("random", StringComparison.OrdinalIgnoreCase))
+					case 'P':
+						offset = Math.Max(1, int.TryParse(opts.AsSpan(i + 1).BeginNums(), out var column) ? column : 0) - 1;
+						break;
+
+					case 'R':
+						if (opts.AsSpan(i).StartsWith("Random", StringComparison.OrdinalIgnoreCase))
 						{
-							i += "random".Length;
 							random = true;
+							i += 5;
 						}
 						else
 							reverse = true;
 
 						break;
 
-					case 'u':
+					case 'U':
 						unique = true;
 						break;
 
-					case '/':
+					case 'Z':
+						trailingBlank = true;
+						break;
+
+					// A '/' sorts by the name after the last forward slash, for paths off Windows.
 					case '\\':
-						slash = true;
-						slashtype = c;
-						break;
-
-					case 'z':
-						zopt = true;
-						break;
-
-					default:
+					case '/':
+						pathSeparator = opts[i];
 						break;
 				}
 			}
+
+			object function = null;
 
 			if (callback != null)
 			{
 				//Any object, unchecked, as AHK's Sort takes it; anything else is an invalid parameter, as there.
 				if (callback is not (Any or Delegate))
-					return (string)Errors.ValueErrorOccurred("Parameter #3 invalid.", null, "");
+					return (string)Errors.InvalidParameterErrorOccurred(3, "Sort", callback, "");
 
 				function = Functions.ToCallback(callback);
 			}
 
-			var list = input.Split([split], zopt ? StringSplitOptions.None : StringSplitOptions.RemoveEmptyEntries);
+			if (input.Length == 0)
+				return input;
 
-			if (split == '\n')
+			// As in AHK, without Z a delimiter at the end ends the last item, rather than starting a blank one, and is put
+			// back after the sort. A list whose first line ends in CRLF gives its last line a CRLF for the sort, so that
+			// every item ends in `r, which compares and is written back with it.
+			var count = input.AsSpan().Count(delimiter) + 1;
+			var terminateLast = false;
+			var addedCrLf = false;
+
+			if (!trailingBlank && input[^1] == delimiter)
 			{
-				for (var i = 0; i < list.Length; i++)
-				{
-					var x = list[i].Length - 1;
-
-					if (x >= 0 && list[i][x] == '\r')
-						list[i] = list[i].Substring(0, x);
-				}
+				terminateLast = true;
+				count--;
+			}
+			else if (delimiter == '\n')
+			{
+				var first = input.IndexOf('\n');
+				terminateLast = addedCrLf = first > 0 && input[first - 1] == '\r';
 			}
 
-			sortAt = Math.Max(0, sortAt - 1);
-			var compl = withlocale ? StringComparison.CurrentCultureIgnoreCase : StringComparison.OrdinalIgnoreCase;
-			var comp = withcase ? StringComparison.Ordinal : compl;
+			if (count == 1)
+				return input;
 
-			if (random)
+			var items = new string[count];
+			// Every path sorts indexes into items, so a lower index is also the earlier item.
+			var order = new int[count];
+
+			for (int i = 0, start = 0; i < count; i++)
 			{
-				var rand = new Random();
-				list = list.OrderBy(x => rand.Next()).ToArray();
+				var end = input.IndexOf(delimiter, start);
+
+				if (end < 0)
+					end = input.Length;
+
+				items[i] = input.Substring(start, end - start);
+				order[i] = i;
+				start = end + 1;
 			}
-			else if (function != null)
+
+			if (addedCrLf)
+				items[^1] += "\r";
+
+			if (function != null)
 			{
-				var index = 0L;
-				var indexedlist = new ValueTuple<string, long>[list.Length];//Temporary needed to include the indices for the third argument.
+				// As AHK: the third argument is how far the second item starts after the first in the unsorted list.
+				var starts = new int[count];
 
-				foreach (var val in list)
-					indexedlist[index] = (val, index++);
+				for (var i = 1; i < count; i++)
+					starts[i] = starts[i - 1] + items[i - 1].Length + 1;
 
-				var args = new object[3];//Cache to avoid allocations inside of the sort function.
-				ExceptionDispatchInfo failure = null;
-				System.Array.Sort(indexedlist, delegate (ValueTuple<string, long> x, ValueTuple<string, long> y)
+				var args = new object[3];
+				Array.SortByCallback(order, (x, y) =>
 				{
-					//As AHK: once the callback has failed, no comparison calls it again, and Sort raises that one error.
-					if (failure != null)
-						return 0;
-
-					object value;
-					args[0] = x.Item1;
-					args[1] = y.Item1;
-					args[2] = y.Item2 - x.Item2;
-
-					//Captured rather than let through, which Array.Sort would wrap in an InvalidOperationException.
-					try { value = Script.InvokeOrNull(function, null, args); }
-					catch (Exception e) when (CallStack.RememberAndCatch(e))
-					{
-						failure = ExceptionDispatchInfo.Capture(e);
-						return 0;
-					}
-
-					if (value is long l)
-						return (int)l;
-					//else if (value is int i)
-					//  return i;
-					else if (value is double d)
-						return (int)d;
-					else
-						return 0;
+					args[0] = items[x];
+					args[1] = items[y];
+					args[2] = (long)(starts[y] - starts[x]);
+					return Script.InvokeOrNull(function, null, args);
 				});
-				failure?.Throw();
-				index = 0;
-
-				foreach (var val in indexedlist)
-					list[index++] = val.Item1;
 			}
+			else if (random)
+				Random.Shared.Shuffle(order);
 			else
 			{
-				System.Array.Sort(list, (x, y) =>
+				// Each item's sort key, read once: the name after the last separator for \, otherwise the item from the P
+				// column on, as a number for N. N and P do not apply to \, as in AHK. CL leaves hyphens and apostrophes out,
+				// as Windows' word sort does, and puts the items equal that way with fewer of them first, so that coop and
+				// co-op stay together but apart.
+				var numbers = numeric && pathSeparator == '\0' ? new double[count] : null;
+				var keys = numbers == null ? new string[count] : null;
+				var wordSort = keys != null && !logical && comparison == StringComparison.CurrentCultureIgnoreCase;
+				var strippedCount = wordSort ? new int[count] : null;
+
+				for (var i = 0; i < count; i++)
 				{
-					ReadOnlySpan<char> xs, ys;
+					var item = items[i];
+					var start = pathSeparator != '\0' ? item.LastIndexOf(pathSeparator) + 1 : Math.Min(offset, item.Length);
 
-					if (withlocale)
+					if (numbers != null)
+						numbers[i] = Atof(item.AsSpan(start));
+					else
 					{
-						xs = sortAt == 0 || slash ? x.RemoveAll("'-").AsSpan() : sortAt < x.Length ? x.RemoveAll("'-").AsSpan(sortAt) : string.Empty.AsSpan();
-						ys = sortAt == 0 || slash ? y.RemoveAll("'-").AsSpan() : sortAt < y.Length ? y.RemoveAll("'-").AsSpan(sortAt) : string.Empty.AsSpan();
+						var key = start == 0 ? item : item.Substring(start);
+						keys[i] = wordSort ? key.RemoveAll("'-") : key;
+
+						if (wordSort)
+							strippedCount[i] = key.Length - keys[i].Length;
+					}
+				}
+
+				System.Array.Sort(order, (x, y) =>
+				{
+					int result;
+
+					// As in AHK, a pair which compares equal is ordered by position, which R reverses along with the rest,
+					// except for equal numbers, which keep their order.
+					if (numbers != null)
+					{
+						result = numbers[x].CompareTo(numbers[y]);
+
+						if (result == 0)
+							return x.CompareTo(y);
 					}
 					else
 					{
-						xs = sortAt == 0 || slash ? x.AsSpan() : sortAt < x.Length ? x.AsSpan(sortAt) : string.Empty.AsSpan();
-						ys = sortAt == 0 || slash ? y.AsSpan() : sortAt < y.Length ? y.AsSpan(sortAt) : string.Empty.AsSpan();
+						result = logical ? NaturalComparer.NaturalCompare(keys[x], keys[y]) : CaseCompare.Compare(keys[x], keys[y], comparison);
+
+						if (result == 0 && wordSort)
+							result = strippedCount[x].CompareTo(strippedCount[y]);
+
+						if (result == 0)
+							result = x.CompareTo(y);
 					}
 
-					if (xs == ys)
-					{
-						return 0;
-					}
-					else if (numeric && !slash)
-					{
-						return double.TryParse(xs, out var a) && double.TryParse(ys, out var b) ?
-							   a.CompareTo(b) : CaseCompare.Compare(xs, ys, compl);
-					}
-					else
-					{
-						if (slash)
-						{
-							var z = xs.LastIndexOf(slashtype);
-
-							if (z != -1)
-								xs = xs.Slice(z + 1);
-
-							z = ys.LastIndexOf(slashtype);
-
-							if (z != -1)
-								ys = ys.Slice(z + 1);
-
-							if (xs == ys)
-								return 0;
-						}
-
-						return CaseCompare.Compare(xs, ys, comp);
-					}
+					return reverse ? -result : result;
 				});
 			}
 
-			// As in AHK, the sorted list drops each item equal to the one kept before it, numerically in N mode.
-			if (unique)
+			// As in AHK, U drops each item equal to the one kept before it, numerically for N without P.
+			var output = new StringBuilder(input.Length + 2);
+			string prev = null;
+
+			for (var i = 0; i < count; i++)
 			{
-				var kept = 0;
+				var item = items[order[i]];
 
-				foreach (var item in list)
-				{
-					if (kept > 0)
-					{
-						var prev = list[kept - 1];
+				if (unique && prev != null
+						&& (numeric && offset == 0 ? Atof(item) == Atof(prev)
+							: logical ? NaturalComparer.NaturalCompare(item, prev) == 0
+							: CaseCompare.Equals(item, prev, comparison)))
+					continue;
 
-						if (numeric && sortAt == 0
-								&& double.TryParse(item, NumberStyles.Float, CultureInfo.InvariantCulture, out var a)
-								&& double.TryParse(prev, NumberStyles.Float, CultureInfo.InvariantCulture, out var b)
-								? a == b : CaseCompare.Equals(item, prev, comp))
-							continue;
-					}
+				if (prev != null)
+					_ = output.Append(delimiter);
 
-					list[kept++] = item;
-				}
-
-				System.Array.Resize(ref list, kept);
+				_ = output.Append(item);
+				prev = item;
 			}
 
-			if (reverse && function == null)
-				System.Array.Reverse(list);
+			if (terminateLast)
+				_ = output.Append(delimiter);
 
-			return string.Join(split.ToString(), list);
+			if (addedCrLf)
+				output.Length -= 2;
+
+			return output.ToString();
 		}
 
 		/// <summary>
@@ -1382,105 +1398,93 @@ namespace Keysharp.Builtins
 		/// <returns>This function returns an array containing the substrings of the specified string.</returns>
 		public static Array StrSplit(object @string, object delimiters = null, object omitChars = null, object maxParts = null)
 		{
-			List<string> del = new ();
-
 			if (!@string.CoerceString(out var input))
 				return null;
 
-			if (!maxParts.CoerceInt(out var count, -1))
-				return null;
+			string[] delims = null;
 
-			if (delimiters is IList il)
+			// As in AHK, a list holds non-empty strings only, and an empty list is taken for a mistake rather than a request
+			// for characters.
+			if (delimiters is Array list)
 			{
-				foreach (var id in il.Flatten(false))
-				{
-					if (!id.CoerceString(out var delimiter))
-						return null;
-
-					del.Add(delimiter);
-				}
+				if (list.Count > 0 && list.array.TrueForAll(x => x is string { Length: > 0 }))
+					delims = [.. list.array.Cast<string>()];
 			}
-			else
+			else if (delimiters is not Any)
 			{
 				if (!delimiters.CoerceString(out var d))
 					return null;
 
-				if (d.Length > 0)
-					del.Add(d);
+				delims = d.Length > 0 ? [d] : [];
 			}
 
-			string trim;
+			if (delims == null)
+				return (Array)Errors.InvalidParameterErrorOccurred(2, "StrSplit", delimiters, new Array());
 
-			if (omitChars is IList ol)
-			{
-				var sb = new StringBuilder();
-
-				foreach (var id in ol.Flatten(false))
-				{
-					if (!id.CoerceString(out var chars))
-						return null;
-
-					_ = sb.Append(chars);
-				}
-
-				trim = sb.ToString();
-			}
-			else if (!omitChars.CoerceString(out trim))
+			if (!omitChars.CoerceString(out var omit) || !maxParts.CoerceInt(out var parts, -1))
 				return null;
 
-			if (del.Count == 0)
+			// MaxParts 0 gives no items and a negative one no limit, as AHK's splits_left does.
+			if (input.Length == 0 || parts == 0)
+				return new Array();
+
+			if (delims.Length != 0)
 			{
-				var list = new List<string>(input.Length);
+				// Split takes the first delimiter in the list at the earliest position, as AHK's InStrAny does.
+				var split = input.Split(delims, parts > 0 ? parts : int.MaxValue, StringSplitOptions.None);
 
-				if (count > 0)
-				{
-					int i = 0, ct = 0;
+				for (var i = 0; i < split.Length; i++)
+					split[i] = split[i].TrimAnyOf(omit);
 
-					for (; ct < count - 1 && i < input.Length; i++)
-					{
-						var ch = input[i];
-
-						if (!trim.Contains(ch))
-						{
-							list.Add(ch.ToString());
-							ct++;
-						}
-					}
-
-					if (ct < input.Length && i < input.Length)
-					{
-						list.Add(input.Substring(i));
-					}
-				}
-				else
-				{
-					foreach (var letter in input)
-						if (!trim.Contains(letter))
-							list.Add(letter.ToString());
-				}
-
-				return new Array(list.Cast<object>());
+				return new Array(split);
 			}
 
-			var output = count > 0 ? input.Split(del.ToArray(), count, StringSplitOptions.None) : input.Split(del.ToArray(), StringSplitOptions.None);
+			// Each character not omitted is an item, until the last of MaxParts takes the rest of the string.
+			var items = new List<object>();
 
-			if (trim.Length != 0)
+			for (var i = 0; i < input.Length; i++)
 			{
-				var omit = trim.ToCharArray();
+				if (omit.Contains(input[i]))
+					continue;
 
-				for (var i = 0; i < output.Length; i++)
-					output[i] = output[i].Trim(omit);
+				if (items.Count == parts - 1)
+				{
+					items.Add(input.AsSpan(i).TrimAnyOf(omit).ToString());
+					break;
+				}
+
+				items.Add(input[i].ToString());
 			}
 
-			return new Array(output.Cast<object>());
+			return new Array(items);
 		}
 
 		/// <summary>
-		/// Converts a string to title case.
+		/// Converts a string to title case as AHK's StrToTitleCase does, which Format's T flag also uses: only whitespace
+		/// starts a word, and every letter but a word's first is lower case.
 		/// </summary>
 		/// <param name="string">The string to convert to title case.</param>
 		/// <returns>The newly converted version of the string.</returns>
-		public static string StrTitle(object @string) => @string.CoerceString(out var s) ? CultureInfo.CurrentCulture.TextInfo.ToTitleCase(s) : "";
+		public static string StrTitle(object @string) => !@string.CoerceString(out var s) ? "" :
+			string.Create(s.Length, s, static (dest, src) =>
+			{
+				var upper = true;
+
+				for (var i = 0; i < src.Length; i++)
+				{
+					var c = src[i];
+
+					if (char.IsLetter(c))
+					{
+						c = upper ? char.ToUpperInvariant(c) : char.ToLowerInvariant(c);
+						upper = false;
+					}
+					else if (char.IsWhiteSpace(c))
+						upper = true;
+
+					dest[i] = c;
+				}
+			});
 
 		/// <summary>
 		/// Converts a string to uppercase.
@@ -1547,7 +1551,7 @@ namespace Keysharp.Builtins
 		/// </param>
 		/// <returns>Returns the trimmed version of the specified string.</returns>
 		public static string Trim(object @string, object omitChars = null) =>
-		@string.CoerceString(out var s) && omitChars.CoerceString(out var omit, " \t") ? s.Trim(omit.ToCharArray()) : "";
+		@string.CoerceString(out var s) && omitChars.CoerceString(out var omit, " \t") ? s.TrimAnyOf(omit) : "";
 
 		/// <summary>
 		/// Enlarges a variable's capacity or frees its memory, as AutoHotkey does. The capacity belongs to the memory the
@@ -1864,6 +1868,112 @@ namespace Keysharp.Builtins
 		/// An internal optimized version of StrCompare().
 		/// </summary>
 		internal static int StrCmp(string left, string right, bool caseSensitive) => string.Compare(left, right, caseSensitive ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
+
+		// As AHK's ATOF, by which Sort's N option compares: the number text starts with after any whitespace, read as
+		// hexadecimal after 0x, or 0 when it starts with none.
+		private static double Atof(ReadOnlySpan<char> s)
+		{
+			s = s.TrimStart(" \t\n\v\f\r");
+			var i = s.Length != 0 && s[0] is '+' or '-' ? 1 : 0;
+
+			if (s.Length > i + 2 && s[i] == '0' && (s[i + 1] | 0x20) == 'x' && char.IsAsciiHexDigit(s[i + 2]))
+			{
+				// Past 64 bits the value wraps, as AHK's does.
+				var hex = 0L;
+
+				for (var j = i + 2; j < s.Length && char.IsAsciiHexDigit(s[j]); j++)
+					hex = (hex << 4) | (long)(char.IsAsciiDigit(s[j]) ? s[j] - '0' : (s[j] | 0x20) - 'a' + 10);
+
+				return s[0] == '-' ? -hex : hex;
+			}
+
+			var end = i;
+
+			while (end < s.Length && char.IsAsciiDigit(s[end]))
+				end++;
+
+			var digits = end - i;
+
+			if (end < s.Length && s[end] == '.')
+			{
+				var fraction = ++end;
+
+				while (end < s.Length && char.IsAsciiDigit(s[end]))
+					end++;
+
+				digits += end - fraction;
+			}
+
+			if (digits == 0)
+				return 0;
+
+			if (end < s.Length && (s[end] | 0x20) == 'e')
+			{
+				var exponent = end + 1;
+
+				if (exponent < s.Length && s[exponent] is '+' or '-')
+					exponent++;
+
+				if (exponent < s.Length && char.IsAsciiDigit(s[exponent]))
+				{
+					end = exponent;
+
+					while (end < s.Length && char.IsAsciiDigit(s[end]))
+						end++;
+				}
+			}
+
+			return double.Parse(s[..end], NumberStyles.Float, CultureInfo.InvariantCulture);
+		}
+
+		// FormatTime's picture as a .NET custom format: as in AHK, only the date and time specifiers mean anything, text in
+		// single quotes is literal with '' a quote, and five or more y read as yyyy. Every other character is escaped, and
+		// an empty quoted section is kept, since it separates the specifiers around it.
+		private static string ToCustomTimeFormat(string picture)
+		{
+			var sb = new StringBuilder(picture.Length * 2);
+
+			for (var i = 0; i < picture.Length; i++)
+			{
+				var c = picture[i];
+
+				if (c == '\'')
+				{
+					var start = sb.Length;
+
+					for (i++; i < picture.Length; i++)
+					{
+						if (picture[i] == '\'')
+						{
+							if (i + 1 == picture.Length || picture[i + 1] != '\'')
+								break;
+
+							i++;
+						}
+
+						_ = sb.Append('\\').Append(picture[i]);
+					}
+
+					if (sb.Length == start)
+						_ = sb.Append("''");
+				}
+				else if (c == 'y')
+				{
+					var run = 1;
+
+					for (; i + 1 < picture.Length && picture[i + 1] == 'y'; i++)
+						run++;
+
+					_ = sb.Append('y', Math.Min(run, 4));
+				}
+				else if (c is 'd' or 'M' or 'g' or 'h' or 'H' or 'm' or 's' or 't')
+					_ = sb.Append(c);
+				else
+					_ = sb.Append('\\').Append(c);
+			}
+
+			return sb.ToString();
+		}
 
 		/// <summary>
 		/// The bit pattern of a Format() argument read as unsigned, for the conversions that have no sign:

@@ -50,6 +50,33 @@ namespace System
 		}
 
 		/// <summary>
+		/// Trims the characters in a list from either end, as AHK's omit lists do: an empty list trims nothing, where
+		/// .NET's Trim would take it for white space.
+		/// </summary>
+		internal static ReadOnlySpan<char> TrimAnyOf(this ReadOnlySpan<char> str, string chars, bool start = true, bool end = true)
+		{
+			if (chars.Length != 0)
+			{
+				if (start)
+					str = str.TrimStart(chars);
+
+				if (end)
+					str = str.TrimEnd(chars);
+			}
+
+			return str;
+		}
+
+		/// <summary>
+		/// See above; the string itself when nothing was trimmed.
+		/// </summary>
+		internal static string TrimAnyOf(this string str, string chars, bool start = true, bool end = true)
+		{
+			var span = str.AsSpan().TrimAnyOf(chars, start, end);
+			return span.Length == str.Length ? str : span.ToString();
+		}
+
+		/// <summary>
 		/// Determines if all characters within a string are hexadecimal.
 		/// </summary>
 		/// <param name="str">The string to examine.</param>

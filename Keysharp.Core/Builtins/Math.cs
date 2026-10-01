@@ -440,8 +440,8 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="number">A double number to be rounded.</param>
 		/// <param name="n">The number of double places in the return value.</param>
-		/// <returns>The number nearest to <paramref name="number"/> that contains a number of fractional digits equal to <paramref name="n"/>.<br />
-		/// If
+		/// <returns>For a positive <paramref name="n"/>, the rounded number as a string with exactly that many decimal places;
+		/// otherwise the rounded number as an integer.
 		/// </returns>
 		public static object Round(object number, object n = null)
 		{
@@ -453,13 +453,12 @@ namespace Keysharp.Builtins
 			if (n is not null && !n.CoerceLong(out places))
 				return DefaultObject;
 
-			if (places == 0L)
-				//Convert.ToInt64 rounds a midpoint to even; AutoHotkey rounds it away from zero, the same
-				//rule the fractional-digits path below already uses.
-				return Convert.ToInt64(num >= 0.0 ? Math.Floor(num + 0.5) : Math.Ceiling(num - 0.5));
+			var mult = Math.Pow(10, places);
+			num = (num >= 0.0 ? Math.Floor(num * mult + 0.5) : Math.Ceiling(num * mult - 0.5)) / mult;
 
-			var mult = Math.Pow(10, places);//Code taken from AHK.
-			return (num >= 0.0 ? Math.Floor(num * mult + 0.5) : Math.Ceiling((num * mult) - 0.5)) / mult;
+			// As in AHK, which shows exactly N decimal places for display, and adds 0.2 so that the integer cast cannot
+			// fall one short of a result the division left just below it.
+			return places > 0 ? num.ToString("F" + places, CultureInfo.InvariantCulture) : (long)(num + (num > 0 ? 0.2 : -0.2));
 		}
 
 		/// <summary>

@@ -1,37 +1,6 @@
 namespace Keysharp.Builtins;
 
 /// <summary>
-/// A comparer which uses an <see cref="KeysharpFunc"/> to compare two objects.
-/// This is used in <see cref="Array.Sort"/>.
-/// </summary>
-internal class KeysharpFuncComparer : IComparer<object>
-{
-	/// <summary>
-	/// The function object to use in the comparison.
-	/// </summary>
-	private readonly Any ifo;
-
-	/// <summary>
-	/// Initializes a new instance of the <see cref="KeysharpFuncComparer"/> class.
-	/// </summary>
-	/// <param name="f">The <see cref="KeysharpFunc"/> to use in the comparison.</param>
-	public KeysharpFuncComparer(Any f) => ifo = f;
-
-	/// <summary>
-	/// The implementation for <see cref="IComparer.Compare"/> which internally calls the
-	/// underlying <see cref="KeysharpFunc"/> to do the comparison.
-	/// </summary>
-	/// <param name="left">The left object to compare.</param>
-	/// <param name="right">The right object to compare.</param>
-	/// <returns>An <see cref="int"/>-1 if left is less than right, 0 if left equals right, otherwise 1.</returns>
-	public int Compare(object left, object right)
-	{
-		_ = Script.InvokeOrNull(ifo, null, left, right).TryCoerceInt(out var result);
-		return result;
-	}
-}
-
-/// <summary>
 /// Array class that wraps a <see cref="List{object}"/>.<br/>
 /// Internally the list uses 0-based indexing, however the public interface expects 1-based indexing.<br/>
 /// A negative index can be used to address elements in reverse, so -1 is the last element, -2 is the second last element, and so on.
@@ -755,19 +724,77 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// Sorts the array in place and returns a reference to this.
 	/// </summary>
 	/// <param name="callback">The callback to use for sorting which takes the form (left, right) => int.<br/>
-	/// It must return -1 if left is less than right, 0 if left equals right, otherwise 1.
+	/// It returns a negative number if left is less than right, 0 if they are equal, otherwise a positive number.
+	/// Equal items keep their order.
 	/// </param>
 	/// <returns>this.</returns>
 	/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if callback is not of type <see cref="KeysharpFunc"/>.</exception>
 	public object Sort(object callback)
 	{
-		if (callback is Any fo)
-		{
-			array.Sort(new KeysharpFuncComparer(fo));
-			return this;
-		}
-		else
+		if (callback is not Any fo)
 			return Errors.TypeErrorOccurred(callback, typeof(KeysharpFunc), DefaultObject);
+
+		var items = array.ToArray();
+		var args = new object[2];
+		SortByCallback(items, (x, y) =>
+		{
+			args[0] = x;
+			args[1] = y;
+			return Script.InvokeOrNull(fo, null, args);
+		});
+
+		// A callback which resized the array meanwhile gets as much of the sorted order as the array now holds.
+		items.AsSpan(0, Math.Min(items.Length, array.Count)).CopyTo(CollectionsMarshal.AsSpan(array));
+		return this;
+	}
+
+	// As AHK's Sort calls a script's function: only the sign of its result counts, equal items keep their order, the first
+	// error is raised again after the sort, and a function which orders inconsistently still leaves every item in place.
+	internal static void SortByCallback<T>(T[] items, Func<T, T, object> compare)
+	{
+		ExceptionDispatchInfo failure = null;
+		var source = items;
+		var target = new T[items.Length];
+
+		for (var width = 1; width < items.Length; width *= 2)
+		{
+			for (var lo = 0; lo < items.Length; lo += 2 * width)
+			{
+				int mid = Math.Min(lo + width, items.Length), hi = Math.Min(lo + 2 * width, items.Length);
+				int i = lo, j = mid, k = lo;
+
+				while (i < mid && j < hi)
+					target[k++] = RightFirst(source[i], source[j]) ? source[j++] : source[i++];
+
+				source.AsSpan(i, mid - i).CopyTo(target.AsSpan(k));
+				source.AsSpan(j, hi - j).CopyTo(target.AsSpan(k + mid - i));
+			}
+
+			(source, target) = (target, source);
+		}
+
+		if (source != items)
+			source.CopyTo(items, 0);
+
+		failure?.Throw();
+
+		bool RightFirst(T left, T right)
+		{
+			if (failure != null)
+				return false;
+
+			try
+			{
+				// As AHK reads the result, a value which is not a number is 0.
+				_ = compare(left, right).TryCoerceLong(out var result);
+				return result > 0;
+			}
+			catch (Exception e) when (CallStack.RememberAndCatch(e))
+			{
+				failure = ExceptionDispatchInfo.Capture(e);
+				return false;
+			}
+		}
 	}
 
 	/// <summary>
