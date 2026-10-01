@@ -39,13 +39,15 @@ namespace Keysharp.Tests
 				}
 				""");
 
-			using var process = Process.Start(new ProcessStartInfo(launcher)
+			var startInfo = new ProcessStartInfo(launcher)
 			{
 				UseShellExecute = false,
 				CreateNoWindow = true,
 				RedirectStandardError = true,
 				ArgumentList = { scriptPath },
-			});
+			};
+			startInfo.Environment["KEYSHARP_FORCE_HEADLESS"] = "1";
+			using var process = Process.Start(startInfo);
 
 			try
 			{
@@ -55,7 +57,8 @@ namespace Keysharp.Tests
 				Assert.IsTrue(SpinWait.SpinUntil(() => File.Exists(vetoPath), 10000), "OnExit veto did not complete after SIGTERM");
 				Assert.IsFalse(process.HasExited, "OnExit veto was ignored");
 				Assert.AreEqual(0, SendSignal(process.Id, 15), "second SIGTERM failed");
-				Assert.IsTrue(process.WaitForExit(20000), "script did not exit after the second SIGTERM");
+				var exited = process.WaitForExit(20000);
+				Assert.IsTrue(exited, $"script did not exit after the second SIGTERM; OnExit calls: {ReadExits(exitsPath)}");
 				Assert.AreEqual(0, process.ExitCode, process.StandardError.ReadToEnd());
 				Assert.AreEqual("Close 1;Close 2;", File.ReadAllText(exitsPath));
 			}
@@ -110,13 +113,15 @@ namespace Keysharp.Tests
 				}
 				""");
 
-			using var process = Process.Start(new ProcessStartInfo(launcher)
+			var startInfo = new ProcessStartInfo(launcher)
 			{
 				UseShellExecute = false,
 				CreateNoWindow = true,
 				RedirectStandardError = true,
 				ArgumentList = { scriptPath },
-			});
+			};
+			startInfo.Environment["KEYSHARP_FORCE_HEADLESS"] = "1";
+			using var process = Process.Start(startInfo);
 
 			try
 			{
@@ -127,7 +132,8 @@ namespace Keysharp.Tests
 				Assert.IsFalse(process.HasExited, "OnExit veto was ignored");
 				Assert.AreEqual(0, SendSignal(process.Id, 15), "second SIGTERM failed");
 				File.WriteAllText(releasePath, "release");
-				Assert.IsTrue(process.WaitForExit(20000), "script did not exit after the queued SIGTERM");
+				var exited = process.WaitForExit(20000);
+				Assert.IsTrue(exited, $"script did not exit after the queued SIGTERM; OnExit calls: {ReadExits(exitsPath)}");
 				Assert.AreEqual(0, process.ExitCode, process.StandardError.ReadToEnd());
 				Assert.AreEqual("Close 1;Close 2;", File.ReadAllText(exitsPath));
 			}
@@ -142,6 +148,8 @@ namespace Keysharp.Tests
 				Directory.Delete(directory, true);
 			}
 		}
+
+		private static string ReadExits(string path) => File.Exists(path) ? File.ReadAllText(path) : "none";
 	}
 }
 #endif

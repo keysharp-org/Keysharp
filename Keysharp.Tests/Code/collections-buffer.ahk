@@ -24,4 +24,13 @@ Loop (5)
 	AssertEq(p, 10, A_LineNumber)
 }
 
+; A smaller size keeps the bytes that fit, 0 frees the memory, and a negative size is an error, as in AutoHotkey.
+buf.Size := 3
+AssertEq(buf.Size, 3, A_LineNumber)
+AssertEq(buf[3], 10, A_LineNumber)
+buf.Size := 0
+AssertEq(buf.Ptr, 0, A_LineNumber)
+Throws(() => buf.Size := -1, A_LineNumber, ValueError)
+AssertEq(buf.Size, 0, A_LineNumber)
+
 FileAppend "pass", "*"

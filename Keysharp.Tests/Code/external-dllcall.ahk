@@ -460,4 +460,18 @@ Base64ToString(Base64)
 str := Base64ToString("VGhlIHF1aWNrIGJyb3duIGZveCBqdW1wcyBvdmVyIHRoZSBsYXp5IGRvZw==")
 AssertEq(str, "The quick brown fox jumps over the lazy dog", A_LineNumber)
 
+; A Ptr argument truncates a Float as AutoHotkey does, is required, and is read from an object's Ptr.
+AssertEq(DllCall("msvcrt\_abs64", "Ptr", -2.7, "CDecl Int64"), 2, A_LineNumber)
+UnsetPtrArg(value?) => DllCall("msvcrt\_abs64", "Ptr", value, "CDecl Int64")
+Throws(() => UnsetPtrArg(), A_LineNumber, ArgumentError)
+Throws(() => DllCall("msvcrt\_abs64", "Ptr", {}, "CDecl Int64"), A_LineNumber, PropertyError)
+
+; A function in a library the script has unloaded is found again rather than called where the library was.
+if !DllCall("GetModuleHandle", "Str", "lz32", "Ptr") {
+	lz := DllCall("LoadLibrary", "Str", "lz32", "Ptr")
+	DllCall("lz32\LZDone")
+	DllCall("FreeLibrary", "Ptr", lz)
+	DllCall("lz32\LZDone")
+}
+
 FileAppend "pass", "*"

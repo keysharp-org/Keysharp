@@ -14,6 +14,12 @@ namespace Keysharp.Internals.Interop
 		/// </summary>
 		internal static readonly Dictionary<string, nint> loadedDlls = BuildSystemLibraries();
 
+#if WINDOWS
+		// The modules #DllLoad pinned, which nothing can unload, so an address in one may be remembered. On Linux and
+		// macOS #DllLoad adds its library to loadedDlls instead.
+		internal static readonly ConcurrentDictionary<nint, byte> pinnedDlls = new();
+#endif
+
 		/// <summary>
 		/// The standard set of system libraries scanned when <see cref="Keysharp.Builtins.Dll.DllCall"/> is given a bare function name
 		/// (no library/path component), mirroring how Windows resolves bare names against user32/kernel32/comctl32/
@@ -173,11 +179,21 @@ namespace Keysharp.Internals.Interop
 
 			if (handle != 0 && TryGetExport(handle, name, out address))
 			{
-				//Only an address inside a module this call did not load may be remembered. One we loaded is
-				//unloaded again when the call returns, and the module could go with it; a script which wants it
-				//to stay -- and wants its address cached -- says so with #DllLoad, which pins it.
-				cacheable = moduleToFree == 0;
+				//Only an address in a module nothing can unload may be remembered, which here is one #DllLoad pinned.
+				//The script may unload any other, even one this call did not load, so it is found again on every call,
+				//as AutoHotkey finds it.
+#if WINDOWS
+				cacheable = pinnedDlls.ContainsKey(handle);
+#else
+				cacheable = false;
+#endif
 				return true;
+			}
+
+			if (moduleToFree != 0)
+			{
+				NativeLibrary.Free(moduleToFree);
+				moduleToFree = 0;
 			}
 
 			error = $"Unable to locate {LibraryExtension} with path {path}.";

@@ -22,6 +22,9 @@ namespace Keysharp.Builtins
 		public long Offset = offset;
 		public long Pack = pack;
 		public bool HasExplicitOffset = hasExplicitOffset;
+		// What the field's type is, final once the field is registered, so reading the field needs no lookup.
+		public StructPrimitiveKind Kind;
+		public Type PointerTarget;
 	}
 
 	public class Struct(params object[] args) : Any(args), IDisposable, IPointable
@@ -36,6 +39,7 @@ namespace Keysharp.Builtins
 			public bool FieldsLocked;
 			public Type ArrayElementType;   // non-null for a structured-array type (Struct.Array subclass), e.g. Int32[10]
 			public long ArrayLength;        // element count for an array type
+			public bool HasDerived;         // a known struct type derives from this one, so its fields are final
 
 			public bool IsPrimitive => PrimitiveKind != StructPrimitiveKind.None;
 			public bool IsArray => ArrayElementType != null;
@@ -46,17 +50,20 @@ namespace Keysharp.Builtins
 		private static readonly AssemblyBuilder dynamicAssembly = AssemblyBuilder.DefineDynamicAssembly(new AssemblyName("Keysharp.DynamicStructs"), AssemblyBuilderAccess.Run);
 		private static readonly ModuleBuilder dynamicModule = dynamicAssembly.DefineDynamicModule("Keysharp.DynamicStructs");
 		private static readonly Dictionary<Type, Type> pointerTypes = new();
-		private static readonly Dictionary<Type, Type> pointerTargets = new();
+		private static readonly ConcurrentDictionary<Type, Type> pointerTargets = new();
 		private static readonly Dictionary<Type, Type> structBases = new();
 		private static readonly Dictionary<(Type element, long length), Type> arrayTypes = new();
 		private static int dynamicTypeId;
 
 		// Memory of its own, which only Dispose frees, so that a __Delete run when the struct is collected still reads it.
 		private nint owned;
+		private long ownedSize;
 		private long borrowedPtr;
 		private bool isPointerView;
 		private bool disposed;
 		private Dictionary<string, Struct> nestedViews;
+		// The layout, locked once the struct has memory, so its accessors take no lock.
+		private StructInfo layout;
 
 		static Struct()
 		{
@@ -356,7 +363,7 @@ namespace Keysharp.Builtins
 				if (FindField(structType, fieldName, false) != null)
 					throw new InvalidOperationException($"Struct field {fieldName} is already registered on {structType.FullName}.");
 
-				if (HasKnownDerivedStruct(structType))
+				if (info.HasDerived)
 					throw new InvalidOperationException("Cannot add typed property.");
 
 				UpdateLayout(structType, info, false);
@@ -368,14 +375,17 @@ namespace Keysharp.Builtins
 				if (!hasExplicitOffset)
 					offset = AlignUp(info.Size, alignment);
 
-				field = new StructFieldInfo(fieldName, fieldType, offset, pack, hasExplicitOffset);
+				field = new StructFieldInfo(fieldName, fieldType, offset, pack, hasExplicitOffset)
+				{
+					Kind = fieldInfo.PrimitiveKind,
+					PointerTarget = pointerTargets.GetValueOrDefault(fieldType)
+				};
 
 				info.Fields.Add(field);
 				info.Size = Math.Max(info.Size, offset + fieldInfo.Size);
 				info.Alignment = Math.Max(info.Alignment, alignment);
 				info.PrimitiveKind = StructPrimitiveKind.None;
 				info.SizeAligned = false;
-				MarkDerivedLayoutsDirty(structType);
 			}
 
 			return field;
@@ -384,15 +394,20 @@ namespace Keysharp.Builtins
 		[PublicHiddenFromUser]
 		public void InitializeStructStorage()
 		{
-			var info = GetCurrentLayoutInfo(true);
+			var info = layout = GetLayoutInfo(StructType, true);
 
 			if (Ptr != 0 || info.Size == 0)
 				return;
 
-			owned = Marshal.AllocHGlobal((nint)info.Size);
+			owned = NativeAllocation.Allocate(ownedSize = info.Size);
 			unsafe { Unsafe.InitBlockUnaligned((void*)owned, 0, (uint)info.Size); }
 			isPointerView = false;
+			MaybeActivateFinalizer();
 		}
+
+		// Only memory of its own, or a __Delete, needs the struct cleaned up when collected, which spares a view the
+		// finalizable sentinel.
+		internal override bool DisposesWhenCollected => owned != 0 || HasDeleteCall;
 
 		internal object Dispose(bool disposing)
 		{
@@ -482,16 +497,14 @@ namespace Keysharp.Builtins
 		{
 			var address = GetDataPointer() + field.Offset;
 
-			if (pointerTargets.TryGetValue(field.FieldType, out var targetType))
+			if (field.PointerTarget is Type targetType)
 			{
 				_ = ReadPrimitive(StructPrimitiveKind.Ptr, address).TryCoerceLong(out var ptr);
 				return CreatePointerValue(targetType, ptr);
 			}
 
-			var fieldInfo = GetLayoutInfo(field.FieldType, true);
-
-			if (fieldInfo.IsPrimitive)
-				return ReadPrimitive(fieldInfo.PrimitiveKind, address);
+			if (field.Kind != StructPrimitiveKind.None)
+				return ReadPrimitive(field.Kind, address);
 
 			if (nestedViews?.TryGetValue(field.Name, out var nested) == true && nested.Ptr == address)
 				return nested;
@@ -507,17 +520,15 @@ namespace Keysharp.Builtins
 		{
 			var address = GetDataPointer() + field.Offset;
 
-			if (pointerTargets.TryGetValue(field.FieldType, out var targetType))
+			if (field.PointerTarget is Type targetType)
 				return SetPointerValue(address, value, targetType, field.FieldType);
 
-			var fieldInfo = GetLayoutInfo(field.FieldType, true);
-
-			if (fieldInfo.IsPrimitive)
+			if (field.Kind != StructPrimitiveKind.None)
 			{
 				if (IsStructInstance(value) && ((Struct)value).GetCurrentLayoutInfo().IsPrimitive)
 					value = ((Struct)value).GetPrimitiveValue();
 
-				WritePrimitive(fieldInfo.PrimitiveKind, address, value);
+				WritePrimitive(field.Kind, address, value);
 				return value;
 			}
 
@@ -717,7 +728,7 @@ namespace Keysharp.Builtins
 				case StructPrimitiveKind.UInt16: return (long)(ushort)slot;
 				case StructPrimitiveKind.Int32: return (long)(int)slot;
 				case StructPrimitiveKind.UInt32: return (long)(uint)slot;
-				case StructPrimitiveKind.Float32: return (double)BitConverter.Int32BitsToSingle((int)slot);
+				case StructPrimitiveKind.Float32: return NativeType.WidenFloat(BitConverter.Int32BitsToSingle((int)slot));
 				case StructPrimitiveKind.Float64: return BitConverter.Int64BitsToDouble(slot);
 				case StructPrimitiveKind.Int64:
 				case StructPrimitiveKind.Ptr: return slot;// Already the whole slot.
@@ -968,8 +979,16 @@ namespace Keysharp.Builtins
 			}
 		}
 
-		private static StructInfo GetOrCreateInfo(Type type) =>
-			infos.TryGetValue(type, out var info) ? info : infos[type] = new StructInfo();
+		private static StructInfo GetOrCreateInfo(Type type)
+		{
+			if (infos.TryGetValue(type, out var info))
+				return info;
+
+			for (var baseType = GetBaseStructType(type); baseType != null; baseType = GetBaseStructType(baseType))
+				GetOrCreateInfo(baseType).HasDerived = true;
+
+			return infos[type] = new StructInfo();
+		}
 
 		private static void InitPrimitiveInfo(Type type, StructPrimitiveKind kind)
 		{
@@ -1001,9 +1020,6 @@ namespace Keysharp.Builtins
 		private static StructFieldInfo FindOwnField(Type type, string name) =>
 			GetOrCreateInfo(type).Fields.FirstOrDefault(x => x.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
 
-		private static bool HasKnownDerivedStruct(Type type) =>
-			infos.Keys.Any(knownType => knownType != type && IsDerivedStructType(knownType, type));
-
 		private static bool IsDerivedStructType(Type type, Type baseType)
 		{
 			if (type.IsSubclassOf(baseType))
@@ -1028,13 +1044,14 @@ namespace Keysharp.Builtins
 			return false;
 		}
 
-		private StructInfo GetCurrentLayoutInfo(bool lockFields = false) => GetLayoutInfo(StructType, lockFields);
+		private StructInfo GetCurrentLayoutInfo(bool lockFields = false) => layout ?? GetLayoutInfo(StructType, lockFields);
 
 		private static Struct CreatePointerView(Type viewType, Any proto, long address)
 		{
-			_ = GetLayoutInfo(viewType, true);
+			var info = GetLayoutInfo(viewType, true);
 			var instance = FastCtor.Call(viewType, null) as Struct;
 			instance.type = viewType;
+			instance.layout = info;
 			instance.SetBaseInternal(proto);
 			instance.BindToPointer(address);
 			//A view owns nothing, and as in AutoHotkey is given no __Delete call.
@@ -1065,14 +1082,18 @@ namespace Keysharp.Builtins
 
 		private void ReleaseOwnedStorage()
 		{
-			Marshal.FreeHGlobal(owned);
+			NativeAllocation.Free(owned, ownedSize);
 			owned = 0;
+			ownedSize = 0;
 		}
 
 		private static void UpdateLayout(Type type, StructInfo info, bool lockFields)
 		{
 			if (info.IsArray)
 			{
+				if (info.SizeAligned)
+					return;
+
 				// A structured array's size/alignment derive entirely from its element type and length.
 				var elemInfo = GetLayoutInfo(info.ArrayElementType, true);
 				info.Size = elemInfo.Size * info.ArrayLength;
@@ -1121,13 +1142,6 @@ namespace Keysharp.Builtins
 
 			if (lockFields)
 				info.FieldsLocked = true;
-		}
-
-		private static void MarkDerivedLayoutsDirty(Type baseType)
-		{
-			foreach (var (type, info) in infos)
-				if (type != baseType && IsDerivedStructType(type, baseType))
-					info.SizeAligned = false;
 		}
 
 		private static Type GetStructType(Any proto)
@@ -1249,7 +1263,7 @@ namespace Keysharp.Builtins
 				StructPrimitiveKind.UInt32 => (long)Unsafe.ReadUnaligned<uint>(ptr),
 				StructPrimitiveKind.Int64 => Unsafe.ReadUnaligned<long>(ptr),
 				StructPrimitiveKind.Ptr => Unsafe.ReadUnaligned<nint>(ptr).ToInt64(),
-				StructPrimitiveKind.Float32 => (double)Unsafe.ReadUnaligned<float>(ptr),
+				StructPrimitiveKind.Float32 => NativeType.WidenFloat(Unsafe.ReadUnaligned<float>(ptr)),
 				StructPrimitiveKind.Float64 => Unsafe.ReadUnaligned<double>(ptr),
 				_ => DefaultObject
 			};

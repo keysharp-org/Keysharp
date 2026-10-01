@@ -32,6 +32,10 @@ struct LATE_POINT {
     y : Int32
 }
 
+struct FLOAT_FIELD {
+    f : Float32
+}
+
 struct DWORD {
     v : UInt32
     __Value {
@@ -342,6 +346,12 @@ try
     CLASS_FIELD_ASSIGN.Prototype.Base := CLASS_GET_BASE.Prototype
 catch
     Assert(false, A_LineNumber)
+
+; A Float32 field widens as NumGet does, to the shortest decimal that reads back as the same float.
+floatField := FLOAT_FIELD()
+floatField.f := 1.2345
+AssertEq(floatField.f, 1.2345, A_LineNumber)
+AssertEq(floatField.f, NumGet(floatField.Ptr, "Float"), A_LineNumber)
 
 ; Property type strings and typeless (byte-count) types were both removed. [v2.1-alpha.30]
 for badType in ["i32", 4] {

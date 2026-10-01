@@ -363,8 +363,9 @@ namespace Keysharp.Runtime
 		private DriveTypeMapper driveTypeMapper;
 #if !WINDOWS
 		private EnvData envData;
-#endif
+#else
 		private ExecutableMemoryPoolManager exeMemoryPoolManager;
+#endif
 		private FlowData flowData;
 		private FunctionData functionData;
 		private GuiData guiData;
@@ -429,8 +430,9 @@ namespace Keysharp.Runtime
 		internal DriveTypeMapper DriveTypeMapper => driveTypeMapper ?? (driveTypeMapper = new ());
 #if !WINDOWS
 		internal EnvData EnvData => envData ?? (envData = new ());
-#endif
+#else
 		internal ExecutableMemoryPoolManager ExecutableMemoryPoolManager => exeMemoryPoolManager ?? (exeMemoryPoolManager = new ());
+#endif
 		internal FlowData FlowData => flowData ?? (flowData = new ());
 		internal FunctionData FunctionData => functionData ?? (functionData = new ());
 		internal GuiData GuiData => guiData ?? (guiData = new ());
@@ -805,10 +807,10 @@ namespace Keysharp.Runtime
 				if (hmodule != 0)
 				{
 #if WINDOWS
-					// "Pin" the dll so that the script cannot unload it with FreeLibrary.
-					// This is done to avoid undefined behavior when DllCall optimizations
-					// resolves a proc address in a dll loaded by this directive.
-					_ = WindowsAPI.GetModuleHandleEx(WindowsAPI.GET_MODULE_HANDLE_EX_FLAG_PIN, libraryName, out hmodule);  // MSDN regarding hmodule: "If the function fails, this parameter is NULL."
+					// "Pin" the dll so that the script cannot unload it with FreeLibrary, which lets DllCall remember the
+					// addresses it finds there (see NativeLibraryResolver.pinnedDlls).
+					if (WindowsAPI.GetModuleHandleEx(WindowsAPI.GET_MODULE_HANDLE_EX_FLAG_PIN, libraryName, out var pinned) != 0)
+						NativeLibraryResolver.pinnedDlls[pinned] = 0;
 #else
 					NativeLibraryResolver.loadedDlls[library] = hmodule;
 #endif

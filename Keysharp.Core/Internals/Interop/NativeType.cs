@@ -222,6 +222,10 @@ namespace Keysharp.Internals.Interop
 		/// </summary>
 		internal static double WidenFloat(float value)
 		{
+			// Below 2^24 every integral float is exact, and so is its plain cast.
+			if (MathF.Abs(value) < 16777216f && value == MathF.Truncate(value))
+				return value;
+
 			Span<char> text = stackalloc char[32];
 			return value.TryFormat(text, out var written, default, CultureInfo.InvariantCulture)
 				   ? double.Parse(text[..written], NumberStyles.Float, CultureInfo.InvariantCulture)

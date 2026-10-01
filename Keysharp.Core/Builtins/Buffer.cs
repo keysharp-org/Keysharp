@@ -28,10 +28,8 @@ namespace Keysharp.Builtins
 		public long Ptr => ptr;
 
 		/// <summary>
-		/// Gets or sets the size of the buffer.<br/>
-		/// If value is greater than the existing size, a new buffer is created with length == value and<br/>
-		/// the existing data in the old buffer is copied to the beginning of the new buffer.<br/>
-		/// The old buffer is then deleted.
+		/// Gets or sets the size of the buffer in bytes. As in AutoHotkey, another size reallocates the memory and keeps
+		/// the bytes that fit, so a smaller size gives memory back and 0 frees it.
 		/// </summary>
 		public object Size
 		{
@@ -39,26 +37,29 @@ namespace Keysharp.Builtins
 
 			set
 			{
-				if (!value.CoerceLong(out var val))
+				if (!value.CoerceLong(out var val) || val == size)
 					return;
 
-				if (val > size)
+				if (val < 0)
 				{
-					var newptr = Marshal.AllocHGlobal((nint)val);
-
-					if (ptr != 0)
-					{
-						unsafe
-						{
-							System.Buffer.MemoryCopy((void*)ptr, (void*)newptr, val, size);
-						}
-
-						Marshal.FreeHGlobal(ptr);
-					}
-
-					ptr = newptr;
+					_ = Errors.ValueErrorOccurred("Invalid value.", val);
+					return;
 				}
 
+				var newptr = val == 0 ? 0 : NativeAllocation.Allocate(val);
+
+				if (ptr != 0)
+				{
+					if (newptr != 0)
+						unsafe
+						{
+							System.Buffer.MemoryCopy((void*)ptr, (void*)newptr, val, Math.Min(size, val));
+						}
+
+					NativeAllocation.Free(ptr, size);
+				}
+
+				ptr = newptr;
 				size = val;
 			}
 		}
@@ -113,11 +114,8 @@ namespace Keysharp.Builtins
 
 				Size = bytecount;
 
-				if (bytecount > 0)
-				{
-					byte val = fill != long.MinValue ? (byte)(fill & 255) : (byte)0;
-					Unsafe.InitBlockUnaligned((void*)ptr, val, (uint)bytecount);
-				}
+				if (bytecount > 0 && fill != long.MinValue)
+					Unsafe.InitBlockUnaligned((void*)ptr, (byte)(fill & 255), (uint)bytecount);
 			}
 
 			return DefaultObject;
@@ -146,7 +144,7 @@ namespace Keysharp.Builtins
 		{
 			if (!disposed)
 			{
-				Marshal.FreeHGlobal(ptr);
+				NativeAllocation.Free(ptr, size);
 				ptr = 0;
 				size = 0;
 				disposed = true;

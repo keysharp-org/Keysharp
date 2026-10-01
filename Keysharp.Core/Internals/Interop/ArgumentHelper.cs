@@ -255,9 +255,11 @@ namespace Keysharp.Internals.Interop
 				var isPtrObject = false;
 
 				//An object passed to "ptr*" seeds the slot with its own pointer and receives the written
-				//value back through that property; any other reference (a VarRef, whatever its type) is
-				//unwrapped to the value it holds, so an in/out parameter starts from the script's value.
-				if (p is Any kso)
+				//value back through that property; a reference, a VarRef first as in AutoHotkey, is unwrapped
+				//to the value it holds, so an in/out parameter starts from the script's value.
+				if (p is VarRef reference)
+					p = Refs.GetValueOrNull(reference) ?? "";
+				else if (p is Any kso)
 				{
 					object kptr;
 
@@ -468,37 +470,44 @@ namespace Keysharp.Internals.Interop
 
 		private bool ConvertPtr(int n, object p)
 		{
-			if (p is long lptr)
-				args[n] = lptr;
-			else if (p is string s)
+			long value;
+
+			switch (p)
 			{
-				if (!s.CoerceLong(out var sl))
+				case IPointable ip://Before Any: a Buffer is both, and this reads the long without boxing it.
+					value = ip.Ptr;
+					break;
+
+				case Any kso://An object without a Ptr raises as reading the property does, as in AutoHotkey.
+					if (!Script.GetPropertyValue(kso, "Ptr").CoerceLong(out value))
+						return false;
+
+					break;
+
+				case null:
+					Error err;
+
+					if (Errors.ErrorOccurred(err = new ArgumentError()))
+						throw err;
+
 					return false;
-
-				args[n] = sl;
-			}
-			else if (p is IPointable ip)//Before the Any test: a Buffer is both, and this reads the long without boxing it.
-				args[n] = ip.Ptr;
-			else if (p is Any kso && Script.GetPropertyValueOrNull(kso, "ptr") is object kptr)
-			{
-				if (!kptr.CoerceLong(out var kl))
-					return false;
-
-				args[n] = kl;
-			}
-
 #if WINDOWS
-			else if (Marshal.IsComObject(p))
-			{
-				var pUnk = Marshal.GetIUnknownForObject(p);
-				args[n] = pUnk;
-				_ = Marshal.Release(pUnk);
+
+				case var com when Marshal.IsComObject(com):
+					var pUnk = Marshal.GetIUnknownForObject(com);
+					value = pUnk;
+					_ = Marshal.Release(pUnk);
+					break;
+#endif
+
+				default://A Float is truncated, as AutoHotkey's TokenToInt64 does.
+					if (!p.CoerceLong(out value))
+						return false;
+
+					break;
 			}
 
-#endif
-			else
-				args[n] = Pin(n, p);
-
+			args[n] = value;
 			return true;
 		}
 
