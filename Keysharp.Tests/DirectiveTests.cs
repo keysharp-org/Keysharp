@@ -403,33 +403,22 @@ namespace Keysharp.Tests
 			Assert.IsTrue(s.HotkeyData.shk[3].firstVariant.suspendExempt);
 			Assert.IsTrue(s.HotkeyData.shk[4].firstVariant.suspendExempt);
 			Assert.IsFalse(s.HotkeyData.shk[5].firstVariant.suspendExempt);
-			Assert.AreEqual(10, hsm.shs.Count);
-			Assert.IsTrue(hsm.shs[0].SuspendExempt);
-			Assert.IsTrue(hsm.shs[1].SuspendExempt);
-			Assert.IsFalse(hsm.shs[2].SuspendExempt);
-			Assert.IsFalse(hsm.shs[3].SuspendExempt);
-			Assert.IsTrue(hsm.shs[4].SuspendExempt);
-			Assert.IsTrue(hsm.shs[5].SuspendExempt);
-			Assert.IsTrue(hsm.shs[6].SuspendExempt);
-			Assert.IsFalse(hsm.shs[7].SuspendExempt);
-			Assert.AreEqual(0, hsm.shs[0].suspended);
-			Assert.AreEqual(0, hsm.shs[1].suspended);
-			Assert.AreNotEqual(0, hsm.shs[2].suspended);
-			Assert.AreNotEqual(0, hsm.shs[3].suspended);
-			Assert.AreEqual(0, hsm.shs[4].suspended);
-			Assert.AreEqual(0, hsm.shs[5].suspended);
-			Assert.AreEqual(0, hsm.shs[6].suspended);
-			Assert.AreNotEqual(0, hsm.shs[7].suspended);
-			Assert.IsTrue(hsm.shs[8].SuspendExempt);
-			Assert.AreEqual(0, hsm.shs[8].suspended);
-			Assert.IsFalse(hsm.shs[9].SuspendExempt);
-			Assert.AreNotEqual(0, hsm.shs[9].suspended);
+			// While suspended, exactly the exempt hotstrings stay enabled.
+			bool[] exempt = [true, true, false, false, true, true, true, false, true, false];
+			Assert.AreEqual(exempt.Length, hsm.Hotstrings.Length);
+
+			for (var i = 0; i < exempt.Length; i++)
+			{
+				Assert.AreEqual(exempt[i], hsm.Hotstrings[i].SuspendExempt, $"hotstring {i}");
+				Assert.AreEqual(exempt[i], hsm.Hotstrings[i].suspended == 0, $"hotstring {i}");
+			}
+
 			Assert.AreEqual(6, hsm.enabledCount);
 			Keysharp.Builtins.Keyboard.Hotstring(":S:dynamic");
-			Assert.AreEqual(0, hsm.shs[7].suspended);
+			Assert.AreEqual(0, hsm.Hotstrings[7].suspended);
 			Assert.AreEqual(7, hsm.enabledCount);
 			Keysharp.Builtins.Keyboard.Hotstring(":S0:dynamic");
-			Assert.AreNotEqual(0, hsm.shs[7].suspended);
+			Assert.AreNotEqual(0, hsm.Hotstrings[7].suspended);
 			Assert.AreEqual(6, hsm.enabledCount);
 #if WINDOWS
 			using var suspendItem = new ToolStripMenuItem();

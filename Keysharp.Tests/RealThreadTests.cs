@@ -224,7 +224,7 @@ namespace Keysharp.Tests
 							maxThreads = 1,
 							priority = 0
 						};
-						s.HotstringManager.shs.Add(registrations.Hotstring);
+						s.HotstringManager.Add(registrations.Hotstring);
 
 						registrations.MessageId = 0x8017;
 						_ = Keysharp.Builtins.Flow.OnMessage(registrations.MessageId, new KeysharpFunc((Func<object, object, object, object, object>)((wParam, lParam, msg, hwnd) =>

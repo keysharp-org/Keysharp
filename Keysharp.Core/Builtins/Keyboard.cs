@@ -399,9 +399,7 @@ break_twice:;
 			}
 			else if (string.Compare(name, "Reset", true) == 0)
 			{
-				var str = hm.CurrentInputBuffer;
-				hm.ClearBuf();
-				return str;
+				return hm.ResetBuf();
 			}
 			else if (replacementVal == null && onOffToggle == null && name.Length > 0 && name[0] != ':') //Check if only one param was passed. Equivalent to #Hotstring <name>.
 			{
@@ -532,10 +530,10 @@ break_twice:;
 					initialSuspendState |= HotstringDefinition.HS_SUSPENDED;
 
 				var addResult = hm.AddHotstring(name, ifunc, hotstringOptions, hotstringStart, action, false, initialSuspendState);
-				if (addResult is not HotstringDefinition)
+				if (addResult is not HotstringDefinition added)
 					return addResult;
 
-				existing = hm.shs[hm.shs.Count - 1];
+				existing = added;
 				if (A_IsSuspended && existing.suspendExempt)
 					existing.SetSuspended(existing.suspended & ~HotstringDefinition.HS_SUSPENDED);
 				wasAlreadyEnabled = false; // Because it didn't exist.

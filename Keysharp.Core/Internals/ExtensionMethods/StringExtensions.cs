@@ -221,10 +221,11 @@ namespace System
 		/// </summary>
 		/// <param name="str">The string to return the leading digits for.</param>
 		/// <param name="allowDecimal">True to allow decimals, else false for integers only.</param>
+		/// <param name="allowSign">True to include a leading minus or plus sign.</param>
 		/// <returns>A string consisting only of digits, empty if none.</returns>
-		internal static ReadOnlySpan<char> BeginNums(this ReadOnlySpan<char> str, bool allowDecimal = false)
+		internal static ReadOnlySpan<char> BeginNums(this ReadOnlySpan<char> str, bool allowDecimal = false, bool allowSign = false)
 		{
-			var i = 0;
+			var i = allowSign && str.Length != 0 && str[0] is '-' or '+' ? 1 : 0;
 
 			while (i < str.Length && (char.IsDigit(str[i]) || (allowDecimal && str[i] == '.')))
 				i++;

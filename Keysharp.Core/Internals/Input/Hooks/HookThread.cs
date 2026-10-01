@@ -1078,35 +1078,46 @@ namespace Keysharp.Internals.Input.Hooks
 		{
 			var suppressHotstringFinalChar = false; // Set default.
 			var hm = script.HotstringManager;
+			// A copy of the typed text, which the trimming below keeps shorter than this, is matched outside the lock: matching
+			// can wait on a #HotIf, which must not hold up the script, and a callback nested in that wait may change the buffer.
+			Span<char> typed = stackalloc char[HotstringDefinition.MAX_HOTSTRING_LENGTH * 3];
+			int typedLength;
 
-			if (activeWindow != hsHwnd)
+			lock (hm.bufLock)
 			{
-				// Since the buffer tends to correspond to the text to the left of the caret in the
-				// active window, if the active window changes, it seems best to reset the buffer
-				// to avoid misfires.
-				hsHwnd = activeWindow;
-				hm.ClearBuf();
+				if (activeWindow != hsHwnd)
+				{
+					// Since the buffer tends to correspond to the text to the left of the caret in the
+					// active window, if the active window changes, it seems best to reset the buffer
+					// to avoid misfires.
+					hsHwnd = activeWindow;
+					hm.hsBuf.Clear();
+				}
+				else if (hm.hsBuf.Count > 90)
+					hm.hsBuf.RemoveRange(0, 45);
+
+				hm.hsBuf.Add(ch[0]);
+
+				if (charCount > 1)
+					// MSDN: "This usually happens when a dead-key character (accent or diacritic) stored in the
+					// keyboard layout cannot be composed with the specified virtual key to form a single character."
+					hm.hsBuf.Add(ch[1]);
+
+				var buffer = (ReadOnlySpan<char>)CollectionsMarshal.AsSpan(hm.hsBuf);
+				buffer = buffer[Math.Max(0, buffer.Length - typed.Length)..];
+				buffer.CopyTo(typed);
+				typedLength = buffer.Length;
 			}
-			else if (hm.hsBuf.Count > 90)
-				hm.hsBuf.RemoveRange(0, 45);
 
-			hm.hsBuf.Add(ch[0]);
+			var hsBufSpan = (ReadOnlySpan<char>)typed[..typedLength];
 
-			if (charCount > 1)
-				// MSDN: "This usually happens when a dead-key character (accent or diacritic) stored in the
-				// keyboard layout cannot be composed with the specified virtual key to form a single character."
-				hm.hsBuf.Add(ch[1]);
-
-			if (hm.MatchHotstring() is HotstringDefinition hs)
+			if (hm.MatchHotstring(hsBufSpan) is HotstringDefinition hs)
 			{
 				int cpcaseStart, cpcaseEnd;
 				int caseCapableCharacters;
 				bool firstCharWithCaseIsUpper, firstCharWithCaseHasGoneBy;
-				var hsBufSpan = (ReadOnlySpan<char>)CollectionsMarshal.AsSpan(hm.hsBuf);
 				var hsLength = hsBufSpan.Length;
 				var hsBufCountm1 = hsLength - 1;
-				var hsBufCountm2 = hsLength - 2;
-				var hasEndChar = hm.defEndChars.Contains(hsBufSpan[hsBufCountm1]);
 
 				if (HotInputLevelAllowsFiring(hs.inputLevel, extraInfo, ref keyHistoryCurr.eventType))
 				{
@@ -1242,6 +1253,9 @@ namespace Keysharp.Internals.Input.Hooks
 					// Consequently, the buffer should be adjusted below to ensure it's in the right state to work
 					// in situations such as the user typing two hotstrings consecutively where the ending
 					// character of the first is used as a valid starting character (non-alphanumeric) for the next.
+					// The buffer may have changed while the match ran, so the counts below are clamped.
+					using var bufScope = hm.bufLock.EnterScope();
+
 					if (!string.IsNullOrEmpty(hs.replacement))
 					{
 						// Since the buffer no longer reflects what is actually on screen to the left
@@ -1251,9 +1265,9 @@ namespace Keysharp.Internals.Input.Hooks
 						// sent by DoReplace() won't be captured (since it's "ignored input", which
 						// is why it's put into the buffer manually here):
 						if (hs.endCharRequired)
-							hm.hsBuf.RemoveRange(0, hm.hsBuf.Count - 1);
+							hm.hsBuf.RemoveRange(0, Math.Max(0, hm.hsBuf.Count - 1));
 						else
-							hm.ClearBuf();
+							hm.hsBuf.Clear();
 					}
 					else if (hs.doBackspace)
 					{
@@ -1263,10 +1277,8 @@ namespace Keysharp.Internals.Input.Hooks
 						// active window.  A simpler way to understand is to realize that the buffer now
 						// contains (for recognition purposes, in its right side) the hotstring and its
 						// end char (if applicable), so remove both:
-						hm.hsBuf.RemoveRange(hm.hsBuf.Count - hs.str.Length, hs.str.Length);
-
-						if (hs.endCharRequired)
-							hm.hsBuf.RemoveAt(hm.hsBuf.Count - 1);
+						var typedCount = Math.Min(hm.hsBuf.Count, hs.str.Length + (hs.endCharRequired ? 1 : 0));
+						hm.hsBuf.RemoveRange(hm.hsBuf.Count - typedCount, typedCount);
 					}
 
 					// v1.0.38.04: Fixed the following mDoReset section by moving it beneath the above because
@@ -1279,7 +1291,7 @@ namespace Keysharp.Internals.Input.Hooks
 					// There are probably many other uses for the reset option (albeit obscure, but they have
 					// been brought up in the forum at least twice).
 					if (hs.doReset)
-						hm.ClearBuf(); // Further below, the buffer will be terminated to reflect this change.
+						hm.hsBuf.Clear(); // Further below, the buffer will be terminated to reflect this change.
 				}//for each hotstring for this letter.
 			}//if hotstring buffer not empty.
 
@@ -1634,8 +1646,10 @@ namespace Keysharp.Internals.Input.Hooks
 						// that determines whether the backspace behaves like an unmodified backspace.  This solves the issue
 						// of the Input command collecting simulated backspaces as real characters rather than recognizing
 						// them as a means to erase the previous character in the buffer.
-						if (kbdMsSender.modifiersLRLogical == 0 && hsBuf.Count > 0)
-							hsBuf.RemoveAt(hsBuf.Count - 1);
+						if (kbdMsSender.modifiersLRLogical == 0)
+							lock (hm.bufLock)
+								if (hsBuf.Count > 0)
+									hsBuf.RemoveAt(hsBuf.Count - 1);
 
 						// Fall through to the check below in case this {BS} completed a dead key sequence.
 						break;

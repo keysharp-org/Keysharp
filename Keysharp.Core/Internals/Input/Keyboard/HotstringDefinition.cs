@@ -196,20 +196,15 @@ namespace Keysharp.Internals.Input.Keyboard
 					case 'K':
 					case 'P':
 					{
-						var j = 0;
+						var number = next.BeginNums(allowSign: true);
+						_ = long.TryParse(number, out var val); // 0 when there are no digits, as AutoHotkey reads it.
 
-						while (j < next.Length && (next[j] == '-' || char.IsNumber(next[j])))
-							j++;
+						if (ch == 'K')
+							_keyDelay = val;
+						else
+							_priority = val;
 
-						if (long.TryParse(next.Slice(0, j), out var val))
-						{
-							if (ch == 'K')
-								_keyDelay = val;
-							else
-								_priority = val;
-						}
-
-						i += j;
+						i += number.Length;
 					}
 					break;
 

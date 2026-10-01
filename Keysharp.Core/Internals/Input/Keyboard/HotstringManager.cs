@@ -24,11 +24,23 @@ namespace Keysharp.Internals.Input.Keyboard
 		internal SendModes hsSendMode = SendModes.Input;
 		internal SendRawModes hsSendRaw = SendRawModes.NotRaw;
 		internal bool hsSuspendExempt;
-		internal List<HotstringDefinition> shs = new (256);
 		private readonly Dictionary<char, List<HotstringDefinition>> shsDkt = new (new CharNoCaseEqualityComp());
-		//private Stopwatch sw = new Stopwatch();
+		// The hook reads these without a lock while the script adds hotstrings, so a hotstring is stored before the
+		// count which covers it, and a larger array is published before the count passes the old one's length.
+		private HotstringDefinition[] hotstrings = new HotstringDefinition[256];
+		private int hotstringCount;
+		// Guards hsBuf, which the hook and the script both change.
+		internal readonly Lock bufLock = new ();
 
-		public string CurrentInputBuffer => new (hsBuf.ToArray());
+		/// <summary>The hotstrings in the order they were defined, which is the order of precedence.</summary>
+		internal ReadOnlySpan<HotstringDefinition> Hotstrings
+		{
+			get
+			{
+				var count = Volatile.Read(ref hotstringCount);
+				return Volatile.Read(ref hotstrings).AsSpan(0, count);
+			}
+		}
 
 		internal HotstringManager(Script script)
 		{
@@ -51,136 +63,123 @@ namespace Keysharp.Internals.Input.Keyboard
 			if (!hs.constructedOK)
 				return Errors.ValueErrorOccurred($"Invalid hotstring: {_name}.");
 
-			shs.Add(hs);
+			Add(hs);
 			shsDkt.GetOrAdd(_hotstring[0]).Add(hs);
-
 			return hs;
+		}
+
+		/// <summary>Appends a hotstring after those defined before it, which take precedence over it.</summary>
+		internal void Add(HotstringDefinition hs)
+		{
+			var array = hotstrings;
+			var count = hotstringCount;
+
+			if (count == array.Length)
+			{
+				System.Array.Resize(ref array, count * 2);
+				Volatile.Write(ref hotstrings, array);
+			}
+
+			array[count] = hs;
+			Volatile.Write(ref hotstringCount, count + 1);
 		}
 
 		public void AddChars(string s)
 		{
-			foreach (var ch in s)
-				hsBuf.Add(ch);
+			lock (bufLock)
+				hsBuf.AddRange(s);
 		}
 
 		public void ClearHotstrings()
 		{
-			hsBuf.Clear();
-			shs.Clear();
+			ClearBuf();
+			var count = hotstringCount;
+			Volatile.Write(ref hotstringCount, 0);
+			// Emptied in place, since a hook which read the old count still indexes this array.
+			System.Array.Clear(hotstrings, 0, count);
 			shsDkt.Clear();
 		}
 
-		public HotstringDefinition MatchHotstring()
+		/// <summary>
+		/// Returns the first eligible hotstring which the typed text ends with.
+		/// </summary>
+		public HotstringDefinition MatchHotstring(ReadOnlySpan<char> hsBufSpan)
 		{
-			var found = false;
-			HotstringDefinition hs = null;
-			//sw.Restart();
+			if (hsBufSpan.Length == 0)
+				return null;
 
-			if (hsBuf.Count > 0)
+			var hasEndChar = defEndChars.Contains(hsBufSpan[^1]);
+			var ht = script.HookThread;
+
+			// Searching through the hot strings in the original, physical order is the documented
+			// way in which precedence is determined, i.e. the first match is the only one that will
+			// be triggered.
+			foreach (var hs in Hotstrings)
 			{
-				var hsBufSpan = (ReadOnlySpan<char>)CollectionsMarshal.AsSpan(hsBuf);
-				var hsLength = hsBufSpan.Length;
-				var hsBufCountm1 = hsLength - 1;
-				var hsBufCountm2 = hsLength - 2;
-				var hasEndChar = defEndChars.Contains(hsBufSpan[hsBufCountm1]);
-				var ht = script.HookThread;
+				if (hs == null || hs.suspended != 0) // Null only while ClearHotstrings runs on the script thread.
+					continue;
 
-				for (var i = 0; !found && i < hsBuf.Count; i++)//Must loop forward to catch hotstrings in order.
+				int cpbuf;
+
+				if (hs.endCharRequired)
 				{
-					if (shsDkt.TryGetValue(hsBuf[i], out var possibleHotstrings))
-					{
-						int cpbuf;
+					if (!hasEndChar || hsBufSpan.Length <= hs.str.Length) // Ensure the string is long enough for loop below.
+						continue;
 
-						// Searching through the hot strings in the original, physical order is the documented
-						// way in which precedence is determined, i.e. the first match is the only one that will
-						// be triggered.
-						for (var u = 0; !found && u < possibleHotstrings.Count; ++u)
-						{
-							hs = possibleHotstrings[u];
-
-							if (hs.suspended != 0)
-								continue;
-
-							if (hs.endCharRequired)
-							{
-								if (hsLength <= hs.str.Length) // Ensure the string is long enough for loop below.
-									continue;
-
-								if (hsBufCountm1 - i > hs.str.Length)//Ensure the distance from i to the end is not greater than the hotstring length.
-									continue;
-
-								if (!hasEndChar)
-									continue;
-
-								cpbuf = hsBufCountm2;// Init once for both loops. -2 to omit end-char.
-							}
-							else // No ending char required.
-							{
-								if (hsLength < hs.str.Length) // Ensure the string is long enough for loop below.
-									continue;
-
-								if (hsLength - i > hs.str.Length)//Ensure the distance from i to the end is not greater than the hotstring length.
-									continue;
-
-								cpbuf = hsBufCountm1;// Init once for both loops.
-							}
-
-							var cphs = hs.str.Length - 1; // Init once for both loops.
-
-							// Check if this item is a match:
-							if (hs.caseSensitive)//Using fixed* doesn't seem to make a different in performance.
-							{
-								for (; cphs >= 0; --cpbuf, --cphs)
-									if (hsBufSpan[cpbuf] != hs.str[cphs])
-										break;
-							}
-							else // case insensitive
-							{
-								// v1.0.43.03: Using CharLower vs. tolower seems the best default behavior (even though slower)
-								// so that languages in which the higher ANSI characters are common will see "�" == "�", etc.
-								for (; cphs >= 0; --cpbuf, --cphs)
-									if (char.ToLower(hsBufSpan[cpbuf]) != char.ToLower(hs.str[cphs])) // v1.0.43.04: Fixed crash by properly casting to UCHAR (via macro).
-										break;
-							}
-
-							// Check if one of the loops above found a matching hotstring (relies heavily on
-							// short-circuit boolean order):
-							if (cphs >= 0 // One of the loops above stopped early due discovering "no match"...
-									// ... or it did but the "?" option is not present to protect from the fact that
-									// what lies to the left of this hotstring abbreviation is an alphanumeric character:
-									|| (!hs.detectWhenInsideWord && cpbuf >= 0 && ht.IsHotstringWordChar(hsBufSpan[cpbuf]))
-									// ... v1.0.41: Or it's a perfect match but the right window isn't active or doesn't exist.
-									// In that case, continue searching for other matches in case the script contains
-									// hotstrings that would trigger simultaneously were it not for the "only one" rule.
-									|| (HotkeyDefinition.HotCriterionAllowsFiring(script, hs.hotCriterion, hs.Name) == 0L)
-							   )
-								continue; // No match or not eligible to fire.
-
-							// v1.0.42: The following scenario defeats the ability to give criterion hotstrings
-							// precedence over non-criterion:
-							// A global/non-criterion hotstring is higher up in the file than some criterion hotstring,
-							// but both are eligible to fire at the same instant.  In v1.0.41, the global one would
-							// take precedence because it's higher up (and this behavior is preserved not just for
-							// backward compatibility, but also because it might be more flexible -- this is because
-							// unlike hotkeys, variants aren't stored under a parent hotstring, so we don't know which
-							// ones are exact dupes of each other (same options+abbreviation).  Thus, it would take
-							// extra code to determine this at runtime; and even if it were added, it might be
-							// more flexible not to do it; instead, to let the script determine (even by resorting to
-							// #HotIf NOT WinActive()) what precedence hotstrings have with respect to each other.
-							//////////////////////////////////////////////////////////////
-							// MATCHING HOTSTRING WAS FOUND (since above didn't continue).
-							//////////////////////////////////////////////////////////////
-							//sw.Stop();
-							//Diagnostics.Debug.WriteLine($"Detecting hotstring {hs.str} at index {u} took {sw.Elapsed.TotalMilliseconds}ms or {((sw.Elapsed.TotalMilliseconds / (u + 1)) * 1000):F4}us per hotstring.");
-							found = true;
-						}
-					}
+					cpbuf = hsBufSpan.Length - 2;// Init once for both loops. -2 to omit end-char.
 				}
+				else // No ending char required.
+				{
+					if (hsBufSpan.Length < hs.str.Length) // Ensure the string is long enough for loop below.
+						continue;
+
+					cpbuf = hsBufSpan.Length - 1;// Init once for both loops.
+				}
+
+				var cphs = hs.str.Length - 1; // Init once for both loops.
+
+				// Check if this item is a match:
+				if (hs.caseSensitive)
+				{
+					for (; cphs >= 0; --cpbuf, --cphs)
+						if (hsBufSpan[cpbuf] != hs.str[cphs])
+							break;
+				}
+				else // case insensitive
+				{
+					for (; cphs >= 0; --cpbuf, --cphs)
+						if (char.ToLower(hsBufSpan[cpbuf]) != char.ToLower(hs.str[cphs]))
+							break;
+				}
+
+				// Check if one of the loops above found a matching hotstring (relies heavily on
+				// short-circuit boolean order):
+				if (cphs >= 0 // One of the loops above stopped early due discovering "no match"...
+						// ... or it did but the "?" option is not present to protect from the fact that
+						// what lies to the left of this hotstring abbreviation is an alphanumeric character:
+						|| (!hs.detectWhenInsideWord && cpbuf >= 0 && ht.IsHotstringWordChar(hsBufSpan[cpbuf]))
+						// ... v1.0.41: Or it's a perfect match but the right window isn't active or doesn't exist.
+						// In that case, continue searching for other matches in case the script contains
+						// hotstrings that would trigger simultaneously were it not for the "only one" rule.
+						|| (HotkeyDefinition.HotCriterionAllowsFiring(script, hs.hotCriterion, hs.Name) == 0L)
+				   )
+					continue; // No match or not eligible to fire.
+
+				// v1.0.42: The following scenario defeats the ability to give criterion hotstrings
+				// precedence over non-criterion:
+				// A global/non-criterion hotstring is higher up in the file than some criterion hotstring,
+				// but both are eligible to fire at the same instant.  In v1.0.41, the global one would
+				// take precedence because it's higher up (and this behavior is preserved not just for
+				// backward compatibility, but also because it might be more flexible -- this is because
+				// unlike hotkeys, variants aren't stored under a parent hotstring, so we don't know which
+				// ones are exact dupes of each other (same options+abbreviation).  Thus, it would take
+				// extra code to determine this at runtime; and even if it were added, it might be
+				// more flexible not to do it; instead, to let the script determine (even by resorting to
+				// #HotIf NOT WinActive()) what precedence hotstrings have with respect to each other.
+				return hs;
 			}
 
-			//sw.Stop();
-			//Diagnostics.Debug.WriteLine($"Detecting hotstring took {sw.Elapsed.TotalMilliseconds}ms.");
-			return found ? hs : null;
+			return null;
 		}
 
 		public void RestoreDefaults(bool doNonPositional = false)
@@ -190,11 +189,10 @@ namespace Keysharp.Internals.Input.Keyboard
 				defEndChars = "-()[]{}:;'\"/\\,.?!\r\n \t";
 				hsResetUponMouseClick = true;
 				enabledCount = 0;
-				shs.Clear();
-				shsDkt.Clear();
+				ClearHotstrings();
 			}
 
-			hsBuf.Clear();
+			ClearBuf();
 			hsCaseSensitive = false;
 			hsConformToCase = true;
 			hsDetectWhenInsideWord = false;
@@ -210,7 +208,22 @@ namespace Keysharp.Internals.Input.Keyboard
 			hsSuspendExempt = false;
 		}
 
-		internal void ClearBuf() => hsBuf.Clear();
+		internal void ClearBuf()
+		{
+			lock (bufLock)
+				hsBuf.Clear();
+		}
+
+		/// <summary>Empties the buffer and returns what it held, as Hotstring("Reset") does.</summary>
+		internal string ResetBuf()
+		{
+			lock (bufLock)
+			{
+				var text = new string(CollectionsMarshal.AsSpan(hsBuf));
+				hsBuf.Clear();
+				return text;
+			}
+		}
 
 		internal HotstringDefinition FindHotstring(string _hotstring, bool _caseSensitive, bool _detectWhenInsideWord, object _hotCriterion)
 		{
@@ -224,7 +237,9 @@ namespace Keysharp.Internals.Input.Keyboard
 
 		internal void SuspendAll(bool _suspend)
 		{
-			if (shs.Count < 1) // At least one part below relies on this check.
+			var shs = Hotstrings;
+
+			if (shs.Length < 1) // At least one part below relies on this check.
 				return;
 
 			int u;
@@ -232,7 +247,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			if (_suspend) // Suspend all those that aren't exempt.
 			{
 				// Recalculating sEnabledCount might perform better in the average case since most aren't exempt.
-				for (u = 0, enabledCount = 0; u < shs.Count; ++u)
+				for (u = 0, enabledCount = 0; u < shs.Length; ++u)
 					if (shs[u].suspendExempt)
 					{
 						shs[u].SetSuspended(shs[u].suspended & ~HotstringDefinition.HS_SUSPENDED);
@@ -249,7 +264,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 				// Recalculating enabledCount is probably best since we otherwise need to both remove HS_SUSPENDED
 				// and determine if the final suspension status has changed (i.e. no other bits were set).
-					for (enabledCount = 0, u = 0; u < shs.Count; ++u)
+					for (enabledCount = 0, u = 0; u < shs.Length; ++u)
 					{
 						shs[u].SetSuspended(shs[u].suspended & ~HotstringDefinition.HS_SUSPENDED);
 
@@ -262,18 +277,18 @@ namespace Keysharp.Internals.Input.Keyboard
 				// have been called in a long time, making the contents of g_HSBuf obsolete, which in turn might
 				// otherwise cause accidental firings based on old keystrokes coupled with new ones.
 				if (previous_count == 0 && enabledCount > 0)
-					hsBuf.Clear();
+					ClearBuf();
 			}
 		}
 
 		internal bool DisableOwnedHotstrings(ScriptEventScheduler scheduler)
 		{
-			if (scheduler == null || shs.Count == 0)
+			if (scheduler == null || Hotstrings.Length == 0)
 				return false;
 
 			var changed = false;
 
-			foreach (var hotstring in shs.ToArray())
+			foreach (var hotstring in Hotstrings)
 			{
 				if (hotstring == null || !ReferenceEquals(hotstring.ownerScheduler, scheduler))
 					continue;
@@ -288,7 +303,13 @@ namespace Keysharp.Internals.Input.Keyboard
 			}
 
 			if (changed)
-				enabledCount = (uint)shs.Count(hotstring => hotstring != null && hotstring.suspended == 0);
+			{
+				enabledCount = 0;
+
+				foreach (var hotstring in Hotstrings)
+					if (hotstring != null && hotstring.suspended == 0)
+						++enabledCount;
+			}
 
 			return changed;
 		}

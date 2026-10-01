@@ -1810,7 +1810,7 @@ namespace Keysharp.Runtime
 				return true;
 
 			return WinEventManager.IsKeepingScriptRunning || ClipboardEventManager.IsKeepingScriptRunning
-				   || HotstringManager.shs.Count > 0 || FlowData.timers.AnyEnabled || ClipFunctions.Count > 0
+				   || HotstringManager.Hotstrings.Length > 0 || FlowData.timers.AnyEnabled || ClipFunctions.Count > 0
 				   || includeWindows && Gui.AnyExistingVisibleWindows(this);
 		}
 

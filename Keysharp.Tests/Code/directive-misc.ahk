@@ -62,6 +62,15 @@ Hotstring(":S:dynamicexempt", "ok")
 Hotstring(":S0:dynamicordinary", "ok")
 
 #if !SUSPENDEXEMPT_INSPECT
+; Hotkey's options may run together, and S and B may end the text without their digit, as in AutoHotkey.
+try
+{
+	Hotkey("F5", , "T2 P1 S")
+	Hotkey("F5", , "B")
+}
+catch
+	Assert(false, A_LineNumber)
+
 FileAppend "pass", "*"
 
 ExitApp()

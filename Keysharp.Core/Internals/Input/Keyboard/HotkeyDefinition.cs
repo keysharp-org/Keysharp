@@ -94,6 +94,8 @@ namespace Keysharp.Internals.Input.Keyboard
 		internal Keys Extra { get; }
 		internal Keys Keys { get; }
 		internal string Name { get; set; }
+		// Name broken into its modifiers, keys and flags, once, since every hotkey added is compared with each existing one.
+		private HotkeyProperties parsedName;
 		internal object Precondition { get; set; }
 		internal object Proc { get; set; }
 		internal string Typed { get; set; }
@@ -698,7 +700,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			//Regardless of the type of hook needed, including none, we always need to start the reader queue.
 			//The presence of any hotkey/string should start the reader channel thread because even hotkeys
 			//which are received in MainWindow.WndProc() need to be forwarded to it.
-			if (shk.Length != 0 || script.HotstringManager.shs.Count != 0)
+			if (shk.Length != 0 || script.HotstringManager.Hotstrings.Length != 0)
 			{
 				ht.Start();
 			}
@@ -707,7 +709,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			ht.ChangeHookState(shk, hkd.whichHookNeeded, hkd.whichHookAlways);
 
 #if LINUX
-			if ((shk.Length != 0 || hm.shs.Count != 0) && hkd.whichHookNeeded != HookType.None)
+			if ((shk.Length != 0 || hm.Hotstrings.Length != 0) && hkd.whichHookNeeded != HookType.None)
 				WarnIfRegisteredHotkeysHotstringsHooksUnavailable(ht, hkd.whichHookNeeded);
 #endif
 
@@ -777,7 +779,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 			//We must first check if the hotkey exists before creating a new one because this might just be a variant.
 			//The code to check for a variant was in the parsing section of AHK, but we move it here because Keysharp adds them at runtime.
-			if ((hk = FindHotkeyByTrueNature(script, _name, ref _noSuppress, ref hookIsMandatory)) != null) // Parent hotkey found.  Add a child/variant hotkey for it.
+			if ((hk = FindEquivalentHotkey(script, _name, ref _noSuppress, ref hookIsMandatory)) != null) // Parent hotkey found.  Add a child/variant hotkey for it.
 			{
 				if (_hookAction != 0) // suffix_has_tilde has always been ignored for these types (alt-tab hotkeys).
 				{
@@ -1058,7 +1060,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 			uint noSuppress = 0;
 			bool hook_is_mandatory = false;
-			var hk = FindHotkeyByTrueNature(script, hotkeyName, ref noSuppress, ref hook_is_mandatory); // NULL if not found.
+			var hk = FindEquivalentHotkey(script, hotkeyName, ref noSuppress, ref hook_is_mandatory); // NULL if not found.
 			var variant = hk?.FindVariant();
 			var binding = variant?.FindBinding(script.EventScheduler);
 			var updateAllHotkeys = false;  // This method avoids multiple calls to ManifestAllHotkeysHotstringsHooks() (which is high-overhead).
@@ -1223,9 +1225,7 @@ namespace Keysharp.Internals.Input.Keyboard
 					{
 						case 'O': // v1.0.38.02.
 						{
-							var ch2 = char.ToUpper(options[i + 1]);
-
-							if (ch2 == 'N') // Full validation for maintainability.
+							if (options.AsSpan(i).StartsWith("On", StringComparison.OrdinalIgnoreCase)) // Full validation for maintainability.
 							{
 								++i; // Omit the 'N' from further consideration in case it ever becomes a valid option letter.
 
@@ -1248,37 +1248,34 @@ namespace Keysharp.Internals.Input.Keyboard
 						case 'B':
 						{
 							if (variant != null)
-							{
-								var ch2 = options[i + 1];
-								variant.maxThreadsBuffer = ch2 != '0';  // i.e. if the char is NULL or something other than '0'.
-							}
+								variant.maxThreadsBuffer = !options.AsSpan(i + 1).StartsWith('0'); // i.e. if the text ends or something other than '0' follows.
 						}
 						break;
 
-						// For options such as P & T: Use atoi() vs. ATOI() to avoid interpreting something like 0x01B
-						// as hex when in fact the B was meant to be an option letter:
+						// For options such as P & T: only the decimal digits after the letter, since a letter which follows is
+						// another option (as B is in P0x01B), and 0 when there are none, as AutoHotkey reads them.
 						case 'P':
 						{
-							if (variant != null && int.TryParse(options.AsSpan(i + 1), out var val))
+							if (variant != null)
+							{
+								_ = int.TryParse(options.AsSpan(i + 1).BeginNums(allowSign: true), out var val);
 								variant.priority = val;
+							}
 						}
 						break;
 
 						case 'S':
 						{
 							if (variant != null)
-							{
-								var ch2 = options[i + 1];
-								variant.suspendExempt = ch2 != '0';
-							}
+								variant.suspendExempt = !options.AsSpan(i + 1).StartsWith('0');
 						}
 						break;
 
 						case 'T':
 							if (variant != null)
 							{
-								if (uint.TryParse(options.AsSpan(i + 1), out var val))
-									variant.maxThreads = val;
+								_ = uint.TryParse(options.AsSpan(i + 1).BeginNums(), out var val);
+								variant.maxThreads = val;
 
 								if (variant.maxThreads > script.MaxThreadsTotal) // To avoid array overflow, this limit must by obeyed except where otherwise documented.
 									// Older comment: Keep this limited to prevent stack overflow due to too many pseudo-
@@ -1290,8 +1287,10 @@ namespace Keysharp.Internals.Input.Keyboard
 							break;
 
 						case 'I':
-							if (variant != null && long.TryParse(options.AsSpan(i + 1), out var newInputLevel))
+							if (variant != null)
 							{
+								_ = long.TryParse(options.AsSpan(i + 1).BeginNums(allowSign: true), out var newInputLevel);
+
 								if (KeyboardMouseSender.SendLevelIsValid(newInputLevel))
 								{
 									if (newInputLevel != 0 && !hk.keybdHookMandatory)
@@ -1323,7 +1322,7 @@ namespace Keysharp.Internals.Input.Keyboard
 		}
 
 		/// <summary>
-		/// Returns the address of the hotkey if found, NULL otherwise.
+		/// Returns the existing hotkey whose name means the same as the one given, however it is written (AutoHotkey's FindHotkeyByTrueNature), or null.
 		/// In v1.0.42, it tries harder to find a match so that the order of modifier symbols doesn't affect the true nature of a hotkey.
 		/// For example, ^!c should be the same as !^c, primarily because RegisterHotkey() and the hook would consider them the same.
 		/// Primary benefits to the above:
@@ -1334,10 +1333,10 @@ namespace Keysharp.Internals.Input.Keyboard
 		///    one of them would never fire because the hook isn't capable or storing two hotkey IDs for the same combination of
 		///    modifiers+VK/SC.
 		/// </summary>
-		internal static HotkeyDefinition FindHotkeyByTrueNature(Script script, string _name, ref uint _noSuppress, ref bool _hookIsMandatory)
+		internal static HotkeyDefinition FindEquivalentHotkey(Script script, string _name, ref uint _noSuppress, ref bool _hookIsMandatory)
 		{
 			var shk = script.HotkeyData.shk;
-			HotkeyProperties propCandidate = new (), propExisting = new ();
+			HotkeyProperties propCandidate = new ();
 			_ = TextToModifiers(_name, null, propCandidate);
 			_noSuppress = (propCandidate.prefixHasTilde ? NO_SUPPRESS_PREFIX : 0)//Set for caller.
 						  | (propCandidate.suffixHasTilde ? AT_LEAST_ONE_VARIANT_HAS_TILDE : 0);
@@ -1347,7 +1346,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 			for (var i = 0; i < shk.Length; ++i)
 			{
-				_ = TextToModifiers(shk[i].Name, null, propExisting);
+				var propExisting = shk[i].ParsedName;
 
 				if (propExisting.modifiers == propCandidate.modifiers
 						&& propExisting.modifiersLR == propCandidate.modifiersLR
@@ -1376,6 +1375,20 @@ namespace Keysharp.Internals.Input.Keyboard
 			}
 
 			return null;  // No match found.
+		}
+
+		private HotkeyProperties ParsedName
+		{
+			get
+			{
+				if (parsedName == null)
+				{
+					parsedName = new HotkeyProperties();
+					_ = TextToModifiers(Name, null, parsedName);
+				}
+
+				return parsedName;
+			}
 		}
 
 		/// <summary>
@@ -2996,7 +3009,13 @@ namespace Keysharp.Internals.Input.Keyboard
 		internal bool HasEnabledBindings()
 		{
 			lock (bindings)
-				return bindings.Any(static binding => binding.IsDispatchable);
+			{
+				foreach (var binding in bindings)
+					if (binding.IsDispatchable)
+						return true;
+
+				return false;
+			}
 		}
 
 		internal HotkeyBinding FindBinding(ScriptEventScheduler scheduler)
