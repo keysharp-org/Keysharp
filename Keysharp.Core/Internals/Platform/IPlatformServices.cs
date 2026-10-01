@@ -163,6 +163,16 @@ namespace Keysharp.Internals
 		IReadOnlyList<DisplayInfo> GetDisplays();
 
 		/// <summary>
+		/// The primary display's size in native pixels, when the platform can answer without a <see cref="GetDisplays"/>
+		/// snapshot; false means it cannot.
+		/// </summary>
+		bool TryGetPrimarySize(out int width, out int height)
+		{
+			width = height = 0;
+			return false;
+		}
+
+		/// <summary>
 		/// The expensive per-display metadata for one display out of a <see cref="GetDisplays"/> snapshot — EDID
 		/// identity, model, refresh rate, physical size, orientation, connection kind. Separate from
 		/// <see cref="GetDisplays"/> on purpose: topology enumeration is on the path of every <c>MonitorGet</c>,

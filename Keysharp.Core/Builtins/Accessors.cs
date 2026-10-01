@@ -568,33 +568,19 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// True if the current executing assembly is a compiled script, false otherwise;
 		/// </summary>
-		public static bool A_IsCompiled
-		{
-			get
-			{
-				var processName = Path.GetFileName(
+		public static bool A_IsCompiled => !isScriptHost && !(ScriptExecutionState.Assembly is { } assembly && string.IsNullOrEmpty(assembly.Location));
+
+		// Whether this process runs the scripts it is handed rather than being a compiled script's own executable.
+		private static readonly bool isScriptHost = Path.GetFileName(
 #if WINDOWS
-					Application.ExecutablePath
+				Application.ExecutablePath
 #else
-					Environment.ProcessPath ?? string.Empty
+				Environment.ProcessPath ?? string.Empty
 #endif
-					).ToLowerInvariant();
-
-				if (processName is "keysharp.dll" or "keysharp.exe"
-					or "keysharp"
-					or "keyview.dll" or "keyview.exe"
-					or "keyview"
-					or "testhost.exe" or "testhost.dll"
-					or "testhost"
-					or "dotnet" or "dotnet.exe")
-					return false;
-
-				if (ScriptExecutionState.Assembly != null && string.IsNullOrEmpty(ScriptExecutionState.Assembly.Location))
-					return false;
-
-				return true;
-			}
-		}
+			).ToLowerInvariant() is "keysharp.dll" or "keysharp.exe" or "keysharp"
+				or "keyview.dll" or "keyview.exe" or "keyview"
+				or "testhost.exe" or "testhost.dll" or "testhost"
+				or "dotnet" or "dotnet.exe";
 
 		/// <summary>
 		/// 1 if the current thread is marked as critical, else 0.
@@ -717,48 +703,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The attributes of the file currently retrieved.
 		/// </summary>
-		public static string A_LoopFileAttrib
-		{
-			get
-			{
-				if (A_LoopFileFullPath is string s && (File.Exists(s) || Directory.Exists(s)))
-				{
-					var val = "";
-					var attr = File.GetAttributes(s);
-
-					if (attr.HasFlag(FileAttributes.ReadOnly))
-						val += "R";
-
-					if (attr.HasFlag(FileAttributes.Archive))
-						val += "A";
-
-					if (attr.HasFlag(FileAttributes.System))
-						val += "S";
-
-					if (attr.HasFlag(FileAttributes.Hidden))
-						val += "H";
-
-					if (attr.HasFlag(FileAttributes.Normal))
-						val += "N";
-
-					if (attr.HasFlag(FileAttributes.Directory))
-						val += "D";
-
-					if (attr.HasFlag(FileAttributes.Offline))
-						val += "O";
-
-					if (attr.HasFlag(FileAttributes.Compressed))
-						val += "C";
-
-					if (attr.HasFlag(FileAttributes.Temporary))
-						val += "T";
-
-					return val;
-				}
-
-				return DefaultObject;
-			}
-		}
+		public static string A_LoopFileAttrib => Loops.GetDirLoop() is { } loop ? Conversions.FromFileAttribs(loop.file.Info.Attributes) : "";
 
 		/// <summary>
 		/// The full path of the directory in which A_LoopFileName resides. However, if FilePattern contains a relative path rather than an absolute path, the path here will also be relative. A root directory will not contain a trailing backslash. For example: C:
@@ -767,22 +712,18 @@ namespace Keysharp.Builtins
 		{
 			get
 			{
-				var loop = Loops.GetDirLoop();
-				return loop != null && loop.file is string s ? Path.GetDirectoryName(s) : null;
+				if (Loops.GetDirLoop() is not { } loop)
+					return "";
+
+				var dir = loop.fileDir + loop.file.SubDir;
+				return Path.EndsInDirectorySeparator(dir) ? dir[..^1] : dir;
 			}
 		}
 
 		/// <summary>
 		/// The file's extension (e.g. TXT, DOC, or EXE). The period (.) is not included.
 		/// </summary>
-		public static string A_LoopFileExt
-		{
-			get
-			{
-				var file = Loops.GetDirLoopFilename();
-				return file != null ? Path.GetExtension(file).TrimStart('.') : "";
-			}
-		}
+		public static string A_LoopFileExt => Loops.GetDirLoop()?.file.Info.Extension is { Length: > 0 } ext ? ext[1..] : "";
 
 		/// <summary>
 		/// This is different than A_LoopFilePath in the following ways:
@@ -791,75 +732,33 @@ namespace Keysharp.Builtins
 		/// 3) Characters in FilePattern are converted to uppercase or lowercase to match the case stored in the file system.
 		/// This is useful for converting file names -- such as those passed into a script as command line parameters -- to their exact path names as shown by Explorer.
 		/// </summary>
-		public static string A_LoopFileFullPath
-		{
-			get
-			{
-				var loop = Loops.GetDirLoop();
-				return loop != null && loop.file is string s ? Loops.GetExactPath(s) : "";//This gives exact case.
-			}
-		}
+		public static string A_LoopFileFullPath => Loops.GetDirLoop() is { } loop ? loop.fileFullDir.Value + loop.file.SubPath : "";
 
 		/// <summary>
 		/// The name of the file or folder currently retrieved (without the path).
 		/// </summary>
-		public static string A_LoopFileName
-		{
-			get
-			{
-				var file = Loops.GetDirLoopFilename();
-				return file != null ? Path.GetFileName(file) ?? "" : "";
-			}
-		}
+		public static string A_LoopFileName => Loops.GetDirLoop()?.file.Info.Name ?? "";
 
 		/// <summary>
 		/// The path and name of the file/folder currently retrieved. If FilePattern contains a relative path rather than an absolute path, the path here will also be relative.
 		/// </summary>
-		public static string A_LoopFilePath
-		{
-			get
-			{
-				var loop = Loops.GetDirLoop();
-
-				if (loop != null && loop.file is string s)
-				{
-					var fullpath = Path.GetFullPath(s);
-					var isrel = !Path.IsPathFullyQualified(loop.path);
-					return (isrel ? Path.GetRelativePath(A_WorkingDir as string, fullpath) : fullpath) ?? "";
-				}
-
-				return "";
-			}
-		}
+		public static string A_LoopFilePath => Loops.GetDirLoop() is { } loop ? loop.fileDir + loop.file.SubPath : "";
 
 		/// <summary>
 		/// The 8.3 short name, or alternate name of the file. If the file doesn't have one (due to the long name being shorter than 8.3 or perhaps because short-name generation is disabled on an NTFS file system), A_LoopFileName will be retrieved instead.
 		/// </summary>
-		public static string A_LoopFileShortName => A_LoopFileShortPath is string s ? Path.GetFileName(s) : null;
+		public static string A_LoopFileShortName =>
+			Loops.GetDirLoop() is { } loop && Loops.GetShortPath(loop.file.Info.FullName) is { Length: > 0 } s ? Path.GetFileName(s) : A_LoopFileName;
 
 		/// <summary>
 		/// The 8.3 short path and name of the file/folder currently retrieved. For example: C:\MYDOCU~1\ADDRES~1.txt. However, if FilePattern contains a relative path rather than an absolute path, the path here will also be relative.
 		/// </summary>
-		public static string A_LoopFileShortPath
-		{
-			get
-			{
-				var loop = Loops.GetDirLoop();
-				return loop != null && loop.file is string s ? Loops.GetShortPath(s) : "";
-			}
-		}
+		public static string A_LoopFileShortPath => A_LoopFilePath is { Length: > 0 } path ? Loops.GetShortPath(path) : "";
 
 		/// <summary>
 		/// The size in bytes of the file currently retrieved. Files larger than 4 gigabytes are also supported.
 		/// </summary>
-		public static long A_LoopFileSize
-		{
-			get
-			{
-				var file = Loops.GetDirLoopFilename();
-				return file != null && File.Exists(file) ? new FileInfo(file).Length : 0L;
-			}
-		}
+		public static long A_LoopFileSize => Loops.GetDirLoop()?.file.Info is FileInfo file ? file.Length : 0L;
 
 		/// <summary>
 		/// The size in Kbytes of the file currently retrieved, rounded down to the nearest integer.
@@ -874,38 +773,17 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The time the file was last accessed. Format YYYYMMDDHH24MISS.
 		/// </summary>
-		public static string A_LoopFileTimeAccessed
-		{
-			get
-			{
-				var file = Loops.GetDirLoopFilename();
-				return !string.IsNullOrEmpty(file) ? Conversions.ToYYYYMMDDHH24MISS(File.GetLastAccessTime(file)) : "";
-			}
-		}
+		public static string A_LoopFileTimeAccessed => Loops.GetDirLoop() is { } loop ? Conversions.ToYYYYMMDDHH24MISS(loop.file.Info.LastAccessTime) : "";
 
 		/// <summary>
 		/// The time the file was created. Format YYYYMMDDHH24MISS.
 		/// </summary>
-		public static string A_LoopFileTimeCreated
-		{
-			get
-			{
-				var file = Loops.GetDirLoopFilename();
-				return !string.IsNullOrEmpty(file) ? Conversions.ToYYYYMMDDHH24MISS(File.GetCreationTime(file)) : "";
-			}
-		}
+		public static string A_LoopFileTimeCreated => Loops.GetDirLoop() is { } loop ? Conversions.ToYYYYMMDDHH24MISS(loop.file.Info.CreationTime) : "";
 
 		/// <summary>
 		/// The time the file was last modified. Format YYYYMMDDHH24MISS.
 		/// </summary>
-		public static string A_LoopFileTimeModified
-		{
-			get
-			{
-				var file = Loops.GetDirLoopFilename();
-				return !string.IsNullOrEmpty(file) ? Conversions.ToYYYYMMDDHH24MISS(File.GetLastWriteTime(file)) : "";
-			}
-		}
+		public static string A_LoopFileTimeModified => Loops.GetDirLoop() is { } loop ? Conversions.ToYYYYMMDDHH24MISS(loop.file.Info.LastWriteTime) : "";
 
 
 		/// <summary>
@@ -1226,29 +1104,27 @@ namespace Keysharp.Builtins
 		/// this value is the same for all monitors. On most systems this is 96; it depends on the system's text size (DPI) setting.
 		/// See also the GUI's -DPIScale option.
 		/// </summary>
-		public static double A_ScreenDPI
+		public static long A_ScreenDPI => screenDpi.Value;
+
+		// The system DPI a process sees is fixed when it starts, and AutoHotkey reads it once as well.
+		private static readonly Lazy<long> screenDpi = new(() =>
 		{
-			get
-			{
 #if WINDOWS
-				using (var graphics = Graphics.FromHwnd(0))//This will only get the DPI for the first screen.
-				{
-					var x = graphics.DpiX;
-					//var y = graphics.DpiY;
-					return x;
-				}
+			using var graphics = Graphics.FromHwnd(0);
+			return (long)Math.Round(graphics.DpiX);
 #else
-				try
-				{
-					return Forms.Screen.PrimaryScreen.RealDPI;
-				}
-				catch
-				{
-					return 96.0;
-				}
-#endif
+			// GTK reports -1 when no resolution is set, as under a bare X server.
+			try
+			{
+				var dpi = (long)Math.Round(Forms.Screen.PrimaryScreen.RealDPI);
+				return dpi > 0 ? dpi : 96L;
 			}
-		}
+			catch
+			{
+				return 96L;
+			}
+#endif
+		});
 
 		/// <summary>
 		/// The height of the primary monitor in pixels.

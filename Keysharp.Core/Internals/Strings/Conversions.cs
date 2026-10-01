@@ -208,7 +208,7 @@ namespace Keysharp.Internals.Strings
 
 		internal static string FromFileAttribs(FileAttributes attribs)
 		{
-			var str = new StringBuilder(9);
+			var str = new StringBuilder(10);
 
 			if ((attribs & FileAttributes.ReadOnly) == FileAttributes.ReadOnly)
 				_ = str.Append('R');
@@ -237,8 +237,8 @@ namespace Keysharp.Internals.Strings
 			if ((attribs & FileAttributes.Temporary) == FileAttributes.Temporary)
 				_ = str.Append('T');
 
-			if (str.Length == 0)
-				_ = str.Append('X');
+			if ((attribs & FileAttributes.ReparsePoint) == FileAttributes.ReparsePoint)
+				_ = str.Append('L');
 
 			return str.ToString();
 		}
@@ -768,7 +768,7 @@ namespace Keysharp.Internals.Strings
 				files = dirs = true;
 			}
 
-			return Loops.GetFiles(Path.GetDirectoryName(fullPath) ?? fullPath, pattern, dirs, files, recurse);
+			return Loops.GetFiles(Path.GetDirectoryName(fullPath) ?? fullPath, pattern, dirs, files, recurse).Select(item => item.Info.FullName);
 		}
 
 		// AutoHotkey's option letters. S (study) is implied by compiling every pattern, and X (PCRE_EXTRA's strict

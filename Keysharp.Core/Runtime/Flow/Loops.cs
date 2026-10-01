@@ -125,10 +125,6 @@ namespace Keysharp.Runtime
 			if (path.Length == 0)
 				yield break;
 
-			// A pattern with no folder part, such as "*.txt" or "data*.txt", searches the working directory.
-			if (Path.GetDirectoryName(path) is "")
-				path = "." + Path.DirectorySeparatorChar + path;
-
 			if (!string.IsNullOrEmpty(m))
 			{
 				d = m.Contains('d', StringComparison.OrdinalIgnoreCase);
@@ -139,15 +135,21 @@ namespace Keysharp.Runtime
 			if (!d && !f)
 				f = true;
 
-			var dir = Path.GetDirectoryName(path);
+			// Resolved once, so SetWorkingDir inside the loop moves neither the search nor A_LoopFileFullPath.
 			var pattern = Path.GetFileName(path);
-			info.path = dir;
-
-			foreach (var file in GetFiles(dir, pattern, d, f, r))
+			info.fileDir = path[..^pattern.Length];
+			var dir = Path.GetFullPath(info.fileDir.Length == 0 ? "." : info.fileDir);
+			info.fileFullDir = new(() =>
 			{
-				info.file = file;
+				var exact = GetExactPath(dir);
+				return Path.EndsInDirectorySeparator(exact) ? exact : exact + Path.DirectorySeparatorChar;
+			});
+
+			foreach (var item in GetFiles(dir, pattern, d, f, r))
+			{
+				info.file = item;
 				info.index++;
-				yield return file;
+				yield return item.Info;
 			}
 
 			//Caller must call Pop() after the loop exits.
@@ -591,71 +593,51 @@ namespace Keysharp.Runtime
 		}
 
 		/// <summary>
-		/// Internal helper to get the most recent loop of type <see cref="LoopType.Directory"/>.
+		/// The innermost Loop Files that has reached an item, or null. Loops inside it see its A_LoopFile* variables, as in
+		/// AutoHotkey; one still evaluating its pattern does not.
 		/// </summary>
-		/// <returns>The most recent directory loop if found, else null.</returns>
 		internal static LoopInfo GetDirLoop()
 		{
-			var s = LoopStack;
-
-			foreach (var l in s)
-			{
-				switch (l.type)
-				{
-					case LoopType.Directory:
-						return l;
-				}
-			}
+			foreach (var l in LoopStack)
+				if (l.type == LoopType.Directory && l.file.Info != null)
+					return l;
 
 			return null;
 		}
 
 		/// <summary>
-		/// Internal helper to get the filename of the most recent loop of type <see cref="LoopType.Directory"/>.
+		/// A full path as the file system spells it, as AutoHotkey's ConvertFilespecToCorrectCase gives it: each name in
+		/// the case its directory lists it and the drive letter in upper case. A name that cannot be looked up stays as given.
 		/// </summary>
-		/// <returns>The filename of the most recent directory loop if found, else null.</returns>
-		internal static string GetDirLoopFilename()
+		internal static string GetExactPath(string path)
 		{
-			var s = LoopStack;
+			var root = Path.GetPathRoot(path) ?? "";
+			var exact = new StringBuilder(root.Length > 1 && root[1] == ':' ? char.ToUpperInvariant(root[0]) + root[1..] : root, path.Length);
 
-			if (s.Count == 0)
-				return DefaultObject;
-
-			foreach (var l in s)
+			foreach (var name in path[root.Length..].Split([Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries))
 			{
-				switch (l.type)
+				string listed = null;
+
+				foreach (var entry in Entries(exact.ToString(), static (ref FileSystemEntry e) => e.FileName.ToString(),
+					(ref FileSystemEntry e) => e.FileName.Equals(name, StringComparison.OrdinalIgnoreCase)))
 				{
-					case LoopType.Directory:
-						return l.file as string;
+					listed ??= entry;
+
+					// A case-sensitive file system can hold both spellings.
+					if (entry == name)
+					{
+						listed = entry;
+						break;
+					}
 				}
+
+				if (exact[^1] != Path.DirectorySeparatorChar && exact[^1] != Path.AltDirectorySeparatorChar)
+					_ = exact.Append(Path.DirectorySeparatorChar);
+
+				_ = exact.Append(listed ?? name);
 			}
 
-			return null;
-		}
-
-		/// <summary>
-		/// Internal helper to get a full path with exact casing.
-		/// Gotten from https://stackoverflow.com/questions/325931/getting-actual-file-name-with-proper-casing-on-windows-with-net
-		/// </summary>
-		/// <param name="pathName">The path to examine.</param>
-		/// <returns>The properly cased full path to pathName.</returns>
-		internal static string GetExactPath(string pathName)
-		{
-			if (!(File.Exists(pathName) || Directory.Exists(pathName)))
-				return pathName;
-
-			var di = new DirectoryInfo(pathName);
-
-			if (di.Parent != null)
-			{
-				return Path.Combine(
-						   GetExactPath(di.Parent.FullName),
-						   di.Parent.GetFileSystemInfos(di.Name)[0].Name);
-			}
-			else
-			{
-				return di.Name.ToUpper();
-			}
+			return exact.ToString();
 		}
 
 		/// <summary>
@@ -666,11 +648,19 @@ namespace Keysharp.Runtime
 		internal static string GetShortPath(string filename)
 		{
 #if WINDOWS
-			var buffer = new char[1024];
-			var len = WindowsAPI.GetShortPathName(filename, buffer, buffer.Length);
-			return new string(buffer, 0, len);
+			// The call returns the size it needs, terminator included, when the buffer is too small, and 0 on failure.
+			var buffer = new char[260];
+			var length = WindowsAPI.GetShortPathName(filename, buffer, buffer.Length);
+
+			if (length > buffer.Length)
+			{
+				buffer = new char[length];
+				length = WindowsAPI.GetShortPathName(filename, buffer, buffer.Length);
+			}
+
+			return length > 0 && length < buffer.Length ? new string(buffer, 0, length) : "";
 #else
-			return DefaultObject;
+			return "";
 #endif
 		}
 
@@ -695,39 +685,32 @@ namespace Keysharp.Runtime
 		/// The files and folders of a Loop Files, in AutoHotkey's order: the entries of a folder that match the pattern,
 		/// then with recursion the same search in each of its subfolders, whether or not their names match.
 		/// </summary>
-		internal static IEnumerable<string> GetFiles(string dir, string pattern, bool d, bool f, bool r)
-		{
-			var options = new EnumerationOptions
-			{
-				AttributesToSkip = 0,
-				IgnoreInaccessible = true,
-				MatchCasing = MatchCasing.CaseInsensitive,
-				MatchType = MatchType.Win32
-			};
-			var expression = FileSystemName.TranslateWin32Expression(pattern);
-			return GetFiles(dir, expression, d, f, r, options);
-		}
+		internal static IEnumerable<LoopFileItem> GetFiles(string dir, string pattern, bool d, bool f, bool r) =>
+			GetFiles(dir, "", FileSystemName.TranslateWin32Expression(pattern), d, f, r);
 
-		private static IEnumerable<string> GetFiles(string dir, string expression, bool d, bool f, bool r, EnumerationOptions options)
+		private static IEnumerable<LoopFileItem> GetFiles(string dir, string subDir, string expression, bool d, bool f, bool r)
 		{
-			foreach (var entry in Entries(dir, options, (ref FileSystemEntry e) =>
-				(e.IsDirectory ? d : f) && FileSystemName.MatchesWin32Expression(expression, e.FileName, true)))
-				yield return entry;
+			foreach (var item in Entries(dir, (ref FileSystemEntry e) => new LoopFileItem(subDir, e.ToFileSystemInfo()),
+				(ref FileSystemEntry e) => (e.IsDirectory ? d : f) && FileSystemName.MatchesWin32Expression(expression, e.FileName, true)))
+				yield return item;
 
 			if (!r)
 				yield break;
 
-			foreach (var sub in Entries(dir, options, static (ref FileSystemEntry e) => e.IsDirectory))
-				foreach (var entry in GetFiles(sub, expression, d, f, r, options))
-					yield return entry;
+			foreach (var name in Entries(dir, static (ref FileSystemEntry e) => e.FileName.ToString(), static (ref FileSystemEntry e) => e.IsDirectory))
+				foreach (var item in GetFiles(Path.Join(dir, name), subDir + name + Path.DirectorySeparatorChar, expression, d, f, r))
+					yield return item;
 		}
 
+		// Hidden and system entries included, as in AutoHotkey.
+		private static readonly EnumerationOptions listingOptions = new() { AttributesToSkip = 0, IgnoreInaccessible = true };
+
 		// As in AutoHotkey, a folder that cannot be searched contributes nothing rather than raising an error.
-		private static IEnumerable<string> Entries(string dir, EnumerationOptions options, FileSystemEnumerable<string>.FindPredicate include)
+		private static IEnumerable<T> Entries<T>(string dir, FileSystemEnumerable<T>.FindTransform transform, FileSystemEnumerable<T>.FindPredicate include)
 		{
 			try
 			{
-				return new FileSystemEnumerable<string>(dir, static (ref FileSystemEntry e) => e.ToSpecifiedFullPath(), options)
+				return new FileSystemEnumerable<T>(dir, transform, listingOptions)
 				{
 					ShouldIncludePredicate = include
 				};
@@ -835,12 +818,13 @@ namespace Keysharp.Runtime
 	/// </summary>
 	public class LoopInfo
 	{
-		public object file;
+		internal LoopFileItem file;
+		internal string fileDir;             // the pattern's folder as the script wrote it, ending in a separator unless empty
+		internal Lazy<string> fileFullDir;   // that folder resolved when the loop started, as the file system spells it
 		public string filename = "";
 		public long index;
 		//public DateTime lastIter = DateTime.UtcNow;
 		public string line = "";
-		public string path;
 		public object regDate;
 		public string regKeyName;
 		public string regName;
@@ -849,6 +833,15 @@ namespace Keysharp.Runtime
 		public object result;
 		public TextWriter sw;
 		public LoopType type = LoopType.Normal;
+	}
+
+	/// <summary>
+	/// A Loop Files item: the directory entry its listing produced, whose name, attributes, size and times the
+	/// A_LoopFile* variables read, and the subfolders entered to reach it, each followed by a separator.
+	/// </summary>
+	internal readonly record struct LoopFileItem(string SubDir, FileSystemInfo Info)
+	{
+		internal string SubPath => SubDir + Info.Name;
 	}
 
 	/// <summary>

@@ -314,6 +314,14 @@ namespace Keysharp.Internals
 			return result;
 		}
 
+		// As AutoHotkey reads them. The process is per-monitor aware, so these are the primary display's native pixels.
+		public bool TryGetPrimarySize(out int width, out int height)
+		{
+			width = WindowsAPI.GetSystemMetrics(SystemMetric.SM_CXSCREEN);
+			height = WindowsAPI.GetSystemMetrics(SystemMetric.SM_CYSCREEN);
+			return width > 0 && height > 0;
+		}
+
 		public DisplayDetails GetDisplayDetails(DisplayInfo display) => WindowsMonitorDetails.Get(display);
 
 		private static double GetScale(ScreenRect bounds)

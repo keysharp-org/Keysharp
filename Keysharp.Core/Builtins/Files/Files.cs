@@ -537,11 +537,11 @@ namespace Keysharp.Builtins
 				var dir = new DirectoryInfo(path);
 				var filename = Path.GetFileName(s);
 
-				if (Directory.Exists(s))
-					return Conversions.FromFileAttribs(File.GetAttributes(s));
+				FileSystemInfo found = Directory.Exists(s) ? new DirectoryInfo(s) : dir.EnumerateFiles(filename).FirstOrDefault();
 
-				foreach (var file in dir.EnumerateFiles(filename))
-					return Conversions.FromFileAttribs(File.GetAttributes(file.FullName));
+				// As in AutoHotkey, a file with none of the listed attributes reports "X", so that the result is still true.
+				if (found != null)
+					return Conversions.FromFileAttribs(found.Attributes) is { Length: > 0 } attribs ? attribs : "X";
 			}
 			catch
 			{

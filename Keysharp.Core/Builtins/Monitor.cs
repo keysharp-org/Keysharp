@@ -93,6 +93,9 @@ namespace Keysharp.Builtins
 
 		internal static (long Width, long Height) GetPrimaryScreenSize()
 		{
+			if (Platform.Screen.TryGetPrimarySize(out var width, out var height))
+				return (width, height);
+
 			var (display, _) = ResolveDisplay(null);
 			return (display.Bounds.Width, display.Bounds.Height);
 		}
