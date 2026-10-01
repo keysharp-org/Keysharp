@@ -69,7 +69,10 @@ namespace Keysharp.Internals.Os
 				}
 				else
 				{
-					foreach (ToolStripItem tempItem in menuItem.DropDownItems)
+					var parent = menuItem;
+					menuItem = null;
+
+					foreach (ToolStripItem tempItem in parent.DropDownItems)
 					{
 						if (MenuMatchHelper(tempItem.Text, item))
 						{

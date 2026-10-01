@@ -513,14 +513,6 @@ namespace Keysharp.Internals.Os.Windows
 	{
 		internal static Point ToPoint(this RECT rect) => new (rect.Left, rect.Top);
 
-		internal static Map ToPos(this RECT rect, double scale = 1.0) => new (new Dictionary<object, object>()
-		{
-			{ "X", rect.Left * scale },
-			{ "Y", rect.Top * scale },
-			{ "Width", (rect.Right - rect.Left)* scale },
-			{ "Height", (rect.Bottom - rect.Top)* scale },
-		});
-
 		[DllImport(oleacc, CharSet = CharSet.Unicode)]
 		internal static extern int AccessibleObjectFromWindow(nint hwnd, uint id, ref Guid iid, [In, Out, MarshalAs(UnmanagedType.IUnknown)] ref object ppvObject);
 
@@ -533,23 +525,38 @@ namespace Keysharp.Internals.Os.Windows
 		//public static extern int SafeArrayGetDim([MarshalAs(UnmanagedType.SafeArray, SafeArraySubType = VarEnum.VT_I4)] nint arr);
 
 		/// <summary>
-		/// Gotten from https://stackoverflow.com/questions/29392625/check-if-a-winform-checkbox-is-checked-through-winapi-only
+		/// Whether a button is checked, read with BM_GETCHECK as AHK reads it. An owner-drawn button, as another app's
+		/// WinForms button is, keeps no check state for that to report, so its state is read through MSAA instead.
+		/// False when the button did not answer.
 		/// </summary>
-		internal static bool IsChecked(nint handle)
+		internal static bool TryGetChecked(nint handle, out bool isChecked)
 		{
-			var guid = new Guid("{618736E0-3C3D-11CF-810C-00AA00389B71}");
-			object obj = null;
-			var retValue = AccessibleObjectFromWindow(handle, (uint)OBJID.CLIENT, ref guid, ref obj);
+			isChecked = false;
 
-			if (obj is IAccessible accObj)
+			if ((GetWindowLongPtr(handle, GWL_STYLE).ToInt64() & BS_TYPEMASK) == BS_OWNERDRAW)
 			{
-				var result = accObj.get_accState(0);
+				var guid = new Guid("{618736E0-3C3D-11CF-810C-00AA00389B71}");//IID_IAccessible
+				object obj = null;
 
-				if (result is int state)
-					return state == CHECKED || state == CHECKED_FOCUSED;
+				if (AccessibleObjectFromWindow(handle, (uint)OBJID.CLIENT, ref guid, ref obj) < 0 || obj is not IAccessible acc)
+					return false;
+
+				try
+				{
+					isChecked = acc.get_accState(0) is int state && (state & STATE_SYSTEM_CHECKED) != 0;
+					return true;
+				}
+				catch (COMException)
+				{
+					return false;
+				}
 			}
 
-			return false;
+			if (SendMessageTimeout(handle, BM_GETCHECK, 0, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var result) == 0)
+				return false;
+
+			isChecked = result == BST_CHECKED;
+			return true;
 		}
 
 		[LibraryImport(user32, EntryPoint = "PeekMessageW", StringMarshalling = StringMarshalling.Utf16)]
@@ -1497,9 +1504,6 @@ namespace Keysharp.Internals.Os.Windows
 		[return: MarshalAs(UnmanagedType.Bool)]
 		internal static partial bool WritePrivateProfileSection(string lpAppName, string lpString, string lpFileName);
 
-		[LibraryImport(user32, EntryPoint = "SendMessageW", StringMarshalling = StringMarshalling.Utf16)]
-		internal static partial int SendMessage(nint hwnd, uint msg, int wParam, [Out] char[] chars);
-
 		[LibraryImport(user32, EntryPoint = "GetAncestor")]
 		internal static partial nint GetAncestor(nint hwnd, GetAncestorFlags flags);
 
@@ -1670,7 +1674,7 @@ namespace Keysharp.Internals.Os.Windows
 
 		[LibraryImport(kernel32, EntryPoint = "WriteProcessMemory")]
 		[return: MarshalAs(UnmanagedType.Bool)]
-		internal static partial bool WriteProcessMemory(nint hProcess, nint lpBaseAddress, nint lpBuffer, int nSize, out nint lpNumberOfBytesWritten);
+		internal static partial bool WriteProcessMemory(nint hProcess, nint lpBaseAddress, ref LVITEM lpBuffer, int nSize, out nint lpNumberOfBytesWritten);
 
 		[StructLayout(LayoutKind.Sequential)]
 		internal struct GdiplusStartupInputEx

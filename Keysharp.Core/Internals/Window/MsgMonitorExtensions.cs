@@ -43,10 +43,16 @@ namespace Keysharp.Internals.Window
 		private static ScriptEventExecutionResult InvokeRegistrationOnSchedulerThread(ScriptEventScheduler targetScheduler, MsgMonitorRegistration registration, object[] args, object eventInfo, long hwnd, bool emergency, out object result)
 		{
 			result = null;
+
+			// AHK keeps a message queued while the script is uninterruptible, so the chain waits; any other refusal, such
+			// as #MaxThreads or priority, leaves the message unmonitored, as AHK's MsgMonitor does.
+			if (!emergency && !targetScheduler.Owner.Threads.IsInterruptible())
+				return ScriptEventExecutionResult.GlobalBlocked;
+
 			using var thread = targetScheduler.StartPseudoThreadScope(0, emergency, false, emergency, ThreadKind.Message);
 
 			if (!thread.Started)
-				return thread.Result;
+				return ScriptEventExecutionResult.Dropped;
 
 			try
 			{
@@ -73,16 +79,15 @@ namespace Keysharp.Internals.Window
 
 			foreach (var registration in monitor.GetRegistrationsSnapshot())
 			{
-				if (!registration.IsActive)
+				// A callback already running its MaxThreads leaves the message unmonitored, as in AHK.
+				if (!registration.IsActive || registration.InstanceCount >= registration.MaxInstances)
 					continue;
 
-				var status = registration.InstanceCount >= registration.MaxInstances
-					? ScriptEventExecutionResult.LocalBlocked
-					: registration.ExecuteRegistration(script, args, eventInfo, hwnd, emergency, out claim);
+				var status = registration.ExecuteRegistration(script, args, eventInfo, hwnd, emergency, out claim);
 
 				if (status != ScriptEventExecutionResult.Executed)
 				{
-					if (status != ScriptEventExecutionResult.Dropped)
+					if (status == ScriptEventExecutionResult.GlobalBlocked)
 						blocked = status;
 
 					continue;
@@ -100,13 +105,13 @@ namespace Keysharp.Internals.Window
 
 		/// <summary>
 		/// Runs the chain for a posted message before it is dispatched, as AHK does while the script is interruptible.
-		/// When no callback can start, the chain is queued for when one can and the message is dispatched meanwhile.
+		/// While it is not, the chain is queued for when it is and the message is dispatched meanwhile.
 		/// </summary>
 		internal static bool TryExecuteBeforeDispatch(this MsgMonitor monitor, Script script, object[] args, object eventInfo, long hwnd, out long reply)
 		{
 			reply = 0L;
 
-			if (monitor.RunMonitors(script, args, eventInfo, hwnd, false, out var claim) != ScriptEventExecutionResult.Executed)
+			if (monitor.RunMonitors(script, args, eventInfo, hwnd, false, out var claim) == ScriptEventExecutionResult.GlobalBlocked)
 			{
 				var queuedEvent = new BufferedMessageQueuedEvent(monitor, script, args, eventInfo, hwnd);
 				_ = script.EventScheduler.Enqueue(ScriptEventQueue.Normal, 0, queuedEvent.Execute);

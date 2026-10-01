@@ -14,29 +14,22 @@ namespace Keysharp.Internals.Os.Windows
 		{
 			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowInfoBase item)
 			{
-				var res = 0L;
-				var ctrl2 = Control.FromHandle(item.Handle);
+				uint msg;
 
-				if (ctrl2 is ComboBox cb)
-				{
-					res = cb.Items.Add(str);
-				}
-				else if (ctrl2 is ListBox lb)
-				{
-					res = lb.Items.Add(str);
-				}
+				if (item.ClassName.Contains("Combo", StringComparison.OrdinalIgnoreCase))
+					msg = WindowsAPI.CB_ADDSTRING;
+				else if (item.ClassName.Contains("List", StringComparison.OrdinalIgnoreCase))
+					msg = WindowsAPI.LB_ADDSTRING;
+				else
+					return (long)Errors.TargetErrorOccurred($"Class name {item.ClassName} did not contain Combo or List", DefaultErrorLong);
+
+				long res;
+
+				if (OwnListItems(item.Handle) is IList items)
+					res = items.Add(str);
 				else
 				{
-					int msg;
-
-					if (item.ClassName.Contains("Combo"))
-						msg = WindowsAPI.CB_ADDSTRING;
-					else if (item.ClassName.Contains("List"))
-						msg = WindowsAPI.LB_ADDSTRING;
-					else
-						return (long)Errors.TargetErrorOccurred($"Class name {item.ClassName} did not contain Combo or List", DefaultErrorLong);
-
-					if (WindowsAPI.SendMessageTimeout(item.Handle, (uint)msg, 0, str, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var result) == 0)
+					if (WindowsAPI.SendMessageTimeout(item.Handle, msg, 0, str, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var result) == 0)
 						return (long)Errors.TargetErrorOccurred($"Could not add {str} to combo or list box", title, text, excludeTitle, excludeText, DefaultErrorLong);
 
 					res = result.ToInt64();
@@ -52,6 +45,17 @@ namespace Keysharp.Internals.Os.Windows
 			return 0L;
 		}
 
+		/// <summary>
+		/// The items of the script's own ComboBox or ListBox, which are changed there rather than by message so that
+		/// the control's Items stay in step with its native list; null for any other control.
+		/// </summary>
+		private static IList OwnListItems(nint handle) => Control.FromHandle(handle) switch
+		{
+			ComboBox cb => cb.Items,
+			ListBox lb => lb.Items,
+			_ => null
+		};
+
 		internal override void ControlChooseIndex(int n, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
 			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowInfoBase item)
@@ -59,13 +63,13 @@ namespace Keysharp.Internals.Os.Windows
 				uint msg = 0, x_msg = 0, y_msg = 0;
 				n--;
 
-				if (item.ClassName.Contains("Combo"))
+				if (item.ClassName.Contains("Combo", StringComparison.OrdinalIgnoreCase))
 				{
 					msg = WindowsAPI.CB_SETCURSEL;
 					x_msg = WindowsAPI.CBN_SELCHANGE;
 					y_msg = WindowsAPI.CBN_SELENDOK;
 				}
-				else if (item.ClassName.Contains("List"))
+				else if (item.ClassName.Contains("List", StringComparison.OrdinalIgnoreCase))
 				{
 					msg = (WindowsAPI.GetWindowLongPtr(item.Handle, WindowsAPI.GWL_STYLE).ToInt64() & (WindowsAPI.LBS_EXTENDEDSEL | WindowsAPI.LBS_MULTIPLESEL)) != 0
 						  ? WindowsAPI.LB_SETSEL
@@ -73,7 +77,7 @@ namespace Keysharp.Internals.Os.Windows
 					x_msg = WindowsAPI.LBN_SELCHANGE;
 					y_msg = WindowsAPI.LBN_DBLCLK;
 				}
-				else if (item.ClassName.Contains("Tab"))
+				else if (item.ClassName.Contains("Tab", StringComparison.OrdinalIgnoreCase))
 				{
 					if (!WindowsAPI.ControlSetTab(item.Handle, n))
 					{
@@ -123,13 +127,13 @@ namespace Keysharp.Internals.Os.Windows
 			{
 				uint msg = 0, x_msg = 0, y_msg = 0;
 
-				if (item.ClassName.Contains("Combo"))
+				if (item.ClassName.Contains("Combo", StringComparison.OrdinalIgnoreCase))
 				{
 					msg = WindowsAPI.CB_SELECTSTRING;
 					x_msg = WindowsAPI.CBN_SELCHANGE;
 					y_msg = WindowsAPI.CBN_SELENDOK;
 				}
-				else if (item.ClassName.Contains("List"))
+				else if (item.ClassName.Contains("List", StringComparison.OrdinalIgnoreCase))
 				{
 					msg = (WindowsAPI.GetWindowLongPtr(item.Handle, WindowsAPI.GWL_STYLE).ToInt64() & (WindowsAPI.LBS_EXTENDEDSEL | WindowsAPI.LBS_MULTIPLESEL)) != 0
 						  ? WindowsAPI.LB_FINDSTRING
@@ -220,59 +224,64 @@ namespace Keysharp.Internals.Os.Windows
 				}
 			}
 
-			WindowInfoBase item = null;
-			var getctrlbycoords = false;
+			// The target window is kept apart from the control, as AHK's DetermineTargetControl gives them, because it
+			// is the window that gets activated. A handle names both.
+			WindowInfoBase target;
+			nint control = 0;
 
-			if (ctrlorpos.IsNullOrEmpty())//No control or coordinates, so just find the window.
+			if (!posoverride && ctrlorpos is not null and not string)
 			{
-				item = WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true);
-			}
-			else if (!posoverride)//Don't override, so try ctrlorpos first, and if it doesn't work, then try as an x/y.
-			{
-				if (!WindowSearch.TrySearchControl(ctrlorpos, title, text, excludeTitle, excludeText, out item))
+				if (WindowSearch.SearchControl(ctrlorpos, title, text, excludeTitle, excludeText) is not WindowInfoBase hwndItem)
 					return;
 
-				if (item == null)
-				{
-					if (winx != int.MinValue && winy != int.MinValue)
-						getctrlbycoords = true;
-					else
-						_ = Errors.TargetErrorOccurred($"Could not get control {ctrlorpos}", title, text, excludeTitle, excludeText);
-				}
+				target = hwndItem;
+				control = target.Handle;
 			}
-			else//Override, so always treat ctrlorpos as an x/y.
+			else
 			{
-				if (winx != int.MinValue && winy != int.MinValue)
-				{
-					getctrlbycoords = true;
-				}
-			}
-
-			if (getctrlbycoords)
-			{
-				item = WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true);
-
-				if (item == null)
+				if (WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true) is not WindowInfoBase win)
 					return;
 
-				var rect = new POINT(winx, winy);
-				_ = WindowsAPI.ClientToScreen(item.Handle, ref rect);
-				var pah = new PointAndHwnd(rect);
-				Platform.Window.ChildFindPoint(item.Handle, pah);
-				item = pah.hwndFound != 0 ? WindowQuery.CreateWindow(pah.hwndFound) : item;
+				target = win;
+
+				if (ctrlorpos.IsNullOrEmpty())
+					control = target.Handle;
+				else if (!posoverride && ctrlorpos is string name)
+					control = WindowQuery.ControlExist(target.Handle, name);
 			}
 
-			if (item == null)
-				return;
+			// Read as "xN yN" only once no control matched, so a control whose class or text looks like that comes first.
+			if (control == 0)
+			{
+				if (winx == int.MinValue || winy == int.MinValue)
+				{
+					_ = Errors.TargetErrorOccurred($"Could not get control {ctrlorpos}", title, text, excludeTitle, excludeText);
+					return;
+				}
+
+				var origin = target.ClientToScreen();
+				var pah = new PointAndHwnd(new POINT(origin.X + winx, origin.Y + winy)) { ignoreDisabled = true };
+				Platform.Window.ChildFindPoint(target.Handle, pah);
+				control = pah.hwndFound != 0 ? pah.hwndFound : target.Handle;
+				// The point overrides any X and Y option, converted to the client area of whichever window gets the click.
+				var point = pah.pt;
+				_ = WindowsAPI.ScreenToClient(control, ref point);
+				ctrlx = point.X;
+				ctrly = point.Y;
+			}
 
 			if (clickCount < 1)
+			{
+				// Zero does nothing, so a count read from a variable can turn the click off.
+				if (clickCount < 0)
+					_ = Errors.InvalidParameterErrorOccurred(5, "ControlClick", clickCount);
+
 				return;
+			}
 
 			if (ctrlx == int.MinValue || ctrly == int.MinValue)
 			{
-				var temprect = new RECT();
-
-				if (!WindowsAPI.GetWindowRect(item.Handle, out temprect))
+				if (!WindowsAPI.GetWindowRect(control, out var temprect))
 				{
 					_ = Errors.TargetErrorOccurred($"Could not get control rect {ctrlorpos}", title, text, excludeTitle, excludeText);
 					return;
@@ -285,7 +294,7 @@ namespace Keysharp.Internals.Os.Windows
 					ctrly = (temprect.Bottom - temprect.Top) / 2;
 			}
 
-			var lparam = KeyboardUtils.MakeLong((short)ctrlx, (short)ctrly);
+			var click = new POINT(ctrlx, ctrly);
 			uint msg_down = 0, msg_up = 0;
 			uint wparam = 0, wparam_up = 0;
 			var vk_is_wheel = vk == VirtualKeys.VK_WHEEL_UP || vk == VirtualKeys.VK_WHEEL_DOWN;
@@ -293,6 +302,7 @@ namespace Keysharp.Internals.Os.Windows
 
 			if (vk_is_wheel)
 			{
+				_ = WindowsAPI.ClientToScreen(control, ref click); // Wheel messages use screen coordinates.
 				wparam = (uint)(clickCount * ((vk == VirtualKeys.VK_WHEEL_UP) ? WHEEL_DELTA : -WHEEL_DELTA)) << 16;  // High order word contains the delta.
 				msg_down = WindowsAPI.WM_MOUSEWHEEL;
 			}
@@ -317,16 +327,17 @@ namespace Keysharp.Internals.Os.Windows
 				}
 			}
 
+			var lparam = KeyboardUtils.MakeLong((short)click.X, (short)click.Y);
 			(bool, uint) thinfo = (false, 0);
 
 			if (!na)
 			{
-				thinfo = WindowsAPI.AttachThreadInput(item.Handle, true);
+				thinfo = WindowsAPI.AttachThreadInput(target.Handle, true);
 			}
 
 			if (vk_is_wheel || vk_is_hwheel) // v1.0.48: Lexikos: Support horizontal scrolling in Windows Vista and later.
 			{
-				_ = WindowsAPI.PostMessage(item.Handle, msg_down, wparam, lparam);
+				_ = WindowsAPI.PostMessage(control, msg_down, wparam, lparam);
 				WindowInfoBase.DoControlDelay();
 			}
 			else
@@ -335,13 +346,13 @@ namespace Keysharp.Internals.Os.Windows
 				{
 					if (!u) // It's either down-only or up-and-down so always to the down-event.
 					{
-						_ = WindowsAPI.PostMessage(item.Handle, msg_down, wparam, lparam);
+						_ = WindowsAPI.PostMessage(control, msg_down, wparam, lparam);
 						WindowInfoBase.DoControlDelay();
 					}
 
 					if (!d) // It's either up-only or up-and-down so always to the up-event.
 					{
-						_ = WindowsAPI.PostMessage(item.Handle, msg_up, wparam_up, lparam);
+						_ = WindowsAPI.PostMessage(control, msg_up, wparam_up, lparam);
 						WindowInfoBase.DoControlDelay();
 					}
 				}
@@ -356,40 +367,42 @@ namespace Keysharp.Internals.Os.Windows
 			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowInfoBase item)
 			{
 				uint msg;
-				var ctrl2 = Control.FromHandle(item.Handle);
 				n--;
 
-				if (ctrl2 is ComboBox cb)
+				if (item.ClassName.Contains("Combo", StringComparison.OrdinalIgnoreCase))
+					msg = WindowsAPI.CB_DELETESTRING;
+				else if (item.ClassName.Contains("List", StringComparison.OrdinalIgnoreCase))
+					msg = WindowsAPI.LB_DELETESTRING;
+				else
 				{
-					cb.Items.RemoveAt(n);
+					_ = Errors.TargetErrorOccurred($"Class name {item.ClassName} did not contain Combo or List");
+					return;
 				}
-				else if (ctrl2 is ListBox lb)
+
+				bool deleted;
+
+				if (OwnListItems(item.Handle) is IList items)
 				{
-					lb.Items.RemoveAt(n);
+					deleted = n >= 0 && n < items.Count;
+
+					if (deleted)
+						items.RemoveAt(n);
 				}
 				else
 				{
-					if (item.ClassName.Contains("Combo"))
-						msg = WindowsAPI.CB_DELETESTRING;
-					else if (item.ClassName.Contains("List"))
-						msg = WindowsAPI.LB_DELETESTRING;
-					else
-					{
-						_ = Errors.TargetErrorOccurred($"Class name {item.ClassName} did not contain Combo or List");
-						return;
-					}
-
 					if (WindowsAPI.SendMessageTimeout(item.Handle, msg, n, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var result) == 0)
 					{
 						_ = Errors.TargetErrorOccurred($"Could not delete combo or list box index {n}", title, text, excludeTitle, excludeText);
 						return;
 					}
 
-					if (result.ToInt64() == WindowsAPI.CB_ERR) // CB_ERR == LB_ERR
-					{
-						_ = Errors.TargetErrorOccurred($"Erroneous item index when deleting combo or list box selection index to {n}", title, text, excludeTitle, excludeText);
-						return;
-					}
+					deleted = result.ToInt64() != WindowsAPI.CB_ERR; // CB_ERR == LB_ERR
+				}
+
+				if (!deleted)
+				{
+					_ = Errors.TargetErrorOccurred($"Erroneous item index when deleting combo or list box selection index to {n}", title, text, excludeTitle, excludeText);
+					return;
 				}
 
 				WindowInfoBase.DoControlDelay();
@@ -401,16 +414,10 @@ namespace Keysharp.Internals.Os.Windows
 			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowInfoBase item)
 			{
 				uint msg = 0;
-				var ctrl2 = Control.FromHandle(item.Handle);
 
-				if (ctrl2 is ComboBox cb)
-					return cb.Items.IndexOf(str) + 1L;
-				else if (ctrl2 is ListBox lb)
-					return lb.Items.IndexOf(str) + 1L;
-
-				if (item.ClassName.Contains("Combo"))
+				if (item.ClassName.Contains("Combo", StringComparison.OrdinalIgnoreCase))
 					msg = WindowsAPI.CB_FINDSTRINGEXACT;
-				else if (item.ClassName.Contains("List"))
+				else if (item.ClassName.Contains("List", StringComparison.OrdinalIgnoreCase))
 					msg = WindowsAPI.LB_FINDSTRINGEXACT;
 				else
 					return (long)Errors.TargetErrorOccurred($"Class name {item.ClassName} did not contain Combo or List", DefaultErrorLong);
@@ -440,13 +447,13 @@ namespace Keysharp.Internals.Os.Windows
 		{
 			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowInfoBase item)
 			{
-				var ctrl2 = Control.FromHandle(item.Handle);
+				if (Control.FromHandle(item.Handle) is CheckBox cb)
+					return cb.CheckState == CheckState.Checked ? 1L : 0L;
 
-				if (ctrl2 is CheckBox cb)
-					return cb.Checked ? 1L : 0L;
+				if (!WindowsAPI.TryGetChecked(item.Handle, out var isChecked))
+					return (long)Errors.OSErrorOccurred("", $"Could not get the check state of the control in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}", 0L);
 
-				//Using SendMessage() with BM_GETCHECK does *not* work on Winforms checkboxes. So we must use this custom automation function gotten from Stack Overflow.
-				return WindowsAPI.IsChecked(item.Handle) ? 1L : 0L;
+				return isChecked ? 1L : 0L;
 			}
 
 			return 0L;
@@ -458,13 +465,13 @@ namespace Keysharp.Internals.Os.Windows
 			{
 				uint msg = 0, x_msg = 0, y_msg = 0;
 
-				if (item.ClassName.Contains("Combo"))
+				if (item.ClassName.Contains("Combo", StringComparison.OrdinalIgnoreCase))
 				{
 					msg = WindowsAPI.CB_GETCURSEL;
 					x_msg = WindowsAPI.CB_GETLBTEXTLEN;
 					y_msg = WindowsAPI.CB_GETLBTEXT;
 				}
-				else if (item.ClassName.Contains("List"))
+				else if (item.ClassName.Contains("List", StringComparison.OrdinalIgnoreCase))
 				{
 					msg = WindowsAPI.LB_GETCURSEL;
 					x_msg = WindowsAPI.LB_GETTEXTLEN;
@@ -479,13 +486,14 @@ namespace Keysharp.Internals.Os.Windows
 						|| length.ToInt64() == WindowsAPI.CB_ERR)  // CB_ERR == LB_ERR
 					return (string)Errors.ErrorOccurred($"Could not get selected item string for combo or list box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}", DefaultErrorString);
 
-				var buffer = new char[length.ToInt32()];
+				var buffer = new char[length.ToInt32() + 1];//The text is written with its terminator.
 
-				if (WindowsAPI.SendMessageTimeout(item.Handle, y_msg, index, buffer, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out length) == 0
-						|| length.ToInt64() == WindowsAPI.CB_ERR)//Probably impossible given the way it was called above. Also, CB_ERR == LB_ERR. Relies on short-circuit boolean order.
+				//The text can turn out shorter than the length given for it, but never longer.
+				if (WindowsAPI.SendMessageTimeout(item.Handle, y_msg, index, buffer, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var actual) == 0
+						|| actual < 0 || actual > length)
 					return (string)Errors.ErrorOccurred($"Could not get selected item string for combo or list box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}", DefaultErrorString);
 
-				return new string(buffer, 0, length.ToInt32());
+				return new string(buffer, 0, actual.ToInt32());
 			}
 
 			return DefaultObject;
@@ -529,11 +537,11 @@ namespace Keysharp.Internals.Os.Windows
 			{
 				uint msg = 0;
 
-				if (item.ClassName.Contains("Combo"))
+				if (item.ClassName.Contains("Combo", StringComparison.OrdinalIgnoreCase))
 					msg = WindowsAPI.CB_GETCURSEL;
-				else if (item.ClassName.Contains("List"))
+				else if (item.ClassName.Contains("List", StringComparison.OrdinalIgnoreCase))
 					msg = WindowsAPI.LB_GETCURSEL;
-				else if (item.ClassName.Contains("Tab"))
+				else if (item.ClassName.Contains("Tab", StringComparison.OrdinalIgnoreCase))
 					msg = WindowsAPI.TCM_GETCURSEL;
 				else
 					return (long)Errors.TargetErrorOccurred($"Class name {item.ClassName} did not contain Combo, List or Tab", DefaultErrorLong);
@@ -552,31 +560,51 @@ namespace Keysharp.Internals.Os.Windows
 		{
 			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowInfoBase item)
 			{
-				uint msg = 0, x_msg = 0;
+				uint msg = 0, x_msg = 0, y_msg = 0;
 
-				if (item.ClassName.Contains("Combo"))
+				if (item.ClassName.Contains("Combo", StringComparison.OrdinalIgnoreCase))
 				{
 					msg = WindowsAPI.CB_GETCOUNT;
-					x_msg = WindowsAPI.CB_GETLBTEXT;
+					x_msg = WindowsAPI.CB_GETLBTEXTLEN;
+					y_msg = WindowsAPI.CB_GETLBTEXT;
 				}
-				else if (item.ClassName.Contains("List"))
+				else if (item.ClassName.Contains("List", StringComparison.OrdinalIgnoreCase))
 				{
 					msg = WindowsAPI.LB_GETCOUNT;
-					x_msg = WindowsAPI.LB_GETTEXT;
+					x_msg = WindowsAPI.LB_GETTEXTLEN;
+					y_msg = WindowsAPI.LB_GETTEXT;
 				}
 				else
 					return Errors.TargetErrorOccurred($"Class name {item.ClassName} did not contain Combo or List");
 
-				var cnt = (int)WindowsAPI.SendMessage(item.Handle, msg, 0, 0);
+				if (WindowsAPI.SendMessageTimeout(item.Handle, msg, 0, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 5000, out var count) == 0
+						|| count.ToInt64() == WindowsAPI.LB_ERR)
+					return Errors.ErrorOccurred($"Could not get the item count of the combo or list box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}");
+
+				var cnt = count.ToInt32();
+				nint length = 0;
+
+				//LB_GETTEXT and CB_GETLBTEXT take no buffer size, so one buffer is sized for the longest item.
+				for (var i = 0; i < cnt; i++)
+				{
+					if (WindowsAPI.SendMessageTimeout(item.Handle, x_msg, i, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 5000, out var itemLength) == 0
+							|| itemLength.ToInt64() == WindowsAPI.LB_ERR)
+						return Errors.ErrorOccurred($"Could not get an item length of the combo or list box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}");
+
+					if (itemLength > length)
+						length = itemLength;
+				}
+
+				var buffer = new char[length.ToInt32() + 1];
 				var listBoxContent = new List<object>(cnt);
-				var chars = new char[256];
 
 				for (var i = 0; i < cnt; i++)
 				{
-					System.Array.Clear(chars, 0, chars.Length);
-					int len = WindowsAPI.SendMessage(item.Handle, x_msg, i, chars);
-					if (len > 0)
-						listBoxContent.Add(new string(chars, 0, len));
+					if (WindowsAPI.SendMessageTimeout(item.Handle, y_msg, i, buffer, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 5000, out var itemLength) == 0
+							|| itemLength < 0 || itemLength > length)
+						return Errors.ErrorOccurred($"Could not get an item of the combo or list box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}");
+
+					listBoxContent.Add(new string(buffer, 0, itemLength.ToInt32()));
 				}
 
 				return new Keysharp.Builtins.Array(listBoxContent);
@@ -601,15 +629,13 @@ namespace Keysharp.Internals.Os.Windows
 
 				if (WindowsAPI.GetWindowRect(item.Handle, out var rect))
 				{
-					if (WindowsAPI.MapWindowPoints(0, coordParent, ref rect, 2) != 0)
-					{
-						var pos = rect.ToPos();
-						outX = pos["X"];
-						outY = pos["Y"];
-						outWidth = pos["Width"];
-						outHeight = pos["Height"];
-						return;
-					}
+					// MapWindowPoints returns 0 also for a parent whose client area is at the screen's origin.
+					_ = WindowsAPI.MapWindowPoints(0, coordParent, ref rect, 2);
+					outX = (long)rect.Left;
+					outY = (long)rect.Top;
+					outWidth = (long)(rect.Right - rect.Left);
+					outHeight = (long)(rect.Bottom - rect.Top);
+					return;
 				}
 			}
 
@@ -651,20 +677,26 @@ namespace Keysharp.Internals.Os.Windows
 				var ctrl2 = Control.FromHandle(item.Handle);
 
 				if (ctrl2 is CheckBox cb)
-					cb.Checked = onoff == ToggleValueType.Toggle ? !cb.Checked : onoff == ToggleValueType.On;
+					cb.CheckState = (onoff == ToggleValueType.Toggle ? cb.CheckState != CheckState.Checked : onoff == ToggleValueType.On) ? CheckState.Checked : CheckState.Unchecked;
 				else if (ctrl2 is RadioButton rb)
 					rb.Checked = onoff == ToggleValueType.Toggle ? !rb.Checked : onoff == ToggleValueType.On;
 				else
 				{
-					var ischecked = WindowsAPI.IsChecked(item.Handle);//Check to see if it's already in the desired state.
+					//A toggle clicks without asking, as in AHK.
+					if (onoff is ToggleValueType.On or ToggleValueType.Off)
+					{
+						if (!WindowsAPI.TryGetChecked(item.Handle, out var isChecked))
+						{
+							_ = Errors.OSErrorOccurred("", $"Could not get the check state of the control in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}");
+							return;
+						}
 
-					if (onoff == ToggleValueType.On && ischecked)
-						return;
-					else if (onoff == ToggleValueType.Off && !ischecked)
-						return;
+						if (isChecked == (onoff == ToggleValueType.On))
+							return;
+					}
 
 					var thinfo = WindowsAPI.AttachThreadInput(item.Handle, false);//Pass false because the SetActiveWindow() call below is more specific.
-					_ = WindowsAPI.SetActiveWindow(item.Handle.ToInt64() == item.Handle.ToInt64() ? WindowsAPI.GetNonChildParent(item.Handle) : item.Handle);//Account for when the target window might be the control itself (e.g. via ahk_id %ControlHWND%).
+					_ = WindowsAPI.SetActiveWindow(WindowsAPI.GetNonChildParent(item.Handle));
 
 					if (!WindowsAPI.GetWindowRect(item.Handle, out var rect))
 						rect.Bottom = rect.Left = rect.Right = rect.Top = 0;
@@ -791,23 +823,36 @@ namespace Keysharp.Internals.Os.Windows
 		{
 			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowInfoBase item)
 			{
-				var buffer = new char[32767];
-				n--;
-				buffer[0] = (char)buffer.Length;
+				if (n < 1)
+					return (string)Errors.InvalidParameterErrorOccurred(1, "EditGetLine", n, DefaultErrorString);
 
-				if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.EM_GETLINE, n, buffer, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out nint result) == 0 && result < 0)
-					return (string)Errors.ErrorOccurred($"Could not get line for text box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}", DefaultErrorString);
+				//EM_GETLINE reads the buffer's size from its first character, which caps it at 32767.
+				const int bufferSize = 32767;
+				var buffer = ArrayPool<char>.Shared.Rent(bufferSize);
 
-				if (result == 0)
+				try
 				{
-					if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.EM_GETLINECOUNT, 0, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var linecount) == 0)
-						return (string)Errors.ErrorOccurred($"Could not get line count for text box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}", DefaultErrorString);
+					n--;
+					buffer[0] = (char)bufferSize;
 
-					if (n + 1 > linecount.ToInt32())
-						return (string)Errors.ValueErrorOccurred($"Requested line of {n + 1} is greater than the number of lines ({linecount.ToInt32()}) in the text box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}", null, DefaultErrorString);
+					if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.EM_GETLINE, n, buffer, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var result) == 0)
+						return (string)Errors.ErrorOccurred($"Could not get line for text box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}", DefaultErrorString);
+
+					if (result == 0)//The line is empty or does not exist.
+					{
+						if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.EM_GETLINECOUNT, 0, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var linecount) == 0)
+							return (string)Errors.ErrorOccurred($"Could not get line count for text box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}", DefaultErrorString);
+
+						if (n + 1 > linecount.ToInt32())
+							return (string)Errors.ValueErrorOccurred($"Requested line of {n + 1} is greater than the number of lines ({linecount.ToInt32()}) in the text box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}", null, DefaultErrorString);
+					}
+
+					return new string(buffer, 0, result.ToInt32());
 				}
-
-				return new string(buffer, 0, result.ToInt32());
+				finally
+				{
+					ArrayPool<char>.Shared.Return(buffer);
+				}
 			}
 
 			return DefaultObject;
@@ -967,162 +1012,152 @@ namespace Keysharp.Internals.Os.Windows
 					if (rowct < 1 || colct == 0) // But don't return when col_count == -1 (i.e. always make the attempt when col count is undetermined).
 						return DefaultObject;  // No text in the control, so indicate success.
 
-					// allocate buffer for a string to store the text of the list view item we wanted
-					nint remotetext = 0;
-					nint remotelvi = 0;
+					// One block in the remote process holds the LVITEM and, after it, the buffer its text is written to.
+					var lvItemSize = Marshal.SizeOf<LVITEM>();
+					var remotelvi = WindowsAPI.AllocInterProcMem((uint)(lvItemSize + WindowsAPI.LV_REMOTE_BUF_SIZE * sizeof(char)), item.Handle, ProcessAccessTypes.PROCESS_QUERY_INFORMATION, out var prochandle);
 
-					if ((remotetext = WindowsAPI.AllocInterProcMem(WindowsAPI.LV_REMOTE_BUF_SIZE, item.Handle, ProcessAccessTypes.PROCESS_QUERY_INFORMATION, out var prochandle)) == 0)
-						return Errors.TargetErrorOccurred($"Could not allocate inter process string memory for list view", title, text, excludeTitle, excludeText);
+					if (remotelvi == 0)
+						return Errors.TargetErrorOccurred($"Could not allocate inter process memory for list view", title, text, excludeTitle, excludeText);
 
-					// this is the LVITEM we need to inject
 					var lvItem = new LVITEM
 					{
-						mask = 0x0001,
+						mask = 0x0001,//LVIF_TEXT
 						cchTextMax = WindowsAPI.LV_REMOTE_BUF_SIZE - 1,
-						pszText = remotetext,
-						iItem = 0,//itemId,
-						iSubItem = 1,//subItemId
+						pszText = remotelvi + lvItemSize
 					};
 					long i, total_length;
 					nint next = 0;
 					var is_selective = focused || sel;
 					var single_col_mode = col > -1 || colct == -1;// Get only one column in these cases.
-					var lvItemSize = Marshal.SizeOf(lvItem);
-					var lvItemLocalPtr = Marshal.AllocHGlobal(lvItemSize);
+					var localText = new byte[WindowsAPI.LV_REMOTE_BUF_SIZE * sizeof(char)];
 					var sb = new StringBuilder(1024);
 
-					if ((remotelvi = WindowsAPI.AllocInterProcMem((uint)lvItemSize, item.Handle, ProcessAccessTypes.PROCESS_QUERY_INFORMATION, out _)) == 0)
-						return Errors.TargetErrorOccurred($"Could not allocate inter process list view item memory for list view", title, text, excludeTitle, excludeText);
-
-					for (i = 0, next = new nint(-1), total_length = 0; i < rowct; ++i) // For each row:
+					try
 					{
-						if (is_selective)
+						for (i = 0, next = new nint(-1), total_length = 0; i < rowct; ++i) // For each row:
 						{
-							// Fix for v1.0.37.01: Prevent an infinite loop that might occur if the target control no longer
-							// exists (perhaps having been closed in the middle of the operation) or is permanently hung.
-							// If GetLastError() were to return zero after the below, it would mean the function timed out.
-							// However, rather than checking and retrying, it seems better to abort the operation because:
-							// 1) Timeout should be quite rare.
-							// 2) Reduces code size.
-							// 3) Having a retry really should be accompanied by SLEEP_WITHOUT_INTERRUPTION because all this
-							//    time our thread would not pumping messages (and worse, if the keyboard/mouse hooks are installed,
-							//    mouse/key lag would occur).
-							if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETNEXTITEM, next.ToInt32(), focused ? WindowsAPI.LVNI_FOCUSED : WindowsAPI.LVNI_SELECTED,
-															  SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out next) == 0
-									|| next.ToInt32() == -1) // No next item.  Relies on short-circuit boolean order.
-								break; // End of estimation phase (if estimate is too small, the text retrieval below will truncate it).
-						}
-						else
-							next = new nint(i);
-
-						for (lvItem.iSubItem = (col > -1) ? col : 0 // iSubItem is which field to fetch. If it's zero, the item vs. subitem will be fetched.
-											   ; colct == -1 || lvItem.iSubItem < colct // If column count is undetermined (-1), always make the attempt.
-								; ++lvItem.iSubItem) // For each column:
-						{
-							Marshal.StructureToPtr(lvItem, lvItemLocalPtr, false);
-
-							if (WindowsAPI.WriteProcessMemory(prochandle, remotelvi, lvItemLocalPtr, lvItemSize, out _)
-									&& WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETITEMTEXT, next, remotelvi, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var itemlen) != 0)
-								total_length += itemlen.ToInt64();
-
-							//else timed out or failed, don't include the length in the estimate.  Instead, the
-							// text-fetching routine below will ensure the text doesn't overflow the var capacity.
-							if (single_col_mode)
-								break;
-						}
-					}
-
-					// Add to total_length enough room for one linefeed per row, and one tab after each column
-					// except the last (formula verified correct, though it's inflated by 1 for safety). "i" contains the
-					// actual number of rows that will be transcribed, which might be less than rowct if is_selective==true.
-					total_length += i * (single_col_mode ? 1 : colct);
-					var capacity = total_length; // LRESULT avoids signed vs. unsigned compiler warnings.
-
-					if (capacity > 0) // For maintainability, avoid going negative.
-						--capacity; // Adjust to exclude the zero terminator, which simplifies things below.
-
-					// RETRIEVE THE TEXT FROM THE REMOTE LISTVIEW
-					// Start total_length at zero in case actual size is greater than estimate, in which case only a partial set of text along with its '\t' and '\n' chars will be written.
-					for (i = 0, next = new nint(-1), total_length = 0; i < rowct; ++i) // For each row:
-					{
-						if (is_selective)
-						{
-							// Fix for v1.0.37.01: Prevent an infinite loop (for details, see comments in the estimation phase above).
-							if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETNEXTITEM, next.ToInt32(), focused ? WindowsAPI.LVNI_FOCUSED : WindowsAPI.LVNI_SELECTED
-															  , SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out next) == 0
-									|| next.ToInt32() == -1) // No next item.
-								break; // See comment above for why unconditional break vs. continue.
-						}
-						else // Retrieve every row, so the "next" row becomes the "i" index.
-							next = new nint(i);
-
-						// Insert a linefeed before each row except the first:
-						if (i != 0 && total_length < capacity) // If we're at capacity, it will exit the loops when the next field is read.
-						{
-							_ = sb.AppendLine();
-							++total_length;
-						}
-
-						var localTextBuffer = new byte[WindowsAPI.LV_TEXT_BUF_SIZE];
-
-						// iSubItem is which field to fetch. If it's zero, the item vs. subitem will be fetched:
-						for (lvItem.iSubItem = (col > -1) ? col : 0
-											   ; colct == -1 || lvItem.iSubItem < colct // If column count is undetermined (-1), always make the attempt.
-								; ++lvItem.iSubItem) // For each column:
-						{
-							// Insert a tab before each column except the first and except when in single-column mode:
-							if (!single_col_mode && lvItem.iSubItem != 0 && total_length < capacity)  // If we're at capacity, it will exit the loops when the next field is read.
+							if (is_selective)
 							{
-								_ = sb.Append('\t');
+								// Fix for v1.0.37.01: Prevent an infinite loop that might occur if the target control no longer
+								// exists (perhaps having been closed in the middle of the operation) or is permanently hung.
+								// If GetLastError() were to return zero after the below, it would mean the function timed out.
+								// However, rather than checking and retrying, it seems better to abort the operation because:
+								// 1) Timeout should be quite rare.
+								// 2) Reduces code size.
+								// 3) Having a retry really should be accompanied by SLEEP_WITHOUT_INTERRUPTION because all this
+								//    time our thread would not pumping messages (and worse, if the keyboard/mouse hooks are installed,
+								//    mouse/key lag would occur).
+								if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETNEXTITEM, next.ToInt32(), focused ? WindowsAPI.LVNI_FOCUSED : WindowsAPI.LVNI_SELECTED,
+																  SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out next) == 0
+										|| next.ToInt32() == -1) // No next item.  Relies on short-circuit boolean order.
+									break; // End of estimation phase (if estimate is too small, the text retrieval below will truncate it).
+							}
+							else
+								next = new nint(i);
+
+							for (lvItem.iSubItem = (col > -1) ? col : 0 // iSubItem is which field to fetch. If it's zero, the item vs. subitem will be fetched.
+												   ; colct == -1 || lvItem.iSubItem < colct // If column count is undetermined (-1), always make the attempt.
+									; ++lvItem.iSubItem) // For each column:
+							{
+								if (WindowsAPI.WriteProcessMemory(prochandle, remotelvi, ref lvItem, lvItemSize, out _)
+										&& WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETITEMTEXT, next, remotelvi, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var itemlen) != 0)
+									total_length += itemlen.ToInt64();
+
+								//else timed out or failed, don't include the length in the estimate.  Instead, the
+								// text-fetching routine below will ensure the text doesn't overflow the var capacity.
+								if (single_col_mode)
+									break;
+							}
+						}
+
+						// Add to total_length enough room for one linefeed per row, and one tab after each column
+						// except the last (formula verified correct, though it's inflated by 1 for safety). "i" contains the
+						// actual number of rows that will be transcribed, which might be less than rowct if is_selective==true.
+						total_length += i * (single_col_mode ? 1 : colct);
+						var capacity = total_length; // LRESULT avoids signed vs. unsigned compiler warnings.
+
+						if (capacity > 0) // For maintainability, avoid going negative.
+							--capacity; // Adjust to exclude the zero terminator, which simplifies things below.
+
+						// RETRIEVE THE TEXT FROM THE REMOTE LISTVIEW
+						// Start total_length at zero in case actual size is greater than estimate, in which case only a partial set of text along with its '\t' and '\n' chars will be written.
+						for (i = 0, next = new nint(-1), total_length = 0; i < rowct; ++i) // For each row:
+						{
+							if (is_selective)
+							{
+								// Fix for v1.0.37.01: Prevent an infinite loop (for details, see comments in the estimation phase above).
+								if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETNEXTITEM, next.ToInt32(), focused ? WindowsAPI.LVNI_FOCUSED : WindowsAPI.LVNI_SELECTED
+																  , SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out next) == 0
+										|| next.ToInt32() == -1) // No next item.
+									break; // See comment above for why unconditional break vs. continue.
+							}
+							else // Retrieve every row, so the "next" row becomes the "i" index.
+								next = new nint(i);
+
+							// Insert a linefeed before each row except the first:
+							if (i != 0 && total_length < capacity) // If we're at capacity, it will exit the loops when the next field is read.
+							{
+								_ = sb.AppendLine();
 								++total_length;
 							}
 
-							Marshal.StructureToPtr(lvItem, lvItemLocalPtr, false);
-
-							if (!WindowsAPI.WriteProcessMemory(prochandle, remotelvi, lvItemLocalPtr, lvItemSize, out _)
-									|| WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETITEMTEXT, next, remotelvi, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var templen) == 0)
-								continue; // Timed out or failed. It seems more useful to continue getting text rather than aborting the operation.
-
-							var length = (uint)templen.ToInt32();
-
-							// Otherwise, the message was successfully sent.
-							if (length > 0)
+							// iSubItem is which field to fetch. If it's zero, the item vs. subitem will be fetched:
+							for (lvItem.iSubItem = (col > -1) ? col : 0
+												   ; colct == -1 || lvItem.iSubItem < colct // If column count is undetermined (-1), always make the attempt.
+									; ++lvItem.iSubItem) // For each column:
 							{
-								if (total_length + length > capacity)
-									goto break_both; // "goto" for simplicity and code size reduction.
-
-								// Otherwise:
-								// READ THE TEXT FROM THE REMOTE PROCESS
-								// Although MSDN has the following comment about LVM_GETITEM, it is not present for
-								// LVM_GETITEMTEXT. Therefore, to improve performance (by avoiding a second call to
-								// ReadProcessMemory) and to reduce code size, we'll take them at their word until
-								// proven otherwise.  Here is the MSDN comment about LVM_GETITEM: "Applications
-								// should not assume that the text will necessarily be placed in the specified
-								// buffer. The control may instead change the pszText member of the structure
-								// to point to the new text, rather than place it in the buffer."
-								if (WindowsAPI.ReadProcessMemory(prochandle, remotetext, localTextBuffer, length * 2, out var bytesread))
+								// Insert a tab before each column except the first and except when in single-column mode:
+								if (!single_col_mode && lvItem.iSubItem != 0 && total_length < capacity)  // If we're at capacity, it will exit the loops when the next field is read.
 								{
-									var itemtext = Encoding.Unicode.GetString(localTextBuffer.AsSpan().Slice(0, (int)bytesread));
-									_ = sb.Append(itemtext);
-									total_length += length; // Recalculate length in case its different than the estimate (for any reason).
+									_ = sb.Append('\t');
+									++total_length;
 								}
 
-								//else it failed; but even so, continue on to put in a tab (if called for).
+								if (!WindowsAPI.WriteProcessMemory(prochandle, remotelvi, ref lvItem, lvItemSize, out _)
+										|| WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETITEMTEXT, next, remotelvi, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var templen) == 0)
+									continue; // Timed out or failed. It seems more useful to continue getting text rather than aborting the operation.
+
+								// Never more than the buffer holds, whatever the control reports.
+								var length = (uint)Math.Clamp(templen.ToInt64(), 0, WindowsAPI.LV_REMOTE_BUF_SIZE - 1);
+
+								// Otherwise, the message was successfully sent.
+								if (length > 0)
+								{
+									if (total_length + length > capacity)
+										goto break_both; // "goto" for simplicity and code size reduction.
+
+									// Otherwise:
+									// READ THE TEXT FROM THE REMOTE PROCESS
+									// Although MSDN has the following comment about LVM_GETITEM, it is not present for
+									// LVM_GETITEMTEXT. Therefore, to improve performance (by avoiding a second call to
+									// ReadProcessMemory) and to reduce code size, we'll take them at their word until
+									// proven otherwise.  Here is the MSDN comment about LVM_GETITEM: "Applications
+									// should not assume that the text will necessarily be placed in the specified
+									// buffer. The control may instead change the pszText member of the structure
+									// to point to the new text, rather than place it in the buffer."
+									if (WindowsAPI.ReadProcessMemory(prochandle, lvItem.pszText, localText, length * sizeof(char), out var bytesread))
+									{
+										_ = sb.Append(MemoryMarshal.Cast<byte, char>(new ReadOnlySpan<byte>(localText, 0, (int)bytesread)));
+										total_length += length; // Recalculate length in case its different than the estimate (for any reason).
+									}
+
+									//else it failed; but even so, continue on to put in a tab (if called for).
+								}
+
+								//else length is zero; but even so, continue on to put in a tab (if called for).
+								if (single_col_mode)
+									break;
 							}
-
-							//else length is zero; but even so, continue on to put in a tab (if called for).
-							if (single_col_mode)
-								break;
 						}
-					}
 
-					break_both:
-					// finally free all the memory we allocated, and close the process handle we opened
-					_ = WindowsAPI.VirtualFreeEx(prochandle, remotelvi, 0, VirtualAllocExTypes.MEM_RELEASE);
-					_ = WindowsAPI.VirtualFreeEx(prochandle, remotetext, 0, VirtualAllocExTypes.MEM_RELEASE);
-					Marshal.FreeHGlobal(lvItemLocalPtr);
-					_ = WindowsAPI.CloseHandle(prochandle);
-					ret = sb.ToString();
+						break_both:
+						ret = sb.ToString();
+					}
+					finally
+					{
+						_ = WindowsAPI.VirtualFreeEx(prochandle, remotelvi, 0, VirtualAllocExTypes.MEM_RELEASE);
+						_ = WindowsAPI.CloseHandle(prochandle);
+					}
 				}
 
 				return ret;
@@ -1193,6 +1228,8 @@ namespace Keysharp.Internals.Os.Windows
 			if (menu == 0 || WindowsAPI.GetMenuItemCount(menu) == 0)
 				return true;
 
+			var buf = new StringBuilder(1024);
+
 			for (; i1 < items.Length; i1++)
 			{
 				if (!items[i1].CoerceString(out var item))
@@ -1201,36 +1238,40 @@ namespace Keysharp.Internals.Os.Windows
 				if (item.Length == 0)
 					continue;
 
-				if (item.EndsWith('&') && int.TryParse(item.Trim('&'), out var n) && n > 0)
-				{
-					n--;
-					menuid = WindowsAPI.GetMenuItemID(menu, n);
-					menu = WindowsAPI.GetSubMenu(menu, n);
+				var pos = -1;
 
-					if (menu == 0)
-						break;
-				}
-				else
+				//A path which goes on past an item without a submenu names nothing, as one with an unmatched element does.
+				if (menu != 0)
 				{
-					var itemct = WindowsAPI.GetMenuItemCount(menu);
-
-					for (var i = 0; i < itemct; i++)
+					if (item.EndsWith('&') && int.TryParse(item.Trim('&'), out var n) && n > 0)
 					{
-						var buf = new StringBuilder(256);
+						if (n <= WindowsAPI.GetMenuItemCount(menu))
+							pos = n - 1;
+					}
+					else
+					{
+						var itemct = WindowsAPI.GetMenuItemCount(menu);
 
-						if (WindowsAPI.GetMenuString(menu, (uint)i, buf, buf.Capacity - 1, WindowsAPI.MF_BYPOSITION) > 0)
+						for (var i = 0; i < itemct; i++)
 						{
-							var matchfound = ControlManagerBase.MenuMatchHelper(buf.ToString(), item);
-
-							if (matchfound)
+							if (WindowsAPI.GetMenuString(menu, (uint)i, buf, buf.Capacity - 1, WindowsAPI.MF_BYPOSITION) > 0
+									&& ControlManagerBase.MenuMatchHelper(buf.ToString(), item))
 							{
-								menuid = WindowsAPI.GetMenuItemID(menu, i);
-								menu = WindowsAPI.GetSubMenu(menu, i);
+								pos = i;
 								break;
 							}
 						}
 					}
 				}
+
+				if (pos < 0)
+				{
+					menuid = 0xFFFFFFFF;
+					break;
+				}
+
+				menuid = WindowsAPI.GetMenuItemID(menu, pos);
+				menu = WindowsAPI.GetSubMenu(menu, pos);
 			}
 
 			return true;

@@ -127,8 +127,7 @@ namespace Keysharp.Internals.Os.Windows
 
 		internal const int SYNCHRONIZE = 0x00100000;
 
-		internal const int LV_REMOTE_BUF_SIZE = 1024;// 8192 (below) seems too large in hindsight, given that an LV can only display the first 260 chars in a field.
-		internal const int LV_TEXT_BUF_SIZE = 8192;// Max amount of text in a ListView sub-item.  Somewhat arbitrary: not sure what the real limit is, if any.
+		internal const int LV_REMOTE_BUF_SIZE = 1024;// A ListView displays only the first 260 chars of a field.
 
 		internal const int WM_HOTKEY = 0x0312;
 		internal const int WM_KEYDOWN = 0x0100;
@@ -386,6 +385,9 @@ namespace Keysharp.Internals.Os.Windows
 		internal const int BST_INDETERMINATE = 0x0002;
 		internal const int BST_PUSHED = 0x0004;
 		internal const int BST_FOCUS = 0x0008;
+		internal const int BS_OWNERDRAW = 0x000B;
+		internal const int BS_TYPEMASK = 0x000F;
+		internal const int STATE_SYSTEM_CHECKED = 0x0010;
 
 		internal const int PBM_SETBKCOLOR = 0x2001;
 		internal const int EM_SETBKGNDCOLOR = 0x443;
@@ -569,11 +571,6 @@ namespace Keysharp.Internals.Os.Windows
 
 		internal const int ALTERNATE = 1;
 		internal const int WINDING = 2;
-
-		internal const int UNCHECKED = 1048576;
-		internal const int CHECKED = 1048592;
-		internal const int UNCHECKED_FOCUSED = 1048580; // if control is focused
-		internal const int CHECKED_FOCUSED = 1048596; // if control is focused
 
 		// GlobalAlloc flag SetClipboardData requires of the memory it takes ownership of.
 		internal const uint GMEM_MOVEABLE = 0x0002;

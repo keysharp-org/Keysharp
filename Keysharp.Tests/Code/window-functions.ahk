@@ -8,6 +8,112 @@
 
 SetControlDelay -1
 SetWinDelay -1
+WS_CHILD := 0x40000000, WS_VISIBLE := 0x10000000, WS_DISABLED := 0x08000000
+BS_AUTOCHECKBOX := 3, LVS_REPORT := 1
+
+longItem := ""
+Loop 300
+	longItem .= Chr(65 + Mod(A_Index, 26))
+
+g := Gui()
+lb := g.AddListBox("x10 y10 w150 r10", ["Orange", "", longItem, "Purple", "Lime", "Aqua", "Navy", "Teal", "Gray", "Silver"])
+cb := g.AddComboBox("x170 y10 w150", ["Red", longItem])
+ed := g.AddEdit("x170 y+10 w150 r3", "one`r`ntwo`r`nthree")
+g.Show("NoActivate w700 h400")
+
+; LB_GETTEXT and CB_GETLBTEXT write the whole item, so every item is read, an empty one or one of 300 characters.
+items := ControlGetItems(lb)
+AssertEq(items.Length, 10, A_LineNumber)
+AssertEq(items[2], "", A_LineNumber)
+AssertEq(items[3], longItem, A_LineNumber)
+AssertEq(ControlGetItems(cb)[2], longItem, A_LineNumber)
+ControlChooseIndex(2, cb)
+AssertEq(ControlGetChoice(cb), longItem, A_LineNumber)
+
+; The script's own list controls answer as any other: the search ignores case, and a missing item or index is an error.
+AssertEq(ControlFindItem("PURPLE", lb), 4, A_LineNumber)
+Throws(() => ControlFindItem("Nothing", lb), A_LineNumber, TargetError)
+AssertEq(ControlAddItem("Extra", cb), 3, A_LineNumber)
+ControlDeleteItem(3, cb)
+AssertEq(ControlGetItems(cb).Length, 2, A_LineNumber)
+Throws(() => ControlDeleteItem(9, cb), A_LineNumber, TargetError)
+
+; "xN yN" clicks that point of the window, here in the fourth row, rather than the middle of the control there.
+ControlGetPos(&lbX, &lbY, , , lb)
+rowHeight := SendMessage(0x1A1, 0, 0, lb)   ; LB_GETITEMHEIGHT
+ControlClick("x" (lbX + 10) " y" (lbY + 2 + rowHeight * 3 + rowHeight // 2), g, , , , "NA")
+Sleep 50
+AssertEq(ControlGetIndex(lb), 4, A_LineNumber)
+
+AssertEq(EditGetLine(2, ed), "two", A_LineNumber)
+Throws(() => EditGetLine(0, ed), A_LineNumber, ValueError)
+Throws(() => EditGetLine(9, ed), A_LineNumber, ValueError)
+
+; BM_GETCHECK reports a checked box as checked whatever else it is, here disabled.
+box := DllCall("CreateWindowEx", "UInt", 0, "Str", "Button", "Str", "Box", "UInt", WS_CHILD | WS_VISIBLE | WS_DISABLED | BS_AUTOCHECKBOX, "Int", 500, "Int", 100, "Int", 100, "Int", 20, "Ptr", g.Hwnd, "Ptr", 0, "Ptr", 0, "Ptr", 0, "Ptr")
+SendMessage(0xF1, 1, 0, box)   ; BM_SETCHECK
+AssertEq(ControlGetChecked(box), 1, A_LineNumber)
+SendMessage(0xF1, 0, 0, box)
+AssertEq(ControlGetChecked(box), 0, A_LineNumber)
+
+; A ListView of no Gui is read through its process's memory, as another program's is, and that leaves no handle open.
+icc := Buffer(8)
+NumPut("UInt", 8, icc, 0)
+NumPut("UInt", 1, icc, 4)   ; ICC_LISTVIEW_CLASSES
+DllCall("comctl32\InitCommonControlsEx", "Ptr", icc)
+lv := DllCall("CreateWindowEx", "UInt", 0, "Str", "SysListView32", "Str", "", "UInt", WS_CHILD | WS_VISIBLE | LVS_REPORT, "Int", 500, "Int", 150, "Int", 150, "Int", 100, "Ptr", g.Hwnd, "Ptr", 0, "Ptr", 0, "Ptr", 0, "Ptr")
+column := Buffer(56, 0)   ; LVCOLUMNW
+NumPut("UInt", 2, column, 0)   ; LVCF_WIDTH
+NumPut("Int", 100, column, 8)
+SendMessage(0x1061, 0, column, lv)   ; LVM_INSERTCOLUMNW
+row := Buffer(88, 0)   ; LVITEMW
+for i, rowText in ["first", "second"] {
+	NumPut("UInt", 1, row, 0)   ; LVIF_TEXT
+	NumPut("Int", i - 1, row, 4)
+	NumPut("Ptr", StrPtr(rowText), row, A_PtrSize = 8 ? 24 : 20)
+	SendMessage(0x104D, 0, row, lv)   ; LVM_INSERTITEMW
+}
+
+rows := StrSplit(ListViewGetContent(, lv), "`n", "`r")
+AssertEq(rows.Length, 2, A_LineNumber)
+AssertEq(rows[1], "first", A_LineNumber)
+AssertEq(rows[2], "second", A_LineNumber)
+proc := DllCall("GetCurrentProcess", "Ptr")
+before := 0, after := 0
+DllCall("GetProcessHandleCount", "Ptr", proc, "UInt*", &before)
+Loop 50
+	ListViewGetContent(, lv)
+DllCall("GetProcessHandleCount", "Ptr", proc, "UInt*", &after)
+Assert(after - before < 10, A_LineNumber)
+g.Destroy()
+
+; A MenuSelect path that names nothing selects nothing, rather than the last item it did find.
+opens := 0
+OnOpen(*) {
+	global opens
+	opens += 1
+}
+
+moreMenu := Menu()
+moreMenu.Add("Leaf", OnOpen)
+fileMenu := Menu()
+fileMenu.Add("Open", OnOpen)
+fileMenu.Add("More", moreMenu)
+bar := MenuBar()
+bar.Add("File", fileMenu)
+menuGui := Gui()
+menuGui.MenuBar := bar
+menuGui.Show("NoActivate w200 h100")
+Throws(() => MenuSelect(menuGui, , "File", "Bogus"), A_LineNumber, ValueError)
+Throws(() => MenuSelect(menuGui, , "File", "More", "Bogus"), A_LineNumber, ValueError)
+Throws(() => MenuSelect(menuGui, , "File", "Open", "Extra"), A_LineNumber, ValueError)
+Throws(() => MenuSelect(menuGui, , "0&", "1&", "1&"), A_LineNumber, ValueError)   ; past the system menu's first item
+Sleep 50
+AssertEq(opens, 0, A_LineNumber)
+MenuSelect(menuGui, , "File", "More", "Leaf")
+Sleep 50
+AssertEq(opens, 1, A_LineNumber)
+menuGui.Destroy()
 
 ; A ClassNN is numbered within the whole window, so a control nested in a Tab has the name WinGetControls gives it.
 nested := Gui()

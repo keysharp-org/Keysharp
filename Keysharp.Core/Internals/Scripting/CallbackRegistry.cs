@@ -140,12 +140,18 @@ namespace Keysharp.Internals.Scripting
 			}
 		}
 
-		internal TRegistration Find(object callback, ScriptEventScheduler scheduler)
+		/// <summary>Applies <paramref name="update"/> to the registration the scheduler made for the callback, under the
+		/// gate a removal takes, so it cannot change one already removed; false when there is none.</summary>
+		internal bool TryUpdate(object callback, ScriptEventScheduler scheduler, Action<TRegistration> update)
 		{
 			lock (gate)
-				return byCallbackAndScheduler.TryGetValue(new CallbackRegistrationKey(callback, scheduler), out var registrations) && registrations.Count > 0
-					? registrations[^1]
-					: null;
+			{
+				if (!byCallbackAndScheduler.TryGetValue(new CallbackRegistrationKey(callback, scheduler), out var registrations) || registrations.Count == 0)
+					return false;
+
+				update(registrations[^1]);
+				return true;
+			}
 		}
 
 		internal bool Remove(object callback, ScriptEventScheduler scheduler, bool matchScheduler = true)

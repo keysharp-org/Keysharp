@@ -39,6 +39,13 @@ namespace Keysharp.Internals.Window.Windows
 
 		public bool PreFilterMessage(ref Message m)
 		{
+			// Most messages have no monitor, which is cheaper to rule out than the window's ownership.
+			if (!script.GuiData.onMessageHandlers.ContainsKey(m.Msg))
+			{
+				handledMsg = null;
+				return false;
+			}
+
 			if (m.HWnd != 0)
 			{
 				// Ignore IME windows and other helper forms

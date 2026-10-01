@@ -149,8 +149,12 @@ namespace Keysharp.Tests
 			}
 		}
 
+		/// <summary>
+		/// A callback at its MaxThreads skips the message, and with every callback there the message is left unmonitored
+		/// rather than replayed, as AHK's MsgMonitor does.
+		/// </summary>
 		[Test, Category("Threading")]
-		public void OnMessageLocalBlock()
+		public void OnMessageInstanceLimit()
 		{
 			var context = UseQueuedMainContext();
 
@@ -191,7 +195,47 @@ namespace Keysharp.Tests
 			s.EventScheduler.SchedulePump();
 			context.DrainAll();
 
-			Assert.That(order, Is.EqualTo(new[] { "B", "A" }));
+			Assert.That(order, Is.EqualTo(new[] { "B" }));
+		}
+
+		/// <summary>
+		/// At #MaxThreads an interruptible script leaves the message unmonitored rather than replaying it later.
+		/// </summary>
+		[Test, Category("Threading")]
+		public void OnMessageAtMaxThreads()
+		{
+			var context = UseQueuedMainContext();
+
+			var calls = 0;
+			const int msgId = 0x800D;
+			s.GuiData.onMessageHandlers[msgId] = CreateMonitor((wParam, lParam, msg, hwnd) =>
+			{
+				calls++;
+				return 0L;
+			});
+
+			var filter = new MessageFilter(s);
+			var msg = CreateMessage(msgId);
+			s.MaxThreadsTotal = 1;
+			// No startup window, so the thread holding the only slot is interruptible.
+			s.uninterruptibleTime = 0;
+			Assert.IsTrue(s.Threads.TryBeginThread(out var occupied));
+
+			try
+			{
+				Assert.IsTrue(s.Threads.IsInterruptible());
+				Assert.IsFalse(CallBuffered(filter, ref msg));
+				context.DrainAll();
+			}
+			finally
+			{
+				s.Threads.EndThread(occupied);
+			}
+
+			s.EventScheduler.SchedulePump();
+			context.DrainAll();
+
+			Assert.AreEqual(0, calls);
 		}
 
 		[Test, Category("Threading")]

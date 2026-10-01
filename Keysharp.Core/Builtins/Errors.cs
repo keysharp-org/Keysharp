@@ -336,7 +336,7 @@ namespace Keysharp.Builtins
 				object excludeText,
 				object ret = null)
 		{
-			return TargetErrorOccurred($"Could not find window with criteria: title: {winTitle}, text: {winText}, exclude title: {excludeTitle}, exclude text: {excludeText}.");
+			return TargetErrorOccurred($"Could not find window with criteria: title: {winTitle}, text: {winText}, exclude title: {excludeTitle}, exclude text: {excludeText}.", ret);
 		}
 
 		/// <summary>
@@ -350,7 +350,7 @@ namespace Keysharp.Builtins
 				object excludeText,
 				object ret = null)
 		{
-			return TargetErrorOccurred($"{prefix} in window with criteria: title: {winTitle}, text: {winText}, exclude title: {excludeTitle}, exclude text: {excludeText}.");
+			return TargetErrorOccurred($"{prefix} in window with criteria: title: {winTitle}, text: {winText}, exclude title: {excludeTitle}, exclude text: {excludeText}.", ret);
 		}
 
 		/// <summary>

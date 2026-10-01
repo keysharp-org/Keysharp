@@ -237,8 +237,8 @@ namespace Keysharp.Builtins
 					   excludeText);
 		}
 
-		public static object MenuSelect(object winTitle,
-										object winText,
+		public static object MenuSelect([Optional] object winTitle,
+										[Optional] object winText,
 										object menu,
 										object subMenu1 = null,
 										object subMenu2 = null,
