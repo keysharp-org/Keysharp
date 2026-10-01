@@ -34,6 +34,12 @@ namespace Keysharp.Compilation
 
 		internal PackageManifest Packages { get; set; }
 
+		/// <summary>A required #Package failed to resolve in a compile which was not allowed to restore packages.</summary>
+		internal bool PackageRestoreNeeded { get; set; }
+
+		/// <summary>The lowered C#, when the compile was asked for it, also when the C# failed to compile.</summary>
+		internal string GeneratedCode { get; set; }
+
 		/// <summary>The text of each source file by file index, which a compile that is about to run embeds; null otherwise.</summary>
 		internal IReadOnlyList<string> SourceTexts { get; set; }
 

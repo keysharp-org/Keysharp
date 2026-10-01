@@ -727,14 +727,22 @@ namespace Keysharp.Tests
 		public void RunScriptOptions()
 		{
 			// Ks.RunScript takes a command line, not a bespoke defines list. It compiles in-process and pipes only the
-			// resulting bytes to the launcher, so --define has to be applied HERE and everything else forwarded there.
-			static (string[] defines, string[] rest, string error) Split(params string[] args)
+			// resulting bytes to the launcher, so --define and --include have to be applied HERE and everything else
+			// forwarded there.
+			static (string[] defines, string includeFile, string[] rest, string error) Split(params string[] args)
 			{
-				var err = Keysharp.Internals.Scripting.Runner.SplitDefines(args, out var d, out var r);
-				return (d.ToArray(), r.ToArray(), err);
+				var err = Keysharp.Internals.Scripting.Runner.SplitCompileSwitches([.. args], out var d, out var include, out var r);
+				return (d.ToArray(), include, r.ToArray(), err);
 			}
 
-			// SplitDefines has to agree with Runner.Parse about what is a switch at all, so the slash form is
+			var included = Split("--include", "lib.ahk", "--force");
+			Assert.IsNull(included.error);
+			Assert.AreEqual(Path.GetFullPath("lib.ahk"), included.includeFile, "--include takes the next argument, resolved against the working folder");
+			NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "--force" }, included.rest);
+			Assert.IsNotNull(Split("--include", "a.ahk", "--include", "b.ahk").error, "only one file can be given with --include");
+			Assert.IsNotNull(Split("--include").error, "--include needs a file");
+
+			// SplitCompileSwitches has to agree with Runner.Parse about what is a switch at all, so the slash form is
 			// extracted only where Parse would also have accepted it — on Windows. Elsewhere "/define:A,B" is an
 			// ordinary path-shaped argument and must be forwarded verbatim rather than silently eaten.
 			var mixed = Split("--define:FEATURE_X", "--force", "/define:A,B", "--errorstdout");

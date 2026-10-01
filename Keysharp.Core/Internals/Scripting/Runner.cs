@@ -42,12 +42,10 @@ namespace Keysharp.Internals.Scripting
 		internal string[] Defines = [];   // --define:NAME symbols, handed to the compilation this command performs
 		internal string[] IncludeComponents = [];
 		internal string[] ExcludeComponents = [];
+		internal int CodePage;   // --cpN, 0 when absent
+		internal string IncludeFile;   // --include's full path, null when absent
 		internal bool FromStdin;
 		internal bool Validate;
-		// No switch present changes what gets compiled (see compilationNeutralSwitchCount), so the compile daemon -
-		// which is sent a script path and nothing else - can serve the run or --validate. Allowlisted, so a switch
-		// added later stays in-process until someone decides otherwise.
-		internal bool DefaultCompilation;
 		internal bool SyntaxOnly;
 		internal bool Transpile;
 		internal bool MinimalExe;
@@ -100,9 +98,8 @@ namespace Keysharp.Internals.Scripting
 			var keysharpArgs = System.Array.Empty<string>();
 			var fromstdin = false;
 			var validate = false;
-			var switchCount = 0;
-			// Switches that say nothing about how the script compiles; everything else is assumed to matter.
-			var compilationNeutralSwitchCount = 0;
+			var codePage = 0;
+			string includeFile = null;
 			var syntaxOnly = false;
 			var compileAsm = false;
 			var compileDestPath = "";
@@ -119,8 +116,6 @@ namespace Keysharp.Internals.Scripting
 				}
 
 				var opt = option.ToLowerInvariant();
-				// Before the prefixed forms below continue, so every switch is counted.
-				switchCount++;
 
 				if (opt.StartsWith("asm:", StringComparison.OrdinalIgnoreCase)
 						|| opt.StartsWith("assembly:", StringComparison.OrdinalIgnoreCase))
@@ -146,14 +141,13 @@ namespace Keysharp.Internals.Scripting
 				}
 
 				if (opt.StartsWith("errorstdout=", StringComparison.OrdinalIgnoreCase))
+					continue;
+
+				if (IsCodePageSwitch(opt))
 				{
-					compilationNeutralSwitchCount++;
+					_ = int.TryParse(opt.AsSpan(2), out codePage);
 					continue;
 				}
-
-				// A codepage is how the source is read, so it does change the compilation.
-				if (IsCodePageSwitch(opt))
-					continue;
 
 				switch (opt)
 				{
@@ -162,10 +156,7 @@ namespace Keysharp.Internals.Scripting
 					case "restart":
 					case "r":
 					case "debug":
-						break;
-
 					case "errorstdout":
-						compilationNeutralSwitchCount++;
 						break;
 
 					case "version":
@@ -191,7 +182,6 @@ namespace Keysharp.Internals.Scripting
 
 					case "validate":
 						validate = true;
-						compilationNeutralSwitchCount++;
 						break;
 
 					case "validate-syntax":
@@ -287,18 +277,16 @@ namespace Keysharp.Internals.Scripting
 						break;
 
 					case "include":
-						if (i + 1 >= args.Length)
-							return CliCommand.Error("--include requires a file path.");
+						if (TakeIncludeFile(args, ref i, ref includeFile) is string includeError)
+							return CliCommand.Error(includeError);
 
-						i++;
 						break;
 
 					case "ilib":
 						if (i + 1 >= args.Length)
 							return CliCommand.Error("--iLib requires an output path.");
 
-						validate = true;
-						compilationNeutralSwitchCount++;//The path it takes is ignored, so this is exactly --validate.
+						validate = true;//The path it takes is ignored, so this is exactly --validate.
 						i++;
 						break;
 
@@ -373,10 +361,8 @@ namespace Keysharp.Internals.Scripting
 				if (IsCompiledScriptInput(scriptName))
 					loadAsm = true;
 
-				// The script was discovered rather than named, so SetInput never ran and every argument was a switch —
-				// they are all Keysharp's. Without this they vanish from KeysharpArgs, and callers that gate on it read
-				// the run as plain: the compile daemon in particular would then compile without the --define symbols
-				// it was never sent, silently taking the other branch.
+				// The script was discovered rather than named, so SetInput never ran and every argument was a switch:
+				// all of them are Keysharp's, and error reporting reads --errorstdout from them.
 				if (!string.IsNullOrEmpty(scriptName))
 					keysharpArgs = args;
 			}
@@ -453,9 +439,10 @@ namespace Keysharp.Internals.Scripting
 				Defines = [.. defines],
 				IncludeComponents = [.. includeComponents],
 				ExcludeComponents = [.. excludeComponents],
+				CodePage = codePage,
+				IncludeFile = includeFile,
 				FromStdin = fromstdin,
 				Validate = validate,
-				DefaultCompilation = switchCount == compilationNeutralSwitchCount,
 				SyntaxOnly = syntaxOnly,
 				Transpile = transpile,
 				MinimalExe = compileMinimalExe,
@@ -474,6 +461,40 @@ namespace Keysharp.Internals.Scripting
 				if (command.Kind == CliCommandKind.Error)
 					command = Parse(Environment.GetCommandLineArgs().Skip(1).ToArray());
 			}
+		}
+
+		/// <summary>
+		/// Reports a failure to compile or load <paramref name="command"/>'s script which happened elsewhere, such as in the
+		/// compile daemon, as a compile here would: through a Script carrying the command's switches and the script's
+		/// identity, and with the error dialog's Reload compiling the fixed script again.
+		/// </summary>
+		internal static int ReportCompileFailure(CliCommand command, string error, bool errorStdOut)
+		{
+			int result;
+
+			using (NewCompileScript(command))
+				result = Message(error, true, errorStdOut);
+
+			return result == RetryCompilation ? Execute(command) : result;
+		}
+
+		// The Script a compile of the command's script runs under. Error reporting reads --errorstdout from its arguments;
+		// without them a compile failure on a headless runner opens a modal dialog and the process hangs.
+		internal static Script NewCompileScript(CliCommand command)
+		{
+			var script = new Script();
+			SetScriptIdentity(script, command.FromStdin ? null : command.ScriptName);
+			script.ValidateThenExit = command.Validate;
+			script.KeysharpArgs = command.KeysharpArgs;
+			script.ScriptArgs = command.ScriptArgs;
+			return script;
+		}
+
+		// Error dialogs name, edit and reload the script being compiled. A null path is source text.
+		internal static void SetScriptIdentity(Script script, string scriptPath)
+		{
+			script.scriptPath = scriptPath == null ? "*" : Path.GetFullPath(scriptPath);
+			script.scriptName = Path.GetFileName(script.scriptPath);
 		}
 
 		private static int ExecuteOnce(CliCommand command)
@@ -501,6 +522,12 @@ namespace Keysharp.Internals.Scripting
 						// A precompiled assembly run from a file (or "*" from stdin): its own path is the running script,
 						// so A_ScriptFullPath/A_ScriptDir reflect where the .cks/.dll actually is, not where it was built.
 						ScriptExecutionState.SourcePath = command.ScriptName;
+						ScriptExecutionState.KeysharpArgs = command.KeysharpArgs;
+
+						// A precompiled script is deployed with the components it needs beside it.
+						if (command.ScriptName != "*")
+							ScriptingComponentRegistry.AddSearchRoot(Path.GetDirectoryName(Path.GetFullPath(command.ScriptName)));
+
 						runtimeEntryPoint = LoadAssemblyEntryPoint(command);
 						runtimeEntryArgs = [command.ScriptArgs];
 						goto InvokeRuntimeEntryPoint;
@@ -578,10 +605,8 @@ namespace Keysharp.Internals.Scripting
 		/// </summary>
 		private static int CompileToAssemblies(CliCommand command)
 		{
-			using var script = new Script();
-			script.ValidateThenExit = command.Validate;
-			script.ScriptArgs = [];   // NOT command.ScriptArgs: in a batch those are the sibling script paths.
-			script.KeysharpArgs = command.KeysharpArgs;
+			using var script = NewCompileScript(command);
+			script.ScriptArgs = [];   // In a batch those are the sibling script paths.
 
 			if (!ScriptingComponentRegistry.TryGetCompiler(out var compiler, out var componentFailure))
 				return Message(componentFailure, true);
@@ -619,6 +644,7 @@ namespace Keysharp.Internals.Scripting
 			if (scriptPath != null && !File.Exists(scriptPath))
 				return Message($"Could not find the script file {scriptPath}.", true);
 
+			SetScriptIdentity(Script.TheScript, scriptPath);
 			var (nameNoExt, scriptDir, outPath) = GetScriptOutputPaths(scriptPath ?? command.ScriptName, scriptPath == null);
 			var asmPath = ResolveCompileAsmOutput(command.DestPath, scriptDir, nameNoExt);
 			var compilation = compiler.Compile(new Keysharp.Components.Scripting.ScriptCompileRequest
@@ -630,6 +656,8 @@ namespace Keysharp.Internals.Scripting
 				Defines = command.Defines,
 				AdditionalComponents = command.IncludeComponents,
 				ExcludedComponents = command.ExcludeComponents,
+				CodePage = command.CodePage,
+				IncludeFile = command.IncludeFile,
 				Output = Keysharp.Components.Scripting.ScriptCompilationOutput.Assembly,
 				OutputDirectory = asmPath == "*" ? null : Path.GetDirectoryName(Path.GetFullPath(asmPath)),
 				EmitGeneratedCode = command.Transpile,
@@ -676,14 +704,12 @@ namespace Keysharp.Internals.Scripting
 			// Tell the (about-to-run) compiled assembly where it is actually running from: the script file's full
 			// path, or null for stdin so the compiled "*" marker stands. Drives A_ScriptFullPath/A_ScriptDir.
 			ScriptExecutionState.SourcePath = command.FromStdin ? null : command.ScriptName;
+			ScriptExecutionState.KeysharpArgs = command.KeysharpArgs;
 			var start = DateTime.UtcNow;
 
 			// Resolve embedded components before the temporary Script replaces the compiled host's identity.
 			var hasCompiler = ScriptingComponentRegistry.TryGetCompiler(out var compiler, out var componentFailure);
-			using var script = new Script();
-			script.ValidateThenExit = command.Validate;
-			script.ScriptArgs = command.ScriptArgs;
-			script.KeysharpArgs = command.KeysharpArgs;
+			using var script = NewCompileScript(command);
 			// Validation reports unrestored packages; runs and builds may fetch them.
 			if (!hasCompiler)
 				return Message(componentFailure, true);
@@ -697,22 +723,24 @@ namespace Keysharp.Internals.Scripting
 				Defines = command.Defines,
 				AdditionalComponents = command.IncludeComponents,
 				ExcludedComponents = command.ExcludeComponents,
+				CodePage = command.CodePage,
+				IncludeFile = command.IncludeFile,
 				Output = Keysharp.Components.Scripting.ScriptCompilationOutput.InMemory,
 				EmitGeneratedCode = command.Transpile,
 				AllowPackageRestore = !command.Validate,
 			});
 			var arr = compilation.AssemblyBytes;
-			var result = compilation.Success ? compilation.GeneratedCode : compilation.ErrorText;
 			var elapsed = DateTime.UtcNow - start;
 			// Failed-compilation text already includes its warnings.
 			if (arr != null && !string.IsNullOrEmpty(compilation.WarningText))
 				Console.Error.WriteLine(compilation.WarningText);
 
-			if (command.Transpile && WriteTranspiledCode(compilation, result, command.OutPath) is { } transpileErr)
+			// A script whose C# failed to compile still has its generated code written, for finding the fault in it.
+			if (command.Transpile && WriteTranspiledCode(compilation, compilation.GeneratedCode ?? compilation.ErrorText, command.OutPath) is { } transpileErr)
 				return Message(transpileErr, true);
 
 			if (arr == null)
-				return Message(result, true, compilation.ErrorStdOut);
+				return Message(compilation.ErrorText, true, compilation.ErrorStdOut);
 
 			if (command.Transpile)
 				return 0;
@@ -751,6 +779,7 @@ namespace Keysharp.Internals.Scripting
 				ScriptPath = command.FromStdin ? null : command.ScriptName,
 				IncludeDirectory = command.ScriptDir,
 				Defines = command.Defines,
+				IncludeFile = command.IncludeFile,
 			});
 
 			if (result.Success)
@@ -940,7 +969,7 @@ namespace Keysharp.Internals.Scripting
 			name.Length > 0 && name[0].IsLeadingIdentifierChar() && name.All(c => c.IsIdentifierChar());
 
 		// Parses one `define:NAME[,NAME...]` switch value into `into`, returning an error message for the first name
-		// that is not a valid symbol, else null. Shared by the command-line parser and SplitDefines below so the two
+		// that is not a valid symbol, else null. Shared by the command-line parser and SplitCompileSwitches below so the two
 		// cannot drift on what a symbol may look like.
 		private static string AddDefineSymbols(string option, ICollection<string> into)
 		{
@@ -958,30 +987,55 @@ namespace Keysharp.Internals.Scripting
 			return null;
 		}
 
+		// Takes the file --include names from the argument after it: one file, resolved against the working folder.
+		// Shared like AddDefineSymbols. Returns an error message, else null.
+		private static string TakeIncludeFile(IReadOnlyList<string> args, ref int i, ref string includeFile)
+		{
+			if (i + 1 >= args.Count)
+				return "--include requires a file path.";
+
+			if (includeFile != null)
+				return "Only one file can be given with --include.";
+
+			includeFile = Path.GetFullPath(args[++i]);
+			return null;
+		}
+
 		/// <summary>
-		/// Splits a Keysharp command line into its `--define:NAME` symbols and everything else, so a caller that both
-		/// compiles and launches (Ks.RunScript) can apply the symbols to its own compile and forward the rest to the
-		/// process it starts. --define cannot simply be forwarded: it selects which code is COMPILED, and by the time
-		/// the launched process exists that has already happened.
+		/// Splits a Keysharp command line into its `--define:NAME` symbols, its `--include` file and everything else, so a
+		/// caller that both compiles and launches (Ks.RunScript) can apply the first two to its own compile and forward the
+		/// rest to the process it starts. They cannot simply be forwarded: they select which code is compiled, and by the
+		/// time the launched process exists that has already happened.
 		/// </summary>
-		/// <returns>An error message when a symbol name is invalid, else null.</returns>
-		internal static string SplitDefines(IEnumerable<string> args, out List<string> defines, out List<string> rest)
+		/// <returns>An error message when a switch is invalid, else null.</returns>
+		internal static string SplitCompileSwitches(List<string> args, out List<string> defines, out string includeFile, out List<string> rest)
 		{
 			defines = [];
+			includeFile = null;
 			rest = [];
 
-			foreach (var arg in args)
+			for (var i = 0; i < args.Count; i++)
 			{
-				if ((TryGetSwitch(arg, out var option) || TryGetAhkSlashSwitch(arg, out option))
-						&& option.StartsWith("define:", StringComparison.OrdinalIgnoreCase))
+				if (TryGetSwitch(args[i], out var option) || TryGetAhkSlashSwitch(args[i], out option))
 				{
-					if (AddDefineSymbols(option, defines) is string error)
-						return error;
+					if (option.StartsWith("define:", StringComparison.OrdinalIgnoreCase))
+					{
+						if (AddDefineSymbols(option, defines) is string error)
+							return error;
 
-					continue;
+						continue;
+					}
+
+					if (option.Equals("include", StringComparison.OrdinalIgnoreCase))
+					{
+						if (TakeIncludeFile(args, ref i, ref includeFile) is string error)
+							return error;
+
+						continue;
+					}
 				}
 
-				rest.Add(arg);
+				rest.Add(args[i]);
 			}
 
 			return null;
@@ -1072,12 +1126,6 @@ namespace Keysharp.Internals.Scripting
 		// Windows, or stdout/stderr when redirected/headless); informational text uses an info box or stdout.
 		internal static int Message(string text, bool error, bool errorStdOut = false)
 		{
-			const string marker = "\nusing static ";
-			int idx = text.IndexOf(marker, StringComparison.Ordinal);
-
-			if (idx >= 0)
-				text = text.Substring(0, idx);
-
 			if (error)
 			{
 				try

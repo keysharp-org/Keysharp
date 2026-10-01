@@ -151,7 +151,7 @@ namespace Keysharp.Runtime
 		internal volatile bool hasExited = false;
 		public bool ForceKeybdHook;
 		public string[] ScriptArgs = [];
-		public string[] KeysharpArgs = [];
+		public string[] KeysharpArgs = ScriptExecutionState.KeysharpArgs;
 		public uint MaxThreadsTotal = 12u;
 		public bool NoMainWindow = false;
 		public bool NoTrayIcon = false;

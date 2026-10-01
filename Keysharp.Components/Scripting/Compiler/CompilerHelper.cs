@@ -11,13 +11,6 @@ namespace Keysharp.Compilation
 	[PublicHiddenFromUser]
 	public class CompilerHelper
 	{
-		//CodeEntryPointMethod entryPoint;
-		/// <summary>
-		/// For some reason, the CodeEntryPoint object doesn't seem to allow adding parameters, so we use the base and manually set values and add string[] args.
-		/// </summary>
-		//CodeMemberMethod entryPoint;
-		//System.Web.Configuration.WebConfigurationManager cfg = new System.Web.Configuration.WebConfigurationManager();
-
 		public static readonly string[] requiredManagedDependencies = new[]
 		{
 			"Keysharp.Core.dll",
@@ -178,7 +171,7 @@ namespace Keysharp.Compilation
 						// asmEntry.Name might be "lib/netstandard2.0/PCRE.NET.dll"
 						if (info.TryGetProperty("runtime", out var runTimeGroup))
 							foreach (var asmEntry in runTimeGroup.EnumerateObject())
-								switch (Path.GetFileName(asmEntry.Name).ToUpper())
+								switch (Path.GetFileName(asmEntry.Name).ToUpperInvariant())
 								{
 									// Don't include our entry assemblies
 									case "KEYSHARP.DLL":
@@ -208,24 +201,6 @@ namespace Keysharp.Compilation
 			return deps;
 		}
 
-		private readonly CodeGeneratorOptions cgo = new ()
-		{
-			IndentString = "\t",
-			VerbatimOrder = true,
-			BracingStyle = "C"
-		};
-
-		internal readonly CodeDomProvider provider = CodeDomProvider.CreateProvider("csharp", new Dictionary<string, string>
-		{
-			{
-				"CompilerDirectoryPath", Path.Combine(Environment.CurrentDirectory, "./roslyn")
-			}
-		});
-
-		/// <summary>
-		/// Define the compile unit to use for code generation.
-		/// </summary>
-		//CodeCompileUnit targetUnit;
 		public CompilerHelper()
 		{
 		}
@@ -523,11 +498,12 @@ namespace Keysharp.Compilation
 					resourceDescriptions = allDependencies
 											.Where(path =>
 					{
-						switch (Path.GetFileName(path).ToUpper())
+						switch (Path.GetFileName(path).ToUpperInvariant())
 						{
-							// Exclude Keysharp.Core because it needs to dynamically load the other
-							// embedded assemblies and native libraries.
-							case "Keysharp.Core.DLL":
+							// Keysharp.Core ships beside the executable, where it loads the other embedded assemblies and
+							// native libraries; an embedded compiler also reads it from these resources as a metadata reference.
+							case "KEYSHARP.CORE.DLL":
+								return requiredComponents?.Contains(ScriptingComponentIds.Compiler, StringComparer.OrdinalIgnoreCase) == true;
 
 							// The following would need to be included if dynamic compilation
 							// is desired by the resulting executable.
@@ -535,7 +511,6 @@ namespace Keysharp.Compilation
 							case "MICROSOFT.CODEANALYSIS.CSHARP.DLL":
 							case "KEYSHARP.COMPONENTS.SCRIPTING.COMPILER.DLL":
 							case "KEYSHARP.COMPONENTS.SCRIPTING.PARSER.DLL":
-							case "MICROSOFT.CODEDOM.PROVIDERS.DOTNETCOMPILERPLATFORM.DLL":
 							case "MICROSOFT.NET.HOSTMODEL.DLL":
 								return false;
 
@@ -582,7 +557,7 @@ namespace Keysharp.Compilation
 			if (hasManagedDepsInKsCoreDir)
 			{
 				//This will be the build output folder when running from within the debugger, and the install folder when running from an installation.
-				//Note that Keysharp.Core.dll and System.CodeDom.dll *must* remain in that location for a compiled executable to work.
+				//Note that Keysharp.Core.dll must remain in that location for a compiled executable to work.
 				var deps = curatedKsDeps;
 
 				if (deps == null || !string.Equals(deps.Dir, ksCoreDir, StringComparison.OrdinalIgnoreCase))
@@ -818,94 +793,36 @@ namespace Keysharp.Compilation
 			return (compilationResult, ms, null);
 		}
 
-        public (string, Exception) CreateCodeFromDom(CodeCompileUnit[] units)
-		{
-			var sb = new StringBuilder(100000);
-
-			try
-			{
-				foreach (var unit in units)
-				{
-					var sourceWriter = new StringWriter();
-					provider.GenerateCodeFromCompileUnit(unit, sourceWriter, cgo);//Generating code, then compiling that relieves us of any manual traversal of the DOM.
-					_ = sb.Append(sourceWriter.ToString());
-				}
-			}
-			catch (Exception e)
-			{
-				return (sb.ToString(), e);
-			}
-
-			return (sb.ToString(), null);
-		}
-
-		/// <summary>
-		/// Prepares a (possibly long-lived, reused) <see cref="Script"/> for the next parse. A compile
-		/// server reuses one Script across many parses so its built-in-only <c>ReflectionsData</c> and the
-		/// lazily filled member caches stay warm; parsing never mutates those, so we deliberately preserve
-		/// them. This resets only what a parse actually touches on the Script: the identity fields used for
-		/// diagnostics, and the current thread's variable context the parser/accessors require. It is
-		/// intentionally NOT a <see cref="Script"/> member because it does not fully reset a Script — no
-		/// runtime, UI, hook, or reflection state is cleared.
-		/// </summary>
-		internal static void ResetScriptForParse(Script script, string scriptPath, string scriptName)
-		{
-			script.scriptPath = scriptPath;
-			script.scriptName = scriptName;
-			// Internal parsing can touch accessors, so a current thread context must exist,
-			// but parsing itself should not consume a pseudo-thread slot.
-			script.Threads.EnsureCurrentThreadVariables();
-		}
-
-		public ScriptCompilationResult CreateCompilationUnitFromFile(string fileName, string name = null, ScriptCompilationOutput output = ScriptCompilationOutput.InMemory, string includeDirOverride = null, IEnumerable<string> defines = null, bool allowPackageRestore = true, bool? sourceIsFile = null, string outputDirectory = null)
+		public ScriptCompilationResult CreateCompilationUnitFromFile(string fileName, string name = null, ScriptCompilationOutput output = ScriptCompilationOutput.InMemory, string includeDirOverride = null, IEnumerable<string> defines = null, bool allowPackageRestore = true, bool? sourceIsFile = null, string outputDirectory = null, int codePage = 0, string includeFile = null)
 		{
 			var compilation = new ScriptCompilationResult();
 			var errors = compilation.Errors;
-			var enc = Encoding.Default;
-			var x = Env.FindCommandLineArg("cp");
-			var script = Script.TheScript;
 			var isFile = sourceIsFile ?? File.Exists(fileName);
-			string scriptPath, scriptName, startupName;
+			var scriptPath = isFile ? Path.GetFullPath(fileName) : "*";
+			var startupName = isFile ? null : name;
 
 			if (isFile)
-			{
-				scriptPath = Path.GetFullPath(fileName);
-				scriptName = Path.GetFileName(scriptPath);
-				startupName = null;
 				compilation.ScriptPath = scriptPath;
-				// In-process runners use this default; launchers override it with the runtime path.
-				ScriptExecutionState.SourcePath = scriptPath;
-			}
-			else
-			{
-				scriptPath = "*";
-				scriptName = name ?? "*";
-				startupName = name;
-			}
 
-			ResetScriptForParse(script, scriptPath, scriptName);
-
-			if (x != null)
-			{
-				x = x.Trim(DashSlash);
-
-				if (x.Length > 2 && int.TryParse(x.AsSpan().Slice(2), out var codepage))
-					enc = Encoding.GetEncoding(codepage);
-			}
+			// Parsing reads accessors for #Include paths, which need a thread context but not a pseudo-thread slot.
+			// The compiled script's identity reaches the parser and lowerer as arguments: TheScript is the running
+			// script (or a daemon's parse context), which Ks.CompileScript must not rename.
+			Script.TheScript.Threads.EnsureCurrentThreadVariables();
 
 			try
 			{
 				// A leading BOM is not program text: File.ReadAllText strips one, but in-memory source (stdin, or a
 				// host handing over decoded text) keeps it, where it lexes as an identifier and eats line 1's directive.
-				var source = isFile ? File.ReadAllText(fileName, enc)
+				var source = isFile ? File.ReadAllText(fileName, codePage == 0 ? Encoding.Default : Encoding.GetEncoding(codePage))
 							 : fileName.Length > 0 && fileName[0] == '\uFEFF' ? fileName[1..] : fileName;
 				// Editors can supply an include base for in-memory source; otherwise it is the working directory,
 				// which is what A_ScriptDir reports for such a script. Leaving it null instead disabled #Include
 				// silently, since the lowerer treats a surviving #Include as a directive handled elsewhere.
 				var includeDir = isFile ? Path.GetDirectoryName(scriptPath) : (includeDirOverride ?? Directory.GetCurrentDirectory());
-				var buildName = name ?? (isFile ? Path.GetFileNameWithoutExtension(scriptName) : "*");
+				var buildName = name ?? (isFile ? Path.GetFileNameWithoutExtension(scriptPath) : "*");
 
-				var (prog, parseDiags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(source, includeDir, isFile ? scriptPath : null, defines);
+				var mainScriptPath = isFile ? scriptPath : null;
+				var (prog, parseDiags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(source, includeDir, mainScriptPath, defines, mainScriptPath, includeFile);
 
 				if (parseDiags.Count > 0)
 				{
@@ -932,7 +849,10 @@ namespace Keysharp.Compilation
 
 					// Report syntax errors before a potentially slow package restore.
 					if (!errors.HasErrors)
+					{
 						compilation.Packages = ResolvePackages(lowerer.Packages, errors, scriptPath, allowPackageRestore);
+						compilation.PackageRestoreNeeded = !allowPackageRestore && compilation.Packages == null && lowerer.Packages is { Count: > 0 };
+					}
 
 					// #Warning: same collection, flagged non-fatal so HasErrors stays false and the build proceeds.
 					foreach (var w in lowerer.CompileWarnings)
@@ -971,80 +891,14 @@ namespace Keysharp.Compilation
 			return new CompilerError { ErrorText = diagnostic ?? "", FileName = file };
 		}
 
-		/// <summary>
-		/// Reports compiler errors to the user, either by writing them to the console or, for an
-		/// interactive run, by showing a fatal error dialog offering Edit/Reload/ExitApp.
-		/// </summary>
-		/// <param name="s">The error text to report.</param>
-		/// <param name="stdout">When true, write the errors to stdout instead of showing a dialog.</param>
-		/// <returns>True if the user chose "Reload" from the error dialog and the caller should restart the script.</returns>
-		public bool ReportCompilerErrors(string s, bool stdout = false)
-		{
-			if (Env.FindCommandLineArg("errorstdout") != null)
-				Console.Error.WriteLine(s);//For this to show on the command line, they need to pipe to more like: | more
-			else if (stdout)
-				Console.WriteLine(s);
-			else if (TryShowErrorDialog(s, out var reloadRequested))
-				return reloadRequested;
-			else
-				Console.Error.WriteLine(s);
-
-			return false;
-		}
-
-		private static bool TryShowErrorDialog(string s, out bool reloadRequested)
-		{
-			reloadRequested = false;
-			var fileToEdit = GetCurrentScriptFileToEdit();
-
-#if WINDOWS
-			reloadRequested = ErrorDialog.ShowFatal(s, fileToEdit) == ErrorDialog.ErrorDialogResult.Reload;
-			return true;
-#else
-			if (Script.IsUiInitializationBlocked || Script.IsHeadless || Script.IsTestHost)
-				return false;
-
-			try
-			{
-				if (Application.Instance == null)
-					_ = new Application();
-
-				reloadRequested = ErrorDialog.ShowFatal(s, fileToEdit) == ErrorDialog.ErrorDialogResult.Reload;
-				return true;
-			}
-			catch (Exception ex)
-			{
-				Keysharp.Internals.Diagnostics.Debug.WriteLine($"Unable to show compiler error dialog: {ex.Message}");
-				return false;
-			}
-#endif
-		}
-
-		private static string GetCurrentScriptFileToEdit()
-		{
-			var path = Script.TheScript?.scriptPath;
-			return ScriptEditor.CanEditFile(path) ? path : null;
-		}
-
-		internal string CodeToString(CodeExpression expr)
-		{
-			using (TextWriter tx = new StringWriter())
-			{
-				provider.GenerateCodeFromExpression(expr, tx, cgo);
-				return tx.ToString();
-			}
-		}
-
-		internal string CreateEscapedIdentifier(string variable) => provider.CreateEscapedIdentifier(variable);
-
 		// `defines` are the preprocessor symbols for THIS compilation — from `--define:NAME`, or from a caller such as
 		// Ks.RunScript. They are per-compilation rather than ambient so a nested compile can choose its own.
-		public (byte[] Bytes, string Text, ScriptCompilationResult Compilation) CompileCodeToByteArray(string fileName, string nameNoExt, string exeDir = null, bool minimalexeout = false, bool emitCode = false, ScriptCompilationOutput output = ScriptCompilationOutput.InMemory, IEnumerable<string> defines = null, bool allowPackageRestore = true, IEnumerable<string> includeComponents = null, string includeDirOverride = null, IEnumerable<string> excludeComponents = null, bool? sourceIsFile = null, string outputDirectory = null)
+		public (byte[] Bytes, string Text, ScriptCompilationResult Compilation) CompileCodeToByteArray(string fileName, string nameNoExt, string exeDir = null, bool minimalexeout = false, bool emitCode = false, ScriptCompilationOutput output = ScriptCompilationOutput.InMemory, IEnumerable<string> defines = null, bool allowPackageRestore = true, IEnumerable<string> includeComponents = null, string includeDirOverride = null, IEnumerable<string> excludeComponents = null, bool? sourceIsFile = null, string outputDirectory = null, int codePage = 0, string includeFile = null)
 		{
 			var asm = Assembly.GetExecutingAssembly();
 			exeDir ??= Path.GetFullPath(Path.GetDirectoryName(asm.Location.IsNullOrEmpty() ? Environment.ProcessPath : asm.Location));
 			var writesArtifact = output != ScriptCompilationOutput.InMemory;
-			var compilation = CreateCompilationUnitFromFile(fileName, nameNoExt, output, includeDirOverride, defines, allowPackageRestore, sourceIsFile, outputDirectory);
+			var compilation = CreateCompilationUnitFromFile(fileName, nameNoExt, output, includeDirOverride, defines, allowPackageRestore, sourceIsFile, outputDirectory, codePage, includeFile);
 			if (includeComponents != null)
 				compilation.RequiredComponents = compilation.RequiredComponents.Concat(includeComponents)
 					.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
@@ -1074,11 +928,8 @@ namespace Keysharp.Compilation
 			}
 
 			// PrettyPrinter.Print walks the whole syntax tree and is comparatively expensive, so only
-			// generate the C# source when a caller actually wants it (emitCode, e.g. --codeout) or when a
-			// compile error occurs and we need it for diagnostics. Debug test runs also produce it to validate
-			// PrettyPrinter against Roslyn's own normalizer, which walks the tree twice more: seconds on a large script.
-			string code = null;
-			string GetCode() => code ??= PrettyPrinter.Print(unit);
+			// generate the C# source when a caller actually wants it (emitCode, e.g. --transpile). Debug test runs also
+			// validate PrettyPrinter against Roslyn's own normalizer, which walks the tree twice more: seconds on a large script.
 #if DEBUG
 			if (Script.IsTestHost)
 			{
@@ -1090,7 +941,7 @@ namespace Keysharp.Compilation
 #endif
 
 			if (emitCode)
-				_ = GetCode();
+				compilation.GeneratedCode = PrettyPrinter.Print(unit);
 
 			var (results, ms, compileexc) = Compile(compilation, assemblyName, exeDir, minimalexeout, win32Resources: writesArtifact);
 
@@ -1098,7 +949,7 @@ namespace Keysharp.Compilation
 			{
 				if (results == null)
 				{
-					return (null, $"Error compiling C# code to executable: {(compileexc != null ? compileexc.Message : string.Empty)}\n\n{GetCode()}", compilation);
+					return (null, $"Error compiling C# code to executable: {(compileexc != null ? compileexc.Message : string.Empty)}", compilation);
 				}
 				else if (results.Success)
 				{
@@ -1124,11 +975,11 @@ namespace Keysharp.Compilation
 						}
 					}
 
-					return (ms.ToArray(), code, compilation);
+					return (ms.ToArray(), compilation.GeneratedCode, compilation);
 				}
 				else
 				{
-					return (null, HandleCompilerErrors(results.Diagnostics, assemblyName, "Compiling C# code to executable", compileexc != null ? compileexc.Message : string.Empty) + "\n" + GetCode(), compilation);
+					return (null, HandleCompilerErrors(results.Diagnostics, assemblyName, "Compiling C# code to executable", compileexc != null ? compileexc.Message : string.Empty), compilation);
 				}
 			}
 			finally
@@ -1186,7 +1037,5 @@ namespace Dyn
 			else
 				throw new ParseException($"Failed to compile: {code}.");
 		}
-
-		internal bool IsValidIdentifier(string variable) => provider.IsValidIdentifier(variable);
 	}
 }

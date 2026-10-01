@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
+using System.Linq;
 using System.Reflection;
+using System.Reflection.Metadata;
+using System.Reflection.PortableExecutable;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
@@ -19,8 +22,24 @@ namespace Keysharp.Main
 		Compiled,
 		/// <summary>The daemon was reached but the script failed to compile; an error message is available.</summary>
 		CompileFailed,
-		/// <summary>No compatible daemon could be reached (and, where applicable, none could be spawned).</summary>
-		Unreachable
+		/// <summary>
+		/// A required #Package failed to resolve, and the daemon never restores packages; a compile allowed to restore
+		/// them may succeed. An error message is available.
+		/// </summary>
+		PackageRestoreNeeded,
+		/// <summary>
+		/// No compatible daemon could be reached (and, where applicable, none could be spawned), or the daemon itself
+		/// failed to compile; either way the caller compiles in-process.
+		/// </summary>
+		Unavailable
+	}
+
+	/// <summary>What a compile request to the daemon produced.</summary>
+	/// <param name="ErrorStdOut">The script asks, through #ErrorStdOut, for its compile error to go to stderr.</param>
+	internal sealed record DaemonReply(CompileDaemonStatus Status, byte[] AssemblyBytes = null, string ErrorText = null,
+		string WarningText = null, bool ErrorStdOut = false)
+	{
+		internal static readonly DaemonReply Unavailable = new(CompileDaemonStatus.Unavailable);
 	}
 
 	/// <summary>
@@ -29,24 +48,51 @@ namespace Keysharp.Main
 	/// assembly bytes compiled against different references/runtime. We fingerprint both modules by their
 	/// Module Version IDs (MVIDs): the compiler stamps a distinct MVID into every build of an assembly, so
 	/// any change to either binary changes the fingerprint and a mismatched client simply spawns its own
-	/// daemon instead of reusing an incompatible one.
+	/// daemon instead of reusing an incompatible one. The compiler component the daemon loads, which a rebuild
+	/// or update can replace alone, counts too: its Keysharp assemblies by the MVID in their metadata, and its
+	/// other files by name and size.
 	/// </summary>
 	internal static class KeysharpFingerprint
 	{
+		// Null when the compiler component is missing or could not be read, as while an update replaces it: no daemon is
+		// used then, so a launch reports a missing compiler at once rather than after waiting for a daemon.
 		internal static string Value { get; } = Compute();
 
 		private static string Compute()
 		{
-			// typeof(KeysharpFingerprint) lives in Keysharp.dll/exe; typeof(Script) lives in Keysharp.Core.dll.
-			var keysharpMvid = typeof(KeysharpFingerprint).Module.ModuleVersionId;
-			var coreMvid = typeof(Script).Module.ModuleVersionId;
+			using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+			Span<byte> buf = stackalloc byte[16];
 
-			Span<byte> buf = stackalloc byte[32];
-			_ = keysharpMvid.TryWriteBytes(buf.Slice(0, 16));
-			_ = coreMvid.TryWriteBytes(buf.Slice(16, 16));
-			Span<byte> hash = stackalloc byte[32];
-			_ = SHA256.HashData(buf, hash);
-			return Convert.ToHexString(hash.Slice(0, 8)); // 16 hex chars is plenty to avoid collisions.
+			// typeof(KeysharpFingerprint) lives in Keysharp.dll/exe; typeof(Script) lives in Keysharp.Core.dll.
+			_ = typeof(KeysharpFingerprint).Module.ModuleVersionId.TryWriteBytes(buf);
+			hash.AppendData(buf);
+			_ = typeof(Script).Module.ModuleVersionId.TryWriteBytes(buf);
+			hash.AppendData(buf);
+
+			try
+			{
+				var directory = new DirectoryInfo(Path.Combine(AppContext.BaseDirectory, ScriptingComponentRegistry.RelativeDirectory(ScriptingComponentIds.Compiler)));
+
+				foreach (var file in directory.EnumerateFiles("*", SearchOption.AllDirectories).OrderBy(file => file.FullName, StringComparer.Ordinal))
+				{
+					var identity = file.Name.StartsWith("Keysharp.", StringComparison.OrdinalIgnoreCase) && file.Extension.Equals(".dll", StringComparison.OrdinalIgnoreCase)
+								   ? ReadMvid(file).ToString() : file.Length.ToString();
+					hash.AppendData(Encoding.UTF8.GetBytes($"{Path.GetRelativePath(directory.FullName, file.FullName)}|{identity}\n"));
+				}
+			}
+			catch
+			{
+				return null;
+			}
+
+			return Convert.ToHexString(hash.GetHashAndReset().AsSpan(0, 8)); // 16 hex chars is plenty to avoid collisions.
+		}
+
+		private static Guid ReadMvid(FileInfo file)
+		{
+			using var pe = new PEReader(file.OpenRead());
+			var metadata = pe.GetMetadataReader();
+			return metadata.GetGuid(metadata.GetModuleDefinition().Mvid);
 		}
 	}
 
@@ -61,7 +107,7 @@ namespace Keysharp.Main
 	/// </summary>
 	internal static class DaemonCoordinator
 	{
-		private static readonly string LockFile = Path.Combine(Path.GetTempPath(), $"keysharp-compile-server-{Environment.UserName}.lock");
+		private static readonly string LockFile = Path.Combine(CompileServer.RuntimeDirectory, $"keysharp-compile-server-{Environment.UserName}.lock");
 		private static readonly string MutexName = $@"Local\keysharp-compile-coord-{Environment.UserName}";
 
 		/// <summary>
@@ -197,11 +243,11 @@ namespace Keysharp.Main
 		{
 			internal int Pid;
 			internal string ProcName;
-			internal long StartedAtTicks;
+			internal long StartStamp;
 			internal string Pipe;
 		}
 
-		// Lock file is a single line: "pid|procName|startTimeUtcTicks|pipeName".
+		// Lock file is a single line: "pid|procName|startStamp|pipeName".
 		private static Owner Read()
 		{
 			try
@@ -216,8 +262,8 @@ namespace Keysharp.Main
 				// a slot that was already free.
 				if (parts.Length >= 4
 						&& int.TryParse(parts[0], out var pid)
-						&& long.TryParse(parts[2], out var startedAt))
-					return new Owner { Pid = pid, ProcName = parts[1], StartedAtTicks = startedAt, Pipe = parts[3] };
+						&& long.TryParse(parts[2], out var startStamp))
+					return new Owner { Pid = pid, ProcName = parts[1], StartStamp = startStamp, Pipe = parts[3] };
 			}
 			catch { }
 
@@ -229,7 +275,7 @@ namespace Keysharp.Main
 			try
 			{
 				using var self = Process.GetCurrentProcess();
-				File.WriteAllText(LockFile, $"{Environment.ProcessId}|{self.ProcessName}|{self.StartTime.ToUniversalTime().Ticks}|{pipeName}");
+				File.WriteAllText(LockFile, $"{Environment.ProcessId}|{self.ProcessName}|{StartStamp(self)}|{pipeName}");
 				return true;
 			}
 			catch
@@ -237,6 +283,13 @@ namespace Keysharp.Main
 				return false;
 			}
 		}
+
+		/// <summary>
+		/// Whether the lock file names a live daemon serving <paramref name="pipeName"/>. Read without the coordination
+		/// mutex, since it only decides whether a client waits for that daemon's pipe or first spawns a daemon.
+		/// </summary>
+		internal static bool HasLiveOwner(string pipeName) =>
+			Read() is { } owner && string.Equals(owner.Pipe, pipeName, StringComparison.Ordinal) && IsLiveDaemon(owner);
 
 		// A recorded PID counts as a live daemon only if it is running AND is the same process instance that
 		// wrote the record.
@@ -255,12 +308,26 @@ namespace Keysharp.Main
 				if (p.HasExited || !string.Equals(p.ProcessName, owner.ProcName, StringComparison.OrdinalIgnoreCase))
 					return false;
 
-				return p.StartTime.ToUniversalTime().Ticks == owner.StartedAtTicks;
+				return StartStamp(p) == owner.StartStamp;
 			}
 			catch
 			{
 				return false;
 			}
+		}
+
+		// Compared across processes, so it has to be exact. Linux derives Process.StartTime from a boot time which
+		// each process computes from the wall clock, so two processes disagree on it by up to a clock tick; the
+		// kernel's own stamp, in clock ticks since boot, is field 22 of the process's stat line.
+		private static long StartStamp(Process p)
+		{
+#if LINUX
+			var stat = File.ReadAllText($"/proc/{p.Id}/stat");
+			// Field 2, the command name, is parenthesised and may itself contain spaces and parentheses.
+			return long.Parse(stat[(stat.LastIndexOf(')') + 2)..].Split(' ')[19]);
+#else
+			return p.StartTime.ToUniversalTime().Ticks;
+#endif
 		}
 
 		private static void TryKill(int pid)
@@ -281,29 +348,44 @@ namespace Keysharp.Main
 
 	/// <summary>
 	/// Compile daemon ("--daemon" mode). Holds one warm compiler component and one reused
-	/// parse-context <see cref="Script"/>, accepts script paths over a per-build/per-user named pipe, and
+	/// parse-context <see cref="Script"/>, accepts compile requests over a per-build/per-user named pipe, and
 	/// returns compiled assembly bytes so a thin launcher can run them in a lean process that never loads
 	/// the parser/Roslyn (see <see cref="CompileClient"/> and Program.RunCompiledBytes).
 	///
 	/// Correctness constraints:
 	///   - <see cref="Script.TheScript"/> is process-global, so compiles MUST be serialized. The accept
 	///     loop is single-threaded and runs on the (STA) thread that created the Script.
-	///   - Parsing only reads the built-in-only ReflectionsData and writes scriptPath/scriptName + thread
-	///     vars, so one Script is reused across parses via ResetScriptForParse.
+	///   - Parsing only reads the built-in-only ReflectionsData and ensures thread vars, so one Script is
+	///     reused across parses.
 	/// </summary>
 	internal static class CompileServer
 	{
-		// Bump when the wire protocol changes. (The fingerprint already separates incompatible builds; this
-		// guards against a protocol change within an otherwise-identical build during development.)
-		internal const int ProtocolVersion = 1;
+		// The environment variables a compile reads: those behind the A_ variables #Include and #Import paths use, and
+		// the #Import search path. Package settings are not among them: NuGet caches those on first use.
+		internal static readonly string[] CompileEnvironment =
+		[
+			"AhkImportPath", "COMSPEC", "HOME", "TEMP", "TMP", "TMPDIR", "USERPROFILE",
+			"XDG_CONFIG_DIRS", "XDG_CONFIG_HOME", "XDG_DESKTOP_DIR", "XDG_DOCUMENTS_DIR"
+		];
+
+		// The folder for the daemon's lock file and, off Windows, its socket. $XDG_RUNTIME_DIR is the user's own; the temp
+		// folder is too on Windows and macOS, but on Linux it is usually the shared /tmp, where another user could create
+		// them first.
+		internal static readonly string RuntimeDirectory =
+			Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR") is { Length: > 0 } runtimeDirectory && Directory.Exists(runtimeDirectory)
+			? runtimeDirectory : Path.GetTempPath();
 
 		// Idle shutdown so an abandoned daemon does not linger forever (mirrors VBCSCompiler behavior).
 		private static readonly TimeSpan IdleTimeout = TimeSpan.FromHours(4);
 
+		// Far beyond any real request (a 24k-line script compiles in seconds): one which runs longer, such as an
+		// #Include of a FIFO, a compiler hang or a stalled client, holds the single pipe instance, so the daemon exits
+		// and the next client spawns a healthy one.
+		internal static readonly TimeSpan RequestDeadline = TimeSpan.FromSeconds(60);
+
 		// All daemon-side diagnostics go to stderr with a common prefix, which reaches a console only when the
-		// daemon was started by hand: a client-spawned one inherits no standard handles at all (see
-		// SuppressStandardHandleInheritance). Logging must never be able to take the daemon down, whatever it
-		// is or is not attached to.
+		// daemon was started by hand: a client-spawned one inherits none of its launcher's standard handles (see
+		// TrySpawnServer). Logging must never be able to take the daemon down, whatever it is or is not attached to.
 		internal static void Log(string message)
 		{
 			try { Console.Error.WriteLine($"[keysharp --daemon] {message}"); }
@@ -311,19 +393,31 @@ namespace Keysharp.Main
 		}
 
 		/// <summary>
-		/// Pipe name keyed on protocol + build fingerprint + user, so a client never connects to a daemon
-		/// built from different Keysharp/Keysharp.Core binaries, or to another user's daemon.
+		/// Pipe name keyed on build fingerprint + user, so a client only connects to its own user's daemon of the
+		/// same Keysharp and compiler component, which therefore speaks the same wire format. Null when the build
+		/// has no fingerprint.
 		/// </summary>
 		internal static string PipeName { get; } = CreatePipeName();
 
 		private static string CreatePipeName()
 		{
+			if (KeysharpFingerprint.Value is not { } fingerprint)
+				return null;
+
 			var userHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Environment.UserName))).Substring(0, 8);
-			return $"ksc-{ProtocolVersion}-{KeysharpFingerprint.Value}-{userHash}";
+			var name = $"ksc-{fingerprint}-{userHash}";
+			// Off Windows a pipe is a socket file, which .NET creates in the temp folder unless its name is a full path.
+			return OperatingSystem.IsWindows() ? name : Path.Combine(RuntimeDirectory, name);
 		}
 
 		internal static int Run()
 		{
+			if (PipeName == null)
+			{
+				Log("the compiler component is missing or could not be read; exiting.");
+				return 1;
+			}
+
 			// Only one daemon runs per user. A daemon of any different build already up is killed and we take
 			// over; if an identical-build daemon already owns the slot we defer and exit. This keeps exactly
 			// one daemon alive across builds, even though their fingerprint-keyed pipe names differ.
@@ -374,12 +468,14 @@ namespace Keysharp.Main
 
 				try
 				{
+					// Only this user's processes may connect, and a client checks the same of the pipe: a request carries
+					// the caller's paths, and a reply is code the caller runs.
 					server = new NamedPipeServerStream(
 						PipeName,
 						PipeDirection.InOut,
 						maxNumberOfServerInstances: 1,
 						PipeTransmissionMode.Byte,
-						PipeOptions.Asynchronous);
+						PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
 				}
 				catch (IOException)
 				{
@@ -391,10 +487,18 @@ namespace Keysharp.Main
 
 				using (server)
 				{
-					if (!WaitForConnection(server, IdleTimeout))
+					try
 					{
-						Log("idle timeout reached, exiting.");
-						return 0;
+						if (!WaitForConnection(server, IdleTimeout))
+						{
+							Log("idle timeout reached, exiting.");
+							return 0;
+						}
+					}
+					// Another user's connection, which the pipe refuses; a new instance waits for the next one.
+					catch (AggregateException ex) when (ex.InnerException is UnauthorizedAccessException)
+					{
+						continue;
 					}
 
 					try
@@ -570,73 +674,87 @@ namespace Keysharp.Main
 		}
 
 		// Wire format (length-prefixed, BinaryReader/Writer):
-		//   request : int32 protocolVersion, string scriptPath
-		//   response: bool success,
-		//             if success -> int32 byteLen, byte[] assemblyBytes, string warnings ("" when none)
-		//             else        -> string errorMessage
+		//   request : string scriptPath, string[] defines, string[] additionalComponents, string[] excludedComponents,
+		//             int32 codePage, string includeFile ("" when none), string[] the caller's value of each
+		//             CompileEnvironment variable ("" when unset); a string[] is an int32 count, then the strings
+		//   response: byte CompileDaemonStatus, then
+		//             Compiled                  -> int32 byteLen, byte[] assemblyBytes, string warnings ("" when none)
+		//             CompileFailed/
+		//             PackageRestoreNeeded      -> string errorMessage, bool errorStdOut
+		//             Unavailable               -> string reason: the daemon itself failed, so the client compiles
 		// `warnings` carries the script's #Warning text to the client: the daemon compiles in a detached process
-		// whose stderr goes nowhere, so a warning printed here would be lost on the path most runs take.
+		// whose stderr goes nowhere, so a warning printed here would be lost on the path most runs take. A failure
+		// carries what the client needs to report it as an in-process compile would, without compiling again.
 		private static void HandleRequest(NamedPipeServerStream server, IScriptCompiler ch, string exeDir)
 		{
+			// Killed rather than exited: exit handlers could wait on whatever hangs, such as a key-mapper lock held by
+			// a stalled layout query.
+			using var watchdog = new Timer(_ =>
+			{
+				Log($"a request took longer than {RequestDeadline.TotalSeconds:0} s; exiting.");
+				Process.GetCurrentProcess().Kill();
+			}, null, RequestDeadline, Timeout.InfiniteTimeSpan);
 			using var reader = new BinaryReader(server, Encoding.UTF8, leaveOpen: true);
 			using var writer = new BinaryWriter(server, Encoding.UTF8, leaveOpen: true);
-
-			var clientProtocol = reader.ReadInt32();
-
-			if (clientProtocol != ProtocolVersion)
-			{
-				writer.Write(false);
-				writer.Write($"Protocol mismatch: server={ProtocolVersion}, client={clientProtocol}.");
-				return;
-			}
-
 			var scriptPath = reader.ReadString();
-
+			var request = new ScriptCompileRequest
+			{
+				ScriptPath = scriptPath,
+				CompilationName = Path.GetFileNameWithoutExtension(scriptPath),
+				Defines = ReadStrings(reader),
+				AdditionalComponents = ReadStrings(reader),
+				ExcludedComponents = ReadStrings(reader),
+				CodePage = reader.ReadInt32(),
+				IncludeFile = reader.ReadString(),
+				RuntimeDirectory = exeDir,
+				Output = ScriptCompilationOutput.InMemory,
+				// A shared background process does no network I/O for a caller it cannot see: an unrestored
+				// #Package fails here, and the client recompiles in-process.
+				AllowPackageRestore = false,
+			};
+			var callerValues = ReadStrings(reader);
 			var sw = Stopwatch.StartNew();
-			var nameNoExt = scriptPath == "*" ? "pipestdin" : Path.GetFileNameWithoutExtension(scriptPath);
-
-			byte[] bytes;
-			string error;
-			string warnings = null;
+			IScriptCompilationResult compilation = null;
+			string fault = null;
 
 			try
 			{
-				var compilation = ch.Compile(new ScriptCompileRequest
-				{
-					SourceText = scriptPath == "*" ? scriptPath : null,
-					ScriptPath = scriptPath == "*" ? null : scriptPath,
-					CompilationName = nameNoExt,
-					RuntimeDirectory = exeDir,
-					Output = ScriptCompilationOutput.InMemory,
-					// A shared background process does no network I/O for a caller it cannot see: an unrestored
-					// #Package fails here, and the client recompiles in-process.
-					AllowPackageRestore = false,
-				});
-				bytes = compilation.AssemblyBytes;
-				error = compilation.ErrorText;
-				warnings = compilation.WarningText;
+				// The compile reads the caller's values. A request sets every one, "" removing a variable the caller has
+				// unset, so none of an earlier caller's remain.
+				for (var i = 0; i < CompileEnvironment.Length; i++)
+					Environment.SetEnvironmentVariable(CompileEnvironment[i], callerValues[i]);
+
+				compilation = ch.Compile(request);
 			}
 			catch (Exception ex)
 			{
-				bytes = null;
-				error = $"Compiling script failed.\n\n{ex.GetType().Name}: {ex.Message}\n\n{ex.StackTrace}";
+				fault = $"{ex.GetType().Name}: {ex.Message}";
 			}
 
 			sw.Stop();
 
-			if (bytes != null)
+			// A failure of the daemon rather than of the script is not the script's error to report: the client compiles
+			// in-process instead, as it does when no daemon answers.
+			if (fault != null)
+			{
+				Log($"compiling '{scriptPath}' failed in the daemon after {sw.ElapsedMilliseconds} ms: {fault}");
+				writer.Write((byte)CompileDaemonStatus.Unavailable);
+				writer.Write(fault);
+			}
+			else if (compilation.AssemblyBytes is { } bytes)
 			{
 				Log($"compiled '{scriptPath}' ({bytes.Length} bytes) in {sw.ElapsedMilliseconds} ms.");
-				writer.Write(true);
+				writer.Write((byte)CompileDaemonStatus.Compiled);
 				writer.Write(bytes.Length);
 				writer.Write(bytes);
-				writer.Write(warnings ?? "");
+				writer.Write(compilation.WarningText ?? "");
 			}
 			else
 			{
 				Log($"compile error for '{scriptPath}' in {sw.ElapsedMilliseconds} ms.");
-				writer.Write(false);
-				writer.Write(error ?? "Unknown compile error.");
+				writer.Write((byte)(compilation.PackageRestoreNeeded ? CompileDaemonStatus.PackageRestoreNeeded : CompileDaemonStatus.CompileFailed));
+				writer.Write(compilation.ErrorText ?? "Unknown compile error.");
+				writer.Write(compilation.ErrorStdOut);
 			}
 
 			writer.Flush();
@@ -644,6 +762,24 @@ namespace Keysharp.Main
 #if WINDOWS
 			server.WaitForPipeDrain();
 #endif
+		}
+
+		internal static void WriteStrings(BinaryWriter writer, string[] values)
+		{
+			writer.Write(values.Length);
+
+			foreach (var value in values)
+				writer.Write(value);
+		}
+
+		private static string[] ReadStrings(BinaryReader reader)
+		{
+			var values = new string[reader.ReadInt32()];
+
+			for (var i = 0; i < values.Length; i++)
+				values[i] = reader.ReadString();
+
+			return values;
 		}
 	}
 
@@ -660,8 +796,8 @@ namespace Keysharp.Main
 		private static readonly TimeSpan SpawnWaitTimeout = TimeSpan.FromSeconds(10);
 
 		/// <summary>
-		/// Compiles <paramref name="scriptPath"/> via a running daemon, spawning one and waiting for it when
-		/// none is reachable. Returns <see cref="CompileDaemonStatus.Unreachable"/> if no daemon can be
+		/// Compiles <paramref name="command"/>'s script via a running daemon, spawning one and waiting for it when
+		/// none is reachable. Returns <see cref="CompileDaemonStatus.Unavailable"/> if no daemon can be
 		/// started or one does not become ready within <see cref="SpawnWaitTimeout"/>, and the caller then
 		/// compiles in-process.
 		///
@@ -679,61 +815,58 @@ namespace Keysharp.Main
 		/// Concurrency is safe: several clients starting at once each spawn a daemon, but DaemonCoordinator
 		/// arbitrates with a named mutex and a pid/procname lock file and the losers exit inside
 		/// TryBecomeOwner, before Listen and therefore before any warmup work. The winner does not create its
-		/// pipe until warmup has finished, so no client can reach a half-initialised daemon; it just fails to
-		/// connect and keeps polling.
+		/// pipe until warmup has finished, so no client can reach a half-initialised daemon; its connect attempt
+		/// just keeps waiting.
 		/// </summary>
-		internal static CompileDaemonStatus CompileViaServer(string scriptPath, out byte[] bytes, out string error,
-			out string warnings)
+		internal static DaemonReply CompileViaServer(CliCommand command)
 		{
-			var status = TryCompile(scriptPath, out bytes, out error, out warnings, connectTimeoutMs: 300);
-
-			if (status != CompileDaemonStatus.Unreachable)
-				return status;
-
-			if (!TrySpawnServer(out error))
-				return CompileDaemonStatus.Unreachable;
-
-			// Poll until the daemon (ours, or one another client spawned at the same moment) begins listening.
+			// A warm daemon answers at once. Otherwise one is spawned, unless the lock file names one for this build which
+			// is still warming up or busy, and Connect waits for its pipe. A request the daemon dropped only once its
+			// deadline passed is not sent again, as the next daemon would end the same way.
 			var sw = Stopwatch.StartNew();
 
-			while (sw.Elapsed < SpawnWaitTimeout)
-			{
-				status = TryCompile(scriptPath, out bytes, out error, out warnings, connectTimeoutMs: 500);
+			if (TryCompile(command, 0) is { } reply)
+				return reply;
 
-				if (status != CompileDaemonStatus.Unreachable)
-					return status;
+			if (sw.Elapsed >= CompileServer.RequestDeadline || (!DaemonCoordinator.HasLiveOwner(CompileServer.PipeName) && !TrySpawnServer()))
+				return DaemonReply.Unavailable;
 
-				Thread.Sleep(200);
-			}
+			// Another attempt follows only when a daemon went away mid-request, such as one replaced by a different build.
+			sw.Restart();
 
-			error ??= "Compile server did not become ready in time.";
-			return CompileDaemonStatus.Unreachable;
+			do
+				if (TryCompile(command, (int)Math.Max(1, (SpawnWaitTimeout - sw.Elapsed).TotalMilliseconds)) is { } answer)
+					return answer;
+			while (sw.Elapsed < SpawnWaitTimeout);
+
+			return DaemonReply.Unavailable;
 		}
 
 		/// <summary>
-		/// Attempts a single compile against an already-running daemon. Returns
-		/// <see cref="CompileDaemonStatus.Unreachable"/> (no exception) when no daemon is listening.
+		/// Attempts a single compile against an already-running daemon. Returns null (no exception) when no daemon
+		/// answered: none is listening, or it went away mid-request. A build without a pipe, and a daemon which
+		/// itself failed, answer <see cref="CompileDaemonStatus.Unavailable"/>.
 		/// </summary>
-		internal static CompileDaemonStatus TryCompile(string scriptPath, out byte[] bytes, out string error,
-			out string warnings, int connectTimeoutMs = 1000)
+		internal static DaemonReply TryCompile(CliCommand command, int connectTimeoutMs = 1000)
 		{
-			bytes = null;
-			error = null;
-			warnings = null;
+			if (CompileServer.PipeName == null)
+				return DaemonReply.Unavailable;
 
-			using var client = new NamedPipeClientStream(".", CompileServer.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
+			using var client = new NamedPipeClientStream(".", CompileServer.PipeName, PipeDirection.InOut,
+				PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
 
 			try
 			{
 				client.Connect(connectTimeoutMs);
 			}
-			catch (TimeoutException)
+			catch (Exception ex) when (ex is TimeoutException or IOException)
 			{
-				return CompileDaemonStatus.Unreachable;
+				return null;
 			}
-			catch (IOException)
+			// A pipe another user owns, or a daemon at another integrity level, gets no request: the caller compiles at once.
+			catch (UnauthorizedAccessException)
 			{
-				return CompileDaemonStatus.Unreachable;
+				return DaemonReply.Unavailable;
 			}
 
 			using var writer = new BinaryWriter(client, Encoding.UTF8, leaveOpen: true);
@@ -741,28 +874,34 @@ namespace Keysharp.Main
 
 			try
 			{
-				writer.Write(CompileServer.ProtocolVersion);
-				writer.Write(scriptPath == "*" ? "*" : Path.GetFullPath(scriptPath));
+				writer.Write(Path.GetFullPath(command.ScriptName));
+				CompileServer.WriteStrings(writer, command.Defines);
+				CompileServer.WriteStrings(writer, command.IncludeComponents);
+				CompileServer.WriteStrings(writer, command.ExcludeComponents);
+				writer.Write(command.CodePage);
+				writer.Write(command.IncludeFile ?? "");
+				CompileServer.WriteStrings(writer, Array.ConvertAll(CompileServer.CompileEnvironment, name => Environment.GetEnvironmentVariable(name) ?? ""));
 				writer.Flush();
 
-				if (reader.ReadBoolean())
+				switch ((CompileDaemonStatus)reader.ReadByte())
 				{
-					var len = reader.ReadInt32();
-					bytes = reader.ReadBytes(len);
-					warnings = reader.ReadString();
-					return CompileDaemonStatus.Compiled;
-				}
+					case CompileDaemonStatus.Compiled:
+						var bytes = reader.ReadBytes(reader.ReadInt32());
+						return new(CompileDaemonStatus.Compiled, bytes, WarningText: reader.ReadString());
 
-				error = reader.ReadString();
-				return CompileDaemonStatus.CompileFailed;
+					case var status and (CompileDaemonStatus.CompileFailed or CompileDaemonStatus.PackageRestoreNeeded):
+						var error = reader.ReadString();
+						return new(status, ErrorText: error, ErrorStdOut: reader.ReadBoolean());
+
+					default:
+						return new(CompileDaemonStatus.Unavailable, ErrorText: reader.ReadString());
+				}
 			}
-			catch (Exception ex) when (ex is IOException or EndOfStreamException or ObjectDisposedException)
+			// The daemon went away mid-request: it was replaced by a different build, idled out between connect and reply,
+			// or was ended by its request deadline.
+			catch (Exception ex) when (ex is IOException or ObjectDisposedException)
 			{
-				// The daemon went away mid-request (e.g. it was replaced by a different build, or it idled
-				// out between connect and reply). Treat as unreachable so the caller can spawn/fall back.
-				bytes = null;
-				error = null;
-				return CompileDaemonStatus.Unreachable;
+				return null;
 			}
 		}
 
@@ -826,19 +965,15 @@ namespace Keysharp.Main
 
 #endif
 
-		private static bool TrySpawnServer(out string error)
+		// A daemon which cannot be spawned only means compiling in-process, so the reason is not reported.
+		private static bool TrySpawnServer()
 		{
-			error = null;
-
 			try
 			{
 				var processPath = Environment.ProcessPath;
 
 				if (string.IsNullOrEmpty(processPath))
-				{
-					error = "Cannot determine process path to spawn compile server.";
 					return false;
-				}
 
 				var psi = new ProcessStartInfo
 				{
@@ -899,9 +1034,8 @@ namespace Keysharp.Main
 					return true;
 				}
 			}
-			catch (Exception ex)
+			catch (Exception)
 			{
-				error = $"Failed to spawn compile server: {ex.Message}";
 				return false;
 			}
 		}

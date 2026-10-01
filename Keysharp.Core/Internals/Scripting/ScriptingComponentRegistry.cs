@@ -96,6 +96,13 @@ namespace Keysharp.Internals.Scripting
 					additionalRoots.Add(root);
 		}
 
+		internal static bool IsSearchRoot(string root)
+		{
+			root = Path.GetFullPath(root);
+			lock (sync)
+				return additionalRoots.Contains(root, PathComparer);
+		}
+
 		internal static bool TryGetPayload(string name, out Payload payload)
 		{
 			payload = null;
@@ -256,21 +263,14 @@ namespace Keysharp.Internals.Scripting
 				added = [.. additionalRoots];
 			}
 
+			// The folder beside a source script is not searched: components there are left over from compiling it to an
+			// assembly, and would shadow the installed compiler after an upgrade. A precompiled run adds its own folder.
 			return added.Concat(new[]
 			{
-				RunningArtifactDirectory(),
 				AppContext.BaseDirectory,
 				Path.GetDirectoryName(Assembly.GetEntryAssembly()?.Location ?? ""),
 				Path.GetDirectoryName(typeof(ScriptingComponentRegistry).Assembly.Location)
 			}).Where(path => !string.IsNullOrWhiteSpace(path)).Select(Path.GetFullPath).Distinct(PathComparer);
-		}
-
-		private static string RunningArtifactDirectory()
-		{
-			var path = ScriptExecutionState.SourcePath;
-			return !string.IsNullOrWhiteSpace(path) && path != "*" && File.Exists(path)
-				? Path.GetDirectoryName(Path.GetFullPath(path))
-				: null;
 		}
 
 		private static Descriptor TryReadDescriptor(string path)

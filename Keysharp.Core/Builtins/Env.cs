@@ -702,9 +702,9 @@ namespace Keysharp.Builtins
 		/// <param name="options">Optional Keysharp command-line arguments for this script, either as a string
 		/// (e.g. `--define:FEATURE_X --include "My include.ahk"`, split on whitespace with double quotes grouping) or
 		/// as an Array where each element is already one argument. Nothing is inherited from the calling script: this
-		/// is a separate compilation in a separate process, so it states what it wants. `--define:NAME` is applied to
-		/// the compile that happens HERE, since the launched process receives already-compiled bytes and a define
-		/// handed to it would arrive after the conditionals were resolved; every other argument goes to that process.</param>
+		/// is a separate compilation in a separate process, so it states what it wants. `--define:NAME` and `--include`
+		/// are applied to the compile that happens here, since the launched process receives already-compiled bytes;
+		/// every other argument goes to that process.</param>
 		/// <returns>
 		/// Returns a <see cref="ScriptProcess"/> wrapper around the spawned process.
 		/// If compilation fails without a flagged error, returns <c>null</c>.
@@ -727,18 +727,19 @@ namespace Keysharp.Builtins
 			if (name != null && !name.CoerceString(out nameVal))
 				return DefaultObject;
 
-			// --define selects which code is COMPILED, and that happens here — the launched process only ever receives
-			// already-compiled bytes, so a define forwarded to it would arrive too late to mean anything. Every other
-			// argument is genuinely the launched process's, and is passed along below.
+			// --define and --include select which code is compiled, and that happens here: the launched process only ever
+			// receives already-compiled bytes, so either forwarded to it would arrive too late to mean anything. Every
+			// other argument is genuinely the launched process's, and is passed along below.
 			List<string> defineNames = null, forwardedArgs = null;
+			string includeFile = null;
 
 			if (options != null)
 			{
 				if (!TrySplitCommandLine(options, out var optionArgs))
 					return DefaultObject;
 
-				if (Runner.SplitDefines(optionArgs, out defineNames, out forwardedArgs) is string badDefine)
-					return Errors.ValueErrorOccurred(badDefine);
+				if (Runner.SplitCompileSwitches(optionArgs, out defineNames, out includeFile, out forwardedArgs) is string badSwitch)
+					return Errors.ValueErrorOccurred(badSwitch);
 			}
 
 			string result = null;
@@ -750,8 +751,8 @@ namespace Keysharp.Builtins
 			// callers ship and launch a precompiled script (e.g. WindowSpy.cks) for faster startup.
 			if (File.Exists(script) && (ext.Equals(".cks", StringComparison.OrdinalIgnoreCase) || ext.Equals(".dll", StringComparison.OrdinalIgnoreCase)))
 			{
-				if (defineNames is { Count: > 0 })
-					return Errors.ValueErrorOccurred("--define cannot be applied to an already-compiled .cks/.dll script; its conditionals were resolved when it was built.");
+				if (defineNames is { Count: > 0 } || includeFile != null)
+					return Errors.ValueErrorOccurred("--define and --include cannot be applied to an already-compiled .cks/.dll script; its code was settled when it was built.");
 
 				compiledPath = Path.GetFullPath(script);
 			}
@@ -767,6 +768,7 @@ namespace Keysharp.Builtins
 					CompilationName = nameVal,
 					RuntimeDirectory = Path.GetDirectoryName(Ks.A_KsCorePath),
 					Defines = defineNames ?? [],
+					IncludeFile = includeFile,
 					Output = Keysharp.Components.Scripting.ScriptCompilationOutput.InMemory,
 				});
 				compiledBytes = compilation.AssemblyBytes;

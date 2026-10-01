@@ -117,7 +117,7 @@ namespace Keysharp.Tests
 			var ch = new CompilerHelper();
 			//Source handed over as text has no directory of its own, so `#Include <assert>` and friends resolve
 			//against Code/ the same way they do when the file itself is compiled.
-			var (arr, code, _) = ch.CompileCodeToByteArray(source, name, includeDirOverride: path);
+			var (arr, code, compilation) = ch.CompileCodeToByteArray(source, name, includeDirOverride: path);
 
 			if (arr == null)
 			{
@@ -133,6 +133,8 @@ namespace Keysharp.Tests
 				File.WriteAllText("./" + name + ".runtimeconfig.json", CompilerHelper.GenerateRuntimeConfig());//Probably not needed for test exe outputs.
 			}
 
+			// As a launcher does: the compiled Main takes A_ScriptFullPath and A_ScriptDir from where the file runs.
+			ScriptExecutionState.SourcePath = compilation.ScriptPath;
 			ScriptExecutionState.Assembly = Assembly.Load(arr);
 			var buffer = new StringBuilder();
 			var output = string.Empty;

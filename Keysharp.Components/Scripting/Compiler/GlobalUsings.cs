@@ -1,6 +1,5 @@
 global using System;
 global using System.Buffers;
-global using System.CodeDom;
 global using System.CodeDom.Compiler;
 global using System.Collections;
 global using System.Collections.Concurrent;

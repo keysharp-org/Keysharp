@@ -225,7 +225,7 @@ namespace Keysharp.Internals
 				// [PublicHiddenFromUser] fields are not part of the script's variable space, and a read-only one holds a
 				// function, which no variable does.
 				foreach (var f in t.GetFields(BindingFlags.Static | BindingFlags.Public))
-					if (!f.IsInitOnly && !f.IsLiteral && f.GetCustomAttribute<PublicHiddenFromUser>() == null && f.GetValue(null) is Any)
+					if (!f.IsInitOnly && !f.IsLiteral && !f.IsDefined(typeof(PublicHiddenFromUser), false) && f.GetValue(null) is Any)
 						f.SetValue(null, null);
 
 				if (script.Vars.Statics.IsInitialized(t) && script.Vars.Statics.TryGetValue(t, out Class cls) && cls.HasOwnPropInternal("__Delete"))

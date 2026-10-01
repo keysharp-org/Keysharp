@@ -200,6 +200,8 @@ public sealed class ScriptSyntaxValidationRequest
 	public string ScriptPath { get; init; }
 	public string IncludeDirectory { get; init; }
 	public IReadOnlyCollection<string> Defines { get; init; } = Array.Empty<string>();
+	/// <summary>The file --include names, included before the script's first line; null for none.</summary>
+	public string IncludeFile { get; init; }
 }
 
 public sealed class ScriptSyntaxValidationResult
@@ -220,6 +222,10 @@ public sealed class ScriptCompileRequest
 	public IReadOnlyCollection<string> Defines { get; init; } = Array.Empty<string>();
 	public IReadOnlyCollection<string> AdditionalComponents { get; init; } = Array.Empty<string>();
 	public IReadOnlyCollection<string> ExcludedComponents { get; init; } = Array.Empty<string>();
+	/// <summary>The codepage the script file is read with, from --cpN; 0 for the default.</summary>
+	public int CodePage { get; init; }
+	/// <summary>The file --include names, included before the script's first line; null for none.</summary>
+	public string IncludeFile { get; init; }
 	public ScriptCompilationOutput Output { get; init; }
 	/// <summary>Directory where an Assembly output will be written, for resolving included file paths at runtime.</summary>
 	public string OutputDirectory { get; init; }
@@ -232,7 +238,9 @@ public interface IScriptCompilationResult
 	bool Success { get; }
 	byte[] AssemblyBytes { get; }
 
-	/// <summary>The lowered C#, without the location stamps the compiler adds to every statement for Error.Stack.</summary>
+	/// <summary>The lowered C#, without the location stamps the compiler adds to every statement for Error.Stack, when the
+	/// request asked for it through <see cref="ScriptCompileRequest.EmitGeneratedCode"/>, also when the C# failed to
+	/// compile.</summary>
 	string GeneratedCode { get; }
 
 	/// <summary>The C# exactly as it is compiled, location stamps included, or null when compilation failed. The default
@@ -250,6 +258,13 @@ public interface IScriptCompilationResult
 	/// The default keeps older compiler components binary-compatible with this additive contract member.
 	/// </summary>
 	bool ErrorStdOut => false;
+
+	/// <summary>
+	/// True when a required <c>#Package</c> failed to resolve in a compilation whose request did not allow a package
+	/// restore, so one allowed to restore may succeed. The default keeps older compiler components binary-compatible
+	/// with this additive contract member.
+	/// </summary>
+	bool PackageRestoreNeeded => false;
 
 	/// <summary>
 	/// True when the script's `#App` block sets `ConsoleApp: true`, asking for a console (CUI) executable

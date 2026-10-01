@@ -120,7 +120,7 @@ namespace Keysharp.Runtime
 						if (wantnormal) continue;
 					}
 					else if (wantspecial) continue;
-					if (field.GetCustomAttribute<PublicHiddenFromUser>() != null) continue;
+					if (field.IsDefined(typeof(PublicHiddenFromUser), false)) continue;
 					vars[Script.GetUserDeclaredName(field) ?? name] = MethodPropertyHolder.GetOrAdd(field);
 				}
 			}
@@ -134,7 +134,7 @@ namespace Keysharp.Runtime
 					bool isSpecial = IsSpecialName(name);
 					if (wantspecial && !isSpecial) continue;
 					if (wantnormal && isSpecial) continue;
-					if (prop.GetCustomAttribute<PublicHiddenFromUser>() != null) continue;
+					if (prop.IsDefined(typeof(PublicHiddenFromUser), false)) continue;
 					vars[Script.GetUserDeclaredName(prop) ?? name] = MethodPropertyHolder.GetOrAdd(prop);
 				}
 			}

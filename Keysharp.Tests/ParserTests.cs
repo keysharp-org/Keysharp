@@ -88,10 +88,10 @@ namespace Keysharp.Tests
 
 		// The included content lands in the emitted code, not in the returned Unit, so only the generated text can
 		// tell a resolved #Include from a skipped one. On failure Bytes is null and Text carries the diagnostics.
-		private static (byte[] Bytes, string Text) EmitWithInclude(string source, string includeDir = null)
+		private static (byte[] Bytes, string Text) EmitWithInclude(string source, string includeDir = null, string includeFile = null)
 		{
 			var (bytes, text, _) = new CompilerHelper().CompileCodeToByteArray(source, "inc_" + Guid.NewGuid().ToString("N"),
-									   emitCode: true, includeDirOverride: includeDir, sourceIsFile: false);
+									   emitCode: true, includeDirOverride: includeDir, sourceIsFile: false, includeFile: includeFile);
 			return (bytes, text);
 		}
 
@@ -133,6 +133,14 @@ namespace Keysharp.Tests
 				var relative = "#include \"Included.ks\"\nx := Included()\n";
 				AssertIncluded(EmitWithInclude(relative, dir));
 				AssertIncludeNotFound(EmitWithInclude(relative));
+
+				// --include splices its file before the script's first line, as a plain #Include does, so the script's
+				// own #Include of it is skipped rather than declaring the class twice.
+				AssertIncluded(EmitWithInclude("x := Included()\n", includeFile: include));
+				AssertIncluded(EmitWithInclude(source, includeFile: include));
+				var missing = EmitWithInclude("x := 1\n", includeFile: Path.Combine(dir, "Missing.ks"));
+				Assert.IsNull(missing.Bytes);
+				StringAssert.Contains("--include file not found", missing.Text);
 			}
 			finally
 			{

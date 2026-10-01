@@ -30,7 +30,7 @@ public sealed class CompilerComponent : IScriptCompiler
 		var (bytes, text, compilation) = helper.CompileCodeToByteArray(
 			hasPath ? request.ScriptPath : request.SourceText, request.CompilationName, runtimeDirectory, minimal,
 			request.EmitGeneratedCode, request.Output, request.Defines, request.AllowPackageRestore,
-			additionalComponents, request.IncludeDirectory, excludedComponents, hasPath, request.OutputDirectory);
+			additionalComponents, request.IncludeDirectory, excludedComponents, hasPath, request.OutputDirectory, request.CodePage, request.IncludeFile);
 		return new CompilationResult(request, runtimeDirectory, bytes, text, compilation);
 	}
 
@@ -77,20 +77,20 @@ public sealed class CompilerComponent : IScriptCompiler
 			this.runtimeDirectory = runtimeDirectory;
 			this.compilation = compilation;
 			AssemblyBytes = bytes;
-			GeneratedCode = bytes == null ? null : text;
 			ErrorText = bytes == null ? text : null;
 			ErrorStdOut = compilation?.ErrorStdOut == true;
 		}
 
 		public bool Success => AssemblyBytes != null;
 		public byte[] AssemblyBytes { get; }
-		public string GeneratedCode { get; }
+		public string GeneratedCode => compilation?.GeneratedCode;
 		public string CompiledCode => Success ? compiledCode ??= PrettyPrinter.Print(compilation.Unit, locations: true) : null;
 		public string ErrorText { get; }
 		public string WarningText => compilation?.Warnings;
 		public string InlineCode => compilation?.InlineCode;
 		public IReadOnlyCollection<string> RequiredComponents => compilation?.RequiredComponents ?? [];
 		public bool ErrorStdOut { get; }
+		public bool PackageRestoreNeeded => compilation?.PackageRestoreNeeded == true;
 		public bool ConsoleApp => compilation?.Manifest?.ConsoleApp ?? false;
 
 		internal string DeploySupportFiles(string destination)

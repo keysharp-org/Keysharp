@@ -315,6 +315,7 @@ namespace Keysharp.Compilation.Syntax
 		// The compiled script's full path ("*" for a from-string compile) and the caller-supplied startup name; used to
 		// emit `MainScript.SetName(...)` so A_ScriptName/A_ScriptFullPath are correct.
 		private string _scriptPath = "*";
+		private string MainScriptPath => _scriptPath == "*" ? null : _scriptPath;
 		private readonly Dictionary<string, string[]> _sourceLines = new(SourcePathComparer);   // cached by SourceLines
 		private string _startupName;
 		private string _includeDir;   // directory for resolving file-based `#import "name"` module imports
@@ -420,7 +421,7 @@ namespace Keysharp.Compilation.Syntax
 						// module file rather than its directory, and #Warn/diagnostics raised inside it name it.
 						var moduleSource = System.IO.File.ReadAllText(file);
 
-						var (p, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(moduleSource, fileDir, file, _defines);
+						var (p, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(moduleSource, fileDir, file, _defines, MainScriptPath);
 						_errorStdOutActive |= p.ErrorStdOut;
 						// A parse error in the imported module file is surfaced as the script's error (prefixed with the
 						// module file name), not swallowed — otherwise the user would only see a misleading "module not
@@ -495,7 +496,7 @@ namespace Keysharp.Compilation.Syntax
 			{
 				// The default spec is written with '\' (AHK's own), so without this the user-Documents and exe-adjacent
 				// tiers expand to non-existent directories on Unix and are silently dropped from the search path.
-				var item = Parser.NormalizeDirectiveSeparators(Parser.ExpandPathVars(raw.Trim(), _includeDir, _scriptPath).Trim());
+				var item = Parser.NormalizeDirectiveSeparators(Parser.ExpandPathVars(raw.Trim(), _includeDir, _scriptPath, MainScriptPath).Trim());
 				if (item.Length == 0) continue;
 				string full;
 				try { full = System.IO.Path.GetFullPath(System.IO.Path.IsPathRooted(item) ? item : System.IO.Path.Combine(baseDir, item)); }
@@ -3319,7 +3320,7 @@ namespace Keysharp.Compilation.Syntax
 			}
 
 			var raw = Parser.NormalizeDirectiveSeparators(
-						  Parser.ExpandPathVars((d.FilePath ?? "").Trim(), _includeDir, d.File ?? _scriptPath ?? _includeDir));
+						  Parser.ExpandPathVars((d.FilePath ?? "").Trim(), _includeDir, d.File ?? _scriptPath ?? _includeDir, MainScriptPath));
 
 			if (raw.Length == 0)
 			{

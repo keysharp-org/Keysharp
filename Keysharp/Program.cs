@@ -88,44 +88,43 @@ namespace Keysharp.Main
 			// Daemon fast path: a source run - or --validate, the same compile without the run - can offload
 			// compilation to the shared daemon, so this lean launcher never loads the parser/Roslyn.
 			// KEYSHARP_DAEMON forces it on/off; if unset, release builds use it and debug builds do not.
-			// --define is excluded explicitly, not merely via DefaultCompilation: the daemon is sent nothing but a
-			// script path, so it would compile with no symbols and silently resolve the #if branches the other way.
-			// Other compilation-altering switches go via the switch count (see DefaultCompilation), and so does one
-			// the run itself reads, such as /force: the daemon path hands the runtime script no switches.
 			if (command.Kind == CliCommandKind.RunSource
 					&& !command.FromStdin
 					&& !command.Transpile
-					&& command.DefaultCompilation
-					&& command.Defines.Length == 0
+					&& !command.SyntaxOnly
 					&& ShouldUseDaemon())
 			{
-				switch (CompileClient.CompileViaServer(command.ScriptName, out var daemonBytes, out _,
-					out var daemonWarnings))
+				var reply = CompileClient.CompileViaServer(command);
+
+				switch (reply.Status)
 				{
 					case CompileDaemonStatus.Compiled:
 						// The daemon compiled in a process whose stderr goes nowhere, so its #Warning text rides back
 						// with the bytes and is reported here instead.
-						if (!string.IsNullOrEmpty(daemonWarnings))
-							Console.Error.WriteLine(daemonWarnings);
+						if (!string.IsNullOrEmpty(reply.WarningText))
+							Console.Error.WriteLine(reply.WarningText);
 
 						// The daemon compiled the source but this process runs it: point A_ScriptFullPath/A_ScriptDir at
 						// the source the user launched, not at a path baked in by the daemon.
 						ScriptExecutionState.SourcePath = command.ScriptName;
+						ScriptExecutionState.KeysharpArgs = command.KeysharpArgs;
 
 						if (command.Validate)
 						{
 							Console.WriteLine($"Compilation succeeded in {(DateTime.UtcNow - start).TotalSeconds:N3}s.");
-							return LoadCompiledBytes(daemonBytes, command);
+							return LoadCompiledBytes(reply.AssemblyBytes, command);
 						}
 						else
-							return RunCompiledBytes(daemonBytes, command.ScriptArgs);
+							return RunCompiledBytes(reply.AssemblyBytes, command.ScriptArgs);
 
+					// The daemon's error is the one a compile here would report, and it carries the script's #ErrorStdOut.
+					// Unrestored packages are reported only under --validate, as without a daemon; a run compiles here, which
+					// may restore them.
 					case CompileDaemonStatus.CompileFailed:
-						// Recompile locally so source-level load policy is handled by the ordinary parser. Package restore
-						// remains disabled for --validate, just as it was in the daemon.
-						break;
+					case CompileDaemonStatus.PackageRestoreNeeded when command.Validate:
+						return Runner.ReportCompileFailure(command, reply.ErrorText, reply.ErrorStdOut);
 
-						// Unreachable + unspawnable: fall through to the in-process runner below.
+					// Anything else, a run with unrestored packages or no daemon to answer, compiles in-process below.
 				}
 			}
 
@@ -166,15 +165,16 @@ namespace Keysharp.Main
 				if (daemonArgs.Length < 3 || string.IsNullOrWhiteSpace(daemonArgs[2]))
 					return DaemonUsageError("--daemon ping requires a script path.");
 
-				var st = CompileClient.TryCompile(daemonArgs[2], out var b, out var err, out var warn);
-				Console.WriteLine(st switch
+				var reply = CompileClient.TryCompile(new CliCommand { ScriptName = daemonArgs[2] }) ?? DaemonReply.Unavailable;
+				Console.WriteLine(reply.Status switch
 				{
-					CompileDaemonStatus.Compiled => $"daemon ping: OK, {b.Length} bytes"
-						+ (string.IsNullOrEmpty(warn) ? "" : $"\n{warn}"),
-					CompileDaemonStatus.CompileFailed => $"daemon ping: COMPILE ERROR\n{err}",
+					CompileDaemonStatus.Compiled => $"daemon ping: OK, {reply.AssemblyBytes.Length} bytes"
+						+ (string.IsNullOrEmpty(reply.WarningText) ? "" : $"\n{reply.WarningText}"),
+					CompileDaemonStatus.CompileFailed or CompileDaemonStatus.PackageRestoreNeeded => $"daemon ping: COMPILE ERROR\n{reply.ErrorText}",
+					_ when reply.ErrorText != null => $"daemon ping: FAIL, the daemon could not compile\n{reply.ErrorText}",
 					_ => "daemon ping: FAIL, no daemon reachable",
 				});
-				return st == CompileDaemonStatus.Compiled ? 0 : 1;
+				return reply.Status == CompileDaemonStatus.Compiled ? 0 : 1;
 			}
 
 			return DaemonUsageError($"Unknown --daemon subcommand \"{daemonArgs[1]}\".");
@@ -352,17 +352,11 @@ namespace Keysharp.Main
 			// The parser resolves built-ins through Script.TheScript, so a parse-context Script is needed for
 			// the compile; dispose it once the assembly bytes are produced.
 			byte[] arr;
-			string compileResult;
 			Keysharp.Components.Scripting.IScriptCompiler compiler;
 			Keysharp.Components.Scripting.IScriptCompilationResult exeCompilation;
 
-			using (var script = new Script())
+			using (Runner.NewCompileScript(r))
 			{
-				// Error reporting reads --errorstdout off the Script (Env.FindCommandLineArg); without these a
-				// compile failure on a headless CI runner opens a modal dialog and the process hangs forever.
-				script.KeysharpArgs = r.KeysharpArgs;
-				script.ScriptArgs = r.ScriptArgs;
-
 				if (!ScriptingComponentRegistry.TryGetCompiler(out compiler, out var componentFailure))
 					return Runner.Message(componentFailure, true);
 
@@ -375,18 +369,19 @@ namespace Keysharp.Main
 					Defines = r.Defines,
 					AdditionalComponents = r.IncludeComponents,
 					ExcludedComponents = r.ExcludeComponents,
+					CodePage = r.CodePage,
+					IncludeFile = r.IncludeFile,
 					Output = r.MinimalExe
 						? Keysharp.Components.Scripting.ScriptCompilationOutput.MinimalExecutable
 						: Keysharp.Components.Scripting.ScriptCompilationOutput.Executable,
 				});
 				arr = exeCompilation.AssemblyBytes;
-				compileResult = exeCompilation.Success ? exeCompilation.GeneratedCode : exeCompilation.ErrorText;
 			}
 
 			if (arr == null)
-				return Runner.Message(compileResult, true, exeCompilation.ErrorStdOut);
+				return Runner.Message(exeCompilation.ErrorText, true, exeCompilation.ErrorStdOut);
 
-			// #Warning from the compiled script; on the failure path above it is already inside compileResult.
+			// #Warning from the compiled script; on the failure path above it is already inside the error text.
 			if (!string.IsNullOrEmpty(exeCompilation?.WarningText))
 				Console.Error.WriteLine(exeCompilation.WarningText);
 
@@ -497,20 +492,8 @@ namespace Keysharp.Main
 			}
 			catch (Exception ex)
 			{
-				return ReportDaemonFailure(command, $"Loading the compiled script failed.\n\n{ex.GetType().Name}: {ex.Message}");
+				return Runner.ReportCompileFailure(command, $"Loading the compiled script failed.\n\n{ex.GetType().Name}: {ex.Message}", false);
 			}
-		}
-
-		// Error reporting reads its switches off the Script, not the command line (see Env.FindCommandLineArg):
-		// without KeysharpArgs, --errorstdout goes unseen and a headless --validate stops at a modal dialog.
-		private static int ReportDaemonFailure(CliCommand command, string error)
-		{
-			using var script = new Script();
-			script.scriptPath = Path.GetFullPath(command.ScriptName);
-			script.scriptName = Path.GetFileName(script.scriptPath);
-			script.KeysharpArgs = command.KeysharpArgs;
-			script.ScriptArgs = command.ScriptArgs;
-			return Runner.Message(error, true);
 		}
 
 #if WINDOWS

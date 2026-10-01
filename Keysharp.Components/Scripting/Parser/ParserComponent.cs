@@ -108,7 +108,7 @@ public sealed class ParserComponent : IScriptSyntaxValidator, IScriptTokenizer
 	{
 		ArgumentNullException.ThrowIfNull(request);
 		var (program, diagnostics) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(
-			request.SourceText ?? "", request.IncludeDirectory, request.ScriptPath, request.Defines);
+			request.SourceText ?? "", request.IncludeDirectory, request.ScriptPath, request.Defines, request.ScriptPath, request.IncludeFile);
 		return new()
 		{
 			Diagnostics = diagnostics.Select(diagnostic => ToDiagnostic(diagnostic, request.ScriptPath)).ToArray(),

@@ -2499,7 +2499,8 @@ namespace Keyview
 					  + "// ---- #CSharp (compiled as a separate file) ----" + Environment.NewLine + Environment.NewLine
 					  + inlineCode
 					: "";
-				var code = (result.GeneratedCode ?? result.ErrorText ?? "Compilation failed.") + inline;
+				// A script whose C# failed to compile shows the error above the generated code which caused it.
+				var code = string.Join(Environment.NewLine + Environment.NewLine, new[] { result.ErrorText, result.GeneratedCode }.Where(text => text != null)) + inline;
 
 				if (result.Success)
 				{

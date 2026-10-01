@@ -21,6 +21,7 @@ namespace Keysharp.Parsing.Syntax
 		private int _pos;
 		private long _nextSourceOrder;
 		private bool _errorStdOut;
+		private readonly string _mainScriptPath;   // the compiled script's full path, or null for source text
 		private int _groupDepth;   // >0 inside ()/[] — newlines are insignificant
 		private int _exprDepth;    // recursion guard for ParseExpression (defensive cap against malformed/unsupported input)
 		private const int MaxExprDepth = 250;
@@ -77,29 +78,47 @@ namespace Keysharp.Parsing.Syntax
 		};
 
 		// `defines` are the caller's extra preprocessor symbols for this compilation (null when there are none).
-		private Parser(string includeDir = null, IEnumerable<string> defines = null)
+		private Parser(string includeDir = null, IEnumerable<string> defines = null, string mainScriptPath = null)
 		{
 			_includeDir = includeDir;
+			_mainScriptPath = string.IsNullOrWhiteSpace(mainScriptPath) ? null : System.IO.Path.GetFullPath(mainScriptPath);
 
 			if (defines != null)
 				foreach (var d in defines) _ = _defines.Add(d);
 		}
 
-		private void LoadTokens(List<Token> tokens, IReadOnlyList<string> lexDiagnostics = null)
+		private void LoadTokens(List<Token> tokens, IReadOnlyList<string> lexDiagnostics = null, string includeFile = null)
 		{
-			_t = Preprocess(tokens, _includeDir, lexDiagnostics);
+			var outp = new List<Token>(tokens.Count);
+
+			// As AutoHotkey's /include: one file, included before the main script's first line as a plain #Include is.
+			if (!string.IsNullOrEmpty(includeFile))
+			{
+				includeFile = System.IO.Path.GetFullPath(includeFile);
+
+				if (!System.IO.File.Exists(includeFile))
+					throw new Keysharp.Builtins.ParseException($"--include file not found: {includeFile}");
+
+				if (_included.Add(includeFile))
+				{
+					_ = Preprocess(LexIncludedFile(includeFile, out var includedDiagnostics), System.IO.Path.GetDirectoryName(includeFile), includedDiagnostics, outp);
+					outp.Add(new Token(TokenKind.Newline, "\n", 0, 0, 0, 0, true, includeFile));
+				}
+			}
+
+			_t = Preprocess(tokens, _includeDir, lexDiagnostics, outp);
 			JoinContinuationLines(_t);
 		}
 
-		public static ProgramNode Parse(string source, string includeDir = null, string scriptFile = null) => ParseWithDiagnostics(source, includeDir, scriptFile).program;
-
 		// Tokenizes + parses, returning the AST together with all lex + parse diagnostics (line:col: message).
-		// scriptFile is the main script's full path (when known): it stamps the top-level tokens so %A_LineFile% in an
-		// #include resolves to the real file (not just its directory) and main-file diagnostics name the file.
-		public static (ProgramNode program, List<string> diagnostics) ParseWithDiagnostics(string source, string includeDir = null, string scriptFile = null, IEnumerable<string> defines = null)
+		// scriptFile is the parsed file's full path (when known): it stamps the top-level tokens so %A_LineFile% in an
+		// #include resolves to the real file (not just its directory) and diagnostics name the file. mainScriptPath is the
+		// compiled script's path, for %A_ScriptFullPath% and %A_ScriptName%; it is null when that script is source text,
+		// including for the module files such a script imports. includeFile is the file --include names.
+		public static (ProgramNode program, List<string> diagnostics) ParseWithDiagnostics(string source, string includeDir = null, string scriptFile = null, IEnumerable<string> defines = null, string mainScriptPath = null, string includeFile = null)
 		{
 			var diags = new List<string>();
-			var parser = new Parser(includeDir, defines);
+			var parser = new Parser(includeDir, defines, mainScriptPath);
 			// As in AutoHotkey, a file counts as included already while it is being parsed, so an #Include of it is skipped.
 			if (!string.IsNullOrWhiteSpace(scriptFile))
 				_ = parser._included.Add(System.IO.Path.GetFullPath(scriptFile));
@@ -107,7 +126,7 @@ namespace Keysharp.Parsing.Syntax
 			{
 				var lexer = new Lexer(source, scriptFile);
 				var tokens = LexForParsing(lexer);
-				parser.LoadTokens(tokens, lexer.Diagnostics);
+				parser.LoadTokens(tokens, lexer.Diagnostics, includeFile);
 				// Preprocessing has finished. Parse directives again in statement order so a later #ErrorStdOut cannot
 				// retroactively route an earlier syntax error.
 				parser._errorStdOut = false;
@@ -1203,7 +1222,12 @@ namespace Keysharp.Parsing.Syntax
 			if (!System.IO.File.Exists(path)) { if (ignoreMissing) return null; throw IncludeNotFound(directive, path); }
 			includedDir = System.IO.Path.GetDirectoryName(path);   // nested includes in this file resolve against its dir
 			includedPath = path;
-			// The lexer stamps each token with this file's full path for diagnostics and A_LineFile.
+			return LexIncludedFile(path, out lexDiagnostics);
+		}
+
+		// The lexer stamps each token with the file's full path for diagnostics and A_LineFile.
+		private List<Token> LexIncludedFile(string path, out IReadOnlyList<string> lexDiagnostics)
+		{
 			var lexer = new Lexing.Lexer(_includedSources[path] = System.IO.File.ReadAllText(path), path);
 			var toks = LexForParsing(lexer);
 			lexDiagnostics = lexer.Diagnostics;
@@ -1402,12 +1426,13 @@ namespace Keysharp.Parsing.Syntax
 
 		// Expands %BuiltInVar% references in an #include path. A_ScriptDir is the main-script dir; A_LineFile is the
 		// directive's own file. Delegates to the shared ExpandPathVars (also used by the #import search path).
-		private string ExpandIncludeVars(string s, Token directive) => ExpandPathVars(s, _includeDir, directive.File ?? _includeDir);
+		private string ExpandIncludeVars(string s, Token directive) => ExpandPathVars(s, _includeDir, directive.File ?? _includeDir, _mainScriptPath);
 
-		// Expands %BuiltInVar% references in a path string. A_ScriptDir/A_LineFile are supplied by the caller (the parse
-		// context); the rest come from the Accessors built-ins (restricted to includePathVars). An unrecognized %name%
-		// (or one that can't be resolved) is left verbatim, matching AutoHotkey's "interpreted literally" rule.
-		internal static string ExpandPathVars(string s, string scriptDir, string lineFile)
+		// Expands %BuiltInVar% references in a path string. The script's own variables come from the caller (the parse
+		// context), which is the script being compiled, whatever script is running; the rest come from the Accessors
+		// built-ins (restricted to includePathVars). An unrecognized %name% (or one that can't be resolved, such as the
+		// file name of a script compiled from text) is left verbatim, matching AutoHotkey's "interpreted literally" rule.
+		internal static string ExpandPathVars(string s, string scriptDir, string lineFile, string mainScriptPath)
 		{
 			if (string.IsNullOrEmpty(s) || s.IndexOf('%') < 0) return s;
 			return ExpandPathRegEx().Replace(s, m =>
@@ -1416,6 +1441,8 @@ namespace Keysharp.Parsing.Syntax
 				if (!includePathVars.Contains(name)) return m.Value;
 				if (name.Equals("A_ScriptDir", System.StringComparison.OrdinalIgnoreCase)) return scriptDir ?? m.Value;
 				if (name.Equals("A_LineFile", System.StringComparison.OrdinalIgnoreCase)) return lineFile ?? m.Value;
+				if (name.Equals("A_ScriptFullPath", System.StringComparison.OrdinalIgnoreCase)) return mainScriptPath ?? m.Value;
+				if (name.Equals("A_ScriptName", System.StringComparison.OrdinalIgnoreCase)) return System.IO.Path.GetFileName(mainScriptPath) ?? m.Value;
 				try
 				{
 					var prop = typeof(Keysharp.Builtins.Accessors).GetProperty(name,

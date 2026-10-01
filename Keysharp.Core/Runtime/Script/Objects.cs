@@ -85,7 +85,7 @@ namespace Keysharp.Runtime
 
 				foreach (var method in methods)
 				{
-					if (method.GetCustomAttribute<PublicHiddenFromUser>() != null) continue;
+					if (method.IsDefined(typeof(PublicHiddenFromUser), false)) continue;
 
 					string userDeclaredName = GetUserDeclaredName(method);
 
@@ -93,7 +93,7 @@ namespace Keysharp.Runtime
 
 					// A member is static if it carries [Static] or if its C# name has the "static" prefix.
 					// The attribute lets the prefix be omitted when there is no instance member to disambiguate from.
-					bool isStatic = method.GetCustomAttribute<StaticAttribute>() != null;
+					bool isStatic = method.IsDefined(typeof(StaticAttribute), false);
 					if (methodName.StartsWith(Keywords.ClassStaticPrefix))
 					{
 						isStatic = true;
@@ -162,7 +162,7 @@ namespace Keysharp.Runtime
 
 				foreach (var prop in properties)
 				{
-					if (prop.GetCustomAttribute<PublicHiddenFromUser>() != null) continue;
+					if (prop.IsDefined(typeof(PublicHiddenFromUser), false)) continue;
 
 					string userDeclaredName = GetUserDeclaredName(prop);
 
@@ -172,7 +172,7 @@ namespace Keysharp.Runtime
 						propertyName = "__Item";
 
 					OwnPropsDesc propertyMap = null;
-					bool isStaticProp = prop.GetCustomAttribute<StaticAttribute>() != null;
+					bool isStaticProp = prop.IsDefined(typeof(StaticAttribute), false);
 					if (isStaticProp || propertyName.StartsWith(Keywords.ClassStaticPrefix))
 					{
 						if (userDeclaredName == null)
@@ -260,7 +260,7 @@ namespace Keysharp.Runtime
 
 					// Same opt-out the method loop above honors. Without it a public nested type is always
 					// registered, and its getter indexes Vars.Statics with a type that was never initialized.
-					if (nestedType.GetCustomAttribute<PublicHiddenFromUser>() != null)
+					if (nestedType.IsDefined(typeof(PublicHiddenFromUser), false))
 						continue;
 
 					staticInst.DefinePropInternal(GetUserDeclaredName(nestedType) ?? nestedType.Name,
@@ -320,10 +320,10 @@ namespace Keysharp.Runtime
 			&& typeof(Any).IsAssignableFrom(type)
 			&& !typeof(Module).IsAssignableFrom(type);
 
-		public static string GetUserDeclaredName(MemberInfo mb)
-		{
-			return mb.GetCustomAttribute<UserDeclaredNameAttribute>()?.Name;
-		}
+		// Most members carry no such attribute, which IsDefined answers without the arrays GetCustomAttribute builds even
+		// when nothing matches.
+		public static string GetUserDeclaredName(MemberInfo mb) =>
+			mb.IsDefined(typeof(UserDeclaredNameAttribute), false) ? mb.GetCustomAttribute<UserDeclaredNameAttribute>().Name : null;
 
 		public static object SetObject(object item, params object[] args)
 		{

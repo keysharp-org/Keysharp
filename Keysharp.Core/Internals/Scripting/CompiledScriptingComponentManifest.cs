@@ -130,6 +130,16 @@ namespace Keysharp.Internals.Scripting
 
 			var cacheRoot = Path.Combine(userRoot, "Keysharp", "embedded-components");
 			var root = Path.Combine(cacheRoot, ContentKey(entry));
+
+			// Verified once, a root serves the rest of the process while its descriptor remains; every compiler lookup would
+			// otherwise rehash its assets. Each use still marks it recent, so another process does not prune it.
+			if (ScriptingComponentRegistry.IsSearchRoot(root)
+					&& File.Exists(SafePath(root, ScriptingComponentRegistry.DescriptorRelativePath(entry.Name))))
+			{
+				Keysharp.Internals.Os.ExtractionCache.Touch(root);
+				return true;
+			}
+
 			var seen = new HashSet<string>(PathComparer);
 
 			try

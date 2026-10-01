@@ -35,6 +35,8 @@ namespace Keysharp.Tests
 				Assert.AreEqual(CliCommandKind.RunSource, command.Kind);
 				Assert.AreEqual(Path.GetFullPath(scriptPath), command.ScriptName);
 				Assert.IsTrue(command.Validate);
+				Assert.AreEqual(65001, command.CodePage);
+				Assert.AreEqual(Path.GetFullPath(includePath), command.IncludeFile);
 				Assert.AreEqual(args.Take(args.Length - 2).ToArray(), command.KeysharpArgs);
 				Assert.AreEqual(new[] { "script-arg" }, command.ScriptArgs);
 

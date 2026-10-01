@@ -50,8 +50,8 @@ namespace Keysharp.Internals.Invoke
 
 			var typesQuery = rd.loadedAssemblies.Values.Where(asm => asm == typeof(Any).Assembly)
 						.SelectMany(t => t.GetExportedTypes())
-						.Where(t => t.GetCustomAttribute<PublicHiddenFromUser>() == null && t.Namespace != null && t.Namespace.StartsWith("Keysharp.Builtins")
-							   && t.IsClass && (t.IsPublic || t.IsNestedPublic));
+						.Where(t => t.Namespace != null && t.Namespace.StartsWith("Keysharp.Builtins", StringComparison.Ordinal) && t.IsClass && (t.IsPublic || t.IsNestedPublic)
+							   && !t.IsDefined(typeof(PublicHiddenFromUser), false));
 
 			var types = typesQuery.ToArray();   // materialize once
 
@@ -66,12 +66,12 @@ namespace Keysharp.Internals.Invoke
 
 			foreach (var property in staticTypes
 					 .SelectMany(t => t.GetProperties(BindingFlags.Public | BindingFlags.Static))
-					 .Where(p => MethodPropertyHolder.HasScriptGetter(p) && p.GetCustomAttribute<PublicHiddenFromUser>() == null))
+					 .Where(p => MethodPropertyHolder.HasScriptGetter(p) && !p.IsDefined(typeof(PublicHiddenFromUser), false)))
 				rd.flatPublicStaticProperties.TryAdd(Script.GetUserDeclaredName(property) ?? property.Name, property);
 
 			foreach (var method in staticTypes
 					 .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static))
-					 .Where(m => !m.IsSpecialName && m.GetCustomAttribute<PublicHiddenFromUser>() == null))
+					 .Where(m => !m.IsSpecialName && !m.IsDefined(typeof(PublicHiddenFromUser), false)))
 				rd.flatPublicStaticMethods.TryAdd(Script.GetUserDeclaredName(method) ?? method.Name, method);
 
 #if DEBUG
