@@ -266,6 +266,20 @@ namespace Keysharp.Internals.Window.Unix
 			owner?.SyncEtoItems();
 			ownerMenuItem?.SyncSubItems();
 		}
+
+		protected override void RemoveItem(int index)
+		{
+			base.RemoveItem(index);
+			owner?.SyncEtoItems();
+			ownerMenuItem?.SyncSubItems();
+		}
+
+		protected override void ClearItems()
+		{
+			base.ClearItems();
+			owner?.SyncEtoItems();
+			ownerMenuItem?.SyncSubItems();
+		}
 	}
 
 	public class ToolStrip

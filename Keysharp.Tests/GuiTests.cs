@@ -1769,6 +1769,11 @@ namespace Keysharp.Tests
 			var right = (ToolStripMenuItem)menuBar.Add("Right", callback, "Right");
 			var nativeRight = (Gtk.MenuItem)right.EtoItem.ControlObject;
 			Assert.IsTrue((bool)nativeRight.GetType().GetProperty("RightJustified").GetValue(nativeRight));
+
+			menu.MenuItem.Items.RemoveAt(0);
+			Assert.AreEqual(1, menu.MenuItem.EtoMenu.Items.Count);
+			_ = menu.Delete();
+			Assert.AreEqual(0, menu.MenuItem.EtoMenu.Items.Count);
 		}
 #endif
 
