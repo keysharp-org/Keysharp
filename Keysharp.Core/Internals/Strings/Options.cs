@@ -3,17 +3,17 @@ namespace Keysharp.Internals.Strings
 {
 	internal static class Options
 	{
-		internal static bool? OnOff(object mode)
+		internal static bool? OnOff(object mode) => mode == null ? false : OnOff((mode as string ?? mode.ToString()).AsSpan());
+
+		internal static bool? OnOff(ReadOnlySpan<char> mode)
 		{
-			if (mode == null)
+			if (mode.Equals(Keyword_On, StringComparison.OrdinalIgnoreCase) || mode is "1" || mode.Equals("true", StringComparison.OrdinalIgnoreCase))
+				return true;
+
+			if (mode.Equals(Keyword_Off, StringComparison.OrdinalIgnoreCase) || mode is "0" || mode.Equals("false", StringComparison.OrdinalIgnoreCase))
 				return false;
 
-			return mode.ToString().ToLower() switch
-			{
-					Keyword_On or "1" or "true" => true,
-					Keyword_Off or "0" or "false" => false,
-					_ => null,
-			};
+			return null;
 		}
 
 		internal static bool IsOption(string options, string search)
@@ -186,56 +186,40 @@ namespace Keysharp.Internals.Strings
 
 		internal static bool TryParse(ReadOnlySpan<char> opt, string prefix, ref bool result, StringComparison comp = StringComparison.OrdinalIgnoreCase, bool allowempty = false, bool def = default)
 		{
-			if (opt[0] == '-' && opt.Slice(1).CompareTo(prefix, StringComparison.OrdinalIgnoreCase) == 0)
+			if (opt.Length > 0 && opt[0] is '-' or '+' && opt.Slice(1).Equals(prefix, StringComparison.OrdinalIgnoreCase))
 			{
-				result = false;
-				return true;
-			}
-			else if (opt[0] == '+' && opt.Slice(1).CompareTo(prefix, StringComparison.OrdinalIgnoreCase) == 0)
-			{
-				result = true;
+				result = opt[0] == '+';
 				return true;
 			}
 
-			return TryParseWrapper(opt, prefix, (ReadOnlySpan<char> v, out bool r) =>
-			{
-				var b = OnOff(v.ToString());
-
-				if (b != null)
-				{
-					r = b.Value;
-					return true;
-				}
-				else if (allowempty)
-				{
-					r = false;
-					return true;
-				}
-
-				r = false;
-				return false;
-			}, ref result, comp, allowempty, def);
+			// With allowempty, a suffix other than on/off reads as off.
+			return TryParseWrapper(opt, prefix, allowempty ? ParseOnOffOrOff : ParseOnOff, ref result, comp, allowempty, def);
 		}
 
-		/// <summary>
-		/// Parse a string and get Coordinates
-		/// </summary>
-		/// <param name="input">String in Format X123 Y123</param>
-		/// <param name="p">out Point Struct if possible</param>
-		/// <returns>true if parsing succesful</returns>
-		internal static bool TryParseCoordinate(string input, out Point p) => throw new NotImplementedException();
+		private static bool ParseOnOff(ReadOnlySpan<char> value, out bool result)
+		{
+			var onOff = OnOff(value);
+			result = onOff ?? false;
+			return onOff != null;
+		}
+
+		private static bool ParseOnOffOrOff(ReadOnlySpan<char> value, out bool result)
+		{
+			result = OnOff(value) ?? false;
+			return true;
+		}
 
 		internal static bool TryParseDateTime(string opt, string prefix, string format, ref DateTime result, StringComparison comp = StringComparison.OrdinalIgnoreCase) =>
 		TryParseDateTime(opt.AsSpan(), prefix, format, ref result, comp);
 
-		internal static bool TryParseDateTime(ReadOnlySpan<char> opt, string prefix, string format, ref DateTime result, StringComparison comp = StringComparison.OrdinalIgnoreCase) =>
-		TryParseWrapper(opt, prefix, (ReadOnlySpan<char> v, out DateTime r) =>
+		internal static bool TryParseDateTime(ReadOnlySpan<char> opt, string prefix, string format, ref DateTime result, StringComparison comp = StringComparison.OrdinalIgnoreCase)
 		{
-			if (!DateTime.TryParseExact(v, format.AsSpan(), CultureInfo.CurrentCulture, DateTimeStyles.AssumeLocal, out r))
-				r = Conversions.ToDateTime(v.ToString());
+			if (!TryGetSuffix(opt, prefix, comp, out var v))
+				return false;
 
+			result = DateTime.TryParseExact(v, format.AsSpan(), CultureInfo.CurrentCulture, DateTimeStyles.AssumeLocal, out var r) ? r : Conversions.ToDateTime(v.ToString());
 			return true;
-		}, ref result, comp);
+		}
 
 		internal static bool TryParseString(ReadOnlySpan<char> opt, string prefix, ref string result, StringComparison comp = StringComparison.OrdinalIgnoreCase, bool allowEmpty = false) =>
 		TryParseWrapper(opt, prefix, (ReadOnlySpan<char> v, out string r) => { r = v.ToString(); return true; }, ref result, comp, allowEmpty);
@@ -250,34 +234,38 @@ namespace Keysharp.Internals.Strings
 		private static bool TryParseWrapper<T>(ReadOnlySpan<char> opt, string prefix, TryParseHandler<T> handler, ref T result, StringComparison comp = StringComparison.OrdinalIgnoreCase,
 											   bool allowempty = false, T def = default)// where T : struct
 		{
-			var doit = false;
-			var suffix = ReadOnlySpan<char>.Empty;
+			if (!TryGetSuffix(opt, prefix, comp, out var suffix))
+				return false;
 
+			if (allowempty && suffix.IsEmpty)
+			{
+				result = def;
+				return true;
+			}
+
+			if (!handler(suffix, out var res))
+				return false;
+
+			result = res;
+			return true;
+		}
+
+		// The text after prefix, or after + and prefix.
+		private static bool TryGetSuffix(ReadOnlySpan<char> opt, string prefix, StringComparison comp, out ReadOnlySpan<char> suffix)
+		{
 			if (opt.StartsWith(prefix, comp))
 			{
 				suffix = opt.Slice(prefix.Length);
-				doit = true;
+				return true;
 			}
-			else if (opt.Length > 0 && opt[0] == '+' && opt.Slice(1).StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+
+			if (opt.Length > 0 && opt[0] == '+' && opt.Slice(1).StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
 			{
 				suffix = opt.Slice(prefix.Length + 1);
-				doit = true;
+				return true;
 			}
 
-			if (doit)
-			{
-				if (allowempty && suffix.CompareTo([], StringComparison.OrdinalIgnoreCase) == 0)//Need CompareTo() because == doesn't work with spans and "".
-				{
-					result = def;
-					return true;
-				}
-				else if (handler(suffix, out var res))
-				{
-					result = res;
-					return true;
-				}
-			}
-
+			suffix = default;
 			return false;
 		}
 

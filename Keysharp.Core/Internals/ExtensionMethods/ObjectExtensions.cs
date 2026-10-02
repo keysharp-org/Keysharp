@@ -10,13 +10,11 @@ namespace Keysharp.Internals.ExtensionMethods
 	internal static class ObjectExtensions
 	{
 		/// <summary>
-		/// Converts an object to a bool.
+		/// Tests a value's truth as <c>if</c> does (AutoHotkey's TokenToBOOL), or gives <paramref name="def"/> when there is
+		/// no value.
 		/// </summary>
-		/// <param name="obj">The object to convert.</param>
-		/// <param name="def">A default value to use if obj is null or the conversion fails.</param>
-		/// <returns>The object as a bool if conversion succeeded, else def.</returns>
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		public static bool Ab(this object obj, bool def = default) => obj.TryParseBool(out var b) ? b : def;
+		public static bool Ab(this object obj, bool def = default) => obj is bool b ? b : obj is null ? def : Script.ForceBool(obj);
 
 		// Two families convert a value. TryCoerce* never raises: false means no value or one which does not convert. Coerce*
 		// takes a built-in's parameter: no value gives the default, and a value which does not convert raises a TypeError,

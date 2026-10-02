@@ -165,7 +165,7 @@ namespace Keysharp.Builtins.COM
 			{
 				Reflections.TryGetPtrProperty(value, out var psaAddr);
 				nint psa = new nint(psaAddr);
-				return new ComObjArray(vt & ~VarEnum.VT_ARRAY, psa, flags.Ab());
+				return new ComObjArray(vt & ~VarEnum.VT_ARRAY, psa, flags.TryCoerceLong(out var f) && (f & F_OWNVALUE) != 0);
 			}
 			if ((vt & VarEnum.VT_BYREF) != 0)
 				return new ComValueRef(varType, value, flags);

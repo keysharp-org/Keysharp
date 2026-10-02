@@ -59,13 +59,13 @@ namespace Keysharp.Builtins
 			if (!TryResolveTarget(source, out var addr, out var size) && !TryResolveReadOnlyTarget(source, code, out addr))
 				return Errors.TypeErrorOccurred(source, typeof(nint), DefaultObject);
 
-			if (addr < MinValidAddress)
-				return Errors.IndexErrorOccurred($"Could not parse target {source} as a Buffer or memory address.", DefaultObject);
+			if (!IsValidAddress(addr, off))
+				return Errors.IndexErrorOccurred($"Memory address {addr} with offset {off} is outside the supported address range.", DefaultObject);
 
 			var width = NativeType.SizeOf(code);
 
-			if (size > 0 && off + width > size)
-				return Errors.IndexErrorOccurred($"Memory access exceeded buffer size. Offset {off} + length {width} > buffer size {size}.", DefaultObject);
+			if (size >= 0 && off > size - width)
+				return Errors.IndexErrorOccurred($"Memory access exceeded buffer size. Offset {off}, length {width}, buffer size {size}.", DefaultObject);
 
 			return NativeType.ReadMemory(code, addr + (nint)off);
 		}
@@ -103,9 +103,6 @@ namespace Keysharp.Builtins
 			if (!TryResolveTarget(target, out var addr, out var size))
 				return (long)Errors.TypeErrorOccurred(target, typeof(nint), DefaultErrorLong);
 
-			if (addr < MinValidAddress)
-				return (long)Errors.IndexErrorOccurred($"Could not parse target {target} as a Buffer or memory address.", DefaultErrorLong);
-
 			for (var i = 0; i <= lastPairIndex; i += 2)
 			{
 				var t = obj[i] as string;
@@ -116,8 +113,11 @@ namespace Keysharp.Builtins
 
 				var width = NativeType.SizeOf(code);
 
-				if (size > 0 && offset + width > size)
-					return (long)Errors.IndexErrorOccurred($"Memory access exceeded buffer size. Offset {offset} + length {width} > buffer size {size}.", DefaultErrorLong);
+				if (size >= 0 && offset > size - width)
+					return (long)Errors.IndexErrorOccurred($"Memory access exceeded buffer size. Offset {offset}, length {width}, buffer size {size}.", DefaultErrorLong);
+
+				if (!IsValidAddress(addr, offset))
+					return (long)Errors.IndexErrorOccurred($"Memory address {addr} with offset {offset} is outside the supported address range.", DefaultErrorLong);
 
 				if (!NativeType.WriteMemory(addr + (nint)offset, code, obj[i + 1]))
 					return (long)Errors.ValueErrorOccurred($"Value {obj[i + 1]} is not a number that can be written to memory.", obj[i + 1], DefaultErrorLong);
@@ -128,13 +128,18 @@ namespace Keysharp.Builtins
 			return addr + offset;
 		}
 
+		// Check before adding, since a wrapped offset can otherwise bypass the address floor and a buffer's bound.
+		private static bool IsValidAddress(nint address, long offset)
+			=> address >= MinValidAddress && offset <= (long)nint.MaxValue - address && (long)address + offset >= MinValidAddress;
+
 		/// <summary>
-		/// Resolves a NumGet/NumPut target to the address it names, plus the size which bounds access through it.
-		/// A bare address has no size, so nothing bounds it and <paramref name="size"/> stays 0.
+		/// Resolves a NumGet/NumPut target to the address it names and its right-side bound. A bare address has no size,
+		/// so <paramref name="size"/> is -1; an object's size bounds the right side even when it is 0. AutoHotkey permits
+		/// negative offsets through either kind of target and checks only the effective address floor and right bound.
 		/// </summary>
 		private static bool TryResolveTarget(object target, out nint addr, out long size)
 		{
-			size = 0;
+			size = -1;
 
 			if (target is Buffer buf)//Put Buffer first because it's faster and more likely.
 			{
@@ -156,10 +161,11 @@ namespace Keysharp.Builtins
 			if (target is Any && Reflections.TryGetPtrProperty(target, out var p) && Reflections.TryGetSizeProperty(target, out size))
 			{
 				addr = (nint)p;
+				size = Math.Max(size, 0);//A negative Size is treated as zero.
 				return true;
 			}
 
-			size = 0;
+			size = -1;
 			addr = 0;
 			return false;
 		}

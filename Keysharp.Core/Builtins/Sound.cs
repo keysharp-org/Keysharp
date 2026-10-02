@@ -228,12 +228,12 @@ namespace Keysharp.Builtins
 			{
 				soundSet = true;
 				type = (SoundControlType)((int)soundCmd - (int)SoundCommands.SoundSetVolume);
-				sink = obj1.Ab(true);
+				sink = obj1 is "" || obj1.Ab(true);
 				device = obj2;
 			}
 			else
 			{
-				sink = obj0.Ab(true);
+				sink = obj0 is "" || obj0.Ab(true);
 				type = (SoundControlType)(int)soundCmd;
 			}
 

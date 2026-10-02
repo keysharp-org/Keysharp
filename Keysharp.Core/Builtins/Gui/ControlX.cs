@@ -525,13 +525,11 @@ namespace Keysharp.Builtins
 											   object excludeText = null)
 		{
 			EnsureControlPermission("ControlSetExStyle");
-			Platform.Control.ControlSetExStyle(
-				value,
-				controlID,
-				winTitle,
-				winText,
-				excludeTitle,
-				excludeText);
+
+			if (WindowHelper.StyleChange.TryParse(value, "ControlSetExStyle", out var change)
+					&& WindowSearch.SearchControl(controlID, winTitle, winText, excludeTitle, excludeText) is WindowInfoBase item)
+				WindowHelper.SetStyle(item, true, change, "ControlSetExStyle");
+
 			return DefaultObject;
 		}
 
@@ -543,13 +541,11 @@ namespace Keysharp.Builtins
 											 object excludeText = null)
 		{
 			EnsureControlPermission("ControlSetStyle");
-			Platform.Control.ControlSetStyle(
-				value,
-				controlID,
-				winTitle,
-				winText,
-				excludeTitle,
-				excludeText);
+
+			if (WindowHelper.StyleChange.TryParse(value, "ControlSetStyle", out var change)
+					&& WindowSearch.SearchControl(controlID, winTitle, winText, excludeTitle, excludeText) is WindowInfoBase item)
+				WindowHelper.SetStyle(item, false, change, "ControlSetStyle");
+
 			return DefaultObject;
 		}
 

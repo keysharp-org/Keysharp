@@ -32,6 +32,14 @@ ih.Timeout := 1.5
 AssertEq(ih.Timeout, 1.5, A_LineNumber)
 Throws(() => ih.Timeout := "abc", A_LineNumber, TypeError)
 
+; A Boolean property reads its value's truth as `if` does.
+ih.CaseSensitive := 2
+AssertEq(ih.CaseSensitive, true, A_LineNumber)
+ih.FindAnywhere := "yes"
+AssertEq(ih.FindAnywhere, true, A_LineNumber)
+ih.FindAnywhere := "0"
+AssertEq(ih.FindAnywhere, false, A_LineNumber)
+
 ; A key code beyond the key tables names no key, so it is ignored like an unknown key name.
 try
 {

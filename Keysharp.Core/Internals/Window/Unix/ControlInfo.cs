@@ -149,11 +149,6 @@ namespace Keysharp.Internals.Window.Unix
 
 		// === control-specific mutators (Platform.Control drives these on the concrete ControlInfo) ===
 
-		// Eto controls have no Win32-style style words; keep these as accepted no-ops so the toggle paths compile.
-		internal void SetStyle(long value) { }
-
-		internal void SetExStyle(long value) { }
-
 		internal void Focus() => control?.Focus();
 
 		internal void ChildFindPoint(PointAndHwnd pah) => TryFindPoint(control, pah);

@@ -215,10 +215,6 @@ namespace Keysharp.Internals.Os
 
 		internal abstract void ControlSetEnabled(object val, object ctrl, object title, object text, object excludeTitle, object excludeText);
 
-		internal abstract void ControlSetExStyle(object val, object ctrl, object title, object text, object excludeTitle, object excludeText);
-
-		internal abstract void ControlSetStyle(object val, object ctrl, object title, object text, object excludeTitle, object excludeText);
-
 		//internal abstract void ControlSetText(string str, object ctrl, object title, object text, object excludeTitle, object excludeText);
 		internal virtual void ControlSetText(string str, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{

@@ -708,16 +708,6 @@ break_twice:;
 			return DefaultObject;
 		}
 
-		//We initially had these using BeginInvoke(), but that is wrong, because these will often be launched from threads in responde to a hotkey/string.
-		//The state of those threads needs to be preserved, but invoking will overwrite that state by putting the call on the main GUI thread.
-		//This is unlikely to be true anymore since we implemented the pseudo-thread functionality of AHK.
-		//So put them back to just straight calls, revisit if cross threading bugs occur.
-		//public static void SendEvent(object obj) => Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() => Keysharp.Runtime.Script.HookThread.kbdMsSender.SendKeys(obj.ToText(), SendRawModes.NotRaw, SendModes.Event, 0), true, true);
-		//public static void Send(object obj) => Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() => Keysharp.Runtime.Script.HookThread.kbdMsSender.SendKeys(obj.ToText(), SendRawModes.NotRaw, Accessors.SendMode, 0), true, true);
-		//public static void SendInput(object obj) => Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() => Keysharp.Runtime.Script.HookThread.kbdMsSender.SendKeys(obj.ToText(), SendRawModes.NotRaw, Accessors.SendMode == SendModes.InputThenPlay ? SendModes.InputThenPlay : SendModes.Input, 0), true, true);
-		//public static void SendPlay(object obj) => Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() => Keysharp.Runtime.Script.HookThread.kbdMsSender.SendKeys(obj.ToText(), SendRawModes.NotRaw, SendModes.Play, 0), true, true);
-		//public static void SendText(object obj) => Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() => Keysharp.Runtime.Script.HookThread.kbdMsSender.SendKeys(obj.ToText(), SendRawModes.RawText, Accessors.SendMode, 0), true, true);
-
 		/// <summary>
 		/// SendEvent sends keystrokes using the Windows keybd_event function (search Microsoft Docs for details).<br/>
 		/// The rate at which keystrokes are sent is determined by <see cref="SetKeyDelay"/>.<br/>

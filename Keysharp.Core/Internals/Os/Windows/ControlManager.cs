@@ -725,62 +725,6 @@ namespace Keysharp.Internals.Os.Windows
 			}
 		}
 
-		internal override void ControlSetExStyle(object val, object ctrl, object title, object text, object excludeTitle, object excludeText)
-		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowInfoBase item)
-			{
-				var exStyle = item.ExStyle;
-
-				if (val is long l)
-					exStyle = l;
-				else if (val is double d)
-					exStyle = (long)d;
-				else if (val is string s)
-				{
-					long temp = 0;
-
-					if (Options.TryParse(s, "+", ref temp)) { exStyle |= temp; }
-					else if (Options.TryParse(s, "-", ref temp)) { exStyle &= ~temp; }
-					else if (Options.TryParse(s, "^", ref temp)) { exStyle ^= temp; }
-					else _ = val.TryCoerceLong(out exStyle);
-				}
-
-				_ = Platform.Window.TrySetExStyle(item.Handle, exStyle);
-				//else if (val is int i)
-				//  item.ExStyle = i;
-				//else if (val is uint ui)
-				//  item.ExStyle = ui;
-			}
-		}
-
-		internal override void ControlSetStyle(object val, object ctrl, object title, object text, object excludeTitle, object excludeText)
-		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowInfoBase item)
-			{
-				var style = item.Style;
-
-				if (val is long l)
-					style = l;
-				else if (val is double d)
-					style = (long)d;
-				else if (val is string s)
-				{
-					long temp = 0;
-
-					if (Options.TryParse(s, "+", ref temp)) { style |= temp; }
-					else if (Options.TryParse(s, "-", ref temp)) { style &= ~temp; }
-					else if (Options.TryParse(s, "^", ref temp)) { style ^= temp; }
-					else style = val.ParseLong().Value;
-				}
-
-				_ = Platform.Window.TrySetStyle(item.Handle, style);
-				//else if (val is int i)
-				//  item.Style = i;
-				//else if (val is uint ui)
-				//  item.Style = ui;
-			}
-		}
-
 		internal override void ControlShowDropDown(object ctrl, object title, object text, object excludeTitle, object excludeText) =>
 		DropdownHelper(true, ctrl, title, text, excludeTitle, excludeText);
 

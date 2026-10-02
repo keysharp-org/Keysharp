@@ -100,9 +100,6 @@ namespace Keysharp.Internals.Input.Keyboard
 		protected SendModes sendMode = SendModes.Event;//Note this is different than the one in Accessors and serves as a temporary.
 		private const int retention = 1024;
 		private readonly StringBuilder caser = new (32);
-		private readonly List<HotkeyDefinition> hotkeys;
-		private readonly List<HotstringDefinition> hotstrings;
-		private readonly Dictionary<Keys, bool> pressed;
 
 		internal uint prevEventModifierDown;
 		internal KeyEventTypes prevEventType;
@@ -153,13 +150,6 @@ namespace Keysharp.Internals.Input.Keyboard
 		protected KeyboardMouseSender(Script script)
 		{
 			this.script = script ?? throw new ArgumentNullException(nameof(script));
-			hotkeys = [];
-			hotstrings = [];
-			pressed = [];
-
-			foreach (int i in Enum.GetValues(typeof(Keys)))
-				_ = pressed.TryAdd((Keys)i, false);
-
 			RegisterHook();
 		}
 
@@ -209,17 +199,6 @@ namespace Keysharp.Internals.Input.Keyboard
 			}
 
 			return caser.ToString();
-		}
-
-		public bool IsPressed(Keys key)
-		{
-			if (pressed.ContainsKey(key))
-				return pressed[key];
-			else
-			{
-				System.Diagnostics.Debug.Fail("Thre should'nt be any key not in this table...");
-				return false;
-			}
 		}
 
 		internal static bool HotInputLevelAllowsFiring(long inputLevel, ulong aEventExtraInfo, ref char? aKeyHistoryChar)
@@ -285,18 +264,6 @@ namespace Keysharp.Internals.Input.Keyboard
 		internal static long KeyIgnoreMin() => KeyIgnoreLevel(SendLevelMax);
 
 		internal static bool SendLevelIsValid(long level) => level >= 0 && level <= SendLevelMax;
-
-		internal HotkeyDefinition Add(HotkeyDefinition hotkey)
-		{
-			hotkeys.Add(hotkey);
-			return hotkey;
-		}
-
-		internal HotstringDefinition Add(HotstringDefinition hotstring)
-		{
-			hotstrings.Add(hotstring);//This will not check for duplicates.
-			return hotstring;
-		}
 
 		internal abstract void CleanupEventArray(long aFinalKeyDelay);
 
@@ -1155,10 +1122,6 @@ namespace Keysharp.Internals.Input.Keyboard
 				hk.PerformInNewThreadMadeByCallerAsync(variant, criterion_found_hwnd, lParamVal, eventInfo);
 			}
 		}
-
-		internal void Remove(HotkeyDefinition hotkey) => _ = hotkeys.Remove(hotkey);
-
-		internal void Remove(HotstringDefinition hotstring) => _ = hotstrings.Remove(hotstring);
 
 		internal abstract void SendEventArray(ref long aFinalKeyDelay, uint aModsDuringSend);
 

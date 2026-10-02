@@ -186,7 +186,7 @@ namespace Keysharp.Builtins
 
 				// Mirrors Flow.Critical: turning it on pins uninterruptibility so it never times out, turning
 				// it off makes the thread immediately interruptible regardless of "Thread Interrupt".
-				var on = value.Ab();
+				var on = Options.OnOff(value) ?? value.Ab();
 				target.isCritical = on;
 				target.configData.defaultIsCritical = on;
 				target.configData.peekFrequency = on
@@ -211,7 +211,7 @@ namespace Keysharp.Builtins
 			set
 			{
 				if (Mutable() is { } target)
-					target.IsPaused = value.Ab();
+					target.IsPaused = Options.OnOff(value) ?? value.Ab();
 			}
 		}
 

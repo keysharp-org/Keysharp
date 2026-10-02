@@ -62,9 +62,8 @@ namespace Keysharp.Builtins
 
 			var opts = $"{optionsText} {coordsText} {buttonText} {countText} {downUpText} {relativeText}";
 			ht.ParseClickOptions(opts, ref x, ref y, ref vk, ref eventType, ref repeatCount, ref moveOffset);
-			//Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() =>
 			ht.kbdMsSender.PerformMouseCommon(repeatCount < 1 ? Actions.ACT_MOUSEMOVE : Actions.ACT_MOUSECLICK // Treat repeat-count<1 as a move (like {click}).
-											  , vk, x, y, 0, 0, repeatCount, eventType, ThreadAccessors.A_DefaultMouseSpeed, moveOffset);//, true, true);
+											  , vk, x, y, 0, 0, repeatCount, eventType, ThreadAccessors.A_DefaultMouseSpeed, moveOffset);
 			return DefaultObject;
 		}
 
@@ -181,9 +180,8 @@ namespace Keysharp.Builtins
 
 			var ispeed = (int)speedRaw;
 
-			//Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() =>
 			PerformMouse(Actions.ACT_MOUSECLICK, wb, ix, iy, KeyboardMouseSender.CoordUnspecified, KeyboardMouseSender.CoordUnspecified,
-						 ispeed, rel, repeatCount, du);//, true, true);
+						 ispeed, rel, repeatCount, du);
 			return DefaultObject;
 		}
 
@@ -238,9 +236,8 @@ namespace Keysharp.Builtins
 			if (!relative.CoerceString(out var rel))
 				return DefaultObject;
 
-			//Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() =>
 			PerformMouse(Actions.ACT_MOUSECLICKDRAG, wb, ix1, iy1, ix2, iy2,
-						 ispeed, rel, 1, "");//, true, true);
+						 ispeed, rel, 1, "");
 			return DefaultObject;
 		}
 
@@ -395,7 +392,6 @@ namespace Keysharp.Builtins
 			if (!relative.CoerceString(out var r))
 				return DefaultObject;
 
-			//Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() =>
 			PerformMouse(Actions.ACT_MOUSEMOVE, "", ix, iy, KeyboardMouseSender.CoordUnspecified, KeyboardMouseSender.CoordUnspecified,
 						 s, r, 1, "");
 			return DefaultObject;
@@ -520,7 +516,6 @@ namespace Keysharp.Builtins
 				return;
 			}
 
-			//Keysharp.Runtime.Script.mainWindow.CheckedBeginInvoke(() =>
 			ht.kbdMsSender.PerformMouseCommon(actionType
 											  , vk
 											  , x1

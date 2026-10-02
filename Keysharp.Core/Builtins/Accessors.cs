@@ -333,10 +333,7 @@ namespace Keysharp.Builtins
 				var val = Options.OnOff(value);
 
 				if (val != null)
-				{
-					var b = val.Value.Ab();
-					ThreadAccessors.A_DetectHiddenText = b;
-				}
+					ThreadAccessors.A_DetectHiddenText = val.Value;
 			}
 		}
 
@@ -352,10 +349,7 @@ namespace Keysharp.Builtins
 				var val = Options.OnOff(value);
 
 				if (val != null)
-				{
-					var b = val.Value.Ab();
-					ThreadAccessors.A_DetectHiddenWindows = b;
-				}
+					ThreadAccessors.A_DetectHiddenWindows = val.Value;
 			}
 		}
 

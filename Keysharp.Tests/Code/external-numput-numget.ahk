@@ -1,3 +1,5 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
 
@@ -217,9 +219,27 @@ Throws(() => NumPut("int", 1, buf, 0x80000000), A_LineNumber, IndexError)
 Throws(() => NumGet(buf, 0x80000000, "int"), A_LineNumber, IndexError)
 Throws(() => NumPut("int", 1, buf, 0x7FFFFFFFFFFF), A_LineNumber, IndexError)
 
+; Adding the type's width must not wrap a large offset past an object's bound.
+Throws(() => NumGet(buf, 0x7FFFFFFFFFFFFFFF, "int"), A_LineNumber, IndexError)
+Throws(() => NumPut("int", 1, buf, 0x7FFFFFFFFFFFFFFF), A_LineNumber, IndexError)
+Throws(() => NumGet({Ptr: buf.Ptr, Size: 0}, 0x7FFFFFFFFFFFFFFF, "int"), A_LineNumber, IndexError)
+
+; A negative offset is allowed when its effective address remains valid.
+NumPut("int", 42, buf)
+AssertEq(NumGet(buf.Ptr + 4, -4, "int"), 42, A_LineNumber)
+NumPut("int", 43, {Ptr: buf.Ptr + 4, Size: 4}, -4)
+AssertEq(NumGet(buf, 0, "int"), 43, A_LineNumber)
+
 ; The first 64KB of the address space is never mapped, so an address in it is a mistake rather than
 ; something to dereference.
 Throws(() => NumGet(4, "int"), A_LineNumber, IndexError)
 Throws(() => NumPut("int", 1, 4), A_LineNumber, IndexError)
+Throws(() => NumGet(65536, -65536, "int"), A_LineNumber, IndexError)
+Throws(() => NumPut("int", 1, 65536, -65536), A_LineNumber, IndexError)
+
+; An object's Size bounds the access even when it is 0.
+sized := {Ptr: buf.Ptr, Size: 0}
+Throws(() => NumGet(sized, 0, "int"), A_LineNumber, IndexError)
+Throws(() => NumPut("int", 1, sized), A_LineNumber, IndexError)
 
 FileAppend "pass", "*"

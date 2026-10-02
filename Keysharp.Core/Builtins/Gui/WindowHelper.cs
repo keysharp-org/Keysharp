@@ -152,54 +152,57 @@ namespace Keysharp.Builtins
 											   object excludeText = null)
 		{
 			EnsureWindowControlPermission("window style operation");
-			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win)
+			var function = ex ? "WinSetExStyle" : "WinSetStyle";
+
+			// No A_WinDelay: AHK's WinSetStyle/WinSetExStyle do not call DoWinDelay.
+			if (StyleChange.TryParse(value, function, out var change)
+					&& SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win)
+				SetStyle(win, ex, change, function);
+		}
+
+		/// <summary>Applies a style value to a window or a control, as AutoHotkey's one WinSetStyle serves both.</summary>
+		internal static void SetStyle(WindowInfoBase win, bool ex, StyleChange change, string function)
+		{
+			var set = ex ? Platform.Window.TrySetExStyle(win.Handle, change.ApplyTo(win.ExStyle))
+					  : Platform.Window.TrySetStyle(win.Handle, change.ApplyTo(win.Style));
+
+			if (!set)
+				_ = WindowOperationUnsupported(function);
+		}
+
+		/// <summary>
+		/// The value of WinSetStyle, ControlSetStyle or their Ex forms, read as AutoHotkey reads it: a number replaces the
+		/// style, and +, - or ^ before one adds, removes or toggles its bits.
+		/// </summary>
+		internal readonly record struct StyleChange(char Operator, long Bits)
+		{
+			/// <summary>False after raising for a blank value, or for one that does not convert to text.</summary>
+			internal static bool TryParse(object value, string function, out StyleChange change)
 			{
-				var val = value;
+				change = default;
 
-				if (ex)
+				if (!value.CoerceString(out var text))
+					return false;
+
+				if (text.Length == 0)
 				{
-					var exVal = win.ExStyle;
-
-					if (val is long l)
-						exVal = l;
-					else if (val is double d)
-						exVal = (long)d;
-					else if (val is string s)
-					{
-						long temp = 0;
-
-						if (Options.TryParse(s, "+", ref temp)) { exVal |= temp; }
-						else if (Options.TryParse(s, "-", ref temp)) { exVal &= ~temp; }
-						else if (Options.TryParse(s, "^", ref temp)) { exVal ^= temp; }
-						else _ = val.TryCoerceLong(out exVal);
-					}
-
-					if (!Platform.Window.TrySetExStyle(win.Handle, exVal))
-						_ = WindowOperationUnsupported("WinSetExStyle");
+					_ = Errors.InvalidParameterErrorOccurred(1, function, value);
+					return false;
 				}
-				else
-				{
-					var stVal = win.Style;
 
-					if (val is long l)
-						stVal = l;
-					else if (val is double d)
-						stVal = (long)d;
-					else if (val is string s)
-					{
-						long temp = 0;
-
-						if (Options.TryParse(s, "+", ref temp)) { stVal |= temp; }
-						else if (Options.TryParse(s, "-", ref temp)) { stVal &= ~temp; }
-						else if (Options.TryParse(s, "^", ref temp)) { stVal ^= temp; }
-						else stVal = val.ParseLong().Value;
-					}
-
-					if (!Platform.Window.TrySetStyle(win.Handle, stVal))
-						_ = WindowOperationUnsupported("WinSetStyle");
-				}
-				// No A_WinDelay: AHK's WinSetStyle/WinSetExStyle do not call DoWinDelay.
+				var op = text[0] is '+' or '-' or '^' ? text[0] : '\0';
+				// A 32-bit style word, as AutoHotkey's ATOU reads it: "+-1" adds 0xFFFFFFFF.
+				change = new StyleChange(op, unchecked((uint)Strings.Atoi(text.AsSpan(op == '\0' ? 0 : 1))));
+				return true;
 			}
+
+			internal long ApplyTo(long current) => Operator switch
+			{
+				'+' => current | Bits,
+				'-' => current & ~Bits,
+				'^' => current ^ Bits,
+				_ => Bits
+			};
 		}
 
 		internal static void WinSetToggleX(Func<WindowInfoBase, bool, bool> set, Func<WindowInfoBase, bool> get,

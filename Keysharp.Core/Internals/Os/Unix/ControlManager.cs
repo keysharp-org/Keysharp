@@ -533,54 +533,6 @@ namespace Keysharp.Internals.Os.Unix
 			}
 		}
 
-		internal override void ControlSetExStyle(object val, object ctrl, object title, object text, object excludeTitle, object excludeText)
-		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
-			{
-				var ex = item.ExStyle;
-
-				if (val is long l)
-					ex = l;
-				else if (val is double d)
-					ex = (long)d;
-				else if (val is string s)
-				{
-					long temp = 0;
-
-					if (Options.TryParse(s, "+", ref temp)) { ex |= temp; }
-					else if (Options.TryParse(s, "-", ref temp)) { ex &= ~temp; }
-					else if (Options.TryParse(s, "^", ref temp)) { ex ^= temp; }
-					else _ = val.TryCoerceLong(out ex);
-				}
-
-				item.SetExStyle(ex);   // Eto controls have no Win32 ex-style word → accepted no-op
-			}
-		}
-
-		internal override void ControlSetStyle(object val, object ctrl, object title, object text, object excludeTitle, object excludeText)
-		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
-			{
-				var st = item.Style;
-
-				if (val is long l)
-					st = l;
-				else if (val is double d)
-					st = (long)d;
-				else if (val is string s)
-				{
-					long temp = 0;
-
-					if (Options.TryParse(s, "+", ref temp)) { st |= temp; }
-					else if (Options.TryParse(s, "-", ref temp)) { st &= ~temp; }
-					else if (Options.TryParse(s, "^", ref temp)) { st ^= temp; }
-					else st = val.ParseLong().Value;
-				}
-
-				item.SetStyle(st);   // Eto controls have no Win32 style word → accepted no-op
-			}
-		}
-
 		private static void ControlSendHelper(string str, object ctrl, object title, object text, object excludeTitle, object excludeText, SendRawModes mode)
 		{
 			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)

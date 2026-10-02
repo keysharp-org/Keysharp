@@ -17,18 +17,6 @@ namespace Keysharp.Internals.ExtensionMethods
 		public static IEnumerator __Enum(this IEnumerable obj, params object[] args) => obj.GetEnumerator();
 
 		/// <summary>
-		/// Converts an element of an <see cref="IList"/> to a boolean.<br/>
-		/// This treats 0, "", false, and off as false.<br/>
-		/// and 1, true and on as true.<br/>
-		/// If the conversion fails, obj[index] is null or the index is out of bounds, def is returned.
-		/// </summary>
-		/// <param name="obj">The list whose element will be converted.</param>
-		/// <param name="index">The index in the list to convert.</param>
-		/// <param name="def">A default value to return if the conversion failed, the item is null or the index is out of bounds. Default: false.</param>
-		/// <returns>The element at the specified list index as a boolean.</returns>
-		public static bool Ab(this IList obj, int index, bool def = default) => obj.Count > index ? obj[index].Ab(def) : def;
-
-		/// <summary>
 		/// Retrieves the element of an <see cref="IList"/> if index is in bounds, else def.
 		/// </summary>
 		/// <param name="obj">The list whose element will be retrieved.</param>

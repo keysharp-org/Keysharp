@@ -177,5 +177,25 @@ AssertEq(WinExist(title " opt"), 0, A_LineNumber)
 AssertEq(WinExist(title " opt ahk_opt Hidden"), optGui.Hwnd, A_LineNumber)
 optGui.Destroy()
 
+; A style value is read as in AutoHotkey: a number replaces the style, and +, - or ^ before one adds, removes or
+; toggles its bits. A blank value is an error.
+styleGui := Gui(, title " style"), styleButton := styleGui.AddButton(, "B"), styleGui.Show("NoActivate w200 h100")
+style := WinGetStyle(styleGui)
+WinSetStyle("^" WS_DISABLED, styleGui)
+AssertEq(WinGetStyle(styleGui), style | WS_DISABLED, A_LineNumber)
+WinSetStyle("-0x08000000", styleGui)
+AssertEq(WinGetStyle(styleGui), style, A_LineNumber)
+WinSetStyle(style | WS_DISABLED, styleGui)
+AssertEq(WinGetStyle(styleGui), style | WS_DISABLED, A_LineNumber)
+; A negative number is the remove operator, since its text starts with "-".
+WinSetStyle(-WS_DISABLED, styleGui)
+AssertEq(WinGetStyle(styleGui), style, A_LineNumber)
+Throws(() => WinSetStyle("", styleGui), A_LineNumber, ValueError)
+ControlSetStyle("+" WS_DISABLED, styleButton)
+Assert(ControlGetStyle(styleButton) & WS_DISABLED, A_LineNumber)
+ControlSetStyle("-" WS_DISABLED, styleButton)
+Assert(!(ControlGetStyle(styleButton) & WS_DISABLED), A_LineNumber)
+styleGui.Destroy()
+
 FileAppend "pass", "*"
 ExitApp()
