@@ -1050,7 +1050,7 @@ namespace Keyview
 		// Cleared whenever the compiler writes C# back into the box, so a still-running (now stale)
 		// script can't clobber the freshly displayed code with its continued output.
 		private bool scriptOwnsOutput;
-		private int highlightBaseLength;
+		private int inputEditVersion;
 		private bool closing;
 
 		public Keyview(string initialFile = null)
@@ -1587,11 +1587,7 @@ namespace Keyview
 
 		private void InputArea_TextChanged(object sender, EventArgs e)
 		{
-			// Applying highlight tags raises spurious TextChanged events (same length); ignore those.
-			// A real edit typed while a pumped highlight yields changes the length, so let it through
-			// (the highlighter notices the change and aborts to avoid applying stale offsets).
-			if (highlighting && inputArea.TextLength == highlightBaseLength)
-				return;
+			inputEditVersion++;
 
 			// Read the buffer once: inputArea.Text rebuilds the whole string, so calling it per consumer
 			// (undo, dirty check, autosave) on every keystroke is a major cost on large scripts.
@@ -1626,11 +1622,10 @@ namespace Keyview
 				return;
 
 			highlighting = true;
-			highlightBaseLength = inputArea.TextLength;
 			try
 			{
 				// Yield to the UI loop periodically so re-highlighting a large script doesn't block typing.
-				inputHighlighter.Highlight(inputArea, Application.Instance.RunIteration);
+				inputHighlighter.Highlight(inputArea, Application.Instance.RunIteration, () => inputEditVersion);
 			}
 			finally
 			{

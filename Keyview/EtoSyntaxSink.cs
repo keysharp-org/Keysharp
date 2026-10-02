@@ -26,8 +26,9 @@ namespace Keyview
 		/// Re-colors the entire contents of <paramref name="area"/>. Stale colors from a previous pass are cleared
 		/// by first resetting the whole buffer to the control's default text color.
 		/// </summary>
-		internal static void Highlight(this SyntaxHighlighter highlighter, RichTextArea area, Action pump = null)
+		internal static void Highlight(this SyntaxHighlighter highlighter, RichTextArea area, Action pump = null, Func<int> currentVersion = null)
 		{
+			var version = currentVersion?.Invoke() ?? 0;
 			var text = area.Text ?? "";
 			var n = text.Length;
 
@@ -40,7 +41,8 @@ namespace Keyview
 			if (!highlighter.CanHighlight(n))
 				return;
 
-			highlighter.Highlight(new EtoSyntaxSink(buffer, SyntaxPalette.IsDark), text, pump, () => area.TextLength);
+			highlighter.Highlight(new EtoSyntaxSink(buffer, SyntaxPalette.IsDark), text, pump,
+				() => currentVersion != null && currentVersion() != version ? -1 : area.TextLength);
 		}
 	}
 }
