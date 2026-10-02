@@ -2,7 +2,7 @@
 #Warn All, StdOut
 #Warn Experimental, Off
 #NoTrayIcon
-#import KS { Http, Url, Await, Task, Clr, A_KsVersion, A_DirSeparator }
+#import KS { Http, Url, Await, Task, Clr, RunScript, A_KsVersion, A_DirSeparator }
 #Include <assert>
 
 #CSharp
@@ -697,6 +697,45 @@ StopFtpServer()
 
 Assert(IsObject(api.ToClr()), A_LineNumber)
 Assert(Http.Get(root "/text").ToClr().IsSuccessStatusCode, A_LineNumber)
+
+; ---- persistence ---------------------------------------------------------------------------------------
+
+; Each streaming transfer keeps a script running until it ends, however many run at once, and the end of the last
+; lets the script exit. A child script shows both, since a script here that failed to exit would hang the run.
+#if WINDOWS
+	hostBinary := "Keysharp.exe"
+#elif LINUX
+	hostBinary := "./Keysharp"
+#else
+	hostBinary := "./osx-arm64/Keysharp.app/Contents/MacOS/Keysharp"
+#endif
+
+streamScript := "#NoTrayIcon`n#ErrorStdOut`n#Warn All, StdOut`n#Warn Experimental, Off`n#Import Ks { Http }`nslow := `"" root "/slow`"`n" . "
+(
+left := 2
+Finish(chunk, received, total)
+{
+	global left
+	if (received == total && --left == 0)
+		FileAppend "pass", "*"
+	return 0
+}
+Http.GetAsync(slow, {OnData: Finish})
+Http.GetAsync(slow, {OnData: Finish})
+)"
+child := RunScript(streamScript, true,,, hostBinary)
+waited := 0
+
+while (!child.HasExited && waited++ < 1000)
+	Sleep 10
+
+exitedAlone := child.HasExited
+
+if (!exitedAlone)
+	child.Kill()
+
+Assert(exitedAlone, A_LineNumber)
+AssertEq(child.StdOut.Read(), "pass", A_LineNumber)
 
 StopServer()
 FileAppend "pass", "*"

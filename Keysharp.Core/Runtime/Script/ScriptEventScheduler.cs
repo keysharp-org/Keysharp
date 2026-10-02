@@ -262,7 +262,7 @@ namespace Keysharp.Runtime
 		private readonly Lock ownedResourceCleanupGate = new();
 		private readonly Lock ownedDelegateGate = new();
 		private readonly HashSet<DelegateHolder> ownedDelegates = [];
-		private readonly HashSet<Action> pendingCallbacks = [];
+		private readonly HashSet<PendingCallbackRegistration> pendingCallbacks = [];
 		private readonly LinkedList<ScriptQueueEntry> interactiveQueue = new();
 		private readonly LinkedList<ScriptQueueEntry> normalQueue = new();
 		// Reused by EnqueueDueTimers (only the owning thread calls it), so the per-pump due-check doesn't allocate.
@@ -346,32 +346,53 @@ internal bool HasBlockedQueuedWork
 			SignalWorkerPump();
 		}
 
-		internal bool RegisterPendingCallback(Action invalidated)
+		/// <summary>
+		/// Keeps the script and this scheduler running for work whose callback is still to come, until the returned
+		/// registration is released. <paramref name="invalidated"/> runs instead if the scheduler is torn down first.
+		/// Null when it already has been.
+		/// </summary>
+		internal PendingCallbackRegistration RegisterPendingCallback(Action invalidated)
 		{
+			var registration = new PendingCallbackRegistration(this, invalidated);
+
 			lock (ownedResourceCleanupGate)
 			{
 				if (ownedResourcesDisposed || IsDisposed)
-					return false;
+					return null;
 
-				if (!pendingCallbacks.Add(invalidated))
-					return false;
-
+				_ = pendingCallbacks.Add(registration);
 				AdjustPersistenceRoot(1);
 				script.AdjustPendingSchedulerWork(1);
-				return true;
+				return registration;
 			}
 		}
 
-		internal void ReleasePendingCallback(Action invalidated)
+		private void ReleasePendingCallback(PendingCallbackRegistration registration)
 		{
 			lock (ownedResourceCleanupGate)
 			{
-				if (!pendingCallbacks.Remove(invalidated))
+				if (!pendingCallbacks.Remove(registration))
 					return;
 
 				AdjustPersistenceRoot(-1);
 				script.AdjustPendingSchedulerWork(-1);
 			}
+
+			// The released work may have been all that kept the script running.
+			if (!script.IsDisposed)
+				_ = script.ExitIfNotPersistent();
+		}
+
+		/// <summary>
+		/// One <see cref="RegisterPendingCallback"/> registration. Each is its own object, so two pieces of work
+		/// pending at once hold two roots however alike their callbacks are.
+		/// </summary>
+		internal sealed class PendingCallbackRegistration(ScriptEventScheduler scheduler, Action invalidated) : IDisposable
+		{
+			internal Action Invalidated => invalidated;
+
+			/// <summary>Ends the registration. Repeated disposal and disposal after scheduler teardown have no effect.</summary>
+			public void Dispose() => scheduler.ReleasePendingCallback(this);
 		}
 
 		internal bool RegisterOwnedDelegate(DelegateHolder holder)
@@ -1197,7 +1218,7 @@ internal bool HasBlockedQueuedWork
 			script.AdjustPendingSchedulerWork(-callbacks.Length);
 
 			foreach (var callback in callbacks)
-				callback();
+				callback.Invalidated();
 		}
 
 		private void DisposeOwnedTimers()

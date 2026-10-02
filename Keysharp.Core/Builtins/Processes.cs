@@ -13,7 +13,8 @@ namespace Keysharp.Builtins
 	/// </summary>
 	public static class Processes
 	{
-		private const int LoopFrequency = 50;
+		// As AutoHotkey's ProcessWait: listing the processes costs more than a window search, so it runs less often.
+		private const int ProcessPollInterval = 100;
 
 		private static readonly FrozenSet<string> verbs = new HashSet<string>(StringComparer.InvariantCultureIgnoreCase)
 		{
@@ -81,10 +82,7 @@ namespace Keysharp.Builtins
 			if (!pidOrName.CoerceString(out var name))
 				return 0L;
 
-			using (var proc = string.IsNullOrEmpty(name) ? Process.GetCurrentProcess() : FindProcess(name))
-			{
-				return proc != null ? proc.Id : 0L;
-			}
+			return string.IsNullOrEmpty(name) ? Environment.ProcessId : FindProcessId(name);
 		}
 
 		/// <summary>Returns the parent process ID of the specified process.</summary>
@@ -127,24 +125,7 @@ namespace Keysharp.Builtins
 		/// Throws a TargetError if the process could not be found, or an OSError if the name could not be retrieved.
 		/// </returns>
 		public static string ProcessGetName([UserDeclaredName("PIDOrName")] object pidOrName = null)
-		{
-			if (!pidOrName.CoerceString(out var name))
-				return "";
-
-			using (var proc = string.IsNullOrEmpty(name) ? Process.GetCurrentProcess() : FindProcess(name))
-			{
-				if (proc == null)
-					return (string)Errors.TargetErrorOccurred($"The specified process {pidOrName} was not found");
-
-#if WINDOWS
-				var result = GetProcessImage((uint)proc.Id, true);
-				return result.Length != 0 ? result : (string)Errors.OSErrorOccurred(new Win32Exception(Marshal.GetLastWin32Error()), "", DefaultErrorString);
-#else
-				using var module = proc.MainModule;
-				return module.ModuleName;
-#endif
-			}
-		}
+			=> ProcessGetPathName(pidOrName, true);
 
 		/// <summary>
 		/// Returns the full path of the specified processï¿½s executable.
@@ -161,24 +142,7 @@ namespace Keysharp.Builtins
 		/// Throws a TargetError if the process could not be found, or an OSError if the path could not be retrieved.
 		/// </returns>
 		public static string ProcessGetPath([UserDeclaredName("PIDOrName")] object pidOrName = null)
-		{
-			if (!pidOrName.CoerceString(out var name))
-				return "";
-
-			using (var proc = string.IsNullOrEmpty(name) ? Process.GetCurrentProcess() : FindProcess(name))
-			{
-				if (proc == null)
-					return (string)Errors.TargetErrorOccurred($"The specified process {pidOrName} was not found");
-
-#if WINDOWS
-				var result = GetProcessImage((uint)proc.Id, false);
-				return result.Length != 0 ? result : (string)Errors.OSErrorOccurred(new Win32Exception(Marshal.GetLastWin32Error()), "", DefaultErrorString);
-#else
-				using var module = proc.MainModule;
-				return module.FileName;
-#endif
-			}
-		}
+			=> ProcessGetPathName(pidOrName, false);
 
 		/// <summary>
 		/// Changes the priority level of the first matching process.
@@ -254,39 +218,7 @@ namespace Keysharp.Builtins
 		/// <param name="timeout">If omitted, the function will wait indefinitely. Otherwise, specify the number of seconds (can contain a decimal point) to wait before timing out.</param>
 		/// <returns>The Process ID (PID) of the discovered process. If the function times out, zero is returned.</returns>
 		public static long ProcessWait([UserDeclaredName("PIDOrName")] object pidOrName, object timeout = null)
-		{
-			if (!pidOrName.CoerceString(out var name))
-				return 0L;
-
-			if (!timeout.CoerceDouble(out var time, -1.0))
-				return 0L;
-
-			var t = time;
-			Process proc;
-
-			if (t >= 0)
-				t = time * 1000;
-
-			var start = DateTime.UtcNow;
-
-			while ((proc = FindProcess(name)) == null)
-			{
-				_ = Flow.Sleep(LoopFrequency);
-
-				if (t >= 0.0 && (DateTime.UtcNow - start).TotalMilliseconds > t)
-					break;
-			}
-
-			long id = 0L;
-
-			if (proc != null)
-			{
-				id = proc.Id;
-				proc.Dispose();
-			}
-
-			return id;
-		}
+			=> WaitForProcess(pidOrName, timeout, false);
 
 		/// <summary>
 		/// Waits for all matching processes to close.
@@ -303,32 +235,9 @@ namespace Keysharp.Builtins
 		/// The name is not case-sensitive.
 		/// </param>
 		/// <param name="timeout">If omitted, the function will wait indefinitely. Otherwise, specify the number of seconds (can contain a decimal point) to wait before timing out.</param>
-		/// <returns></returns>
+		/// <returns>0 once no matching process exists, or the PID of a matching process still running when the function times out.</returns>
 		public static long ProcessWaitClose([UserDeclaredName("PIDOrName")] object pidOrName, object timeout = null)
-		{
-			if (!pidOrName.CoerceString(out var name))
-				return 0L;
-
-			if (!timeout.CoerceDouble(out var time, -1.0))
-				return 0L;
-
-			using (var proc = FindProcess(name))
-			{
-				if (proc != null)
-				{
-					var pid = proc.Id;
-
-					if (time >= 0)
-						_ = proc.WaitForExit((int)(time * 1000));
-					else
-						proc.WaitForExit();
-
-					return pid;
-				}
-			}
-
-			return 0L;
-		}
+			=> WaitForProcess(pidOrName, timeout, true);
 
 		/// <summary>
 		/// Runs an external program. Unlike <see cref="Run"/>, <see cref="RunWait"/> will wait until the program finishes before continuing.
@@ -471,6 +380,57 @@ namespace Keysharp.Builtins
 			}
 		}
 
+		/// <summary>The PID of the first process <see cref="FindProcess"/> matches, or 0 when none does.</summary>
+		private static long FindProcessId(string name)
+		{
+			using var proc = FindProcess(name);
+			return proc?.Id ?? 0L;
+		}
+
+		/// <summary>
+		/// <see cref="ProcessGetName"/> and <see cref="ProcessGetPath"/>, as AutoHotkey's ProcessGetPathName serves both:
+		/// the executable's file name with <paramref name="nameOnly"/>, otherwise its full path.
+		/// </summary>
+		private static string ProcessGetPathName(object pidOrName, bool nameOnly)
+		{
+			if (!pidOrName.CoerceString(out var name))
+				return "";
+
+			using var proc = string.IsNullOrEmpty(name) ? Process.GetCurrentProcess() : FindProcess(name);
+
+			if (proc == null)
+				return (string)Errors.TargetErrorOccurred($"The specified process {pidOrName} was not found");
+
+#if WINDOWS
+			var result = GetProcessImage((uint)proc.Id, nameOnly);
+			return result.Length != 0 ? result : (string)Errors.OSErrorOccurred(new Win32Exception(Marshal.GetLastWin32Error()), "", DefaultErrorString);
+#else
+			using var module = proc.MainModule;
+			return nameOnly ? module.ModuleName : module.FileName;
+#endif
+		}
+
+		/// <summary>
+		/// <see cref="ProcessWait"/> and, with <paramref name="waitClose"/>, <see cref="ProcessWaitClose"/>, as
+		/// AutoHotkey's ProcessWait serves both. A name can match several processes, so a close lasts until none
+		/// remains. An omitted timeout waits indefinitely and a negative one checks once.
+		/// </summary>
+		/// <returns>The PID found last: a match for ProcessWait, and for ProcessWaitClose 0 or the match still running.</returns>
+		private static long WaitForProcess(object pidOrName, object timeout, bool waitClose)
+		{
+			if (!pidOrName.CoerceString(out var name) || !timeout.CoerceDouble(out var seconds))
+				return 0L;
+
+			var timeoutMs = timeout == null ? -1 : (int)Math.Clamp(seconds * 1000, 0, int.MaxValue);
+			var pid = 0L;
+			_ = Keysharp.Internals.Flow.WaitUntil(() =>
+			{
+				pid = FindProcessId(name);
+				return waitClose ? pid == 0 : pid != 0;
+			}, timeoutMs, ProcessPollInterval);
+			return pid;
+		}
+
 #if WINDOWS
 		/// <summary>
 		/// The process's executable path or, with <paramref name="nameOnly"/>, its file name. Empty when the process
@@ -538,7 +498,7 @@ namespace Keysharp.Builtins
 		private static long RunInternal(string target, string workingDir, string showMode, [ByRef] object outputVarPID, string args, bool wait = false)
 		{
 			ThreadAccessors.A_LastError = 0;
-			var pid = 0;
+			var pid = 0L;
 			var useRunAs = RunAsSpecified();
 
 			if (string.IsNullOrEmpty(target))//AHK returns 1 as a success for an empty run target.
@@ -554,6 +514,15 @@ namespace Keysharp.Builtins
 				if (!Directory.Exists(workingDir))
 					return (long)Errors.ErrorOccurred($"{workingDir} is not a valid directory.", DefaultErrorLong);
 			}
+
+			using var prc = new Process
+			{
+				StartInfo = new ProcessStartInfo
+				{
+					WorkingDirectory = workingDir,
+					UseShellExecute = true
+				}
+			};
 
 			try
 			{
@@ -599,15 +568,6 @@ namespace Keysharp.Builtins
 					return (long)Errors.ErrorOccurred("System verbs unsupported with RunAs.", DefaultErrorLong);
 
 				var parsedArgs = "";
-				var prc = new Process
-				{
-					StartInfo = new ProcessStartInfo
-					{
-						WorkingDirectory = workingDir,
-						UseShellExecute = true
-					}
-				};
-				//MessageBox.Show(Accessors.A_WorkingDir.ToString());
 
 				if (string.IsNullOrEmpty(shellVerb))
 				{
@@ -742,16 +702,7 @@ namespace Keysharp.Builtins
 				}
 
 				if (prc.Start())
-				{
 					pid = prc.Id;
-
-					if (wait)
-					{
-                        prc.WaitForExit();
-						if (outputVarPID != null ) Refs.SetValue(outputVarPID, pid);
-						return prc.ExitCode;
-					}
-				}
 			}
 			catch (Exception ex)
 			{
@@ -759,8 +710,17 @@ namespace Keysharp.Builtins
 				return (long)Errors.ErrorOccurred(ex.Message, DefaultErrorLong);
 			}
 
+			// Assigned before RunWait waits, as AutoHotkey does, so a thread that runs meanwhile can use it.
 			if (outputVarPID != null) Refs.SetValue(outputVarPID, pid != 0 ? pid : "");
-            return 0L;
+
+			// No process to wait for, such as a document handed to an application that was already running.
+			if (!wait || pid == 0)
+				return 0L;
+
+			// Pumped as AutoHotkey's MsgWaitForMultipleObjects wait is, so timers, hotkeys and the GUI keep running, and woken
+			// by the exit itself.
+			_ = Keysharp.Internals.Flow.WaitForCompletion(prc.WaitForExitAsync(), -1);
+			return prc.ExitCode;
 		}
 	}
 
@@ -773,9 +733,9 @@ namespace Keysharp.Builtins
 		private string assemblyTransportPath;
 		private object exitCallback;
 		private ScriptEventScheduler callbackScheduler;
-		private Action callbackInvalidated;
-		private string capturedStdOut;
-		private string capturedStdErr;
+		private ScriptEventScheduler.PendingCallbackRegistration callbackRegistration;
+		private Task<string> capturedStdOut;
+		private Task<string> capturedStdErr;
 		private bool disposed;
 
 		public ScriptProcess(params object[] args) : base(args)
@@ -835,22 +795,23 @@ namespace Keysharp.Builtins
 
 			exitCallback = callback;
 			callbackScheduler = scheduler;
-			callbackInvalidated = InvalidateCallback;
 
-			if (scheduler != null && scheduler.RegisterPendingCallback(callbackInvalidated))
+			if ((callbackRegistration = scheduler?.RegisterPendingCallback(InvalidateCallback)) != null)
 				return true;
 
 			InvalidateCallback();
 			return false;
 		}
 
+		/// <summary>
+		/// Waits for the process and its output, pumping meanwhile as RunWait does. The output is kept as the reads
+		/// themselves, since the exit callback can run during the wait, before they have finished.
+		/// </summary>
 		internal void CaptureAndWait()
 		{
-			var stdout = process.StandardOutput.ReadToEndAsync();
-			var stderr = process.StandardError.ReadToEndAsync();
-			process.WaitForExit();
-			capturedStdOut = stdout.GetAwaiter().GetResult();
-			capturedStdErr = stderr.GetAwaiter().GetResult();
+			var stdout = capturedStdOut = process.StandardOutput.ReadToEndAsync();
+			var stderr = capturedStdErr = process.StandardError.ReadToEndAsync();
+			_ = Keysharp.Internals.Flow.WaitForCompletion(Task.WhenAll(process.WaitForExitAsync(), stdout, stderr), -1);
 		}
 
 		internal void StartFailed()
@@ -884,7 +845,7 @@ namespace Keysharp.Builtins
 
 			var captured = error ? capturedStdErr : capturedStdOut;
 			return result = captured != null
-				? new KeysharpFile(new StringReader(captured))
+				? new KeysharpFile(new StringReader(captured.GetAwaiter().GetResult()))
 				: new KeysharpFile(error ? process.StandardError : process.StandardOutput);
 		}
 
@@ -926,15 +887,14 @@ namespace Keysharp.Builtins
 		{
 			_ = Interlocked.Exchange(ref exitCallback, null);
 			_ = Interlocked.Exchange(ref callbackScheduler, null);
-			_ = Interlocked.Exchange(ref callbackInvalidated, null);
+			_ = Interlocked.Exchange(ref callbackRegistration, null);
 		}
 
 		private void CancelCallback()
 		{
-			var scheduler = Interlocked.Exchange(ref callbackScheduler, null);
-			var invalidated = Interlocked.Exchange(ref callbackInvalidated, null);
+			_ = Interlocked.Exchange(ref callbackScheduler, null);
 			_ = Interlocked.Exchange(ref exitCallback, null);
-			scheduler?.ReleasePendingCallback(invalidated);
+			Interlocked.Exchange(ref callbackRegistration, null)?.Dispose();
 		}
 
 		private void CleanupTransport()

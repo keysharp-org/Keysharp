@@ -68,7 +68,7 @@ namespace Keysharp.Internals.Mapper.MacOS
 
 		internal override void SetLabel(string label)
 		{
-			var result = RunCommand("/usr/sbin/diskutil", "renameVolume", drive.Name, label);
+			var result = RunCommand("/usr/sbin/diskutil", ["renameVolume", drive.Name, label]);
 
 			if (!result.Succeeded)
 				throw new IOException(result.ErrorMessage);

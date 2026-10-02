@@ -18,8 +18,12 @@ namespace Keysharp.Internals
 						: $"Process exited with code {ExitCode}.";
 			}
 
-			/// <summary>Runs an executable directly, without a command shell, and captures both output streams.</summary>
-			internal static CommandResult RunCommand(string fileName, params string[] arguments)
+			/// <summary>
+			/// Runs an executable directly, without a command shell, and captures both output streams. A helper still
+			/// running after <paramref name="timeoutMs"/> is killed with its child processes and reported as failed;
+			/// the default, -1, waits indefinitely.
+			/// </summary>
+			internal static CommandResult RunCommand(string fileName, string[] arguments, int timeoutMs = -1)
 			{
 				using var process = new System.Diagnostics.Process
 				{
@@ -52,10 +56,17 @@ namespace Keysharp.Internals
 					// buffer would block forever while we wait for it to exit.
 					var outputTask = process.StandardOutput.ReadToEndAsync();
 					var errorTask = process.StandardError.ReadToEndAsync();
-					process.WaitForExit();
+
+					if (!Flow.WaitForCompletion(Task.WhenAll(process.WaitForExitAsync(), outputTask, errorTask), timeoutMs))
+					{
+						if (!process.HasExited)
+							process.Kill(entireProcessTree: true);
+						return new(-1, string.Empty, $"{fileName} did not finish within {timeoutMs / 1000.0} s.");
+					}
+
 					return new(process.ExitCode, outputTask.GetAwaiter().GetResult(), errorTask.GetAwaiter().GetResult());
 				}
-				catch (Exception ex)
+				catch (Exception ex) when (!Flow.TryGetException<Keysharp.Builtins.Flow.UserRequestedExitException>(ex, out _))
 				{
 					return new(-1, string.Empty, ex.Message);
 				}

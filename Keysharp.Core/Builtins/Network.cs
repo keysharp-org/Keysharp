@@ -379,29 +379,5 @@ namespace Keysharp.Builtins
 
 			return ips;
 		}
-
-		/// <summary>
-		/// Internal helper which resolves a host name or IP address.
-		/// </summary>
-		/// <param name="name">The host name to resolve.</param>
-		/// <returns>A <see cref="Dictionary{string, object}"/> with the following key/value pairs:<br/>
-		///     Host: The host name.<br/>
-		///     Addresses: The list of IP addresses.
-		/// </returns>
-		internal static Dictionary<string, object> GetHostEntry(string name)
-		{
-			var entry = Dns.GetHostEntry(name);
-			var ips = new string[entry.AddressList.Length];
-
-			for (var i = 0; i < ips.Length; i++)
-				ips[i] = entry.AddressList[0].ToString();
-
-			var info = new Dictionary<string, object>
-			{
-				{ "Host", entry.HostName },
-				{ "Addresses", ips }
-			};
-			return info;
-		}
 	}
 }

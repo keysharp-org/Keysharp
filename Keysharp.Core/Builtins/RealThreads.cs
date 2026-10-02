@@ -40,8 +40,11 @@ namespace Keysharp.Builtins
 			private readonly TaskCompletionSource<object> entryCompletion;
 			// Settled in RunWorkerLoop's finally: scheduler disposed, thread about to end.
 			private readonly TaskCompletionSource<object> terminationCompletion;
-			// Resolved by the worker once its scheduler exists. For main/adopted threads it is already resolved.
-			private readonly TaskCompletionSource<ScriptEventScheduler> schedulerSource;
+			// The thread's scheduler. A worker publishes it as it starts and clears it as it ends, so a finished worker the
+			// script still holds does not keep the scheduler's queues and pseudo-thread stack reachable.
+			private ScriptEventScheduler liveScheduler;
+			// Set once a worker has published its scheduler or failed to start. Null for the main and adopted threads.
+			private readonly TaskCompletionSource started;
 			// KeysharpTask.Wrap registers a task with the unobserved-failure hook, so these are wrapped up front
 			// rather than on first read.
 			private readonly KeysharpTask entryTask;
@@ -56,7 +59,7 @@ namespace Keysharp.Builtins
 				this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
 				entryCompletion = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
 				terminationCompletion = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
-				schedulerSource = new TaskCompletionSource<ScriptEventScheduler>(TaskCreationOptions.RunContinuationsAsynchronously);
+				started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 				pendingPosts = new ConcurrentDictionary<PostRequest, byte>();
 				entryTask = KeysharpTask.Wrap(entryCompletion.Task);
 				terminatedTask = KeysharpTask.Wrap(terminationCompletion.Task);
@@ -66,9 +69,8 @@ namespace Keysharp.Builtins
 			private RealThread(ScriptEventScheduler scheduler)
 			{
 				owner = scheduler?.Owner ?? throw new ArgumentNullException(nameof(scheduler));
-				schedulerSource = new TaskCompletionSource<ScriptEventScheduler>(TaskCreationOptions.RunContinuationsAsynchronously);
+				liveScheduler = scheduler;
 				pendingPosts = new ConcurrentDictionary<PostRequest, byte>();
-				_ = schedulerSource.TrySetResult(scheduler);
 			}
 
 			private bool IsWorker => entryCompletion != null;
@@ -318,17 +320,18 @@ namespace Keysharp.Builtins
 			private object RunWorkerLoop(Func<object> body)
 			{
 				var script = owner;
-				ScriptEventScheduler scheduler = null;
+				ScriptEventScheduler workerScheduler = null;
 				var previousContext = SynchronizationContext.Current;
 
 				try
 				{
-					scheduler = script.ThreadScheduler;
-					scheduler.realThread = this;
-					_ = schedulerSource.TrySetResult(scheduler);
-					SynchronizationContext.SetSynchronizationContext(scheduler.DispatchContext);
-					SettleEntry(scheduler, body);
-					scheduler.RunWorkerEventLoop();
+					workerScheduler = script.ThreadScheduler;
+					workerScheduler.realThread = this;
+					Volatile.Write(ref liveScheduler, workerScheduler);
+					_ = started.TrySetResult();
+					SynchronizationContext.SetSynchronizationContext(workerScheduler.DispatchContext);
+					SettleEntry(workerScheduler, body);
+					workerScheduler.RunWorkerEventLoop();
 					return DefaultObject;
 				}
 				catch (Exception ex) when (CallStack.RememberAndCatch(ex))
@@ -342,20 +345,20 @@ namespace Keysharp.Builtins
 				}
 				finally
 				{
-					// Unblock anything waiting on the scheduler before it ever appeared: completing with null makes
-					// GetAliveScheduler report not-alive, whereas faulting this source would create a second task
-					// nobody observes.
-					_ = schedulerSource.TrySetResult(scheduler);
+					// Unblock anything waiting on the scheduler before it ever appeared, which then finds none and reports
+					// not-alive; faulting the signal instead would create a second task nobody observes.
+					_ = started.TrySetResult();
 					// The body may never have run at all (the scheduler failed to appear), so the entry task still
 					// needs an answer before anything awaiting it is released by the termination below.
 					_ = entryCompletion.TrySetCanceled();
 
 					try
 					{
-						scheduler?.DisposeWorker();
+						workerScheduler?.DisposeWorker();
 					}
 					finally
 					{
+						Volatile.Write(ref liveScheduler, null);
 						SynchronizationContext.SetSynchronizationContext(previousContext);
 						_ = terminationCompletion.TrySetResult(DefaultObject);
 						script.AdjustPendingSchedulerWork(-1);
@@ -454,29 +457,16 @@ namespace Keysharp.Builtins
 			/// </summary>
 			private ScriptEventScheduler GetAliveScheduler()
 			{
-				var scheduler = schedulerSource.Task.GetAwaiter().GetResult();
-				return scheduler == null || scheduler.IsDisposed ? null : scheduler;
-			}
-
-			internal bool OwnsCurrentThread()
-			{
-				var scheduler = schedulerSource.Task;
-				return scheduler.Status == TaskStatus.RanToCompletion && scheduler.Result is { } s && s.OwnsCurrentThread;
+				started?.Task.GetAwaiter().GetResult();
+				var alive = Volatile.Read(ref liveScheduler);
+				return alive == null || alive.IsDisposed ? null : alive;
 			}
 
 			/// <summary>The entry task of this object, without wrapping, for the self-wait guard.</summary>
 			internal Task EntryTask => entryCompletion?.Task;
 
 			/// <summary>True when this object is the script's main thread, which owns the UI scheduler.</summary>
-			private bool IsMainThread
-			{
-				get
-				{
-					var scheduler = schedulerSource.Task;
-					return scheduler.Status == TaskStatus.RanToCompletion
-						   && ReferenceEquals(scheduler.Result, owner.uiEventScheduler);
-				}
-			}
+			private bool IsMainThread => Volatile.Read(ref liveScheduler) is { } s && ReferenceEquals(s, owner.uiEventScheduler);
 
 			private const string ThreadNotAlive = "Real thread is no longer alive.";
 

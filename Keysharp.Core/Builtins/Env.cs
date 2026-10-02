@@ -135,12 +135,13 @@ namespace Keysharp.Builtins
 		public static object EnvSet(object envVar, object value = null)
 		{
 			// Converted outside the try so a TypeError is not reported as an OSError.
-			if (!envVar.CoerceString(out var variableName))
+			string variableValue = null;
+
+			if (!envVar.CoerceString(out var variableName) || value != null && !value.CoerceString(out variableValue))
 				return DefaultObject;
 
 			try
 			{
-				var variableValue = value as string;
 				Environment.SetEnvironmentVariable(variableName, variableValue);
 #if !WINDOWS
 				Script.TheScript?.EnvData.RecordChange(variableName, variableValue);
@@ -171,7 +172,8 @@ namespace Keysharp.Builtins
 
 			foreach (var command in BuildEnvironmentUpdateCommands(pendingChanges))
 			{
-				var result = RunCommand(command.FileName, command.Arguments);
+				// Bounded, since a session manager that never answers would otherwise hang the script.
+				var result = RunCommand(command.FileName, command.Arguments, 5000);
 
 				if (result.Succeeded)
 					continue;

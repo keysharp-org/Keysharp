@@ -17,9 +17,6 @@ namespace Keysharp.Builtins
 		[UserDeclaredName("Task")]
 		public class KeysharpTask : KeysharpObject
 		{
-			// UnobservedTaskException is process-wide, so this table retains only a weak route back to the active
-			// script which received each task. Wrapper identity itself is scoped to Script.
-			private static readonly ConditionalWeakTable<Task, WeakReference<Script>> unobservedOwners = new();
 			// Task<T>.Result is reached by reflection (T is not known here) and Result is read once per element
 			// of a WhenAll, so the accessor is resolved once per closed type rather than per read.
 			private static readonly ConcurrentDictionary<Type, Func<Task, object>> resultReaders = new();
@@ -54,14 +51,7 @@ namespace Keysharp.Builtins
 
 				EnsureUnobservedHook();
 				var script = Script.TheScript;
-
-				if (script != null)
-					unobservedOwners.GetValue(t, _ => new(script)).SetTarget(script);
-
-				if (script == null)
-					return new KeysharpTask(t);
-
-				return script.TaskWrappers.GetValue(t, static key => new KeysharpTask(key));
+				return script == null ? new KeysharpTask(t) : script.TaskWrappers.GetValue(t, static key => new KeysharpTask(key));
 			}
 
 			/// <summary>The underlying <see cref="Task"/>, for runtime code that needs it rather than the wrapper.</summary>
@@ -344,7 +334,7 @@ namespace Keysharp.Builtins
 			/// </summary>
 			private static void EnsureUnobservedHook()
 			{
-				if (Interlocked.Exchange(ref unobservedHooked, 1) != 0)
+				if (Volatile.Read(ref unobservedHooked) != 0 || Interlocked.Exchange(ref unobservedHooked, 1) != 0)
 					return;
 
 				TaskScheduler.UnobservedTaskException += (sender, e) =>
@@ -372,14 +362,18 @@ namespace Keysharp.Builtins
 				};
 			}
 
+			/// <summary>
+			/// The scheduler to report <paramref name="sender"/> on, when the running script wrapped it. The event is raised
+			/// by a finalizer, and the wrapper table, a ConditionalWeakTable, keeps a task's entry until that has run.
+			/// </summary>
 			internal static ScriptEventScheduler GetUnobservedScheduler(object sender)
 			{
+				var script = Script.TheScript;
+
 				if (sender is not Task task
-						|| !unobservedOwners.TryGetValue(task, out var owner)
-						|| !owner.TryGetTarget(out var script)
 						|| script is not { hasExited: false, IsDisposed: false }
-						|| !ReferenceEquals(Script.TheScript, script)
-						|| script.uiEventScheduler is not { IsDisposed: false } scheduler)
+						|| script.uiEventScheduler is not { IsDisposed: false } scheduler
+						|| !script.TaskWrappers.TryGetValue(task, out _))
 					return null;
 
 				return scheduler;
@@ -393,7 +387,7 @@ namespace Keysharp.Builtins
 				private object successCallback;
 				private object failureCallback;
 				private readonly TaskCompletionSource<object> completion;
-				private readonly Action invalidated;
+				private ScriptEventScheduler.PendingCallbackRegistration registration;
 
 				internal TaskContinuation(KeysharpTask antecedent, ScriptEventScheduler scheduler,
 					object successCallback, object failureCallback, TaskCompletionSource<object> completion)
@@ -403,12 +397,11 @@ namespace Keysharp.Builtins
 					this.successCallback = successCallback;
 					this.failureCallback = failureCallback;
 					this.completion = completion;
-					invalidated = OwnerInvalidated;
 				}
 
 				internal void Attach(Task task)
 				{
-					if (scheduler == null || !scheduler.RegisterPendingCallback(invalidated))
+					if ((registration = scheduler?.RegisterPendingCallback(OwnerInvalidated)) == null)
 					{
 						Finish();
 						return;
@@ -457,11 +450,6 @@ namespace Keysharp.Builtins
 					catch (Exception ex)
 					{
 						Finish(ex);
-					}
-					finally
-					{
-						if (!script.IsDisposed)
-							script.ExitIfNotPersistent();
 					}
 				}
 
@@ -514,10 +502,6 @@ namespace Keysharp.Builtins
 
 					// Returned background work is not rooted; a downstream Then owns its own callback root.
 					Release();
-
-					if (!owner.Owner.IsDisposed)
-						owner.Owner.ExitIfNotPersistent();
-
 					return result;
 				}
 
@@ -534,8 +518,7 @@ namespace Keysharp.Builtins
 
 				private void Release()
 				{
-					var owner = Volatile.Read(ref scheduler);
-					owner?.ReleasePendingCallback(invalidated);
+					Volatile.Read(ref registration)?.Dispose();
 					Volatile.Write(ref antecedent, null);
 					Volatile.Write(ref scheduler, null);
 					Volatile.Write(ref successCallback, null);

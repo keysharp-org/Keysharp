@@ -20,8 +20,11 @@ namespace Keysharp.Builtins
 			/// </summary>
 			private const int DataFlushIntervalMs = 100;
 
-			/// <summary>The largest body pre-sized from Content-Length, so a hostile header cannot ask for more.</summary>
-			private const long MaxPreSizedBody = 64L * 1024 * 1024;
+			/// <summary>
+			/// The most of a declared Content-Length reserved before the body arrives. A larger body grows the buffer
+			/// as it comes, so a header that overstates it commits at most this much up front.
+			/// </summary>
+			private const long MaxPreSizedBody = 1024 * 1024;
 
 			/// <summary>
 			/// The largest chunk OnData is handed. Without it a fast link grows the chunk with its own speed, since
@@ -323,17 +326,11 @@ namespace Keysharp.Builtins
 			{
 				// Nothing to undo on teardown: the delivery in flight registers its own callback and fails there,
 				// and this one exists only to hold the root while the transfer is between chunks.
-				static void Invalidated() { }
-
-				if (!scheduler.RegisterPendingCallback(Invalidated))
+				if (scheduler.RegisterPendingCallback(static () => { }) is not { } registration)
 					return;
 
-				_ = work.ContinueWith(static (_, state) =>
-				{
-					var (owner, release) = ((ScriptEventScheduler, Action))state;
-					owner.ReleasePendingCallback(release);
-				}, (scheduler, (Action)Invalidated), CancellationToken.None,
-				TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+				_ = work.ContinueWith(static (_, state) => ((ScriptEventScheduler.PendingCallbackRegistration)state).Dispose(),
+					registration, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 			}
 
 			/// <summary>
@@ -444,9 +441,12 @@ namespace Keysharp.Builtins
 					var total = message.Content.Headers.ContentLength ?? -1L;
 					using var stream = await message.Content.ReadAsStreamAsync(cts.Token).ConfigureAwait(false);
 					using var sink = destination?.Invoke();
+					// HEAD, 204 and 304 keep the resource's Content-Length but carry no body.
+					var bodyless = request.Method == HttpMethod.Head
+								   || message.StatusCode is HttpStatusCode.NoContent or HttpStatusCode.NotModified;
 					var body = onData != null || sink != null
 							   ? null
-							   : new MemoryStream(total > 0 && total <= MaxPreSizedBody ? (int)total : 0);
+							   : new MemoryStream(bodyless || total <= 0 ? 0 : (int)Math.Min(total, MaxPreSizedBody));
 					var pending = onData == null ? null : new MemoryStream();
 					var lastFlush = Environment.TickCount64;
 					long received = 0;
@@ -602,11 +602,9 @@ namespace Keysharp.Builtins
 					2 => [chunk, received],
 					_ => [chunk, received, total],
 				};
-				void Invalidated() => completion.TrySetException(
-					(Exception)new Error("The Http transfer stopped because its script thread went away."));
-
-				if (!scheduler.RegisterPendingCallback(Invalidated))
-					throw (Exception)new Error("The Http transfer stopped because its script thread is gone.");
+				var registration = scheduler.RegisterPendingCallback(() => completion.TrySetException(
+					(Exception)new Error("The Http transfer stopped because its script thread went away.")))
+					?? throw (Exception)new Error("The Http transfer stopped because its script thread is gone.");
 
 				// Queued as dispatch rather than as a launch, so the pump keeps serving it while launches are
 				// parked, and served in arrival order as a sent message is.
@@ -644,13 +642,13 @@ namespace Keysharp.Builtins
 					}
 					finally
 					{
-						scheduler.ReleasePendingCallback(Invalidated);
+						registration.Dispose();
 					}
 				}, ScriptEventQueue.Interactive, priority);
 
 				if (!queued)
 				{
-					scheduler.ReleasePendingCallback(Invalidated);
+					registration.Dispose();
 					throw (Exception)new Error("The Http OnData callback could not be queued, so the transfer stopped.");
 				}
 

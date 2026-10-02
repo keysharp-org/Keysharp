@@ -528,13 +528,13 @@ namespace Keysharp.Builtins
 		/// </returns>
 		public static string FileExist(object filePattern)
 		{
-			if (!filePattern.CoerceString(out var s))
+			if (!filePattern.CoerceString(out var s) || s.Length == 0)
 				return "";
 
 			try
 			{
 				var path = Path.GetDirectoryName(s);
-				var dir = new DirectoryInfo(path);
+				var dir = new DirectoryInfo(string.IsNullOrEmpty(path) ? "." : path);
 				var filename = Path.GetFileName(s);
 
 				FileSystemInfo found = Directory.Exists(s) ? new DirectoryInfo(s) : dir.EnumerateFiles(filename).FirstOrDefault();
@@ -1335,7 +1335,7 @@ namespace Keysharp.Builtins
 #if LINUX
 				foreach (var target in Conversions.ToFiles(s, true, true, false))
 				{
-					var result = RunCommand("gio", "trash", target);
+					var result = RunCommand("gio", ["trash", target]);
 
 					if (!result.Succeeded)
 						return Errors.OSErrorOccurred(new InvalidOperationException(result.ErrorMessage),
@@ -1375,7 +1375,7 @@ namespace Keysharp.Builtins
 			try
 			{
 #if LINUX
-				var result = RunCommand("gio", "trash", "--empty");
+				var result = RunCommand("gio", ["trash", "--empty"]);
 
 				if (!result.Succeeded)
 					return Errors.OSErrorOccurred(new InvalidOperationException(result.ErrorMessage), "gio trash --empty failed.");

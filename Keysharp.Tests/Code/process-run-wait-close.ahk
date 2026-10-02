@@ -17,8 +17,11 @@ AssertEq(pid, "", A_LineNumber)
 
 	if (ProcessExist(pid) != 0)
 	{
+		; A timeout gives the PID still running, and a negative one checks once.
+		AssertEq(ProcessWaitClose(pid, 0), pid, A_LineNumber)
+		AssertEq(ProcessWaitClose(pid, -1), pid, A_LineNumber)
 		ProcessClose(pid)
-		ProcessWaitClose(pid, 5)
+		AssertEq(ProcessWaitClose(pid, 5), 0, A_LineNumber)
 	}
 
 	AssertEq(ProcessExist(pid), 0, A_LineNumber)
@@ -49,8 +52,9 @@ AssertEq(pid, "", A_LineNumber)
 	; Priority is not raised here: only root can raise it above normal.
 	if (ProcessExist(pid) != 0)
 	{
+		AssertEq(ProcessWaitClose(pid, 0), pid, A_LineNumber)
 		ProcessClose(pid)
-		ProcessWaitClose(pid, 5)
+		AssertEq(ProcessWaitClose(pid, 5), 0, A_LineNumber)
 	}
 
 	AssertEq(ProcessExist(pid), 0, A_LineNumber)
@@ -71,5 +75,27 @@ AssertEq(pid, "", A_LineNumber)
 	finally
 		DirDelete(tmpDir, true)
 #endif
+
+#if WINDOWS
+	sleeper := A_WinDir "\System32\PING.EXE", sleeperArgs := "-n 2 127.0.0.1"
+#else
+	sleeper := "sleep", sleeperArgs := "1"
+#endif
+
+; RunWait lets a timer run while it waits, and assigns the PID before waiting so the timer can read it.
+RecordPidDuringWait()
+{
+	global runWaitPid, pidDuringWait
+	pidDuringWait := runWaitPid
+}
+
+runWaitPid := 0, pidDuringWait := 0
+SetTimer(RecordPidDuringWait, 10)
+RunWait(sleeper, "", "Hide", &runWaitPid, sleeperArgs)
+SetTimer(RecordPidDuringWait, 0)
+Assert(runWaitPid > 0, A_LineNumber)
+AssertEq(pidDuringWait, runWaitPid, A_LineNumber)
+
+Throws(() => ProcessGetName("no such process.exe"), A_LineNumber, TargetError)
 
 FileAppend "pass", "*"

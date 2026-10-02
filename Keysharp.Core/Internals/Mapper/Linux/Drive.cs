@@ -64,7 +64,7 @@ namespace Keysharp.Internals.Mapper.Linux
 		{
 			// DriveInfo.Name is normally a mount point on Linux. Label utilities generally
 			// need the backing block device, so resolve it through findmnt first.
-			var lookup = RunCommand("findmnt", "--noheadings", "--output", "SOURCE", "--target", drive.Name);
+			var lookup = RunCommand("findmnt", ["--noheadings", "--output", "SOURCE", "--target", drive.Name], 5000);
 
 			if (!lookup.Succeeded)
 				throw new IOException($"Could not resolve the block device for {drive.Name}: {lookup.ErrorMessage}");
