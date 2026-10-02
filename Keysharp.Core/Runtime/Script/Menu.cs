@@ -88,13 +88,13 @@ namespace Keysharp.Runtime
 			{
 				try
 				{
-					Keysharp.Builtins.Menu menu = new();
-					menu.AddStandard();
-					trayMenu = menu;
+					trayMenu = new();
+					_ = trayMenu.AddStandard();
 				}
 				catch (Exception ex)
 				{
 					// A toolkit which cannot build a menu cannot build a tray either, so stop asking for both.
+					trayMenu = null;
 					NoTrayIcon = true;
 					Script.WriteUncaughtErrorToStdErr("Tray menu initialization skipped: " + ex.Message);
 					return;
@@ -159,7 +159,7 @@ namespace Keysharp.Runtime
 
 		/// <summary>
 		/// Stops treating <paramref name="item"/> as a standard item once a script gives it a callback of its own, as
-		/// AHK does, so that its checkmark and visibility are the script's. AddStandard claims its items afresh.
+		/// AHK does, so that its checkmark and visibility are the script's.
 		/// </summary>
 		internal void ReleaseStandardItem(ToolStripItem item)
 		{

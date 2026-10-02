@@ -20,6 +20,7 @@ namespace Keysharp.Builtins
 			internal bool Right;
 			internal bool Rtl;
 			internal int Priority;
+			internal string StandardId;
 
 			//Set on separators in a columned menu, which WinForms would otherwise stretch across the whole
 			//window; 0 means "not in a columned menu". See KeysharpMenuRenderer.OnRenderSeparator.
@@ -244,6 +245,9 @@ namespace Keysharp.Builtins
 		/// The default item in the menu.
 		/// </summary>
 		internal ToolStripItem defaultItem;
+#if WINDOWS
+		private Font defaultFont;
+#endif
 
 		private readonly int menuId;
 
@@ -280,28 +284,31 @@ namespace Keysharp.Builtins
 			{
 				// AutoHotkey's set_Default reads a blank name as "no default" and looks nothing up; any other
 				// name must name an item that exists.
-				if (value?.Length != 0 && GetExistingMenuItem(value) is ToolStripMenuItem item)
-				{
-					var allitems = GetMenu().GetItems();
-					defaultItem = item;
-
-					foreach (var defitem in allitems)
-#if WINDOWS
-						defitem.Font = defitem == item
-									   ? new Font(item.Font, item.Font.Style | FontStyle.Bold)
-									   : new Font(item.Font, item.Font.Style & ~FontStyle.Bold);
-#else
-						try
-						{
-							defitem.Font = defitem == item
-									   ? new Font(item.Font.Family.Name, item.Font.Size, item.Font.FontStyle | FontStyle.Bold)
-									   : new Font(item.Font.Family.Name, item.Font.Size, item.Font.FontStyle & ~FontStyle.Bold);
-						} catch {}
-#endif
-				}
-				else
-					defaultItem = null;
+				if (string.IsNullOrEmpty(value))
+					SetDefaultItem(null);
+				else if (GetExistingMenuItem(value) is ToolStripItem item)
+					SetDefaultItem(item);
 			}
+		}
+
+		private void SetDefaultItem(ToolStripItem item)
+		{
+			if (item == defaultItem)
+				return;
+#if WINDOWS
+			if (defaultItem != null)
+				defaultItem.Font = null;
+			if (item != null)
+			{
+				if (defaultFont == null)
+				{
+					var font = defaultFont = new Font(GetMenu().Font, GetMenu().Font.Style | FontStyle.Bold);
+					GetMenu().Disposed += (_, _) => font.Dispose();
+				}
+				item.Font = defaultFont;
+			}
+#endif
+			defaultItem = item;
 		}
 
 		/// <summary>
@@ -424,150 +431,128 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public object AddStandard()
 		{
-			var menu = GetMenu();
 			var script = Script.TheScript;
-			var openfunc = (params object[] args) =>
-			{
-				var mainWindow = script.mainWindow;
-
-				if (mainWindow != null && A_AllowMainWindow.Ab())
-				{
-					script.PostToUIThread(() =>
-					{
-						mainWindow.AllowShowDisplay = true;
-						mainWindow.WindowState = mainWindow.lastWindowState == FormWindowState.Minimized
-							? FormWindowState.Normal
-							: mainWindow.lastWindowState;
-						mainWindow.Show();
-						mainWindow.Visible = true;
-						mainWindow.BringToFront();
-						mainWindow.Focus();
-						// The tab that comes back into view holds a snapshot taken the last time it was
-						// refreshed (nothing at all, on a first open), so regenerate it now.
-						mainWindow.RefreshSelectedTab();
-					});
-				}
-
-				return DefaultObject;
-			};
-			var reloadfunc = (params object[] args) =>
-			{
-				_ = Flow.Reload();
-				return DefaultObject;
-			};
-			var suspend = (params object[] args) =>
-			{
-				Script.SuspendHotkeys();
-				return DefaultObject;
-			};
-			var pause = (params object[] args) =>
-			{
-				Script.TogglePause();
-				return DefaultObject;
-			};
-			var exitfunc = (params object[] args) =>
-			{
-				_ = Keysharp.Internals.Flow.ExitAppInternal(script, Flow.ExitReasons.Menu, null, true);
-				return DefaultObject;
-			};
-			//Won't be a gui target, so won't be marked as IsGui internally, but it's ok because it's only ever called on the gui thread in response to gui events.
-			script.openMenuItem = (ToolStripMenuItem)Add("&Open", new KeysharpFunc(openfunc.Method, openfunc.Target));
-
-			if (!A_AllowMainWindow.Ab())
-				script.openMenuItem.Visible = false;
-
-			var helpFunc = (params object[] args) =>
-			{
-				_ = Processes.Run("https://github.com/keysharp-org/Keysharp/issues");
-				return DefaultObject;
-			};
-			_ = Add("&Help", new KeysharpFunc(helpFunc.Method, helpFunc.Target));
-
-			if (menu.Items.Cast<ToolStripItem>().Any(tsi => tsi.Visible))
-				_ = menu.Items.Add(new ToolStripSeparator());
-
-			// Resolve a bundled helper script (WindowSpy/AtSpi/Ax) from its "Scripts" folder.
-			// Normally that folder sits beside the running executable, but A_AhkPath is the
-			// process host -- which is the dotnet host (e.g. /usr/lib/dotnet/dotnet) when Keysharp
-			// is launched via "dotnet" while debugging from an IDE. In that case fall back to the
-			// directory of Keysharp.Core.dll, where the Scripts folder is also copied in build output.
-			static string ResolveBundledScript(string name)
-			{
-				foreach (var baseDir in new[] { Path.GetDirectoryName(Accessors.A_AhkPath), Path.GetDirectoryName(Ks.A_KsCorePath) })
-				{
-					if (string.IsNullOrEmpty(baseDir))
-						continue;
-
-					var compiled = Path.Combine(baseDir, "Scripts", name + ".cks");//Prefer the precompiled .cks for faster startup.
-
-					if (File.Exists(compiled))
-						return compiled;
-
-					var source = Path.Combine(baseDir, "Scripts", name + ".ks");
-
-					if (File.Exists(source))
-						return source;
-				}
-
-				return null;
-			}
-
-			var windowSpyFunc = (params object[] args) =>
-			{
-				var spy = ResolveBundledScript("WindowSpy");
-
-				if (spy == null)
-				{
-					_ = Dialogs.MsgBox($"Window Spy script not found in a Scripts folder beside:\n{Accessors.A_AhkPath}\nor\n{Ks.A_KsCorePath}", "Keysharp", "Icon!");
-					return DefaultObject;
-				}
-
-				// Compile source in the child so the menu host can finish dismissing its popup.
-				using var process = Process.Start(Runner.CreateRestartStartInfo(["--script", Path.GetFullPath(spy)]));
-				return DefaultObject;
-			};
-			_ = Add("&Window Spy", new KeysharpFunc(windowSpyFunc.Method, windowSpyFunc.Target));
+			if (A_AllowMainWindow.Ab())
+				AddStandardOpenItem();
+			_ = AddStandardItem("&Help", () => Processes.Run("https://github.com/keysharp-org/Keysharp/issues"));
+			_ = AddStandardItem("StandardSeparator1");
+			_ = AddStandardItem("&Window Spy", () => LaunchSpy("WindowSpy", "Window Spy script"));
 #if LINUX || OSX
 #if LINUX
 			const string accessibilitySpyName = "AtSpi";
 #else
 			const string accessibilitySpyName = "Ax";
 #endif
-			var accessibilitySpyFunc = (params object[] args) =>
-			{
-				var spy = ResolveBundledScript(accessibilitySpyName);
+			_ = AddStandardItem("&Accessibility Spy", () => LaunchSpy(accessibilitySpyName, $"{accessibilitySpyName} accessibility inspector script"));
+			_ = AddStandardItem("StandardSeparator2");
+#endif
+			_ = AddStandardItem("&Reload Script", () => Flow.Reload());
+			if (!A_IsCompiled)
+				_ = AddStandardItem("&Edit Script", () => Debug.Edit());
+			_ = AddStandardItem("StandardSeparator3");
+			var suspendItem = (ToolStripMenuItem)AddStandardItem("&Suspend Hotkeys", Script.SuspendHotkeys, check: script.FlowData.suspended);
+			var pauseItem = (ToolStripMenuItem)AddStandardItem("&Pause Script", Script.TogglePause, check: script.showsPaused);
+			if (this == script.trayMenu)
+				(script.suspendMenuItem, script.pauseMenuItem) = (suspendItem, pauseItem);
+			_ = AddStandardItem("E&xit", () => Keysharp.Internals.Flow.ExitAppInternal(script, Flow.ExitReasons.Menu, null, true));
+			return DefaultObject;
 
+			void LaunchSpy(string name, string description)
+			{
+				var spy = ResolveBundledScript(name);
 				if (spy == null)
 				{
-					_ = Dialogs.MsgBox($"{accessibilitySpyName} accessibility inspector script not found in a Scripts folder beside:\n{Accessors.A_AhkPath}\nor\n{Ks.A_KsCorePath}", "Keysharp", "Icon!");
-					return DefaultObject;
+					_ = Dialogs.MsgBox($"{description} not found in a Scripts folder beside:\n{Accessors.A_AhkPath}\nor\n{Ks.A_KsCorePath}", "Keysharp", "Icon!");
+					return;
 				}
-
+				// Compile source in the child so the menu host can finish dismissing its popup.
 				using var process = Process.Start(Runner.CreateRestartStartInfo(["--script", Path.GetFullPath(spy)]));
-				return DefaultObject;
-			};
-			_ = Add($"&Accessibility Spy", new KeysharpFunc(accessibilitySpyFunc.Method, accessibilitySpyFunc.Target));
-			_ = menu.Items.Add(new ToolStripSeparator());
-#endif
-			_ = Add("&Reload Script", new KeysharpFunc(reloadfunc.Method, reloadfunc.Target));
-
-			if (!A_IsCompiled)
-			{
-				var editfunc = (params object[] args) =>
-				{
-					_ = Debug.Edit();
-					return DefaultObject;
-				};
-				_ = Add("&Edit Script", new KeysharpFunc(editfunc.Method, editfunc.Target));
 			}
 
-			_ = menu.Items.Add(new ToolStripSeparator());
-			script.suspendMenuItem = (ToolStripMenuItem)Add("&Suspend Hotkeys", new KeysharpFunc(suspend.Method, suspend.Target));
-			script.suspendMenuItem.Checked = script.FlowData.suspended;
-			script.pauseMenuItem = (ToolStripMenuItem)Add("&Pause Script", new KeysharpFunc(pause.Method, pause.Target));
-			script.pauseMenuItem.Checked = script.showsPaused;
-			_ = Add("E&xit", new KeysharpFunc(exitfunc.Method, exitfunc.Target));
-			return DefaultObject;
+			static string ResolveBundledScript(string name)
+			{
+				// A_AhkPath can be the dotnet host, so also search beside Keysharp.Core.dll.
+				foreach (var baseDir in new[] { Path.GetDirectoryName(Accessors.A_AhkPath), Path.GetDirectoryName(Ks.A_KsCorePath) })
+				{
+					if (string.IsNullOrEmpty(baseDir))
+						continue;
+					var compiled = Path.Combine(baseDir, "Scripts", name + ".cks");
+					if (File.Exists(compiled))
+						return compiled;
+					var source = Path.Combine(baseDir, "Scripts", name + ".ks");
+					if (File.Exists(source))
+						return source;
+				}
+				return null;
+			}
+		}
+
+		private void AddStandardOpenItem(int? index = null)
+		{
+			if (FindStandardItem("&Open") != null)
+				return;
+			var script = Script.TheScript;
+			var open = (ToolStripMenuItem)AddStandardItem("&Open", () =>
+			{
+				var mainWindow = script.mainWindow;
+				if (mainWindow == null || !A_AllowMainWindow.Ab())
+					return;
+				script.PostToUIThread(() =>
+				{
+					mainWindow.AllowShowDisplay = true;
+					mainWindow.WindowState = mainWindow.lastWindowState == FormWindowState.Minimized
+						? FormWindowState.Normal : mainWindow.lastWindowState;
+					mainWindow.Show();
+					mainWindow.Visible = true;
+					mainWindow.BringToFront();
+					mainWindow.Focus();
+					mainWindow.RefreshSelectedTab();
+				});
+			}, index);
+			if (this == script.trayMenu)
+			{
+				script.openMenuItem = open;
+				if (defaultItem == null)
+					SetDefaultItem(open);
+			}
+		}
+
+		private ToolStripItem FindStandardItem(string id) => GetMenu().Items.Cast<ToolStripItem>()
+			.FirstOrDefault(item => item.Tag is MenuItemPresentation presentation && presentation.StandardId == id);
+
+		private ToolStripItem AddStandardItem(string id, Action callback = null, int? index = null, bool check = false)
+		{
+			if (FindStandardItem(id) is { } existing)
+				return existing;
+			ToolStripItem item;
+			if (callback == null)
+			{
+				item = new ToolStripSeparator();
+				GetMenu().Items.Insert(index ?? GetMenu().Items.Count, item);
+			}
+			else
+			{
+				var handler = (params object[] args) => { callback(); return DefaultObject; };
+				item = (ToolStripItem)AddOrInsert(index is int position ? $"{position + 1}&" : "", id,
+					new KeysharpFunc(handler.Method, handler.Target), "", true);
+			}
+			GetPresentation(item).StandardId = id;
+			if (item is ToolStripMenuItem menuItem)
+				menuItem.Checked = check;
+			return item;
+		}
+
+		internal void EnableStandardOpenItem(bool enable)
+		{
+			var open = FindStandardItem("&Open");
+			if (!enable)
+			{
+				if (open != null)
+					_ = Delete($"{GetMenu().Items.IndexOf(open) + 1}&");
+			}
+			else if (open == null && GetMenu().Items.Cast<ToolStripItem>()
+				.FirstOrDefault(item => item.Tag is MenuItemPresentation { StandardId: not null }) is { } first)
+				AddStandardOpenItem(GetMenu().Items.IndexOf(first));
 		}
 
 		/// <summary>
@@ -590,6 +575,9 @@ namespace Keysharp.Builtins
 
 			if (s?.Length == 0)
 			{
+				SetDefaultItem(null);
+				foreach (ToolStripItem item in GetMenu().Items)
+					Script.TheScript.ReleaseStandardItem(item);
 				GetMenu().Items.Clear();
 				foreach (var hub in clickHandlers.Values)
 					hub.Clear();
@@ -599,7 +587,7 @@ namespace Keysharp.Builtins
 			else if (GetExistingMenuItem(s) is ToolStripItem item)
 			{
 				if (item == defaultItem)
-					defaultItem = null;
+					SetDefaultItem(null);
 
 				if (item.GetCurrentParent() is ToolStripDropDownMenu tsddm)
 					tsddm.Items.Remove(item);
@@ -610,6 +598,7 @@ namespace Keysharp.Builtins
 
 				if (clickHandlers.TryRemove(item, out var hub))
 					hub.Clear();
+				Script.TheScript.ReleaseStandardItem(item);
 			}
 
 			return DefaultObject;
@@ -1044,11 +1033,6 @@ namespace Keysharp.Builtins
 					_ = GetMenu().Items.Add(item);
 			}
 
-			if (string.IsNullOrEmpty(Default) && item.Text == "&Open")
-			{
-				Default = "&Open";
-			}
-
 			var presentation = GetPresentation(item);
 			if (priority is int p)
 			{
@@ -1124,6 +1108,7 @@ namespace Keysharp.Builtins
 				handlers.Clear();
 				_ = handlers.Add(clickReg);
 				// As AHK's ModifyItem gives the item a new ID, only for a callback and not for a submenu.
+				presentation.StandardId = null;
 				Script.TheScript.ReleaseStandardItem(item);
 			}
 
@@ -1173,16 +1158,16 @@ namespace Keysharp.Builtins
 
 		private bool MakeVisible(string s, eCheckToggle vis)
 		{
-			if (GetExistingMenuItem(s) is ToolStripMenuItem item)
+			if (GetExistingMenuItem(s) is ToolStripItem item)
 			{
 				if (vis == eCheckToggle.Toggle)
-					item.Visible = !item.Visible;
+					item.Available = !item.Available;
 				else if (vis == eCheckToggle.Check)
-					item.Visible = true;
+					item.Available = true;
 				else
-					item.Visible = false;
+					item.Available = false;
 
-				return item.Visible;
+				return item.Available;
 			}
 
 			return false;
