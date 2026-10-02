@@ -919,7 +919,7 @@ namespace Keysharp.Runtime
 						_ = EnsureEtoApplication();
 #endif
 
-						if (Dialogs.MsgBox("Do you want to close the existing instance before running this one?\nYes to exit that instance, No to exit this instance.", "", "YesNo") == "Yes")
+						if (Dialogs.MsgBox("Do you want to close the existing instance before running this one?\nYes to exit that instance, No to exit this instance.", null, "YesNo") == "Yes")
 							_ = WindowX.WinClose(hwnd, "", 2);
 						else
 							exit = true;

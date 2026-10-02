@@ -91,7 +91,11 @@ namespace Keysharp.Builtins
 			if (!handle.CoerceLong(out var handleVal))
 				return DefaultObject;
 
-			return (object)Control.FromHandle(new nint(handleVal)) ?? DefaultObject;
+			foreach (var entry in Script.TheScript.GuiData.allMenus.Values)
+				if (entry.TryGetTarget(out var menu) && menu.HasHandle(handleVal))
+					return menu;
+
+			return "";
 		}
 
 		internal static bool CallMessageHandler(Control control, ref Message m)

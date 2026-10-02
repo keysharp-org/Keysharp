@@ -98,7 +98,7 @@ namespace Keysharp.Internals.Scripting
 #if !WINDOWS
 					_ = Script.EnsureEtoApplication();
 #endif
-					if (Dialogs.MsgBox("Could not close the previous instance of this script.  Keep waiting?", "", "YesNo") != "Yes")
+					if (Dialogs.MsgBox("Could not close the previous instance of this script.  Keep waiting?", null, "YesNo") != "Yes")
 						return false;
 				}
 			}

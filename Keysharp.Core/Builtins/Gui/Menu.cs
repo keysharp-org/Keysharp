@@ -245,11 +245,6 @@ namespace Keysharp.Builtins
 		/// </summary>
 		internal ToolStripItem defaultItem;
 
-		/// <summary>
-		/// A variable needed to assign <see cref="Handle"/> to once in the constructor
-		/// to ensure the underlying handle is created. Unused otherwise.
-		/// </summary>
-		protected long dummyHandle;
 		private readonly int menuId;
 
 		/// <summary>
@@ -303,6 +298,16 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public long Handle => GetMenu().Handle.ToInt64();
 
+		internal bool HasHandle(long handle)
+		{
+			var strip = GetMenu();
+#if WINDOWS
+			return strip.IsHandleCreated && strip.Handle.ToInt64() == handle;
+#else
+			return strip.Handle.ToInt64() == handle;
+#endif
+		}
+
 		/// <summary>
 		/// The backing toolkit menu as an ordinary <c>Ks.Clr</c> object. Its concrete type is platform-dependent
 		/// and unspecified; changes made through it bypass this class's own state and event wiring.
@@ -341,7 +346,6 @@ namespace Keysharp.Builtins
 			menuId = Interlocked.Increment(ref Script.TheScript.GuiData.menuCount);
 			Script.TheScript.GuiData.allMenus[menuId] = new(this);
 			GetMenu().Name = $"Menu_{menuId}";
-			dummyHandle = Handle;//Must access the handle once to force creation.
 			// Track menu visibility (AutoHotkey's g_MenuIsVisible) so timers are held and the keyboard hook passes
 			// keystrokes through while this menu is open. Visibility is reference-counted per menu id, so overlapping
 			// menus don't clobber each other. Closed fires on every backend; Opened only on WinForms, so the other

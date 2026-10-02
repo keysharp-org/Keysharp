@@ -82,6 +82,17 @@ namespace Keysharp.Builtins
 		private static nint GetDialogOwnerHandle(Form owner)
 			=> owner is { IsDisposed: false, IsHandleCreated: true } && WindowsAPI.IsWindow(owner.Handle) ? owner.Handle : 0;
 
+		internal static int MergeMsgBoxOptions(int current, int options)
+		{
+			ReadOnlySpan<int> masks = [0xF, 0xF0, 0xF00, 0x3000];
+
+			foreach (var mask in masks)
+				if ((options & mask) != 0)
+					current &= ~mask;
+
+			return current | options;
+		}
+
 		private sealed class WindowsMsgBoxRequest
 		{
 			internal Script Owner;
@@ -220,7 +231,7 @@ namespace Keysharp.Builtins
 			owner.ScheduleBlockedEventSchedulers();
 		}
 
-		private static (DialogResult Result, bool TimedOut) ShowWindowsMsgBox(Script script, IWin32Window ownerWindow, string txt, string caption, MessageBoxButtons buttons, MessageBoxIcon icon, MessageBoxDefaultButton defaultbutton, MessageBoxOptions mbopts, uint timeoutMs)
+		private static (DialogResult Result, bool TimedOut, int Error) ShowWindowsMsgBox(Script script, IWin32Window ownerWindow, string txt, string caption, MessageBoxButtons buttons, MessageBoxIcon icon, MessageBoxDefaultButton defaultbutton, MessageBoxOptions mbopts, uint timeoutMs)
 		{
 			var request = new WindowsMsgBoxRequest()
 			{
@@ -239,8 +250,12 @@ namespace Keysharp.Builtins
 
 				_ = WindowsAPI.PostMessage(script.MainWindowHandle, (uint)WindowsAPI.WM_COMMNOTIFY, (nint)(uint)UserMessages.AHK_DIALOG, (nint)request.RequestId);
 
-				var ret = MessageBox.Show(ownerWindow, txt, caption, buttons, icon, defaultbutton, mbopts);
-				return (ret, request.TimedOut || (timeoutMs != 0 && ret == DialogResult.None));
+				// Pass the complete style through options so Windows, rather than WinForms' enum checks, decides validity.
+				var style = mbopts | (MessageBoxOptions)((int)buttons | (int)icon | (int)defaultbutton);
+				WindowsAPI.SetLastError(0);
+				var ret = MessageBox.Show(ownerWindow, txt, caption, MessageBoxButtons.OK, MessageBoxIcon.None, MessageBoxDefaultButton.Button1, style);
+				var error = ret == DialogResult.None && !request.TimedOut ? (int)WindowsAPI.GetLastError() : 0;
+				return (ret, request.TimedOut, error);
 			}
 			finally
 			{
@@ -839,6 +854,9 @@ namespace Keysharp.Builtins
 			if (!text.CoerceString(out var txt) || !title.CoerceString(out var caption))
 				return "";
 
+			if (title == null)
+				caption = A_ScriptName;
+
 			txt = txt.Truncate(8192); // 8192 is AHK MSGBOX_TEXT_SIZE
 			caption = caption.Truncate(1024); // 1024 is AHK DIALOG_TITLE_SIZE
 			var buttons = MessageBoxButtons.OK;
@@ -855,83 +873,50 @@ namespace Keysharp.Builtins
 			Control owner = GuiHelper.DialogOwner;
 			var timeout = 0.0;
 
-			if (caption?.Length == 0)
-				caption = A_ScriptName;
-
 			void HandleNumericOptions(int itemp)
 			{
 #if WINDOWS
-				switch (itemp & 0xf0000)
-				{
-					case 524288: mbopts |= MessageBoxOptions.RightAlign; break;
-
-					case 1048576: mbopts |= MessageBoxOptions.RtlReading; break;
-				}
-
-				switch (itemp & 0xf0)
-				{
-					case 16: icon = MessageBoxIcon.Hand; break;
-
-					case 32: icon = MessageBoxIcon.Question; break;
-
-					case 48: icon = MessageBoxIcon.Exclamation; break;
-
-					case 64: icon = MessageBoxIcon.Asterisk; break;
-				}
-
-				//switch (itemp & 0xf000)
-				//{
-				//  case 16384: help = true; break;
-				//}
-
-				switch (itemp & 0xf00)
-				{
-					case 256: defaultbutton = MessageBoxDefaultButton.Button2; break;
-
-					case 512: defaultbutton = MessageBoxDefaultButton.Button3; break;
-				}
+				var style = MergeMsgBoxOptions((int)buttons | (int)icon | (int)defaultbutton | (int)mbopts, itemp);
+				buttons = (MessageBoxButtons)(style & 0xF);
+				icon = (MessageBoxIcon)(style & 0xF0);
+				defaultbutton = (MessageBoxDefaultButton)(style & 0xF00);
+				mbopts = (MessageBoxOptions)(style & ~0xFFF);
 #else
-				switch (itemp & 0xf00)
-				{
-					case 256: defaultbuttonindex = 2; break;
+				if ((itemp & 0xF00) != 0)
+					defaultbuttonindex = ((itemp & 0xF00) >> 8) + 1;
 
-					case 512: defaultbuttonindex = 3; break;
+				switch (itemp & 0xF0)
+				{
+					case 16: icon = MessageBoxType.Error; break;
+					case 32: icon = MessageBoxType.Question; break;
+					case 48: icon = MessageBoxType.Warning; break;
+					case 64: icon = MessageBoxType.Information; break;
 				}
-#endif
 
-				switch (itemp & 0xf)
+				switch (itemp & 0xF)
 				{
-					case 0: buttons = MessageBoxButtons.OK; break;
-
 					case 1: buttons = MessageBoxButtons.OKCancel; break;
-
+					case 2: case 5: case 6: buttons = MessageBoxButtons.OK; break;
 					case 3: buttons = MessageBoxButtons.YesNoCancel; break;
-
 					case 4: buttons = MessageBoxButtons.YesNo; break;
-#if WINDOWS
-					case 2: buttons = MessageBoxButtons.AbortRetryIgnore; break;
-
-					case 5: buttons = MessageBoxButtons.RetryCancel; break;
-
-					case 6: buttons = MessageBoxButtons.CancelTryContinue; break;
-#endif
 				}
-
-				//System modal dialogs are no longer supported in Windows.
+#endif
 			}
 
 			if (Script.IsNumeric(options))
 			{
-				_ = options.TryCoerceInt(out var itemp);
-				HandleNumericOptions(itemp);
+				if (options.TryCoerceInt(out var itemp, allowFloat: false))
+					HandleNumericOptions(itemp);
+				else
+				{
+					_ = Errors.ValueErrorOccurred("Invalid option.", options);
+					return "";
+				}
 			}
 			else
 			{
 				if (!options.CoerceString(out var opts))
 					return "";
-
-				var iopt = 0;
-				var hadNumeric = false;
 
 				foreach (Range r in opts.AsSpan().SplitAny(Spaces))
 				{
@@ -940,19 +925,27 @@ namespace Keysharp.Builtins
 					if (opt.Length > 0)
 					{
 						long hwnd = 0;
+						var defaultIndex = 0;
 
-						if (Options.TryParse(opt, "Owner", ref hwnd)) { owner = Control.FromHandle(new nint(hwnd)); }
-						else if (Options.TryParse(opt, "T", ref timeout)) { }
-						else if (opt.ToString().TryParseLong(out var lopt))
+						if (Options.TryParse(opt, "Owner", ref hwnd, allowempty: true))
+							owner = Control.FromHandle(new nint(hwnd));
+						else if (Options.TryParse(opt, "T", ref timeout) && opt[1] != '-' && double.IsFinite(timeout)) { }
+						else if (Options.TryParse(opt, "Default", ref defaultIndex) && defaultIndex is >= 1 and <= 4)
 						{
-							hadNumeric = true;
-							iopt |= unchecked((int)lopt);
+#if WINDOWS
+							defaultbutton = (MessageBoxDefaultButton)((defaultIndex - 1) << 8);
+#else
+							defaultbuttonindex = defaultIndex;
+#endif
 						}
+						else if (opt.ToString().TryCoerceInt(out var numericOption, allowFloat: false))
+							HandleNumericOptions(numericOption);
 						else
 						{
 							switch (opt)
 							{
 								case var b when opt.Equals("ok", StringComparison.OrdinalIgnoreCase):
+								case var b2 when opt.Equals("o", StringComparison.OrdinalIgnoreCase):
 									buttons = MessageBoxButtons.OK;
 									break;
 
@@ -974,25 +967,37 @@ namespace Keysharp.Builtins
 									buttons = MessageBoxButtons.YesNo;
 									break;
 
-#if WINDOWS
 								case var b when opt.Equals("retrycancel", StringComparison.OrdinalIgnoreCase):
 								case var b2 when opt.Equals("r/c", StringComparison.OrdinalIgnoreCase):
 								case var b3 when opt.Equals("rc", StringComparison.OrdinalIgnoreCase):
+#if WINDOWS
 									buttons = MessageBoxButtons.RetryCancel;
+#else
+									buttons = MessageBoxButtons.OK;
+#endif
 									break;
 
 								case var b when opt.Equals("abortretryignore", StringComparison.OrdinalIgnoreCase):
 								case var b2 when opt.Equals("a/r/i", StringComparison.OrdinalIgnoreCase):
 								case var b3 when opt.Equals("ari", StringComparison.OrdinalIgnoreCase):
+#if WINDOWS
 									buttons = MessageBoxButtons.AbortRetryIgnore;
+#else
+									buttons = MessageBoxButtons.OK;
+#endif
 									break;
 
 								case var b when opt.Equals("canceltryagaincontinue", StringComparison.OrdinalIgnoreCase):
 								case var b2 when opt.Equals("c/t/c", StringComparison.OrdinalIgnoreCase):
 								case var b3 when opt.Equals("ctc", StringComparison.OrdinalIgnoreCase):
+#if WINDOWS
 									buttons = MessageBoxButtons.CancelTryContinue;
+#else
+									buttons = MessageBoxButtons.OK;
+#endif
 									break;
 
+#if WINDOWS
 								case var b when opt.Equals("iconx", StringComparison.OrdinalIgnoreCase):
 									icon = MessageBoxIcon.Hand;
 									break;
@@ -1009,17 +1014,10 @@ namespace Keysharp.Builtins
 									icon = MessageBoxIcon.Asterisk;
 									break;
 
-								case var b when opt.Equals("default2", StringComparison.OrdinalIgnoreCase):
-									defaultbutton = MessageBoxDefaultButton.Button2;
+								case var b when opt.Equals("icon", StringComparison.OrdinalIgnoreCase):
+									icon = MessageBoxIcon.None;
 									break;
 
-								case var b when opt.Equals("default3", StringComparison.OrdinalIgnoreCase):
-									defaultbutton = MessageBoxDefaultButton.Button3;
-									break;
-
-								case var b when opt.Equals("default4", StringComparison.OrdinalIgnoreCase):
-									defaultbutton = MessageBoxDefaultButton.Button4;
-									break;
 #else
 								case var b when opt.Equals("iconx", StringComparison.OrdinalIgnoreCase):
 									icon = MessageBoxType.Error;
@@ -1037,25 +1035,18 @@ namespace Keysharp.Builtins
 									icon = MessageBoxType.Information;
 									break;
 
-								case var b when opt.Equals("default2", StringComparison.OrdinalIgnoreCase):
-									defaultbuttonindex = 2;
+								case var b when opt.Equals("icon", StringComparison.OrdinalIgnoreCase):
+									icon = MessageBoxType.Information;
 									break;
 
-								case var b when opt.Equals("default3", StringComparison.OrdinalIgnoreCase):
-									defaultbuttonindex = 3;
-									break;
-
-								case var b when opt.Equals("default4", StringComparison.OrdinalIgnoreCase):
-									defaultbuttonindex = 4;
-									break;
 #endif
+								default:
+									_ = Errors.ValueErrorOccurred("Invalid option.", opts[r.Start..]);
+									return "";
 							}
 						}
 					}
 				}
-
-				if (hadNumeric)
-					HandleNumericOptions(iopt);
 			}
 
 #if !WINDOWS
@@ -1084,22 +1075,51 @@ namespace Keysharp.Builtins
 				txt = "Press OK to continue.";
 
 #if WINDOWS
-			var result = RunInterruptibleUIDialog(() =>
+			try
 			{
-				script.nMessageBoxes++;
+				var result = RunInterruptibleUIDialog(() =>
+				{
+					script.nMessageBoxes++;
 
-				try
+					try
+					{
+						var ownerWindow = (IWin32Window)(owner?.FindForm() ?? owner);
+						var timeoutMs = timeout != 0 ? (uint)Math.Clamp((long)Math.Round(timeout * 1000.0), 1L, int.MaxValue) : 0;
+						return ShowWindowsMsgBox(script, ownerWindow, txt, caption, buttons, icon, defaultbutton, mbopts, timeoutMs);
+					}
+					finally
+					{
+						script.nMessageBoxes--;
+					}
+				});
+
+				if (result.TimedOut)
+					return "Timeout";
+
+				if (result.Result == DialogResult.None)
 				{
-					var ownerWindow = (IWin32Window)(owner?.FindForm() ?? owner);
-					var timeoutMs = timeout != 0 ? (uint)Math.Clamp((long)Math.Round(timeout * 1000.0), 1L, int.MaxValue) : 0;
-					return ShowWindowsMsgBox(script, ownerWindow, txt, caption, buttons, icon, defaultbutton, mbopts, timeoutMs);
+					if (result.Error == 1438 || (int)buttons > 6) // ERROR_INVALID_MSGBOX_STYLE
+						_ = Errors.InvalidParameterErrorOccurred(3, "MsgBox", options);
+					else if (result.Error != 0)
+						_ = Errors.OSErrorOccurred(result.Error);
+					else
+						_ = Errors.OSErrorOccurredWithMessage("The message box could not be displayed.");
+
+					return "";
 				}
-				finally
-				{
-					script.nMessageBoxes--;
-				}
-			});
-			return result.TimedOut ? "Timeout" : MessageBoxResultName(result.Result);
+
+				return MessageBoxResultName(result.Result);
+			}
+			catch (ArgumentException)
+			{
+				_ = Errors.InvalidParameterErrorOccurred(3, "MsgBox", options);
+				return "";
+			}
+			catch (Win32Exception ex)
+			{
+				_ = Errors.OSErrorOccurred(ex);
+				return "";
+			}
 #else
 			return RunInterruptibleDialog(() =>
 			{
