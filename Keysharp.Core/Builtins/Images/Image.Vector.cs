@@ -40,10 +40,13 @@ namespace Keysharp.Builtins
 					Bounds = previous == null ? bounds : IntersectBounds(previous.Bounds, bounds);
 				}
 
+#if !WINDOWS
+				// A System.Drawing GraphicsPath has its own finalizer; an Eto path handler may not.
 				~VectorClip()
 				{
 					try { Path.Dispose(); } catch { }
 				}
+#endif
 			}
 
 			private readonly record struct VectorDrawingState(VectorTransform Transform, VectorClip Clip);
@@ -99,6 +102,7 @@ namespace Keysharp.Builtins
 				private object InvalidFillRule(object value) => Errors.ValueErrorOccurred(
 					$"Invalid FillRule {value}; accepted values are EvenOdd and NonZero.", value, this);
 
+				internal GraphicsPath Geometry => geometry;
 				internal GraphicsPath CloneGeometry() => ClonePath(geometry);
 				internal bool HasGeometry => hasGeometry;
 
@@ -556,43 +560,32 @@ namespace Keysharp.Builtins
 				if (!pathValue.HasGeometry || thicknessValue <= 0 || paint.IsTransparent)
 					return this;
 
-				var snapshot = pathValue.CloneGeometry();
+				var geometry = PathForDraw(pathValue);
 				var boundsKnown = pathValue.TryGetBounds(out var bounds);
 				var coverage = ExpandBounds(bounds, thicknessValue * 5 + 1);
 				var state = SnapshotDrawingState();
 
-				if (!eagerDraw)
-					pendingResources.Add(snapshot);
-
-				try
+				QueueDraw(bitmap =>
 				{
-					QueueDraw(bitmap =>
+					using var lease = DrawG(bitmap, state);
+					var graphics = lease.Graphics;
+
+					if (paint.IsSolid)
 					{
-						using var lease = DrawG(bitmap, state);
-						var graphics = lease.Graphics;
+						using var pen = new Pen(ImageHelper.ArgbToColor(paint.Solid), (float)thicknessValue);
+						ConfigureVectorPen(pen);
+						graphics.DrawPath(pen, geometry);
+					}
+					else
+					{
+						using var brush = CreateVectorBrush(paint.Brush, coverage);
+						using var pen = new Pen(brush, (float)thicknessValue);
+						ConfigureVectorPen(pen);
+						graphics.DrawPath(pen, geometry);
+					}
 
-						if (paint.IsSolid)
-						{
-							using var pen = new Pen(ImageHelper.ArgbToColor(paint.Solid), (float)thicknessValue);
-							ConfigureVectorPen(pen);
-							graphics.DrawPath(pen, snapshot);
-						}
-						else
-						{
-							using var brush = CreateVectorBrush(paint.Brush, coverage);
-							using var pen = new Pen(brush, (float)thicknessValue);
-							ConfigureVectorPen(pen);
-							graphics.DrawPath(pen, snapshot);
-						}
-
-						return bitmap;
-					});
-				}
-				finally
-				{
-					if (eagerDraw)
-						snapshot.Dispose();
-				}
+					return bitmap;
+				});
 
 				if (boundsKnown)
 					DamageVector(bounds, thicknessValue * 5, state);
@@ -615,36 +608,25 @@ namespace Keysharp.Builtins
 				if (!pathValue.HasGeometry || paint.IsTransparent)
 					return this;
 
-				var snapshot = pathValue.CloneGeometry();
+				var geometry = PathForDraw(pathValue);
 				var boundsKnown = pathValue.TryGetBounds(out var bounds);
 				var coverage = ExpandBounds(bounds, 1);
 				var state = SnapshotDrawingState();
 
-				if (!eagerDraw)
-					pendingResources.Add(snapshot);
-
-				try
+				QueueDraw(bitmap =>
 				{
-					QueueDraw(bitmap =>
+					using var lease = DrawG(bitmap, state);
+
+					if (paint.IsSolid)
+						lease.Graphics.FillPath(Brush(paint.Solid), geometry);
+					else
 					{
-						using var lease = DrawG(bitmap, state);
+						using var brush = CreateVectorBrush(paint.Brush, coverage);
+						lease.Graphics.FillPath(brush, geometry);
+					}
 
-						if (paint.IsSolid)
-							lease.Graphics.FillPath(Brush(paint.Solid), snapshot);
-						else
-						{
-							using var brush = CreateVectorBrush(paint.Brush, coverage);
-							lease.Graphics.FillPath(brush, snapshot);
-						}
-
-						return bitmap;
-					});
-				}
-				finally
-				{
-					if (eagerDraw)
-						snapshot.Dispose();
-				}
+					return bitmap;
+				});
 
 				if (boundsKnown)
 					DamageVector(bounds, 1, state);
@@ -655,6 +637,18 @@ namespace Keysharp.Builtins
 			}
 
 			private VectorDrawingState SnapshotDrawingState() => new(drawingTransform, drawingClip);
+
+			// A live surface draws at once, straight from the path. A queued draw replays later, so it takes a
+			// snapshot the script cannot change, freed with the queue.
+			private GraphicsPath PathForDraw(KeysharpPath path)
+			{
+				if (eagerDraw)
+					return path.Geometry;
+
+				var snapshot = path.CloneGeometry();
+				pendingResources.Add(snapshot);
+				return snapshot;
+			}
 
 			private static KeysharpObject TransformObject(VectorTransform transform)
 			{
@@ -735,11 +729,16 @@ namespace Keysharp.Builtins
 
 			private static bool TryVectorNumber(object value, string name, out double result)
 			{
-				if (!value.TryParseDouble(out result))
+				// Unset is an error rather than CoerceDouble's default: a polygon point without X or Y arrives as one.
+				if (value == null)
 				{
-					_ = Errors.TypeErrorOccurred($"{name} must be numeric.");
+					result = 0;
+					_ = Errors.TypeErrorOccurred(value, typeof(double));
 					return false;
 				}
+
+				if (!value.CoerceDouble(out result))
+					return false;
 
 				if (!double.IsFinite(result) || !float.IsFinite((float)result))
 				{
@@ -777,36 +776,15 @@ namespace Keysharp.Builtins
 
 			private static bool TryVectorColor(object value, string name, out int argb)
 			{
-				argb = 0;
-
-				if (value is long or int or double)
+				// A gradient stop names a colour; it has no default to fall back on.
+				if (value is null or "")
 				{
-					if (value is double number && !double.IsFinite(number))
-					{
-						_ = Errors.ValueErrorOccurred($"{name} must be a valid color.", value);
-						return false;
-					}
-
-					_ = value.TryCoerceLong(out var rawLong);
-					var raw = (uint)rawLong;
-					argb = unchecked((int)(raw > 0xFFFFFFu ? raw : 0xFF000000u | (raw & 0xFFFFFFu)));
-					return true;
+					argb = 0;
+					_ = Errors.ValueErrorOccurred($"{name} must be a valid color.", value);
+					return false;
 				}
 
-				if (value is string text && text.Length > 0)
-				{
-					if (Conversions.TryParseColor(text, out var color))
-					{
-						argb = color.ToArgb();
-						return true;
-					}
-
-					if (text.ParseLong().HasValue)
-						return TryParseColorArg(text, out argb);
-				}
-
-				_ = Errors.ValueErrorOccurred($"{name} must be a valid color.", value);
-				return false;
+				return TryParseColorArg(value, out argb, name: name);
 			}
 
 			private static bool TryVectorPaint(object value, int defaultColor, out VectorPaint paint)

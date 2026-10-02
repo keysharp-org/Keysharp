@@ -586,6 +586,12 @@ namespace Keysharp.Internals.Images
 #endif
 		}
 
+		/// <summary>A pure colour transform of one pixel packed as 0xAARRGGBB, for <see cref="MapPixelsArgb"/>.</summary>
+		internal interface IPixelMap
+		{
+			uint Map(uint argb);
+		}
+
 		/// <summary>
 		/// Returns a NEW bitmap that is <paramref name="src"/> with <paramref name="map"/> applied to every
 		/// pixel. Both the input and output pixels are packed as 0xAARRGGBB, so a caller writes a pure color
@@ -593,7 +599,8 @@ namespace Keysharp.Internals.Images
 		/// lock/translate scaffolding mirrors <c>ImageFinder.ReadArgb</c> (read) and <c>ApplyOpacity</c>
 		/// (write) so the three stay consistent across the System.Drawing and Eto backends.
 		/// </summary>
-		internal static Bitmap MapPixelsArgb(Bitmap src, Func<uint, uint> map)
+		/// <typeparam name="TMap">A struct, so the JIT compiles the loop per map and inlines its call.</typeparam>
+		internal static Bitmap MapPixelsArgb<TMap>(Bitmap src, TMap map) where TMap : struct, IPixelMap
 		{
 			if (src == null)
 				return null;
@@ -623,7 +630,7 @@ namespace Keysharp.Internals.Images
 						var drow = (uint*)(dBase + (nint)y * ddata.Stride);
 
 						for (var x = 0; x < w; x++)
-							drow[x] = map(srow[x]);
+							drow[x] = map.Map(srow[x]);
 					}
 				}
 			}
@@ -664,7 +671,7 @@ namespace Keysharp.Internals.Images
 							// TranslateDataToArgb un-premultiplies + reorders to 0xAARRGGBB; TranslateArgbToData
 							// re-premultiplies + reorders back into the destination's in-memory layout.
 							var argb = (uint)sdata.TranslateDataToArgb(*(int*)(srow + x * sBpp));
-							*(int*)(drow + x * dBpp) = ddata.TranslateArgbToData((int)map(argb));
+							*(int*)(drow + x * dBpp) = ddata.TranslateArgbToData((int)map.Map(argb));
 						}
 					}
 				}
@@ -756,12 +763,8 @@ namespace Keysharp.Internals.Images
 		{
 #if WINDOWS
 			var bmp = new Bitmap(Math.Max(1, w), Math.Max(1, h), PixelFormat.Format32bppArgb);
-			// GDI+ stamps a new bitmap with the DPI it read from the screen when it initialised, so in a
-			// per-monitor-DPI-aware process on a scaled display this canvas would be, e.g., 192 DPI. Drawing
-			// primitives take pixel coordinates (DPI-independent), but DrawString converts a point-size font
-			// through the Graphics' DpiY — so on a 192-DPI canvas "13pt" text renders at 2x and overflows the
-			// pixel-sized shapes around it. Pin every drawing canvas to 96 DPI so a point size maps to the same
-			// pixel count regardless of display scaling, keeping text and shapes on one coordinate system.
+			// GDI+ stamps a new bitmap with the screen's DPI. A canvas reports 96 instead, so whatever scales by it,
+			// such as DrawImage without a source rectangle or a saved file's resolution, does not depend on the display.
 			bmp.SetResolution(96f, 96f);
 			return bmp;
 #else
@@ -780,7 +783,11 @@ namespace Keysharp.Internals.Images
 				return;
 
 #if WINDOWS
-			if (((uint)argb >> 24) == 0)
+			// A straight-alpha bitmap stores the colour itself, so it is written exactly; Graphics.Clear would round a
+			// translucent colour through premultiplied alpha.
+			var exact = bmp.PixelFormat == PixelFormat.Format32bppArgb;
+
+			if (((uint)argb >> 24) == 0 || exact)
 			{
 				var data = bmp.LockBits(new Rectangle(region.X, region.Y, region.Width, region.Height), ImageLockMode.WriteOnly, bmp.PixelFormat);
 
@@ -789,14 +796,10 @@ namespace Keysharp.Internals.Images
 					unsafe
 					{
 						var stride = Math.Abs(data.Stride);
-						var rowBytes = data.Width * 4;
 						var start = data.Stride < 0 ? (byte*)data.Scan0 + (long)data.Stride * (data.Height - 1) : (byte*)data.Scan0;
 
-						if (stride == rowBytes)
-							NativeMemory.Clear(start, (nuint)((long)stride * data.Height));
-						else
-							for (var row = 0; row < data.Height; row++)
-								NativeMemory.Clear(start + (long)row * stride, (nuint)rowBytes);
+						for (var row = 0; row < data.Height; row++)
+							new Span<uint>(start + (long)row * stride, data.Width).Fill(exact ? (uint)argb : 0u);
 					}
 				}
 				finally

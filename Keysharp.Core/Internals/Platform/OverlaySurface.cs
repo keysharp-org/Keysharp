@@ -48,7 +48,7 @@ namespace Keysharp.Internals
 		}
 
 		/// <summary>Finishes pending drawing before a backing reads the pixels.</summary>
-		internal Bitmap PrepareForPresent() => disposed ? null : Image?.PrepareForPresent();
+		internal Bitmap PrepareForPresent() => disposed ? null : Image?.PrepareForPixelAccess();
 
 		/// <summary>Finishes drawing and releases any attached drawing context before another bitmap reads the pixels.</summary>
 		internal Bitmap PrepareForRead() => disposed ? null : Image?.PrepareForRead();

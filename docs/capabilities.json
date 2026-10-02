@@ -6735,7 +6735,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Captures, loads, creates, edits and searches images. Search methods return match objects. FromWindow Mode and search Direction use string names instead of numeric codes. Supports saving and CLR bitmap access. Image.FromWindow raises UnsupportedError on Wayland when neither window capture nor global frame geometry is available. Full on Windows, partial on Linux (X11); Wayland and macOS are unverified.",
+                     "notes":  "Captures, loads, creates, edits and searches images. Search methods return match objects. A color string that is neither a name nor a number, and an invalid DrawText font option, raise ValueError when the method is called. FromWindow Mode and search Direction use string names instead of numeric codes. Supports saving and CLR bitmap access. Image.FromWindow raises UnsupportedError on Wayland when neither window capture nor global frame geometry is available. Full on Windows, partial on Linux (X11); Wayland and macOS are unverified.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {

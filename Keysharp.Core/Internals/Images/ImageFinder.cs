@@ -33,17 +33,20 @@ namespace Keysharp.Internals.Images
 		internal int Height { get; }
 
 		/// <param name="ownsSource">Whether the finder disposes <paramref name="source"/> with itself.</param>
-		internal ImageFinder(Bitmap source, bool ownsSource = false)
+		/// <param name="region">The part of <paramref name="source"/> searched, which must lie inside it; the whole
+		/// bitmap when omitted. Matches are relative to its top-left.</param>
+		internal ImageFinder(Bitmap source, bool ownsSource = false, Rectangle? region = null)
 		{
-			Width = source.Width;
-			Height = source.Height;
+			var area = region ?? new Rectangle(0, 0, source.Width, source.Height);
+			Width = area.Width;
+			Height = area.Height;
 #if WINDOWS
 			bitmap = source;
 			ownsBitmap = ownsSource;
 			// 32bpp RGB and ARGB lock without a copy; GDI+ converts any other format to straight ARGB.
 			var format = (source.PixelFormat is PixelFormat.Format32bppArgb or PixelFormat.Format32bppRgb)
 						 ? source.PixelFormat : PixelFormat.Format32bppArgb;
-			data = source.LockBits(new Rectangle(0, 0, Width, Height), ImageLockMode.ReadOnly, format);
+			data = source.LockBits(area, ImageLockMode.ReadOnly, format);
 			scan0 = (byte*)data.Scan0;
 			stride = data.Stride;
 #else
@@ -55,8 +58,8 @@ namespace Keysharp.Internals.Images
 				source.Dispose();
 
 			data = bitmap.Lock();
-			scan0 = (byte*)data.Data;
 			stride = data.ScanWidth;
+			scan0 = (byte*)data.Data + (nint)area.Y * stride + area.X * 4;
 
 			// A premultiplied pixel that is not opaque has scaled-down color, so such a haystack is compared through
 			// a straight copy in the same byte order.

@@ -175,6 +175,15 @@ TextImage := Image.Create(120, 40)
 TextImage.DrawText("Vector", 2, 2, Linear, "s14", "Sans")
 Assert(HasAlpha(TextImage), A_LineNumber)
 
+; Every colour argument goes through one parser, and every number through one conversion.
+Throws(() => Image.Brush.LinearGradient(0, 0, 10, 0, "Rde", "Blue"), A_LineNumber, ValueError)
+Throws(() => Image.Brush.RadialGradient(5, 5, 4, 4, "Red", "0xZZ"), A_LineNumber, ValueError)
+Throws(() => Image.Create(8, 8).FillPath(Triangle, "Rde"), A_LineNumber, ValueError)
+Throws(() => Image.Create(8, 8).DrawPath(Triangle, "Rde"), A_LineNumber, ValueError)
+Throws(() => Image.Path().MoveTo("left", 1), A_LineNumber, TypeError)
+Throws(() => Image.Path().AddPolygon([{X: 1}, {X: 2, Y: 2}, {X: 3, Y: 1}]), A_LineNumber, TypeError)
+Throws(() => Image.Path().MoveTo(1, 1e300), A_LineNumber, ValueError)
+
 Throws(() => Image.Path("BadRule"), A_LineNumber, ValueError)
 Throws(() => Image.Path().LineTo(1, 1), A_LineNumber, ValueError)
 Throws(() => Image.Brush.LinearGradient(1, 1, 1, 1, "Red", "Blue"), A_LineNumber, ValueError)

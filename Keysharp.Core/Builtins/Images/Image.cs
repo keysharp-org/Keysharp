@@ -1,6 +1,7 @@
 // The nested Ks.Font class shadows the ambient toolkit Font type everywhere under Ks, and the text
 // rendering below wants the toolkit's.
 #if WINDOWS
+using System.Runtime.Intrinsics;
 using NativeFont = System.Drawing.Font;
 #else
 using NativeFont = Eto.Drawing.Font;
@@ -34,18 +35,14 @@ namespace Keysharp.Builtins
 		[UserDeclaredName("Image"), Experimental]
 		public partial class KeysharpImage : KeysharpObject, IDisposable
 		{
-			// The current materialized pixels. An owned image folds pending work into this bitmap; a borrowed
-			// overlay canvas keeps the platform bitmap identity fixed.
+			// The current pixels. A lazy image folds pending work into this bitmap; a borrowed overlay canvas keeps
+			// the platform bitmap identity fixed.
 			private Bitmap baseBitmap;
 
-			// Queued operations, applied in order on the next Materialize(). `inPlace` distinguishes draw ops
-			// from transforms and Clear, which return a new bitmap. Owned images can draw into their current base;
-			// a borrowed base is copied before any queued mutation.
-			private readonly List<(Func<Bitmap, Bitmap> op, bool inPlace)> pending = new ();
+			// Queued operations, applied in order on the next Materialize(). Each mutates the bitmap it is given and
+			// returns it, or returns a replacement. Only a lazy image queues, and a lazy image owns its base.
+			private readonly List<Func<Bitmap, Bitmap>> pending = new ();
 			private readonly List<IDisposable> pendingResources = new ();
-
-			// A materialized result kept separate only when the base cannot be replaced.
-			private Bitmap cached;
 
 			// Image pixels per native screen unit at capture time (1.0 for files and one-pixel-per-unit captures).
 			// All Image coordinates (Width/Height, Get/SetPixel, Search) are in the image's own pixels,
@@ -117,7 +114,9 @@ namespace Keysharp.Builtins
 			// pens. Every lease resets the accumulated transform before applying drawScale.
 			private Graphics liveGraphics;
 			private Bitmap liveGraphicsFor;
+#if WINDOWS
 			private bool liveHighQuality;
+#endif
 			private Dictionary<int, SolidBrush> brushCache;
 			private Dictionary<(int argb, float width), Pen> penCache;
 
@@ -150,40 +149,31 @@ namespace Keysharp.Builtins
 			// bitmaps (Create, Clear, Scale/Rotate/Flip) use ImageHelper.MakeGraphics directly and are unscaled.
 			private GraphicsLease DrawG(Bitmap b, VectorDrawingState state, bool highQuality = true)
 			{
-				Graphics g;
-				// A Graphics is reusable only while its bitmap identity is stable. Borrowed bases and transform
-				// working bitmaps therefore get a transient context.
 #if WINDOWS
-				var reusable = eagerDraw || (ownsBitmap && ReferenceEquals(b, baseBitmap));
+				// Every draw targets the base, so its Graphics is kept until the base is replaced.
+				if (liveGraphics == null || !ReferenceEquals(liveGraphicsFor, b))
+				{
+					ReleaseLiveGraphics();
+					liveGraphics = ImageHelper.MakeGraphics(b, highQuality);
+					liveGraphicsFor = b;
+					liveHighQuality = highQuality;
+				}
+				else if (liveHighQuality != highQuality)
+				{
+					ImageHelper.ConfigureGraphics(liveGraphics, highQuality);
+					liveHighQuality = highQuality;
+				}
+
+				var g = liveGraphics;
+				var owned = false;
 #else
-				var reusable = false;
+				var g = ImageHelper.MakeGraphics(b, highQuality);
+				var owned = true;
 #endif
-
-				if (!reusable)
-				{
-					g = ImageHelper.MakeGraphics(b, highQuality);
-				}
-				else
-				{
-					if (liveGraphics == null || !ReferenceEquals(liveGraphicsFor, b))
-					{
-						ReleaseLiveGraphics();
-						liveGraphics = ImageHelper.MakeGraphics(b, highQuality);
-						liveGraphicsFor = b;
-						liveHighQuality = highQuality;
-					}
-					else if (liveHighQuality != highQuality)
-					{
-						ImageHelper.ConfigureGraphics(liveGraphics, highQuality);
-						liveHighQuality = highQuality;
-					}
-
-					g = liveGraphics;
-				}
 
 				// Every operation reapplies its captured transform and clip state.
 				ImageHelper.PushDrawTransform(g);
-				var lease = new GraphicsLease(g, !reusable);
+				var lease = new GraphicsLease(g, owned);
 
 				try
 				{
@@ -194,7 +184,7 @@ namespace Keysharp.Builtins
 				{
 					lease.Dispose();
 
-					if (reusable)
+					if (!owned)
 						ReleaseLiveGraphics();
 
 					throw;
@@ -271,15 +261,13 @@ namespace Keysharp.Builtins
 				return bitmap;
 			}
 
-			// Windows presents a DIB synchronously and can keep its Graphics attached after flushing queued work.
-			// Eto contexts are already per-operation, but releasing here keeps this boundary correct if that changes.
-			internal Bitmap PrepareForPresent()
+			// Materializes pending work for pixel access that ends before the next draw: a present, or a pixel read or
+			// write inside this class. Flushing is enough, so the retained Graphics survives; Eto retains none.
+			internal Bitmap PrepareForPixelAccess()
 			{
 				var bitmap = Materialize();
 #if WINDOWS
 				liveGraphics?.Flush(System.Drawing.Drawing2D.FlushIntention.Sync);
-#else
-				ReleaseLiveGraphics();
 #endif
 				return bitmap;
 			}
@@ -385,10 +373,8 @@ namespace Keysharp.Builtins
 			{
 				if (source != null)
 				{
-					// Re-initialising a borrowed canvas would point this image at a different bitmap while the
-					// backing kept presenting the old one — draws would silently stop appearing on screen, and
-					// the newly assigned bitmap would never be freed (ownsBitmap stays false). Reachable since
-					// Overlay.Canvas began handing this object to scripts, which can call __New explicitly.
+					// A script can call __New on the Overlay.Canvas it holds. Re-initialising that borrowed canvas would
+					// point it at a bitmap the backing never presents and never frees, since ownsBitmap is false.
 					if (!ownsBitmap)
 						return Errors.ValueErrorOccurred(
 							"An Overlay canvas cannot be re-initialised; use Overlay.SetImage to replace its content.");
@@ -519,8 +505,8 @@ namespace Keysharp.Builtins
 					{
 						// Client-area capture (X11 XGetImage, or KWin Wayland without decorations): the captured pixels are
 						// already the client area natively (no crop), beginning at the CLIENT top-left and smaller than the
-						// frame. Prefer the compositor's reported client position (now derived from clientPos/clientSize
-						// when KWin doesn't expose clientGeometry); if it's still unreliable (equals the frame), derive the
+						// frame. Prefer the compositor's reported client position (derived from clientPos/clientSize
+						// when KWin doesn't expose clientGeometry); if it's unreliable (equals the frame), derive the
 						// insets from the capture: the client image is smaller than the frame by the borders, so
 						// side = (frameW - capW)/2 and titleTop = (frameH - capH) - side.
 						var clientPt = w.ClientToScreen();
@@ -762,7 +748,6 @@ namespace Keysharp.Builtins
 				// can upscale for accuracy without their coordinates drifting.
 				scaleX *= sx;
 				scaleY *= sy;
-				Invalidate();
 				return this;
 			}
 
@@ -789,7 +774,6 @@ namespace Keysharp.Builtins
 
 				originValid = false;
 				scaleValid = false;
-				Invalidate();
 				return this;
 			}
 
@@ -806,7 +790,6 @@ namespace Keysharp.Builtins
 					return this;
 
 				originValid = false;
-				Invalidate();
 				return this;
 			}
 
@@ -831,7 +814,6 @@ namespace Keysharp.Builtins
 				// position. (CropBitmap clamps a negative start to 0, so clamp here to match.)
 				originX += (int)Math.Round(Math.Max(0, cx) / scaleX);
 				originY += (int)Math.Round(Math.Max(0, cy) / scaleY);
-				Invalidate();
 				return this;
 			}
 
@@ -872,7 +854,6 @@ namespace Keysharp.Builtins
 				// scaleX/scaleY exactly as Scale does so consumers (OCR) recover native units after the resize.
 				scaleX *= (double)nw / curW;
 				scaleY *= (double)nh / curH;
-				Invalidate();
 				return this;
 			}
 
@@ -912,6 +893,15 @@ namespace Keysharp.Builtins
 
 				QueueDraw(b =>
 				{
+#if WINDOWS
+					// Any other format could not hold the cleared colour's alpha exactly, so it gets a new canvas.
+					if (b.PixelFormat == PixelFormat.Format32bppArgb)
+					{
+						ImageHelper.ClearInPlace(b, argb, new PixelRect(0, 0, b.Width, b.Height));
+						return b;
+					}
+
+#endif
 					var dst = ImageHelper.NewArgbCanvas(b.Width, b.Height);
 
 					if (((uint)argb >> 24) != 0)
@@ -921,7 +911,7 @@ namespace Keysharp.Builtins
 					}
 
 					return dst;
-				}, inPlace: false);
+				});
 				return this;
 			}
 
@@ -1024,11 +1014,21 @@ namespace Keysharp.Builtins
 					using var gl = DrawG(b, state, highQuality: !state.Transform.IsAxisAligned);
 					var g = gl.Graphics;
 					var brush = Brush(argb);
-					var stroke = (float)Math.Min(t, Math.Min(rect.Width, rect.Height));
-					g.FillRectangle(brush, new RectangleF(rect.X, rect.Y, rect.Width, stroke));
-					g.FillRectangle(brush, new RectangleF(rect.X, rect.Bottom - stroke, rect.Width, stroke));
-					g.FillRectangle(brush, new RectangleF(rect.X, rect.Y, stroke, rect.Height));
-					g.FillRectangle(brush, new RectangleF(rect.Right - stroke, rect.Y, stroke, rect.Height));
+					var stroke = (float)t;
+
+					// The bars do not overlap, so a translucent colour paints every pixel once. A stroke that meets
+					// itself fills the whole rectangle.
+					if (2 * stroke >= rect.Width || 2 * stroke >= rect.Height)
+						g.FillRectangle(brush, rect);
+					else
+					{
+						var side = rect.Height - 2 * stroke;
+						g.FillRectangle(brush, new RectangleF(rect.X, rect.Y, rect.Width, stroke));
+						g.FillRectangle(brush, new RectangleF(rect.X, rect.Bottom - stroke, rect.Width, stroke));
+						g.FillRectangle(brush, new RectangleF(rect.X, rect.Y + stroke, stroke, side));
+						g.FillRectangle(brush, new RectangleF(rect.Right - stroke, rect.Y + stroke, stroke, side));
+					}
+
 					return b;
 				});
 				DamageVector(rect, 0, state);   // The stroke is drawn inside rect, so the rect itself bounds it.
@@ -1236,7 +1236,8 @@ namespace Keysharp.Builtins
 				var px = textOrigin.X;
 				var py = textOrigin.Y;
 
-				if (!SplitFontArgs(options, fontName, out var fontOptions, out var fontFamily))
+				if (!SplitFontArgs(options, fontName, out var fontOptions, out var fontFamily)
+						|| !TryGetImageFont(fontOptions, fontFamily, out var font, out var quality))
 					return this;
 
 				//A Ks.Font in the options slot carries its own colour, which is the one thing the option string
@@ -1255,7 +1256,6 @@ namespace Keysharp.Builtins
 				{
 					using var gl = DrawG(b, state);
 					var g = gl.Graphics;
-					var (f, quality) = CreateFont(fontOptions, fontFamily);
 #if WINDOWS
 					ConfigureFontGraphics(g, quality);
 #endif
@@ -1263,14 +1263,14 @@ namespace Keysharp.Builtins
 					var measured = !paint.IsSolid || damage != null;
 
 					if (measured)
-						sz = ImageHelper.MeasureText(g, f, s);
+						sz = ImageHelper.MeasureText(g, font, s);
 
 					if (paint.IsSolid)
 					{
 #if WINDOWS
-						g.DrawString(s, f, Brush(paint.Solid), (float)px, (float)py);
+						g.DrawString(s, font, Brush(paint.Solid), (float)px, (float)py);
 #else
-						g.DrawText(f, Brush(paint.Solid), (float)px, (float)py, s);
+						g.DrawText(font, Brush(paint.Solid), (float)px, (float)py, s);
 #endif
 					}
 					else
@@ -1279,16 +1279,14 @@ namespace Keysharp.Builtins
 							Math.Max(2, sz.Height / 2));
 						using var brush = CreateVectorBrush(paint.Brush, coverage);
 #if WINDOWS
-						g.DrawString(s, f, brush, (float)px, (float)py);
+						g.DrawString(s, font, brush, (float)px, (float)py);
 #else
-						g.DrawText(f, brush, (float)px, (float)py, s);
+						g.DrawText(font, brush, (float)px, (float)py, s);
 #endif
 					}
 
-					// Measure on the Graphics that just drew, rather than through MeasureTextCore: that builds a
-					// throwaway surface and a Graphics for it, so tracking damage for a HUD's text cost more than
-					// drawing the text did. It has to happen inside the op because this is the only place a
-					// Graphics is in hand — which is also why only a presented surface pays for it at all.
+					// Measured on the Graphics that drew, the one place a Graphics is in hand, so only a presented
+					// surface pays for it.
 					if (damage != null)
 					{
 						// Measured extents are the logical box; italics, swashes and negative-left-bearing
@@ -1306,17 +1304,17 @@ namespace Keysharp.Builtins
 
 			/// <summary>Measures the size <paramref name="text"/> would occupy when drawn with the given font
 			/// (same <paramref name="options"/>/<paramref name="fontName"/> convention as <see cref="DrawText"/>)
-			/// and returns it as a <c>{Width, Height}</c> object. The size is in the image's own draw units (96-DPI
-			/// pixels), matching DrawText and the pixel-coordinate shapes — use it to centre or align text
-			/// before drawing.</summary>
+			/// and returns it as a <c>{Width, Height}</c> object. The size is in draw units, matching DrawText and
+			/// the pixel-coordinate shapes — use it to centre or align text before drawing.</summary>
 			public object MeasureText(object text, object options = null, object fontName = null)
 			{
 				ThrowIfDisposed();
 
-				if (!SplitFontArgs(options, fontName, out var o, out var n) || !text.CoerceString(out var s))
+				if (!SplitFontArgs(options, fontName, out var o, out var n) || !text.CoerceString(out var s)
+						|| !TryGetImageFont(o, n, out var font, out var quality))
 					return DefaultObject;
 
-				var (w, h) = MeasureTextCore(s, o, n);
+				var (w, h) = MeasureWithFont(s, font, quality);
 				return MakeSize(w, h);
 			}
 
@@ -1349,21 +1347,32 @@ namespace Keysharp.Builtins
 				return true;
 			}
 
-			// Pixel size of text in the given font, measured on a throwaway 96-DPI surface so it matches
-			// DrawText and the pixel shapes. (0,0) for empty text. Shared by Image and Overlay MeasureText;
-			// independent of any draw scale, so an Overlay gets back its logical text size.
+			// Pixel size of text in the given font options, as DrawText lays it out at a draw scale of 1. (0,0) for
+			// empty text or after a font-option error the script continued.
 			internal static (double w, double h) MeasureTextCore(string text, string options, string fontName)
+				=> TryGetImageFont(options, fontName, out var font, out var quality)
+				   ? MeasureWithFont(text, font, quality) : (0.0, 0.0);
+
+#if WINDOWS
+			// Measuring needs a Graphics but no surface of its own, so each thread keeps one, on a 1x1 bitmap the
+			// Graphics keeps alive.
+			[ThreadStatic] private static Graphics measureGraphics;
+#endif
+
+			private static (double w, double h) MeasureWithFont(string text, NativeFont font, int? quality)
 			{
 				if (string.IsNullOrEmpty(text))
 					return (0.0, 0.0);
 
-				var (f, quality) = CreateFont(options, fontName);
+#if WINDOWS
+				var g = measureGraphics ??= ImageHelper.MakeGraphics(ImageHelper.NewArgbCanvas(1, 1));
+				ConfigureFontGraphics(g, quality);
+#else
+				// An Eto Graphics on a bitmap holds backend locks, so it is not kept between calls.
 				using var bmp = ImageHelper.NewArgbCanvas(1, 1);
 				using var g = ImageHelper.MakeGraphics(bmp);
-#if WINDOWS
-				ConfigureFontGraphics(g, quality);
 #endif
-				var sz = ImageHelper.MeasureText(g, f, text);
+				var sz = ImageHelper.MeasureText(g, font, text);
 				return (sz.Width, sz.Height);
 			}
 
@@ -1440,20 +1449,47 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>Queues a desaturation to grayscale: each pixel's R, G and B become the luminance
-			/// <c>round(0.299 R + 0.587 G + 0.114 B)</c>; alpha is preserved. Lazy and chainable.</summary>
+			/// <c>0.299 R + 0.587 G + 0.114 B</c>, rounded half up as AutoHotkey's Round does; alpha is preserved.
+			/// Lazy and chainable.</summary>
 			public object Grayscale()
 			{
 				ThrowIfDisposed();
-				if (!QueueTransform(b => ImageHelper.MapPixelsArgb(b, p =>
-				{
-					uint a = (p >> 24) & 0xFF, r = (p >> 16) & 0xFF, g = (p >> 8) & 0xFF, bl = p & 0xFF;
-					var gray = (uint)Math.Clamp((int)Math.Round(0.299 * r + 0.587 * g + 0.114 * bl), 0, 255);
-					return (a << 24) | (gray << 16) | (gray << 8) | gray;
-				})))
-					return this;
 
-				Invalidate();
+				_ = QueueTransform(b => ImageHelper.MapPixelsArgb(b, new GrayscaleMap()));
 				return this;
+			}
+
+			private readonly struct GrayscaleMap : ImageHelper.IPixelMap
+			{
+				public uint Map(uint p)
+				{
+					uint r = (p >> 16) & 0xFF, g = (p >> 8) & 0xFF, b = p & 0xFF;
+					var gray = (299 * r + 587 * g + 114 * b + 500) / 1000;
+					return (p & 0xFF000000u) | (gray << 16) | (gray << 8) | gray;
+				}
+			}
+
+			// Maps each RGB channel through a 256-entry table and keeps alpha.
+			private readonly struct ChannelTableMap(byte[] table) : ImageHelper.IPixelMap
+			{
+				public uint Map(uint p) => (p & 0xFF000000u) | ((uint)table[(p >> 16) & 0xFF] << 16)
+					| ((uint)table[(p >> 8) & 0xFF] << 8) | table[p & 0xFF];
+			}
+
+			// Maps alpha through a 256-entry table and keeps RGB.
+			private readonly struct AlphaTableMap(byte[] table) : ImageHelper.IPixelMap
+			{
+				public uint Map(uint p) => ((uint)table[p >> 24] << 24) | (p & 0x00FFFFFFu);
+			}
+
+			private static byte[] ChannelTable(Func<int, int> channel)
+			{
+				var table = new byte[256];
+
+				for (var c = 0; c < table.Length; c++)
+					table[c] = (byte)Math.Clamp(channel(c), 0, 255);
+
+				return table;
 			}
 
 			/// <summary>Queues an alpha multiply: every pixel's alpha becomes <c>round(A * factor)</c> with
@@ -1468,14 +1504,9 @@ namespace Keysharp.Builtins
 					return this;
 
 				var f = Math.Clamp(fRaw, 0.0, 1.0);
-				if (!QueueTransform(b => ImageHelper.MapPixelsArgb(b, p =>
-				{
-					var a = (uint)Math.Clamp((int)Math.Round(((p >> 24) & 0xFF) * f), 0, 255);
-					return (a << 24) | (p & 0x00FFFFFFu);
-				})))
-					return this;
+				var map = new AlphaTableMap(ChannelTable(a => (int)Math.Round(a * f)));
 
-				Invalidate();
+				_ = QueueTransform(b => ImageHelper.MapPixelsArgb(b, map));
 				return this;
 			}
 
@@ -1491,17 +1522,9 @@ namespace Keysharp.Builtins
 
 				var amt = Math.Clamp(amtRaw, -1.0, 1.0);
 				var delta = (int)Math.Round(amt * 255);
-				if (!QueueTransform(b => ImageHelper.MapPixelsArgb(b, p =>
-				{
-					uint a = (p >> 24) & 0xFF;
-					var r = (uint)Math.Clamp((int)((p >> 16) & 0xFF) + delta, 0, 255);
-					var g = (uint)Math.Clamp((int)((p >> 8) & 0xFF) + delta, 0, 255);
-					var bl = (uint)Math.Clamp((int)(p & 0xFF) + delta, 0, 255);
-					return (a << 24) | (r << 16) | (g << 8) | bl;
-				})))
-					return this;
+				var map = new ChannelTableMap(ChannelTable(c => c + delta));
 
-				Invalidate();
+				_ = QueueTransform(b => ImageHelper.MapPixelsArgb(b, map));
 				return this;
 			}
 
@@ -1518,17 +1541,9 @@ namespace Keysharp.Builtins
 
 				var amt = Math.Clamp(amtRaw, -1.0, 1.0);
 				var factor = 1.0 + amt;
-				if (!QueueTransform(b => ImageHelper.MapPixelsArgb(b, p =>
-				{
-					uint a = (p >> 24) & 0xFF;
-					var r = (uint)Math.Clamp((int)Math.Round(((int)((p >> 16) & 0xFF) - 128) * factor + 128), 0, 255);
-					var g = (uint)Math.Clamp((int)Math.Round(((int)((p >> 8) & 0xFF) - 128) * factor + 128), 0, 255);
-					var bl = (uint)Math.Clamp((int)Math.Round(((int)(p & 0xFF) - 128) * factor + 128), 0, 255);
-					return (a << 24) | (r << 16) | (g << 8) | bl;
-				})))
-					return this;
+				var map = new ChannelTableMap(ChannelTable(c => (int)Math.Round((c - 128) * factor + 128)));
 
-				Invalidate();
+				_ = QueueTransform(b => ImageHelper.MapPixelsArgb(b, map));
 				return this;
 			}
 
@@ -1607,7 +1622,7 @@ namespace Keysharp.Builtins
 					return 0L;
 
 				// Hand a *copy* to the manager (not `bmp` itself) for two reasons: this image keeps
-				// ownership of its own cached bitmap, and the copy ctor forces a surface-backed bitmap
+				// ownership of its own bitmap, and the copy ctor forces a surface-backed bitmap
 				// (after a transform) to materialize its real backing store (e.g. a Gdk.Pixbuf on Linux)
 				// so the handle the manager extracts is valid. Do not "optimize" the copy away.
 				if (ImageHandleManager.TryAddBitmap(new Bitmap(bmp), ImageHandleKind.Bitmap, out var handle))
@@ -1637,8 +1652,8 @@ namespace Keysharp.Builtins
 					return Errors.ValueErrorOccurred("There is no image to display.");
 
 				// Snapshot the dimensions from this one materialized bitmap so the caption and the Picture size are
-				// provably the same source as the displayed pixels: ToBitmap() below re-materializes, but with no
-				// Invalidate() in between it returns the same cached bitmap, so imgW/imgH match the shown handle.
+				// provably the same source as the displayed pixels: nothing is queued before ToBitmap() below, so it
+				// returns the same bitmap and imgW/imgH match the shown handle.
 				int imgW = bmp.Width, imgH = bmp.Height;
 
 				// Converted before the handle is made, which returning early would otherwise leave behind.
@@ -1784,7 +1799,7 @@ namespace Keysharp.Builtins
 			public object GetPixel(object x, object y)
 			{
 				ThrowIfDisposed();
-				var bmp = PrepareForRead();
+				var bmp = PrepareForPixelAccess();
 
 				if (bmp == null)
 					return Errors.ValueErrorOccurred("There is no image to read.");
@@ -1803,7 +1818,7 @@ namespace Keysharp.Builtins
 			public object SetPixel(object x, object y, object color)
 			{
 				ThrowIfDisposed();
-				var bmp = PrepareForRead();
+				var bmp = PrepareForPixelAccess();
 
 				if (bmp == null)
 					return Errors.ValueErrorOccurred("There is no image to write.");
@@ -1818,9 +1833,6 @@ namespace Keysharp.Builtins
 					return this;
 
 				bmp.SetPixel(px, py, ImageHelper.ArgbToColor(argb));
-				// Persist the edit: bake the materialized result in as the new base so it survives a later
-				// Invalidate() (a no-op when there were no queued ops and `bmp` is the base, edited in place).
-				Bake();
 				// In canvas pixels already, so it bypasses Damage()'s draw-unit scaling. The one pixel is
 				// reported as a 1x1 rect; without this it is the only mutating op that changes a presented
 				// surface without saying so.
@@ -1861,20 +1873,15 @@ namespace Keysharp.Builtins
 				if (dir < 1)
 					return Errors.ValueErrorOccurred($"Unknown Direction \"{Errors.Describe(direction)}\". Expected {ImageFinder.DirectionNames}.", direction);
 
-				var haystack = PrepareForRead();
+				var haystack = PrepareForPixelAccess();
 
 				if (haystack == null)
 					return Errors.ValueErrorOccurred("There is no image to search.");
 
-				var (needleBmp, _, _) = LoadFromSource(needle);
+				var (needleBmp, ownsNeedle) = NeedleBitmap(needle);
 
 				if (needleBmp == null)
 					return Errors.ValueErrorOccurred("Could not load the search image.");
-
-				// Resolve the search surface inside the try so a throw while cropping can't leak the owned needle
-				// (the finally disposes both; surface stays null on the throw path).
-				Bitmap surface = null;
-				var ownedSurface = false;
 
 				try
 				{
@@ -1882,10 +1889,9 @@ namespace Keysharp.Builtins
 							!CoerceOptionalRegionArg(width, out var wi) || !CoerceOptionalRegionArg(height, out var hi))
 						return DefaultObject;
 
-					(surface, var offX, var offY, ownedSurface) = ResolveRegion(haystack, xi, yi, wi, hi);
+					var area = ResolveRegion(haystack, xi, yi, wi, hi);
 
-					// Empty region -> zero pixels -> no match.
-					if (surface == null)
+					if (area.Width <= 0 || area.Height <= 0)
 						return "";
 
 					var transColor = -1L;
@@ -1901,16 +1907,14 @@ namespace Keysharp.Builtins
 					if (!variation.CoerceLong(out var variationL, 0))
 						return DefaultObject;
 
-					using var finder = new ImageFinder(surface) { Variation = (byte)Math.Clamp(variationL, 0, 255) };
+					using var finder = new ImageFinder(haystack, region: area) { Variation = (byte)Math.Clamp(variationL, 0, 255) };
 					var loc = finder.Find(needleBmp, transColor, dir);
-					return loc.HasValue ? MakePoint(loc.Value.X + offX, loc.Value.Y + offY) : "";
+					return loc.HasValue ? MakePoint(loc.Value.X + area.X, loc.Value.Y + area.Y) : "";
 				}
 				finally
 				{
-					needleBmp.Dispose();
-
-					if (ownedSurface)
-						surface.Dispose();
+					if (ownsNeedle)
+						needleBmp.Dispose();
 				}
 			}
 
@@ -1936,20 +1940,16 @@ namespace Keysharp.Builtins
 				if (dir < 1)
 					return Errors.ValueErrorOccurred($"Unknown Direction \"{Errors.Describe(direction)}\". Expected {ImageFinder.DirectionNames}.", direction);
 
-				var haystack = PrepareForRead();
+				var haystack = PrepareForPixelAccess();
 
 				if (haystack == null)
 					return Errors.ValueErrorOccurred("There is no image to search.");
 
-				var (needleBmp, _, _) = LoadFromSource(needle);
+				var (needleBmp, ownsNeedle) = NeedleBitmap(needle);
 
 				if (needleBmp == null)
 					return Errors.ValueErrorOccurred("Could not load the search image.");
 
-				// Resolve the search surface inside the try so a throw while cropping can't leak the owned needle
-				// (the finally disposes both; surface stays null on the throw path).
-				Bitmap surface = null;
-				var ownedSurface = false;
 				var results = new Array();
 
 				try
@@ -1958,10 +1958,9 @@ namespace Keysharp.Builtins
 							!CoerceOptionalRegionArg(width, out var wi) || !CoerceOptionalRegionArg(height, out var hi))
 						return DefaultObject;
 
-					(surface, var offX, var offY, ownedSurface) = ResolveRegion(haystack, xi, yi, wi, hi);
+					var area = ResolveRegion(haystack, xi, yi, wi, hi);
 
-					// Empty region -> zero pixels -> no matches.
-					if (surface == null)
+					if (area.Width <= 0 || area.Height <= 0)
 						return results;
 
 					var transColor = -1L;
@@ -1977,20 +1976,18 @@ namespace Keysharp.Builtins
 					if (!variation.CoerceLong(out var variationL, 0))
 						return DefaultObject;
 
-					using var finder = new ImageFinder(surface) { Variation = (byte)Math.Clamp(variationL, 0, 255) };
+					using var finder = new ImageFinder(haystack, region: area) { Variation = (byte)Math.Clamp(variationL, 0, 255) };
 					var found = finder.FindAll(needleBmp, transColor, dir);
 
 					foreach (var p in found)
-						_ = results.Push(MakePoint(p.X + offX, p.Y + offY));
+						_ = results.Push(MakePoint(p.X + area.X, p.Y + area.Y));
 
 					return results;
 				}
 				finally
 				{
-					needleBmp.Dispose();
-
-					if (ownedSurface)
-						surface.Dispose();
+					if (ownsNeedle)
+						needleBmp.Dispose();
 				}
 			}
 
@@ -2021,53 +2018,38 @@ namespace Keysharp.Builtins
 				if (dir < 1 || dir > 4)
 					return Errors.ValueErrorOccurred($"Unknown Direction \"{Errors.Describe(direction)}\". Expected TopLeft, TopRight, BottomLeft or BottomRight.", direction);
 
-				var haystack = PrepareForRead();
+				var haystack = PrepareForPixelAccess();
 
 				if (haystack == null)
 					return Errors.ValueErrorOccurred("There is no image to search.");
 
-				Bitmap surface = null;
-				var ownedSurface = false;
+				if (!CoerceOptionalRegionArg(x, out var xi) || !CoerceOptionalRegionArg(y, out var yi) ||
+						!CoerceOptionalRegionArg(width, out var wi) || !CoerceOptionalRegionArg(height, out var hi))
+					return DefaultObject;
 
-				try
-				{
-					if (!CoerceOptionalRegionArg(x, out var xi) || !CoerceOptionalRegionArg(y, out var yi) ||
-							!CoerceOptionalRegionArg(width, out var wi) || !CoerceOptionalRegionArg(height, out var hi))
-						return DefaultObject;
+				var area = ResolveRegion(haystack, xi, yi, wi, hi);
 
-					(surface, var offX, var offY, ownedSurface) = ResolveRegion(haystack, xi, yi, wi, hi);
-
-					// Empty region -> zero pixels -> no match (and avoids reading a phantom pixel off-image).
-					if (surface == null)
-						return "";
-
-					if (!TryParseColorArg(color, out var target, unchecked((int)0xFF000000), allowTransparentEmpty: false))
-						return DefaultObject;
-
-					if (!variation.CoerceLong(out var variationL, 0))
-						return DefaultObject;
-
-					Point? loc;
-
-					// The haystack can be the surface the finder locks, so the matched pixel is read after it is released.
-					using (var finder = new ImageFinder(surface) { Variation = (byte)Math.Clamp(variationL, 0, 255) })
-						loc = finder.Find(ImageHelper.ArgbToColor(target), ltr: dir is 1 or 3, ttb: dir is 1 or 2);
-
-					if (loc.HasValue)
-					{
-						int ax = loc.Value.X + offX, ay = loc.Value.Y + offY;
-						// Report the actual pixel's full ARGB (what GetPixel would return), read from the haystack.
-						long argb = (long)(uint)haystack.GetPixel(ax, ay).ToArgb();
-						return MakePixel(ax, ay, argb);
-					}
-
+				if (area.Width <= 0 || area.Height <= 0)
 					return "";
-				}
-				finally
-				{
-					if (ownedSurface)
-						surface.Dispose();
-				}
+
+				if (!TryParseColorArg(color, out var target, unchecked((int)0xFF000000), allowTransparentEmpty: false))
+					return DefaultObject;
+
+				if (!variation.CoerceLong(out var variationL, 0))
+					return DefaultObject;
+
+				Point? loc;
+
+				// The finder locks the haystack, so the matched pixel is read after it is released.
+				using (var finder = new ImageFinder(haystack, region: area) { Variation = (byte)Math.Clamp(variationL, 0, 255) })
+					loc = finder.Find(ImageHelper.ArgbToColor(target), ltr: dir is 1 or 3, ttb: dir is 1 or 2);
+
+				if (!loc.HasValue)
+					return "";
+
+				int ax = loc.Value.X + area.X, ay = loc.Value.Y + area.Y;
+				// Report the actual pixel's full ARGB (what GetPixel would return), read from the haystack.
+				return MakePixel(ax, ay, (long)(uint)haystack.GetPixel(ax, ay).ToArgb());
 			}
 
 			private static bool ParseSearchDirection(object direction, out int dir)
@@ -2103,32 +2085,25 @@ namespace Keysharp.Builtins
 				return true;
 			}
 
-			// Resolves the optional (x, y, width, height) region arguments into the bitmap the finder scans: the
-			// full materialized haystack when all four are omitted, else a clamped crop (each argument defaults
-			// independently — origin to 0, size to the far edge). Returns the pixel offset to add back to a match
-			// so reported coordinates stay absolute, and whether the surface is a fresh copy the caller must
-			// dispose (the crop) or the shared haystack (must not dispose). Returns a null surface when the region
-			// is empty after clamping (a non-positive size, or an origin at/past an edge) — that genuinely contains
-			// zero pixels, so the caller short-circuits to "no match" rather than cropping to a degenerate 1x1
-			// canvas the finder would spuriously match (which would then throw when read back at absolute
-			// coordinates off the image).
-			private static (Bitmap surface, int offX, int offY, bool owned) ResolveRegion(Bitmap haystack,
-				int? x, int? y, int? width, int? height)
+			// Resolves the optional (x, y, width, height) region arguments into the rectangle of the haystack the
+			// finder scans, clamped to it. Each defaults independently: the origin to 0, the size to the far edge.
+			// A non-positive size, or an origin at or past an edge, leaves an empty rectangle, which holds no pixels
+			// and so no match.
+			private static Rectangle ResolveRegion(Bitmap haystack, int? x, int? y, int? width, int? height)
 			{
-				if (x == null && y == null && width == null && height == null)
-					return (haystack, 0, 0, false);
-
-				// Match CropBitmap's clamping so the offset we add back equals the crop's real origin.
 				int rx = Math.Clamp(x ?? 0, 0, haystack.Width);
 				int ry = Math.Clamp(y ?? 0, 0, haystack.Height);
 				int rw = Math.Clamp(width ?? haystack.Width - rx, 0, haystack.Width - rx);
 				int rh = Math.Clamp(height ?? haystack.Height - ry, 0, haystack.Height - ry);
-
-				if (rw <= 0 || rh <= 0)
-					return (null, 0, 0, false);
-
-				return (ImageHelper.CropBitmap(haystack, rx, ry, rw, rh), rx, ry, true);
+				return new Rectangle(rx, ry, rw, rh);
 			}
+
+			// The needle's bitmap, and whether it is a copy the caller disposes. Another Image is read where it lies;
+			// this one is copied, because the finder holds its bitmap locked.
+			private (Bitmap bmp, bool owned) NeedleBitmap(object needle)
+				=> needle is KeysharpImage image && !ReferenceEquals(image, this)
+				   ? (image.PrepareForPixelAccess(), false)
+				   : (LoadFromSource(needle).bmp, true);
 
 			// A {X, Y} match object with own properties.
 			private static KeysharpObject MakePoint(long x, long y)
@@ -2185,7 +2160,7 @@ namespace Keysharp.Builtins
 				if (bpp != 1 && bpp != 4)
 					return Errors.ValueErrorOccurred("GetPixelData supports only 1 (grayscale) or 4 (RGBA) bytes per pixel.");
 
-				var bmp = PrepareForRead();
+				var bmp = PrepareForPixelAccess();
 
 				if (bmp == null)
 					return Errors.ValueErrorOccurred("There is no image to read.");
@@ -2229,7 +2204,7 @@ namespace Keysharp.Builtins
 			/// <c>Width * Height * bytesPerPixel</c> bytes for the image's current (materialized) dimensions (a
 			/// ValueError otherwise); it is not resized. <paramref name="bytesPerPixel"/> (default 4) selects the source layout, matching
 			/// GetPixelData: <c>1</c> = 8-bit grayscale (each byte becomes an opaque gray R=G=B=byte, A=255),
-			/// <c>4</c> = R, G, B, A byte order. The change is baked in immediately (like <see cref="SetPixel"/>).
+			/// <c>4</c> = R, G, B, A byte order. The change is applied immediately (like <see cref="SetPixel"/>).
 			/// Returns this image.
 			///
 			/// <para>On Windows the pixels are written in place through a 32bpp lock. On the Eto backends
@@ -2262,7 +2237,7 @@ namespace Keysharp.Builtins
 
 				nint ptr = new nint(addr);//TryGetPtrProperty already rejected a null (0) address.
 
-				var bmp = PrepareForRead();
+				var bmp = PrepareForPixelAccess();
 
 				if (bmp == null)
 					return Errors.ValueErrorOccurred("There is no image to write.");
@@ -2279,15 +2254,11 @@ namespace Keysharp.Builtins
 				{
 					ImageHelper.WriteBufferToBitmap(bmp, (byte*)ptr, bpp);
 				}
-
-				// Persist the edit as the new base so it survives a later Invalidate() (mirrors SetPixel/Bake):
-				// a no-op when `bmp` is the base (edited in place), otherwise cached becomes the base.
-				Bake();
 #else
 				// Eto's Lock() exposes the bitmap's native storage, which for a loaded 24-bit image is a 3bpp
 				// Pixbuf; writing 4-byte pixels into that would corrupt/overrun it. Since the buffer describes
 				// every pixel anyway, write into a fresh guaranteed-32bpp canvas and swap it in as the new base
-				// rather than writing in place (mirrors the Bake swap: dispose old base/cached, clear the queue).
+				// rather than writing in place. Eto retains no Graphics, and the queue is already empty.
 				var canvas = ImageHelper.NewArgbCanvas(w, h);
 
 				unsafe
@@ -2295,14 +2266,8 @@ namespace Keysharp.Builtins
 					ImageHelper.WriteBufferToBitmap(canvas, (byte*)ptr, bpp);
 				}
 
-				cached?.Dispose();
-				cached = null;
-				ReleaseLiveGraphics();   // bound to the base about to be replaced
-
-				baseBitmap?.Dispose();
+				baseBitmap.Dispose();
 				baseBitmap = canvas;
-				pending.Clear();
-				DisposePendingResources();
 				SyncGcPressure();
 #endif
 				return this;
@@ -2331,6 +2296,12 @@ namespace Keysharp.Builtins
 					{
 						var row = (uint*)(basePtr + (nint)y * data.Stride);
 						var dstRow = y * w;
+
+						if (bpp == 4)
+						{
+							SwapRedBlue(row, (uint*)dst + dstRow, w);
+							continue;
+						}
 
 						for (var x = 0; x < w; x++)
 							EmitPixel(dst, dstRow + x, row[x], bpp);
@@ -2385,6 +2356,26 @@ namespace Keysharp.Builtins
 #endif
 			}
 
+#if WINDOWS
+			// Format32bppArgb rows hold B, G, R, A bytes; RGBA output swaps the first and third byte of each pixel.
+			private static unsafe void SwapRedBlue(uint* src, uint* dst, int width)
+			{
+				var x = 0;
+
+				// The shuffle indices are written inline: the JIT emits a single byte shuffle only for constant indices.
+				if (Vector128.IsHardwareAccelerated)
+					for (; x <= width - 4; x += 4)
+						Vector128.Shuffle(Vector128.Load((byte*)(src + x)),
+							Vector128.Create((byte)2, 1, 0, 3, 6, 5, 4, 7, 10, 9, 8, 11, 14, 13, 12, 15)).Store((byte*)(dst + x));
+
+				for (; x < width; x++)
+				{
+					var p = src[x];
+					dst[x] = (p & 0xFF00FF00u) | ((p >> 16) & 0xFFu) | ((p & 0xFFu) << 16);
+				}
+			}
+
+#endif
 			// Writes one 0xAARRGGBB pixel into dst at pixel index idx in the bpp layout: grayscale uses the
 			// integer luminance 0.30R+0.59G+0.11B; RGBA writes R,G,B,A in that byte order. Aggressively inlined
 			// to remove the call overhead; the bpp test then runs inline per pixel but is perfectly predicted
@@ -2472,101 +2463,40 @@ namespace Keysharp.Builtins
 				return (null, 1.0, 1.0);
 			}
 
-			// Applies queued work in order. Owned images fold the result into their base; a borrowed base uses a
-			// separate result so platform-owned pixels are never replaced.
+			// Applies queued work in order, folding each result into the base as soon as it is produced, so the draws
+			// after a transform keep reusing the base's Graphics. Only a lazy image queues, and it owns its base. If an
+			// op throws, what already ran stays; draw arguments are validated before queueing, so that is a backend
+			// failure.
 			private Bitmap Materialize()
 			{
 				if (disposed || baseBitmap == null)
 					return null;
 
-				if (cached != null)
-					return cached;
-
 				if (pending.Count == 0)
 					return baseBitmap;
 
-				var current = baseBitmap;
-				var writable = false;
-
 				try
 				{
-					foreach (var (op, inPlace) in pending)
+					foreach (var op in pending)
 					{
-						if (!inPlace)
-							ReleaseLiveGraphics();
+						var next = op(baseBitmap);
 
-						if (inPlace && !writable)
+						if (next != null && !ReferenceEquals(next, baseBitmap))
 						{
-							// Owned images fold draws directly into the base. A draw throwing during replay can leave
-							// earlier operations applied, but draw arguments are validated before queueing.
-							if (!ownsBitmap)
-							{
-								// A borrowed base (an Overlay canvas) is never ours to mutate through this path.
-								current = new Bitmap(current);
-#if WINDOWS
-								// GDI+ re-stamps a `new Bitmap(Image)` copy with the current screen DPI, discarding the
-								// source's resolution. DrawString scales a point-size font by the graphics' DpiY, so on a
-								// scaled display this would silently double text over the pixel-sized shapes. Restore the
-								// base's resolution (96 for a drawing canvas) so text renders at the canvas's own DPI.
-								current.SetResolution(baseBitmap.HorizontalResolution, baseBitmap.VerticalResolution);
-#endif
-							}
-
-							writable = true;
+							ReleaseLiveGraphics();
+							baseBitmap.Dispose();
+							baseBitmap = next;
 						}
-
-						var next = op(current);
-
-						if (next == null || ReferenceEquals(next, current))
-							continue;
-
-						// A transform returned a new bitmap. The base is replaced only by the fold below.
-						if (writable && !ReferenceEquals(current, baseBitmap))
-							current.Dispose();
-
-						current = next;
-						writable = true;
 					}
 				}
-				catch
+				finally
 				{
-					// An op threw partway through; don't leak the work-in-progress copy, and never free the base
-					// (draws may have been running straight into it). `cached` is left null so a later call can
-					// retry; what already ran on the base stays, as the comment on the draw path above explains.
-					if (writable && !ReferenceEquals(current, baseBitmap))
-						current?.Dispose();
-
-					pending.Clear();
-					DisposePendingResources();
-					throw;
-				}
-
-				// Fold replayed content into the base so interleaved draws and reads stay linear. A borrowed Overlay
-				// base is excluded because folding would dispose its presentable memory.
-				if (ownsBitmap)
-				{
-					if (!ReferenceEquals(current, baseBitmap))
-					{
-						ReleaseLiveGraphics();   // bound to the base being replaced
-						baseBitmap.Dispose();
-						baseBitmap = current;
-					}
-
-					cached = null;
 					pending.Clear();
 					DisposePendingResources();
 					SyncGcPressure();
-					return baseBitmap;
 				}
 
-				// Every queued transform was a no-op on this base: hand back a distinct, owned copy so `cached`
-				// stays disposable independently of the base (Invalidate/SetPixel rely on that).
-				if (ReferenceEquals(current, baseBitmap))
-					current = new Bitmap(baseBitmap);
-
-				cached = current;
-				SyncGcPressure();
-				return cached;
+				return baseBitmap;
 			}
 
 			/// <summary>
@@ -2594,48 +2524,18 @@ namespace Keysharp.Builtins
 				};
 			}
 
-			// The image's current pixels without a copy. The caller must not dispose the returned bitmap or retain
-			// it past the synchronous operation.
-			internal Bitmap PeekBitmap() => Materialize();
-
-			// Applies every queued op into the base bitmap and clears the queue, so repeated draw-then-read
-			// cycles (an on-screen Overlay redrawing after each shape) don't re-run a growing op chain each
-			// time. A no-op when there is nothing queued and the materialized result is already the base.
-			internal void Bake()
-			{
-				var bmp = Materialize();
-
-				// `!ownsBitmap` guards a borrowed base — an Overlay canvas, whose bitmap is the compositor's
-				// own memory. Disposing it here would free a surface the backing is still presenting from, and
-				// then free it a second time when the OverlaySurface is disposed. Materialize already refuses to
-				// fold such an image, so there is never anything for this method to do with one.
-				if (bmp == null || !ownsBitmap || ReferenceEquals(bmp, baseBitmap))
-					return;
-
-				ReleaseLiveGraphics();   // bound to the bitmap about to be replaced
-				baseBitmap?.Dispose();
-				baseBitmap = bmp;   // == cached
-				cached = null;
-				pending.Clear();
-				DisposePendingResources();
-				SyncGcPressure();
-			}
-
 			// An eager image is a live drawing surface (used by an Overlay canvas): every draw op is applied
-			// straight to baseBitmap with no lazy queue and no defensive working copy, and there is never a
-			// separate materialized `cached`. This removes the per-draw "first in-place op" copy that the lazy
-			// transform model needs: the surface is the pixels being drawn. Set once after bitmap creation;
-			// an eager image never queues transforms or SetPixel-bakes.
+			// straight to baseBitmap with no lazy queue. Set once after bitmap creation; an eager image never
+			// queues, and it refuses transforms.
 			//
 			// Strictly "when does a draw happen", nothing more. Whether the pixels are ours is `ownsBitmap`,
 			// and whether anything presents them is `damage`; an Overlay canvas has all three, and they are
 			// independently answerable.
 			internal bool eagerDraw;
 
-			// Enqueues a draw op. inPlace ops (the default: shapes/text/image) mutate the working bitmap and
-			// return it; pass inPlace:false for an op that returns a fresh bitmap (Clear) so Materialize does
-			// not needlessly copy the base for it. On an eager surface the op is applied to baseBitmap now.
-			private void QueueDraw(Func<Bitmap, Bitmap> op, bool inPlace = true)
+			// Enqueues a draw op, which mutates the bitmap it is given and returns it, or returns a replacement (a
+			// lazy Clear of a base it cannot clear in place). On an eager surface the op is applied to baseBitmap now.
+			private void QueueDraw(Func<Bitmap, Bitmap> op)
 			{
 				if (eagerDraw)
 				{
@@ -2670,16 +2570,13 @@ namespace Keysharp.Builtins
 						ReleaseLiveGraphics();
 						baseBitmap.Dispose();
 						baseBitmap = result;
+						SyncGcPressure();
 					}
 
-					cached?.Dispose();
-					cached = null;
-					SyncGcPressure();
 					return;
 				}
 
-				pending.Add((op, inPlace));
-				Invalidate();
+				pending.Add(op);
 			}
 
 			/// <summary>
@@ -2703,16 +2600,8 @@ namespace Keysharp.Builtins
 					return false;
 				}
 
-				pending.Add((op, false));
-				Invalidate();
+				pending.Add(op);
 				return true;
-			}
-
-			private void Invalidate()
-			{
-				cached?.Dispose();
-				cached = null;
-				SyncGcPressure();
 			}
 
 			// A System.Drawing.Bitmap's real weight is unmanaged GDI memory; the managed KeysharpImage/Bitmap
@@ -2733,9 +2622,6 @@ namespace Keysharp.Builtins
 					// nag the GC into collections that can reclaim nothing.
 					if (baseBitmap != null && ownsBitmap)
 						bytes += BitmapByteEstimate(baseBitmap);
-
-					if (cached != null && !ReferenceEquals(cached, baseBitmap))
-						bytes += BitmapByteEstimate(cached);
 				}
 
 				if (bytes == gcPressure)
@@ -2756,28 +2642,63 @@ namespace Keysharp.Builtins
 			private static RectangleF MakeRectF(double x, double y, double w, double h)
 				=> new ((float)x, (float)y, (float)w, (float)h);
 
-			// Eto font handlers can be shared with the toolkit; cached fonts must not be disposed by callers.
-			private static readonly System.Collections.Concurrent.ConcurrentDictionary<(string, string), (NativeFont, int?)> fontCache = new ();
+			// Rendering quality is not part of a font: DrawText applies it to the Graphics.
+			private readonly record struct ImageFontKey(string Name, double? Size, int? Weight, bool? Italic, bool? Underline,
+				bool? Strike);
 
-			private static (NativeFont, int?) CreateFont(string options, string name)
-				=> fontCache.GetOrAdd((options ?? "", name ?? ""), key => CreateFontUncached(key.Item1, key.Item2));
+			// Keyed on parsed options, so only valid ones reach it. A queued draw or an Eto toolkit handler can still
+			// hold a cached font, so the cache is bounded by dropping its entries to their finalizers, never by disposing.
+			private static readonly System.Collections.Concurrent.ConcurrentDictionary<ImageFontKey, NativeFont> fontCache = new ();
+			private const int MaxCachedFonts = 256;
 
-			private static (NativeFont, int?) CreateFontUncached(string options, string name)
+			// Parses and validates DrawText/MeasureText font options and returns the font for them. False after an
+			// error the script continued, and the caller then returns at once.
+			private static bool TryGetImageFont(string options, string name, out NativeFont font, out int? quality)
 			{
-				var fontOptions = Conversions.ParseFontOptions(options, name, strict: true) ?? new FontOptions();//Both are strings, which always convert.
-				if (fontOptions.color.HasValue)
+				font = null;
+				quality = null;
+
+				if (Conversions.ParseFontOptions(options, name, strict: true) is not { } parsed)
+					return false;
+
+				if (parsed.color.HasValue)
+				{
 					_ = Errors.ValueErrorOccurred("Font colour belongs in DrawText's color argument, not in the font options.");
+					return false;
+				}
+
+				quality = parsed.quality;
+				var key = new ImageFontKey(parsed.name, parsed.size, parsed.weight, parsed.italic, parsed.underline, parsed.strike);
+#if WINDOWS
+				var cacheable = true;
+#else
+				// Eto rejects a rendering quality when it creates the font, so options with one never take a cached font.
+				var cacheable = parsed.quality is not > 0;
+#endif
+
+				if (cacheable && fontCache.TryGetValue(key, out font))
+					return true;
+
 #if WINDOWS
 				using var standard = new NativeFont(System.Drawing.FontFamily.GenericSansSerif, 10);
 #else
 				var standard = SystemFonts.Default(10);
 #endif
-				var font = Conversions.ApplyFont(standard, fontOptions, forImage: true);
-#if WINDOWS
-				// Error continuation can return the temporary fallback font.
-				if (ReferenceEquals(font, standard)) font = (NativeFont)standard.Clone();
-#endif
-				return (font, fontOptions.quality);
+				var created = Conversions.ApplyFont(standard, parsed, forImage: true);
+
+				// The standard font comes back only after an error the script continued.
+				if (ReferenceEquals(created, standard))
+					return false;
+
+				if (fontCache.Count >= MaxCachedFonts)
+					fontCache.Clear();
+
+				font = fontCache.GetOrAdd(key, created);
+
+				if (!ReferenceEquals(font, created))
+					created.Dispose();
+
+				return true;
 			}
 
 #if WINDOWS
@@ -2808,8 +2729,11 @@ namespace Keysharp.Builtins
 			// so a transparent color (alpha 0) cannot be expressed numerically — it would read as opaque RRGGBB.
 			// Use "", the color name "Transparent" (KnownColor.Transparent parses to alpha 0 via TryParseColor),
 			// or an 8-hex-digit STRING (e.g. "0x80FF0000") when you need a non-opaque alpha.
-			// False when the argument raised a TypeError the script continued, and the caller then returns at once.
-			private static bool TryParseColorArg(object o, out int argb, int defaultArgb = 0, bool allowTransparentEmpty = true)
+			// Any other string, and a NaN or infinite number, raises a ValueError, as AutoHotkey's colour options do;
+			// `name` names the parameter in it.
+			// False when the argument raised an error the script continued, and the caller then returns at once.
+			private static bool TryParseColorArg(object o, out int argb, int defaultArgb = 0, bool allowTransparentEmpty = true,
+				string name = null)
 			{
 				argb = 0;
 
@@ -2819,7 +2743,7 @@ namespace Keysharp.Builtins
 					return true;
 				}
 
-				if (o is long or int or double)
+				if (o is long or int || o is double number && double.IsFinite(number))
 				{
 					_ = o.TryCoerceLong(out var rawLong);
 					var raw = (uint)rawLong;
@@ -2827,22 +2751,33 @@ namespace Keysharp.Builtins
 					return true;
 				}
 
-				if (!o.CoerceString(out var s))
-					return false;
-
-				if (s.Length == 0)
-					argb = allowTransparentEmpty ? 0 : defaultArgb;
-				else if (Conversions.TryParseColor(s, out var c))
-					argb = c.ToArgb();
-				else if (s.ParseLong() is long v)
+				if (o is not double)
 				{
-					var parsed = (uint)v;
-					argb = unchecked((int)(parsed > 0xFFFFFFu ? parsed : 0xFF000000u | (parsed & 0xFFFFFFu)));
-				}
-				else
-					argb = defaultArgb;
+					if (!o.CoerceString(out var s))
+						return false;
 
-				return true;
+					if (s.Length == 0)
+					{
+						argb = allowTransparentEmpty ? 0 : defaultArgb;
+						return true;
+					}
+
+					if (Conversions.TryParseColor(s, out var c))
+					{
+						argb = c.ToArgb();
+						return true;
+					}
+
+					if (s.ParseLong() is long v)
+					{
+						var parsed = (uint)v;
+						argb = unchecked((int)(parsed > 0xFFFFFFu ? parsed : 0xFF000000u | (parsed & 0xFFFFFFu)));
+						return true;
+					}
+				}
+
+				_ = Errors.ValueErrorOccurred(name == null ? "Invalid color." : $"{name} must be a valid color.", o);
+				return false;
 			}
 
 			private void DisposePendingResources()
@@ -2888,10 +2823,8 @@ namespace Keysharp.Builtins
 					return;
 
 				disposed = true;
-				// Before the bitmaps: the Graphics is attached to one of them.
+				// Before the bitmap: the Graphics is attached to it.
 				ReleaseDrawState();
-				cached?.Dispose();
-				cached = null;
 
 				// A borrowed canvas bitmap belongs to the OverlaySurface that created it, which frees the GDI+
 				// wrapper and the memory underneath it in the one order that is safe.

@@ -76,10 +76,14 @@ namespace Keysharp.Internals.Strings
 
 			_ = sb.Append(token);
 		}
-		internal void Parse(string styles, Action<string> onUnknown = null)
+		// False when a token raised an error the script continued, in which case the other tokens still apply.
+		// onUnknown raises the error for an unrecognized token; without it such a token is ignored.
+		internal bool Parse(string styles, Action<string> onUnknown = null)
 		{
 			if (string.IsNullOrEmpty(styles))
-				return;
+				return true;
+
+			var valid = true;
 
 			foreach (Range r in styles.AsSpan().SplitAny(Spaces))
 			{
@@ -92,9 +96,9 @@ namespace Keysharp.Internals.Strings
 				var c = default(NativeColor);
 
 				if (opt.StartsWith("s", StringComparison.OrdinalIgnoreCase)
-					&& double.TryParse(opt[1..], NumberStyles.Float, CultureInfo.InvariantCulture, out var f)) { if (ValidSize(f)) size = f; }
-				else if (Opts.TryParse(opt, "q", ref i)) { if (ValidInteger(i, "quality", 0, 5)) quality = i; }
-				else if (Opts.TryParse(opt, "w", ref i)) { if (ValidInteger(i, "weight", 1, 1000)) weight = i; }
+					&& double.TryParse(opt[1..], NumberStyles.Float, CultureInfo.InvariantCulture, out var f)) { if (ValidSize(f)) size = f; else valid = false; }
+				else if (Opts.TryParse(opt, "q", ref i)) { if (ValidInteger(i, "quality", 0, 5)) quality = i; else valid = false; }
+				else if (Opts.TryParse(opt, "w", ref i)) { if (ValidInteger(i, "weight", 1, 1000)) weight = i; else valid = false; }
 				else if (Opts.TryParse(opt, "c", ref c)) { color = Opaque(c); }
 				else if (opt.Equals(Keyword_Bold, StringComparison.OrdinalIgnoreCase)) { weight = 700; }
 				else if (opt.Equals(Keyword_Italic, StringComparison.OrdinalIgnoreCase)) { italic = true; }
@@ -107,9 +111,14 @@ namespace Keysharp.Internals.Strings
 					weight = 400;
 					italic = underline = strike = false;
 				}
-				else
-					onUnknown?.Invoke(opt.ToString());
+				else if (onUnknown != null)
+				{
+					onUnknown(opt.ToString());
+					valid = false;
+				}
 			}
+
+			return valid;
 		}
 	}
 }

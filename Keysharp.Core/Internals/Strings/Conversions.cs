@@ -368,7 +368,8 @@ namespace Keysharp.Internals.Strings
 			return true;
 		}
 
-		// Null means the script continued a TypeError in the arguments, and the caller then stops at once.
+		// Null means the script continued a TypeError in the arguments or, when strict, an error in an option, and the
+		// caller then stops at once. Strict parsing also rejects unrecognized options.
 		internal static FontOptions? ParseFontOptions(object options, object family = null, bool strict = false)
 		{
 			var fontOptions = options is FontOptions f ? f : new FontOptions();
@@ -377,7 +378,9 @@ namespace Keysharp.Internals.Strings
 				if (!options.CoerceString(out var optionsText))
 					return null;
 
-				fontOptions.Parse(optionsText, strict ? tok => Errors.ValueErrorOccurred($"Unrecognized font option \"{tok}\".") : null);
+				if (!fontOptions.Parse(optionsText, strict ? tok => Errors.ValueErrorOccurred($"Unrecognized font option \"{tok}\".") : null)
+						&& strict)
+					return null;
 			}
 
 			if (family is Any)
@@ -448,7 +451,8 @@ namespace Keysharp.Internals.Strings
 			using (resolved)
 			{
 				if (!resolved.IsStyleAvailable(style)) style = System.Drawing.FontStyle.Regular;
-				result = new Font(resolved, size, style);
+				// An image font is sized in pixels, at 96 per inch, so its text ignores the bitmap's DPI metadata.
+				result = forImage ? new Font(resolved, size * 96f / 72f, style, GraphicsUnit.Pixel) : new Font(resolved, size, style);
 			}
 #else
 			if (fontOptions.quality is > 0)

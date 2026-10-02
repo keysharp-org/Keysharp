@@ -17,6 +17,17 @@ HasAlpha(image) {
     return false
 }
 
+; The right and bottom edges of dark pixels on a light image.
+InkExtent(image) {
+    inkPixels := image.GetPixelData(1), width := image.Width, right := 0, bottom := 0
+    loop inkPixels.Size
+        if inkPixels[A_Index] < 128 {
+            right := Max(right, Mod(A_Index - 1, width) + 1)
+            bottom := Max(bottom, (A_Index - 1) // width + 1)
+        }
+    return {Right: right, Bottom: bottom}
+}
+
 transparent := Image.Create(8, 6)
 Assert(transparent.Width == 8 && transparent.Height == 6, A_LineNumber)
 AssertEq(Channel(transparent, 0, 0, 3), 0, A_LineNumber)
@@ -30,6 +41,23 @@ AssertEq(Channel(colored, 0, 0, 1), 0x55, A_LineNumber)
 AssertEq(Channel(colored, 0, 0, 2), 0x66, A_LineNumber)
 AssertEq(Channel(Image.Create(4, 3, "0x80445566"), 0, 0, 3), 0x80, A_LineNumber)
 
+; A colour string that is no name or number raises, rather than drawing black or transparent.
+Throws(() => Image.Create(4, 4, "Rde"), A_LineNumber, ValueError)
+badColour := Image.Create(4, 4)
+Throws(() => badColour.FillRect(0, 0, 4, 4, "Rde"), A_LineNumber, ValueError)
+Throws(() => badColour.Clear("Rde"), A_LineNumber, ValueError)
+Throws(() => badColour.SetPixel(0, 0, "Rde"), A_LineNumber, ValueError)
+Throws(() => badColour.SearchPixel("Rde"), A_LineNumber, ValueError)
+Throws(() => badColour.Search(Image.Create(1, 1), trans: "Rde"), A_LineNumber, ValueError)
+AssertEq(badColour.GetPixel(1, 1), 0, A_LineNumber)
+
+; A queued Clear rewrites the image's own pixels, and a draw after it still lands on them.
+cleared := Image.Create(2, 2, "Red").Clear(0x80112233)
+AssertEq(cleared.GetPixel(0, 0), 0x80112233, A_LineNumber)
+cleared.FillRect(1, 1, 1, 1, "Blue")
+AssertEq(cleared.GetPixel(1, 1), 0xFF0000FF, A_LineNumber)
+AssertEq(cleared.GetPixel(0, 1), 0x80112233, A_LineNumber)
+
 canvas := Image.Create(12, 12)
 copy := canvas.Copy()
 AssertEq(canvas.FillRect(1, 1, 8, 8, "Red"), canvas, A_LineNumber)
@@ -39,12 +67,49 @@ AssertEq(canvas.GetPixel(6, 6), 0xFF0000FF, A_LineNumber)
 AssertEq(canvas.GetPixel(0, 0), 0xFF00FF00, A_LineNumber)
 AssertEq(Channel(copy, 1, 1, 3), 0, A_LineNumber)
 
+; A translucent outline paints each pixel once, corners included, also when the bars would overlap.
+frame := Image.Create(10, 8)
+frame.DrawRect(0, 0, 10, 8, "0x80FF0000", 2)
+for point in [[0, 0], [9, 0], [0, 7], [9, 7], [1, 1], [8, 6], [5, 0], [0, 4], [9, 4], [5, 7]]
+    AssertEq(frame.GetPixel(point[1], point[2]), 0x80FF0000, A_LineNumber)
+AssertEq(frame.GetPixel(5, 4), 0, A_LineNumber)
+thick := Image.Create(10, 4)
+thick.DrawRect(0, 0, 10, 4, "0x80FF0000", 3)
+for point in [[0, 0], [9, 0], [0, 3], [9, 3], [5, 1], [5, 2]]
+    AssertEq(thick.GetPixel(point[1], point[2]), 0x80FF0000, A_LineNumber)
+
 text := Image.Create(120, 40)
 text.DrawText("Hi", 2, 2, "Black", "s14", "Sans")
 Assert(HasAlpha(text), A_LineNumber)
 styled := Image.Create(120, 40)
 styled.DrawText("Hi", 2, 2, "Black", "s14 bold italic", "Sans")
 Assert(HasAlpha(styled), A_LineNumber)
+
+; Font options are checked when DrawText is called, so a bad one neither surfaces at a later read nor discards
+; the draws queued before it, and raises again on every call.
+queuedText := Image.Create(40, 20)
+queuedText.FillRect(0, 0, 4, 4, "Red")
+Throws(() => queuedText.DrawText("Hi", 0, 0, "Black", "s12 bogus"), A_LineNumber, ValueError)
+Throws(() => queuedText.DrawText("Hi", 0, 0, "Black", "cRed"), A_LineNumber, ValueError)
+Throws(() => queuedText.MeasureText("Hi", "s12 bogus"), A_LineNumber, ValueError)
+AssertEq(queuedText.GetPixel(1, 1), 0xFFFF0000, A_LineNumber)
+Throws(() => queuedText.DrawText("Hi", 0, 0, "Black", "s12 bogus"), A_LineNumber, ValueError)
+
+; Text is sized in draw units whatever resolution a bitmap carries, so on a copied or loaded image it matches a
+; fresh canvas and stays inside MeasureText's box.
+fresh := Image.Create(120, 80, "White")
+fresh.DrawText("Hg", 2, 2, "Black", "s14", "Arial")
+box := fresh.MeasureText("Hg", "s14", "Arial")
+ink := InkExtent(fresh)
+Assert(ink.Right > 2 + box.Width / 2 && ink.Right <= 2 + Ceil(box.Width), A_LineNumber)
+Assert(ink.Bottom > 2 + box.Height / 2 && ink.Bottom <= 2 + Ceil(box.Height), A_LineNumber)
+copied := Image.Create(120, 80, "White").Copy()
+#if WINDOWS
+copied.ToClr().SetResolution(192, 192)    ; as an image saved at 192 DPI loads
+#endif
+copied.DrawText("Hg", 2, 2, "Black", "s14", "Arial")
+copiedInk := InkExtent(copied)
+Assert(copiedInk.Right == ink.Right && copiedInk.Bottom == ink.Bottom, A_LineNumber)
 
 source := Image.Create(3, 3, "0xFF112233")
 target := Image.Create(8, 8)
@@ -211,6 +276,8 @@ Assert(last.x == 10 && last.y == 6, A_LineNumber)
 wild := haystack.Search(needle, trans: "Red")
 Assert(wild.x == 0 && wild.y == 0, A_LineNumber)
 AssertEq(haystack.Search(Image.Create(3, 3, "Magenta")), "", A_LineNumber)
+selfMatch := haystack.Search(haystack)
+Assert(selfMatch.x == 0 && selfMatch.y == 0, A_LineNumber)
 
 pixel := haystack.SearchPixel("Red")
 Assert(pixel.x == 2 && pixel.y == 2 && pixel.color == 0xFFFF0000, A_LineNumber)
@@ -346,6 +413,16 @@ contrast := Image.Create(4, 4, "0xFF204060").Contrast(-1)
 AssertEq(Channel(contrast, 0, 0, 0), 128, A_LineNumber)
 AssertEq(Channel(contrast, 0, 0, 1), 128, A_LineNumber)
 AssertEq(Channel(contrast, 0, 0, 2), 128, A_LineNumber)
+
+; Exact halves of the luminance round up, as AutoHotkey's Round does: these give 28.5, 21.5, 53.5 and 72.5.
+for rgb, expected in Map(0x0000FA, 29, 0x0004A8, 22, 0x01551D, 54, 0x057129, 73)
+    AssertEq(Image.Create(1, 1, rgb).Grayscale().GetPixel(0, 0), 0xFF000000 | expected * 0x010101, A_LineNumber)
+AssertEq(Image.Create(1, 1, 0x204060).Brightness(0.5).GetPixel(0, 0), 0xFFA0C0E0, A_LineNumber)
+AssertEq(Image.Create(1, 1, 0x204060).Brightness(-0.25).GetPixel(0, 0), 0xFF000020, A_LineNumber)
+AssertEq(Image.Create(1, 1, 0x818380).Contrast(0.5).GetPixel(0, 0), 0xFF828480, A_LineNumber)
+AssertEq(Image.Create(1, 1, 0x204060).Contrast(0.5).GetPixel(0, 0), 0xFF002050, A_LineNumber)
+AssertEq(Channel(Image.Create(1, 1, "0x81112233").Alpha(0.5), 0, 0, 3), 64, A_LineNumber)
+AssertEq(Channel(Image.Create(1, 1, "0xC3112233").Alpha(0.3), 0, 0, 3), 58, A_LineNumber)
 
 resized := Image.Create(20, 10, "Black")
 AssertEq(resized.Resize(40, 20), resized, A_LineNumber)

@@ -307,14 +307,14 @@ namespace Keysharp.Tests
 			var canvas = surface.Image;
 			var bitmap = surface.Bitmap;
 
-			var before = canvas.PeekBitmap();
+			var before = canvas.PrepareForPixelAccess();
 			_ = canvas.Clear();
-			Assert.AreSame(before, canvas.PeekBitmap(), "Clear must overwrite the surface, not replace it");
+			Assert.AreSame(before, canvas.PrepareForPixelAccess(), "Clear must overwrite the surface, not replace it");
 			_ = canvas.Clear("0xFF204060");
-			Assert.AreSame(before, canvas.PeekBitmap(), "clearing to a colour must not replace it either");
+			Assert.AreSame(before, canvas.PrepareForPixelAccess(), "clearing to a colour must not replace it either");
 
-			canvas.Bake();
-			Assert.AreSame(bitmap, canvas.PeekBitmap(), "Bake must not dispose or replace a borrowed base");
+			_ = canvas.PrepareForRead();
+			Assert.AreSame(bitmap, canvas.PrepareForPixelAccess(), "materializing must not dispose or replace a borrowed base");
 
 			// Disposing through the interface is the surface's own teardown path and does release the view; the
 			// borrowed pixels must survive it, since the surface frees those separately and in order.
@@ -496,13 +496,13 @@ namespace Keysharp.Tests
 			try
 			{
 				_ = image.FillRect(0L, 0L, 10L, 10L, "0xFF0000");
-				var first = image.PeekBitmap();
+				var first = image.PrepareForPixelAccess();
 				Assert.AreEqual(0xFFFF0000, (uint)(long)image.GetPixel(2L, 2L));
 
 				_ = image.FillRect(20L, 0L, 10L, 10L, "0x00FF00");
 				Assert.AreEqual(0xFF00FF00, (uint)(long)image.GetPixel(22L, 2L));
 				Assert.AreEqual(0xFFFF0000, (uint)(long)image.GetPixel(2L, 2L), "the earlier draw must survive");
-				Assert.AreSame(first, image.PeekBitmap(), "reads must not rebuild the surface");
+				Assert.AreSame(first, image.PrepareForPixelAccess(), "reads must not rebuild the surface");
 			}
 			finally
 			{
