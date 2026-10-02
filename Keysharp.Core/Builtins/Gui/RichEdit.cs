@@ -523,7 +523,8 @@ namespace Keysharp.Builtins
 						return NoControl();
 
 					var pos = rt.SelectionStart;
-					return (long)(pos - lineStarts[LineOf(rt, pos)] + 1);
+					var line = LineOf(rt, pos);
+					return (long)(pos - lineStarts[line] + 1);
 				}
 			}
 
@@ -554,7 +555,8 @@ namespace Keysharp.Builtins
 					if (!value.CoerceLong(out var line))
 						return;
 
-					rt.TopPos = lineStarts[ClampLine(rt, line)];
+					var index = ClampLine(rt, line);
+					rt.TopPos = lineStarts[index];
 				}
 			}
 
@@ -637,7 +639,8 @@ namespace Keysharp.Builtins
 				if (!line.CoerceLong(out var lineVal))
 					return DefaultObject;
 
-				return (long)(lineStarts[ClampLine(rt, lineVal)] + 1);
+				var index = ClampLine(rt, lineVal);
+				return (long)(lineStarts[index] + 1);
 			}
 
 			/// <summary>

@@ -40,6 +40,20 @@ AssertEq(re.GetLine(99), "three", A_LineNumber)
 AssertEq(re.LineFromPos(0), 1, A_LineNumber)
 AssertEq(re.LineFromPos(9999), 3, A_LineNumber)
 
+; Query before another member has initialized or refreshed the line table.
+fresh := g.Add("RichEdit", "w100 h50")
+AssertEq(fresh.CurrentCol, 1, A_LineNumber)
+fresh.Value := "a`nbb`nccc"
+AssertEq(fresh.PosFromLine(3), 6, A_LineNumber)
+fresh.Value := "x"
+AssertEq(fresh.PosFromLine(99), 1, A_LineNumber)
+fresh := g.Add("RichEdit", "w100 h50", "a`nb")
+AssertEq(fresh.PosFromLine(2), 3, A_LineNumber)
+if A_OSType = "WINDOWS" {
+    fresh.Value := "a`nb`nc"
+    fresh.FirstVisibleLine := 3
+}
+
 ; --- selection --------------------------------------------------------------------------------------------
 
 re.Select(5, 3)
