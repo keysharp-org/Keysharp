@@ -104,8 +104,8 @@ namespace Keysharp.Internals.Window.Unix
 			set
 			{
 				image = value;
-				if (EtoItem is ButtonMenuItem button && value is Eto.Drawing.Image etoImage)
-					button.Image = etoImage;
+				if (EtoItem is ButtonMenuItem button)
+					button.Image = value as Eto.Drawing.Image;
 			}
 		}
 

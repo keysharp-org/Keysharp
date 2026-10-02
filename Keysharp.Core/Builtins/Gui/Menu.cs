@@ -577,7 +577,10 @@ namespace Keysharp.Builtins
 			{
 				SetDefaultItem(null);
 				foreach (ToolStripItem item in GetMenu().Items)
+				{
+					ReleaseIcon(item);
 					Script.TheScript.ReleaseStandardItem(item);
+				}
 				GetMenu().Items.Clear();
 				foreach (var hub in clickHandlers.Values)
 					hub.Clear();
@@ -586,6 +589,7 @@ namespace Keysharp.Builtins
 			}
 			else if (GetExistingMenuItem(s) is ToolStripItem item)
 			{
+				ReleaseIcon(item);
 				if (item == defaultItem)
 					SetDefaultItem(null);
 
@@ -670,6 +674,9 @@ namespace Keysharp.Builtins
 			{
 				var index = (int)GetIndex(tss);
 				var newItem = new ToolStripMenuItem(newname);
+#if WINDOWS
+				newItem.Disposed += ReleaseIcon;
+#endif
 				newItem.Name = newItem.Text = newname;
 				GetMenu().Items.RemoveAt(index);
 				GetMenu().Items.Insert(index, newItem);
@@ -693,12 +700,7 @@ namespace Keysharp.Builtins
 		/// If false, the color will be applied to the menu only.
 		/// </param>
 		public object SetColor(object colorValue = null, object applyToSubmenus = null)
-		{
-			if (!colorValue.CoerceString(out var color))
-				return DefaultObject;
-
-			return HandleColor(GetMenu(), color, applyToSubmenus.Ab(true), true);
-		}
+			=> HandleColor(GetMenu(), colorValue, applyToSubmenus.Ab(true), true);
 
 		/// <summary>
 		/// Changes the foreground (text) color of the menu.
@@ -712,12 +714,7 @@ namespace Keysharp.Builtins
 		/// If false, the color will be applied to the menu only.
 		/// </param>
 		public object SetForeColor(object colorValue = null, object applyToSubmenus = null)
-		{
-			if (!colorValue.CoerceString(out var color))
-				return DefaultObject;
-
-			return HandleColor(GetMenu(), color, applyToSubmenus.Ab(true), false);
-		}
+			=> HandleColor(GetMenu(), colorValue, applyToSubmenus.Ab(true), false);
 
 		/// <summary>
 		/// Sets the icon to be displayed next to a menu item.
@@ -746,19 +743,36 @@ namespace Keysharp.Builtins
 			if (!iconWidth.CoerceInt(out var width, SystemInformation.SmallIconSize.Width))
 				return DefaultObject;
 
-			if (GetExistingMenuItem(name) is ToolStripItem tsmi)
+			if (GetExistingMenuItem(name) is not ToolStripItem tsmi)
+				return DefaultObject;
+
+			Bitmap bmp = null;
+			if (filename.Length != 0 && filename != "*")
 			{
 				// A height of -1 follows the aspect ratio, as in AutoHotkey.
-				var (bmp, source) = ImageHelper.LoadImage(filename, width, -1, iconnumber);
+				(bmp, var source) = ImageHelper.LoadImage(filename, width, -1, iconnumber);
 				(source as IDisposable)?.Dispose();
 
 				if (bmp == null)
 					return Errors.ErrorOccurred("Can't load icon.", null, filename);
 
-				tsmi.Image = bmp;
 			}
 
+			ReleaseIcon(tsmi);
+			tsmi.Image = bmp;
+#if WINDOWS
+			tsmi.Disposed -= ReleaseIcon;
+			tsmi.Disposed += ReleaseIcon;
+#endif
 			return DefaultObject;
+		}
+
+		private static void ReleaseIcon(object sender, EventArgs e = null)
+		{
+			var item = (ToolStripItem)sender;
+			var icon = item.Image as IDisposable;
+			item.Image = null;
+			icon?.Dispose();
 		}
 
 		/// <summary>
@@ -881,22 +895,34 @@ namespace Keysharp.Builtins
 
 		protected internal virtual ToolStrip GetMenu() => submenuOf ?? MenuItem;
 
-		protected static object HandleColor(ToolStrip menu, string name, bool submenus, bool backcolor)
+		protected static object HandleColor(ToolStrip menu, object value, bool submenus, bool backcolor)
 		{
-			if (Conversions.TryParseColor(name, out var color))
+			Color color = default;
+			if (value is long rgb)
+				color = Color.FromArgb(unchecked((int)(0xFF000000u | ((uint)rgb & 0xFFFFFFu))));
+			else if (!value.CoerceString(out var name))
+				return DefaultObject;
+			else if (name.Length != 0 && !name.Equals("Default", StringComparison.OrdinalIgnoreCase) && !Conversions.TryParseColor(name, out color))
+				return Errors.ValueErrorOccurred("Invalid color.", name);
+
+			if (backcolor)
+				menu.BackColor = color;
+			else
+				menu.ForeColor = color;
+
+			foreach (var item in submenus ? menu.GetItems() : menu.Items.Cast<ToolStripItem>())
 			{
 				if (backcolor)
-					menu.BackColor = color;
+					item.BackColor = color;
 				else
-					menu.ForeColor = color;
+					item.ForeColor = color;
 
-				if (submenus)
+				if (submenus && item is ToolStripMenuItem owner && owner.DropDownItems.Count > 0)
 				{
-					foreach (var item in menu.GetItems())
-						if (backcolor)
-							item.BackColor = color;
-						else
-							item.ForeColor = color;
+					if (backcolor)
+						owner.DropDown.BackColor = color;
+					else
+						owner.DropDown.ForeColor = color;
 				}
 			}
 
@@ -1027,6 +1053,9 @@ namespace Keysharp.Builtins
 			{
 				item = new ToolStripMenuItem(name) { Name = name };
 				item.Click += Tsmi_Click;
+#if WINDOWS
+				item.Disposed += ReleaseIcon;
+#endif
 				if (anchor != null)
 					GetMenu().Items.Insert((int)GetIndex(anchor), item);
 				else
