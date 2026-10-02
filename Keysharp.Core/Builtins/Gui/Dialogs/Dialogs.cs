@@ -82,6 +82,12 @@ namespace Keysharp.Builtins
 		private static nint GetDialogOwnerHandle(Form owner)
 			=> owner is { IsDisposed: false, IsHandleCreated: true } && WindowsAPI.IsWindow(owner.Handle) ? owner.Handle : 0;
 
+		private sealed class MsgBoxOwner(nint handle) : IWin32Window
+		{
+			// A non-null wrapper with a zero handle prevents WinForms from choosing the active window.
+			public nint Handle { get; } = handle;
+		}
+
 		internal static int MergeMsgBoxOptions(int current, int options)
 		{
 			ReadOnlySpan<int> masks = [0xF, 0xF0, 0xF00, 0x3000];
@@ -865,12 +871,13 @@ namespace Keysharp.Builtins
 			var icon = MessageBoxIcon.None;
 			var defaultbutton = MessageBoxDefaultButton.Button1;
 			var mbopts = (MessageBoxOptions)WindowsAPI.MB_SETFOREGROUND;//For some reason this constant is not available in C#, but it works and is required to make the message box take the focus.
+			var ownerHandle = GetDialogOwnerHandle(GuiHelper.DialogOwner);
 #else
 			var icon = MessageBoxType.Information;
 			var defaultbutton = MessageBoxDefaultButton.Default;
 			int defaultbuttonindex = 1;
-#endif
 			Control owner = GuiHelper.DialogOwner;
+#endif
 			var timeout = 0.0;
 
 			void HandleNumericOptions(int itemp)
@@ -928,7 +935,13 @@ namespace Keysharp.Builtins
 						var defaultIndex = 0;
 
 						if (Options.TryParse(opt, "Owner", ref hwnd, allowempty: true))
+						{
+#if WINDOWS
+							ownerHandle = new nint(hwnd);
+#else
 							owner = Control.FromHandle(new nint(hwnd));
+#endif
+						}
 						else if (Options.TryParse(opt, "T", ref timeout) && opt[1] != '-' && double.IsFinite(timeout)) { }
 						else if (Options.TryParse(opt, "Default", ref defaultIndex) && defaultIndex is >= 1 and <= 4)
 						{
@@ -1083,7 +1096,8 @@ namespace Keysharp.Builtins
 
 					try
 					{
-						var ownerWindow = (IWin32Window)(owner?.FindForm() ?? owner);
+						var ownerWindow = ownerHandle == 0 && (mbopts & (MessageBoxOptions.ServiceNotification | MessageBoxOptions.DefaultDesktopOnly)) != 0
+							? null : new MsgBoxOwner(ownerHandle);
 						var timeoutMs = timeout != 0 ? (uint)Math.Clamp((long)Math.Round(timeout * 1000.0), 1L, int.MaxValue) : 0;
 						return ShowWindowsMsgBox(script, ownerWindow, txt, caption, buttons, icon, defaultbutton, mbopts, timeoutMs);
 					}
