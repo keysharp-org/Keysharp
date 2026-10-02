@@ -10,8 +10,7 @@ namespace Keysharp.Builtins
 	public class Menu : KeysharpObject
 	{
 		/// <summary>
-		/// The AHK v2.1 item options that have no direct WinForms/Eto equivalent and so must be reproduced by
-		/// hand. AutoHotkey stores these as MFT_* bits on the native menu item; here they live on the item's Tag.
+		/// Menu item options and layout state which WinForms/Eto do not provide directly.
 		/// </summary>
 		internal sealed class MenuItemPresentation
 		{
@@ -20,6 +19,7 @@ namespace Keysharp.Builtins
 			internal bool Radio;
 			internal bool Right;
 			internal bool Rtl;
+			internal int Priority;
 
 			//Set on separators in a columned menu, which WinForms would otherwise stretch across the whole
 			//window; 0 means "not in a columned menu". See KeysharpMenuRenderer.OnRenderSeparator.
@@ -252,11 +252,22 @@ namespace Keysharp.Builtins
 		/// Each item can have more than one click handler.
 		/// </summary>
 		private readonly ConcurrentDictionary<ToolStripItem, CallbackRegistry> clickHandlers = new();
+		private long clickCount = 2;
 
 		/// <summary>
 		/// How many times the tray icon must be clicked to select its default menu item.
 		/// </summary>
-		public long ClickCount { get; set; } = 2;
+		public long ClickCount
+		{
+			get => clickCount;
+			set
+			{
+				if (value is < 1 or > 2)
+					_ = Errors.InvalidParameterErrorOccurred(1, "Menu.Prototype.ClickCount", value);
+				else
+					clickCount = value;
+			}
+		}
 
 		/// <summary>
 		/// The default menu item to click when the tray icon is double clicked.
@@ -919,6 +930,16 @@ namespace Keysharp.Builtins
 
 		private static long GetPosition(string name) => name.Length > 1 && name[^1] == '&' && name[^2] != '&' ? Strings.Atoi(name) : 0;
 
+		private static bool ContainsMenu(ToolStrip menu, ToolStrip target)
+		{
+			if (menu == target)
+				return true;
+			foreach (ToolStripItem item in menu.Items)
+				if (item is ToolStripMenuItem owner && ContainsMenu(owner.DropDown, target))
+					return true;
+			return false;
+		}
+
 		/// <summary>
 		/// The item <paramref name="s"/> names, raising the way AutoHotkey's UserMenu::GetItem does when the menu
 		/// holds no such item. Every method that acts ON an item goes through this; <see cref="GetMenuItem"/> stays
@@ -933,14 +954,25 @@ namespace Keysharp.Builtins
 		private object AddOrInsert(string insertbefore, string name, object funcorsub, string options, bool insert)
 		{
 			ToolStripMenuItem item = null;
-			// Only an EXISTING item may have its options retargeted with the callback omitted, so Insert always
-			// requires one. Both the lookup and the check happen before anything is added, so a rejected call
-			// leaves the menu exactly as it was rather than stranding an item that does nothing when chosen.
-			var existing = !insert && !string.IsNullOrEmpty(name)
-						   ? GetMenuItem(name) as ToolStripMenuItem
-						   : null;
-			if (!insert && GetMenuItem(name) is not ToolStripItem && GetPosition(name) > 0)
+			ToolStripItem anchor = null;
+			if (insertbefore.Length > 0 && GetPosition(insertbefore) != MenuItemCount + 1)
+			{
+				if (GetExistingMenuItem(insertbefore) is not ToolStripItem before)
+					return DefaultObject;
+				anchor = before;
+			}
+
+			if (name.Length == 0 && (funcorsub != null || options.Length > 0))
+				return Errors.ValueErrorOccurred("Invalid combination of parameters.");
+
+			//Only Add can update an existing item without replacing its callback.
+			var found = !insert && name.Length > 0 ? GetMenuItem(name) as ToolStripItem : null;
+			var existing = found as ToolStripMenuItem;
+			if (!insert && found == null && GetPosition(name) > 0)
 				return Errors.InvalidParameterErrorOccurred(1, "Menu.Prototype.Add", name);
+
+			if (funcorsub is Menu submenu && (submenu is MenuBar || ContainsMenu(submenu.GetMenu(), GetMenu())))
+				return Errors.ArgumentErrorOccurred(funcorsub, insert ? 3 : 2);
 
 			var canOmitCallback = existing != null && options.Length > 0;
 
@@ -954,154 +986,155 @@ namespace Keysharp.Builtins
 			if (funcorsub is not (null or Menu) && (callback = Functions.CheckedCallback(funcorsub, 3)) == null)
 				return DefaultObject;
 
-			if (!string.IsNullOrEmpty(insertbefore))
+			bool? radio = null, right = null, columnBreak = null, barBreak = null, rtl = null;
+			int? priority = null;
+			foreach (Range r in options.AsSpan().SplitAny(SpaceTabSv))
 			{
-				// The anchor has to exist; AutoHotkey's Insert raises ItemNotFoundError otherwise. Going through
-				// the shared lookup also accepts the "3&" position form and a separator as the anchor.
-				if (GetExistingMenuItem(insertbefore) is ToolStripItem tsmiinsert)
-				{
-					var index = GetIndex(tsmiinsert);
+				var opt = options.AsSpan(r);
+				if (opt.IsEmpty)
+					continue;
+				var adding = opt[0] != '-';
+				if (opt[0] is '+' or '-')
+					opt = opt[1..];
+				if (opt.IsEmpty)
+					continue;
 
-					if (tsmiinsert.GetCurrentParent() is ToolStripDropDownMenu tsddm)
-					{
-						if (name?.Length == 0)
-						{
-							tsddm.Items.Insert((int)index, new ToolStripSeparator());
-							return DefaultObject;
-						}
-						else
-						{
-							item = new ToolStripMenuItem(name);
-							item.Click += Tsmi_Click;
-							item.Name = name;
-							tsddm.Items.Insert((int)index, item);
-						}
-					}
-					else
-					{
-						item = new ToolStripMenuItem(name);
-						item.Click += Tsmi_Click;
-						item.Name = name;
-						GetMenu().Items.Insert((int)index, item);
-					}
+				if (opt[0] is 'P' or 'p')
+					priority = unchecked((int)Strings.Atoi(opt[1..]));
+				else if (opt.Equals("Radio", StringComparison.OrdinalIgnoreCase))
+					radio = adding;
+				else if (this is MenuBar && opt.Equals("Right", StringComparison.OrdinalIgnoreCase))
+					right = adding;
+				else if (opt.Equals("Break", StringComparison.OrdinalIgnoreCase))
+				{
+					columnBreak = adding;
+					if (adding)
+						barBreak = false;
 				}
-			}
-			else if (existing != null)
-			{
-				item = existing;
-			}
-			else if (GetMenu().Items.Add(name) is ToolStripMenuItem tsmi2)
-			{
-				tsmi2.Click += Tsmi_Click;
-				tsmi2.Name = name;
-				item = tsmi2;
-			}
-
-			if (item != null)
-			{
-				if (string.IsNullOrEmpty(Default) && item.Text == "&Open")
+				else if (opt.Equals("BarBreak", StringComparison.OrdinalIgnoreCase))
 				{
-					Default = "&Open";
+					barBreak = adding;
+					if (adding)
+						columnBreak = false;
 				}
+				else if (opt.Equals("RTL", StringComparison.OrdinalIgnoreCase))
+					rtl = adding;
+				else
+					_ = Errors.ValueErrorOccurred("Invalid option.", opt.ToString());
+			}
 
-				Keysharp.Internals.Scripting.CallbackRegistration clickReg = null;
+			if (name.Length == 0)
+			{
+				var separator = new ToolStripSeparator();
+				if (anchor != null)
+					GetMenu().Items.Insert((int)GetIndex(anchor), separator);
+				else
+					_ = GetMenu().Items.Add(separator);
+				return DefaultObject;
+			}
 
-				if (funcorsub is Menu mnu)
-				{
-					// A submenu item runs no callback, as AHK's ModifyItem sets its mCallback to null.
-					if (clickHandlers.TryRemove(item, out var oldHandlers))
-						oldHandlers.Clear();
+			item = existing;
+			if (item == null)
+			{
+				item = new ToolStripMenuItem(name) { Name = name };
+				item.Click += Tsmi_Click;
+				if (anchor != null)
+					GetMenu().Items.Insert((int)GetIndex(anchor), item);
+				else
+					_ = GetMenu().Items.Add(item);
+			}
 
-					var fromMenuItems = mnu.GetMenu().Items;
+			if (string.IsNullOrEmpty(Default) && item.Text == "&Open")
+			{
+				Default = "&Open";
+			}
 
-					while (fromMenuItems.Count > 0)//Must use this because add range doesn't work.
-					{
-						var moveItem = fromMenuItems[0];
+			var presentation = GetPresentation(item);
+			if (priority is int p)
+			{
+				presentation.Priority = p;
+				if (clickHandlers.TryGetValue(item, out var retainedHandlers))
+					foreach (var registration in retainedHandlers.GetSnapshot())
+						registration.Priority = p;
+			}
+			presentation.Radio = radio ?? presentation.Radio;
+			if (columnBreak is bool breakValue)
+				SetColumnBreak(item, breakValue, false);
+			if (barBreak is bool barValue)
+				SetColumnBreak(item, barValue, true);
+			if (right is bool rightValue)
+			{
+				presentation.Right = rightValue;
 #if WINDOWS
-						_ = item.DropDownItems.Add(moveItem);
+				item.Alignment = rightValue ? ToolStripItemAlignment.Right : ToolStripItemAlignment.Left;
+#endif
+			}
+			if (rtl is bool rtlValue)
+			{
+				presentation.Rtl = rtlValue;
+#if WINDOWS
+				item.RightToLeft = rtlValue ? RightToLeft.Yes : RightToLeft.No;
+#endif
+			}
+
+			if (funcorsub is Menu mnu)
+			{
+				// A submenu item runs no callback, as AHK's ModifyItem sets its mCallback to null.
+				if (clickHandlers.TryRemove(item, out var oldHandlers))
+					oldHandlers.Clear();
+
+				var fromMenuItems = mnu.GetMenu().Items;
+
+				while (fromMenuItems != item.DropDownItems && fromMenuItems.Count > 0)//AddRange does not move ownership on every backend.
+				{
+					var moveItem = fromMenuItems[0];
+#if WINDOWS
+					_ = item.DropDownItems.Add(moveItem);
 #else
-						//Windows automatically removes a menu item from one collection when it is added to another, but linux doesn't.
-						//So it must be done manually here by moving the item between collections.
-						fromMenuItems.RemoveAt(0);
-						moveItem.ResetEtoItemRecursive();
-						item.DropDownItems.Add(moveItem);
-						moveItem.Owner = item.DropDown;
+					//Windows automatically removes a menu item from one collection when it is added to another, but linux doesn't.
+					//So it must be done manually here by moving the item between collections.
+					fromMenuItems.RemoveAt(0);
+					moveItem.ResetEtoItemRecursive();
+					item.DropDownItems.Add(moveItem);
+					moveItem.Owner = item.DropDown;
 #endif
-					}
+				}
 
-					//The submenu's drop-down only comes into existence here, so this is where it gets its renderer
-					//and column handling. Items that already own a populated drop-down keep the one they were given.
-					InitMenu(item.DropDown);
-					//Point the submenu at where its items now live. This has to come after the move, which drains
-					//whichever collection the menu was using up to now.
-					mnu.submenuOf = item.DropDown;
+				//The submenu's drop-down only comes into existence here, so this is where it gets its renderer
+				//and column handling. Items that already own a populated drop-down keep the one they were given.
+				InitMenu(item.DropDown);
+				//Point the submenu at where its items now live. This has to come after the move, which drains
+				//whichever collection the menu was using up to now.
+				mnu.submenuOf = item.DropDown;
 #if !WINDOWS
-					item.Owner?.SyncEtoItems();
-#endif
-				}
-				// An options-only call registers nothing, leaving the item's existing handler in place — the guard
-				// above has already established that omitting the callback is legal only in that case. AutoHotkey's
-				// ModifyItem does the same by returning before it assigns mCallback.
-				else if (callback != null)
-				{
-					// Create the registration explicitly (not ModifyEventHandlers) so the "Pn" option parsed below can
-					// set its Priority — the priority then travels with the registration to the launch. It replaces
-					// the item's handler, as AHK's ModifyItem replaces mCallback, rather than running beside it.
-					clickReg = new Keysharp.Internals.Scripting.CallbackRegistration(callback, Script.TheScript.EventScheduler, true);
-					var handlers = clickHandlers.GetOrAdd(item, static _ => new(threadName: "Menu"));
-					handlers.Clear();
-					_ = handlers.Add(clickReg);
-					// As AHK's ModifyItem gives the item a new ID, only for a callback and not for a submenu.
-					Script.TheScript.ReleaseStandardItem(item);
-				}
-
-				foreach (Range r in options.AsSpan().SplitAny(Spaces))
-				{
-					var opt = options.AsSpan(r).Trim();
-
-					if (opt.Length > 0)
-					{
-						var temp = 0;
-						var tempbool = false;
-
-						if (Options.TryParse(opt, "P", ref temp)) { if (clickReg != null) clickReg.Priority = temp; }
-						else if (Options.TryParse(opt, "Radio", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true))
-							GetPresentation(item).Radio = tempbool;
-						else if (Options.TryParse(opt, "Right", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true))
-						{
-							//AHK honors Right only for menu-bar items (MENU_TYPE_BAR), not inside popups or submenus.
-							//Items can be inserted into a submenu through a MenuBar, so the parent has to be checked too.
-							if (this is MenuBar && item.GetCurrentParent() == GetMenu())
-							{
-								GetPresentation(item).Right = tempbool;
-#if WINDOWS
-								item.Alignment = tempbool ? ToolStripItemAlignment.Right : ToolStripItemAlignment.Left;
-#endif
-							}
-						}
-						else if (Options.TryParse(opt, "Break", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true))
-							SetColumnBreak(item, tempbool, false);
-						else if (Options.TryParse(opt, "BarBreak", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true))
-							SetColumnBreak(item, tempbool, true);
-						else if (Options.TryParse(opt, "RTL", ref tempbool, StringComparison.OrdinalIgnoreCase, true, true))
-						{
-							GetPresentation(item).Rtl = tempbool;
-#if WINDOWS
-							item.RightToLeft = tempbool ? RightToLeft.Yes : RightToLeft.No;
-#endif
-						}
-					}
-				}
-
-#if !WINDOWS
-				//The Eto backends have no "about to open" hook — the tray indicator and menu bar are handed the
-				//native menu directly — so their items must be rebuilt as soon as the menu changes. On Windows
-				//this is deferred to the drop-down's Opening event (see InitMenu).
-				GetMenu().Refresh();
+				item.Owner?.SyncEtoItems();
 #endif
 			}
+			// An options-only call registers nothing, leaving the item's existing handler in place — the guard
+			// above has already established that omitting the callback is legal only in that case. AutoHotkey's
+			// ModifyItem does the same by returning before it assigns mCallback.
+			else if (callback != null)
+			{
+				//Replacing a callback preserves the item's priority, including when no P option was supplied.
+				var clickReg = new Keysharp.Internals.Scripting.CallbackRegistration(callback, Script.TheScript.EventScheduler, true)
+				{
+					Priority = presentation.Priority
+				};
+				var handlers = clickHandlers.GetOrAdd(item, static _ => new(threadName: "Menu"));
+				handlers.Clear();
+				_ = handlers.Add(clickReg);
+				// As AHK's ModifyItem gives the item a new ID, only for a callback and not for a submenu.
+				Script.TheScript.ReleaseStandardItem(item);
+			}
 
-			return item != null ? item : "";
+#if !WINDOWS
+			//The Eto backends have no "about to open" hook — the tray indicator and menu bar are handed the
+			//native menu directly — so their items must be rebuilt as soon as the menu changes. On Windows
+			//this is deferred to the drop-down's Opening event (see InitMenu).
+			GetMenu().Refresh();
+#endif
+
+			return item;
 		}
 
 		private bool Check(string s, eCheckToggle checktoggle)
