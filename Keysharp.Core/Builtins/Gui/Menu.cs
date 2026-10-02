@@ -903,16 +903,17 @@ namespace Keysharp.Builtins
 
 		protected virtual object GetMenuItem(string s)
 		{
-			if (s.EndsWith('&') && int.TryParse(s.Trim('&'), out var i) && i > 0)
-			{
-				if (GetMenu().Items[--i] is ToolStripItem tsmi)
-					return tsmi;
-			}
-			else if (GetMenu().Items.Find(s, true).FirstOrDefault() is ToolStripItem tsmi)
-				return tsmi;
+			var items = GetMenu().Items;
+			var index = GetPosition(s) - 1;
+
+			for (var i = 0; i < items.Count; i++)
+				if (i == index || string.Equals(items[i].Name, s, StringComparison.OrdinalIgnoreCase))
+					return items[i];
 
 			return DefaultObject;
 		}
+
+		private static long GetPosition(string name) => name.Length > 1 && name[^1] == '&' && name[^2] != '&' ? Strings.Atoi(name) : 0;
 
 		/// <summary>
 		/// The item <paramref name="s"/> names, raising the way AutoHotkey's UserMenu::GetItem does when the menu
@@ -932,8 +933,11 @@ namespace Keysharp.Builtins
 			// requires one. Both the lookup and the check happen before anything is added, so a rejected call
 			// leaves the menu exactly as it was rather than stranding an item that does nothing when chosen.
 			var existing = !insert && !string.IsNullOrEmpty(name)
-						   ? GetMenu().Items.Find(name, true).FirstOrDefault() as ToolStripMenuItem
+						   ? GetMenuItem(name) as ToolStripMenuItem
 						   : null;
+			if (!insert && GetMenuItem(name) is not ToolStripItem && GetPosition(name) > 0)
+				return Errors.InvalidParameterErrorOccurred(1, "Menu.Prototype.Add", name);
+
 			var canOmitCallback = existing != null && options.Length > 0;
 
 			// A blank name adds a separator, which never carries a callback.
