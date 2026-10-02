@@ -12,16 +12,16 @@ namespace Keysharp.Builtins.COM
 	internal sealed class ComDBusSink : IDisposable
 	{
 		private readonly Script script;
-		private readonly ComObject target;
+		private readonly WeakReference<ComObject> target;
 		private readonly string prefix;
 		private readonly KeysharpObject sinkObj;
 		private readonly Dictionary<string, MethodPropertyHolder> methodMapper = new (StringComparer.OrdinalIgnoreCase);
 		private readonly List<IDisposable> subscriptions = [];
-		private bool disposed;
+		private int disposed;
 
 		internal ComDBusSink(ComObject target, object sinkOrPrefix)
 		{
-			this.target = target;
+			this.target = new(target);
 			script = Script.TheScript;
 
 			if (sinkOrPrefix is string s)
@@ -48,23 +48,28 @@ namespace Keysharp.Builtins.COM
 				return;
 			}
 
-			Subscribe();
+			Subscribe(target);
 		}
 
-		private void Subscribe()
+		private void Subscribe(ComObject ownerTarget)
 		{
 			// Bind to the current owner so a service restart cannot silently feed us another process's signals.
-			var owner = DBusCalls.GetNameOwner(target.bus, target.service);
+			var owner = DBusCalls.GetNameOwner(ownerTarget.bus, ownerTarget.service);
+			var weakSink = new WeakReference<ComDBusSink>(this);
 
-			foreach (var (iface, signal) in target.AllSignals())
+			foreach (var (iface, signal) in ownerTarget.AllSignals())
 			{
 				var name = signal.Name;
 
 				try
 				{
 					subscriptions.Add(DBusCalls.WatchSignal(
-										  target.bus, owner, target.path, iface.Name, name, signal.Signature,
-										  args => Deliver(name, args)));
+										  ownerTarget.bus, owner, ownerTarget.path, iface.Name, name, signal.Signature,
+											  args =>
+											  {
+												  if (weakSink.TryGetTarget(out var sink))
+													  sink.Deliver(name, args);
+											  }));
 				}
 				catch (Exception ex)
 				{
@@ -76,7 +81,7 @@ namespace Keysharp.Builtins.COM
 		/// <summary>Runs on a Tmds dispatch thread; hands the callback to the Keysharp thread and returns at once.</summary>
 		private void Deliver(string signalName, object[] args)
 		{
-			if (disposed || script.IsDisposed || script.hasExited)
+			if (Volatile.Read(ref disposed) != 0 || script.IsDisposed || script.hasExited || !target.TryGetTarget(out var owner))
 				return;
 
 			var allArgs = new object[(args?.Length ?? 0) + 1];
@@ -84,7 +89,7 @@ namespace Keysharp.Builtins.COM
 			if (args != null)
 				System.Array.Copy(args, allArgs, args.Length);
 
-			allArgs[^1] = target;
+			allArgs[^1] = owner;
 
 			if (prefix != null)
 			{
@@ -92,28 +97,35 @@ namespace Keysharp.Builtins.COM
 					return;
 
 				script.Threads.LaunchThreadInMain(
-					() => _ = Keysharp.Internals.Flow.TryCatch(() => mph.CallFunc(null, allArgs)),
+					() =>
+					{
+						if (Volatile.Read(ref disposed) == 0)
+							_ = Keysharp.Internals.Flow.TryCatch(() => mph.CallFunc(null, allArgs));
+					},
 					kind: ThreadKind.Com);
 			}
 			else if (sinkObj != null)
 			{
-				var (_, found) = Script.GetMethodOrProperty(sinkObj, signalName, -1, checkBase: true, throwIfMissing: false, invokeMeta: true);
-
-				if (found == null)
-					return;
-
 				script.Threads.LaunchThreadInMain(
-					() => _ = Keysharp.Internals.Flow.TryCatch(() => Script.Invoke(sinkObj, signalName, allArgs)),
+					() =>
+					{
+						if (Volatile.Read(ref disposed) != 0)
+							return;
+						_ = Keysharp.Internals.Flow.TryCatch(() =>
+						{
+							var (_, found) = Script.GetMethodOrProperty(sinkObj, signalName, -1, checkBase: true, throwIfMissing: false, invokeMeta: true);
+							if (found != null)
+								_ = Script.Invoke(sinkObj, signalName, allArgs);
+						});
+					},
 					kind: ThreadKind.Com);
 			}
 		}
 
 		public void Dispose()
 		{
-			if (disposed)
+			if (Interlocked.Exchange(ref disposed, 1) != 0)
 				return;
-
-			disposed = true;
 
 			foreach (var s in subscriptions)
 			{

@@ -72,7 +72,6 @@ namespace Keysharp.Internals.AppleEvents
 		internal readonly List<string> Suites = [];
 		internal readonly Dictionary<string, AESdefClass> ClassesByName = new (StringComparer.Ordinal);
 		internal readonly Dictionary<string, List<AESdefClass>> ClassesByKey = new (StringComparer.Ordinal);
-		internal readonly Dictionary<string, List<AESdefClass>> ClassesByPluralKey = new (StringComparer.Ordinal);
 		internal readonly Dictionary<uint, AESdefClass> ClassesByCode = [];
 		internal readonly Dictionary<string, List<AESdefCommand>> CommandsByKey = new (StringComparer.Ordinal);
 		internal readonly Dictionary<string, AESdefEnumeration> EnumerationsByName = new (StringComparer.Ordinal);
@@ -386,7 +385,6 @@ namespace Keysharp.Internals.AppleEvents
 
 			dict.ClassesByName[name] = cls;
 			Index(dict.ClassesByKey, Key(name), cls);
-			Index(dict.ClassesByPluralKey, Key(AESdefDictionary.Plural(cls)), cls);
 
 			if (cls.Code != 0)
 				dict.ClassesByCode[cls.Code] = cls;

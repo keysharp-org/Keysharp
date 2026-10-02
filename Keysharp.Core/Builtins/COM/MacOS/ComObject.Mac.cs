@@ -19,7 +19,7 @@ namespace Keysharp.Builtins.COM
 	// Derives from Any, not KeysharpObject, for the same reason the Windows ComValue does: Script.InvokeOrNull
 	// tests for KeysharpObject (a callable object) BEFORE IMetaObject, so a KeysharpObject-derived meta object
 	// is treated as callable and recurses until the stack is exhausted instead of dispatching by name.
-	public class ComObject : Any, IMetaObject, I__Enum
+	public class ComObject : Any, IMetaObject, I__Enum, IDisposable
 	{
 		internal AETarget target;
 		internal List<AESpecifierStep> steps;
@@ -27,6 +27,7 @@ namespace Keysharp.Builtins.COM
 		internal string className;
 		internal bool isCollection;
 		internal ComAESink sink;               // live ComObjConnect subscription, if any
+		internal override bool DisposesWhenCollected => sink != null;
 
 		private AEContext context;
 
@@ -462,13 +463,20 @@ namespace Keysharp.Builtins.COM
 
 		internal void Connect(object sinkOrPrefix)
 		{
-			sink?.Dispose();
-			sink = null;
+			Dispose();
 
 			if (sinkOrPrefix == null)
 				return;
 
 			sink = new ComAESink(this, sinkOrPrefix);
+			MaybeActivateFinalizer();
+		}
+
+		[PublicHiddenFromUser]
+		public void Dispose()
+		{
+			Interlocked.Exchange(ref sink, null)?.Dispose();
+			MaybeActivateFinalizer();
 		}
 
 		// ---- diagnostics -------------------------------------------------------------------------

@@ -31,10 +31,8 @@ namespace Keysharp.Internals.AppleEvents
 	}
 
 	/// <summary>
-	/// Resolves what a script wrote into an addressable application, and launches one on demand. Two lookups here
-	/// go through osascript rather than a framework call: mapping an application name to its bundle identifier and
-	/// a bundle identifier to its path are both one-line AppleScript idioms, they run once per application and are
-	/// cached, and the alternative is a deprecated LaunchServices surface.
+	/// Resolves an application address and launches it on demand. Name-to-bundle lookups use cached AppleScript;
+	/// bundle paths and running processes use AppKit.
 	/// </summary>
 	internal static class AETargets
 	{
@@ -89,13 +87,12 @@ namespace Keysharp.Internals.AppleEvents
 
 			try
 			{
-				foreach (var app in NSWorkspace.SharedWorkspace.RunningApplications)
+				foreach (var app in NSRunningApplication.GetRunningApplications(target.BundleId))
 				{
 					if (app == null)
 						continue;
 
-					if (string.Equals(app.BundleIdentifier, target.BundleId, StringComparison.OrdinalIgnoreCase))
-						return app.ProcessIdentifier;
+					return app.ProcessIdentifier;
 				}
 			}
 			catch (Exception ex)
@@ -203,7 +200,7 @@ namespace Keysharp.Internals.AppleEvents
 
 		/// <summary>
 		/// Caches a lookup, but only once it has succeeded. A failed lookup is usually transient — the application
-		/// is still starting, or osascript was interrupted — and remembering the empty answer would keep the
+		/// is still starting, or the lookup was interrupted — and remembering the empty answer would keep the
 		/// application unreachable for the rest of the run.
 		/// </summary>
 		private static string Remember(ConcurrentDictionary<string, string> cache, string key, Func<string, string> lookUp)
@@ -228,8 +225,16 @@ namespace Keysharp.Internals.AppleEvents
 
 		private static string LookUpPathByBundleId(string bundleId)
 		{
-			var escaped = bundleId.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
-			return RunAppleScript($"POSIX path of (path to application id \"{escaped}\")");
+			try
+			{
+				using var url = NSWorkspace.SharedWorkspace.UrlForApplication(bundleId);
+				return url?.Path ?? "";
+			}
+			catch (Exception ex)
+			{
+				Diagnostics.Debug.WriteLine($"Application path lookup failed: {ex.Message}");
+				return "";
+			}
 		}
 
 		private static string RunAppleScript(string script)

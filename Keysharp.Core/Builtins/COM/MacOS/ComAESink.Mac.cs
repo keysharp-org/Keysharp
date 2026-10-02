@@ -13,16 +13,16 @@ namespace Keysharp.Builtins.COM
 	internal sealed class ComAESink : IDisposable
 	{
 		private readonly Script script;
-		private readonly ComObject target;
+		private readonly WeakReference<ComObject> target;
 		private readonly string prefix;
 		private readonly KeysharpObject sinkObj;
 		private readonly Dictionary<string, MethodPropertyHolder> methodMapper = new (StringComparer.OrdinalIgnoreCase);
 		private IDisposable subscription;
-		private bool disposed;
+		private int disposed;
 
 		internal ComAESink(ComObject target, object sinkOrPrefix)
 		{
-			this.target = target;
+			this.target = new(target);
 			script = Script.TheScript;
 
 			if (sinkOrPrefix is string s)
@@ -49,13 +49,11 @@ namespace Keysharp.Builtins.COM
 				return;
 			}
 
-			Subscribe();
+			Subscribe(target.BundleId);
 		}
 
-		private void Subscribe()
+		private void Subscribe(string bundleId)
 		{
-			var bundleId = target.BundleId;
-
 			if (string.IsNullOrEmpty(bundleId))
 			{
 				_ = Errors.ErrorOccurred("ComObjConnect needs an application addressed by bundle id; a process id publishes no identifiable notifications.");
@@ -68,7 +66,12 @@ namespace Keysharp.Builtins.COM
 				// handle available: nothing describes what an application publishes ahead of time. The convention
 				// is not a rule — Music still posts under com.apple.iTunes — so an application that renamed its
 				// bundle publishes names this will not match.
-				subscription = AENotifications.Subscribe(bundleId, Deliver);
+				var weakSink = new WeakReference<ComAESink>(this);
+				subscription = AENotifications.Subscribe(bundleId, (name, payload) =>
+				{
+					if (weakSink.TryGetTarget(out var sink))
+						sink.Deliver(name, payload);
+				});
 			}
 			catch (Exception ex)
 			{
@@ -82,14 +85,14 @@ namespace Keysharp.Builtins.COM
 		/// </summary>
 		private void Deliver(string notification, object payload)
 		{
-			if (disposed || script.IsDisposed || script.hasExited)
+			if (Volatile.Read(ref disposed) != 0 || script.IsDisposed || script.hasExited || !target.TryGetTarget(out var owner))
 				return;
 
 			// "com.apple.Music.playerInfo" on com.apple.Music invokes Prefix_playerInfo.
-			var member = notification.Length > target.BundleId.Length && notification[target.BundleId.Length] == '.'
-						 ? notification[(target.BundleId.Length + 1)..]
+			var member = notification.Length > owner.BundleId.Length && notification[owner.BundleId.Length] == '.'
+						 ? notification[(owner.BundleId.Length + 1)..]
 						 : notification;
-			var args = new object[] { notification, payload, target };
+			var args = new object[] { notification, payload, owner };
 
 			if (prefix != null)
 			{
@@ -97,28 +100,35 @@ namespace Keysharp.Builtins.COM
 					return;
 
 				script.Threads.LaunchThreadInMain(
-					() => _ = Keysharp.Internals.Flow.TryCatch(() => mph.CallFunc(null, args)),
+					() =>
+					{
+						if (Volatile.Read(ref disposed) == 0)
+							_ = Keysharp.Internals.Flow.TryCatch(() => mph.CallFunc(null, args));
+					},
 					kind: ThreadKind.Com);
 			}
 			else if (sinkObj != null)
 			{
-				var (_, found) = Script.GetMethodOrProperty(sinkObj, member, -1, checkBase: true, throwIfMissing: false, invokeMeta: true);
-
-				if (found == null)
-					return;
-
 				script.Threads.LaunchThreadInMain(
-					() => _ = Keysharp.Internals.Flow.TryCatch(() => Script.Invoke(sinkObj, member, args)),
+					() =>
+					{
+						if (Volatile.Read(ref disposed) != 0)
+							return;
+						_ = Keysharp.Internals.Flow.TryCatch(() =>
+						{
+							var (_, found) = Script.GetMethodOrProperty(sinkObj, member, -1, checkBase: true, throwIfMissing: false, invokeMeta: true);
+							if (found != null)
+								_ = Script.Invoke(sinkObj, member, args);
+						});
+					},
 					kind: ThreadKind.Com);
 			}
 		}
 
 		public void Dispose()
 		{
-			if (disposed)
+			if (Interlocked.Exchange(ref disposed, 1) != 0)
 				return;
-
-			disposed = true;
 
 			try
 			{

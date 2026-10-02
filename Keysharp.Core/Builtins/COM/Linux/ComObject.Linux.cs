@@ -14,13 +14,14 @@ namespace Keysharp.Builtins.COM
 	// Derives from Any, not KeysharpObject, for the same reason the Windows ComValue does: Script.InvokeOrNull
 	// tests for KeysharpObject (a callable object) BEFORE IMetaObject, so a KeysharpObject-derived meta object
 	// is treated as callable and recurses until the stack is exhausted instead of dispatching by name.
-	public class ComObject : Any, IMetaObject
+	public class ComObject : Any, IMetaObject, IDisposable
 	{
 		internal DBusBus bus;
 		internal string service;
 		internal string path;
 		internal string iface;             // pinned interface, or null to search all of them
 		internal ComDBusSink sink;         // live ComObjConnect subscription, if any
+		internal override bool DisposesWhenCollected => sink != null;
 
 		public ComObject(params object[] args) : base(args)
 		{
@@ -309,13 +310,20 @@ namespace Keysharp.Builtins.COM
 
 		internal void Connect(object sinkOrPrefix)
 		{
-			sink?.Dispose();
-			sink = null;
+			Dispose();
 
 			if (sinkOrPrefix == null)
 				return;
 
 			sink = new ComDBusSink(this, sinkOrPrefix);
+			MaybeActivateFinalizer();
+		}
+
+		[PublicHiddenFromUser]
+		public void Dispose()
+		{
+			Interlocked.Exchange(ref sink, null)?.Dispose();
+			MaybeActivateFinalizer();
 		}
 
 		internal IEnumerable<(DBusInterfaceInfo Interface, DBusSignalInfo Signal)> AllSignals()
