@@ -5904,23 +5904,23 @@
                  },
                  {
                      "category":  "Windowing/GUI",
-                     "feature":  "Gui.Control.Add()",
+                     "feature":  "Gui.List.Add()",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Adds an item to controls that support item lists."
+                     "notes":  "Appends items to a ListBox, DropDownList, ComboBox or Tab control, given as an array or one per parameter, and like every control-specific member exists only on its control types, so another type raises a MethodError."
                  },
                  {
                      "category":  "Windowing/GUI",
-                     "feature":  "Gui.Control.Choose()",
+                     "feature":  "Gui.List.Choose()",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Selects an item in the control."
+                     "notes":  "Selects an item of a ListBox, DropDownList, ComboBox or Tab control by position or text."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -5934,13 +5934,14 @@
                  },
                  {
                      "category":  "Windowing/GUI",
-                     "feature":  "Gui.Control.Delete()",
+                     "feature":  "Gui.List.Delete()",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Deletes items from controls that support item lists."
+                     "notes":  "Deletes one item, or every item when the position is omitted, and a position below 1 raises a ValueError.",
+                     "tested-by":  "gui-window.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -6106,13 +6107,23 @@
                  },
                  {
                      "category":  "Windowing/GUI",
-                     "feature":  "Gui.Control.SetCue()",
-                     "syntax":  "",
+                     "feature":  "Gui.Edit.SetCue()",
+                     "syntax":  "Edit.SetCue(CueText [, ShowWhenFocused])",
                      "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Sets cue banner (placeholder text) for the control."
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "partial",
+                     "notes":  "Shows a cue text in an empty Edit, which off Windows only a single-line Edit has, a multi-line or password one raising an Error there."
+                 },
+                 {
+                     "category":  "Windowing/GUI",
+                     "feature":  "Gui.ComboBox.SetCue()",
+                     "syntax":  "ComboBox.SetCue(CueText)",
+                     "windows":  "full",
+                     "linux_x11":  "unsupported",
+                     "linux_wayland":  "unsupported",
+                     "macos":  "unsupported",
+                     "notes":  "Shows a cue text in a ComboBox's empty field, which raises an Error off Windows, where the toolkit's combo box has none."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -6163,6 +6174,16 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Gets or sets whether the control is visible."
+                 },
+                 {
+                     "category":  "Windowing/GUI",
+                     "feature":  "Gui.DateTime.SetFormat()",
+                     "syntax":  "DT.SetFormat([Format])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Sets the display format of a DateTime control."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -6448,7 +6469,27 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Selects the active tab page for subsequent control additions."
+                     "notes":  "Selects the tab page later controls are added to, by number or name; omitted, 0 or an empty name ends the tab."
+                 },
+                 {
+                     "category":  "Windowing/GUI",
+                     "feature":  "Gui.Tab.SetImageList()",
+                     "syntax":  "Tab.SetImageList(ImageListID)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Keysharp extension that sets the image list SetTabIcon takes tab icons from and returns the previous list's ID."
+                 },
+                 {
+                     "category":  "Windowing/GUI",
+                     "feature":  "Gui.Tab.SetTabIcon()",
+                     "syntax":  "Tab.SetTabIcon(TabIndex, ImageIndex)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Keysharp extension that shows an image of the tab control's image list on a tab, both numbers 1-based, an image number of 0 or past the list removing the icon."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -7429,7 +7470,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Adds a row to a ListView control.",
+                     "notes":  "Adds a row and returns its number, setting only the states its options name and raising a ValueError for an option that is not one, as AutoHotkey does.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -7450,7 +7491,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Deletes one row or all rows in a ListView."
+                     "notes":  "Deletes one row, or every row when the row number is omitted, and a row number below 1 raises a ValueError.",
+                     "tested-by":  "gui-window.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -7460,7 +7502,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Deletes a column from a ListView control."
+                     "notes":  "Deletes a column, and a column that does not exist fails with an Error, as in AutoHotkey."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -7470,7 +7512,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets item, selected-item, or column count in a ListView."
+                     "notes":  "Gets the row count, or the selected rows for a mode starting with S and the columns for one starting with Col, any other mode raising a ValueError.",
+                     "tested-by":  "gui-window.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -7480,7 +7523,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets the next row matching selection/focus criteria."
+                     "notes":  "Gets the first selected, focused (F) or checked (C) row after a row number, so a loop passing each result back visits every match once.",
+                     "tested-by":  "gui-window.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -7490,7 +7534,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets text from a ListView row and column.",
+                     "notes":  "Gets a cell's text, or a column header's for row 0, and a row or column that does not exist fails with an Error, as in AutoHotkey.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -7501,7 +7545,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Inserts a row at a specific position in a ListView."
+                     "notes":  "Inserts a row before a row number, or appends it past the last row, and returns its number.",
+                     "tested-by":  "gui-window.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -7511,7 +7556,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Inserts a column into a ListView."
+                     "notes":  "Inserts a column sized to its header unless the options size it, a new first column keeping the old first column's text as the native control does."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -7521,7 +7566,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Changes ListView row state, text, or icon."
+                     "notes":  "Changes the text and the named states of a row, or of every row for row 0, leaving other states and omitted columns as they are.",
+                     "tested-by":  "gui-window.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -7531,7 +7577,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Changes ListView column options and width.",
+                     "notes":  "Changes a column's options and title as AutoHotkey does, the per-column sort settings applying to header clicks, Auto and AutoHdr sizing only that column, and Sort sorting once.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -10328,6 +10374,39 @@
                      "tested-by":  "external-clr.ahk"
                  },
                  {
+                     "category":  "Windowing/GUI",
+                     "feature":  "StatusBar.SetIcon()",
+                     "syntax":  "SB.SetIcon(Filename [, IconNumber, PartNumber])",
+                     "windows":  "full",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "partial",
+                     "notes":  "Shows an icon in a part and returns its icon handle, which the part owns, and off Windows, where there is no icon handle, returns 0.",
+                     "tested-by":  "gui-window.ahk"
+                 },
+                 {
+                     "category":  "Windowing/GUI",
+                     "feature":  "StatusBar.SetParts()",
+                     "syntax":  "SB.SetParts([Width1, Width2, ...])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Divides the bar into one part per width plus a last part filling the rest, the parts that remain keeping their text and icon.",
+                     "tested-by":  "gui-window.ahk"
+                 },
+                 {
+                     "category":  "Windowing/GUI",
+                     "feature":  "StatusBar.SetText()",
+                     "syntax":  "SB.SetText(NewText [, PartNumber, Style])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Sets a part's text and, when a style is given, its border, and a part the bar does not have fails with an Error, as in AutoHotkey.",
+                     "tested-by":  "gui-window.ahk"
+                 },
+                 {
                      "category":  "Core Language",
                      "feature":  "StatusBarGetText()",
                      "syntax":  "",
@@ -10631,16 +10710,6 @@
                      "tested-by":  "flow-trycatch.ahk"
                  },
                  {
-                     "category":  "Windowing/GUI",
-                     "feature":  "TabControl.SetTabIcon()",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Sets icon for a tab page in tab controls."
-                 },
-                 {
                      "category":  "Core Language",
                      "feature":  "Tan()",
                      "syntax":  "x := Tan(1.2)",
@@ -10758,7 +10827,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Adds an item to a TreeView.",
+                     "notes":  "Adds an item and returns its ID, at the top level for parent 0, after the item whose ID is given as a numeric option, and raises a ValueError for an option that is not one.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -10769,7 +10838,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Deletes one item or all items in a TreeView."
+                     "notes":  "Deletes an item and its descendants, or every item when the ID is omitted, ID 0 raising a ValueError and an ID that does not exist failing with an Error.",
+                     "tested-by":  "gui-window.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10779,7 +10849,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets state information for a TreeView item."
+                     "notes":  "Gets the item's ID when it is expanded, checked or bold, chosen by the attribute's first letter, else 0.",
+                     "tested-by":  "gui-window.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10789,7 +10860,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets the first child item of a TreeView node."
+                     "notes":  "Gets the first child of an item, or the first top-level item for ID 0.",
+                     "tested-by":  "gui-window.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10799,7 +10871,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets the total item count in a TreeView."
+                     "notes":  "Gets the number of items in the whole tree, nested ones included.",
+                     "tested-by":  "gui-window.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10809,7 +10882,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets the next sibling item in a TreeView."
+                     "notes":  "Gets the next sibling, or with Full or Checked the next item of a depth-first walk over the whole tree, and an empty type raises a ValueError.",
+                     "tested-by":  "gui-window.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10860,7 +10934,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets text of a TreeView item."
+                     "notes":  "Gets an item's text, and ID 0 or one that does not exist fails with an Error, as in AutoHotkey."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -10870,7 +10944,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Changes TreeView item text, icon, or state.",
+                     "notes":  "Changes an item's options and name, selects it when only the ID is given, and with Sort sorts its children one level, keeping every ID.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {

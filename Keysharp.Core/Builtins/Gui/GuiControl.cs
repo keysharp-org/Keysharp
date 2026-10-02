@@ -40,7 +40,6 @@ namespace Keysharp.Builtins
 #if WINDOWS
 			private ConcurrentDictionary<int, CallbackRegistry> notifyHandlers;
 #endif
-			private long parenthandle;
 			private CallbackRegistry selectedItemChangedHandlers;
 			internal Size requestedSize = new (int.MinValue, int.MinValue);
 			internal bool eventHandlerActive = true;
@@ -404,142 +403,10 @@ namespace Keysharp.Builtins
 				}
 			}
 
-			public object UseTab(object value = null, object exactMatch = null)
-			{
-				if (_control is KeysharpTabControl tc)
-				{
-					if (gui == null || !gui.TryGetTarget(out var g))
-						return DefaultObject;
-
-					var val = value;
-					var exact = exactMatch.Ab();
-
-					if (val is string s)
-					{
-						if (s.Length > 0)
-						{
-							if (tc.FindTab(s, exact) is TabPage tp)
-							{
-								g.CurrentTab = tp;
-								g.LastContainer = tp;
-							}
-							else
-								return Errors.ErrorOccurred($"No tab matching the name \"{s}\" found");
-						}
-					}
-					else if (val != null)
-					{
-						_ = val.TryCoerceInt(out var i);
-						i--;
-
-						if (i >= 0 && i < tc.TabPages.Count)
-						{
-							var tp = tc.TabPages[i];
-							g.CurrentTab = tp;
-							g.LastContainer = tp;
-						}
-						else
-							return Errors.ErrorOccurred($"Tab index {i+1} out of bounds [1..{tc.TabPages.Count}]");
-					}
-					else
-					{
-						tc.AdjustSize(((Gui)Gui).DpiScale, requestedSize);
-						g.LastContainer = tc.GetLogicalParent();
-					}
-
-					return DefaultObject;
-				}
-
-				return Errors.ValueErrorOccurred($"Only Tab controls implement this method.");
-			}
-
-			public object Choose(object value)
-			{
-				//The documentation says "Unlike ControlChooseIndex, this method does not raise a Change or DoubleClick event."
-				//But we don't raise click events anyway here, so it shouldn't matter.
-				var s = value as string;
-				_ = value.TryCoerceInt(out var i);
-				i--;
-
-				if (_control is KeysharpTabControl tc)
-				{
-					if (!string.IsNullOrEmpty(s))
-					{
-						if (tc.FindTab(s, false) is TabPage tp)
-							tc.SelectTab(tp);
-					}
-					else if (i >= 0)
-						tc.SelectTab(i);
-				}
-				else if (_control is KeysharpListBox lb)
-				{
-					if (!string.IsNullOrEmpty(s))
-						lb.SelectItem(s);
-					else if (i >= 0)
-						lb.SetSelected(i, true);
-					else
-						lb.ClearSelected();
-				}
-				else if (_control is KeysharpComboBox cb)
-				{
-					if (!string.IsNullOrEmpty(s))
-						cb.SelectItem(s);
-					else if (i >= 0)
-						cb.SelectedIndex = i;
-					else if (cb.DropDownStyle != ComboBoxStyle.DropDownList)
-					{
-						cb.SelectedIndex = -1;
-						cb.ResetText();
-					}
-				}
-
-				return DefaultObject;
-			}
-
 			public object Focus()
 			{
 				_control?.Focus();
 				return DefaultObject;
-			}
-
-			public long Get(object itemID, object attribute)
-			{
-				if (_control is KeysharpTreeView tv)
-				{
-					if (!itemID.CoerceLong(out var id))
-						return 0L;
-
-					if (!attribute.CoerceString(out var attrText))
-						return 0L;
-
-					var attr = attrText.Trim();
-
-					if (attr.Length > 0 && TreeViewHelper.TV_FindNode(tv, id) is TreeNode node)
-					{
-						if (Options.OptionContains(attr, Keyword_Expand, Keyword_Expanded, Keyword_Expand[0].ToString()) && node.IsExpanded)
-							return node.Handle.ToInt64();
-						else if (Options.OptionContains(attr, Keyword_Check, Keyword_Checked, Keyword_Checked[0].ToString()) && node.Checked)
-							return node.Handle.ToInt64();
-						else if (Options.OptionContains(attr, Keyword_Bold, Keyword_Bold[0].ToString()) && node.NodeFont.Bold)
-							return node.Handle.ToInt64();
-					}
-				}
-
-				return 0L;
-			}
-
-			public long GetChild(object itemID)
-			{
-				if (_control is KeysharpTreeView tv)
-				{
-					if (!itemID.CoerceLong(out var id))
-						return 0L;
-
-					var node = TreeViewHelper.TV_FindNode(tv, id);
-					return node == null ? 0 : node.Nodes.Count == 0 ? 0L : node.FirstNode.Handle.ToInt64();
-				}
-
-				return 0L;
 			}
 
 			public object GetClientPos([Optional()][DefaultParameterValue(null)] object outX,
@@ -551,33 +418,6 @@ namespace Keysharp.Builtins
 				return DefaultObject;
 			}
 
-			public object GetNode(object itemID)
-			{
-				if (_control is KeysharpTreeView tv)
-				{
-					if (!itemID.CoerceLong(out var id))
-						return DefaultObject;
-
-					return TreeViewHelper.TV_FindNode(tv, id);
-				}
-
-				return DefaultObject;
-			}
-
-			public long GetParent(object itemID)
-			{
-				if (_control is KeysharpTreeView tv)
-				{
-					if (!itemID.CoerceLong(out var id))
-						return DefaultErrorLong;
-
-					var node = TreeViewHelper.TV_FindNode(tv, id);
-					return node == null || node.Parent == null ? 0L : (node.Parent is TreeNode tn ? tn.Handle.ToInt64() : 0L);
-				}
-
-				return DefaultErrorLong;
-			}
-
 			public object GetPos([Optional()][DefaultParameterValue(null)] object outX,
 								 [Optional()][DefaultParameterValue(null)] object outY,
 								 [Optional()][DefaultParameterValue(null)] object outWidth,
@@ -587,53 +427,6 @@ namespace Keysharp.Builtins
 				return DefaultObject;
 			}
 
-			public long GetPrev(object itemID)
-			{
-				if (_control is KeysharpTreeView tv)
-				{
-					if (!itemID.CoerceLong(out var id))
-						return DefaultErrorLong;
-
-					var node = TreeViewHelper.TV_FindNode(tv, id);
-					return node == null || node.PrevNode == null ? 0L : node.PrevNode.Handle.ToInt64();
-				}
-
-				return DefaultErrorLong;
-			}
-
-			public long GetSelection() => _control is KeysharpTreeView tv&& tv.SelectedNode != null ? tv.SelectedNode.Handle.ToInt64() : 0L;
-
-			public string GetText(object rowNumber, object columnNumber = null)
-			{
-				if (_control is KeysharpTreeView tv)
-				{
-					if (!rowNumber.CoerceLong(out var id))
-						return DefaultErrorString;
-
-					var node = TreeViewHelper.TV_FindNode(tv, id);
-
-					if (node != null)
-						return node.Text;
-				}
-				else if (_control is KeysharpListView lv)
-				{
-					if (!rowNumber.CoerceInt(out var row))
-						return DefaultErrorString;
-
-					if (!columnNumber.CoerceInt(out var col, 1))
-						return DefaultErrorString;
-
-					row--;
-					col = Math.Max(col - 1, 0);
-
-					if (row < 0 && col < lv.Columns.Count)
-						return lv.Columns[col].Text;
-					else if (row < lv.Items.Count && col < lv.Items[row].SubItems.Count)
-						return lv.Items[row].SubItems[col].Text;
-				}
-
-				return DefaultErrorString;
-			}
 			/// <summary>
 			/// This control's font as a <see cref="Ks.Font"/>. Reading returns a detached copy; assigning
 			/// applies only the properties the font sets. See <see cref="Gui.Font"/>.
@@ -659,10 +452,19 @@ namespace Keysharp.Builtins
 				return DefaultObject;
 			}
 
-			public object SetFormat(object format)
+			/// <summary>
+			/// Converts each item to a string as CoerceString does, leaving an omitted item null. False means one raised a
+			/// TypeError which the script continued, and the caller then returns at once.
+			/// </summary>
+			private protected static bool CoerceStrings(object[] items, out string[] texts)
 			{
-				(_control as DateTimePicker)?.SetFormat(format);
-				return DefaultObject;
+				texts = items.Length == 0 ? [] : new string[items.Length];
+
+				for (var i = 0; i < items.Length; i++)
+					if (items[i] is not null && !items[i].CoerceString(out texts[i]))
+						return false;
+
+				return true;
 			}
 
 			/// <summary>
@@ -738,7 +540,7 @@ namespace Keysharp.Builtins
 					return;
 
 				if (_control is KeysharpTreeView tv)
-					doubleClickHandlers.InvokeEventHandlers(this, GetSelection());
+					doubleClickHandlers.InvokeEventHandlers(this, tv.SelectedNode?.Handle.ToInt64() ?? 0L);
 				else if (_control is KeysharpListView lv)
 				{
 					if (lv.SelectedIndices.Count > 0)

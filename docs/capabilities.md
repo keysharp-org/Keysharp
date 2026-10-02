@@ -593,10 +593,8 @@ Status legend:
 | Gui.Add() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Adds a control to the GUI. The ActiveX and Custom control types are Win32-only and raise a ValueError on Linux and macOS. A ListView created with a view option other than +Report (+Icon, +IconSmall, +Tile, +List) is not implemented there either. Adding a WebView on Linux fails unless WebKitGTK is installed. |
 | Gui.BackColor | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the GUI background color. |
 | Gui.Call() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Shows the GUI when the object is called like a function. |
-| Gui.Control.Add() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Adds an item to controls that support item lists. |
-| Gui.Control.Choose() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Selects an item in the control. |
+| Gui.ComboBox.SetCue() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Shows a cue text in a ComboBox's empty field, which raises an Error off Windows, where the toolkit's combo box has none. |
 | Gui.Control.ClassNN | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | ClassNN identifier of the control. Off Windows only a top-level window reports a ClassNN; a child control returns an empty string, because Eto controls are drawn by the toolkit and have no per-control native window class. |
-| Gui.Control.Delete() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Deletes items from controls that support item lists. |
 | Gui.Control.Enabled | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets whether the control is enabled. |
 | Gui.Control.Focus() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets keyboard focus to the control. |
 | Gui.Control.Focused | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Whether the control currently has focus. |
@@ -612,14 +610,15 @@ Status legend:
 | Gui.Control.OnNotify() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Registers a WM_NOTIFY callback for the control. WM_NOTIFY is a Win32 concept; the non-Windows implementation accepts the call, registers nothing and never fires. |
 | Gui.Control.Opt() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sets options for the control. Changing a ListView to a view other than Report (+Icon, +IconSmall, +Tile, +List) is not implemented on Linux or macOS and raises. Raw Win32 style options (+0x..., +E0x...) have no portable equivalent and are ignored. |
 | Gui.Control.Redraw() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Redraws the control. |
-| Gui.Control.SetCue() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets cue banner (placeholder text) for the control. |
 | Gui.Control.SetFont() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the control font. |
 | Gui.Control.Text | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the control text. |
 | Gui.Control.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The backing toolkit control as a Ks.Clr object. Its concrete type is platform-dependent and unspecified; changes made through it bypass the control's own state and event wiring. |
 | Gui.Control.Type | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Control type name. |
 | Gui.Control.Value | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the control value. |
 | Gui.Control.Visible | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets whether the control is visible. |
+| Gui.DateTime.SetFormat() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the display format of a DateTime control. |
 | Gui.Destroy() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Destroys the GUI window and releases associated resources. |
+| Gui.Edit.SetCue() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Shows a cue text in an empty Edit, which off Windows only a single-line Edit has, a multi-line or password one raising an Error there. |
 | Gui.Flash() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Flashes the GUI window to attract attention. Backed by the Win32 FlashWindow API; the call is accepted and does nothing on Linux and macOS. |
 | Gui.FocusedCtrl | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Currently focused control in the GUI. |
 | Gui.Font | 🟡 Partial | 🟡 Partial | 🟡 Partial | ⚪ Unknown | Detached Font snapshot; assignments apply only specified attributes. Weights map to normal or bold; non-default quality raises Error. |
@@ -629,6 +628,9 @@ Status legend:
 | Gui.Hide() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Hides the GUI window. |
 | Gui.Hwnd | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Native window handle of the GUI. |
 | Gui.Icon | 🟢 Full | 🟡 Partial | 🔴 Unsupported | 🔴 Unsupported | Gets or sets this window's own icon, in place of the tray icon it was created with. Reading returns an Image holding the frame the window shows at its preferred size, or "" when it has none, so an icon can be copied from one window to another. Property form of Gui.SetIcon(). Partial on X11 for the same reasons as the setter. Wayland has no per-window icon protocol and resolves the icon from the window's app id instead; macOS windows have no icon. |
+| Gui.List.Add() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Appends items to a ListBox, DropDownList, ComboBox or Tab control, given as an array or one per parameter, and like every control-specific member exists only on its control types, so another type raises a MethodError. |
+| Gui.List.Choose() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Selects an item of a ListBox, DropDownList, ComboBox or Tab control by position or text. |
+| Gui.List.Delete() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Deletes one item, or every item when the position is omitted, and a position below 1 raises a ValueError. |
 | Gui.MarginX | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Default horizontal margin for layout. |
 | Gui.MarginY | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Default vertical margin for layout. |
 | Gui.Maximize() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Maximizes the GUI window. |
@@ -645,7 +647,9 @@ Status legend:
 | Gui.SetIcon() | 🟢 Full | 🟡 Partial | 🔴 Unsupported | 🔴 Unsupported | Gives one window an icon of its own, from a file, an icon resource in a module, an "HICON:"/"HBITMAP:" handle or an Image, applying to a window which is already open. Every size the source carries is kept, so each place the icon appears takes the one it wants; the Options "Wn" chooses the large (alt-tab and taskbar) size; a source carrying fixed sizes supplies the nearest it holds, one that is resampled anyway lands exactly. Unsupported on Wayland and macOS for the reason given under Gui.Icon. Partial on X11: icon resources inside a module are addressable by name but not by index, and the size option selects the nearest frame the source already carries rather than resampling. |
 | Gui.Show() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | Displays the window. Explicit X/Y placement on Wayland requires a compositor backend (KWin, GNOME or Cinnamon with the Keysharp extension). In the tested COSMIC 1.2.0 session, GTK ignores resize requests for already shown windows; initial sizing, maximize and restore work. |
 | Gui.Submit() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Submits control values and returns them to script variables. |
-| Gui.Tab.UseTab() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Selects the active tab page for subsequent control additions. |
+| Gui.Tab.SetImageList() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension that sets the image list SetTabIcon takes tab icons from and returns the previous list's ID. |
+| Gui.Tab.SetTabIcon() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension that shows an image of the tab control's image list on a tab, both numbers 1-based, an image number of 0 or past the list removing the icon. |
+| Gui.Tab.UseTab() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Selects the tab page later controls are added to, by number or name; omitted, 0 or an empty name ends the tab. |
 | Gui.Title | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the GUI window title. |
 | Gui.ToClr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The backing toolkit window as a Ks.Clr object. Its concrete type is platform-dependent and unspecified; changes made through it bypass the Gui's own state and event wiring. |
 | Gui.Visible | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets/sets GUI visibility state. |
@@ -753,17 +757,17 @@ Status legend:
 | ListHotkeys() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The ListHotkeys function displays the hotkeys in use by the current script, whether their subroutines are currently running, and whether they use a hook. |
 | ListLines() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The ListLines function enables or disables line logging or displays the script lines most recently executed. |
 | ListVars() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The ListVars function displays the script's variables: their names and current contents. |
-| ListView.Add() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Adds a row to a ListView control. |
+| ListView.Add() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Adds a row and returns its number, setting only the states its options name and raising a ValueError for an option that is not one, as AutoHotkey does. |
 | ListView.ClearColors() | 🟢 Full | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | Clears row and cell overrides and returns the control. Successful row/column insertion or deletion and sorting also clear all colors; unsorted Add and Modify retain them. Windows native properties verified without a visible window; Linux and macOS unverified. |
-| ListView.Delete() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Deletes one row or all rows in a ListView. |
-| ListView.DeleteCol() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Deletes a column from a ListView control. |
-| ListView.GetCount() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets item, selected-item, or column count in a ListView. |
-| ListView.GetNext() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the next row matching selection/focus criteria. |
-| ListView.GetText() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets text from a ListView row and column. |
-| ListView.Insert() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Inserts a row at a specific position in a ListView. |
-| ListView.InsertCol() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Inserts a column into a ListView. |
-| ListView.Modify() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Changes ListView row state, text, or icon. |
-| ListView.ModifyCol() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Changes ListView column options and width. |
+| ListView.Delete() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Deletes one row, or every row when the row number is omitted, and a row number below 1 raises a ValueError. |
+| ListView.DeleteCol() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Deletes a column, and a column that does not exist fails with an Error, as in AutoHotkey. |
+| ListView.GetCount() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the row count, or the selected rows for a mode starting with S and the columns for one starting with Col, any other mode raising a ValueError. |
+| ListView.GetNext() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the first selected, focused (F) or checked (C) row after a row number, so a loop passing each result back visits every match once. |
+| ListView.GetText() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets a cell's text, or a column header's for row 0, and a row or column that does not exist fails with an Error, as in AutoHotkey. |
+| ListView.Insert() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Inserts a row before a row number, or appends it past the last row, and returns its number. |
+| ListView.InsertCol() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Inserts a column sized to its header unless the options size it, a new first column keeping the old first column's text as the native control does. |
+| ListView.Modify() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Changes the text and the named states of a row, or of every row for row 0, leaving other states and omitted columns as they are. |
+| ListView.ModifyCol() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Changes a column's options and title as AutoHotkey does, the per-column sort settings applying to header clicks, Auto and AutoHdr sizing only that column, and Sort sorting once. |
 | ListView.SetCellColor() | 🟢 Full | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | Sets a cell foreground and background using GUI color names, hexadecimal strings or RGB integers. Omitted, empty or Default components inherit the row then control. Requires existing 1-based indices; returns the control. Windows native properties verified; Linux and macOS unverified. |
 | ListView.SetImageList() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assigns an image list for ListView icons. |
 | ListView.SetRowColor() | 🟢 Full | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | Sets a row foreground and background using GUI colors. Omitted, empty or Default components inherit the control; cell overrides take precedence. Requires an existing 1-based row; returns the control. Structural edits and sorting clear assignments. Windows native properties verified; Linux and macOS unverified. |
@@ -991,6 +995,9 @@ Status legend:
 | SoundSetVolume() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟢 Full | Changes a volume setting of a sound device. Differs in that there is no support for components, so the function only takes one parameter: the 1-based index, or name for the device. Platform statuses inherited from curated 'Sound APIs'; per-function validation pending. |
 | SplitPath() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Separates a file name or URL into its name, directory, extension, and drive. If all output variables are omitted, it returns an object with FileName, Dir, Extension, NameNoExt and Drive properties. An empty path sets requested outputs to empty strings, including in v2.1 compatibility mode. |
 | Sqrt() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the square root of a number. Throws an exception if the argument is negative. |
+| StatusBar.SetIcon() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Shows an icon in a part and returns its icon handle, which the part owns, and off Windows, where there is no icon handle, returns 0. |
+| StatusBar.SetParts() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Divides the bar into one part per width plus a last part filling the rest, the parts that remain keeping their text and icon. |
+| StatusBar.SetText() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets a part's text and, when a style is given, its border, and a part the bar does not have fails with an Error, as in AutoHotkey. |
 | StatusBarGetText() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Retrieves text from a native Win32 status bar control. No non-Windows status-bar accessibility backend is implemented. |
 | StatusBarWait() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Waits for native Win32 status-bar text and depends on StatusBarGetText; no non-Windows status-bar accessibility backend is implemented. |
 | StrCompare() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compares two strings alphabetically. Note this supports local, human readable comparison as well. |
@@ -1019,7 +1026,6 @@ Status legend:
 | Switch | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Selects one case branch based on a value/expression. |
 | SysGet() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Gets system information. Non-Windows builds implement monitor dimensions/count, mouse presence/buttons, network state and selected session metrics; Win32-only system metrics have no portable equivalent and are not implemented. |
 | SysGetIPAddresses() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The SysGetIPAddresses function returns an array of the system's IPv4 addresses. |
-| TabControl.SetTabIcon() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets icon for a tab page in tab controls. |
 | Tan() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the tangent of a number. |
 | Tanh() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the hyperbolic tangent of a number. |
 | TargetError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
@@ -1035,18 +1041,18 @@ Status legend:
 | Tray icon and menu | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Tray icon, its menu and TrayTip notifications. On Linux the tray depends on the desktop providing a StatusNotifier/AppIndicator host - some environments need an extension before an icon appears at all - and notifications go through the desktop notification service. macOS uses a status item in the menu bar. |
 | TraySetIcon() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Changes the script's tray icon. |
 | TrayTip() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Creates a toast message window near the tray icon. Differs in that the Mute option is accepted but has no effect (there is no way to mute the system sound) and a large icon cannot be requested. The registry key EnableBalloonTips is not observed for disabling the notification. The option 4 has no effect because the tray icon is always shown at the top of the toast. On Linux and macOS the toast is an Eto Notification, so its appearance and duration are decided by the desktop notification service. |
-| TreeView.Add() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Adds an item to a TreeView. |
-| TreeView.Delete() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Deletes one item or all items in a TreeView. |
-| TreeView.Get() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets state information for a TreeView item. |
-| TreeView.GetChild() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the first child item of a TreeView node. |
-| TreeView.GetCount() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the total item count in a TreeView. |
-| TreeView.GetNext() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the next sibling item in a TreeView. |
+| TreeView.Add() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Adds an item and returns its ID, at the top level for parent 0, after the item whose ID is given as a numeric option, and raises a ValueError for an option that is not one. |
+| TreeView.Delete() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Deletes an item and its descendants, or every item when the ID is omitted, ID 0 raising a ValueError and an ID that does not exist failing with an Error. |
+| TreeView.Get() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the item's ID when it is expanded, checked or bold, chosen by the attribute's first letter, else 0. |
+| TreeView.GetChild() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the first child of an item, or the first top-level item for ID 0. |
+| TreeView.GetCount() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the number of items in the whole tree, nested ones included. |
+| TreeView.GetNext() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the next sibling, or with Full or Checked the next item of a depth-first walk over the whole tree, and an empty type raises a ValueError. |
 | TreeView.GetNode() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns TreeView node object by node id/handle. |
 | TreeView.GetParent() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the parent item of a TreeView node. |
 | TreeView.GetPrev() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the previous sibling item in a TreeView. |
 | TreeView.GetSelection() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the currently selected TreeView item. |
-| TreeView.GetText() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets text of a TreeView item. |
-| TreeView.Modify() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Changes TreeView item text, icon, or state. |
+| TreeView.GetText() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets an item's text, and ID 0 or one that does not exist fails with an Error, as in AutoHotkey. |
+| TreeView.Modify() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Changes an item's options and name, selects it when only the ID is given, and with Sort sorts its children one level, keeping every ID. |
 | TreeView.SetImageList() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Assigns an image list for TreeView icons. |
 | Trim() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Trims characters from the beginning and end of a string. |
 | True | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Boolean true constant. |

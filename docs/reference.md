@@ -1310,8 +1310,9 @@ Controlling another application needs **Automation** permission, granted per tar
 			+ `MenuItemCount`: Gets the number of sub items within a menu.
 		+ `ListView`:
 			+ `DeleteCol(Column) => Boolean` Removes a column and returns `true` if the column was found and deleted, else `false`.
-		+ `TabControl`:
-			+ `SetTabIcon(TabIndex, ImageIndex)`: Relieves the caller of having to use `SendMessage()`.
+		+ `Gui.Tab`:
+			+ `SetImageList(ImageListID)`: Sets the image list the tab icons come from and returns the previous list's ID.
+			+ `SetTabIcon(TabIndex, ImageIndex)`: Shows an image of that list on a tab, relieving the caller of having to use `SendMessage()`. Both numbers are 1-based, as tab and icon numbers are elsewhere, and an image number of 0 or past the list removes the icon.
 		+ `TreeView`:
 			+ `GetNode(ItemID) => TreeNode`: Retrieves a raw Winforms `TreeNode` object based on the passed in ID.
 		+ `RichEdit`: the control returned by `Gui.Add("RichEdit", ...)` carries its own members, because a range of characters in it has a font, two colours and a paragraph of its own. Every character position is 1-based and indexes the same text `Value` returns, one character per line break — so a position computed with `InStr()` or `RegExMatch()` over `Value` can be handed straight to `SetFormat()`. A position of `0` means "the current selection" wherever a range is asked for.

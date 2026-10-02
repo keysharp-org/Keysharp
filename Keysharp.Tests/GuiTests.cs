@@ -1006,7 +1006,7 @@ namespace Keysharp.Tests
 			try
 			{
 				var btn = (Gui.Control)gui.Add("Button", "x10 y20 w80 h24", "OK");
-				var lv = (Gui.Control)gui.Add("ListView", "x10 y60 w200 h100", "Name");
+				var lv = (Gui.ListView)gui.Add("ListView", "x10 y60 w200 h100", "Name");
 				var hotkey = (Gui.Control)gui.Add("Hotkey", "x100 y20 w80 h24");
 				_ = lv.Add("", "one");
 				_ = lv.Add("", "two");
@@ -1275,7 +1275,7 @@ namespace Keysharp.Tests
 					controls.Add((Gui.Control)gui.Add("Button", "xs w80 h24", "xs"));
 					controls.Add((Gui.Control)gui.Add("Button", "ys w80 h24", "ys"));
 					controls.Add((Gui.Control)gui.Add("Button", "xm w80 h24", "xm"));
-					var tab = (Gui.Control)gui.Add("Tab3", "x10 y260 w200 h80", new Keysharp.Builtins.Array(["One", "Two"]));
+					var tab = (Gui.Tab)gui.Add("Tab3", "x10 y260 w200 h80", new Keysharp.Builtins.Array(["One", "Two"]));
 					controls.Add(tab);
 					controls.Add((Gui.Control)gui.Add("Button", "w60 h24", "In the tab"));
 					_ = tab.UseTab();

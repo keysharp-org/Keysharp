@@ -31,7 +31,8 @@ namespace Keysharp.Builtins
 	public enum ColumnHeaderAutoResizeStyle
 	{
 		None,
-		HeaderSize
+		HeaderSize,
+		ColumnContent
 	}
 
 	public enum TabAlignment
@@ -909,13 +910,6 @@ namespace Keysharp.Builtins
 
 	public class KeysharpListView : GridView
 	{
-		private enum ListViewSortMode
-		{
-			Text,
-			Integer,
-			Float
-		}
-
 		internal event Action<int> ColumnClicked;
 
 		public class ListViewItem
@@ -1022,10 +1016,7 @@ namespace Keysharp.Builtins
 			set
 			{
 				sorting = value;
-				if (sorting == SortOrder.Ascending)
-					SortByColumn(0, false);
-				else if (sorting == SortOrder.Descending)
-					SortByColumn(0, true);
+				SortBySorting();
 			}
 		}
 		public bool MultiSelect
@@ -1068,10 +1059,6 @@ namespace Keysharp.Builtins
 		private readonly List<GridColumn> etoColumns = [];
 		private readonly List<TextBoxCell> etoTextCells = [];
 		private readonly List<ListViewItem> etoItems = [];
-		private readonly Dictionary<int, ListViewSortMode> columnSortModes = [];
-		private readonly Dictionary<int, bool> columnSortDescending = [];
-		private readonly HashSet<int> columnSortDefaultDescending = [];
-		private readonly HashSet<int> columnNoSort = [];
 		private bool multiSelect;
 		private bool checkBoxes;
 		private bool gridLines;
@@ -1146,9 +1133,6 @@ namespace Keysharp.Builtins
 
 			for (var i = 0; i < Columns.Count; i++)
 			{
-				if (!columnSortModes.ContainsKey(i))
-					columnSortModes[i] = ListViewSortMode.Text;
-
 				var columnIndex = i;
 				var binding = new DelegateBinding<ListViewItem, string>
 				{
@@ -1180,79 +1164,26 @@ namespace Keysharp.Builtins
 			EnsureResizableColumns();
 		}
 
-		internal void SetColumnSortMode(int columnIndex, string mode)
+		/// <summary>Reorders the rows by a column's cells.</summary>
+		internal void SortRows(int column, Comparison<string> compare)
 		{
-			if (columnIndex < 0)
-				return;
-
-			if (string.Equals(mode, "Integer", StringComparison.OrdinalIgnoreCase))
-				columnSortModes[columnIndex] = ListViewSortMode.Integer;
-			else if (string.Equals(mode, "Float", StringComparison.OrdinalIgnoreCase))
-				columnSortModes[columnIndex] = ListViewSortMode.Float;
-			else
-				columnSortModes[columnIndex] = ListViewSortMode.Text;
-		}
-
-		internal void SetColumnNoSort(int columnIndex, bool noSort)
-		{
-			if (columnIndex < 0)
-				return;
-
-			if (noSort)
-				columnNoSort.Add(columnIndex);
-			else
-				columnNoSort.Remove(columnIndex);
-		}
-
-		internal void SetColumnSortDefaultDescending(int columnIndex, bool desc)
-		{
-			if (columnIndex < 0)
-				return;
-
-			if (desc)
-				columnSortDefaultDescending.Add(columnIndex);
-			else
-				columnSortDefaultDescending.Remove(columnIndex);
-		}
-
-		internal void SortByColumn(int columnIndex, bool descending)
-		{
-			if (columnIndex < 0 || columnIndex >= Columns.Count)
-				return;
-
-			_ = (this.GetGuiControl() as Gui.ListView)?.ClearColors();
-
-			var mode = columnSortModes.TryGetValue(columnIndex, out var m) ? m : ListViewSortMode.Text;
 			var list = Items.ToList();
-			list.Sort((a, b) => CompareItems(a, b, columnIndex, mode));
-			if (descending)
-				list.Reverse();
-
+			list.Sort((a, b) => compare(GetCellText(a, column), GetCellText(b, column)));
 			Items.Clear();
+
 			foreach (var item in list)
 				Items.Add(item);
 
-			columnSortDescending[columnIndex] = descending;
 			RefreshDataStore();
 		}
 
-		private static int CompareItems(ListViewItem a, ListViewItem b, int columnIndex, ListViewSortMode mode)
+		//The control's own Sort option keeps the rows in the order of their first column, as the native one does.
+		private void SortBySorting()
 		{
-			var left = GetCellText(a, columnIndex);
-			var right = GetCellText(b, columnIndex);
-
-			if (mode == ListViewSortMode.Integer)
-			{
-				if (long.TryParse(left, out var li) && long.TryParse(right, out var ri))
-					return li.CompareTo(ri);
-			}
-			else if (mode == ListViewSortMode.Float)
-			{
-				if (double.TryParse(left, out var ld) && double.TryParse(right, out var rd))
-					return ld.CompareTo(rd);
-			}
-
-			return string.Compare(left, right, StringComparison.OrdinalIgnoreCase);
+			if (sorting == SortOrder.Ascending)
+				SortRows(0, (x, y) => string.Compare(x, y, StringComparison.OrdinalIgnoreCase));
+			else if (sorting == SortOrder.Descending)
+				SortRows(0, (x, y) => string.Compare(y, x, StringComparison.OrdinalIgnoreCase));
 		}
 
 		private void OnColumnHeaderClickInternal(object sender, GridColumnEventArgs e)
@@ -1282,91 +1213,11 @@ namespace Keysharp.Builtins
 			if (baseColumnIndex < 0)
 				return;
 
-			ColumnClicked?.Invoke(baseColumnIndex);
-			if (columnNoSort.Contains(baseColumnIndex))
-				return;
-
+			//Sorted first, as AutoHotkey does, so the rows are in order by the time the script hears of the click.
 			if (autoSortHeader)
-			{
-				var desc = columnSortDescending.TryGetValue(baseColumnIndex, out var last)
-					? !last
-					: columnSortDefaultDescending.Contains(baseColumnIndex);
-				columnSortDescending[baseColumnIndex] = desc;
-				SortByColumn(baseColumnIndex, desc);
-			}
-		}
+				(this.GetGuiControl() as Gui.ListView)?.SortByHeader(baseColumnIndex);
 
-		internal void InsertColumnState(int index)
-		{
-			if (index < 0)
-				index = 0;
-
-			var updatedModes = new Dictionary<int, ListViewSortMode>();
-			foreach (var pair in columnSortModes)
-				updatedModes[pair.Key >= index ? pair.Key + 1 : pair.Key] = pair.Value;
-			columnSortModes.Clear();
-			foreach (var pair in updatedModes)
-				columnSortModes[pair.Key] = pair.Value;
-
-			var updatedDescending = new Dictionary<int, bool>();
-			foreach (var pair in columnSortDescending)
-				updatedDescending[pair.Key >= index ? pair.Key + 1 : pair.Key] = pair.Value;
-			columnSortDescending.Clear();
-			foreach (var pair in updatedDescending)
-				columnSortDescending[pair.Key] = pair.Value;
-
-			var updatedDefaultDesc = new HashSet<int>();
-			foreach (var value in columnSortDefaultDescending)
-				updatedDefaultDesc.Add(value >= index ? value + 1 : value);
-			columnSortDefaultDescending.Clear();
-			foreach (var value in updatedDefaultDesc)
-				columnSortDefaultDescending.Add(value);
-
-			var updatedNoSort = new HashSet<int>();
-			foreach (var value in columnNoSort)
-				updatedNoSort.Add(value >= index ? value + 1 : value);
-			columnNoSort.Clear();
-			foreach (var value in updatedNoSort)
-				columnNoSort.Add(value);
-		}
-
-		internal void RemoveColumnState(int index)
-		{
-			if (index < 0)
-				return;
-
-			columnSortModes.Remove(index);
-			columnSortDescending.Remove(index);
-			_ = columnSortDefaultDescending.Remove(index);
-			_ = columnNoSort.Remove(index);
-
-			var updatedModes = new Dictionary<int, ListViewSortMode>();
-			foreach (var pair in columnSortModes)
-				updatedModes[pair.Key > index ? pair.Key - 1 : pair.Key] = pair.Value;
-			columnSortModes.Clear();
-			foreach (var pair in updatedModes)
-				columnSortModes[pair.Key] = pair.Value;
-
-			var updatedDescending = new Dictionary<int, bool>();
-			foreach (var pair in columnSortDescending)
-				updatedDescending[pair.Key > index ? pair.Key - 1 : pair.Key] = pair.Value;
-			columnSortDescending.Clear();
-			foreach (var pair in updatedDescending)
-				columnSortDescending[pair.Key] = pair.Value;
-
-			var updatedDefaultDesc = new HashSet<int>();
-			foreach (var value in columnSortDefaultDescending)
-				updatedDefaultDesc.Add(value > index ? value - 1 : value);
-			columnSortDefaultDescending.Clear();
-			foreach (var value in updatedDefaultDesc)
-				columnSortDefaultDescending.Add(value);
-
-			var updatedNoSort = new HashSet<int>();
-			foreach (var value in columnNoSort)
-				updatedNoSort.Add(value > index ? value - 1 : value);
-			columnNoSort.Clear();
-			foreach (var value in updatedNoSort)
-				columnNoSort.Add(value);
+			ColumnClicked?.Invoke(baseColumnIndex);
 		}
 
 	internal int AddRow(IReadOnlyList<string> values, bool isChecked = false, int colStart = 0)
@@ -1383,17 +1234,13 @@ namespace Keysharp.Builtins
 
 			item.Checked = isChecked;
 			Items.Add(item);
-			if (sorting == SortOrder.Ascending)
-				SortByColumn(0, false);
-			else if (sorting == SortOrder.Descending)
-				SortByColumn(0, true);
+			SortBySorting();
 			RefreshDataStore();
-			return Items.Count;
+			return item.Index + 1;
 		}
 
 	internal int InsertRow(int index, IReadOnlyList<string> values, bool isChecked = false, int colStart = 0)
 	{
-			_ = (this.GetGuiControl() as Gui.ListView)?.ClearColors();
 			if (base.Columns.Count == 0 && Columns.Count > 0)
 				SyncColumns();
 
@@ -1410,13 +1257,10 @@ namespace Keysharp.Builtins
 			else
 				Items.Insert(index, item);
 
-			if (sorting == SortOrder.Ascending)
-				SortByColumn(0, false);
-			else if (sorting == SortOrder.Descending)
-				SortByColumn(0, true);
+			SortBySorting();
 
 			RefreshDataStore();
-			return index < 0 || index >= Items.Count ? Items.Count : index + 1;
+			return item.Index + 1;
 		}
 
 		public void AutoResizeColumns(ColumnHeaderAutoResizeStyle style)
@@ -1644,7 +1488,7 @@ namespace Keysharp.Builtins
 			item.SubItems.Add(new ListViewItem.ListViewSubItem());
 	}
 
-	private static string GetCellText(ListViewItem item, int columnIndex)
+	internal static string GetCellText(ListViewItem item, int columnIndex)
 	{
 			if (columnIndex == 0)
 				return string.IsNullOrEmpty(item.Text) && item.SubItems.Count > 0 ? item.SubItems[0].Text : item.Text;
@@ -1652,7 +1496,7 @@ namespace Keysharp.Builtins
 			return columnIndex < item.SubItems.Count ? item.SubItems[columnIndex].Text : "";
 		}
 
-	private static void SetCellText(ListViewItem item, int columnIndex, string value)
+	internal static void SetCellText(ListViewItem item, int columnIndex, string value)
 	{
 			EnsureSubItems(item, columnIndex + 1);
 
@@ -2766,6 +2610,8 @@ namespace Keysharp.Builtins
 
 		internal void RemoveMarkForExpansion(TreeNode node) => _ = expandStates.Remove(node);
 
+		internal void ClearMarksForExpansion() => expandStates.Clear();
+
 		internal TreeNode FindNode(long id) => nodesById.TryGetValue(id, out var node) ? node : null;
 
 		internal void RegisterNode(TreeNode node)
@@ -2819,12 +2665,6 @@ namespace Keysharp.Builtins
 			SelectedNode = node;
 			if (ensureVisible)
 				node.EnsureVisible();
-		}
-
-		public void Sort()
-		{
-			Nodes.SortByText();
-			Application.Instance.AsyncInvoke(new Action(ReloadData));
 		}
 
 		private void UpdateCheckColumn()
@@ -2883,15 +2723,14 @@ namespace Keysharp.Builtins
 
 	public static class TreeNodeCollectionExtensions
 	{
+		//One level, as the native TreeView sorts, by the case-insensitive order of the user's locale.
 		internal static void SortByText(this TreeNodeCollection nodes)
 		{
-			var ordered = nodes.OrderBy(node => node.Text, StringComparer.OrdinalIgnoreCase).ToList();
+			var ordered = nodes.OrderBy(node => node.Text, StringComparer.CurrentCultureIgnoreCase).ToList();
 			nodes.Clear();
+
 			foreach (var node in ordered)
-			{
-				node.Nodes?.SortByText();
 				nodes.Add(node);
-			}
 		}
 	}
 

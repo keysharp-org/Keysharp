@@ -1708,17 +1708,13 @@ namespace Keysharp.Builtins
 					if (opts.bgcolor.HasValue)
 						ss.BackColor = opts.bgcolor.Value;
 
-					if (!string.IsNullOrEmpty(textStr))
+					//A StatusBar always has its one part, as in AutoHotkey, so SetText reaches part 1 with no text given.
+					_ = ss.Items.Add(new KeysharpToolStripStatusLabel(textStr)
 					{
-						var tsl = new KeysharpToolStripStatusLabel(textStr)
-						{
-							AutoSize = true,
-							Name = $"AutoToolStripLabel{ss.Items.Count}",
-							Font = Conversions.ConvertFont(form.Font)
-						};
-
-						_ = ss.Items.Add(tsl);
-					}
+						AutoSize = true,
+						Name = $"AutoToolStripLabel{ss.Items.Count}",
+						Font = Conversions.ConvertFont(form.Font)
+					});
 
 					ctrl = ss;
 					holder = new StatusBar(this, ctrl, typeo);
@@ -2365,7 +2361,7 @@ namespace Keysharp.Builtins
 			{
 				var ktc = (KeysharpTabControl)ctrl;
 				if (ktc.TabPages.Count > 0)
-					holder.UseTab(1);//Will set this object's CurrentTab value, as well as the LastContainer values.
+					((Tab)holder).UseTab(1);//Will set this object's CurrentTab value, as well as the LastContainer values.
 				else
 					LastContainer = ktc.GetLogicalParent();
 
@@ -4349,9 +4345,9 @@ namespace Keysharp.Builtins
 #if WINDOWS
 		public class Custom(params object[] args) : Gui.Control(args) { }
 #endif
-		public class DateTime(params object[] args) : Gui.Control(args) { }
+		public partial class DateTime(params object[] args) : Gui.Control(args) { }
 
-		public class Edit(params object[] args) : Gui.Control(args) { }
+		public partial class Edit(params object[] args) : Gui.Control(args) { }
 
 		public class GroupBox(params object[] args) : Gui.Control(args) { }
 
@@ -4359,15 +4355,15 @@ namespace Keysharp.Builtins
 
 		public class Link(params object[] args) : Gui.Control(args) { }
 
-		public class List(params object[] args) : Gui.Control(args) { }
+		public partial class List(params object[] args) : Gui.Control(args) { }
 
-		public class ComboBox(params object[] args) : Gui.List(args) { }
+		public partial class ComboBox(params object[] args) : Gui.List(args) { }
 
 		public class DDL(params object[] args) : Gui.List(args) { }
 
 		public class ListBox(params object[] args) : Gui.List(args) { }
 
-		public class Tab(params object[] args) : Gui.List(args) { }
+		public partial class Tab(params object[] args) : Gui.List(args) { }
 
 		public partial class ListView(params object[] args) : Gui.Control(args) { }
 
@@ -4381,16 +4377,17 @@ namespace Keysharp.Builtins
 
 		public class Slider(params object[] args) : Gui.Control(args) { }
 
-		public class StatusBar(params object[] args) : Gui.Control(args) { }
+		public partial class StatusBar(params object[] args) : Gui.Control(args) { }
 
 		public class Text(params object[] args) : Gui.Control(args) { }
 
-		public class TreeView(params object[] args) : Gui.Control(args) { }
+		public partial class TreeView(params object[] args) : Gui.Control(args) { }
 
 		public class UpDown(params object[] args) : Gui.Control(args) { }
 
-		//Gui.RichEdit and Gui.WebView are the two control holders with members of their own; each lives in a
-		//file of its own, RichEdit.cs and WebView.cs.
+		//The members a control type has beyond Gui.Control's live in a file of their own, as AutoHotkey defines them
+		//on that type's prototype: List.cs (Gui.List and Gui.Tab), ListView.cs, TreeView.cs, StatusBar.cs, DateTime.cs,
+		//Edit.cs (Gui.Edit and Gui.ComboBox), RichEdit.cs and WebView.cs.
 
 		internal class GuiOptions
 		{

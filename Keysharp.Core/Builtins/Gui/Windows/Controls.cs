@@ -518,8 +518,6 @@ namespace Keysharp.Builtins
 
 	public class KeysharpListView : ListView
 	{
-		public bool uni = false;
-		private int sortColumn = -1;
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 
@@ -578,6 +576,12 @@ namespace Keysharp.Builtins
 			Invalidate();
 		}
 
+		internal void SetListViewColumnSizes(int width = -2)
+		{
+			foreach (ColumnHeader col in Columns)
+				col.Width = width;
+		}
+
 		protected override void OnForeColorChanged(EventArgs e)
 		{
 			base.OnForeColorChanged(e);
@@ -596,26 +600,8 @@ namespace Keysharp.Builtins
 				base.WndProc(ref m);
 		}
 
-		/// <summary>
-		/// Gotten from https://docs.microsoft.com/en-us/previous-versions/dotnet/articles/ms996467(v=msdn.10)
-		/// </summary>
-		/// <param name="sender"></param>
-		/// <param name="e"></param>
-		private void KeysharpListView_ColumnClick(object sender, ColumnClickEventArgs e)
-		{
-			if (Sorting == SortOrder.None)
-				return;
-
-			_ = (this.GetGuiControl() as Gui.ListView)?.ClearColors();
-
-			if (e.Column != sortColumn)//Determine whether the column is the same as the last column clicked.
-			{
-				sortColumn = e.Column;//Set the sort column to the new column.
-				Sorting = Sorting == SortOrder.Ascending ? SortOrder.Descending : SortOrder.Ascending;//Determine what the last sort order was and change it.
-			}
-			else if (!uni)
-				Sorting = Sorting == SortOrder.Ascending ? SortOrder.Descending : SortOrder.Ascending;//Determine what the last sort order was and change it.
-		}
+		//Subscribed ahead of the holder's ColClick, so the rows are sorted by the time the script hears of the click.
+		private void KeysharpListView_ColumnClick(object sender, ColumnClickEventArgs e) => (this.GetGuiControl() as Gui.ListView)?.SortByHeader(e.Column);
 	}
 
 	public class KeysharpMonthCalendar : MonthCalendar
@@ -1120,9 +1106,9 @@ namespace Keysharp.Builtins
 		/// Focusing gets rid of the unsightly dotted selection box on the tab.
 		/// It may still show for a half second when donig custom drawing with bgcolor.
 		/// </summary>
-		private void KeysharpTabControl_Click(object sender, EventArgs e) => _ = SelectedTab.Focus();
+		private void KeysharpTabControl_Click(object sender, EventArgs e) => _ = SelectedTab?.Focus();
 
-		private void KeysharpTabControl_Enter(object sender, EventArgs e) => _ = SelectedTab.Focus();
+		private void KeysharpTabControl_Enter(object sender, EventArgs e) => _ = SelectedTab?.Focus();
 
 		private void KeysharpTabControl_ControlAdded(object sender, ControlEventArgs e)
 		{
@@ -1136,11 +1122,47 @@ namespace Keysharp.Builtins
 		internal readonly CallbackRegistry doubleClickHandlers = new(CallbackStop.NonEmpty, "Gui");
 		//No WndProc method to override because TSSL is not a Control.
 
+		//The icon handle StatusBar.SetIcon returned, which this part owns as an AutoHotkey status bar part owns its HICON.
+		private nint icon;
+
 		public KeysharpToolStripStatusLabel(string text = "")
 			: base(text)
 		{
 			DoubleClickEnabled = true;
 			DoubleClick += KeysharpToolStripStatusLabel_DoubleClick;
+		}
+
+		/// <summary>
+		/// Shows the bitmap as this part's icon, taking ownership of it, and returns an icon handle for it which stays
+		/// valid until the icon is replaced or the part is disposed.
+		/// </summary>
+		internal nint SetIcon(Bitmap bitmap)
+		{
+			var old = Image;
+			Image = bitmap;
+			old?.Dispose();
+			DestroyIcon();
+			return icon = bitmap.GetHicon();
+		}
+
+		protected override void Dispose(bool disposing)
+		{
+			var image = Image;
+			base.Dispose(disposing);
+
+			if (disposing)
+				image?.Dispose();
+
+			DestroyIcon();
+		}
+
+		private void DestroyIcon()
+		{
+			if (icon != 0)
+			{
+				_ = WindowsAPI.DestroyIcon(icon);
+				icon = 0;
+			}
 		}
 
 		private void KeysharpToolStripStatusLabel_DoubleClick(object sender, EventArgs e) => doubleClickHandlers.InvokeEventHandlers(this, GetCurrentParent().Items.IndexOf(this) + 1);
@@ -1191,7 +1213,6 @@ namespace Keysharp.Builtins
 	{
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
-		private readonly Dictionary<TreeNode, bool> expandStates = [];
 
 		protected override CreateParams CreateParams
 		{
@@ -1213,19 +1234,6 @@ namespace Keysharp.Builtins
 			removeStyle = _removeStyle;
 			removeExStyle = _removeExStyle;
 		}
-
-		internal void DelayedExpandParent(TreeNode node)
-		{
-			var parent = node.Parent ?? node;
-
-			if (expandStates.TryGetValue(parent, out var b))
-				if (b)
-					parent.Expand();
-		}
-
-		internal void MarkForExpansion(TreeNode node) => expandStates[node] = true;
-
-		internal void RemoveMarkForExpansion(TreeNode node) => _ = expandStates.Remove(node);
 
 		protected override void WndProc(ref Message m)
 		{
