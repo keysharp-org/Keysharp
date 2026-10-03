@@ -85,6 +85,42 @@ Loop 50
 	ListViewGetContent(, lv)
 DllCall("GetProcessHandleCount", "Ptr", proc, "UInt*", &after)
 Assert(after - before < 10, A_LineNumber)
+; Coordinates of a native child are relative to the selected target, or the top-level client for a direct handle.
+panel := DllCall("CreateWindowEx", "UInt", 0, "Str", "Static", "Str", "NativeContainer", "UInt", WS_CHILD | WS_VISIBLE, "Int", 400, "Int", 280, "Int", 200, "Int", 80, "Ptr", g.Hwnd, "Ptr", 0, "Ptr", 0, "Ptr", 0, "Ptr")
+child := DllCall("CreateWindowEx", "UInt", 0, "Str", "Button", "Str", "NestedNative", "UInt", WS_CHILD | WS_VISIBLE, "Int", 3, "Int", 4, "Int", 100, "Int", 20, "Ptr", panel, "Ptr", 0, "Ptr", 0, "Ptr", 0, "Ptr")
+ControlGetPos(&childX, &childY, &childWidth, &childHeight, child)
+AssertEq(childX, 403, A_LineNumber)
+AssertEq(childY, 284, A_LineNumber)
+ControlGetPos(&localX, &localY, , , "NestedNative", panel)
+AssertEq(localX, 3, A_LineNumber)
+AssertEq(localY, 4, A_LineNumber)
+ControlGetPos(&panelX, &panelY, , , , panel)
+AssertEq(panelX, 400, A_LineNumber)
+AssertEq(panelY, 280, A_LineNumber)
+AssertEq(ControlGetClassNN("NestedNative", panel), "Button1", A_LineNumber)
+AssertEq(ControlGetClassNN(child, "no matching window"), ControlGetClassNN(child), A_LineNumber)
+ControlMove(413, , , , child)
+ControlGetPos(&childX, &childY, &movedWidth, &movedHeight, child)
+AssertEq(childX, 413, A_LineNumber)
+AssertEq(childY, 284, A_LineNumber)
+AssertEq(movedWidth, childWidth, A_LineNumber)
+AssertEq(movedHeight, childHeight, A_LineNumber)
+ControlMove(, 9, , , "NestedNative", panel)
+ControlGetPos(&localX, &localY, , , "NestedNative", panel)
+AssertEq(localX, 13, A_LineNumber)
+AssertEq(localY, 9, A_LineNumber)
+
+; Resizing an owned top-level window keeps its screen position, since its owner is not a coordinate parent.
+owned := Gui("+Owner" g.Hwnd)
+owned.Show("NoActivate x100 y120 w200 h100")
+WinGetPos(&ownedX, &ownedY, &ownedWidth, &ownedHeight, owned)
+ControlMove(, , ownedWidth + 20, , owned)
+WinGetPos(&resizedX, &resizedY, &resizedWidth, &resizedHeight, owned)
+AssertEq(resizedX, ownedX, A_LineNumber)
+AssertEq(resizedY, ownedY, A_LineNumber)
+AssertEq(resizedWidth, ownedWidth + 20, A_LineNumber)
+AssertEq(resizedHeight, ownedHeight, A_LineNumber)
+owned.Destroy()
 g.Destroy()
 
 ; A MenuSelect path that names nothing selects nothing, rather than the last item it did find.
@@ -129,6 +165,15 @@ for i, hwnd in WinGetControlsHwnd(nested) {
 	AssertEq(ControlGetHwnd(names[i], nested), hwnd, A_LineNumber)
 }
 AssertEq(ControlGetHwnd("Inner", nested), nested["Inner"].Hwnd, A_LineNumber)   ; a control's own text
+inner := nested["Inner"]
+ControlGetPos(&innerX, &innerY, , , "Inner", nested)
+ControlGetPos(&directX, &directY, , , inner)
+AssertEq(directX, innerX, A_LineNumber)
+AssertEq(directY, innerY, A_LineNumber)
+ControlMove(innerX + 7, innerY + 5, , , inner)
+ControlGetPos(&directX, &directY, , , "Inner", nested)
+AssertEq(directX, innerX + 7, A_LineNumber)
+AssertEq(directY, innerY + 5, A_LineNumber)
 
 ; The process path is a drive path, which ahk_exe matches in full.
 path := WinGetProcessPath(nested)

@@ -132,8 +132,13 @@ namespace Keysharp.Internals.Os
 
 		internal virtual string ControlGetClassNN(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowInfoBase item)
-				return item.ClassNN;
+			if (WindowSearch.TrySearchControl(ctrl, title, text, excludeTitle, excludeText, out var item, out var target, true) && item != null)
+			{
+				var parent = WindowSearch.GetControlReferenceWindow(item, target);
+				return Platform.Window.TryEnumerateChildren(parent.Handle, out var controls)
+					? WindowQuery.ClassNNs(controls).FirstOrDefault(c => c.Control == item.Handle).ClassNN ?? item.ClassName
+					: item.ClassName;
+			}
 
 			return DefaultObject;
 		}
@@ -186,26 +191,7 @@ namespace Keysharp.Internals.Os
 
 		internal abstract void ControlHideDropDown(object ctrl, object title, object text, object excludeTitle, object excludeText);
 
-		internal virtual void ControlMove(int x, int y, int width, int height, object ctrl, object title, object text, object excludeTitle, object excludeText)
-		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowInfoBase item)
-			{
-				if (Control.FromHandle(item.Handle) is Control ctrl2)
-				{
-					ctrl2.SetLocation(new Point(x == int.MinValue ? ctrl2.Location.X : x, y == int.MinValue ? ctrl2.Location.Y : y));
-					ctrl2.Size = new Size(width == int.MinValue ? ctrl2.Size.Width : width, height == int.MinValue ? ctrl2.Size.Height : height);
-				}
-				else
-				{
-					//Unspecified args are int.MinValue ("leave unchanged"); actions go by handle (WindowInfo is read-only).
-					var setPos  = x != int.MinValue || y != int.MinValue;
-					var setSize = width != int.MinValue || height != int.MinValue;
-					_ = Platform.Window.TryMoveResize(item.Handle, new Rectangle(x, y, width, height), setPos, setSize);
-				}
-
-				WindowInfoBase.DoControlDelay();
-			}
-		}
+		internal abstract void ControlMove(int x, int y, int width, int height, object ctrl, object title, object text, object excludeTitle, object excludeText);
 
 		internal abstract void ControlSend(string str, object ctrl, object title, object text, object excludeTitle, object excludeText);
 

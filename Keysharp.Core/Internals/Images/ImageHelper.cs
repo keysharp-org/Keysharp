@@ -9,6 +9,9 @@ namespace Keysharp.Internals.Images
 {
 	internal static class ImageHelper
 	{
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		internal static uint Grayscale(uint r, uint g, uint b) => (299 * r + 587 * g + 114 * b + 500) / 1000;
+
 		internal static Icon IconFromByteArray(byte[] bytes)
 		{
 #if WINDOWS

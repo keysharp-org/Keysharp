@@ -229,13 +229,12 @@ namespace Keysharp.Internals.Os.Windows
 			WindowInfoBase target;
 			nint control = 0;
 
-			if (!posoverride && ctrlorpos is not null and not string)
+			if (!posoverride)
 			{
-				if (WindowSearch.SearchControl(ctrlorpos, title, text, excludeTitle, excludeText) is not WindowInfoBase hwndItem)
+				if (!WindowSearch.TrySearchControl(ctrlorpos, title, text, excludeTitle, excludeText, out var item, out target))
 					return;
 
-				target = hwndItem;
-				control = target.Handle;
+				control = item?.Handle ?? 0;
 			}
 			else
 			{
@@ -243,11 +242,6 @@ namespace Keysharp.Internals.Os.Windows
 					return;
 
 				target = win;
-
-				if (ctrlorpos.IsNullOrEmpty())
-					control = target.Handle;
-				else if (!posoverride && ctrlorpos is string name)
-					control = WindowQuery.ControlExist(target.Handle, name);
 			}
 
 			// Read as "xN yN" only once no control matched, so a control whose class or text looks like that comes first.
@@ -623,9 +617,9 @@ namespace Keysharp.Internals.Os.Windows
 											 object excludeTitle = null,
 											 object excludeText = null)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowInfoBase item)
+			if (WindowSearch.TrySearchControl(ctrl, title, text, excludeTitle, excludeText, out var item, out var target, true) && item != null)
 			{
-				var coordParent = item.ParentWindow.Handle;
+				var coordParent = GetControlCoordinateParent(item, target);
 
 				if (WindowsAPI.GetWindowRect(item.Handle, out var rect))
 				{
@@ -643,6 +637,36 @@ namespace Keysharp.Internals.Os.Windows
 			outY = 0L;
 			outWidth = 0L;
 			outHeight = 0L;
+		}
+
+		private static nint GetControlCoordinateParent(WindowInfoBase item, WindowInfoBase target)
+		{
+			var parent = WindowSearch.GetControlReferenceWindow(item, target);
+			// A script-owned form puts its menu outside the content panel used for GUI client coordinates.
+			return Control.FromHandle(parent.Handle) is KeysharpForm form ? form.ContentContainer.Handle : parent.Handle;
+		}
+
+		internal override void ControlMove(int x, int y, int width, int height, object ctrl, object title, object text, object excludeTitle, object excludeText)
+		{
+			if (!WindowSearch.TrySearchControl(ctrl, title, text, excludeTitle, excludeText, out var item, out var target, true) || item == null)
+				return;
+
+			if (!WindowsAPI.GetWindowRect(item.Handle, out var rect))
+				return;
+
+			var coordParent = GetControlCoordinateParent(item, target);
+			_ = WindowsAPI.MapWindowPoints(0, coordParent, ref rect, 2);
+			var point = new RECT { Left = x == int.MinValue ? rect.Left : x, Top = y == int.MinValue ? rect.Top : y };
+			// GetParent returns an owner for top-level windows, whose MoveWindow coordinates are screen-relative.
+			var immediateParent = (item.Style & WindowsAPI.WS_CHILD) != 0 ? WindowsAPI.GetParent(item.Handle) : 0;
+
+			if (immediateParent != coordParent)
+				_ = WindowsAPI.MapWindowPoints(coordParent, immediateParent, ref point, 1);
+
+			_ = WindowsAPI.MoveWindow(item.Handle, point.Left, point.Top,
+				width == int.MinValue ? rect.Right - rect.Left : width,
+				height == int.MinValue ? rect.Bottom - rect.Top : height, true);
+			WindowInfoBase.DoControlDelay();
 		}
 
 		internal override long ControlGetStyle(object ctrl, object title, object text, object excludeTitle, object excludeText) => WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowInfoBase item ? item.Style : 0;

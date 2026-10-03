@@ -83,9 +83,8 @@ namespace Keysharp.Internals.Window.Unix
 			if (control == null)
 				return new POINT();
 
-			//ScreenOrigin, so this answers in the same space as Bounds and ClientBounds on this same object.
-			var pt = control.ScreenOrigin(true);
-			return new POINT(Convert.ToInt32(pt.X), Convert.ToInt32(pt.Y));
+			var client = control.GetClientScreenRect(true);
+			return new POINT(client.X, client.Y);
 		}
 
 		internal static bool TryFindPoint(Control root, PointAndHwnd pah)

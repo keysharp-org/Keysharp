@@ -18,8 +18,12 @@ namespace Keysharp.Builtins
 		/// missing control. The caller then returns its empty value at once without raising another.
 		/// </summary>
 		internal static bool TrySearchControl(object ctrl, object title, object text, object excludeTitle, object excludeText, out WindowInfoBase item, bool throwifnull = false)
+			=> TrySearchControl(ctrl, title, text, excludeTitle, excludeText, out item, out _, throwifnull);
+
+		internal static bool TrySearchControl(object ctrl, object title, object text, object excludeTitle, object excludeText, out WindowInfoBase item, out WindowInfoBase target, bool throwifnull = false)
 		{
 			item = null;
+			target = null;
 			EnsureWindowMonitoringPermission("control query");
 
 			if (!TryCtrlTonint(ctrl, out var parsed, out var ptr))
@@ -33,6 +37,7 @@ namespace Keysharp.Builtins
 				if (Control.FromHandle(ptr) is Control ks)
 				{
 					item = new ControlInfo(ks);
+					target = item;
 					return true;
 				}
 #endif
@@ -44,11 +49,14 @@ namespace Keysharp.Builtins
 					return false;
 				}
 
+				target = item;
 				return true;
 			}
 
 			if (SearchWindow(title, text, excludeTitle, excludeText, true) is not WindowInfoBase parent)
 				return false;
+
+			target = parent;
 
 			var s = ctrl as string;
 
@@ -69,6 +77,10 @@ namespace Keysharp.Builtins
 			item = found != 0 ? WindowQuery.CreateWindow(found) : null;
 			return true;
 		}
+
+		// A direct handle names the target and control alike; positions and ClassNN then use its non-child parent.
+		internal static WindowInfoBase GetControlReferenceWindow(WindowInfoBase item, WindowInfoBase target)
+			=> item.Handle == target.Handle ? item.NonChildParentWindow ?? target : target;
 
 		/// <summary>
 		/// The window a search names. Null when there is none, having raised a TargetError if

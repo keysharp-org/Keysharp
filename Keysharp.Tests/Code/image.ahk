@@ -415,8 +415,12 @@ AssertEq(Channel(contrast, 0, 0, 1), 128, A_LineNumber)
 AssertEq(Channel(contrast, 0, 0, 2), 128, A_LineNumber)
 
 ; Exact halves of the luminance round up, as AutoHotkey's Round does: these give 28.5, 21.5, 53.5 and 72.5.
-for rgb, expected in Map(0x0000FA, 29, 0x0004A8, 22, 0x01551D, 54, 0x057129, 73)
-    AssertEq(Image.Create(1, 1, rgb).Grayscale().GetPixel(0, 0), 0xFF000000 | expected * 0x010101, A_LineNumber)
+for rgb, expected in Map(0x0000FA, 29, 0x0004A8, 22, 0x01551D, 54, 0x057129, 73, 0x00FF00, 150, 0xFFFFFF, 255, 0x000000, 0) {
+    source := Image.Create(1, 1, rgb)
+    AssertEq(NumGet(source.GetPixelData(1), 0, "UChar"), expected, A_LineNumber)
+    AssertEq(source.Grayscale().GetPixel(0, 0), 0xFF000000 | expected * 0x010101, A_LineNumber)
+    AssertEq(NumGet(source.GetPixelData(1), 0, "UChar"), expected, A_LineNumber)
+}
 AssertEq(Image.Create(1, 1, 0x204060).Brightness(0.5).GetPixel(0, 0), 0xFFA0C0E0, A_LineNumber)
 AssertEq(Image.Create(1, 1, 0x204060).Brightness(-0.25).GetPixel(0, 0), 0xFF000020, A_LineNumber)
 AssertEq(Image.Create(1, 1, 0x818380).Contrast(0.5).GetPixel(0, 0), 0xFF828480, A_LineNumber)

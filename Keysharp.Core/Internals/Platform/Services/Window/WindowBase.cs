@@ -285,8 +285,8 @@ namespace Keysharp.Internals
 #if !WINDOWS
 			if (TryOwnControl(h, out var control))
 			{
-				var sp = control.PointToScreen(Point.Empty);
-				return new POINT(Convert.ToInt32(sp.X), Convert.ToInt32(sp.Y));
+				var client = control.GetClientScreenRect(true);
+				return new POINT(client.X, client.Y);
 			}
 #endif
 			return NotYet<POINT>();

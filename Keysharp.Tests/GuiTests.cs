@@ -526,6 +526,16 @@ namespace Keysharp.Tests
 			Assert.IsTrue(TestScript("gui-richedit", false));
 		}
 
+		[Test, Category("Gui"), Category("Curated"), NonParallelizable]
+#if WINDOWS
+		[Apartment(ApartmentState.STA)]
+#endif
+		public void ControlCoordinates()
+		{
+			SkipIfUiInitializationBlocked("Control coordinates require a live GUI application.");
+			Assert.IsTrue(TestScript("control-coordinates", false));
+		}
+
 #if WINDOWS
 		// The whole zero-copy design rests on one property: GDI+ drawing through the Bitmap and GDI reading
 		// through the DC address the same memory. If that ever stopped holding, presents would silently show

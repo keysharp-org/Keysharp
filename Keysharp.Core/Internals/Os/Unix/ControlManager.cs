@@ -171,15 +171,16 @@ namespace Keysharp.Internals.Os.Unix
 			}
 
 			WindowInfoBase item = null;
+			WindowInfoBase target = null;
 			var getctrlbycoords = false;
 
 			if (ctrlorpos.IsNullOrEmpty())
 			{
-				item = WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true);
+				item = target = WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true);
 			}
 			else if (!posoverride)
 			{
-				if (!WindowSearch.TrySearchControl(ctrlorpos, title, text, excludeTitle, excludeText, out item))
+				if (!WindowSearch.TrySearchControl(ctrlorpos, title, text, excludeTitle, excludeText, out item, out target))
 					return;
 
 				if (item == null)
@@ -198,7 +199,7 @@ namespace Keysharp.Internals.Os.Unix
 
 			if (getctrlbycoords)
 			{
-				item = WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true);
+				item = target ?? WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true);
 				if (item != null)
 				{
 					var pt = new POINT(winx, winy);
@@ -449,20 +450,15 @@ namespace Keysharp.Internals.Os.Unix
 
 		internal override void ControlGetPos(ref object outX, ref object outY, ref object outWidth, ref object outHeight, object ctrl = null, object title = null, object text = null, object excludeTitle = null, object excludeText = null)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
+			if (WindowSearch.TrySearchControl(ctrl, title, text, excludeTitle, excludeText, out var item, out var target, true)
+				&& item != null && Control.FromHandle(item.Handle) is Control control)
 			{
-				if (item.Control is Control ctrl2)
-				{
-					outX = ctrl2.Left;
-					outY = ctrl2.Top;
-					outWidth = ctrl2.Width;
-					outHeight = ctrl2.Height;
-				}
-				else
-				{
-					//How to do the equivalent of what the Windows derivation does, but on linux?
-				}
-
+				var bounds = control.GetScreenBounds(true);
+				var origin = WindowSearch.GetControlReferenceWindow(item, target).ClientToScreen();
+				outX = (long)(bounds.X - origin.X);
+				outY = (long)(bounds.Y - origin.Y);
+				outWidth = control.Width;
+				outHeight = control.Height;
 				return;
 			}
 
@@ -470,6 +466,27 @@ namespace Keysharp.Internals.Os.Unix
 			outY = 0L;
 			outWidth = 0L;
 			outHeight = 0L;
+		}
+
+		internal override void ControlMove(int x, int y, int width, int height, object ctrl, object title, object text, object excludeTitle, object excludeText)
+		{
+			if (!WindowSearch.TrySearchControl(ctrl, title, text, excludeTitle, excludeText, out var item, out var target, true) || item == null)
+				return;
+
+			if (Control.FromHandle(item.Handle) is Control control)
+			{
+				var origin = WindowSearch.GetControlReferenceWindow(item, target).ClientToScreen();
+				var parentOrigin = control.Parent?.ScreenOrigin(true) ?? PointF.Empty;
+				var location = control is Forms.Window window ? window.Location : control.GetLocation();
+				control.SetLocation(new Point(x == int.MinValue ? location.X : x + origin.X - Convert.ToInt32(parentOrigin.X),
+					y == int.MinValue ? location.Y : y + origin.Y - Convert.ToInt32(parentOrigin.Y)));
+				control.Size = new Size(width == int.MinValue ? control.Size.Width : width, height == int.MinValue ? control.Size.Height : height);
+			}
+			else
+				_ = Platform.Window.TryMoveResize(item.Handle, new Rectangle(x, y, width, height),
+					x != int.MinValue || y != int.MinValue, width != int.MinValue || height != int.MinValue);
+
+			WindowInfoBase.DoControlDelay();
 		}
 
 		internal override long ControlGetStyle(object ctrl, object title, object text, object excludeTitle, object excludeText) => 1;

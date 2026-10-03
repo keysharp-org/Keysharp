@@ -1464,7 +1464,7 @@ namespace Keysharp.Builtins
 				public uint Map(uint p)
 				{
 					uint r = (p >> 16) & 0xFF, g = (p >> 8) & 0xFF, b = p & 0xFF;
-					var gray = (299 * r + 587 * g + 114 * b + 500) / 1000;
+					var gray = ImageHelper.Grayscale(r, g, b);
 					return (p & 0xFF000000u) | (gray << 16) | (gray << 8) | gray;
 				}
 			}
@@ -2135,7 +2135,8 @@ namespace Keysharp.Builtins
 			///   <c>img.SetPixelData(img.GetPixelData())</c> round-trips: <see cref="SetPixelData"/> and
 			///   <see cref="FromBuffer"/> default to the same layout.</item>
 			///   <item><c>1</c>: 8-bit grayscale, one luminance byte per pixel
-			///   (<c>0.30 R + 0.59 G + 0.11 B</c>). Unambiguous across byte orders — this is what
+			///   (<c>0.299 R + 0.587 G + 0.114 B</c>, rounded half up as in <see cref="Grayscale"/>).
+			///   Unambiguous across byte orders — this is what
 			///   Tesseract expects for <c>bytes_per_pixel = 1</c>, and what OCR engines threshold anyway.</item>
 			/// </list>
 			/// The returned Buffer owns its memory; keep a reference to it for as long as the native side
@@ -2377,7 +2378,7 @@ namespace Keysharp.Builtins
 
 #endif
 			// Writes one 0xAARRGGBB pixel into dst at pixel index idx in the bpp layout: grayscale uses the
-			// integer luminance 0.30R+0.59G+0.11B; RGBA writes R,G,B,A in that byte order. Aggressively inlined
+			// rounded luminance shared with Grayscale; RGBA writes R,G,B,A in that byte order. Aggressively inlined
 			// to remove the call overhead; the bpp test then runs inline per pixel but is perfectly predicted
 			// (constant for the whole call), so it costs effectively nothing.
 			[MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -2386,7 +2387,7 @@ namespace Keysharp.Builtins
 				if (bpp == 1)
 				{
 					uint r = (p >> 16) & 0xFF, g = (p >> 8) & 0xFF, b = p & 0xFF;
-					dst[idx] = (byte)((r * 77 + g * 150 + b * 29) >> 8);
+					dst[idx] = (byte)ImageHelper.Grayscale(r, g, b);
 				}
 				else
 				{

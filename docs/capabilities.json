@@ -4219,8 +4219,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The ControlGetClassNN function returns the class ClassNN (class name and sequence number) of a control.",
-                     "tested-by":  "ControlTests/control_get_classNN.ahk"
+                     "notes":  "Returns the class name and sequence number among the resolved target window's descendants. A direct control handle uses its containing top-level window for numbering.",
+                     "tested-by":  "ControlTests/control_get_classNN.ahk; window-functions.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -4296,8 +4296,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The ControlGetPos function retrieves the position and size of a control.",
-                     "tested-by":  "ControlTests/control_get_pos.ahk"
+                     "notes":  "Retrieves a control's position relative to the resolved target window's client area and its size. A direct control handle or omitted ControlID uses the control's containing top-level window's client area. Nested container offsets are included. Off Windows, position queries cover script-owned toolkit controls only.",
+                     "tested-by":  "ControlTests/control_get_pos.ahk; window-functions.ahk; control-coordinates.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -4362,8 +4362,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The ControlMove function moves and/or resizes a control.",
-                     "tested-by":  "ControlTests/control_move.ahk"
+                     "notes":  "Moves and/or resizes a control using the same target-client coordinates as ControlGetPos, including controls in nested containers. A direct control handle or omitted ControlID uses the control's containing top-level window's client area. Omitted position and size axes stay unchanged. Off Windows, toolkit controls use this mapping; native window movement remains limited by the desktop backend.",
+                     "tested-by":  "ControlTests/control_move.ahk; window-functions.ahk; control-coordinates.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -6735,8 +6735,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Captures, loads, creates, edits and searches images. Search methods return match objects. A color string that is neither a name nor a number, and an invalid DrawText font option, raise ValueError when the method is called. FromWindow Mode and search Direction use string names instead of numeric codes. Supports saving and CLR bitmap access. Image.FromWindow raises UnsupportedError on Wayland when neither window capture nor global frame geometry is available. Full on Windows, partial on Linux (X11); Wayland and macOS are unverified.",
-                     "tested-by":  "Gui/guitest.ks"
+                     "notes":  "Captures, loads, creates, edits and searches images. Search methods return match objects. Grayscale() and GetPixelData(1) share 0.299R + 0.587G + 0.114B luminance rounded half up. A color string that is neither a name nor a number, and an invalid DrawText font option, raise ValueError when the method is called. FromWindow Mode and search Direction use string names instead of numeric codes. Supports saving and CLR bitmap access. Image.FromWindow raises UnsupportedError on Wayland when neither window capture nor global frame geometry is available. Full on Windows, partial on Linux (X11); Wayland and macOS are unverified.",
+                     "tested-by":  "Gui/guitest.ks; image.ahk"
                  },
                  {
                      "category":  "Image",
