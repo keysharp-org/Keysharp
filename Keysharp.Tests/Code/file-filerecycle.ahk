@@ -1,3 +1,5 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
 
@@ -37,6 +39,11 @@ Assert(!FileExist("./FileRecycle/file2.txt"), A_LineNumber)
 Assert(FileExist("./FileRecycle/file3txt"), A_LineNumber)
 
 FileRecycle("./FileRecycle/*")
+
+; As in AutoHotkey, an empty pattern and a missing name are errors, while a wildcard may match nothing.
+Throws(() => FileRecycle(""), A_LineNumber, ValueError)
+Throws(() => FileRecycle("./FileRecycle/nosuch.txt"), A_LineNumber, OSError)
+FileRecycle("./FileRecycle/*.none")
 
 Assert(!FileExist("./FileRecycle/file3txt"), A_LineNumber)
 

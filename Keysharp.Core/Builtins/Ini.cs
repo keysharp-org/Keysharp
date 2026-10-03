@@ -2,9 +2,8 @@ namespace Keysharp.Builtins
 {
 	/// <summary>
 	/// Public interface for Ini-related functions.<br/>
-	/// Although the Windows API does provide functions for manipulating INI files, they are not cross platform.<br/>
-	/// So the code here provides cross platform INI manipulation functions in pure C#.
-	/// Gotten from: https://www.codeproject.com/articles/20053/a-complete-win-ini-file-utility-class
+	/// On Windows these call the native profile functions, as AutoHotkey does. Elsewhere they follow those functions'
+	/// rules and edit the file's lines in place, so that comments, blank lines and formatting survive a write.
 	/// </summary>
 	public static class Ini
 	{
@@ -29,75 +28,40 @@ namespace Keysharp.Builtins
 			}
 
 #if WINDOWS
-			// Pass null for key to delete whole section; or pass the key to delete only that entry
-			bool ok = WindowsAPI.WritePrivateProfileString(s, string.IsNullOrEmpty(k) ? null : k, null, file);
-			// Flush the in-memory cache
-			WindowsAPI.WritePrivateProfileString(null, null, null, file);
+			bool ok = WindowsAPI.WritePrivateProfileString(s, key == null ? null : k, null, file);
 			ThreadAccessors.A_LastError = Marshal.GetLastWin32Error();
+			_ = WindowsAPI.WritePrivateProfileString(null, null, null, file);
 
-			if (ok)
-				return DefaultObject;
-			else
-			{
-				return Errors.OSErrorOccurred(
-						   new Win32Exception(unchecked((int)ThreadAccessors.A_LastError)),
-						   $"Error deleting {(string.IsNullOrEmpty(k) ? "section" : "key")} '{k}' from INI '{file}'"
-					   );
-			}
+			return ok ? DefaultObject : Errors.OSErrorOccurred(new Win32Exception(unchecked((int)ThreadAccessors.A_LastError)),
+				$"Error deleting {(key == null ? "section" : "key")} '{k}' from INI '{file}'");
 
 #else
 
 			ThreadAccessors.A_LastError = 0;
 
-			if (s != "")
-				s = string.Format(Keyword_IniSectionOpen + "{0}]", s);
-
 			try
 			{
-				var haskey = !string.IsNullOrEmpty(k);
-				var hassec = !string.IsNullOrEmpty(s);
-				var sb = new StringBuilder(1024);
-				var writer = new StringWriter();
-				var inidkt = IniLoad(file);
+				var lines = IniLoad(file, out var encoding, out var newLine);
+				var header = IniFindSection(lines, s, out var end, out var contentEnd);
 
-				if (hassec && haskey)
-				{
-					if (inidkt.Contains(s))
-					{
-						var secdkt = inidkt[s] as OrderedDictionary;
-						secdkt.Remove(k);
-					}
-				}
-				else if (hassec)
-					inidkt.Remove(s);
+				if (header < 0)
+					return DefaultObject;
 
-				foreach (DictionaryEntry kv in inidkt)
-				{
-					writer.WriteLine(kv.Key);
+				// As WritePrivateProfileString does, a section goes with its entries and comments but not the blank lines after them.
+				if (key == null)
+					lines.RemoveRange(header, contentEnd - header);
+				else if (IniFindKey(lines, header + 1, end, k, out _) is var at and >= 0)
+					lines.RemoveAt(at);
+				else
+					return DefaultObject;
 
-					foreach (DictionaryEntry kv2 in (OrderedDictionary)kv.Value)
-						if (((string)kv2.Key)[0] != ';')
-							writer.WriteLine($"{kv2.Key}={kv2.Value}");
-						else
-							writer.WriteLine($"{kv2.Key}");
-
-					writer.WriteLine();
-				}
-
-				writer.Flush();
-				var text = writer.ToString();
-
-				if (File.Exists(file))
-					File.Delete(file);
-
-				_ = Files.FileAppend("", file, "unicode");
-				File.WriteAllText(file, text);
+				IniSave(file, lines, encoding, newLine);
 				return DefaultObject;
 			}
 			catch (Exception ex)
 			{
 				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
-				return Errors.ErrorOccurred(ex.Message);
+				return Errors.OSErrorOccurred(ex, $"Error deleting {(key == null ? "section" : "key")} '{k}' from INI '{file}'");
 			}
 
 #endif
@@ -116,7 +80,6 @@ namespace Keysharp.Builtins
 			if (!filename.CoerceString(out var file) || !section.CoerceString(out var s) || !key.CoerceString(out var k) || !@default.CoerceString(out var def))
 				return DefaultObject;
 
-			var result = "";
 			file = Path.GetFullPath(file);
 
 			if (!File.Exists(file))
@@ -125,134 +88,113 @@ namespace Keysharp.Builtins
 				return @default != null ? def : Errors.OSErrorOccurred("", $"INI file '{file}' not found.");
 			}
 
+			bool hasKey = key != null;
+			bool hasSec = section != null;
+
+			if (hasKey && !hasSec)
+				return Errors.OSErrorOccurred("", "Section name required when reading a single key.");
+
 #if WINDOWS
+			// AutoHotkey's limit, in a pooled buffer because a new one this size would land on the large object heap.
 			const uint BUF_SIZE = 65535;
-			uint read;
-			bool hasKey = !string.IsNullOrEmpty(k);
-			bool hasSec = !string.IsNullOrEmpty(s);
-
-			if (hasKey)
+			var buf = ArrayPool<char>.Shared.Rent((int)BUF_SIZE);
+			try
 			{
-				// must specify section
-				if (!hasSec)
-					return Errors.OSErrorOccurred("", "Section name required when reading a single key.");
-
-				var chars = new char[BUF_SIZE];
-				// lpAppName = section (no brackets), wParam default = def
-				read = WindowsAPI.GetPrivateProfileString(s, k, def, chars, BUF_SIZE, file);
-				// error or not found?
-				var err = Marshal.GetLastWin32Error();
-				ThreadAccessors.A_LastError = err;
-
-				if (err != 0 || read < 0)
-					return @default != null ? def : Errors.OSErrorOccurred(new Win32Exception(err), $"Failed to read key '{k}' in section '{s}' from '{file}' (0x{err:X}).");
-
-				result = new string(chars, 0, (int)read);
-			}
-			else if (hasSec)
-			{
-				// read entire section: returns a double-null–terminated list of "key=value" entries
-				var buf = new char[BUF_SIZE];
-				read = WindowsAPI.GetPrivateProfileSection(s, buf, BUF_SIZE, file);
+				// The profile API can write to an empty section name in a UTF-16 file, so give it a private string.
+				var read = hasKey ? WindowsAPI.GetPrivateProfileString(s.Length == 0 ? new string('\0', 1) : s, k, def, buf, BUF_SIZE, file)
+					: hasSec ? WindowsAPI.GetPrivateProfileSection(s, buf, BUF_SIZE, file)
+					: WindowsAPI.GetPrivateProfileSectionNames(buf, BUF_SIZE, file);
 				var err = Marshal.GetLastWin32Error();
 				ThreadAccessors.A_LastError = err;
 
 				if (err != 0)
-					return @default != null ? def : Errors.OSErrorOccurred(new Win32Exception(err), $"Failed to read section '{s}' from '{file}' (0x{err:X}).");
+				{
+					var item = hasKey ? $"key '{k}' in section '{s}'" : hasSec ? $"section '{s}'" : "sections";
+					return @default != null ? def : Errors.OSErrorOccurred(new Win32Exception(err), $"Failed to read {item} from '{file}' (0x{err:X}).");
+				}
 
-				// convert double-null list into lines
-				result = MultiStringToLines(buf, read);
+				return hasKey ? new string(buf, 0, (int)read) : MultiStringToLines(buf, read);
 			}
-			else
+			finally
 			{
-				// no section/key → list all section names
-				var buf = new char[BUF_SIZE];
-				read = WindowsAPI.GetPrivateProfileSectionNames(buf, BUF_SIZE, file);
-				var err = Marshal.GetLastWin32Error();
-				ThreadAccessors.A_LastError = err;
-
-				if (err != 0)
-					return @default != null ? def : Errors.OSErrorOccurred(new Win32Exception(err), $"Failed to list sections in '{file}' (0x{err:X}).");
-
-				result = MultiStringToLines(buf, read);
+				ArrayPool<char>.Shared.Return(buf);
 			}
 
-			return result;
 #else
-
 			ThreadAccessors.A_LastError = 0;
-			if (s != "")
-				s = $"[{s}]";
+			List<string> lines;
 
-			var haskey = !string.IsNullOrEmpty(k);
-			var hassec = !string.IsNullOrEmpty(s);
-			var sb = new StringBuilder(1024);
-			var inidkt = IniLoad(file);
-
-			if (!haskey && !hassec)
+			try
 			{
-				foreach (DictionaryEntry kv in inidkt)
-					_ = sb.AppendLine(((string)kv.Key).Trim(TrimSec));
+				lines = IniLoad(file, out _, out _);
 			}
-			else if (haskey && hassec)
+			catch (Exception ex)
 			{
-				var secdkt = inidkt.GetOrAdd<string, OrderedDictionary, IEqualityComparer>(s, StringComparer.CurrentCultureIgnoreCase);
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
+				return @default != null ? def : Errors.OSErrorOccurred(ex, $"Error reading INI '{file}'");
+			}
 
-				if (secdkt.Contains(k))
+			var sb = new StringBuilder();
+
+			if (!hasSec)
+			{
+				foreach (var line in lines)
 				{
-					var val = secdkt.GetOrAdd<string, string, string>(k, def);
-					_ = sb.Append(val);
+					if (IniSectionName(line, out var name))
+						_ = sb.Append(name).Append('\n');
 				}
-				else if (@default != null)      // a default was supplied (even "") -> return it instead of throwing
-					_ = sb.Append(def);
-				else
-				{
-					ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
-					return Errors.OSErrorOccurred("", $"Failed to find key {k} in section {s} in INI file {file}.");
-				}
+
+				return sb.ToString().TrimEnd('\n');
 			}
-			else if (hassec)
+
+			var header = IniFindSection(lines, s, out var end, out _);
+
+			if (header >= 0)
 			{
-				var secdkt = inidkt.GetOrAdd<string, OrderedDictionary, IEqualityComparer>(s, StringComparer.CurrentCultureIgnoreCase);
+				if (!hasKey)
+				{
+					// As GetPrivateProfileSection does, the entries without comments and blank lines, each key=value trimmed.
+					for (var i = header + 1; i < end; i++)
+					{
+						var text = lines[i].AsSpan().Trim();
 
-				foreach (DictionaryEntry kv in secdkt)
-					if (((string)kv.Key)[0] != ';')
-						_ = sb.Append($"{kv.Key}={kv.Value}\n");
+						if (text.IsEmpty || text[0] == ';')
+							continue;
+
+						if (IniEntry(text, out var entryName, out var entryValue))
+							_ = sb.Append(entryName).Append('=').Append(entryValue);
+						else
+							_ = sb.Append(text);
+
+						_ = sb.Append('\n');
+					}
+
+					return sb.ToString().TrimEnd('\n');
+				}
+
+				if (IniFindKey(lines, header + 1, end, k, out var found) >= 0)
+				{
+					// As GetPrivateProfileString does, a value enclosed in matching quotes loses them.
+					if (found.Length >= 2 && found[0] is '"' or '\'' && found[^1] == found[0])
+						found = found[1..^1];
+
+					return found.ToString();
+				}
 			}
 
-			result = sb.ToString().TrimEnd('\n');
-			return result;
+			ThreadAccessors.A_LastError = 2;//ERROR_FILE_NOT_FOUND, as the native functions report it.
+			return @default != null ? def : Errors.OSErrorOccurred("", "The requested key, section or file was not found.");
 #endif
 		}
 
-		/// <summary>
-		/// Convert a double-null–terminated char[] into '\n'-delimited string.
-		/// </summary>
-		/// <param name="buf">The multiline buffer to convert.</param>
-		/// <param name="length">The length of buf to process.</param>
-		/// <returns>The new string delimited by '\n'.</returns>
+#if WINDOWS
 		private static string MultiStringToLines(char[] buf, uint length)
 		{
-			var sb = new StringBuilder((int)length);
-			int i = 0;
-
-			while (i < length)
-			{
-				var start = i;
-
-				while (i < length && buf[i] != '\0')
-					i++;
-
-				if (i == start)
-					break; // two nulls in a row = end
-
-				_ = sb.Append(buf, start, i - start);
-				_ = sb.Append('\n');
-				i++;
-			}
-
-			return sb.ToString().TrimEnd('\n');
+			var text = buf.AsSpan(0, (int)length);
+			var end = text.IndexOf("\0\0");
+			return (end < 0 ? text.TrimEnd('\0') : text[..end]).ToString().Replace('\0', '\n');
 		}
+#endif
 
 		/// <summary>
 		/// Writes a value to a standard format .ini file.
@@ -280,31 +222,21 @@ namespace Keysharp.Builtins
 
 			if (!File.Exists(file))
 			{
-				// Ensure the file exists so WritePrivateProfile* won’t fail
-				File.WriteAllText(file, "\uFEFF");  // BOM to hint Unicode
-			}
-
-			if (!string.IsNullOrEmpty(k))
-			{
-				// single key
-				ok = WindowsAPI.WritePrivateProfileString(s, k, v, file);
-			}
-			else
-			{
-				// whole section; convert "\n"-delimited to "\0"-delimited
-				// and append double-null terminator
-				var lines = v.Split('\n', StringSplitOptions.None);
-				var sb = new StringBuilder();
-
-				foreach (var line in lines)
+				// As in AutoHotkey, a new file starts as UTF-16 with a byte order mark, without which the profile functions
+				// write the ANSI code page, and with the section header, before which they would add a blank line.
+				try
 				{
-					sb.Append(line.TrimEnd('\r'));
-					sb.Append('\0');
+					File.WriteAllText(file, $"[{s}]", Encoding.Unicode);
 				}
-
-				sb.Append('\0');  // extra null for end-of-section
-				ok = WindowsAPI.WritePrivateProfileSection(s, sb.ToString(), file);
+				catch (Exception ex)
+				{
+					ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
+					return Errors.OSErrorOccurred(ex, $"Error creating INI '{file}'");
+				}
 			}
+
+			ok = key != null ? WindowsAPI.WritePrivateProfileString(s, k, v, file)
+				: WindowsAPI.WritePrivateProfileSection(s, v.Replace('\n', '\0') + "\0\0", file);
 
 			if (ok)
 			{
@@ -319,91 +251,65 @@ namespace Keysharp.Builtins
 				ThreadAccessors.A_LastError = err;
 				return Errors.OSErrorOccurred(
 					new System.ComponentModel.Win32Exception(err),
-					$"Error writing {(string.IsNullOrEmpty(k) ? "section" : "key")} to INI '{file}'"
+					$"Error writing {(key == null ? "section" : "key")} to INI '{file}'"
 				);
 			}
 
 #else
 			ThreadAccessors.A_LastError = 0;
-			var within = string.IsNullOrEmpty(s);
-			s = string.Format("[{0}]", s ?? string.Empty);
-			var haskey = !string.IsNullOrEmpty(k);
-			var writer = new StringWriter();
+			file = Path.GetFullPath(file);
 
 			try
 			{
-				if (!File.Exists(file))
-				{
-					writer.WriteLine(s);
+				// A new file gets UTF-8 without a byte order mark, the usual encoding of text files outside Windows.
+				Encoding encoding = new UTF8Encoding(false);
+				var newLine = "\n";
+				var lines = File.Exists(file) ? IniLoad(file, out encoding, out newLine) : [];
+				var header = IniFindSection(lines, s, out var end, out var contentEnd);
 
-					if (haskey)
-						writer.WriteLine($"{k}={v}");
+				if (header < 0)
+				{
+					lines.Add($"[{s}]");
+					header = lines.Count - 1;
+					end = contentEnd = lines.Count;
+				}
+
+				if (key != null)
+				{
+					// As WritePrivateProfileString does, an existing entry keeps its spelling up to the '=', and a new
+					// one follows the last line of the section that is not blank.
+					if (IniFindKey(lines, header + 1, end, k, out _) is var at and >= 0)
+						lines[at] = string.Concat(lines[at].AsSpan(0, lines[at].IndexOf('=') + 1), v);
 					else
-						writer.WriteLine(v);
+						lines.Insert(contentEnd, $"{k}={v}");
 				}
 				else
 				{
-					var inidkt = IniLoad(file);
+					var pairs = new List<string>();
 
-					if (s != "")
+					foreach (var range in v.AsSpan().Split('\n'))
 					{
-						var kvdkt = inidkt.GetOrAdd<string, OrderedDictionary, IEqualityComparer>(s, StringComparer.CurrentCultureIgnoreCase);
+						var pair = v.AsSpan(range).TrimEnd('\r');
 
-						if (haskey)
-						{
-							kvdkt[k] = v;
-						}
-						else
-						{
-							kvdkt.Clear();//Documentation seems to suggest it should overwrite all in the specified section.
+						// The native function takes the pairs as a list that an empty string ends.
+						if (pair.IsEmpty)
+							break;
 
-							foreach (Range r in v.AsSpan().SplitAny(TrimLine))
-							{
-								var pair = v.AsSpan(r).Trim();
-
-								if (pair.Length > 0)
-								{
-									var equalsIndex = pair.IndexOf('=');
-
-									if (equalsIndex != -1 && equalsIndex != pair.Length - 1)
-									{
-										var first = pair.Slice(0, equalsIndex);
-										var second = pair.Slice(equalsIndex + 1);
-										kvdkt[first.Trim(TrimLine).ToString()] = second.Trim(TrimLine).ToString();
-									}
-								}
-							}
-						}
+						pairs.Add(pair.ToString());
 					}
 
-					foreach (DictionaryEntry kv in inidkt)
-					{
-						writer.WriteLine(kv.Key);
-
-						foreach (DictionaryEntry kv2 in (OrderedDictionary)kv.Value)
-							if (((string)kv2.Key)[0] != ';')
-								writer.WriteLine($"{kv2.Key}={kv2.Value}");
-							else
-								writer.WriteLine($"{kv2.Key}");
-
-						writer.WriteLine();
-					}
+					// As WritePrivateProfileSection does, the pairs replace everything up to the section's last line that is not blank.
+					lines.RemoveRange(header + 1, contentEnd - header - 1);
+					lines.InsertRange(header + 1, pairs);
 				}
 
-				writer.Flush();
-				var text = writer.ToString().TrimEnd('\n', '\r');
-
-				if (File.Exists(file))
-					File.Delete(file);
-
-				_ = Files.FileAppend("", file, "unicode");
-				File.WriteAllText(file, text);
+				IniSave(file, lines, encoding, newLine);
 				return DefaultObject;
 			}
 			catch (Exception ex)
 			{
 				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
-				return Errors.OSErrorOccurred(ex, $"Error writing key {k} with value {v} in section {s} to INI file {file}.");
+				return Errors.OSErrorOccurred(ex, $"Error writing {(key == null ? "section" : "key")} to INI '{file}'");
 			}
 
 #endif
@@ -411,41 +317,141 @@ namespace Keysharp.Builtins
 
 #if !WINDOWS
 		/// <summary>
-		/// Private helper to load an .ini file.
+		/// The lines of an .ini file, with the encoding and line break it uses so that a rewrite keeps them.
 		/// </summary>
-		/// <param name="filename">The name of the .ini file, which is assumed to be in <see cref="A_WorkingDir"/> if an absolute path isn't specified.</param>
-		/// <returns>An <see cref="OrderedDictionary"/> with all of the file data in it.</returns>
-		private static OrderedDictionary IniLoad(string filename)
+		private static List<string> IniLoad(string file, out Encoding encoding, out string newLine)
 		{
-			OrderedDictionary kvdkt = null;
-			var inidkt = new OrderedDictionary(StringComparer.CurrentCultureIgnoreCase);
+			string text;
 
-			foreach (var line in File.ReadLines(filename))
+			using (var reader = new StreamReader(file, new UTF8Encoding(false), detectEncodingFromByteOrderMarks: true))
 			{
-				var ln = line.Trim(TrimLine);
-
-				if (ln.Length > 0)
-				{
-					var split = ln.Split('=').Select(l => l.Trim(TrimLine)).ToArray();
-
-					if (ln[0] == ';')
-					{
-						if (kvdkt == null)
-							_ = inidkt.GetOrAdd<string, OrderedDictionary, IEqualityComparer>(ln, StringComparer.CurrentCultureIgnoreCase);
-						else
-							kvdkt[ln] = "";
-					}
-					else
-					{
-						if (split.Length == 1)
-							kvdkt = inidkt.GetOrAdd<string, OrderedDictionary, IEqualityComparer>(split[0], StringComparer.CurrentCultureIgnoreCase);
-						else if (split.Length == 2 && kvdkt != null)
-							kvdkt[split[0]] = split[1];
-					}
-				}
+				text = reader.ReadToEnd();
+				encoding = reader.CurrentEncoding;
 			}
 
-			return inidkt;
+			newLine = text.Contains("\r\n") ? "\r\n" : "\n";
+			var lines = new List<string>();
+
+			foreach (var range in text.AsSpan().Split('\n'))
+				lines.Add(text.AsSpan(range).TrimEnd('\r').ToString());
+
+			// The break that ends the last line leaves an empty piece behind it.
+			if (lines[^1].Length == 0)
+				lines.RemoveAt(lines.Count - 1);
+
+			return lines;
+		}
+
+		/// <summary>
+		/// Writes the lines to a temporary file beside the .ini file and moves it over the file, so that a failure leaves
+		/// the old contents whole. A symbolic link keeps pointing to the edited target.
+		/// </summary>
+		private static void IniSave(string file, List<string> lines, Encoding encoding, string newLine)
+		{
+			var info = new FileInfo(file);
+
+			if (info.LinkTarget != null)
+				file = info.ResolveLinkTarget(returnFinalTarget: true).FullName;
+
+			var temp = file + "." + Path.GetRandomFileName();
+
+			try
+			{
+				File.WriteAllText(temp, string.Join(newLine, lines) + newLine, encoding);
+
+				// The platform test is for the analyzer: this branch is compiled only off Windows.
+				if (!OperatingSystem.IsWindows() && File.Exists(file))
+					File.SetUnixFileMode(temp, File.GetUnixFileMode(file));
+
+				File.Move(temp, file, overwrite: true);
+			}
+			catch
+			{
+				File.Delete(temp);
+				throw;
+			}
+		}
+
+		/// <summary>
+		/// The index of the first section header with the given name, compared as the native functions compare it, or -1.
+		/// end receives the index of the next header or the line count, and contentEnd the index after the section's last
+		/// line that is not blank.
+		/// </summary>
+		private static int IniFindSection(List<string> lines, string name, out int end, out int contentEnd)
+		{
+			var header = -1;
+			end = lines.Count;
+
+			for (var i = 0; i < lines.Count; i++)
+			{
+				if (!IniSectionName(lines[i], out var sectionName))
+					continue;
+
+				if (header >= 0)
+				{
+					end = i;
+					break;
+				}
+
+				if (sectionName.Equals(name, StringComparison.OrdinalIgnoreCase))
+					header = i;
+			}
+
+			contentEnd = end;
+
+			while (contentEnd > header + 1 && string.IsNullOrWhiteSpace(lines[contentEnd - 1]))
+				contentEnd--;
+
+			return header;
+		}
+
+		/// <summary>
+		/// The index of the first entry named key between the lines start and end, compared as the native functions
+		/// compare it, or -1.
+		/// </summary>
+		private static int IniFindKey(List<string> lines, int start, int end, string key, out ReadOnlySpan<char> value)
+		{
+			for (var i = start; i < end; i++)
+			{
+				var text = lines[i].AsSpan().Trim();
+
+				// A comment is no entry.
+				if (text is not [';', ..] && IniEntry(text, out var name, out value) && name.Equals(key, StringComparison.OrdinalIgnoreCase))
+					return i;
+			}
+
+			value = default;
+			return -1;
+		}
+
+		/// <summary>
+		/// Splits a trimmed key=value line at its first '=' and trims both sides. A line without '=' is no entry.
+		/// </summary>
+		private static bool IniEntry(ReadOnlySpan<char> text, out ReadOnlySpan<char> name, out ReadOnlySpan<char> value)
+		{
+			var equals = text.IndexOf('=');
+
+			name = equals < 0 ? default : text[..equals].TrimEnd();
+			value = equals < 0 ? default : text[(equals + 1)..].TrimStart();
+			return equals >= 0;
+		}
+
+		/// <summary>
+		/// The trimmed name of a [name] line.
+		/// </summary>
+		private static bool IniSectionName(string line, out ReadOnlySpan<char> name)
+		{
+			var text = line.AsSpan().Trim();
+			var close = text.IndexOf(']');
+
+			if (text.IsEmpty || text[0] != '[' || close < 1)
+			{
+				name = default;
+				return false;
+			}
+
+			name = text[1..close].Trim();
+			return true;
 		}
 #endif
 	}

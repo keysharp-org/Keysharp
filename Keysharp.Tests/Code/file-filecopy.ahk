@@ -1,3 +1,5 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
 	
@@ -120,6 +122,14 @@ Assert(FileExist("./FileCopy/file1.txt"), A_LineNumber)
 Assert(FileExist("./FileCopy/file2.txt"), A_LineNumber)
 
 Assert(FileExist("./FileCopy/file3txt"), A_LineNumber)
+
+DirCreate("./FileCopy/NoExt")
+FileCopy(dir . "/*.", "./FileCopy/NoExt/")
+Assert(FileExist("./FileCopy/NoExt/file3txt"), A_LineNumber)
+AssertEq(FileExist("./FileCopy/NoExt/file1.txt"), "", A_LineNumber)
+; As in AutoHotkey, a wildcard in a missing folder matches nothing, while a missing file is an error.
+FileCopy(path . "NoSuchDir/*.txt", "./FileCopy/")
+Throws(() => FileCopy(path . "NoSuchDir/file1.txt", "./FileCopy/"), A_LineNumber)
 
 if (DirExist("./FileCopy"))
 	DirDelete("./FileCopy", true)

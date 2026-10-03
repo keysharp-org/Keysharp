@@ -1,3 +1,5 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
 
@@ -158,6 +160,16 @@ Loop Reg "HKCU\SOFTWARE\KeysharpTest"
 	names .= A_LoopRegName "|"
 Assert(InStr(names, "|MixedCase|", true), A_LineNumber)
 RegDelete("HKCU\SOFTWARE\KeysharpTest", "MixedCase")
+
+; As in AutoHotkey, a DWORD keeps the low 32 bits of the number, so a value read back can be written again.
+RegWrite(0xFFFFFFFF, "REG_DWORD", "HKCU\SOFTWARE\KeysharpTest", "dwordmax")
+AssertEq(RegRead("HKCU\SOFTWARE\KeysharpTest", "dwordmax"), 0xFFFFFFFF, A_LineNumber)
+RegWrite(RegRead("HKCU\SOFTWARE\KeysharpTest", "dwordmax"), "REG_DWORD", "HKCU\SOFTWARE\KeysharpTest", "dwordmax")
+AssertEq(RegRead("HKCU\SOFTWARE\KeysharpTest", "dwordmax"), 0xFFFFFFFF, A_LineNumber)
+RegWrite(-1, "REG_DWORD", "HKCU\SOFTWARE\KeysharpTest", "dwordmax")
+AssertEq(RegRead("HKCU\SOFTWARE\KeysharpTest", "dwordmax"), 0xFFFFFFFF, A_LineNumber)
+Throws(() => RegWrite("abc", "REG_DWORD", "HKCU\SOFTWARE\KeysharpTest", "dwordmax"), A_LineNumber, TypeError)
+RegDelete("HKCU\SOFTWARE\KeysharpTest", "dwordmax")
 
 ; Reading or deleting in a missing key neither creates it nor ignores an empty Default.
 AssertEq(RegRead("HKCU\SOFTWARE\KeysharpTest\missing", "v", ""), "", A_LineNumber)

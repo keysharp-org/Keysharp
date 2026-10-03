@@ -369,8 +369,6 @@ namespace Keysharp.Language
 		internal const string Keyword_IgnoreS = "I";
 		internal const string Keyword_ImageList = "imagelist";
 		internal const string Keyword_In = "in";
-		internal const char Keyword_IniKeyAssign = '=';
-		internal const string Keyword_IniSectionOpen = "[";
 		internal const string Keyword_Integer = "integer";
 		internal const string Keyword_Interrupt = "interrupt";
 		internal const string Keyword_Invert = "invert";
@@ -673,8 +671,6 @@ namespace Keysharp.Language
 		internal static readonly char[] SpaceTabOpenBrace = " \t{".ToCharArray();
 		internal static readonly char[] SpaceTabOpenParen = " \t(".ToCharArray();
 		internal static readonly SearchValues<char> SpaceTabOpenParenSv = SearchValues.Create(SpaceTabOpenParen);
-		internal static readonly char[] TrimLine = "\t\r\n ".ToCharArray();
-		internal static readonly char[] TrimSec = "[]".ToCharArray();
 		//internal static readonly SearchValues<char> SpaceMultiDelimSv;
 		internal static readonly char[] PlusMinus = ['+', '-'];
 

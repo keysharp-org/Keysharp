@@ -49,5 +49,31 @@ finally {
 	SetWorkingDir(workingDir)
 	DirDelete(testDir, true)
 }
+#if WINDOWS
+	Assert(InStr(FileExist(SubStr(A_WinDir, 1, 3)), "D"), A_LineNumber)
+#else
+	Assert(InStr(FileExist("/"), "D"), A_LineNumber)
+#endif
+
+; A wildcard matches hidden files and folders as well.
+if (DirExist("./FileExist"))
+	DirDelete("./FileExist", true)
+
+DirCreate("./FileExist/onlydir")
+FileAppend("", "./FileExist/x.hid")
+
+#if WINDOWS
+	FileSetAttrib("+H", "./FileExist/x.hid")
+	Assert(InStr(FileExist("./FileExist/x.hid"), "H"), A_LineNumber)
+#endif
+
+Assert(FileExist("./FileExist/*.hid"), A_LineNumber)
+Assert(InStr(FileExist("./FileExist/only*"), "D"), A_LineNumber)
+AssertEq(FileExist("./FileExist/*.none"), "", A_LineNumber)
+AssertEq(FileExist("   "), "", A_LineNumber)
+AssertEq(DirExist(""), "", A_LineNumber)
+; Wildcards count only in the last part of the path.
+AssertEq(FileExist("./File*/x.hid"), "", A_LineNumber)
+DirDelete("./FileExist", true)
 
 FileAppend "pass", "*"

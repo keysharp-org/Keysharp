@@ -1,3 +1,5 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
 
@@ -24,30 +26,24 @@ dir := path . "DirCopy/file1.txt"
 
 Assert(FileExist(dir), A_LineNumber)
 
-#if WINDOWS
-	AssertEq(DirExist(dir), "A", A_LineNumber)
-#else
-	AssertEq(DirExist(dir), "N", A_LineNumber)
-#endif
+; As in AutoHotkey, a file is not a folder.
+AssertEq(DirExist(dir), "", A_LineNumber)
 
 dir := path . "DirCopy/file2.txt"
 
 Assert(FileExist(dir), A_LineNumber)
-
-#if WINDOWS
-	AssertEq(DirExist(dir), "A", A_LineNumber)
-#else
-	AssertEq(DirExist(dir), "N", A_LineNumber)
-#endif
+AssertEq(DirExist(dir), "", A_LineNumber)
 
 dir := path . "DirCopy/file3txt"
 
 Assert(FileExist(dir), A_LineNumber)
+AssertEq(DirExist(dir), "", A_LineNumber)
 
-#if WINDOWS
-	AssertEq(DirExist(dir), "A", A_LineNumber)
-#else
-	AssertEq(DirExist(dir), "N", A_LineNumber)
-#endif
+; A wildcard finds the first folder it matches and passes over files.
+AssertEq(DirExist("./DirExist/Sub*"), "D", A_LineNumber)
+AssertEq(DirExist(path . "DirCopy/*.txt"), "", A_LineNumber)
+Assert(InStr(DirExist(path . "DirCop*"), "D"), A_LineNumber)
+
+DirDelete("./DirExist", true)
 
 FileAppend "pass", "*"

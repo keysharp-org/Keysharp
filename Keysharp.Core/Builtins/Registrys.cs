@@ -186,15 +186,24 @@ namespace Keysharp.Builtins
 			if (!valueType.CoerceString(out var valtype) || !keyName.CoerceString(out var keyname) || !valueName.CoerceString(out var valname))
 				return DefaultObject;
 
+			keyname = LoopItem(keyname, valueName == null, ref valname, ref valtype);
+			var regtype = Conversions.GetRegistryType(valtype);
+
+			// As in AutoHotkey, a number keeps its low bits, so a DWORD read back as 0x80000000 or more can be written again.
+			if (regtype is RegistryValueKind.DWord or RegistryValueKind.QWord)
+			{
+				if (!val.CoerceLong(out var number))
+					return DefaultObject;
+
+				val = regtype == RegistryValueKind.DWord ? (object)unchecked((int)(uint)number) : number;
+			}
+
 			try
 			{
-				keyname = LoopItem(keyname, valueName == null, ref valname, ref valtype);
 				var (root, subkey) = Conversions.ToRegRootKey(keyname);
 
 				if (root == null)
 					return DefaultObject;
-
-				var regtype = Conversions.GetRegistryType(valtype);
 
 				if (val is string vs)
 				{

@@ -386,47 +386,5 @@ namespace Keysharp.Builtins
 
 			return drive;
 		}
-
-		/// <summary>
-		/// Internal helper to implement globbing which will return files matching a pattern.<br/>
-		/// Adapted from http://stackoverflow.com/questions/398518/how-to-implement-glob-in-c
-		/// </summary>
-		/// <param name="glob">The pattern to match.</param>
-		/// <returns>All files matching the specified pattern.</returns>
-		internal static IEnumerable<string> Glob(string glob)
-		{
-			if (File.Exists(glob) || Directory.Exists(glob))
-			{
-				yield return glob;
-				yield break;
-			}
-
-			foreach (var path in Glob(Dir.PathHead(glob) + Path.DirectorySeparatorChar, Dir.PathTail(glob)))
-				yield return path;
-		}
-
-		/// <summary>
-		/// Private helper to implement globbing which will return files matching a pattern.<br/>
-		/// Adapted from http://stackoverflow.com/questions/398518/how-to-implement-glob-in-c
-		/// </summary>
-		/// <param name="head">The directory prefix to examine.</param>
-		/// <param name="tail">The pattern to search for.</param>
-		/// <returns>The list of files/folders matching the pattern specified in tail.</returns>
-		private static IEnumerable<string> Glob(string head, string tail)
-		{
-			if (Dir.PathTail(tail) == tail)
-			{
-				foreach (var path in Directory.GetFiles(head, tail))
-					yield return path;
-			}
-			else
-			{
-				foreach (var dir in Directory.GetDirectories(head, Dir.PathHead(tail)))
-				{
-					foreach (var path in Glob(Path.Combine(head, dir), Dir.PathTail(tail)))
-						yield return path;
-				}
-			}
-		}
 	}
 }

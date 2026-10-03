@@ -751,30 +751,6 @@ namespace Keysharp.Internals.Strings
 			return (FileAttributes)(((uint)attribs & attrMask.and_mask) ^ attrMask.xor_mask);
 		}
 
-		/// <summary>
-		/// The files and folders a pattern names for FileSetAttrib and FileSetTime, as AutoHotkey's FilePatternApply
-		/// finds them: the walk of Loop Files, except that a name without wildcards is that one item whether it is a file
-		/// or a folder, and with recursion the item of that name in every subfolder.
-		/// </summary>
-		internal static IEnumerable<string> ToFiles(string path, bool files, bool dirs, bool recurse)
-		{
-			if (string.IsNullOrEmpty(path))
-				return [];
-
-			var fullPath = Path.GetFullPath(path);
-			var pattern = Path.GetFileName(fullPath);
-
-			if (pattern.AsSpan().IndexOfAny('*', '?') < 0)
-			{
-				if (!recurse)
-					return System.IO.File.Exists(fullPath) || System.IO.Directory.Exists(fullPath) ? [fullPath] : [];
-
-				files = dirs = true;
-			}
-
-			return Loops.GetFiles(Path.GetDirectoryName(fullPath) ?? fullPath, pattern, dirs, files, recurse).Select(item => item.Info.FullName);
-		}
-
 		// S (study) is implied by compiling every pattern, and X (PCRE_EXTRA's strict escapes) is always in effect in PCRE2.
 		internal static PcreRegexSettings ToRegexOptions(ReadOnlySpan<char> sequence)
 		{

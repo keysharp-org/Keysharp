@@ -13,8 +13,6 @@ namespace Keysharp.Builtins
 	public static class Files
 	{
 		private static readonly SearchValues<char> wildcardsSv = SearchValues.Create("*?");
-		// The default overload's matching, which includes hidden files, but skipping a folder that cannot be read.
-		private static readonly System.IO.EnumerationOptions deleteEnumeration = new() { AttributesToSkip = 0, IgnoreInaccessible = true, MatchType = MatchType.Win32 };
 #if OSX
 		private static readonly char[] dirSeparators = [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar];
 #endif
@@ -449,23 +447,17 @@ namespace Keysharp.Builtins
 				}
 			}
 
-			var path = Path.GetDirectoryName(s);
-			var dir = new DirectoryInfo(string.IsNullOrEmpty(path) ? "./" : path);
 			var failures = 0;
 
-			// As in AutoHotkey, a folder which is missing or cannot be read has no matches.
-			if (dir.Exists)
+			foreach (var file in MatchFiles(s, files: true, dirs: false))
 			{
-				foreach (var file in dir.EnumerateFiles(Path.GetFileName(s), deleteEnumeration))
+				try
 				{
-					try
-					{
-						file.Delete();
-					}
-					catch
-					{
-						failures++;
-					}
+					file.Delete();
+				}
+				catch
+				{
+					failures++;
 				}
 			}
 
@@ -531,21 +523,9 @@ namespace Keysharp.Builtins
 			if (!filePattern.CoerceString(out var s) || s.Length == 0)
 				return "";
 
-			try
-			{
-				var path = Path.GetDirectoryName(s);
-				var dir = new DirectoryInfo(string.IsNullOrEmpty(path) ? "." : path);
-				var filename = Path.GetFileName(s);
-
-				FileSystemInfo found = Directory.Exists(s) ? new DirectoryInfo(s) : dir.EnumerateFiles(filename).FirstOrDefault();
-
-				// As in AutoHotkey, a file with none of the listed attributes reports "X", so that the result is still true.
-				if (found != null)
-					return Conversions.FromFileAttribs(found.Attributes) is { Length: > 0 } attribs ? attribs : "X";
-			}
-			catch
-			{
-			}
+			// As in AutoHotkey, a file with none of the listed attributes reports "X", so that the result is still true.
+			foreach (var found in MatchFiles(s, files: true, dirs: true))
+				return Conversions.FromFileAttribs(found.Attributes) is { Length: > 0 } attribs ? attribs : "X";
 
 			return DefaultErrorString;
 		}
@@ -1327,39 +1307,49 @@ namespace Keysharp.Builtins
 			if (!filePattern.CoerceString(out var s))
 				return DefaultObject;
 
+			if (s.Length == 0)
+				return Errors.InvalidParameterErrorOccurred(1, "FileRecycle", s);
+
 			EnsureFilePermission(s, FilePermissionAccess.Write, "FileRecycle");
 			ThreadAccessors.A_LastError = 0;
+			var found = false;
 
 			try
 			{
-#if LINUX
-				foreach (var target in Conversions.ToFiles(s, true, true, false))
+				// As SHFileOperation does in AutoHotkey, a wildcard matches folders as well as files.
+				foreach (var target in MatchFiles(s, files: true, dirs: true))
 				{
-					var result = RunCommand("gio", ["trash", target]);
+					found = true;
+#if LINUX
+					var result = RunCommand("gio", ["trash", target.FullName]);
 
 					if (!result.Succeeded)
 						return Errors.OSErrorOccurred(new InvalidOperationException(result.ErrorMessage),
-							$"gio trash failed for {target}.");
-				}
+							$"gio trash failed for {target.FullName}.");
 #elif OSX
-				foreach (var target in Conversions.ToFiles(s, true, true, false))
-					MovePathToMacTrash(target);
+					MovePathToMacTrash(target.FullName);
 #elif WINDOWS
-				var path = Path.GetDirectoryName(s);
-				var dir = new DirectoryInfo(path);
-				var filename = Path.GetFileName(s);
-
-				foreach (var file in dir.EnumerateFiles(filename))
-					FileSystem.DeleteFile(file.FullName, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
-
+					if ((target.Attributes & FileAttributes.Directory) != 0)
+						FileSystem.DeleteDirectory(target.FullName, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
+					else
+						FileSystem.DeleteFile(target.FullName, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
 #endif
-				return DefaultObject;
+				}
 			}
 			catch (Exception ex)
 			{
 				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return Errors.OSErrorOccurred(ex, $"Error recycling file(s) with pattern {s}");
 			}
+
+			// As SHFileOperation does in AutoHotkey, a name without wildcards must exist.
+			if (!found && Path.GetFileName(s.AsSpan()).IndexOfAny(wildcardsSv) < 0)
+			{
+				ThreadAccessors.A_LastError = 2;//ERROR_FILE_NOT_FOUND
+				return Errors.OSErrorOccurred(2L, $"Error recycling {s}");
+			}
+
+			return DefaultObject;
 		}
 
 		/// <summary>
@@ -1486,11 +1476,13 @@ namespace Keysharp.Builtins
 			// An invalid attribute letter is an error for the call, as in AHK, not a failure for each file.
 			_ = Conversions.ToFileAttribs(attr, FileAttributes.None);
 
-			foreach (var path in Conversions.ToFiles(file, dofiles, dodirs, recurse))
+			foreach (var item in MatchFiles(file, dofiles, dodirs, recurse))
 			{
+				var path = item.FullName;
+
 				try
 				{
-					var set = Conversions.ToFileAttribs(attr, File.GetAttributes(path));
+					var set = Conversions.ToFileAttribs(attr, item.Attributes);
 					File.SetAttributes(path, set);
 
 					if (set == FileAttributes.None)
@@ -1568,8 +1560,10 @@ namespace Keysharp.Builtins
 			if (time == DateTime.MinValue)
 				return Errors.ValueErrorOccurred($"Invalid timestamp \"{timestamp}\".");
 
-			foreach (var path in Conversions.ToFiles(file, dofiles, dodirs, recurse))
+			foreach (var item in MatchFiles(file, dofiles, dodirs, recurse))
 			{
+				var path = item.FullName;
+
 				try
 				{
 					var set = new DateTime();
@@ -1728,17 +1722,13 @@ namespace Keysharp.Builtins
 			var dfull = Path.GetFullPath(dest).TrimEnd(Path.DirectorySeparatorChar);
 			var sfull = Path.GetFullPath(source).TrimEnd(Path.DirectorySeparatorChar);
 
-			if (Directory.Exists(sfull))
-				sfull += $"{Path.DirectorySeparatorChar}*";
-
 			if (Directory.Exists(dfull))
 				dfull += $"{Path.DirectorySeparatorChar}*";
 
-			var sfname = Path.GetFileName(sfull);
 			var dfname = Path.GetFileName(dfull);
-			var sdname = Path.GetDirectoryName(sfull);
 			var ddname = Path.GetDirectoryName(dfull);
-			var files = Directory.GetFiles(sdname, sfname, System.IO.SearchOption.TopDirectoryOnly);
+			// Listed before the first move, so that a file renamed within the same folder is not found again.
+			var files = MatchFiles(Directory.Exists(sfull) ? Path.Join(sfull, "*") : source, files: true, dirs: false).ToArray();
 
 			if (files.Length == 0 && sfull.AsSpan().IndexOfAny(wildcardsSv) == -1)
 			{
@@ -1758,18 +1748,13 @@ namespace Keysharp.Builtins
 			{
 				try
 				{
-					var name = Path.GetFileName(f);
-					var dname = dfname.Contains('*') ? ExpandFilenameWildcard(name, dfname) : dfname;
-					var s = Path.Combine(sdname, name);
+					var dname = dfname.Contains('*') ? ExpandFilenameWildcard(f.Name, dfname) : dfname;
 					var d = Path.Combine(ddname, dname);
 
-					if (Directory.Exists(s))//Ensure it's not a folder (again) just to be safe. AHK did this.
-						continue;
-
 					if (move)
-						File.Move(s, d, flag);
+						File.Move(f.FullName, d, flag);
 					else
-						File.Copy(s, d, flag);
+						File.Copy(f.FullName, d, flag);
 				}
 				catch { failures++; }
 			}
@@ -1779,6 +1764,42 @@ namespace Keysharp.Builtins
 				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				_ = Errors.ErrorOccurred($"Failed {failures} times moving or copying files.", null, failures);
 				return;
+			}
+		}
+
+		/// <summary>
+		/// The files and folders a pattern names, found as AutoHotkey's file functions find them: wildcards only in the
+		/// last component, a relative path resolved against A_WorkingDir, and hidden and system entries included. A name
+		/// without wildcards is that one item, file or folder, and with recursion the item of that name in every subfolder.
+		/// </summary>
+		/// <param name="files">Whether a wildcard matches files.</param>
+		/// <param name="dirs">Whether a wildcard matches folders.</param>
+		internal static IEnumerable<FileSystemInfo> MatchFiles(string pattern, bool files, bool dirs, bool recurse = false)
+		{
+			// Split as Loop Files splits it: a full path would lose the trailing period of "*.", which matches names without an extension.
+			var name = Path.GetFileName(pattern);
+
+			try
+			{
+				if (name.AsSpan().IndexOfAny(wildcardsSv) < 0)
+				{
+					if (!recurse)
+					{
+						// One attribute query, which also serves a bare name, a folder and a drive root, and reports a missing item as -1.
+						var item = new FileInfo(Path.GetFullPath(pattern));
+						return (int)item.Attributes == -1 ? [] : [item];
+					}
+
+					files = dirs = true;
+				}
+
+				var dir = pattern[..^name.Length];
+				return Loops.GetFiles(Path.GetFullPath(dir.Length == 0 ? "." : dir), name, dirs, files, recurse).Select(static item => item.Info);
+			}
+			// As in AutoHotkey, a pattern that names no file, such as an empty one or one with a wildcard in a folder part, matches nothing.
+			catch (Exception ex) when (ex is ArgumentException or IOException or UnauthorizedAccessException)
+			{
+				return [];
 			}
 		}
 	}

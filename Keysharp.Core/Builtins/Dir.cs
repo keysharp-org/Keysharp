@@ -5,8 +5,6 @@ namespace Keysharp.Builtins
 	/// </summary>
 	public static class Dir
 	{
-		private static readonly string pathStart = new (Path.DirectorySeparatorChar, 2);
-
 		/// <summary>
 		/// Copies a folder along with all its sub-folders and files (similar to xcopy) or the entire contents of an archive file such as ZIP.
 		/// </summary>
@@ -20,17 +18,10 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if any failure happens while attempting to perform the operation.</exception>
 		public static object DirCopy(object source, object dest, object overwrite = null)
 		{
-			if (!source.CoerceString(out var sourceText))
+			if (!source.CoerceString(out var s) || !dest.CoerceString(out var d))
 				return DefaultObject;
 
-			var s = Path.GetFullPath(sourceText);
-
-			if (!dest.CoerceString(out var destText))
-				return DefaultObject;
-
-			var d = Path.GetFullPath(destText);
-			var o = overwrite.Ab();
-			CopyDirectory(s, d, o);
+			CopyDirectory(s, d, overwrite.Ab());
 			return DefaultObject;
 		}
 
@@ -83,7 +74,7 @@ namespace Keysharp.Builtins
 			catch (Exception ex)
 			{
 				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
-				return Errors.OSErrorOccurred(ex, $"Error creating directory {dirName}");
+				return Errors.OSErrorOccurred(ex, $"Error deleting directory {dirName}");
 			}
 		}
 
@@ -108,15 +99,9 @@ namespace Keysharp.Builtins
 			if (!filePattern.CoerceString(out var pattern))
 				return DefaultErrorString;
 
-			try//This can throw if the directory doesn't exist.
-			{
-				foreach (var file in Drive.Glob(pattern))
-					return Conversions.FromFileAttribs(File.GetAttributes(file));
-			}
-			catch (Exception)
-			{
-				//Swallow the exception since we still want to return an empty string even if it doesn't exist.
-			}
+			// A pattern without wildcards names one item, which may be a file.
+			foreach (var found in Files.MatchFiles(pattern, files: false, dirs: true))
+				return (found.Attributes & FileAttributes.Directory) != 0 ? Conversions.FromFileAttribs(found.Attributes) : DefaultErrorString;
 
 			return DefaultErrorString;
 		}
@@ -147,72 +132,107 @@ namespace Keysharp.Builtins
 			if (!source.CoerceString(out var s) || !dest.CoerceString(out var d) || !overwriteOrRename.CoerceString(out var flag))
 				return DefaultObject;
 
-			var rename = false;
-			var movein = false;
+			if (s.Length == 0)
+				return Errors.InvalidParameterErrorOccurred(1, "DirMove", s);
 
-			//If dest exists as a file, never copy.
-			if (File.Exists(d))
+			if (d.Length == 0)
+				return Errors.InvalidParameterErrorOccurred(2, "DirMove", d);
+
+			// As in AutoHotkey, the flag is a single character.
+			var mode = flag.Length == 0 ? '0' : char.ToUpperInvariant(flag[0]);
+
+			if (flag.Length > 1 || mode is not ('0' or '1' or '2' or 'R'))
+				return Errors.InvalidParameterErrorOccurred(3, "DirMove", flag);
+
+			var target = d;
+
+			try
+			{
+				s = Path.TrimEndingDirectorySeparator(Path.GetFullPath(s));
+				d = Path.TrimEndingDirectorySeparator(Path.GetFullPath(d));
+				target = d;
+				var sameVolume = string.Equals(Path.GetPathRoot(s), Path.GetPathRoot(d), PathComparison);
+
+				// A rename is all or nothing, so it is a single move that never copies or merges.
+				if (mode != 'R')
+				{
+					if (!Directory.Exists(s))
+						return Errors.OSErrorOccurred("", $"Cannot move {s} to {d} because source does not exist.");
+
+					if (File.Exists(d))
+						return Errors.OSErrorOccurred("", $"Cannot move {s} to {d} because destination is a file.");
+
+					if (IsSameOrChildDirectory(s, d))
+						return Errors.OSErrorOccurred("", $"Cannot move {s} into itself.");
+
+					if (Directory.Exists(d))
+					{
+						if (mode == '0')
+							return Errors.OSErrorOccurred("", $"Cannot use option 0/empty when {d} already exists.");
+
+						RefuseLinkDestination(d);
+
+						var sourceIsLink = (File.GetAttributes(s) & FileAttributes.ReparsePoint) != 0;
+
+						if (sourceIsLink && mode == '2')
+							throw new IOException($"Cannot merge directory link {s}.");
+
+#if !WINDOWS
+						// Root paths cannot distinguish Unix devices, including symlinked and bind mounts.
+						sameVolume = CanRenameBetween(mode == '1' ? Path.GetDirectoryName(s) : s, d);
+#endif
+						if (mode == '1' && sameVolume)
+						{
+							target = Path.Combine(d, Path.GetFileName(s));
+							RefuseLinkDestination(target);
+						}
+
+						if (sourceIsLink && Directory.Exists(target))
+							throw new IOException($"Cannot merge directory link {s}.");
+					}
+				}
+				if (mode == 'R' || sameVolume && !Directory.Exists(target))
+				{
+					try
+					{
+						Directory.Move(s, target);
+						return DefaultObject;
+					}
+					// Mount points can cross devices even when both paths have the same root.
+					catch (IOException ex) when (mode != 'R' && (ex.HResult == CrossDeviceLink || ex.HResult == unchecked((int)0x80070011)))
+					{
+						sameVolume = false;
+					}
+				}
+
+				// As in AutoHotkey, a merge on one volume moves, while across volumes the source stays until all of it is copied.
+				if (sameVolume)
+					MoveFolderContents(s, target);
+				else
+				{
+#if WINDOWS
+					if ((File.GetAttributes(s) & FileAttributes.ReparsePoint) != 0)
+						throw new IOException($"Cannot move directory link {s} across volumes.");
+#else
+					if (new DirectoryInfo(s).LinkTarget is { } linkTarget)
+					{
+						_ = Directory.CreateSymbolicLink(target, linkTarget);
+						Directory.Delete(s);
+						return DefaultObject;
+					}
+#endif
+					_ = Directory.CreateDirectory(target);
+					CopyFolderContents(s, target, mode != '0');
+				}
+
+				Directory.Delete(s, true);
+				return DefaultObject;
+			}
+			catch (Exception ex) when (ex is not KeysharpException)
 			{
 				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
-				return Errors.OSErrorOccurred("", $"Cannot move {s} to {d} because destination is a file.");
+				return Errors.OSErrorOccurred(ex, $"Failed to move directory {s} to {target}: {ex.Message}");
 			}
-
-			switch (flag.ToUpperInvariant())
-			{
-				case "1":
-					movein = true;
-					break;
-
-				case "2":
-					break;
-
-				case "R":
-					rename = true;
-					break;
-
-				case "0":
-				default:
-					if (Directory.Exists(d))
-						return Errors.OSErrorOccurred("", $"Cannot use option 0/empty when {d} already exists.");
-
-					break;
-			}
-
-			if (rename && Directory.Exists(d))
-				return Errors.OSErrorOccurred("", $"Cannot rename {s} to {d} because it already exists.");
-
-			if (!Directory.Exists(s))
-				return Errors.OSErrorOccurred("", $"Cannot move {s} to {d} because source does not exist.");
-
-			if (movein && Directory.Exists(d))
-				d = Path.Combine(d, Path.GetFileName(s.TrimEnd(Path.DirectorySeparatorChar)));
-
-			MoveDirectory(s, d);
-			return DefaultObject;
-		}
-
-		/// <summary>
-		/// Returns the drive portion of a path without the backslash.<br/>
-		/// Ex: C:\folder => C: or \\uncdrive\folder\*.txt => \\uncdrive\folder<br/>
-		/// Adapted from http://stackoverflow.com/questions/398518/how-to-implement-glob-in-c
-		/// </summary>
-		/// <param name="path">The path to retrieve the head for.</param>
-		/// <returns>The drive portion of the path without the backslash.</returns>
-		internal static string PathHead(string path)
-		{
-			if (path.StartsWith(pathStart))
-			{
-				var dirSep = Path.DirectorySeparatorChar;
-				var parts = path.Substring(2).Split(dirSep);
-				var head = path.Substring(0, 2) + parts[0] + dirSep;
-
-				if (parts.Length > 1)
-					head += parts[1];
-
-				return head;
-			}
-
-			return path.Split(Path.DirectorySeparatorChar)[0];
 		}
 
 		/// <summary>
@@ -348,30 +368,6 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Returns path with the value from <see cref="PathHead"/> removed from the start.
-		/// </summary>
-		/// <param name="path">The path to retrieve the tail for.</param>
-		/// <returns>The path with the drive portion removed.</returns>
-		internal static string PathTail(string path) => !path.Contains(Path.DirectorySeparatorChar.ToString()) ? path : path.Substring(1 + PathHead(path).Length);
-
-		/// <summary>
-		/// Private helper for copying a folder from source to dest.
-		/// </summary>
-		/// <param name="source">The folder to copy from.</param>
-		/// <param name="dest">The folder to copy to.</param>
-		private static void CopyDirectory(DirectoryInfo source, DirectoryInfo dest)
-		{
-			if (!dest.Exists)
-				dest.Create();
-
-			foreach (var fiSrcFile in source.GetFiles())
-				_ = fiSrcFile.CopyTo(Path.Combine(dest.FullName, fiSrcFile.Name));
-
-			foreach (var diSrcDirectory in source.GetDirectories())
-				CopyDirectory(diSrcDirectory, new DirectoryInfo(Path.Combine(dest.FullName, diSrcDirectory.Name)));
-		}
-
-		/// <summary>
 		/// Private helper for copying a folder from source to dest.<br/>
 		/// If source is an archive file (.zip, .tar, .tar.gz/.tgz) its contents are extracted into dest.<br/>
 		/// A plain .gz holds a single compressed file rather than an archive of entries, so in that case
@@ -383,18 +379,18 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if any failure happens while attempting to perform the operation.</exception>
 		private static void CopyDirectory(string source, string dest, bool overwrite)
 		{
-			var isFile = File.Exists(source);
-			//Check the compressed tar suffixes before the plain .gz one, else foo.tar.gz would match .gz and the inner tar would never be extracted.
-			var isCompressedTar = isFile && (source.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) || source.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase));
-			var isSingleGz = isFile && !isCompressedTar && source.EndsWith(".gz", StringComparison.OrdinalIgnoreCase);
-
-			//A plain .gz decompresses to a single file, so dest must not be created as a directory.
-			if (isSingleGz)
+			try
 			{
-				try
+				source = Path.TrimEndingDirectorySeparator(Path.GetFullPath(source));
+				dest = Path.TrimEndingDirectorySeparator(Path.GetFullPath(dest));
+				var isFile = File.Exists(source);
+				var isCompressedTar = isFile && (source.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) || source.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase));
+
+				// A plain gzip contains one file; a compressed tar contains an archive.
+				if (isFile && !isCompressedTar && source.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
 				{
 					if (!overwrite && File.Exists(dest))
-						throw new IOException($"File already exists and overwrite is false.");
+						throw new IOException("File already exists and overwrite is false.");
 
 					if (Path.GetDirectoryName(dest) is string parent && parent.Length > 0)
 						_ = Directory.CreateDirectory(parent);
@@ -403,123 +399,154 @@ namespace Keysharp.Builtins
 					using FileStream outputFileStream = File.Create(dest);
 					using var decompressor = new GZipStream(compressedFileStream, CompressionMode.Decompress);
 					decompressor.CopyTo(outputFileStream);
-				}
-				catch (Exception ex)
-				{
-					_ = Errors.OSErrorOccurred(ex, $"Failed to copy file {source} to {dest}: {ex.Message}");
-				}
-
-				return;
-			}
-
-			try
-			{
-				if (!overwrite && Directory.Exists(dest))
-					throw new IOException($"Directory already exists and overwrite is false.");
-
-				_ = Directory.CreateDirectory(dest);
-			}
-			catch (IOException ioe)
-			{
-				if (!overwrite)
-				{
-					_ = Errors.OSErrorOccurred(ioe, $"Failed to create directory {dest}: {ioe.Message}");
 					return;
 				}
-			}
 
-			try
-			{
-				//Special check for archive files.
-				if (isFile && source.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+				if (!isFile)
 				{
-					ZipFile.ExtractToDirectory(source, dest, overwrite);
+					if (!Directory.Exists(source))
+						throw new DirectoryNotFoundException($"Source directory {source} does not exist.");
+
+					// Refuse recursion into the destination before creating it.
+					if (IsSameOrChildDirectory(source, dest))
+						throw new IOException($"Cannot copy {source} into itself.");
 				}
+
+				RefuseLinkDestination(dest);
+
+				if (!overwrite && Directory.Exists(dest))
+					throw new IOException("Directory already exists and overwrite is false.");
+
+				_ = Directory.CreateDirectory(dest);
+
+				if (isFile && source.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+					ZipFile.ExtractToDirectory(source, dest, overwrite);
 				else if (isCompressedTar)
 				{
-					//Decompress to a temporary tar first, then let TarFile extract it so its entry path validation still applies.
-					var tempTar = Path.Combine(Path.GetTempPath(), Path.ChangeExtension(Path.GetRandomFileName(), ".tar"));
-
-					try
-					{
-						using (FileStream compressedFileStream = File.OpenRead(source))
-						using (FileStream tarFileStream = File.Create(tempTar))
-						using (var decompressor = new GZipStream(compressedFileStream, CompressionMode.Decompress))
-							decompressor.CopyTo(tarFileStream);
-
-						System.Formats.Tar.TarFile.ExtractToDirectory(tempTar, dest, overwrite);
-					}
-					finally
-					{
-						if (File.Exists(tempTar))
-							File.Delete(tempTar);
-					}
+					using var compressedFileStream = File.OpenRead(source);
+					using var decompressor = new GZipStream(compressedFileStream, CompressionMode.Decompress);
+					System.Formats.Tar.TarFile.ExtractToDirectory(decompressor, dest, overwrite);
 				}
 				else if (isFile && source.EndsWith(".tar", StringComparison.OrdinalIgnoreCase))
-				{
 					System.Formats.Tar.TarFile.ExtractToDirectory(source, dest, overwrite);
-				}
 				else
-				{
-					foreach (var filepath in Directory.GetFiles(source))
-					{
-						var basename = Path.GetFileName(filepath);
-						var destfile = Path.Combine(dest, basename);
-						File.Copy(filepath, destfile, overwrite);
-					}
-
-					foreach (var dirpath in Directory.GetDirectories(source))
-					{
-						var basename = Path.GetFileName(dirpath);
-						var destdir = Path.Combine(dest, basename);
-						CopyDirectory(dirpath, destdir, overwrite);
-					}
-				}
+					CopyFolderContents(source, dest, overwrite);
 			}
-			catch (Exception ex)
+			catch (Exception ex) when (ex is not KeysharpException)
 			{
 				_ = Errors.OSErrorOccurred(ex, $"Failed to copy directory {source} to {dest}: {ex.Message}");
 			}
 		}
 
 		/// <summary>
-		/// Move source folder to dest if on the same drive. Copy then delete the source if on a different drive.
-		/// Gotten from: https://social.msdn.microsoft.com/forums/windows/en-US/b43cc316-ab96-49cb-8e3b-6de48fbc3453/how-to-move-a-folder-from-one-volume-drive-to-another-in-vbnet<br/>
+		/// Copies the files and subfolders of source into dest, which exists, stopping at the first failure.
 		/// </summary>
-		/// <param name="source">Source folder to copy</param>
-		/// <param name="dest">Destination to copy source to</param>
-		/// <param name="del">True to delete the source after copying if on different drives, else false to keep both copies.</param>
-		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if any failure happens while attempting to perform the operation.</exception>
-		private static void MoveDirectory(string source, string dest, bool del = true)
+		private static void CopyFolderContents(string source, string dest, bool overwrite)
 		{
-			if (Directory.Exists(source))
+			foreach (var filepath in Directory.GetFiles(source))
 			{
-				if (Directory.GetDirectoryRoot(source) == Directory.GetDirectoryRoot(dest))
+				var destfile = Path.Combine(dest, Path.GetFileName(filepath));
+#if !WINDOWS
+				RefuseLinkDestination(destfile);
+				if (new FileInfo(filepath).LinkTarget is { } fileTarget)
 				{
-					try
-					{
-						Directory.Move(source, dest);
-					}
-					catch (Exception ex)
-					{
-						_ = Errors.OSErrorOccurred(ex, $"Failed to move directory {source} to {dest}: {ex.Message}");
-					}
-				}
-				else
-				{
-					try
-					{
-						CopyDirectory(new DirectoryInfo(source), new DirectoryInfo(dest));
+					if (overwrite)
+						File.Delete(destfile);
 
-						if (del)
-							Directory.Delete(source, true);
-					}
-					catch (Exception ex)
-					{
-						_ = Errors.OSErrorOccurred(ex, $"Failed to copy directory {source} to {dest}: {ex.Message}");
-					}
+					_ = File.CreateSymbolicLink(destfile, fileTarget);
+					continue;
 				}
+#endif
+				File.Copy(filepath, destfile, overwrite);
+			}
+
+			foreach (var dirpath in Directory.GetDirectories(source))
+			{
+				var destdir = Path.Combine(dest, Path.GetFileName(dirpath));
+
+#if !WINDOWS
+				RefuseLinkDestination(destdir);
+				if (new DirectoryInfo(dirpath).LinkTarget is { } dirTarget)
+				{
+					_ = Directory.CreateSymbolicLink(destdir, dirTarget);
+					continue;
+				}
+#endif
+
+				_ = Directory.CreateDirectory(destdir);
+				CopyFolderContents(dirpath, destdir, overwrite);
 			}
 		}
+
+		/// <summary>
+		/// Moves the files and subfolders of source into dest, which exists, overwriting files of the same name, as
+		/// SHFileOperation merges a move in AutoHotkey. A subfolder dest lacks moves whole.
+		/// </summary>
+		private static void MoveFolderContents(string source, string dest)
+		{
+			if ((File.GetAttributes(source) & FileAttributes.ReparsePoint) != 0)
+				throw new IOException($"Cannot merge directory link {source}.");
+
+			foreach (var filepath in Directory.GetFiles(source))
+				File.Move(filepath, Path.Combine(dest, Path.GetFileName(filepath)), overwrite: true);
+
+			foreach (var dirpath in Directory.GetDirectories(source))
+			{
+				var destdir = Path.Combine(dest, Path.GetFileName(dirpath));
+				RefuseLinkDestination(destdir);
+
+				if (Directory.Exists(destdir) && (File.GetAttributes(dirpath) & FileAttributes.ReparsePoint) == 0)
+					MoveFolderContents(dirpath, destdir);
+				else
+					Directory.Move(dirpath, destdir);
+			}
+		}
+
+		private static void RefuseLinkDestination(string path)
+		{
+			if (new FileInfo(path).LinkTarget != null)
+				throw new IOException($"Cannot merge into symbolic link {path}.");
+		}
+
+		private static bool IsSameOrChildDirectory(string source, string dest)
+			=> string.Equals(source, dest, PathComparison)
+				|| dest.StartsWith(Path.EndsInDirectorySeparator(source) ? source : source + Path.DirectorySeparatorChar, PathComparison);
+
+#if !WINDOWS
+		private static bool CanRenameBetween(string source, string dest)
+		{
+			var name = ".keysharp-move-" + Path.GetRandomFileName();
+			var from = Path.Combine(source, name);
+			var to = Path.Combine(dest, name);
+			var cleanup = from;
+			_ = Directory.CreateDirectory(from);
+
+			try
+			{
+				Directory.Move(from, to);
+				cleanup = to;
+				return true;
+			}
+			catch (IOException ex) when (ex.HResult == CrossDeviceLink)
+			{
+				return false;
+			}
+			finally
+			{
+				if (Directory.Exists(cleanup))
+					Directory.Delete(cleanup);
+			}
+		}
+#endif
+
+		// EXDEV, which .NET gives as the HResult of a Unix rename across devices.
+		private const int CrossDeviceLink = 18;
+
+#if LINUX
+		private const StringComparison PathComparison = StringComparison.Ordinal;
+#else
+		// macOS volumes are case-insensitive by default, as Windows ones are.
+		private const StringComparison PathComparison = StringComparison.OrdinalIgnoreCase;
+#endif
 	}
 }
