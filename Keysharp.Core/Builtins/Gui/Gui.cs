@@ -3920,13 +3920,13 @@ namespace Keysharp.Builtins
 				//Options carrying a number are matched first: each demands a numeric value, so none of them can
 				//swallow a word option that merely starts with the same letter ("Range", "Redraw", "Hidden"...).
 				if (Options.TryParse(opt, "r", ref options.rows)) { }
-				else if (Options.TryParse(opt, "w", ref options.width)) { }
-				else if (Options.TryParse(opt, "h", ref options.height)) { }
-				else if (Options.TryParse(opt, "x+", ref options.x)) { options.xpos = GuiOptions.Positioning.PreviousBottomRight; }
-				else if (Options.TryParse(opt, "y+", ref options.y)) { options.ypos = GuiOptions.Positioning.PreviousBottomRight; }
-				else if (Options.TryParse(opt, "x", ref options.x)) { options.xpos = GuiOptions.Positioning.Absolute; }
-				else if (Options.TryParse(opt, "y", ref options.y)) { options.ypos = GuiOptions.Positioning.Absolute; }
-				else if (Options.TryParse(opt, "t", ref options.t)) { options.tabstops.Add(options.t); }
+				else if (Options.TryParse(opt, "w", ref options.width, allowFloat: true)) { }
+				else if (Options.TryParse(opt, "h", ref options.height, allowFloat: true)) { }
+				else if (Options.TryParse(opt, "x+", ref options.x, allowempty: true, allowFloat: true)) { options.xpos = GuiOptions.Positioning.PreviousBottomRight; }
+				else if (Options.TryParse(opt, "y+", ref options.y, allowempty: true, allowFloat: true)) { options.ypos = GuiOptions.Positioning.PreviousBottomRight; }
+				else if (Options.TryParse(opt, "x", ref options.x, allowFloat: true)) { options.xpos = GuiOptions.Positioning.Absolute; }
+				else if (Options.TryParse(opt, "y", ref options.y, allowFloat: true)) { options.ypos = GuiOptions.Positioning.Absolute; }
+				else if (Options.TryParse(opt, "t", ref options.t, allowFloat: true)) { options.tabstops.Add(options.t); }
 				else if (Word(opt, "Redraw")) { options.redraw = adding; }
 				else if (Word(opt, "DPIResize")) { options.dpiresize = adding; }
 				//Checkbox.
@@ -3963,23 +3963,23 @@ namespace Keysharp.Builtins
 				else if (Val(opt, "Disabled", out var disabled)) { options.enabled = !ApplySuffixFlag(disabled, adding); }
 				else if (Val(opt, "Hidden", out var hidden)) { options.visible = !ApplySuffixFlag(hidden, adding); }
 				else if (Word(opt, "Autosize")) { options.autosize = adding; }
-				else if (Options.TryParse(opt, "wp", ref options.wp, StringComparison.OrdinalIgnoreCase, true)) { }
-				else if (Options.TryParse(opt, "hp", ref options.hp, StringComparison.OrdinalIgnoreCase, true)) { }
+				else if (Options.TryParse(opt, "wp", ref options.wp, StringComparison.OrdinalIgnoreCase, true, allowFloat: true)) { }
+				else if (Options.TryParse(opt, "hp", ref options.hp, StringComparison.OrdinalIgnoreCase, true, allowFloat: true)) { }
 
 #if WINDOWS
 				else if (Options.TryParseString(opt, "Class", ref options.customclass, StringComparison.OrdinalIgnoreCase)) { }
 
 #endif
-				else if (Options.TryParse(opt, "xp", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.xpos = GuiOptions.Positioning.PreviousTopLeft; }
-				else if (Options.TryParse(opt, "yp", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.ypos = GuiOptions.Positioning.PreviousTopLeft; }
-				else if (Options.TryParse(opt, "xm", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.xpos = GuiOptions.Positioning.Margin; }
-				else if (Options.TryParse(opt, "ym", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.ypos = GuiOptions.Positioning.Margin; }
-				else if (Options.TryParse(opt, "x+m", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.x += (int)MarginX; options.xpos = GuiOptions.Positioning.PreviousBottomRight; }
-				else if (Options.TryParse(opt, "y+m", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.y += (int)MarginY; options.ypos = GuiOptions.Positioning.PreviousBottomRight; }
-				else if (Options.TryParse(opt, "xs", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.xpos = GuiOptions.Positioning.Section; }
-				else if (Options.TryParse(opt, "ys", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.ypos = GuiOptions.Positioning.Section; }
-				else if (Options.TryParse(opt, "xc", ref options.x, StringComparison.OrdinalIgnoreCase, true)) { options.xpos = GuiOptions.Positioning.Container; }
-				else if (Options.TryParse(opt, "yc", ref options.y, StringComparison.OrdinalIgnoreCase, true)) { options.ypos = GuiOptions.Positioning.Container; }
+				else if (Options.TryParse(opt, "xp", ref options.x, StringComparison.OrdinalIgnoreCase, true, allowFloat: true)) { options.xpos = GuiOptions.Positioning.PreviousTopLeft; }
+				else if (Options.TryParse(opt, "yp", ref options.y, StringComparison.OrdinalIgnoreCase, true, allowFloat: true)) { options.ypos = GuiOptions.Positioning.PreviousTopLeft; }
+				else if (Options.TryParse(opt, "xm", ref options.x, StringComparison.OrdinalIgnoreCase, true, allowFloat: true)) { options.xpos = GuiOptions.Positioning.Margin; }
+				else if (Options.TryParse(opt, "ym", ref options.y, StringComparison.OrdinalIgnoreCase, true, allowFloat: true)) { options.ypos = GuiOptions.Positioning.Margin; }
+				else if (Options.TryParse(opt, "x+m", ref options.x, StringComparison.OrdinalIgnoreCase, true, allowFloat: true)) { options.x += (int)MarginX; options.xpos = GuiOptions.Positioning.PreviousBottomRight; }
+				else if (Options.TryParse(opt, "y+m", ref options.y, StringComparison.OrdinalIgnoreCase, true, allowFloat: true)) { options.y += (int)MarginY; options.ypos = GuiOptions.Positioning.PreviousBottomRight; }
+				else if (Options.TryParse(opt, "xs", ref options.x, StringComparison.OrdinalIgnoreCase, true, allowFloat: true)) { options.xpos = GuiOptions.Positioning.Section; }
+				else if (Options.TryParse(opt, "ys", ref options.y, StringComparison.OrdinalIgnoreCase, true, allowFloat: true)) { options.ypos = GuiOptions.Positioning.Section; }
+				else if (Options.TryParse(opt, "xc", ref options.x, StringComparison.OrdinalIgnoreCase, true, allowFloat: true)) { options.xpos = GuiOptions.Positioning.Container; }
+				else if (Options.TryParse(opt, "yc", ref options.y, StringComparison.OrdinalIgnoreCase, true, allowFloat: true)) { options.ypos = GuiOptions.Positioning.Container; }
 				else if (Word(opt, "AltSubmit")) { options.altsubmit = adding; }
 				else if (Word(opt, "Section")) { options.section = true; }//AHK treats adding and removing the same here.
 				else if (Word(opt, "Tabstop")) { options.tabstop = adding; }
@@ -4090,7 +4090,7 @@ namespace Keysharp.Builtins
 				else if (Options.TryParseString(opt, "v", ref options.name)) { }
 				//Raw style numbers: a leading E is an extended style, LV a ListView extended style, and a bare
 				//number a window style. The sign decides whether each is added or removed.
-				else if (Options.TryParse(opt, "E", ref temp)) { if (adding) options.addexstyle |= temp; else options.remexstyle |= temp; }
+				else if (Options.TryParse(opt, "E", ref temp, allowFloat: true)) { if (adding) options.addexstyle |= temp; else options.remexstyle |= temp; }
 				else if (Options.TryParse(opt, "LV", ref temp)) { if (adding) options.addlvstyle |= temp; else options.remlvstyle |= temp; }
 				else if (Options.TryParse(opt, "", ref temp)) { if (adding) options.addstyle |= temp; else options.remstyle |= temp; }
 				//Anything left is a raw token that isn't a recognized option and isn't a numeric style: reject

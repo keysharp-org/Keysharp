@@ -1687,27 +1687,27 @@ namespace Keysharp.Internals.Input.Hooks
 
 		internal static uint ConvertMouseButton(ReadOnlySpan<char> buf, bool allowWheel = true)
 		{
-			if (buf.Length == 0 || buf.StartsWith("Left", StringComparison.OrdinalIgnoreCase) || buf.StartsWith("L", StringComparison.OrdinalIgnoreCase))
+			if (buf.Length == 0 || buf.Equals("Left", StringComparison.OrdinalIgnoreCase) || buf.Equals("L", StringComparison.OrdinalIgnoreCase))
 				return VK_LBUTTON; // Some callers rely on this default when buf is empty.
 
-			if (buf.StartsWith("Right", StringComparison.OrdinalIgnoreCase) || buf.StartsWith("R", StringComparison.OrdinalIgnoreCase)) return VK_RBUTTON;
+			if (buf.Equals("Right", StringComparison.OrdinalIgnoreCase) || buf.Equals("R", StringComparison.OrdinalIgnoreCase)) return VK_RBUTTON;
 
-			if (buf.StartsWith("Middle", StringComparison.OrdinalIgnoreCase) || buf.StartsWith("M", StringComparison.OrdinalIgnoreCase)) return VK_MBUTTON;
+			if (buf.Equals("Middle", StringComparison.OrdinalIgnoreCase) || buf.Equals("M", StringComparison.OrdinalIgnoreCase)) return VK_MBUTTON;
 
-			if (buf.StartsWith("X1", StringComparison.OrdinalIgnoreCase)) return VK_XBUTTON1;
+			if (buf.Equals("X1", StringComparison.OrdinalIgnoreCase)) return VK_XBUTTON1;
 
-			if (buf.StartsWith("X2", StringComparison.OrdinalIgnoreCase)) return VK_XBUTTON2;
+			if (buf.Equals("X2", StringComparison.OrdinalIgnoreCase)) return VK_XBUTTON2;
 
 			if (allowWheel)
 			{
-				if (buf.StartsWith("WheelUp", StringComparison.OrdinalIgnoreCase) || buf.StartsWith("WU", StringComparison.OrdinalIgnoreCase)) return VK_WHEEL_UP;
+				if (buf.Equals("WheelUp", StringComparison.OrdinalIgnoreCase) || buf.Equals("WU", StringComparison.OrdinalIgnoreCase)) return VK_WHEEL_UP;
 
-				if (buf.StartsWith("WheelDown", StringComparison.OrdinalIgnoreCase) || buf.StartsWith("WD", StringComparison.OrdinalIgnoreCase)) return VK_WHEEL_DOWN;
+				if (buf.Equals("WheelDown", StringComparison.OrdinalIgnoreCase) || buf.Equals("WD", StringComparison.OrdinalIgnoreCase)) return VK_WHEEL_DOWN;
 
 				// Lexikos: Support horizontal scrolling in Windows Vista and later.
-				if (buf.StartsWith("WheelLeft", StringComparison.OrdinalIgnoreCase) || buf.StartsWith("WL", StringComparison.OrdinalIgnoreCase)) return VK_WHEEL_LEFT;
+				if (buf.Equals("WheelLeft", StringComparison.OrdinalIgnoreCase) || buf.Equals("WL", StringComparison.OrdinalIgnoreCase)) return VK_WHEEL_LEFT;
 
-				if (buf.StartsWith("WheelRight", StringComparison.OrdinalIgnoreCase) || buf.StartsWith("WR", StringComparison.OrdinalIgnoreCase)) return VK_WHEEL_RIGHT;
+				if (buf.Equals("WheelRight", StringComparison.OrdinalIgnoreCase) || buf.Equals("WR", StringComparison.OrdinalIgnoreCase)) return VK_WHEEL_RIGHT;
 			}
 
 			return 0;

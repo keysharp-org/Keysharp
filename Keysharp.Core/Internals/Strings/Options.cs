@@ -137,10 +137,10 @@ namespace Keysharp.Internals.Strings
 
 		internal static string[] ParseOptions(string options) => options.Split(Spaces, StringSplitOptions.RemoveEmptyEntries);
 
-		internal static bool TryParse(string opt, string prefix, ref int result, StringComparison comp = StringComparison.OrdinalIgnoreCase, bool allowempty = false, int def = default) =>
-		TryParse(opt.AsSpan(), prefix, ref result, comp, allowempty, def);
+		internal static bool TryParse(string opt, string prefix, ref int result, StringComparison comp = StringComparison.OrdinalIgnoreCase, bool allowempty = false, int def = default, bool allowFloat = false) =>
+		TryParse(opt.AsSpan(), prefix, ref result, comp, allowempty, def, allowFloat);
 
-		internal static bool TryParse(ReadOnlySpan<char> opt, string prefix, ref int result, StringComparison comp = StringComparison.OrdinalIgnoreCase, bool allowempty = false, int def = default) =>
+		internal static bool TryParse(ReadOnlySpan<char> opt, string prefix, ref int result, StringComparison comp = StringComparison.OrdinalIgnoreCase, bool allowempty = false, int def = default, bool allowFloat = false) =>
 		TryParseWrapper(opt, prefix, (ReadOnlySpan<char> s, out int x) =>
 		{
 			if (int.TryParse(s, out x))
@@ -148,6 +148,16 @@ namespace Keysharp.Internals.Strings
 
 			return s.StartsWith("0x", StringComparison.OrdinalIgnoreCase) &&
 				   int.TryParse(s.Slice(2), NumberStyles.HexNumber, CultureInfo.CurrentCulture, out x);
+		}, ref result, comp, allowempty, def)
+		|| allowFloat && TryParseWrapper(opt, prefix, (ReadOnlySpan<char> s, out int x) =>
+		{
+			x = default;
+			if (!float.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+					|| !float.IsFinite(value) || value < int.MinValue || value >= 2147483648f)
+				return false;
+
+			x = (int)value;
+			return true;
 		}, ref result, comp, allowempty, def);
 
 		internal static bool TryParse(string opt, string prefix, ref long result, StringComparison comp = StringComparison.OrdinalIgnoreCase, bool allowempty = false, long def = default) =>
