@@ -434,9 +434,12 @@ namespace Keysharp.Runtime
 		/// call finds it, and returns whether it did. An implicit ToString calls this way, so a value without the method
 		/// is the conversion's TypeError rather than a MethodError.
 		/// </summary>
-		internal static bool TryInvoke(object obj, string name, out object result)
+		internal static bool TryInvoke(object obj, string name, out object result) =>
+			TryInvoke(obj, name, System.Array.Empty<object>(), out result);
+
+		internal static bool TryInvoke(object obj, string name, object[] args, out object result)
 		{
-			result = DispatchCall(obj, name, System.Array.Empty<object>(), optional: true);
+			result = DispatchCall(obj, name, args, optional: true);
 
 			if (!ReferenceEquals(result, NoMember))
 				return true;

@@ -8,10 +8,10 @@ namespace Keysharp.Builtins.COM
 	{
 		internal static readonly long F_OWNVALUE = 1;
 		internal static readonly int MaxVtableLen = 16;
-		internal readonly CallbackRegistry handlers = new();
 		internal object item;
 		// Where this object's members are looked up in type info, found on the first lookup; see ComTypeScope.
 		private ComTypeScope typeScope;
+		private static readonly object conversionFailed = new();
 
 		private nint NintPtr => Ptr switch { long lp => (nint)lp, nint ip => ip, _ => 0 };
 		public object Ptr
@@ -187,7 +187,8 @@ namespace Keysharp.Builtins.COM
 			if (args.Length == 0 && (vt & VarEnum.VT_BYREF) != 0)
 			{
 				_ = Ptr.TryCoerceLong(out var ptr);
-				return VariantHelper.ReadVariant(ptr, vt);
+				var variant = new VARIANT { vt = (ushort)vt, ptrVal = (nint)ptr };
+				return VariantHelper.FromVariant(ref variant, Ownership.Borrowed);
 			}
 
 			return RawInvokeMethod("Item", args);
@@ -197,7 +198,8 @@ namespace Keysharp.Builtins.COM
 			if (args.Length == 0 && (vt & VarEnum.VT_BYREF) != 0)
 			{
 				_ = Ptr.TryCoerceLong(out var ptr);
-				VariantHelper.WriteVariant(ptr, vt, value);
+				var variant = new VARIANT { vt = (ushort)vt, ptrVal = (nint)ptr };
+				VariantHelper.WriteByRefVariant(in variant, value);
 			}
 			else
 			{
@@ -224,129 +226,18 @@ namespace Keysharp.Builtins.COM
 				}
 			}
 
-			Ptr = null;
+			item = null;
+			Flags &= ~F_OWNVALUE;
+			typeScope = null;
 			HasFinalizer = false;
-		}
-
-		internal void CallEvents()
-		{
-			handlers.InvokeEventHandlers(this);
 		}
 
 		internal void Clear()
 		{
 			vt = 0;
-			Ptr = null;
+			item = null;
 			Flags = 0L;
-		}
-
-		internal VARIANT ToVariant(bool copy = false)
-		{
-			var vtype = vt;
-			var v = new VARIANT { vt = (ushort)vtype };
-
-			// ---- BYREF: pass-through pointer to storage (no allocations here) ----
-			if ((vtype & VarEnum.VT_BYREF) != 0)
-			{
-				v.ptrVal = NintPtr;
-				return v;
-			}
-
-			// ---- Arrays by value: SAFEARRAY* goes in parray ----
-			if ((vtype & VarEnum.VT_ARRAY) != 0)
-			{
-				v.ptrVal = NintPtr; // pass-through
-				if (copy && v.ptrVal != 0 &&
-					OleAuto.SafeArrayCopy(v.ptrVal, out var dst) >= 0 && dst != 0)
-				{
-					v.ptrVal = dst;              // our copy, VariantClear will destroy it
-				}
-				return v;
-			}
-
-			// ---- Scalars and interface/bstr cases by value ----
-			switch (vtype)
-			{
-				case VarEnum.VT_EMPTY:
-				case VarEnum.VT_NULL:
-					return v;
-
-				case VarEnum.VT_BOOL:
-					// VARIANT_BOOL is a 16-bit short: -1 (TRUE), 0 (FALSE)
-					if (Ptr is bool bl) v.boolVal = (short)(bl ? -1 : 0);
-					else if (Ptr is long ll) v.boolVal = (short)((ll != 0) ? -1 : 0);
-					else v.boolVal = (short)(Ptr.Ab() ? -1 : 0);
-					return v;
-
-				case VarEnum.VT_BSTR:
-					if (Ptr is string s) v.ptrVal = Marshal.StringToBSTR(s);
-					else if (copy && NintPtr is nint pb && pb != 0)
-					{
-						int len = OleAuto.SysStringLen(pb);
-						v.ptrVal = OleAuto.SysAllocStringLen(pb, len); // duplicate
-					}
-					else v.ptrVal = NintPtr;
-					return v;
-
-				// Signed integers
-				case VarEnum.VT_I1: v.cVal = (sbyte)(Ptr is long l1 ? l1 : Convert.ToSByte(Ptr)); return v;
-				case VarEnum.VT_I2: v.iVal = (short)(Ptr is long l2 ? l2 : Convert.ToInt16(Ptr)); return v;
-				case VarEnum.VT_I4:
-				case VarEnum.VT_INT: v.lVal = (int)(Ptr is long l4 ? l4 : Convert.ToInt32(Ptr)); return v;
-				case VarEnum.VT_I8: v.llVal = (Ptr is long l8 ? l8 : Convert.ToInt64(Ptr)); return v;
-
-				// Unsigned integers
-				case VarEnum.VT_UI1: v.bVal = (byte)(Ptr is long ul1 ? ul1 : Convert.ToByte(Ptr)); return v;
-				case VarEnum.VT_UI2: v.uiVal = (ushort)(Ptr is long ul2 ? ul2 : Convert.ToUInt16(Ptr)); return v;
-				case VarEnum.VT_UI4:
-				case VarEnum.VT_UINT: v.ulVal = (uint)(Ptr is long ul4 ? ul4 : Convert.ToUInt32(Ptr)); return v;
-				case VarEnum.VT_UI8: v.ullVal = (Ptr is ulong u8 ? u8 : (ulong)Convert.ToInt64(Ptr)); return v;
-
-				// Floating-point
-				case VarEnum.VT_R4: v.fltVal = (Ptr is float f ? f : Convert.ToSingle(Ptr)); return v;
-				case VarEnum.VT_R8: v.dblVal = (Ptr is double d ? d : Convert.ToDouble(Ptr)); return v;
-
-				// Currency: 64-bit integer in 1/10,000th units
-				case VarEnum.VT_CY:
-					if (Ptr is long cy) v.cyVal = cy;
-					else if (Ptr is double dcy) v.cyVal = checked((long)Math.Round(dcy * 10000.0));
-					else if (Ptr is decimal mcy) v.cyVal = checked((long)Math.Round(mcy * 10000m));
-					else v.cyVal = checked((long)Math.Round(Convert.ToDouble(Ptr) * 10000.0));
-					return v;
-
-				// DATE: OLE Automation date (stored as double)
-				case VarEnum.VT_DATE:
-					if (Ptr is double dd) v.dblVal = dd;
-					else if (Ptr is DateTime dt) v.dblVal = dt.ToOADate();
-					else v.dblVal = Convert.ToDateTime(Ptr).ToOADate();
-					return v;
-
-				// Interfaces
-				case VarEnum.VT_DISPATCH:
-				case VarEnum.VT_UNKNOWN:
-					if (NintPtr is nint p && p != 0)
-					{
-						if (copy) Marshal.AddRef(p); // own one ref so VariantClear can Release it
-						v.ptrVal = p;
-					}
-					// A numeric Ptr (e.g. ComValue(VT_UNKNOWN, 0)) is a raw interface pointer value:
-					// 0 means a null interface, so leave v.ptrVal = 0. Only wrap genuine managed
-					// objects in a CCW — wrapping a boxed integer would yield a CCW around the number,
-					// which fails to QI to the expected interface (E_NOINTERFACE).
-					else if (Ptr != null && Ptr is not long && Ptr is not nint)
-						v.ptrVal = (vtype == VarEnum.VT_DISPATCH)
-							? Com.DispatchPointer(Ptr) // our ref, VariantClear will Release
-							: Marshal.GetIUnknownForObject(Ptr);
-					return v;
-
-				// Avoid producing a by-value VT_VARIANT; coerce from the runtime value instead.
-				case VarEnum.VT_VARIANT:
-					return VariantHelper.ValueToVariant(Ptr);
-
-				default:
-					// Fallback to general converter to avoid silent mis-encoding.
-					return VariantHelper.ValueToVariant(Ptr);
-			}
+			typeScope = null;
 		}
 
 		internal const int DISP_E_MEMBERNOTFOUND = unchecked((int)0x80020003);
@@ -381,8 +272,8 @@ namespace Keysharp.Builtins.COM
 			for (var i = 0; i < args.Length && i < types.Length; i++)
 				if (args[i] is Array ksarr && types[i].IsArray)
 				{
-					// Only an Array's non-object elements are converted, and only an object's conversion can fail.
-					_ = TryConvertArgument(ksarr, types[i], out var converted);
+					if (!TryConvertArgument(ksarr, types[i], out var converted))
+						return null;
 					(passed ??= (object[])args.Clone())[i] = converted;
 				}
 
@@ -466,6 +357,8 @@ namespace Keysharp.Builtins.COM
 
 			if (namedDispIds == null)
 				inputParameters = SafeArraysWhereDeclared(dispId, methodName, inputParameters, FuncOrGet);
+			if (inputParameters == null)
+				return DefaultObject;
 
 			hr = RawInvoke(dispId, INVOKEKIND.INVOKE_FUNC, inputParameters, out object result, expectedTypes: null, byRefs: byRefs, namedDispIds: namedDispIds);
 			if (hr == DISP_E_MEMBERNOTFOUND)
@@ -504,7 +397,7 @@ namespace Keysharp.Builtins.COM
 				}
 			}
 
-			return hr >= 0 ? result : Errors.ErrorOccurred($"Invoke failed for '{methodName}' ({result})", DefaultObject);
+			return hr >= 0 ? result : ReferenceEquals(result, conversionFailed) ? DefaultObject : Errors.ErrorOccurred($"Invoke failed for '{methodName}' ({result})", DefaultObject);
 		}
 
 		internal unsafe object RawGetProperty(string propertyName, object[] args)
@@ -521,7 +414,7 @@ namespace Keysharp.Builtins.COM
 					&& InvokeGet(dispId, propertyName, [], out var value) >= 0)
 				return GetIndexOrNull(value, args);
 
-			return hr >= 0 ? result : Errors.ErrorOccurred($"Get property failed for '{propertyName}' ({result})");
+			return hr >= 0 ? result : ReferenceEquals(result, conversionFailed) ? DefaultObject : Errors.ErrorOccurred($"Get property failed for '{propertyName}' ({result})");
 		}
 
 		// The flag matching the syntax first, so a server exposing a member both ways reads it, then both, for a server
@@ -529,6 +422,8 @@ namespace Keysharp.Builtins.COM
 		private int InvokeGet(int dispId, string name, object[] args, out object result)
 		{
 			var callArgs = args.Length > 0 ? SafeArraysWhereDeclared(dispId, name, args, FuncOrGet) : null;
+			if (args.Length > 0 && callArgs == null)
+				return AbortConversion(out result);
 			var hr = RawInvoke(dispId, INVOKEKIND.INVOKE_PROPERTYGET, callArgs, out result);
 
 			if (hr == DISP_E_MEMBERNOTFOUND)
@@ -553,6 +448,8 @@ namespace Keysharp.Builtins.COM
 			}
 
 			var callArgs = SafeArraysWhereDeclared(dispId, propertyName, [.. args, value], INVOKEKIND.INVOKE_PROPERTYPUT | INVOKEKIND.INVOKE_PROPERTYPUTREF);
+			if (callArgs == null)
+				return;
 			// An object goes by reference, then by value when the server has no putref (it may then read the object's
 			// default member for the value), as AHK assigns a VT_DISPATCH.
 			var sent = callArgs[^1];
@@ -571,7 +468,7 @@ namespace Keysharp.Builtins.COM
 				hr = RetryCoerced(hr, dispId, MemberInfo(dispId, propertyName, kind), kind, ref callArgs, ref result);
 			}
 
-			if (hr < 0)
+			if (hr < 0 && !ReferenceEquals(result, conversionFailed))
 				_ = Errors.ErrorOccurred($"Set property failed for '{propertyName}' ({result})");
 		}
 
@@ -765,6 +662,13 @@ namespace Keysharp.Builtins.COM
 		// Type info declares no flag for a vararg tail, so byRefs can be shorter than the arguments.
 		private static bool IsByRef(bool[] byRefs, int index) => byRefs != null && index < byRefs.Length && byRefs[index];
 
+		// A continued packing error must abort without reporting a second invocation error.
+		private static int AbortConversion(out object result)
+		{
+			result = conversionFailed;
+			return -1;
+		}
+
 		/// <param name="namedDispIds">
 		/// Parameter DISPIDs for a call using named arguments, already ordered to match the FRONT of rgvarg (which
 		/// is filled in reverse, so these are the reverse of the arguments' source order). Null for a purely
@@ -784,7 +688,10 @@ namespace Keysharp.Builtins.COM
 			bool isPutRef = (flags & INVOKEKIND.INVOKE_PROPERTYPUTREF) != 0;
 
 			if ((isPut || isPutRef) && namedDispIds is { Length: > 0 })
-				return Errors.ErrorOccurred(new ValueError("Named arguments are not supported when setting a COM property."), -1);
+			{
+				_ = Errors.ValueErrorOccurred("Named arguments are not supported when setting a COM property.");
+				return AbortConversion(out result);
+			}
 
 			var vtbl = GetDispatchVtbl();
 			if (vtbl == null)
@@ -803,7 +710,7 @@ namespace Keysharp.Builtins.COM
 			int propertyPutId = Com.DISPID_PROPERTYPUT;
 			int argCount = args?.Length ?? 0;
 			const int stackArgumentLimit = 16;
-			const byte ownsByRef = 1, suppressWriteback = 2;
+			const byte ownsByRef = 1, suppressWriteback = 2, borrowed = 4;
 			Span<VARIANT> variants = argCount <= stackArgumentLimit ? stackalloc VARIANT[argCount] : new VARIANT[argCount];
 			Span<byte> argumentState = argCount <= stackArgumentLimit ? stackalloc byte[argCount] : new byte[argCount];
 			argumentState.Clear();
@@ -825,7 +732,7 @@ namespace Keysharp.Builtins.COM
 						// Apply type conversion if we have type info
 						if (expectedTypes != null && sourceIndex < expectedTypes.Length && arg is not ComValue
 								&& !TryConvertArgument(arg, expectedTypes[sourceIndex], out arg))
-							return -1;
+							return AbortConversion(out result);
 
 						bool isByRef = IsByRef(byRefs, sourceIndex);
 
@@ -833,48 +740,33 @@ namespace Keysharp.Builtins.COM
 
 						if (arg is ComValue cv)
 						{
-							// If signature says BYREF, or cv is already BYREF, just pass through (no ownership)
-							if (isByRef || (cv.vt & VarEnum.VT_BYREF) != 0)
+							if (cv.vt == VarEnum.VT_VARIANT)
 							{
-								variant = cv.ToVariant();
-								if ((cv.vt & VarEnum.VT_BYREF) != 0)
-									argumentState[i] = suppressWriteback;
+								if (!VariantHelper.TryToVariant(cv.Ptr, out variant)) return AbortConversion(out result);
 							}
 							else
 							{
-								// Non-BYREF ComValue: duplicate “dangerous” inners (BSTR/SAFEARRAY/interface) so VariantClear is safe
-								variant = cv.ToVariant(copy: true);
+								if (!VariantHelper.TryBorrowArgument(cv, out variant)) return AbortConversion(out result);
+								argumentState[i] = borrowed;
 							}
+							if ((cv.vt & VarEnum.VT_BYREF) != 0)
+								argumentState[i] |= suppressWriteback;
 						}
 						else if (isByRef)
 						{
-							// If the param is BYREF and the TLB says SAFEARRAY (i.e. expected CLR type is array),
-							// pass VARIANT* whose inner VARIANT = VT_ARRAY | <elemVT> (not SAFEARRAY**).
-							if (expectedTypes != null &&
-								sourceIndex < expectedTypes.Length &&
-								expectedTypes[sourceIndex]?.IsArray == true)
-							{
-								variant = VariantHelper.CreateByRefVariant(arg);  // <- BYREF|VARIANT (nested)
-							}
-							else
-							{
-								VarEnum baseVt = VarEnum.VT_EMPTY;
-								if (expectedTypes != null && sourceIndex < expectedTypes.Length)
-									baseVt = VariantHelper.CLRTypeToVarEnum(expectedTypes[sourceIndex]);
-
-								variant = (baseVt != VarEnum.VT_EMPTY)
-										  ? VariantHelper.CreateByRefVariantTyped(arg, baseVt)
-										  : VariantHelper.CreateByRefVariant(arg);
-
-							}
+							var expected = expectedTypes != null && sourceIndex < expectedTypes.Length ? expectedTypes[sourceIndex] : null;
+							// A by-reference SAFEARRAY argument travels in a nested VARIANT, as ordinary AHK values do.
+							var type = expected == null || expected.IsArray ? VarEnum.VT_VARIANT : VariantHelper.CLRTypeToVarEnum(expected);
+							if (!VariantHelper.TryCreateByRefVariant(arg, type == VarEnum.VT_EMPTY ? VarEnum.VT_VARIANT : type, out variant)) return AbortConversion(out result);
 							argumentState[i] = ownsByRef;
 						}
 						else
 						{
 							// A parameter its type info declares as a boolean gets one; anywhere else a boolean is an integer.
-							variant = arg is bool flag && expectedTypes != null && sourceIndex < expectedTypes.Length && expectedTypes[sourceIndex] == typeof(bool)
-									  ? VariantHelper.CreateVariantFromBool(flag)
-									  : VariantHelper.ValueToVariant(arg);
+							var converted = arg is bool flag && expectedTypes != null && sourceIndex < expectedTypes.Length && expectedTypes[sourceIndex] == typeof(bool)
+								? VariantHelper.TryToTypedVariant(flag, VarEnum.VT_BOOL, out variant)
+								: VariantHelper.TryToVariant(arg, out variant);
+							if (!converted) return AbortConversion(out result);
 						}
 						variants[i] = variant;
 						initializedCount++;
@@ -918,7 +810,7 @@ namespace Keysharp.Builtins.COM
 						var resultVt = (VarEnum)resultVariant.vt & ~VarEnum.VT_BYREF;
 						result = (resultVt == VarEnum.VT_NULL || resultVt == VarEnum.VT_EMPTY)
 							? DefaultObject
-							: VariantHelper.VariantToValue(resultVariant);
+							: VariantHelper.FromVariant(ref resultVariant, Ownership.Owned);
 					}
 
 					// Handle byref out parameters
@@ -934,7 +826,9 @@ namespace Keysharp.Builtins.COM
 								// If it's VT_BYREF, read the value back
 								if (((VarEnum)variant.vt & VarEnum.VT_BYREF) != 0 && (argumentState[i] & suppressWriteback) == 0)
 								{
-									args[sourceIndex] = VariantHelper.ReadByRefVariant(variant);
+									args[sourceIndex] = VariantHelper.FromStorage(variant.ptrVal,
+										(VarEnum)variant.vt & ~VarEnum.VT_BYREF,
+										(argumentState[i] & ownsByRef) != 0 ? Ownership.Owned : Ownership.Borrowed);
 								}
 							}
 						}
@@ -969,7 +863,8 @@ namespace Keysharp.Builtins.COM
 				{
 					if ((argumentState[i] & ownsByRef) != 0)
 						VariantHelper.CleanupByRefVariant(variants[i]);
-					_ = VariantHelper.VariantClear((nint)(pArgs + i));
+					if ((argumentState[i] & borrowed) == 0)
+						_ = VariantHelper.VariantClear((nint)(pArgs + i));
 				}
 
 				if (wantsResult)
@@ -977,6 +872,8 @@ namespace Keysharp.Builtins.COM
 				if (exception.Source != 0) WindowsAPI.SysFreeString(exception.Source);
 				if (exception.Description != 0) WindowsAPI.SysFreeString(exception.Description);
 				if (exception.HelpFile != 0) WindowsAPI.SysFreeString(exception.HelpFile);
+				GC.KeepAlive(args);
+				GC.KeepAlive(this);
 			}
 		}
 
@@ -995,14 +892,6 @@ namespace Keysharp.Builtins.COM
 			if (currentType == expectedType)
 				return true;
 
-			if (arg is ComValue cv)
-			{
-				if ((cv.vt & VarEnum.VT_BYREF) != 0)
-					return true;
-
-				_ = cv.Ptr.TryCoerceLong(out var cvPtr);
-				result = arg = VariantHelper.ReadVariant(cvPtr, cv.vt);
-			}
 
 			// SAFEARRAY parameters become CLR arrays in our surface types.
 			if (expectedType.IsArray)

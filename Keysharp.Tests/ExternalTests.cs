@@ -1,6 +1,7 @@
 using static Keysharp.Builtins.External;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 using ComTypes = System.Runtime.InteropServices.ComTypes;
+using Keysharp.Builtins.COM;
 
 namespace Keysharp.Tests
 {
@@ -54,6 +55,7 @@ namespace Keysharp.Tests
 		[Test, Category("External"), Category("Internal")]
 		public void ComPackingFailure()
 		{
+			Assert.AreEqual(8 + 2 * IntPtr.Size, Marshal.SizeOf<VARIANT>());
 			using var target = (Keysharp.Builtins.COM.ComObject)Keysharp.Builtins.COM.ComObject.staticCall(null, "Scripting.Dictionary");
 			using var invalid = new Keysharp.Builtins.COM.ComValue { vt = VarEnum.VT_CY, item = 1.0e30 };
 			var pointer = (nint)(long)target.Ptr;
@@ -61,9 +63,50 @@ namespace Keysharp.Tests
 			var before = Marshal.Release(pointer);
 
 			// The interface is copied first because COM arguments are packed in reverse order.
-			Assert.Throws<OverflowException>(() => target.RawInvoke(1, ComTypes.INVOKEKIND.INVOKE_FUNC, [invalid, target], out _));
+			using var scope = Keysharp.Runtime.Flow.EnterTry();
+			var failure = Assert.Throws<KeysharpException>(() => target.RawInvoke(1, ComTypes.INVOKEKIND.INVOKE_FUNC, [invalid, target], out _));
+			Assert.IsInstanceOf<OSError>(failure.UserError);
+			Assert.AreEqual(0x8002000AL, ((OSError)failure.UserError).Number);
 			_ = Marshal.AddRef(pointer);
 			Assert.AreEqual(before, Marshal.Release(pointer));
+		}
+
+		[Test, Category("External"), Category("Internal")]
+		public void ComSafeArrayLockedStorage()
+		{
+			using var inner = new ComObjArray(VarEnum.VT_BSTR, 1);
+			using var outer = new ComObjArray(VarEnum.VT_VARIANT, 1);
+			Assert.IsTrue(outer.TryPutElementAtIndices([0], inner, out var hr));
+			Assert.AreEqual(0, hr);
+			var pointer = (nint)(long)outer.Ptr;
+			Assert.AreEqual(0, OleAuto.SafeArrayLock(pointer));
+			nint nested;
+			try
+			{
+				Assert.AreEqual(0, OleAuto.SafeArrayPtrOfIndex(pointer, [0], out var cell));
+				nested = VariantHelper.ReadStorage(cell, VarEnum.VT_VARIANT).ptrVal;
+			}
+			finally { _ = OleAuto.SafeArrayUnlock(pointer); }
+			Assert.AreEqual(0, OleAuto.SafeArrayLock(nested));
+			try
+			{
+				Assert.IsTrue(outer.TryPutElementAtIndices([0], "replacement", out hr));
+				Assert.AreEqual(unchecked((int)0x8002000D), hr);
+			}
+			finally { _ = OleAuto.SafeArrayUnlock(nested); }
+			Assert.AreEqual(0, OleAuto.SafeArrayLock(pointer));
+			try
+			{
+				Assert.AreEqual(0, OleAuto.SafeArrayPtrOfIndex(pointer, [0], out var cell));
+				Assert.AreEqual(nested, VariantHelper.ReadStorage(cell, VarEnum.VT_VARIANT).ptrVal);
+				outer.Dispose();
+				Assert.AreEqual((long)pointer, outer.Ptr);
+			}
+			finally { _ = OleAuto.SafeArrayUnlock(pointer); }
+			using var caught = Keysharp.Runtime.Flow.EnterTry();
+			Assert.Throws<KeysharpException>(() => outer.GetElementAtIndices([1]));
+			outer.Dispose();
+			Assert.IsNull(outer.Ptr);
 		}
 
 		// Scripting.Dictionary's own interface supplies its members, a nameless lookup finds its default member, and

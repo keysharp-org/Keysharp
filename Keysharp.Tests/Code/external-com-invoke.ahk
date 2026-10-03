@@ -11,6 +11,12 @@ dict.Add("δείγμα", "café")
 AssertEq(dict.Item("δείγμα"), "café", A_LineNumber)
 AssertEq(dict.Count, 2, A_LineNumber)
 
+nativeEnum := dict._NewEnum()
+AssertEq(Type(nativeEnum), "Enumerator", A_LineNumber)
+Assert(nativeEnum(&key, &nativeType), A_LineNumber)
+AssertEq(nativeType, 8, A_LineNumber)
+Assert(dict.Exists(key), A_LineNumber)
+
 class DispatchProbe {
     Echo(Value) => Value
 
@@ -58,6 +64,19 @@ AssertEq(probe.Swap(&left, "middle", &right), "middle", A_LineNumber)
 AssertEq(left, "right|middle", A_LineNumber)
 AssertEq(right, "left", A_LineNumber)
 
+BoundByRef(Receiver, Fixed, &Value) => ++Value
+target.DefineProp("Bound", {Value: BoundByRef.Bind(, "fixed")})
+number := 10
+AssertEq(probe.Bound(&number), 11, A_LineNumber)
+AssertEq(number, 11, A_LineNumber)
+
+key := "", value := ""
+next := Map("k", "v").__Enum(2).Bind(&key)
+wrapped := ComObjQuery(ObjPtr(next), "{00020400-0000-0000-C000-000000000046}")
+Assert(wrapped(&value), A_LineNumber)
+AssertEq(key, "k", A_LineNumber)
+AssertEq(value, "v", A_LineNumber)
+
 ; The caller retains ownership of explicitly supplied by-reference storage.
 storage := Buffer(4, 0)
 NumPut("Int", 41, storage)
@@ -78,6 +97,20 @@ AssertEq(returnedArray[0], "array value", A_LineNumber)
 AssertEq(returnedArray[1], 7, A_LineNumber)
 AssertEq(array[0], "array value", A_LineNumber)
 
+bools := ComObjArray(11, 2), bytes := ComObjArray(17, 1)
+bools[0] := "hello", bools[1] := "0", bytes[0] := 257
+Assert(bools[0] && !bools[1], A_LineNumber)
+AssertEq(bytes[0], 1, A_LineNumber)
+interfaces := ComObjArray(13, 1)
+failed := false
+try interfaces[0] := 1
+catch OSError as err {
+    failed := true
+    AssertEq(err.Number, 0x80020005, A_LineNumber)
+}
+Assert(failed, A_LineNumber)
+Assert(!interfaces[0], A_LineNumber)
+
 ; The outer invocation's buffers must survive a nested COM call.
 AssertEq(probe.Reenter((Text) => Text "|" dict.Count, "outer"), "outer|3", A_LineNumber)
 
@@ -87,5 +120,16 @@ catch Any as err
     message := err.Message
 Assert(InStr(message, "dispatch failure Ω"), A_LineNumber)
 AssertEq(probe.Echo("after error"), "after error", A_LineNumber)
+
+conversionErrors := 0
+ContinueConversionError(*) {
+    global conversionErrors
+    conversionErrors++
+    return -1
+}
+OnError(ContinueConversionError)
+probe.Echo(ComValue(14, "not a decimal"))
+OnError(ContinueConversionError, 0)
+AssertEq(conversionErrors, 1, A_LineNumber)
 
 FileAppend "pass", "*"

@@ -45,17 +45,28 @@ doc.getElementById("target").click()
 AssertEq(sink.calls, 2, A_LineNumber)
 AssertEq(errorsReported, 0, A_LineNumber)
 
+ContinueConnectError(*) => -1
+OnError(CountError, 0)
+OnError(ContinueConnectError)
+ComObjConnect(doc, 1)
+ComObjConnect(doc, "")
+OnError(ContinueConnectError, 0)
+doc.getElementById("target").click()
+AssertEq(sink.calls, 3, A_LineNumber)
+
 ComObjConnect(doc)
 doc.getElementById("target").click()
-AssertEq(sink.calls, 2, A_LineNumber)
+AssertEq(sink.calls, 3, A_LineNumber)
 
 ; A sink of functions named by a prefix runs the same way, and Exit in one ends only that handler: the Sleep that
 ; follows would otherwise end this thread.
 prefixCalls := 0
+prefixSource := ""
 
 Doc_onclick(doc) {
-	global prefixCalls
+	global prefixCalls, prefixSource
 	prefixCalls++
+	prefixSource := doc
 	Exit
 }
 
@@ -63,6 +74,7 @@ ComObjConnect(doc, "Doc_")
 doc.getElementById("target").click()
 Sleep(0)
 AssertEq(prefixCalls, 1, A_LineNumber)
+Assert(prefixSource == doc, A_LineNumber)
 ComObjConnect(doc)
 
 FileAppend "pass", "*"

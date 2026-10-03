@@ -4,7 +4,7 @@ namespace Keysharp.Builtins.COM
 	internal partial class ComMethodData(Script script) : IDisposable
 	{
 		private readonly Lock comEventGate = new();
-		private readonly HashSet<ComEvent> comEvents = [];
+		private readonly List<WeakReference<ComEvent>> comEvents = [];
 		private bool disposed;
 
 		internal void Connect(ComObject comObject, object sink, bool log)
@@ -13,7 +13,27 @@ namespace Keysharp.Builtins.COM
 
 			if (sink != null)
 			{
+				if (sink is string { Length: 0 })
+				{
+					_ = Errors.ValueErrorOccurred("The COM event prefix must not be empty.");
+					return;
+				}
+				if (sink is not (string or KeysharpObject))
+				{
+					_ = Errors.TypeErrorOccurred(sink, typeof(KeysharpObject));
+					return;
+				}
+				if (comObject.Ptr is not long pointer || pointer == 0)
+				{
+					_ = Errors.ValueErrorOccurred("The COM object has no interface pointer.");
+					return;
+				}
 				var dispatcher = new Dispatcher(comObject);
+				if (!dispatcher.IsConnected)
+				{
+					dispatcher.Dispose();
+					return;
+				}
 
 				try
 				{
@@ -38,30 +58,20 @@ namespace Keysharp.Builtins.COM
 				}
 				else
 				{
-					existing = comEvents.FirstOrDefault(ce => ReferenceEquals(ce.dispatcher.Co, comObject));
-
-					if (existing != null)
-						_ = comEvents.Remove(existing);
+					existing = comObject.EventSink;
+					comObject.EventSink = replacement;
+					comEvents.RemoveAll(reference => !reference.TryGetTarget(out var target) || ReferenceEquals(target, existing));
 
 					if (replacement != null)
-						_ = comEvents.Add(replacement);
+						comEvents.Add(new(replacement));
 				}
 			}
 
-			if (existing != null)
-			{
-				existing.Unwire();
-				existing.dispatcher.Dispose();
-			}
+			existing?.Dispose();
 
 			if (rejected)
 			{
-				if (replacement != null)
-				{
-					replacement.Unwire();
-					replacement.dispatcher.Dispose();
-				}
-
+				replacement?.Dispose();
 				throw new ObjectDisposedException(nameof(Script));
 			}
 		}
@@ -76,16 +86,13 @@ namespace Keysharp.Builtins.COM
 					return;
 
 				disposed = true;
-				all = [.. comEvents];
+				all = [.. comEvents.Select(reference => reference.TryGetTarget(out var target) ? target : null).Where(target => target != null)];
 				comEvents.Clear();
 			}
 
 			// Unadvise can enter arbitrary COM code, so it must not run while the registry gate is held.
 			foreach (var comEvent in all)
-			{
-				comEvent.Unwire();
-				comEvent.dispatcher.Dispose();
-			}
+				comEvent.Dispose();
 
 			if (libraries != null)
 				foreach (var library in libraries.Values)

@@ -1,4 +1,6 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 #Include <assert>
 
 ; A native IDispatch client (cJson.ahk is the real-world one) enumerates a Keysharp object by calling
@@ -58,12 +60,12 @@ ComEnumerate(obj) {
 }
 
 VariantText(var) {
-    vt := NumGet(var, 0, "UShort")
-    if vt = 8                                        ; VT_BSTR
+    variantType := NumGet(var, 0, "UShort")
+    if variantType = 8                               ; VT_BSTR
         return StrGet(NumGet(var, 8, "Ptr"), "UTF-16")
-    if vt = 3                                        ; VT_I4
+    if variantType = 3                               ; VT_I4
         return NumGet(var, 8, "Int")
-    return "<vt" vt ">"
+    return "<vt" variantType ">"
 }
 
 Assert(ComEnumerate(Map("a", 1, "b", 2)) = "a=1|b=2|", A_LineNumber)

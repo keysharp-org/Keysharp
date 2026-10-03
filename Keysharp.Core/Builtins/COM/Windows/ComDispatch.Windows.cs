@@ -88,184 +88,204 @@ namespace Keysharp.Builtins.COM
 		private int cookie;
 		private bool disposedValue;
 		private readonly Guid interfaceID;
-		private readonly ct.ITypeInfo? typeInfo;
+		private ct.ITypeInfo? typeInfo;
+		private readonly object typeInfoGate = new();
+		private readonly ConcurrentDictionary<int, string> eventNames = [];
+		private readonly WeakReference<ComValue> source;
 
-		public ComValue? Co { get; }
+		public ComValue? Co => source.TryGetTarget(out var target) ? target : null;
 
 		internal Guid InterfaceId => interfaceID;
+		internal bool IsConnected => connection != null;
 
 		internal Dispatcher(ComValue? cobj)
 		{
 			ArgumentNullException.ThrowIfNull(cobj);
+			source = new(cobj);
 
 			Reflections.TryGetPtrProperty(cobj, out var cobjAddr);
 			var pUnk = new nint(cobjAddr);
 			var containerObj = Marshal.GetObjectForIUnknown(pUnk);
-			if (containerObj is not ct.IConnectionPointContainer cpContainer)
-			{
-				_ = Errors.ValueErrorOccurred(
-					$"The passed in COM object of type {containerObj.GetType()} was not of type IConnectionPointContainer.");
-				return;
-			}
-
-			Co = cobj;
-
-			// Try to obtain a *class* typeinfo first; if not, we may get an *interface* TI.
 			ct.ITypeInfo? classTi = null;
-			if (containerObj is IProvideClassInfo ipci)
-			{
-				if (ipci.GetClassInfo(out classTi) < 0) classTi = null;
-			}
-			else if (containerObj is IDispatch disp)
-			{
-				// NB: This is often an *interface* TI, not a coclass – flags may all be 0.
-				_ = disp.GetTypeInfo(0, 0, out classTi);
-			}
-
-			Guid? chosenIid = null;
 			ct.ITypeInfo? chosenTi = null;
-
-			bool TryPickSourceFromImplTypes(ct.ITypeInfo ti, bool preferDefault, out Guid iid, out ct.ITypeInfo? sinkTi)
+			try
 			{
-				iid = Guid.Empty; sinkTi = null;
-
-				ti.GetTypeAttr(out var pAttr);
-				var ta = Marshal.PtrToStructure<ct.TYPEATTR>(pAttr);
-				try
+				if (containerObj is not ct.IConnectionPointContainer cpContainer)
 				{
-					for (int j = 0; j < ta.cImplTypes; j++)
-					{
-						ti.GetImplTypeFlags(j, out var flags);
-
-						bool isSource = flags.HasFlag(ct.IMPLTYPEFLAGS.IMPLTYPEFLAG_FSOURCE);
-						bool isDefault = flags.HasFlag(ct.IMPLTYPEFLAGS.IMPLTYPEFLAG_FDEFAULT);
-
-						if (!isSource) continue;
-						if (preferDefault && !isDefault) continue; // pass 1: prefer default
-																   // pass 2: accept any source
-
-						ti.GetRefTypeOfImplType(j, out int href);
-						ti.GetRefTypeInfo(href, out var eventTi);
-
-						eventTi.GetTypeAttr(out nint pAttr2);
-						var ta2 = Marshal.PtrToStructure<ct.TYPEATTR>(pAttr2);
-						try
-						{
-							iid = ta2.guid;
-							sinkTi = eventTi; // keep (we own this reference)
-							eventTi = null;   // prevent release in finally
-							return true;
-						}
-						finally
-						{
-							if (pAttr2 != 0) eventTi?.ReleaseTypeAttr(pAttr2);
-							if (eventTi != null) Marshal.ReleaseComObject(eventTi);
-						}
-					}
-				}
-				finally
-				{
-					ti.ReleaseTypeAttr(pAttr);
-				}
-				return false;
-			}
-
-			// 1) Try default+source first, 2) then any source
-			if (classTi != null)
-			{
-				if (!TryPickSourceFromImplTypes(classTi, preferDefault: true, out var iid1, out var ti1))
-					TryPickSourceFromImplTypes(classTi, preferDefault: false, out iid1, out ti1);
-				if (ti1 != null)
-				{
-					chosenIid = iid1;
-					chosenTi = ti1; // keep it
-				}
-			}
-
-			// 3) Fallback: enumerate connection points
-			if (chosenIid == null)
-			{
-				cpContainer.EnumConnectionPoints(out var enumPts);
-				if (enumPts != null)
-				{
-					var arr = new ct.IConnectionPoint[1];
-					while (true)
-					{
-						int hr = enumPts.Next(1, arr, 0);
-						if (hr != 0) break;
-						var cp = arr[0];
-						try
-						{
-							cp.GetConnectionInterface(out var iid);
-							chosenIid = iid;
-
-							// Try to resolve ITypeInfo for this IID using any containing type-lib we can get.
-							chosenTi = ResolveTypeInfoForIID(iid, classTi);
-							break; // take the first CP
-						}
-						finally
-						{
-							Marshal.ReleaseComObject(cp);
-						}
-					}
-				}
-			}
-
-			// Finally, connect
-			if (chosenIid is Guid g)
-			{
-				cpContainer.FindConnectionPoint(ref g, out var cp);
-				if (cp != null)
-				{
-					interfaceID = g;
-					typeInfo = chosenTi; // keep this alive for name lookup (may be null)
-					cp.Advise(this, out cookie);
-					connection = cp;
+					_ = Errors.ValueErrorOccurred(
+						$"The passed in COM object of type {containerObj.GetType()} was not of type IConnectionPointContainer.");
 					return;
 				}
-			}
 
-			if (chosenTi != null) Marshal.ReleaseComObject(chosenTi);
-			_ = Errors.ErrorOccurred("Failed to connect dispatcher to COM interface.");
+
+				// Try to obtain a *class* typeinfo first; if not, we may get an *interface* TI.
+				if (containerObj is IProvideClassInfo ipci)
+				{
+					if (ipci.GetClassInfo(out classTi) < 0) classTi = null;
+				}
+				else if (containerObj is IDispatch disp)
+				{
+					// NB: This is often an *interface* TI, not a coclass – flags may all be 0.
+					_ = disp.GetTypeInfo(0, 0, out classTi);
+				}
+
+				Guid? chosenIid = null;
+
+				bool TryPickSourceFromImplTypes(ct.ITypeInfo ti, bool preferDefault, out Guid iid, out ct.ITypeInfo? sinkTi)
+				{
+					iid = Guid.Empty; sinkTi = null;
+
+					ti.GetTypeAttr(out var pAttr);
+					var ta = Marshal.PtrToStructure<ct.TYPEATTR>(pAttr);
+					try
+					{
+						for (int j = 0; j < ta.cImplTypes; j++)
+						{
+							ti.GetImplTypeFlags(j, out var flags);
+
+							bool isSource = flags.HasFlag(ct.IMPLTYPEFLAGS.IMPLTYPEFLAG_FSOURCE);
+							bool isDefault = flags.HasFlag(ct.IMPLTYPEFLAGS.IMPLTYPEFLAG_FDEFAULT);
+
+							if (!isSource) continue;
+							if (preferDefault && !isDefault) continue; // pass 1: prefer default
+																	   // pass 2: accept any source
+
+							ti.GetRefTypeOfImplType(j, out int href);
+							ti.GetRefTypeInfo(href, out var eventTi);
+
+							nint pAttr2 = 0;
+							try
+							{
+								eventTi.GetTypeAttr(out pAttr2);
+								iid = Marshal.PtrToStructure<ct.TYPEATTR>(pAttr2).guid;
+								sinkTi = eventTi; // keep (we own this reference)
+								return true;
+							}
+							finally
+							{
+								if (pAttr2 != 0) eventTi.ReleaseTypeAttr(pAttr2);
+								if (!ReferenceEquals(eventTi, sinkTi)) Marshal.ReleaseComObject(eventTi);
+							}
+						}
+					}
+					finally
+					{
+						ti.ReleaseTypeAttr(pAttr);
+					}
+					return false;
+				}
+
+				// 1) Try default+source first, 2) then any source
+				if (classTi != null)
+				{
+					if (!TryPickSourceFromImplTypes(classTi, preferDefault: true, out var iid1, out var ti1))
+						TryPickSourceFromImplTypes(classTi, preferDefault: false, out iid1, out ti1);
+					if (ti1 != null)
+					{
+						chosenIid = iid1;
+						chosenTi = ti1; // keep it
+					}
+				}
+
+				// 3) Fallback: enumerate connection points
+				if (chosenIid == null)
+				{
+					cpContainer.EnumConnectionPoints(out var enumPts);
+					if (enumPts != null)
+					{
+						var arr = new ct.IConnectionPoint[1];
+						try
+						{
+							if (enumPts.Next(1, arr, 0) == 0)
+							{
+								var cp = arr[0];
+								try
+								{
+									cp.GetConnectionInterface(out var iid);
+									chosenIid = iid;
+
+									// Try to resolve ITypeInfo for this IID using any containing type-lib we can get.
+									chosenTi = ResolveTypeInfoForIID(iid, classTi);
+								}
+								finally
+								{
+									Marshal.ReleaseComObject(cp);
+								}
+							}
+						}
+						finally { Marshal.ReleaseComObject(enumPts); }
+					}
+				}
+
+				// Finally, connect
+				if (chosenIid is Guid g)
+				{
+					cpContainer.FindConnectionPoint(ref g, out var cp);
+					if (cp != null)
+					{
+						interfaceID = g;
+						typeInfo = chosenTi;
+						chosenTi = null;
+						try { cp.Advise(this, out cookie); }
+						catch { Marshal.ReleaseComObject(cp); throw; }
+						connection = cp;
+						return;
+					}
+				}
+
+				_ = Errors.ErrorOccurred("Failed to connect dispatcher to COM interface.");
+			}
+			catch { Dispose(); throw; }
+			finally
+			{
+				if (classTi != null) Marshal.ReleaseComObject(classTi);
+				if (chosenTi != null) Marshal.ReleaseComObject(chosenTi);
+				if (Marshal.IsComObject(containerObj)) Marshal.ReleaseComObject(containerObj);
+			}
 		}
 
 		// Try to fetch a typeinfo for an IID from any type-lib we can reach.
 		private static ct.ITypeInfo? ResolveTypeInfoForIID(Guid iid, ct.ITypeInfo? anyTi)
 		{
-			ct.ITypeInfo? ti = null;
 			ct.ITypeLib? tl = null;
 
 			try
 			{
-				if (anyTi != null)
-				{
-					anyTi.GetContainingTypeLib(out tl, out int index);
-					if (tl != null)
-					{
-						tl.GetTypeInfoOfGuid(ref iid, out ti);
-						if (ti != null) return ti;
-					}
-				}
+				if (anyTi == null) return null;
+				anyTi.GetContainingTypeLib(out tl, out _);
+				if (tl == null) return null;
+				tl.GetTypeInfoOfGuid(ref iid, out var ti);
+				return ti;
 			}
-			catch { /* ignore */ }
+			catch (COMException) { return null; }
 			finally
 			{
 				if (tl != null) Marshal.ReleaseComObject(tl);
 			}
-
-			return null; // okay – we’ll still connect, names will be "DISPID_N"
 		}
 
-
-		~Dispatcher()
-		{
-			Dispose(disposing: false);
-		}
 
 		public void Dispose()
 		{
-			Dispose(disposing: true);
-			GC.SuppressFinalize(this);
+			ct.ITypeInfo? info;
+			lock (typeInfoGate)
+			{
+				if (disposedValue) return;
+				disposedValue = true;
+				info = typeInfo;
+				typeInfo = null;
+			}
+			var point = Interlocked.Exchange(ref connection, null);
+			try
+			{
+				if (point != null && cookie != 0) point.Unadvise(cookie);
+			}
+			finally
+			{
+				cookie = 0;
+				if (point != null) Marshal.ReleaseComObject(point);
+				if (info != null) Marshal.ReleaseComObject(info);
+			}
 		}
 
 		[PreserveSig]
@@ -283,7 +303,7 @@ namespace Keysharp.Builtins.COM
 		public int GetTypeInfoCount(out uint pctinfo)
 		{ pctinfo = 0; return 0; }
 
-		public int Invoke(int dispIdMember, ref Guid riid, int lcid,
+		public unsafe int Invoke(int dispIdMember, ref Guid riid, int lcid,
 						  ct.INVOKEKIND wFlags, ref ct.DISPPARAMS pDispParams,
 						  nint pVarResult, nint pExcepInfo, nint puArgErr)
 		{
@@ -292,10 +312,11 @@ namespace Keysharp.Builtins.COM
 
 			try
 			{
-				// 1) Decode rgvarg manually so we can see VT_BYREF and preserve backing pointers
+				using var caught = Keysharp.Runtime.Flow.EnterTry();
+				// Preserve BYREF pointers for synchronous write-back; queued handlers keep only copied values.
 				int n = pDispParams.cArgs;
 				var args = n > 0 ? new object[n] : [];
-				var byrefCells = new List<(int argIndex, VARIANT v, VarRef)>(); // for write-back
+				List<(VARIANT Variant, VarRef Reference)>? byrefCells = null;
 
 				int sizeVARIANT = Marshal.SizeOf<VARIANT>();
 				for (int i = 0; i < n; i++)
@@ -303,53 +324,41 @@ namespace Keysharp.Builtins.COM
 					// rgvarg is right-to-left; destination is left-to-right
 					int dst = n - 1 - i;
 					nint pVar = pDispParams.rgvarg + i * sizeVARIANT;
-					var v = Marshal.PtrToStructure<VARIANT>(pVar);
-					var vt = (VarEnum)v.vt;
+					var v = *(VARIANT*)pVar;
+					var current = VariantHelper.FromVariant(ref v, Ownership.Borrowed);
 
-					if ((vt & VarEnum.VT_BYREF) != 0)
+					if (((VarEnum)v.vt & VarEnum.VT_BYREF) != 0)
 					{
-						// Read current value
-						object current = VariantHelper.ReadByRefVariant(v);
-						var vr = new VarRef(() => current, val => current = val);
+						var vr = new VarRef(current);
 						args[dst] = vr;
 
-						// We'll write back after the handler returns
-						byrefCells.Add((dst, v, vr));
+						(byrefCells ??= []).Add((v, vr));
 					}
 					else
-					{
-						// Non-byref value: use the general converter
-						args[dst] = VariantHelper.VariantToValue(v);
-					}
+						args[dst] = current;
 				}
 
-				// 2) Name (best-effort)
-				string name = default!;
-				if (typeInfo != null)
+				if (!eventNames.TryGetValue(dispIdMember, out var name))
 				{
-					var names = new string[1];
-					try { typeInfo.GetNames(dispIdMember, names, 1, out _); } catch { }
-					name = names[0];
+					lock (typeInfoGate)
+					{
+						if (typeInfo != null)
+						{
+							var names = new string[1];
+							try { typeInfo.GetNames(dispIdMember, names, 1, out _); } catch (COMException) { }
+							name = names[0];
+						}
+					}
+					eventNames[dispIdMember] = name ??= $"DISPID_{dispIdMember}";
 				}
-				name ??= $"DISPID_{dispIdMember}";
 
-				// 3) Dispatch to the script: the sink runs the handler on the thread which connected it
 				var evt = new DispatcherEventArgs(dispIdMember, name, args);
-				OnEvent(this, evt);
+				EventReceived?.Invoke(this, evt);
 				object? result = evt.Result;
 
-				if (evt.IsHandled)
-				{
-					// 4) Write back any byref VARIANTs
-					foreach (var (argIndex, byrefV, vr) in byrefCells)
-					{
-						try
-						{
-							VariantHelper.WriteByRefVariant(byrefV, vr.__Value);
-						}
-						catch (Exception) { /* avoid tearing down the call for a single write-back issue */ }
-					}
-				}
+				if (evt.IsHandled && byrefCells != null)
+					foreach (var (byrefV, vr) in byrefCells)
+						VariantHelper.WriteByRefVariant(byrefV, vr.__Value);
 
 				// 5) Only produce a VARIANT result for FUNC/GET (not PUT/PUTREF)
 				bool wantsResult = pVarResult != 0 &&
@@ -359,7 +368,8 @@ namespace Keysharp.Builtins.COM
 				if (wantsResult)
 				{
 					VariantHelper.VariantInit(pVarResult);
-					Marshal.StructureToPtr(VariantHelper.ResultToVariant(result), pVarResult, false);
+					if (!VariantHelper.TryToVariant(result, out var variant)) return S_OK;
+					*(VARIANT*)pVarResult = variant;
 				}
 
 				return S_OK;
@@ -395,27 +405,6 @@ namespace Keysharp.Builtins.COM
 			ppv = 0;
 			return iid == IID_IManagedObject ? CustomQueryInterfaceResult.Failed : CustomQueryInterfaceResult.NotHandled;
 		}
-
-		protected virtual void Dispose(bool disposing)
-		{
-			if (!disposedValue)
-			{
-				var connection = Interlocked.Exchange(ref this.connection, null);
-
-				if (connection != null)
-				{
-					connection.Unadvise(cookie);
-					cookie = 0;
-					//_ = Marshal.ReleaseComObject(connection);
-				}
-				if (typeInfo != null)
-					Marshal.ReleaseComObject(typeInfo);
-
-				disposedValue = true;
-			}
-		}
-
-		protected virtual void OnEvent(object sender, DispatcherEventArgs e) => EventReceived?.Invoke(sender, e);
 
 		internal event EventHandler<DispatcherEventArgs>? EventReceived;
 	}

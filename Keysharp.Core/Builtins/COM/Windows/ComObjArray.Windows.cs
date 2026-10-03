@@ -8,7 +8,7 @@ namespace Keysharp.Builtins.COM
 	/// </summary>
 	public class ComObjArray : ComValue, I__Enum, IEnumerable<object>
 	{
-		internal nint _psa;         // pointer to the native SAFEARRAY
+		internal nint _psa;
 		internal int _dimensions;   // number of dimensions
 		internal VarEnum _baseType; // element VARTYPE, e.g. VT_VARIANT
 
@@ -61,7 +61,7 @@ namespace Keysharp.Builtins.COM
 			_dimensions = OleAuto.SafeArrayGetDim(psa);
 			_psa = psa;
 			this.vt = VarEnum.VT_ARRAY | baseType;
-			this.Flags = takeOwnership ? F_OWNVALUE : 0; ;
+			this.Flags = takeOwnership ? F_OWNVALUE : 0;
 			this.Ptr = _psa.ToInt64();
 		}
 
@@ -111,8 +111,8 @@ namespace Keysharp.Builtins.COM
 			if (d < 1 || d > _dimensions)
 				return Errors.ValueErrorOccurred($"Argument out of range.");
 
-			_ = OleAuto.SafeArrayGetUBound(_psa, (uint)d, out int ub);
-			return (long)ub;
+			var hr = OleAuto.SafeArrayGetUBound(_psa, (uint)d, out var bound);
+			return hr < 0 ? Errors.OSErrorOccurredForHR(hr) : (long)bound;
 		}
 
 		/// <summary>
@@ -126,8 +126,8 @@ namespace Keysharp.Builtins.COM
 			if (d < 1 || d > _dimensions)
 				return Errors.ValueErrorOccurred($"Argument out of range.");
 
-			_ = OleAuto.SafeArrayGetLBound(_psa, (uint)d, out int lb);
-			return (long)lb;
+			var hr = OleAuto.SafeArrayGetLBound(_psa, (uint)d, out var bound);
+			return hr < 0 ? Errors.OSErrorOccurredForHR(hr) : (long)bound;
 		}
 
 		/// <summary>
@@ -170,12 +170,11 @@ namespace Keysharp.Builtins.COM
 		{
 			if ((Flags & F_OWNVALUE) != 0 && _psa != 0)
 			{
-				_ = OleAuto.SafeArrayDestroy(_psa);
-				_psa = 0;
-				// Clear the flag so we don't double‐destroy:
-				Flags &= ~F_OWNVALUE;
+				if (OleAuto.SafeArrayDestroy(_psa) < 0)
+					return;
 			}
 
+			_psa = 0;
 			base.Dispose();
 		}
 
@@ -196,8 +195,14 @@ namespace Keysharp.Builtins.COM
 				if (!indices[i].CoerceInt(out var temp))
 					return null;
 
-				int lb = (int)(long)MinIndex(i + 1); // SAFEARRAY is 1-based for the dim parameter
-				int ub = (int)(long)MaxIndex(i + 1);
+				var hr = OleAuto.SafeArrayGetLBound(_psa, (uint)i + 1, out var lb);
+				var ub = 0;
+				if (hr >= 0) hr = OleAuto.SafeArrayGetUBound(_psa, (uint)i + 1, out ub);
+				if (hr < 0)
+				{
+					_ = Errors.OSErrorOccurredForHR(hr);
+					return null;
+				}
 
 				if (temp < 0)              // negative from end
 					temp = ub + temp + 1;  // e.g. -1 -> ub
@@ -219,12 +224,20 @@ namespace Keysharp.Builtins.COM
 			var highs = new int[_dimensions];
 			var lows = new int[_dimensions];
 			var done = false;
+			var empty = false;
 			var index = -1L;
+			object current = null;
 
 			for (var i = 0; i < _dimensions; i++)
 			{
-				highs[i] = (int)(long)MaxIndex(i + 1);
-				lows[i] = (int)(long)MinIndex(i + 1);
+				var hr = OleAuto.SafeArrayGetLBound(_psa, (uint)i + 1, out lows[i]);
+				if (hr >= 0) hr = OleAuto.SafeArrayGetUBound(_psa, (uint)i + 1, out highs[i]);
+				if (hr < 0)
+				{
+					_ = Errors.OSErrorOccurredForHR(hr);
+					return null;
+				}
+				if (highs[i] < lows[i]) done = empty = true;
 				indices[i] = lows[i];
 			}
 
@@ -234,8 +247,8 @@ namespace Keysharp.Builtins.COM
 					   this,
 					   count,
 					   MoveNext,
-					   () => GetElementAtIndices(indices),
-					   () => (index, GetElementAtIndices(indices)),
+					   () => current,
+					   () => (index, current),
 					   Reset);
 
 			bool MoveNext()
@@ -255,6 +268,7 @@ namespace Keysharp.Builtins.COM
 							indices[j] = lows[j];
 
 						index = indices[0] - lows[0];
+						current = GetElementAtIndices(indices);
 						return true;
 					}
 
@@ -276,263 +290,68 @@ namespace Keysharp.Builtins.COM
 
 				indices[_dimensions - 1] = lows[_dimensions - 1] - 1;
 				index = -1L;
-				done = false;
+				done = empty;
 			}
 		}
 
-		internal object GetElementAtIndices(int[] idx)
+		internal unsafe object GetElementAtIndices(int[] indices)
 		{
-			int bytes = ByteSizeForVarType(_baseType);
-			IntPtr pv = Marshal.AllocCoTaskMem(bytes);
-
+			// Release the lock before script code can reenter or dispose the array.
+			var array = _psa;
+			VARIANT value = default;
+			var hr = OleAuto.SafeArrayLock(array);
+			if (hr < 0) return Errors.OSErrorOccurredForHR(hr);
 			try
 			{
-				int hr = OleAuto.SafeArrayGetElementPtr(_psa, idx, pv);
-
-				if (hr < 0)
-					return Errors.OSErrorOccurredForHR(hr);
-
-				return VariantHelper.ReadVariant(pv, _baseType);
+				hr = OleAuto.SafeArrayPtrOfIndex(array, indices, out var data);
+				if (hr >= 0)
+				{
+					var borrowed = VariantHelper.ReadStorage(data, _baseType);
+					hr = VariantHelper.VariantCopy(ref value, in borrowed);
+				}
 			}
-			finally
-			{
-				Marshal.FreeCoTaskMem(pv);
-			}
+			finally { _ = OleAuto.SafeArrayUnlock(array); }
+			try { return hr < 0 ? Errors.OSErrorOccurredForHR(hr) : VariantHelper.FromVariant(ref value, Ownership.Owned); }
+			finally { _ = VariantHelper.VariantClear(ref value); GC.KeepAlive(this); }
 		}
 
-		// Build a VARIANT for storing into a VT_VARIANT SAFEARRAY element.
-		// Returns a flag telling you whether it's safe to VariantClear(&v) afterwards.
-		private static VARIANT BuildVariantForElement(object value, out bool canClearAfterPut)
+		internal unsafe bool TryPutElementAtIndices(int[] indices, object value, out int hr)
 		{
-			// Default: we can clear (to release BSTRs/interfaces we allocate)
-			canClearAfterPut = true;
-
-			if (value is null)
-				return new VARIANT { vt = (ushort)VarEnum.VT_EMPTY };
-
-			// If it's a ComObjArray, encode as VT_ARRAY|baseType pointing to its SAFEARRAY.
-			// DO NOT clear this later, or you'd destroy the caller's array.
-			if (value is ComObjArray coa)
+			if (_baseType == VarEnum.VT_BSTR && value != null)
 			{
-				canClearAfterPut = false; // we don't own coa._psa
-				return new VARIANT
-				{
-					vt = (ushort)(VarEnum.VT_ARRAY | coa._baseType),
-					ptrVal = coa._psa
-				};
-			}
-
-			// If it's a ComValue that already represents a SAFEARRAY, use it as-is (we don't own it).
-			if (value is ComValue cv && (cv.vt & VarEnum.VT_ARRAY) != 0)
-			{
-				nint psa = cv.Ptr is nint ip ? ip
-						 : cv.Ptr is long lp ? (nint)lp
-						 : 0;
-				canClearAfterPut = false; // don't destroy external SAFEARRAY
-				return new VARIANT
-				{
-					vt = (ushort)cv.vt,
-					ptrVal = psa
-				};
-			}
-
-			// Otherwise, let your existing builder create a proper VARIANT.
-			// This allocates BSTRs / grabs interface pointers etc.
-			// We DO want to VariantClear this after SafeArrayPutElement to avoid leaks.
-			return VariantHelper.ValueToVariant(value);
-		}
-
-		// False when the script continued the error of a BSTR element which does not convert.
-		internal bool TryPutElementAtIndices(int[] idx, object value, out int hr)
-		{
-			// VT_VARIANT arrays, let the marshaller coerce the type
-			if (_baseType == VarEnum.VT_VARIANT)
-			{
-				unsafe
-				{
-					VARIANT v = BuildVariantForElement(value, out bool canClear);
-					hr = OleAuto.SafeArrayPutElementPtr(_psa, idx, (nint)(&v));
-
-					// Only clear when safe: never clear a VARIANT that aliases a caller-owned SAFEARRAY.
-					if (canClear)
-						_ = VariantHelper.VariantClear((nint)(&v));
-
-					_ = Errors.OSErrorOccurredForHR(hr);
-					return true;
-				}
-			}
-
-			// Pointer element types: pass the pointer value directly (no staging buffer).
-			if (_baseType == VarEnum.VT_UNKNOWN || _baseType == VarEnum.VT_DISPATCH)
-			{
-				nint pIface = 0;
-				bool releaseInterface = false;
-
-				// Accept Ptr properties or a plain RCW
-				if (Marshal.IsComObject(value))
-				{
-					object src = value is ComValue c ? c.Ptr : value;
-					// Get a temporary COM pointer we own; SafeArray will AddRef its own copy.
-					pIface = (_baseType == VarEnum.VT_DISPATCH)
-							 ? Com.DispatchPointer(src)
-							 : Marshal.GetIUnknownForObject(src);
-					releaseInterface = true;
-				}
-				else
-				{
-					// raw interface pointer → pass as-is; SafeArrayPutElement will AddRef.
-					Reflections.TryGetPtrProperty(value, out var ifaceAddr);
-					pIface = new nint(ifaceAddr);
-					releaseInterface = false;
-				}
-
-				try
-				{
-					hr = OleAuto.SafeArrayPutElementPtr(_psa, idx, pIface);
-					_ = Errors.OSErrorOccurredForHR(hr);
-					return true;
-				}
-				finally
-				{
-					if (releaseInterface && pIface != 0)
-					{
-						try { Marshal.Release(pIface); } catch { }
-					}
-				}
-			}
-
-			if (_baseType == VarEnum.VT_BSTR)
-			{
-				string text = null;
-
-				if (value != null && !value.CoerceString(out text))
+				if (!value.CoerceString(out var text))
 				{
 					hr = 0;
 					return false;
 				}
-
-				// For BSTR, pass the BSTR pointer directly; the array will own & free it.
-				nint bstr = text == null ? 0 : Marshal.StringToBSTR(text);
-				hr = OleAuto.SafeArrayPutElementPtr(_psa, idx, bstr);
-				_ = Errors.OSErrorOccurredForHR(hr);
-				return true;
+				value = text;
 			}
-
-			// All other (non-pointer) element types need to be put in a temporary buffer
-			// used by SafeArrayPutElement.
-			int bytes = ByteSizeForVarType(_baseType);
-			IntPtr pv = Marshal.AllocCoTaskMem(bytes);
+			if (!VariantHelper.TryToTypedVariant(value, _baseType, out var variant))
+			{
+				hr = 0;
+				return false;
+			}
 			try
 			{
-				WriteValueToBuffer(pv, _baseType, value);
-				hr = OleAuto.SafeArrayPutElementPtr(_psa, idx, pv);
-				_ = Errors.OSErrorOccurredForHR(hr);
-				return true;
+				var array = _psa;
+				hr = OleAuto.SafeArrayLock(array);
+				if (hr < 0) return true;
+				try
+				{
+					hr = OleAuto.SafeArrayPtrOfIndex(array, indices, out var data);
+					if (hr < 0) return true;
+					var previous = VariantHelper.ReadStorage(data, _baseType);
+					hr = VariantHelper.VariantClear(ref previous);
+					if (hr < 0) return true;
+					VariantHelper.WriteStorage(data, _baseType, in variant);
+					variant = default;
+					return true;
+				}
+				finally { _ = OleAuto.SafeArrayUnlock(array); }
 			}
-			finally
-			{
-				Marshal.FreeCoTaskMem(pv);
-			}
+			finally { _ = VariantHelper.VariantClear(ref variant); GC.KeepAlive(this); }
 		}
 
-		private static int ByteSizeForVarType(VarEnum vt)
-		{
-			switch (vt)
-			{
-				case VarEnum.VT_I1:
-				case VarEnum.VT_UI1:
-					return 1;
-				case VarEnum.VT_I2:
-				case VarEnum.VT_UI2:
-				case VarEnum.VT_BOOL:    // VARIANT_BOOL (short)
-					return 2;
-				case VarEnum.VT_I4:
-				case VarEnum.VT_UI4:
-					return 4;
-				case VarEnum.VT_R4:
-					return Marshal.SizeOf<float>();
-				case VarEnum.VT_I8:
-				case VarEnum.VT_UI8:
-					return 8;
-				case VarEnum.VT_R8:
-				case VarEnum.VT_DATE:    // DATE is a double (8 bytes)
-					return Marshal.SizeOf<double>();
-				case VarEnum.VT_DECIMAL:
-					return Marshal.SizeOf<decimal>();
-				case VarEnum.VT_BSTR:
-				case VarEnum.VT_UNKNOWN:
-				case VarEnum.VT_DISPATCH:
-					return IntPtr.Size; // pointer-sized storage
-				case VarEnum.VT_VARIANT:
-					return Marshal.SizeOf<VARIANT>();
-				default:
-					// Fallback for other pointer-like types if ever needed.
-					return IntPtr.Size;
-			}
-		}
-
-		private static void WriteValueToBuffer(IntPtr pv, VarEnum vt, object value)
-		{
-			switch (vt)
-			{
-				case VarEnum.VT_I1:
-					Marshal.WriteByte(pv, unchecked((byte)Convert.ToSByte(value)));
-					break;
-				case VarEnum.VT_UI1:
-					Marshal.WriteByte(pv, Convert.ToByte(value));
-					break;
-				case VarEnum.VT_I2:
-					Marshal.WriteInt16(pv, Convert.ToInt16(value));
-					break;
-				case VarEnum.VT_UI2:
-					Marshal.WriteInt16(pv, unchecked((short)Convert.ToUInt16(value)));
-					break;
-				case VarEnum.VT_I4:
-					Marshal.WriteInt32(pv, Convert.ToInt32(value));
-					break;
-				case VarEnum.VT_UI4:
-					Marshal.WriteInt32(pv, unchecked((int)Convert.ToUInt32(value)));
-					break;
-				case VarEnum.VT_I8:
-					Marshal.WriteInt64(pv, Convert.ToInt64(value));
-					break;
-				case VarEnum.VT_UI8:
-					Marshal.WriteInt64(pv, unchecked((long)Convert.ToUInt64(value)));
-					break;
-				case VarEnum.VT_R4:
-					Marshal.StructureToPtr(Convert.ToSingle(value), pv, false);
-					break;
-				case VarEnum.VT_R8:
-					Marshal.StructureToPtr(Convert.ToDouble(value), pv, false);
-					break;
-				case VarEnum.VT_BOOL:
-					{
-						bool b = value is bool bb ? bb : (Convert.ToInt32(value) != 0);
-						Marshal.WriteInt16(pv, (short)(b ? -1 : 0));
-						break;
-					}
-				case VarEnum.VT_DATE:
-					{
-						double oa = value is DateTime dt ? dt.ToOADate() : Convert.ToDouble(value);
-						Marshal.StructureToPtr(oa, pv, false);
-						break;
-					}
-				case VarEnum.VT_DECIMAL:
-					Marshal.StructureToPtr(Convert.ToDecimal(value), pv, false);
-					break;
-				default:
-					{
-						// For any other pointer-like types, try to write pointer-sized data.
-						if (value is IntPtr ip)
-							Marshal.WriteIntPtr(pv, ip);
-						else if (value is nint nip)
-							Marshal.WriteIntPtr(pv, (IntPtr)nip);
-						else
-							Marshal.WriteIntPtr(pv, IntPtr.Zero);
-						break;
-					}
-			}
-		}
 		#endregion
 	}
 }

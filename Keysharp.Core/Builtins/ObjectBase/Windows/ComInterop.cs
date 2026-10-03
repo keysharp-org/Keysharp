@@ -99,8 +99,10 @@ namespace Keysharp.Builtins
 					result = new ComEnumerator(Invoke(this, name, 1L));
 				else
 				{
-					var callable = Functions.HasMethod(this, name) != 0L;
-					var readable = Functions.HasProp(this, name ?? "__Item") != 0L;
+					var member = name == null ? ((object)this, Functions.HasProp(this, "__Item") != 0L)
+						: Functions.FindMethodAndProperty(this, name);
+					var callable = member.Item1 != null && Functions.ValidateFunctor(member.Item1, -1, raise: false);
+					var readable = member.Item2;
 					// A client that cannot tell a call from an indexed read, as VBScript's obj.X(y) cannot, asks for both:
 					// a method is called, and failing that a property is read.
 					var call = (wFlags & INVOKEKIND.INVOKE_FUNC) != 0 && ((wFlags & INVOKEKIND.INVOKE_PROPERTYGET) == 0 || callable || !readable);
@@ -110,13 +112,17 @@ namespace Keysharp.Builtins
 					if (call ? !callable && !readable && !Answers(name, "__Call") : !readable && !Answers(name, "__Get"))
 						return DISP_E_MEMBERNOTFOUND;
 
-					result = call ? DispatchCall(name, args, byRefs) : name == null ? GetIndex(this, args) : GetPropertyValue(this, name, args);
+					result = call ? DispatchCall(name, args, byRefs, member.Item1) : name == null ? GetIndex(this, args) : GetPropertyValue(this, name, args);
 				}
 
 				if (pVarResult != 0)
 				{
 					VariantHelper.VariantInit(pVarResult);
-					var variant = result is ComEnumerator enumerator ? enumerator.ToVariant() : VariantHelper.ResultToVariant(result);
+					VARIANT variant;
+					if (result is ComEnumerator enumerator)
+						variant = enumerator.ToVariant();
+					else if (!VariantHelper.TryToVariant(result, out variant))
+						return S_OK;
 					Marshal.StructureToPtr(variant, pVarResult, false);
 				}
 
@@ -153,7 +159,7 @@ namespace Keysharp.Builtins
 		private bool Answers(string? name, string meta) => name != null && Functions.HasMethod(this, meta) != 0L;
 
 		// rgvarg runs right to left; a by-reference argument is read through, and remembered for the write back.
-		private static object?[] ReadArguments(ref DISPPARAMS dispParams, out VARIANT[]? byRefs)
+		private static unsafe object?[] ReadArguments(ref DISPPARAMS dispParams, out VARIANT[]? byRefs)
 		{
 			byRefs = null;
 			var count = dispParams.cArgs;
@@ -166,33 +172,29 @@ namespace Keysharp.Builtins
 
 			for (var i = 0; i < count; i++)
 			{
-				var variant = Marshal.PtrToStructure<VARIANT>(dispParams.rgvarg + (i * size));
+				var variant = *(VARIANT*)(dispParams.rgvarg + (i * size));
 				var index = count - 1 - i;
 
 				if (((VarEnum)variant.vt & VarEnum.VT_BYREF) != 0)
-				{
 					(byRefs ??= new VARIANT[count])[index] = variant;
-					args[index] = VariantHelper.ReadByRefVariant(variant);
-				}
-				else
-					args[index] = VariantHelper.ArgumentToValue(variant);
+				args[index] = VariantHelper.FromVariant(ref variant, Ownership.Borrowed);
 			}
 
 			return args;
 		}
 
-		private object? DispatchCall(string? name, object?[] args, VARIANT[]? byRefs)
+		private object? DispatchCall(string? name, object?[] args, VARIANT[]? byRefs, object? member)
 		{
-			var slots = ByRefSlots(name, args.Length);
+			var slots = ByRefSlots(member as KeysharpFunc, args.Length, name == null ? null : this);
 
 			if (slots == null)
-				return InvokeOrNull(this, name, args!);
+				return CallMember();
 
 			for (var i = 0; i < slots.Length; i++)
 				if (slots[i])
 					args[i] = new VarRef(args[i]!);
 
-			var result = InvokeOrNull(this, name, args!);
+			var result = CallMember();
 
 			// Only an argument the caller passed by reference has anywhere to be written back to.
 			for (var i = 0; i < slots.Length; i++)
@@ -200,66 +202,62 @@ namespace Keysharp.Builtins
 					VariantHelper.WriteByRefVariant(byRefs[i], ((VarRef)args[i]!).__Value);
 
 			return result;
+
+			object? CallMember() => member is KeysharpFunc function
+				? name == null ? InvokeOrNull(function, null, args!) : function.CallInst(this, args!)
+				: member is KeysharpObject callable && name != null ? InvokeOrNull(callable, null, [this, ..args!]) : InvokeOrNull(this, name, args!);
 		}
 
 		// Which argument slots the callee writes back through, or null when none. A caller's VT_BYREF alone does not
 		// say: VBScript passes every variable that way. The callee's own [ByRef] marks do, and a marked parameter gets
 		// a VarRef to write through whether or not the caller can receive the value.
-		private bool[]? ByRefSlots(string? name, int argCount)
+		private static bool[]? ByRefSlots(KeysharpFunc? fo, int argCount, object? receiver)
 		{
-			KeysharpFunc? fo;
-			object? receiver = null;
-
-			if (argCount == 0)
-				return null;
-
-			if (name == null)
-				fo = this as KeysharpFunc;
-			else
-			{
-				var (owner, member) = GetMethodOrProperty(this, name, -1, checkBase: true, throwIfMissing: false, invokeMeta: false);
-				fo = member as KeysharpFunc;
-				receiver = owner;
-			}
+			if (argCount == 0) return null;
 
 			// An ObjBindMethod reference does not resolve its target until it runs, so its placeholder MPH carries no
 			// signature to read marks off -- KeysharpFunc.IsByRef answers false for the same reason.
 			if (fo?.Mph?.mi == null)
 				return null;
 
-			var prms = fo.Mph.mi.GetParameters();
-			// A caller's argument slot is not a parameter index. Two things shift it: the receiver may be carried as
-			// parameters[0] (the explicit `object @this` a lowered class method declares), which is what ArgBase
-			// measures; and Bind may already have filled slots, which this call's arguments flow PAST rather than into,
-			// so the holes have to be walked exactly as BoundFunc.CreateArgs walks them when it merges the two. A method
-			// resolved by name carries no Inst of its own -- the receiver comes from the resolution, exactly as
-			// KeysharpFunc.CallInst takes `Inst ?? inst`.
-			var argBase = NamedArgBinder.ArgBase(fo.Mph, fo.Inst ?? receiver);
+			var prms = fo.Mph.parameters;
+			var descriptors = fo.Mph.ParamScan;
+			// Bound or instance-bound named calls prepend their receiver as an argument, consuming the first Bind hole.
+			var prependReceiver = receiver != null && (fo is BoundFunc || fo.Inst != null);
+			var argBase = NamedArgBinder.ArgBase(fo.Mph, fo.Inst ?? (prependReceiver ? null : receiver));
 			var boundargs = (fo as BoundFunc)?.boundargs;
 			bool[]? slots = null;
 
-			for (int i = 0, slot = 0; i < argCount; i++, slot++)
+			for (int i = prependReceiver ? -1 : 0, slot = 0; i < argCount; i++, slot++)
 			{
 				if (boundargs != null)
 					while (slot < boundargs.Length && boundargs[slot] != null)
 						slot++;
 
-				var p = slot - argBase;
+				if (i < 0) continue;
+				var p = Math.Min(slot - argBase, fo.VariadicIndex >= 0 ? fo.VariadicIndex : int.MaxValue);
 
-				if (p < 0)   // the caller prepended the receiver, which is never an out-parameter
+				if (p < 0)   // an unbound receiver is never an out-parameter
 					continue;
 
 				if (p >= prms.Length)
 					break;
 
-				if (!prms[p].IsDefined(typeof(ByRefAttribute)))
+				MethodPropertyHolder.ParamScanEntry? descriptor = null;
+				foreach (var entry in descriptors)
+					if (entry.Index == p)
+					{
+						descriptor = entry;
+						break;
+					}
+				if (descriptor?.ByRef != true)
 					continue;
 
 				slots ??= new bool[argCount];
 
 				// A [ByRef] `params object[]` marks everything it absorbs, so the tail is all out-parameters from here
 				// on -- see Enumerator.Call, which stores each argument through __Value.
-				if (prms[p].IsDefined(typeof(ParamArrayAttribute), false))
+				if (descriptor.Variadic)
 				{
 					for (var j = i; j < slots.Length; j++)
 						slots[j] = true;
@@ -351,7 +349,8 @@ namespace Keysharp.Builtins
 				{
 					var slot = rgVar + (nint)(fetched * size);
 					VariantHelper.VariantInit(slot);
-					Marshal.StructureToPtr(VariantHelper.ResultToVariant(item), slot, false);
+					if (!VariantHelper.TryToVariant(item, out var variant)) break;
+					Marshal.StructureToPtr(variant, slot, false);
 				}
 			}
 			catch (Exception)

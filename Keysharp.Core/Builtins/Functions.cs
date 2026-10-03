@@ -213,9 +213,12 @@ namespace Keysharp.Builtins
 
 		// AHK's Object::GetMethod: the first Call up the chain, or an object value that no getter below it hides. No
 		// getter runs. A primitive value starts from its prototype.
-		private static object FindMethod(object value, string name)
+		private static object FindMethod(object value, string name) => FindMethodAndProperty(value, name).Method;
+
+		internal static (object Method, bool Property) FindMethodAndProperty(object value, string name)
 		{
 			var getterSeen = false;
+			var property = false;
 			var start = value as Any ?? (Primitive.IsNative(value) ? Script.TheScript.Vars.Prototypes[Primitive.MapPrimitiveToNativeType(value)] : null);
 
 			for (var o = start; o != null; o = o.Base)
@@ -223,16 +226,16 @@ namespace Keysharp.Builtins
 				if (o.op == null || !o.op.TryGetValue(name, out var desc))
 					continue;
 
+				property = true;
 				if (desc.Call != null)
-					return desc.Call;
-
+					return (desc.Call, true);
 				if (desc.Get != null)
 					getterSeen = true;
 				else if (desc.Value != null)
-					return !getterSeen && desc.Value is Any ? desc.Value : null;
+					return (!getterSeen && desc.Value is Any ? desc.Value : null, true);
 			}
 
-			return null;
+			return (null, property);
 		}
 
 		/// <summary>

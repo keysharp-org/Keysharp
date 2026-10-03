@@ -5,6 +5,16 @@ namespace Keysharp.Builtins.COM
 {
 	public unsafe class ComObject : ComValue, I__Enum
 	{
+		internal ComEvent EventSink;
+
+		[PublicHiddenFromUser]
+		public override void Dispose()
+		{
+			var sink = Interlocked.Exchange(ref EventSink, null);
+			try { sink?.Dispose(); }
+			finally { base.Dispose(); }
+		}
+
 		public ComObject(params object[] args) : base(args) { }
 
 		KeysharpFunc I__Enum.__Enum(object count)

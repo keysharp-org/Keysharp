@@ -57,927 +57,70 @@ namespace Keysharp.Builtins.COM
 		[FieldOffset(8)]
 		internal nint ptrVal;
 
-		// Record pointer
+		[FieldOffset(2)]
+		internal byte decimalScale;
+		[FieldOffset(3)]
+		internal byte decimalSign;
+		[FieldOffset(4)]
+		internal uint decimalHigh;
+
 		[FieldOffset(8)]
-		internal nint pvRecord;     // For VT_RECORD
-		[FieldOffset(16)]
-		internal nint pRecInfo;     // IRecordInfo*
+		internal Record record;
+
+		[StructLayout(LayoutKind.Sequential)]
+		internal struct Record { internal nint Value, Info; }
 	}
 
-	internal static class VariantConstants
+	internal enum Ownership { Borrowed, Owned }
+
+	internal static unsafe partial class VariantHelper
 	{
-		internal const ushort VT_EMPTY = 0;
-		internal const ushort VT_NULL = 1;
-		internal const ushort VT_I2 = 2;
-		internal const ushort VT_I4 = 3;
-		internal const ushort VT_R4 = 4;
-		internal const ushort VT_R8 = 5;
-		internal const ushort VT_CY = 6;
-		internal const ushort VT_DATE = 7;
-		internal const ushort VT_BSTR = 8;
-		internal const ushort VT_DISPATCH = 9;
-		internal const ushort VT_ERROR = 10;
-		internal const ushort VT_BOOL = 11;
-		internal const ushort VT_VARIANT = 12;
-		internal const ushort VT_UNKNOWN = 13;
-		//Extend as needed…
-	}
-	internal static partial class VariantHelper
-	{
-		//Clears the VARIANT and frees any allocated memory (such as BSTRs).
 		[LibraryImport(WindowsAPI.oleaut, EntryPoint = "VariantClear")]
 		internal static partial int VariantClear(ref VARIANT variant);
 		[LibraryImport(WindowsAPI.oleaut, EntryPoint = "VariantClear")]
 		internal static partial int VariantClear(nint pvarg);
-
+		[LibraryImport(WindowsAPI.oleaut)]
+		internal static partial int VariantCopy(ref VARIANT destination, in VARIANT source);
 		[LibraryImport(WindowsAPI.oleaut, EntryPoint = "VariantChangeTypeEx")]
-		internal static partial int VariantChangeTypeEx(nint pvargDest, nint pvarSrc, int lcid, ushort wFlags, ushort vt);
-
+		internal static partial int VariantChangeTypeEx(nint destination, nint source, int lcid, ushort flags, ushort type);
 		[LibraryImport(WindowsAPI.oleaut, EntryPoint = "VariantInit")]
-		internal static partial void VariantInit(nint pvar);
+		internal static partial void VariantInit(nint variant);
 
-		internal static int VariantChangeTypeEx(out object dest, object src, int lcid, ushort wFlags, ushort vt /* VARTYPE */)
-		{
-			nint pSrc = Marshal.AllocHGlobal(16 * 2);   // big enough for VARIANT (x86/x64). Oversize for simplicity.
-			nint pDst = Marshal.AllocHGlobal(16 * 2);
-			try
-			{
-				VariantInit(pSrc);
-				VariantInit(pDst);
-
-				// Fill native VARIANT from managed object
-				Marshal.GetNativeVariantForObject(src, pSrc);
-
-				int hr = VariantChangeTypeEx(pDst, pSrc, lcid, wFlags, vt);
-				if (hr != 0) // FAILED(hr)
-				{
-					dest = null;
-					return hr;
-				}
-
-				// Convert resulting native VARIANT back to managed object
-				dest = Marshal.GetObjectForNativeVariant(pDst);
-
-			}
-			finally
-			{
-				// Clean up native VARIANTs
-				_ = VariantHelper.VariantClear(pSrc);
-				_ = VariantHelper.VariantClear(pDst);
-				Marshal.FreeHGlobal(pSrc);
-				Marshal.FreeHGlobal(pDst);
-			}
-			return 0;
-		}
-
-
-		internal static VARIANT CreateVariantFromInt(int value)
-		{
-			VARIANT variant = new VARIANT();
-			variant.vt = VariantConstants.VT_I4;
-			variant.lVal = value;
-			return variant;
-		}
-
-		internal static VARIANT CreateVariantFromDouble(double value)
-		{
-			VARIANT variant = new VARIANT();
-			variant.vt = VariantConstants.VT_R8;
-			variant.dblVal = value;
-			return variant;
-		}
-
-		internal static VARIANT CreateVariantFromBool(bool value)
-		{
-			VARIANT variant = new VARIANT();
-			variant.vt = VariantConstants.VT_BOOL;
-			//In COM, VARIANT_TRUE is -1 and VARIANT_FALSE is 0.
-			variant.boolVal = (short)(value ? -1 : 0);
-			return variant;
-		}
-
-		internal static VARIANT CreateVariantFromString(string value)
-		{
-			VARIANT variant = new VARIANT();
-			variant.vt = VariantConstants.VT_BSTR;
-			//Marshal the string to a BSTR. Remember to clear the VARIANT later to free this memory.
-			variant.ptrVal = Marshal.StringToBSTR(value);
-			return variant;
-		}
-
-		internal static void ClearVariant(ref VARIANT variant)
-		{
-			_ = VariantClear(ref variant);
-		}
-
-		/// <summary>A result handed to a COM caller, which clears it: what a ComValue holds is copied for it.</summary>
-		internal static VARIANT ResultToVariant(object value) => value is ComValue cv ? cv.ToVariant(copy: true) : ValueToVariant(value);
-
-		internal static VARIANT ValueToVariant(object value)
-		{
-			if (value is ComValue co) return co.ToVariant();
-
-			var variant = new VARIANT();
-
-			if (value == null)
-			{
-				variant.vt = (ushort)VarEnum.VT_EMPTY;
-				return variant;
-			}
-			switch (value)
-			{
-				case string s:
-					variant.vt = (ushort)VarEnum.VT_BSTR;
-					variant.ptrVal = Marshal.StringToBSTR(s);
-					break;
-
-				case int i:
-					variant.vt = (ushort)VarEnum.VT_I4;
-					variant.lVal = i;
-					break;
-
-				case long l when l >= int.MinValue && l <= int.MaxValue:
-					variant.vt = (ushort)VarEnum.VT_I4;
-					variant.lVal = (int)l;
-					break;
-
-				case long l:
-					variant.vt = (ushort)VarEnum.VT_I8;
-					variant.llVal = l;
-					break;
-
-				case double d:
-					variant.vt = (ushort)VarEnum.VT_R8;
-					variant.dblVal = d;
-					break;
-
-				case float f:
-					variant.vt = (ushort)VarEnum.VT_R4;
-					variant.fltVal = f;
-					break;
-
-				// To a script a boolean is the integer 1 or 0, and so it goes to COM, as in AHK. VARIANT_TRUE belongs in a
-				// slot typed VT_BOOL -- a ComValue, a typed SAFEARRAY or by-reference slot, a parameter declared as one --
-				// and each of those has a writer of its own.
-				case bool b:
-					variant.vt = (ushort)VarEnum.VT_I4;
-					variant.lVal = b ? 1 : 0;
-					break;
-
-				case short sh:
-					variant.vt = (ushort)VarEnum.VT_I2;
-					variant.iVal = sh;
-					break;
-
-				case ushort us:
-					variant.vt = (ushort)VarEnum.VT_UI2;
-					variant.uiVal = us;
-					break;
-
-				case byte by:
-					variant.vt = (ushort)VarEnum.VT_UI1;
-					variant.bVal = by;
-					break;
-
-				case sbyte sb:
-					variant.vt = (ushort)VarEnum.VT_I1;
-					variant.cVal = sb;
-					break;
-
-				case System.Array arr:
-					return CreateVariantFromManagedArray(arr);
-
-				default:
-					// Try to wrap as IDispatch for Keysharp objects
-					try
-					{
-						variant.vt = (ushort)VarEnum.VT_DISPATCH;
-						variant.ptrVal = Com.DispatchPointer(value);
-					}
-					catch
-					{
-						// If that fails, set as VT_EMPTY
-						variant.vt = (ushort)VarEnum.VT_EMPTY;
-					}
-					break;
-			}
-
-			return variant;
-		}
-
-		/// <summary>
-		/// The elements of a Keysharp Array for a SAFEARRAY, those of nested Arrays included. An Array otherwise goes to
-		/// COM as the object it is, as in AHK; this is for a parameter declared as a SAFEARRAY, or a server that rejected
-		/// the object. An Array nested within itself stays the object where it recurs.
-		/// </summary>
-		internal static object[] SafeArrayElements(Array ksarr, HashSet<Array> enclosing = null)
-		{
-			var elements = ksarr.array.ToArray();
-
-			for (var i = 0; i < elements.Length; i++)
-				if (elements[i] is Array inner && (enclosing ??= new(ReferenceEqualityComparer.Instance) { ksarr }).Add(inner))
-				{
-					elements[i] = SafeArrayElements(inner, enclosing);
-					_ = enclosing.Remove(inner);
-				}
-
-			return elements;
-		}
-
-		private static VARIANT CreateVariantFromManagedArray(System.Array arr)
-		{
-			// Decide element VT from the CLR element type. Heterogenous/unknown → VARIANT.
-			Type elemClr = arr?.GetType().GetElementType() ?? typeof(object);
-
-			VarEnum elemVt = CLRTypeToVarEnum(elemClr);
-			if (elemVt == VarEnum.VT_EMPTY || elemClr == typeof(object))
-				elemVt = VarEnum.VT_VARIANT;
-
-			return CreateVariantFromManagedArray(arr, elemVt);
-		}
-
-		internal unsafe static VARIANT CreateVariantFromManagedArray(System.Array arr, VarEnum elemVt)
-		{
-			// 1D only (common for Automation). Extend similarly for multi-d if you need.
-			uint len = (uint)(arr?.Length ?? 0);
-
-			nint psa = OleAuto.SafeArrayCreateVectorEx((ushort)elemVt, 0, len, 0);
-
-			if (psa == 0)
-				return new VARIANT { vt = (ushort)VarEnum.VT_EMPTY };
-
-			if (arr != null)
-			{
-				for (int i = 0; i < arr.Length; i++)
-				{
-					int[] idx = { i };
-					object v = arr.GetValue(i);
-
-					int hr;
-					switch (elemVt)
-					{
-						case VarEnum.VT_VARIANT:
-							{
-								// Build element VARIANT and pass pointer
-								VARIANT ev = ValueToVariant(v);
-								try { hr = OleAuto.SafeArrayPutElementPtr(psa, idx, (nint)(&ev)); }
-								finally { _ = VariantClear((nint)(&ev)); }
-								break;
-							}
-
-						case VarEnum.VT_BSTR:
-							{
-								nint b = v == null ? 0 : Marshal.StringToBSTR(v.ToString());
-								hr = OleAuto.SafeArrayPutElementPtr(psa, idx, b);
-								if (b != 0) WindowsAPI.SysFreeString(b);
-								break;
-							}
-
-						case VarEnum.VT_DISPATCH:
-						case VarEnum.VT_UNKNOWN:
-							{
-								nint p = 0;
-								bool rel = false;
-								if (v is long lp) p = (nint)lp;
-								else if (v is nint ip) p = ip;
-								else if (v != null)
-								{
-									p = elemVt == VarEnum.VT_DISPATCH ? Com.DispatchPointer(v) : Marshal.GetIUnknownForObject(v);
-									rel = true; // we own this temp
-								}
-								try { hr = OleAuto.SafeArrayPutElementPtr(psa, idx, p); }
-								finally { if (rel && p != 0) try { Marshal.Release(p); } catch { } }
-								break;
-							}
-
-						case VarEnum.VT_DATE:
-							{
-								double oa = v is DateTime dt ? dt.ToOADate() : Convert.ToDouble(v);
-								hr = OleAuto.SafeArrayPutElement(psa, idx, oa);
-								break;
-							}
-
-						case VarEnum.VT_BOOL:
-							{
-								bool b = v is bool bb ? bb : Script.ForceBool(v);
-								// Using the object overload lets OleAut do VARIANT_BOOL conversion.
-								hr = OleAuto.SafeArrayPutElement(psa, idx, b);
-								break;
-							}
-
-						// Numerics & decimal – use object overload; OleAut will coerce.
-						case VarEnum.VT_I1: hr = OleAuto.SafeArrayPutElement(psa, idx, Convert.ToSByte(v)); break;
-						case VarEnum.VT_UI1: hr = OleAuto.SafeArrayPutElement(psa, idx, Convert.ToByte(v)); break;
-						case VarEnum.VT_I2: hr = OleAuto.SafeArrayPutElement(psa, idx, Convert.ToInt16(v)); break;
-						case VarEnum.VT_UI2: hr = OleAuto.SafeArrayPutElement(psa, idx, Convert.ToUInt16(v)); break;
-						case VarEnum.VT_I4:
-						case VarEnum.VT_INT: hr = OleAuto.SafeArrayPutElement(psa, idx, Convert.ToInt32(v)); break;
-						case VarEnum.VT_UI4:
-						case VarEnum.VT_UINT: hr = OleAuto.SafeArrayPutElement(psa, idx, Convert.ToUInt32(v)); break;
-						case VarEnum.VT_I8: hr = OleAuto.SafeArrayPutElement(psa, idx, Convert.ToInt64(v)); break;
-						case VarEnum.VT_UI8: hr = OleAuto.SafeArrayPutElement(psa, idx, Convert.ToUInt64(v)); break;
-						case VarEnum.VT_R4: hr = OleAuto.SafeArrayPutElement(psa, idx, Convert.ToSingle(v)); break;
-						case VarEnum.VT_R8: hr = OleAuto.SafeArrayPutElement(psa, idx, Convert.ToDouble(v)); break;
-						case VarEnum.VT_DECIMAL:
-							hr = OleAuto.SafeArrayPutElement(psa, idx, Convert.ToDecimal(v)); break;
-
-						default:
-							// Fallback to VARIANT elements for exotic types.
-							VARIANT ev2 = ValueToVariant(v);
-							try { hr = OleAuto.SafeArrayPutElementPtr(psa, idx, (nint)(&ev2)); }
-							finally { _ = VariantClear((nint)(&ev2)); }
-							break;
-					}
-
-					_ = Errors.OSErrorOccurredForHR(hr);
-					if (hr < 0) { OleAuto.SafeArrayDestroy(psa); return new VARIANT { vt = (ushort)VarEnum.VT_EMPTY }; }
-				}
-			}
-
-			return new VARIANT { vt = (ushort)(VarEnum.VT_ARRAY | elemVt), ptrVal = psa };
-		}
-
-
-		internal static unsafe VARIANT CreateByRefVariant(object value)
-		{
-			// Create a VT_BYREF|VT_VARIANT that points at a heap VARIANT holding 'value'.
-			VARIANT inner = ValueToVariant(value);
-
-			nint pInner = Marshal.AllocHGlobal(Marshal.SizeOf<VARIANT>());
-			Marshal.StructureToPtr(inner, pInner, false);
-
-			return new VARIANT
-			{
-				vt = (ushort)(VarEnum.VT_BYREF | VarEnum.VT_VARIANT),
-				ptrVal = pInner
-			};
-		}
-
-		internal static VARIANT CreateByRefVariantTyped(object value, VarEnum baseVt)
-		{
-			// Special-case: BYREF|VARIANT uses nested-variant storage (your existing method).
-			if (baseVt == VarEnum.VT_VARIANT)
-				return CreateByRefVariant(value); // allocates VARIANT and sets ptrVal
-
-			// BYREF SAFEARRAY: allocate pointer-to-SAFEARRAY storage and write initial pointer.
-			if ((baseVt & VarEnum.VT_ARRAY) != 0)
-			{
-				var v = new VARIANT { vt = (ushort)(baseVt | VarEnum.VT_BYREF) };
-				nint pStorage = Marshal.AllocHGlobal(IntPtr.Size);
-				nint psa = 0;
-
-				if (value is ComObjArray coa) psa = coa._psa;
-				else if (value is long lp) psa = (nint)lp;
-				else if (value is nint ip) psa = ip;
-				else if (value is System.Array arr) psa = CreateVariantFromManagedArray(arr).ptrVal;
-				// else leave psa = 0 (pure OUT)
-
-				Marshal.WriteIntPtr(pStorage, psa);
-				v.ptrVal = pStorage;
-				return v;
-			}
-
-			// Normal scalars, BSTR, interfaces: allocate pointer-sized storage cell and fill it.
-			var byref = new VARIANT { vt = (ushort)(baseVt | VarEnum.VT_BYREF) };
-			nint cell = Marshal.AllocHGlobal(IntPtr.Size);
-
-			switch (baseVt)
-			{
-				// Integers
-				case VarEnum.VT_I1: Marshal.WriteByte(cell, unchecked((byte)Convert.ToSByte(value ?? 0))); break;
-				case VarEnum.VT_UI1: Marshal.WriteByte(cell, Convert.ToByte(value ?? 0)); break;
-				case VarEnum.VT_I2: Marshal.WriteInt16(cell, Convert.ToInt16(value ?? 0)); break;
-				case VarEnum.VT_UI2: Marshal.WriteInt16(cell, unchecked((short)Convert.ToUInt16(value ?? 0))); break;
-				case VarEnum.VT_I4:
-				case VarEnum.VT_INT: Marshal.WriteInt32(cell, Convert.ToInt32(value ?? 0)); break;
-				case VarEnum.VT_UI4:
-				case VarEnum.VT_UINT: Marshal.WriteInt32(cell, unchecked((int)Convert.ToUInt32(value ?? 0))); break;
-				case VarEnum.VT_I8: Marshal.WriteInt64(cell, Convert.ToInt64(value ?? 0)); break;
-				case VarEnum.VT_UI8: Marshal.WriteInt64(cell, unchecked((long)Convert.ToUInt64(value ?? 0))); break;
-
-				// Floating point
-				case VarEnum.VT_R4:
-					{
-						float f = Convert.ToSingle(value ?? 0);
-						var bytes = BitConverter.GetBytes(f);
-						Marshal.Copy(bytes, 0, cell, bytes.Length);
-						break;
-					}
-				case VarEnum.VT_R8:
-					{
-						double d = Convert.ToDouble(value ?? 0);
-						var bytes = BitConverter.GetBytes(d);
-						Marshal.Copy(bytes, 0, cell, bytes.Length);
-						break;
-					}
-
-				// DATE (double, OADate)
-				case VarEnum.VT_DATE:
-					{
-						double od = value is DateTime dt ? dt.ToOADate() : Convert.ToDateTime(value ?? default(DateTime)).ToOADate();
-						var bytes = BitConverter.GetBytes(od);
-						Marshal.Copy(bytes, 0, cell, bytes.Length);
-						break;
-					}
-
-				// BOOL (VARIANT_BOOL: short -1/0)
-				case VarEnum.VT_BOOL:
-					{
-						short vb = (short)((value is bool b ? b : Convert.ToBoolean(value ?? false)) ? -1 : 0);
-						Marshal.WriteInt16(cell, vb);
-						break;
-					}
-
-				// BSTR*
-				case VarEnum.VT_BSTR:
-					{
-						nint bstr = 0;
-						if (value is string s && s != null)
-							bstr = Marshal.StringToBSTR(s);
-						Marshal.WriteIntPtr(cell, bstr);
-						break;
-					}
-
-				// Interfaces: IDispatch** / IUnknown**
-				case VarEnum.VT_DISPATCH:
-				case VarEnum.VT_UNKNOWN:
-					{
-						nint p = 0;
-						if (value is long lp) p = (nint)lp;
-						else if (value is nint ip) p = ip;
-						else if (value != null)
-							p = baseVt == VarEnum.VT_DISPATCH
-								? Com.DispatchPointer(value)
-								: Marshal.GetIUnknownForObject(value);
-						Marshal.WriteIntPtr(cell, p);
-						break;
-					}
-
-				default:
-					// Fallback: nested-variant BYREF (covers DECIMAL, etc.)
-					Marshal.FreeHGlobal(cell);
-					return CreateByRefVariant(value);
-			}
-
-			byref.ptrVal = cell;
-
-			return byref;
-		}
-
-		// ---------- Read value back from a BYREF variant (typed AND nested-variant) ----------
-		internal static object ReadByRefVariant(in VARIANT v)
-		{
-			var vt = (VarEnum)v.vt;
-			if ((vt & VarEnum.VT_BYREF) == 0)
-				throw new ArgumentException("ReadByRefVariant called on non-BYREF VARIANT.");
-
-			var baseVt = vt & ~VarEnum.VT_BYREF;
-
-			switch (baseVt)
-			{
-				// ---- Strings ----
-				case VarEnum.VT_BSTR:
-					unsafe
-					{
-						if (v.ptrVal == 0) return "";
-						var pBstr = *((nint*)v.ptrVal);
-						if (pBstr == 0) return "";
-						return Marshal.PtrToStringBSTR(pBstr) ?? "";
-					}
-
-				// ---- Interfaces ----
-				case VarEnum.VT_DISPATCH:
-					unsafe
-					{
-						if (v.ptrVal == 0) return new ComObject((long)vt, 0L);
-						var p = *((nint*)v.ptrVal);
-						return new ComObject((long)VarEnum.VT_DISPATCH, (long)p);
-					}
-
-				case VarEnum.VT_UNKNOWN:
-					unsafe
-					{
-						if (v.ptrVal == 0) return new ComValue((long)vt, 0L);
-						var p = *((nint*)v.ptrVal);
-						return new ComValue((long)VarEnum.VT_UNKNOWN, (long)p);
-					}
-
-				// ---- VARIANT byref: expose the contained value, not the pointer ----
-				case VarEnum.VT_VARIANT:
-					unsafe
-					{
-						if (v.ptrVal == 0) return new ComValue((long)vt, 0L);
-						var inner = Marshal.PtrToStructure<VARIANT>(v.ptrVal);
-						// Return primitive if possible, else ComValue(inner_vt, payload)
-						var obj = VariantToValue(inner);
-						return (obj is long || obj is double || obj is bool || obj is string)
-							? obj
-							: new ComValue((long)inner.vt, obj is ComValue cv ? cv.Ptr : obj);
-					}
-
-				// ---- Numerics & logicals ----
-				case VarEnum.VT_BOOL: unsafe { if (v.ptrVal == 0) return false; return *((short*)v.ptrVal) != 0; }
-				case VarEnum.VT_I1: unsafe { if (v.ptrVal == 0) return 0L; return (long)*((sbyte*)v.ptrVal); }
-				case VarEnum.VT_UI1: unsafe { if (v.ptrVal == 0) return 0L; return (long)*((byte*)v.ptrVal); }
-				case VarEnum.VT_I2: unsafe { if (v.ptrVal == 0) return 0L; return (long)*((short*)v.ptrVal); }
-				case VarEnum.VT_UI2: unsafe { if (v.ptrVal == 0) return 0L; return (long)*((ushort*)v.ptrVal); }
-				case VarEnum.VT_I4:
-				case VarEnum.VT_INT: unsafe { if (v.ptrVal == 0) return 0L; return (long)*((int*)v.ptrVal); }
-				case VarEnum.VT_UI4:
-				case VarEnum.VT_UINT: unsafe { if (v.ptrVal == 0) return 0L; return (long)*((uint*)v.ptrVal); }
-				case VarEnum.VT_I8: unsafe { if (v.ptrVal == 0) return 0L; return *((long*)v.ptrVal); }
-				case VarEnum.VT_UI8: unsafe { if (v.ptrVal == 0) return 0L; return (long)*((ulong*)v.ptrVal); }
-				case VarEnum.VT_R4: unsafe { if (v.ptrVal == 0) return 0.0; return (double)*((float*)v.ptrVal); }
-				case VarEnum.VT_R8: unsafe { if (v.ptrVal == 0) return 0.0; return *((double*)v.ptrVal); }
-
-				case VarEnum.VT_CY: unsafe { if (v.ptrVal == 0) return 0L; return *((long*)v.ptrVal); } // keep scaled int (×10,000)
-				case VarEnum.VT_DATE: unsafe { if (v.ptrVal == 0) return 0.0; return *((double*)v.ptrVal); } // keep OADate (double)
-
-				// ---- Exotic: SAFEARRAY/DECIMAL/RECORD/... → wrap as ComValue(vt, Ptr) ----
-				default:
-					unsafe
-					{
-						// Use the generic byref slot to surface the address (or 0)
-						nint payload = v.ptrVal;
-						return new ComValue((long)vt, (long)payload);
-					}
-			}
-		}
-
-
-		internal static void WriteByRefVariant(in VARIANT byrefVar, object value)
-		{
-			var vt = (VarEnum)byrefVar.vt;
-			if ((vt & VarEnum.VT_BYREF) == 0) return;
-
-			var baseVt = vt & ~VarEnum.VT_BYREF;
-
-			switch (baseVt)
-			{
-				// ---- BYREF|VARIANT: clear old, write a new VARIANT ----
-				case VarEnum.VT_VARIANT:
-					unsafe
-					{
-						if (byrefVar.ptrVal == 0) return;
-						VariantClear(byrefVar.ptrVal);
-						var nv = ValueToVariant(value);
-						Marshal.StructureToPtr(nv, byrefVar.ptrVal, false);
-					}
-					return;
-
-				// ---- BYREF|BSTR: free old BSTR, store new BSTR ----
-				case VarEnum.VT_BSTR:
-					unsafe
-					{
-						if (byrefVar.ptrVal == 0) return;
-						var pBstr = (nint*)byrefVar.ptrVal;
-						if (*pBstr != 0) WindowsAPI.SysFreeString(*pBstr);
-
-						string s = value switch
-						{
-							string ss => ss,
-							ComValue cv when cv.vt == VarEnum.VT_BSTR && cv.Ptr is long lp && lp != 0 =>
-								Marshal.PtrToStringBSTR((nint)lp) ?? "",
-							_ => Convert.ToString(value, System.Globalization.CultureInfo.CurrentCulture) ?? string.Empty
-						};
-
-						*pBstr = Marshal.StringToBSTR(s);
-					}
-					return;
-
-				// ---- BYREF|IDispatch*: Release old, assign new (with a +1 ref) ----
-				case VarEnum.VT_DISPATCH:
-					unsafe
-					{
-						if (byrefVar.ptrVal == 0) return;
-						var p = (nint*)byrefVar.ptrVal;
-
-						if (*p != 0) Marshal.Release(*p);
-
-						nint newPtr = 0;
-						if (value is null)
-						{
-							newPtr = 0;
-						}
-						else if (value is ComValue cv && cv.vt == VarEnum.VT_DISPATCH && cv.Ptr is long lp)
-						{
-							newPtr = (nint)lp;
-							if (newPtr != 0) Marshal.AddRef(newPtr); // ensure independent lifetime
-						}
-						else
-						{
-							newPtr = Com.DispatchPointer(value);
-						}
-
-						*p = newPtr;
-					}
-					return;
-
-				// ---- BYREF|IUnknown*: Release old, assign new (with a +1 ref) ----
-				case VarEnum.VT_UNKNOWN:
-					unsafe
-					{
-						if (byrefVar.ptrVal == 0) return;
-						var p = (nint*)byrefVar.ptrVal;
-
-						if (*p != 0) Marshal.Release(*p);
-
-						nint newPtr = 0;
-						if (value is null)
-						{
-							newPtr = 0;
-						}
-						else if (value is ComValue cv && cv.vt == VarEnum.VT_UNKNOWN && cv.Ptr is long lp)
-						{
-							newPtr = (nint)lp;
-							if (newPtr != 0) Marshal.AddRef(newPtr);
-						}
-						else
-						{
-							newPtr = Marshal.GetIUnknownForObject(value);
-						}
-
-						*p = newPtr;
-					}
-					return;
-
-				// ---- Numerics & logicals ----
-				case VarEnum.VT_BOOL: unsafe { if (byrefVar.ptrVal == 0) return; *((short*)byrefVar.ptrVal) = (short)(Script.ForceBool(value) ? -1 : 0); } return;
-
-				case VarEnum.VT_I1:
-					unsafe
-					{
-						if (byrefVar.ptrVal == 0) return;
-						if (!value.CoerceLong(out var v)) return;
-						*((sbyte*)byrefVar.ptrVal) = (sbyte)v;
-					}
-					return;
-
-				case VarEnum.VT_UI1:
-					unsafe
-					{
-						if (byrefVar.ptrVal == 0) return;
-						if (!value.CoerceLong(out var v)) return;
-						*((byte*)byrefVar.ptrVal) = unchecked((byte)v);
-					}
-					return;
-
-				case VarEnum.VT_I2:
-					unsafe
-					{
-						if (byrefVar.ptrVal == 0) return;
-						if (!value.CoerceLong(out var v)) return;
-						*((short*)byrefVar.ptrVal) = (short)v;
-					}
-					return;
-
-				case VarEnum.VT_UI2:
-					unsafe
-					{
-						if (byrefVar.ptrVal == 0) return;
-						if (!value.CoerceLong(out var v)) return;
-						*((ushort*)byrefVar.ptrVal) = unchecked((ushort)v);
-					}
-					return;
-
-				case VarEnum.VT_I4:
-				case VarEnum.VT_INT:
-					unsafe
-					{
-						if (byrefVar.ptrVal == 0) return;
-						if (!value.CoerceInt(out var v)) return;
-						*((int*)byrefVar.ptrVal) = v;
-					}
-					return;
-
-				case VarEnum.VT_UI4:
-				case VarEnum.VT_UINT:
-					unsafe
-					{
-						if (byrefVar.ptrVal == 0) return;
-						if (!value.CoerceLong(out var v)) return;
-						*((uint*)byrefVar.ptrVal) = unchecked((uint)v);
-					}
-					return;
-
-				case VarEnum.VT_I8:
-					unsafe
-					{
-						if (byrefVar.ptrVal == 0) return;
-						if (!value.CoerceLong(out var v)) return;
-						*((long*)byrefVar.ptrVal) = v;
-					}
-					return;
-
-				case VarEnum.VT_UI8:
-					unsafe
-					{
-						if (byrefVar.ptrVal == 0) return;
-						if (!value.CoerceLong(out var v)) return;
-						*((ulong*)byrefVar.ptrVal) = unchecked((ulong)v);
-					}
-					return;
-
-				case VarEnum.VT_R4:
-					unsafe
-					{
-						if (byrefVar.ptrVal == 0) return;
-						if (!value.CoerceDouble(out var d)) return;
-						*((float*)byrefVar.ptrVal) = (float)d;
-					}
-					return;
-
-				case VarEnum.VT_R8:
-					unsafe
-					{
-						if (byrefVar.ptrVal == 0) return;
-						if (!value.CoerceDouble(out var d)) return;
-						*((double*)byrefVar.ptrVal) = d;
-					}
-					return;
-
-				case VarEnum.VT_CY:
-					unsafe
-					{
-						if (byrefVar.ptrVal == 0) return;
-						long cy = value switch
-						{
-							long l => l,
-							decimal m => checked((long)Math.Round(m * 10000m)),
-							double d => checked((long)Math.Round(d * 10000.0)),
-							_ => checked((long)Math.Round(Convert.ToDouble(value) * 10000.0)),
-						};
-						*((long*)byrefVar.ptrVal) = cy;
-					}
-					return;
-
-				case VarEnum.VT_DATE:
-					unsafe
-					{
-						if (byrefVar.ptrVal == 0) return;
-						double dd = value switch
-						{
-							double d => d,
-							DateTime dt => dt.ToOADate(),
-							_ => Convert.ToDateTime(value).ToOADate(),
-						};
-						*((double*)byrefVar.ptrVal) = dd;
-					}
-					return;
-
-				case var t when (t & VarEnum.VT_ARRAY) != 0:
-					{
-						unsafe
-						{
-							if (byrefVar.ptrVal == 0) return;
-							var ppsa = (nint*)byrefVar.ptrVal;
-
-							// Extract SAFEARRAY* from the incoming value
-							if (!Reflections.TryGetPtrProperty(value, out var srcPsaAddr))
-								return;
-							nint srcPsa = new nint(srcPsaAddr);
-
-							// Make an independent copy of the source SAFEARRAY to avoid aliasing/lifetime issues
-							nint copiedPsa = 0;
-							int hr = OleAuto.SafeArrayCopy(srcPsa, out copiedPsa);
-							if (hr < 0 || copiedPsa == 0)
-								return;
-
-							// Destroy the old one (if any) to avoid leaks, then store the copy
-							if (*ppsa != 0 && *ppsa != copiedPsa)
-								_ = OleAuto.SafeArrayDestroy(*ppsa);
-
-							*ppsa = copiedPsa;
-						}
-						return;
-					}
-
-				// ---- DECIMAL / RECORD / etc. ----
-				default:
-					// Intentionally do nothing by default to avoid corrupting memory.
-					// If you need to support writes for these, add explicit cases:
-					//  - DECIMAL: write through pdecVal
-					//  - RECORD: requires IRecordInfo helpers
-					return;
-			}
-		}
-
-
-
-		// ---------- Free BYREF storage allocated by CreateByRefVariantTyped / CreateByRefVariant ----------
-		internal static void CleanupByRefVariant(VARIANT byRefVariant)
-		{
-			if (((VarEnum)byRefVariant.vt & VarEnum.VT_BYREF) == 0)
-				return;
-
-			VarEnum baseVt = (VarEnum)byRefVariant.vt & ~VarEnum.VT_BYREF;
-
-			// Nested-variant path (your old helper)
-			if (baseVt == VarEnum.VT_VARIANT && byRefVariant.ptrVal != 0)
-			{
-				VariantClear(byRefVariant.ptrVal);
-				Marshal.FreeHGlobal(byRefVariant.ptrVal);
-				return;
-			}
-
-			// SAFEARRAY**: free just the pointer cell (do NOT destroy SAFEARRAY here)
-			if ((baseVt & VarEnum.VT_ARRAY) != 0)
-			{
-				if (byRefVariant.ptrVal != 0)
-					Marshal.FreeHGlobal(byRefVariant.ptrVal);
-				return;
-			}
-
-			// Typed storage cells (we always allocated the cell)
-			switch (baseVt)
-			{
-				case VarEnum.VT_BSTR:
-					{
-						if (byRefVariant.ptrVal != 0)
-						{
-							nint bstr = Marshal.ReadIntPtr(byRefVariant.ptrVal);
-							if (bstr != 0) WindowsAPI.SysFreeString(bstr);
-							Marshal.FreeHGlobal(byRefVariant.ptrVal);
-						}
-						break;
-					}
-
-				default:
-					// Unknown typed case → free as generic cell if we can identify it
-					if (byRefVariant.ptrVal != 0) Marshal.FreeHGlobal(byRefVariant.ptrVal);
-					break;
-			}
-		}
-
-		/// <summary>The value of an argument a COM caller passed: as VariantToValue gives it, an omitted one being unset.</summary>
-		internal static object ArgumentToValue(VARIANT variant) =>
-			(VarEnum)variant.vt == VarEnum.VT_ERROR && variant.lVal == unchecked((int)0x80020004) /*DISP_E_PARAMNOTFOUND*/
-			? null
-			: VariantToValue(variant);
-
-		internal static object VariantToValue(VARIANT variant)
+		// Owned resources move into their wrapper; borrowed resources get an independent lifetime.
+		internal static object FromVariant(ref VARIANT variant, Ownership ownership)
 		{
 			var vt = (VarEnum)variant.vt;
-
-			// ── SAFEARRAYs ─────────────────────────────────────────────────────────────
-			// By-value SAFEARRAY: VT_ARRAY | T, union member is VARIANT.parray (SAFEARRAY*)
-			if ((vt & VarEnum.VT_ARRAY) != 0 && (vt & VarEnum.VT_BYREF) == 0)
-			{
-				var elemVt = vt & ~VarEnum.VT_ARRAY;
-				nint psa = variant.ptrVal;               // SAFEARRAY*
-				if (psa == 0)
-					return null;
-
-				int hr = OleAuto.SafeArrayCopy(psa, out nint psaCopy);
-				if (hr < 0) return Errors.OSErrorOccurredForHR(hr);
-
-				// We do take ownership because we made a copy.
-				return new ComObjArray(elemVt, psaCopy, takeOwnership: true);
-			}
-
-			// By-ref SAFEARRAY: VT_BYREF | VT_ARRAY | T, union member is VARIANT.ptrVal (SAFEARRAY**)
-			if ((vt & VarEnum.VT_ARRAY) != 0 && (vt & VarEnum.VT_BYREF) != 0)
-			{
-				var elemVt = vt & ~(VarEnum.VT_ARRAY | VarEnum.VT_BYREF);
-				nint ppsa = variant.ptrVal;             // SAFEARRAY**
-				if (ppsa == 0)
-					return null;
-
-				nint psa = Marshal.ReadIntPtr(ppsa);     // deref to SAFEARRAY*
-				if (psa == 0)
-					return null;
-
-				return new ComObjArray(elemVt, psa, takeOwnership: false);
-			}
-
-			// ── BYREF (non-array) ─────────────────────────────────────────────────────
 			if ((vt & VarEnum.VT_BYREF) != 0)
 			{
-				if (variant.ptrVal != 0)
-				{
-					// Only correct for VT_BYREF|VT_VARIANT
-					var innerVariant = Marshal.PtrToStructure<VARIANT>(variant.ptrVal);
-					return VariantToValue(innerVariant);
-				}
-
-				// Optional: handle other BYREF scalars precisely (plVal, pboolVal, etc.)
-				// If you already have typed BYREF readback elsewhere, you can keep this as-is.
-				return null;
+				if (variant.ptrVal == 0)
+					return null;
+				// A BYREF VARIANT never owns its pointee, even when the VARIANT itself is a result.
+				return FromStorage(variant.ptrVal, vt & ~VarEnum.VT_BYREF, Ownership.Borrowed);
 			}
 
-			if ((vt == VarEnum.VT_DISPATCH || vt == VarEnum.VT_UNKNOWN) && variant.ptrVal != 0 && Com.TryGetKeysharpObject(variant.ptrVal, out var own))
-				return own;
+			if ((vt & VarEnum.VT_ARRAY) != 0)
+			{
+				var pointer = variant.ptrVal;
+				if (pointer == 0)
+					return null;
+				if (ownership == Ownership.Borrowed)
+				{
+					var hr = OleAuto.SafeArrayCopy(pointer, out pointer);
+					if (hr < 0)
+						return Errors.OSErrorOccurredForHR(hr);
+				}
+				var array = new ComObjArray(vt & ~VarEnum.VT_ARRAY, pointer, takeOwnership: true);
+				if (ownership == Ownership.Owned)
+					variant = default;
+				return array;
+			}
 
-			// ── Scalars / pointers ────────────────────────────────────────────────────
 			switch (vt)
 			{
 				case VarEnum.VT_EMPTY:
-				case VarEnum.VT_NULL:
-					return null;
-
-				case VarEnum.VT_BSTR:
-					return variant.ptrVal == 0 ? "" : Marshal.PtrToStringBSTR(variant.ptrVal);
-
+				case VarEnum.VT_NULL: return null;
+				case VarEnum.VT_ERROR when variant.lVal == unchecked((int)0x80020004): return null;
+				case VarEnum.VT_BSTR: return variant.ptrVal == 0 ? "" : Marshal.PtrToStringBSTR(variant.ptrVal);
 				case VarEnum.VT_I1: return (long)variant.cVal;
 				case VarEnum.VT_UI1: return (long)variant.bVal;
 				case VarEnum.VT_I2: return (long)variant.iVal;
@@ -987,374 +130,325 @@ namespace Keysharp.Builtins.COM
 				case VarEnum.VT_UI4:
 				case VarEnum.VT_UINT: return (long)variant.ulVal;
 				case VarEnum.VT_I8: return variant.llVal;
-				case VarEnum.VT_UI8: return (long)variant.ullVal;
-
+				case VarEnum.VT_UI8: return unchecked((long)variant.ullVal);
 				case VarEnum.VT_R4: return (double)variant.fltVal;
 				case VarEnum.VT_R8: return variant.dblVal;
-
 				case VarEnum.VT_BOOL: return variant.boolVal != 0;
-
-				case VarEnum.VT_DATE: return DateTime.FromOADate(variant.dblVal);
-
-				case VarEnum.VT_UNKNOWN:
-					if (variant.ptrVal != 0)
-					{
-						Guid IID__Object = new Guid("65074F7F-63C0-304E-AF0A-D51741CB4A8D");
-						if (Marshal.QueryInterface(variant.ptrVal, in Com.IID_IDispatch, out nint pDisp) == 0 && pDisp != 0)
-						{
-							return new ComObject { vt = VarEnum.VT_DISPATCH, Ptr = pDisp };
-						}
-						if (Marshal.QueryInterface(variant.ptrVal, in Com.IID_IEnumVARIANT, out var pEnumVar) == 0)
-						{
-							return new ComObject { vt = VarEnum.VT_DISPATCH, Ptr = pEnumVar };
-						}
-						if (Marshal.QueryInterface(variant.ptrVal, in IID__Object, out var pObj) == 0)
-						{
-							return new ComObject { vt = VarEnum.VT_DISPATCH, Ptr = pObj };
-						}
-					}
-					goto case VarEnum.VT_DISPATCH;
 				case VarEnum.VT_DISPATCH:
-					if (variant.ptrVal != 0)
+				case VarEnum.VT_UNKNOWN:
+				{
+					var pointer = variant.ptrVal;
+					if (pointer == 0)
+						return DefaultObject;
+					object result;
+					if (vt == VarEnum.VT_UNKNOWN && Marshal.QueryInterface(pointer, in Com.IID_IEnumVARIANT, out var enumerator) >= 0)
+						result = ComEnumeration.CreateEnumerator(enumerator);
+					else if (Com.TryGetKeysharpObject(pointer, out var own))
+						result = own;
+					else if (vt == VarEnum.VT_UNKNOWN && Marshal.QueryInterface(pointer, in Com.IID_IDispatch, out var dispatch) >= 0)
+						result = new ComObject { vt = VarEnum.VT_DISPATCH, Ptr = dispatch };
+					else
 					{
-						Marshal.AddRef(variant.ptrVal);
-						return vt == VarEnum.VT_DISPATCH ? new ComObject { vt = vt, Ptr = variant.ptrVal } : new ComValue { vt = vt, Ptr = variant.ptrVal };
+						if (ownership == Ownership.Borrowed)
+							_ = Marshal.AddRef(pointer);
+						result = vt == VarEnum.VT_DISPATCH
+							? new ComObject { vt = vt, Ptr = pointer }
+							: new ComValue { vt = vt, Ptr = pointer };
+						if (ownership == Ownership.Owned)
+							variant = default;
+						return result;
 					}
-					return DefaultObject;
-
+					if (ownership == Ownership.Owned)
+					{
+						_ = Marshal.Release(pointer);
+						variant = default;
+					}
+					return result;
+				}
 				default:
-					// Fallback: leave pointer-ish value wrapped
-					return new ComValue { vt = vt, Ptr = variant.llVal };
+				{
+					VARIANT text = default;
+					fixed (VARIANT* source = &variant)
+						if ((int)vt < (int)VarEnum.VT_ARRAY && VariantChangeTypeEx((nint)(&text), (nint)source, Com.LOCALE_USER_DEFAULT, 0, (ushort)VarEnum.VT_BSTR) >= 0)
+						{
+							try { return text.ptrVal == 0 ? "" : Marshal.PtrToStringBSTR(text.ptrVal); }
+							finally { _ = VariantClear(ref text); }
+						}
+					return new ComValue { vt = vt, item = vt == VarEnum.VT_DECIMAL ? ReadDecimal(variant) : variant.llVal };
+				}
 			}
 		}
 
-		internal static object ReadVariant(long ptrValue, VarEnum vtRaw)
+		internal static bool TryToVariant(object value, out VARIANT variant)
 		{
-			nint dataPtr = (nint)ptrValue;
-			VarEnum vt = vtRaw & ~VarEnum.VT_BYREF;
-
-			if ((vt & VarEnum.VT_ARRAY) != 0)
+			variant = default;
+			if (value is ComValue wrapper)
 			{
-				VarEnum elemVt = vt & ~VarEnum.VT_ARRAY;
-				nint parray = Marshal.ReadIntPtr(dataPtr);
-				if (parray == 0)
-					return DefaultObject;
-
-				// Wrap without owning: the VARIANT will destroy it on VariantClear.
-				return new ComObjArray(elemVt, parray, takeOwnership: false);
+				if (wrapper.vt == VarEnum.VT_VARIANT) return TryToVariant(wrapper.Ptr, out variant);
+				if (!TryBorrowArgument(wrapper, out var borrowed)) return false;
+				VARIANT owned = default;
+				var hr = VariantCopy(ref owned, in borrowed);
+				GC.KeepAlive(wrapper);
+				if (hr < 0)
+				{
+					_ = VariantClear(ref owned);
+					_ = Errors.OSErrorOccurredForHR(hr);
+					return false;
+				}
+				variant = owned;
+				return true;
 			}
-
-			switch (vt)
+			if (value is System.Array array)
+				return TryCreateVariantFromManagedArray(array, CLRTypeToVarEnum(array.GetType().GetElementType()), out variant);
+			variant = value switch
 			{
-				// ── Integers → long ───────────────────────────────────────────────
-				case VarEnum.VT_I1:
-					return (long)(sbyte)Marshal.ReadByte(dataPtr);
-
-				case VarEnum.VT_UI1:
-					return (long)Marshal.ReadByte(dataPtr);
-
-				case VarEnum.VT_I2:
-					return (long)Marshal.ReadInt16(dataPtr);
-
-				case VarEnum.VT_UI2:
-					return (long)(ushort)Marshal.ReadInt16(dataPtr);
-
-				case VarEnum.VT_I4:
-				case VarEnum.VT_INT:
-					return (long)Marshal.ReadInt32(dataPtr);
-
-				case VarEnum.VT_UI4:
-				case VarEnum.VT_UINT:
-					return (long)(uint)Marshal.ReadInt32(dataPtr);
-
-				case VarEnum.VT_I8:
-					return Marshal.ReadInt64(dataPtr);
-
-				case VarEnum.VT_UI8:
-					return (long)(ulong)Marshal.ReadInt64(dataPtr);
-
-				// ── Boolean → bool ───────────────────────────────────────────────
-				case VarEnum.VT_BOOL:
-					// COM VARIANT_BOOL is a 16-bit short: 0 or −1
-					return Marshal.ReadInt16(dataPtr) != 0;
-
-				// ── Floating point / date → double ───────────────────────────────
-				case VarEnum.VT_R4:
-					// Read 4-byte float, then promote
-					float f = Marshal.PtrToStructure<float>(dataPtr);
-					return (double)f;
-
-				case VarEnum.VT_R8:
-				case VarEnum.VT_DATE:
-					// VT_DATE is also stored as an 8-byte IEEE double
-					return Marshal.PtrToStructure<double>(dataPtr);
-
-				// ── BSTR → string ────────────────────────────────────────────────
-				case VarEnum.VT_BSTR:
-					{
-						nint bstr = Marshal.ReadIntPtr(dataPtr);
-						return bstr == 0
-							   ? string.Empty
-							   : Marshal.PtrToStringBSTR(bstr);
-					}
-
-				case VarEnum.VT_VARIANT:
-					{
-						VarEnum innerVt = (VarEnum)Marshal.ReadInt16(dataPtr);
-						return ReadVariant(ptrValue + 8, innerVt);
-					}
-
-				case VarEnum.VT_UNKNOWN:
-				case VarEnum.VT_DISPATCH:
-					{
-						nint punk = Marshal.ReadIntPtr(dataPtr);
-						return Objects.ObjFromPtr(punk);
-					}
-
-				default:
-					{
-						nint unk = Marshal.ReadIntPtr(dataPtr);
-
-						if (unk == 0)
-							return DefaultObject;
-
-						return new ComValue
-						{
-							vt = vtRaw & ~VarEnum.VT_BYREF,
-							Ptr = unk,
-						};
-					}
-			}
+				null => default,
+				string text => new VARIANT { vt = (ushort)VarEnum.VT_BSTR, ptrVal = Marshal.StringToBSTR(text) },
+				bool flag => new VARIANT { vt = (ushort)VarEnum.VT_I4, lVal = flag ? 1 : 0 },
+				int number => new VARIANT { vt = (ushort)VarEnum.VT_I4, lVal = number },
+				long number when number >= int.MinValue && number <= int.MaxValue => new VARIANT { vt = (ushort)VarEnum.VT_I4, lVal = (int)number },
+				long number => new VARIANT { vt = (ushort)VarEnum.VT_I8, llVal = number },
+				uint number => new VARIANT { vt = (ushort)VarEnum.VT_UI4, ulVal = number },
+				ulong number => new VARIANT { vt = (ushort)VarEnum.VT_UI8, ullVal = number },
+				short number => new VARIANT { vt = (ushort)VarEnum.VT_I2, iVal = number },
+				ushort number => new VARIANT { vt = (ushort)VarEnum.VT_UI2, uiVal = number },
+				byte number => new VARIANT { vt = (ushort)VarEnum.VT_UI1, bVal = number },
+				sbyte number => new VARIANT { vt = (ushort)VarEnum.VT_I1, cVal = number },
+				float number => new VARIANT { vt = (ushort)VarEnum.VT_R4, fltVal = number },
+				double number => new VARIANT { vt = (ushort)VarEnum.VT_R8, dblVal = number },
+				decimal number => DecimalVariant(number),
+				DateTime date => new VARIANT { vt = (ushort)VarEnum.VT_DATE, date = date.ToOADate() },
+				_ => new VARIANT { vt = (ushort)VarEnum.VT_DISPATCH, ptrVal = Com.DispatchPointer(value) }
+			};
+			return true;
 		}
 
-		/// <summary>
-		/// Write a primitive value back into a COM VARIANT payload.
-		/// Supports VT_I1/UI1/I2/UI2/I4/UI4/I8/UI8, VT_BOOL, VT_R4, VT_R8/VT_DATE, VT_VARIANT.
-		/// </summary>
-		internal static void WriteVariant(long ptrValue, VarEnum vtRaw, object value)
+		// RawInvoke borrows wrappers; owning callers copy the encoded value.
+		internal static bool TryBorrowArgument(ComValue wrapper, out VARIANT variant)
 		{
-			nint dataPtr = new nint(ptrValue);
-			VarEnum vt = vtRaw & ~VarEnum.VT_BYREF;
-
-			if (value is IPointable ip)
-				value = ip.Ptr;
-
-			switch (vt)
+			var vt = wrapper.vt;
+			if ((vt & (VarEnum.VT_BYREF | VarEnum.VT_ARRAY)) != 0 || vt is VarEnum.VT_DISPATCH or VarEnum.VT_UNKNOWN or VarEnum.VT_BSTR)
 			{
-				// ── Integers ────────────────────────────────────────────────────
-				case VarEnum.VT_I1:
-					// sbyte → marshal as one signed byte
-					sbyte sb = Convert.ToSByte(value);
-					Marshal.WriteByte(dataPtr, unchecked((byte)sb));
-					break;
-
-				case VarEnum.VT_UI1:
-					// byte
-					byte ub = Convert.ToByte(value);
-					Marshal.WriteByte(dataPtr, ub);
-					break;
-
-				case VarEnum.VT_I2:
-					short i2 = Convert.ToInt16(value);
-					Marshal.WriteInt16(dataPtr, i2);
-					break;
-
-				case VarEnum.VT_UI2:
-					ushort ui2 = Convert.ToUInt16(value);
-					// Marshal.WriteInt16 writes a signed short, so reinterpret
-					Marshal.WriteInt16(dataPtr, unchecked((short)ui2));
-					break;
-
-				case VarEnum.VT_I4:
-				case VarEnum.VT_INT:
-					int i4 = Convert.ToInt32(value);
-					Marshal.WriteInt32(dataPtr, i4);
-					break;
-
-				case VarEnum.VT_UI4:
-				case VarEnum.VT_UINT:
-					uint ui4 = Convert.ToUInt32(value);
-					Marshal.WriteInt32(dataPtr, unchecked((int)ui4));
-					break;
-
-				case VarEnum.VT_I8:
-					long i8 = Convert.ToInt64(value);
-					Marshal.WriteInt64(dataPtr, i8);
-					break;
-
-				case VarEnum.VT_UI8:
-					ulong ui8 = Convert.ToUInt64(value);
-					// Marshal.WriteInt64 writes signed; reinterpret
-					Marshal.WriteInt64(dataPtr, unchecked((long)ui8));
-					break;
-
-				// ── Boolean ────────────────────────────────────────────────────
-				case VarEnum.VT_BOOL:
-					// VARIANT_BOOL is a 16-bit short: -1 (TRUE) or 0 (FALSE)
-					bool b = Convert.ToBoolean(value);
-					short vb = (short)(b ? -1 : 0);
-					Marshal.WriteInt16(dataPtr, vb);
-					break;
-
-				// ── Floating-point / Date ─────────────────────────────────────
-				case VarEnum.VT_R4:
-					// store 4-byte float
-					float f = Convert.ToSingle(value);
-					byte[] fb = BitConverter.GetBytes(f);
-					Marshal.Copy(fb, 0, dataPtr, fb.Length);
-					break;
-
-				case VarEnum.VT_R8:
-				case VarEnum.VT_DATE:
-					// store 8-byte double
-					double d = Convert.ToDouble(value);
-					byte[] db = BitConverter.GetBytes(d);
-					Marshal.Copy(db, 0, dataPtr, db.Length);
-					break;
-
-				// ── BSTR → string ─────────────────────────────────────────────────
-				case VarEnum.VT_BSTR:
-					{
-						// free old BSTR
-						nint oldBstr = Marshal.ReadIntPtr(dataPtr);
-
-						if (oldBstr != 0)
-							WindowsAPI.SysFreeString(oldBstr);
-
-						// allocate new BSTR (null → zero pointer)
-						string s = value as string;
-						IntPtr newBstr = string.IsNullOrEmpty(s)
-										 ? IntPtr.Zero
-										 : Marshal.StringToBSTR(s);
-						Marshal.WriteIntPtr(dataPtr, newBstr);
-					}
-					break;
-
-				// ── COM interfaces → IUnknown pointer ─────────────────────────────
-				case VarEnum.VT_DISPATCH:
-				case VarEnum.VT_UNKNOWN:
-					{
-						// release old pointer
-						nint oldPtr = Marshal.ReadIntPtr(dataPtr);
-
-						if (oldPtr != 0)
-							_ = Marshal.Release(oldPtr);
-
-						// get new pointer (allow passing either IntPtr or RCW)
-
-						nint newPtr = value switch
-						{
-							long ptr => (nint)ptr,
-							null => 0,
-							_ => vt == VarEnum.VT_DISPATCH ? Com.DispatchPointer(value) : Marshal.GetIUnknownForObject(value)
-						};
-
-						Marshal.WriteIntPtr(dataPtr, newPtr);
-					}
-					break;
-
-				case VarEnum.VT_VARIANT:
-					{
-						// 1) Choose the right VarEnum for "value"
-						VarEnum innerVt;
-
-						if (value is bool flag)
-							value = flag ? 1L : 0L;   // an integer in an untyped slot, as in ValueToVariant
-
-						if (value is string)
-						{
-							innerVt = VarEnum.VT_BSTR;
-						}
-						else if (value is KeysharpObject)
-						{
-							innerVt = VarEnum.VT_DISPATCH;
-						}
-						else if (value is ComObjArray coa)
-						{
-							innerVt = VarEnum.VT_ARRAY | coa._baseType;
-						}
-						else if (value is double)
-						{
-							innerVt = VarEnum.VT_R8;
-						}
-						else if (value is long l)
-						{
-							innerVt = (l >= int.MinValue && l <= int.MaxValue)
-									  ? VarEnum.VT_I4
-									  : VarEnum.VT_I8;
-						}
-						else
-						{
-							throw new NotSupportedException(
-								$"Cannot wrap a {value?.GetType().Name} as VT_VARIANT");
-						}
-
-						// 2) Clear previous contents, release BSTRs etc
-						_ = VariantHelper.VariantClear(dataPtr);
-						// VariantClear leaves the payload behind; the scalar writer must not release it as the new type.
-						Marshal.WriteInt64(dataPtr + 8, 0);
-						// 3) Write the VT and clear the four reserved words
-						//    [vt:2][res1:2][res2:2][res3:2]  <-- totals 8 bytes header
-						Marshal.WriteInt16(dataPtr, (short)innerVt);
-						// 4) Write the payload into the union at offset 8
-						//    we simply recurse into our existing writer,
-						//    passing the address + 8 and the bare innerVt
-						WriteVariant(ptrValue + 8, innerVt, value);
-					}
-					break;
-
-				// ── SAFEARRAYs (VT_ARRAY | T) ─────────────────────────────────────────────
-				case var _ when (vt & VarEnum.VT_ARRAY) != 0:
-					{
-						// vt holds VT_ARRAY|elemVT, payload is a SAFEARRAY*
-						VarEnum elemVt = vt & ~VarEnum.VT_ARRAY;
-
-						nint psaToStore = 0;
-
-						if (value is ComObjArray coa)
-						{
-							// Defensive: if element type differs, still allow but clone regardless.
-							// Clone so that the VARIANT owns its *own* SAFEARRAY (avoids double-destroy).
-							int hr = OleAuto.SafeArrayCopy(coa._psa, out nint psaCopy);
-							if (hr < 0)
-							{
-								_ = Errors.ErrorOccurred(new OSError("SafeArrayCopy failed.", hr), 0);
-								return;
-							}
-
-							psaToStore = psaCopy;
-						}
-						else if (value is object[] managedArr)
-						{
-							// Build a fresh SAFEARRAY (default to VARIANT elements; robust for mixed content)
-							VARIANT vArr = CreateVariantFromManagedArray(managedArr, VarEnum.VT_VARIANT);
-							psaToStore = vArr.ptrVal;
-							// We just need the SAFEARRAY* from vArr; prevent double-free by not clearing vArr.
-							// (The array will now be owned by the receiver VARIANT we’re writing to.)
-						}
-						else if (value is long lp)
-						{
-							psaToStore = (nint)lp; // caller gave us a raw SAFEARRAY*
-						}
-						else if (value is nint ip2)
-						{
-							psaToStore = ip2;
-						}
-						else
-						{
-							_ = Errors.ErrorOccurred($"Cannot write VT_ARRAY payload from {value?.GetType().Name}.");
-							return;
-						}
-
-						Marshal.WriteIntPtr(dataPtr, psaToStore);
-						break;
-					}
-				// ── Unsupported ────────────────────────────────────────────────
-				default:
-					_ = Errors.ErrorOccurred($"Writing VARTYPE {vt} is not supported.");
-					return;
+				variant = new VARIANT { vt = (ushort)vt, ptrVal = wrapper.Ptr switch { long address => (nint)address, nint address => address, _ => 0 } };
+				return true;
 			}
+			if (vt == VarEnum.VT_VARIANT)
+				return TryToVariant(wrapper.Ptr, out variant);
+			if (vt is VarEnum.VT_EMPTY or VarEnum.VT_NULL)
+			{
+				variant = new VARIANT { vt = (ushort)vt };
+				return true;
+			}
+			// An explicitly tagged integer carries native bits, rather than a number to range-check or coerce.
+			if (wrapper.Ptr is long integer && vt is VarEnum.VT_I1 or VarEnum.VT_UI1 or VarEnum.VT_I2 or VarEnum.VT_UI2
+				or VarEnum.VT_I4 or VarEnum.VT_UI4 or VarEnum.VT_INT or VarEnum.VT_UINT or VarEnum.VT_I8 or VarEnum.VT_UI8 or VarEnum.VT_ERROR or VarEnum.VT_CY)
+			{
+				variant = new VARIANT { vt = (ushort)vt, llVal = integer };
+				return true;
+			}
+			// These payloads have already been normalized by ComValue.Ptr.
+			if (vt == VarEnum.VT_BOOL && wrapper.Ptr is bool flag)
+				variant = new VARIANT { vt = (ushort)vt, boolVal = (short)(flag ? -1 : 0) };
+			else if (vt is VarEnum.VT_R8 or VarEnum.VT_DATE && wrapper.Ptr is double number)
+				variant = new VARIANT { vt = (ushort)vt, dblVal = number };
+			else
+				return TryToTypedVariant(wrapper.Ptr, vt, out variant);
+			return true;
 		}
+
+		internal static bool TryToTypedVariant(object value, VarEnum type, out VARIANT result)
+		{
+			result = default;
+			if (type == VarEnum.VT_VARIANT)
+				return TryToVariant(value, out result);
+			if (type == VarEnum.VT_BOOL)
+			{
+				result = new VARIANT { vt = (ushort)type, boolVal = (short)(value.Ab() ? -1 : 0) };
+				return true;
+			}
+			if (value is long integer && type is VarEnum.VT_I1 or VarEnum.VT_UI1 or VarEnum.VT_I2 or VarEnum.VT_UI2
+				or VarEnum.VT_I4 or VarEnum.VT_UI4 or VarEnum.VT_INT or VarEnum.VT_UINT or VarEnum.VT_I8 or VarEnum.VT_UI8 or VarEnum.VT_ERROR or VarEnum.VT_CY)
+			{
+				result = new VARIANT { vt = (ushort)type, llVal = type == VarEnum.VT_CY ? unchecked(integer * 10000) : integer };
+				return true;
+			}
+			if (type is VarEnum.VT_DISPATCH or VarEnum.VT_UNKNOWN && value == null)
+				result = new VARIANT { vt = (ushort)type };
+			else
+			{
+				if (!TryToVariant(value, out var source)) return false;
+				if (source.vt == (ushort)type)
+				{
+					result = source;
+					return true;
+				}
+				VARIANT converted = default;
+				try
+				{
+					var hr = VariantChangeTypeEx((nint)(&converted), (nint)(&source), Com.LOCALE_USER_DEFAULT, 0, (ushort)type);
+					if (hr < 0)
+					{
+						_ = VariantClear(ref converted);
+						_ = Errors.OSErrorOccurredForHR(hr);
+						return false;
+					}
+					result = converted;
+				}
+				finally { _ = VariantClear(ref source); }
+			}
+			return true;
+		}
+
+		internal static object[] SafeArrayElements(Array array, HashSet<Array> enclosing = null)
+		{
+			var elements = array.array.ToArray();
+			for (var i = 0; i < elements.Length; i++)
+				if (elements[i] is Array inner && (enclosing ??= new(ReferenceEqualityComparer.Instance) { array }).Add(inner))
+				{
+					elements[i] = SafeArrayElements(inner, enclosing);
+					_ = enclosing.Remove(inner);
+				}
+			return elements;
+		}
+
+		internal static bool TryCreateVariantFromManagedArray(System.Array array, VarEnum type, out VARIANT result)
+		{
+			result = default;
+			if (type == VarEnum.VT_EMPTY) type = VarEnum.VT_VARIANT;
+			if (array.Rank != 1)
+			{
+				_ = Errors.ValueErrorOccurred("A CLR SAFEARRAY argument must have one dimension.");
+				return false;
+			}
+			var pointer = OleAuto.SafeArrayCreateVectorEx((ushort)type, 0, (uint)array.Length, 0);
+			if (pointer == 0)
+			{
+				_ = Errors.OSErrorOccurredForHR(unchecked((int)0x8007000E));
+				return false;
+			}
+			var complete = false;
+			try
+			{
+				var hr = OleAuto.SafeArrayAccessData(pointer, out var data);
+				if (hr < 0)
+				{
+					_ = Errors.OSErrorOccurredForHR(hr);
+					return false;
+				}
+				try
+				{
+					var stride = (int)OleAuto.SafeArrayGetElemsize(pointer);
+					var lower = array.GetLowerBound(0);
+					for (var i = 0; i < array.Length; i++)
+					{
+						if (!TryToTypedVariant(array.GetValue(lower + i), type, out var element)) return false;
+						WriteStorage(data + i * stride, type, in element);
+					}
+				}
+				finally { _ = OleAuto.SafeArrayUnaccessData(pointer); }
+				complete = true;
+				result = new VARIANT { vt = (ushort)(VarEnum.VT_ARRAY | type), ptrVal = pointer };
+				return true;
+			}
+			finally { if (!complete) _ = OleAuto.SafeArrayDestroy(pointer); }
+		}
+
+		internal static bool TryCreateByRefVariant(object value, VarEnum type, out VARIANT result)
+		{
+			result = default;
+			if (!TryToTypedVariant(value, type, out var inner)) return false;
+			nint cell = 0;
+			try
+			{
+				cell = Marshal.AllocHGlobal(sizeof(VARIANT));
+				WriteStorage(cell, type, in inner);
+				result = new VARIANT { vt = (ushort)(VarEnum.VT_BYREF | type), ptrVal = cell };
+				return true;
+			}
+			catch { Marshal.FreeHGlobal(cell); _ = VariantClear(ref inner); throw; }
+		}
+
+		internal static void WriteByRefVariant(in VARIANT variant, object value)
+		{
+			var type = (VarEnum)variant.vt;
+			if ((type & VarEnum.VT_BYREF) == 0 || variant.ptrVal == 0)
+				return;
+			type &= ~VarEnum.VT_BYREF;
+			if (!TryToTypedVariant(value, type, out var replacement)) return;
+			var previous = ReadStorage(variant.ptrVal, type);
+			var hr = VariantClear(ref previous);
+			if (hr < 0)
+			{
+				_ = VariantClear(ref replacement);
+				_ = Errors.OSErrorOccurredForHR(hr);
+				return;
+			}
+			WriteStorage(variant.ptrVal, type, in replacement);
+		}
+
+		internal static void CleanupByRefVariant(in VARIANT variant)
+		{
+			if (((VarEnum)variant.vt & VarEnum.VT_BYREF) == 0 || variant.ptrVal == 0)
+				return;
+			var value = ReadStorage(variant.ptrVal, (VarEnum)variant.vt & ~VarEnum.VT_BYREF);
+			_ = VariantClear(ref value);
+			Marshal.FreeHGlobal(variant.ptrVal);
+		}
+
+		// Adapters between a VARIANT and a typed cell; conversion stays in FromVariant and TryToTypedVariant.
+		internal static object FromStorage(nint data, VarEnum type, Ownership ownership)
+		{
+			if (type == VarEnum.VT_VARIANT)
+				return FromVariant(ref *(VARIANT*)data, ownership);
+			var value = ReadStorage(data, type);
+			var result = FromVariant(ref value, ownership);
+			if (ownership == Ownership.Owned && value.vt == 0 && IsPointerType(type))
+				*(nint*)data = 0;
+			return result;
+		}
+
+		internal static VARIANT ReadStorage(nint data, VarEnum type)
+		{
+			if (type == VarEnum.VT_VARIANT) return *(VARIANT*)data;
+			VARIANT value = default;
+			var size = StorageSize(type);
+			var destination = type == VarEnum.VT_DECIMAL ? (byte*)(&value) : (byte*)(&value) + 8;
+			System.Buffer.MemoryCopy((void*)data, destination, sizeof(VARIANT), size);
+			value.vt = (ushort)type;
+			return value;
+		}
+
+		internal static void WriteStorage(nint data, VarEnum type, in VARIANT value)
+		{
+			fixed (VARIANT* source = &value)
+				System.Buffer.MemoryCopy(type is VarEnum.VT_VARIANT or VarEnum.VT_DECIMAL ? (byte*)source : (byte*)source + 8,
+					(void*)data, StorageSize(type), StorageSize(type));
+			if (type == VarEnum.VT_DECIMAL) *(ushort*)data = 0;
+		}
+
+		internal static int StorageSize(VarEnum type) => type switch
+		{
+			VarEnum.VT_I1 or VarEnum.VT_UI1 => 1,
+			VarEnum.VT_I2 or VarEnum.VT_UI2 or VarEnum.VT_BOOL => 2,
+			VarEnum.VT_I4 or VarEnum.VT_UI4 or VarEnum.VT_INT or VarEnum.VT_UINT or VarEnum.VT_ERROR or VarEnum.VT_R4 => 4,
+			VarEnum.VT_I8 or VarEnum.VT_UI8 or VarEnum.VT_R8 or VarEnum.VT_DATE or VarEnum.VT_CY => 8,
+			VarEnum.VT_DECIMAL => 16,
+			VarEnum.VT_VARIANT => sizeof(VARIANT),
+			_ when IsPointerType(type) => IntPtr.Size,
+			_ => throw new NotSupportedException($"COM storage for {type} is not supported.")
+		};
+
+		private static bool IsPointerType(VarEnum type) => (type & VarEnum.VT_ARRAY) != 0 || type is VarEnum.VT_BSTR or VarEnum.VT_DISPATCH or VarEnum.VT_UNKNOWN;
+
+		private static VARIANT DecimalVariant(decimal number)
+		{
+			Span<int> bits = stackalloc int[4];
+			decimal.GetBits(number, bits);
+			return new VARIANT { vt = (ushort)VarEnum.VT_DECIMAL, decimalScale = (byte)(bits[3] >> 16), decimalSign = (byte)(bits[3] >> 24),
+				decimalHigh = (uint)bits[2], ullVal = (uint)bits[0] | ((ulong)(uint)bits[1] << 32) };
+		}
+
+		private static decimal ReadDecimal(in VARIANT variant) => new((int)variant.ullVal, (int)(variant.ullVal >> 32), (int)variant.decimalHigh, variant.decimalSign != 0, variant.decimalScale);
 
 		internal static Type VarEnumToCLRType(VarEnum vt)
 		{
@@ -1403,6 +497,7 @@ namespace Keysharp.Builtins.COM
 			if (t == typeof(ulong)) return VarEnum.VT_UI8;
 			if (t == typeof(float)) return VarEnum.VT_R4;
 			if (t == typeof(double)) return VarEnum.VT_R8;
+			if (t == typeof(decimal)) return VarEnum.VT_DECIMAL;
 			if (t == typeof(DateTime)) return VarEnum.VT_DATE;
 			if (t == typeof(object)) return VarEnum.VT_VARIANT;
 			// Fallback for COM-ref types:
@@ -1412,166 +507,6 @@ namespace Keysharp.Builtins.COM
 			return VarEnum.VT_EMPTY;
 		}
 	}
-
-	internal static class ComDebug
-	{
-		static string Flags(VarEnum vt)
-		{
-			var parts = new List<string>();
-			if ((vt & VarEnum.VT_BYREF) != 0) parts.Add("BYREF");
-			if ((vt & VarEnum.VT_ARRAY) != 0) parts.Add("ARRAY");
-			parts.Add((vt & ~(VarEnum.VT_BYREF | VarEnum.VT_ARRAY)).ToString());
-			return string.Join("|", parts);
-		}
-
-		public static void DumpVariant(string label, Keysharp.Builtins.COM.VARIANT v)
-		{
-			var vt = (VarEnum)v.vt;
-			System.Diagnostics.Debug.WriteLine($"{label}: vt=0x{v.vt:X4} ({Flags(vt)})");
-
-			// --- BYREF cases ---
-			if ((vt & VarEnum.VT_BYREF) != 0)
-			{
-				var baseVt = vt & ~VarEnum.VT_BYREF;
-
-				// BYREF SAFEARRAY: ptrVal is SAFEARRAY**
-				if ((baseVt & VarEnum.VT_ARRAY) != 0)
-				{
-					nint ppsa = v.ptrVal;
-					nint psa = ppsa != 0 ? Marshal.ReadIntPtr(ppsa) : 0;
-					System.Diagnostics.Debug.WriteLine($"  BYREF SAFEARRAY** ppsa=0x{(long)ppsa:X}, psa=0x{(long)psa:X}");
-					DumpSafeArray("  ", psa, baseVt & ~VarEnum.VT_ARRAY);
-					return;
-				}
-
-				// BYREF|VARIANT: ptrVal points at an inner VARIANT
-				if ((baseVt == VarEnum.VT_VARIANT) && v.ptrVal != 0)
-				{
-					var inner = Marshal.PtrToStructure<Keysharp.Builtins.COM.VARIANT>(v.ptrVal);
-					DumpVariant("  *inner", inner);
-					return;
-				}
-
-				// BYREF scalar/BSTR/IDispatch/IUnknown
-				System.Diagnostics.Debug.WriteLine($"  BYREF payload cell: 0x{(long)v.ptrVal:X} for base {baseVt}");
-				return;
-			}
-
-			// --- By-value SAFEARRAY ---
-			if ((vt & VarEnum.VT_ARRAY) != 0)
-			{
-				nint psa = v.ptrVal;
-				System.Diagnostics.Debug.WriteLine($"  SAFEARRAY* parray=0x{(long)psa:X}");
-				DumpSafeArray("  ", psa, vt & ~VarEnum.VT_ARRAY);
-				return;
-			}
-
-			// --- Scalars / pointers ---
-			switch (vt)
-			{
-				case VarEnum.VT_BSTR:
-					{
-						var s = v.ptrVal == 0 ? "" : Marshal.PtrToStringBSTR(v.ptrVal);
-						var prev = s is null ? "null" : (s.Length > 80 ? s.Substring(0, 80) + "…" : s);
-						System.Diagnostics.Debug.WriteLine($"  BSTR=\"{prev}\"");
-						break;
-					}
-				case VarEnum.VT_DISPATCH:
-				case VarEnum.VT_UNKNOWN:
-					System.Diagnostics.Debug.WriteLine($"  COM ptr=0x{(long)v.ptrVal:X}");
-					break;
-				default:
-					System.Diagnostics.Debug.WriteLine($"  scalar payload at union: 0x{(long)v.llVal:X}");
-					break;
-			}
-		}
-
-		static void DumpSafeArray(string indent, nint psa, VarEnum elemFromHeader)
-		{
-			if (psa == 0)
-			{
-				System.Diagnostics.Debug.WriteLine($"{indent}(psa is NULL)");
-				return;
-			}
-
-			// Element VARTYPE from array header
-			int hr = Keysharp.Builtins.COM.OleAuto.SafeArrayGetVartype(psa, out ushort vtElemHdrRaw);
-			var vtElemHdr = (VarEnum)vtElemHdrRaw;
-			int dims = Keysharp.Builtins.COM.OleAuto.SafeArrayGetDim(psa);
-
-			System.Diagnostics.Debug.WriteLine($"{indent}elemVT(header)=0x{vtElemHdrRaw:X4} ({vtElemHdr}), dims={dims}");
-
-			// Bounds
-			for (uint d = 1; d <= dims; d++)
-			{
-				_ = Keysharp.Builtins.COM.OleAuto.SafeArrayGetLBound(psa, d, out int lb);
-				_ = Keysharp.Builtins.COM.OleAuto.SafeArrayGetUBound(psa, d, out int ub);
-				System.Diagnostics.Debug.WriteLine($"{indent}dim{d}: [{lb}..{ub}] (len={ub - lb + 1})");
-			}
-
-			// Peek first element’s VT (especially useful for VT_VARIANT arrays)
-			if (dims == 1)
-			{
-				_ = Keysharp.Builtins.COM.OleAuto.SafeArrayGetLBound(psa, 1, out int lb);
-				_ = Keysharp.Builtins.COM.OleAuto.SafeArrayGetUBound(psa, 1, out int ub);
-				int count = ub - lb + 1;
-				if (count > 0)
-				{
-					var vtElem = vtElemHdr;
-					if (vtElem == VarEnum.VT_VARIANT)
-					{
-						// Access raw data and read first VARIANT
-						hr = Keysharp.Builtins.COM.OleAuto.SafeArrayAccessData(psa, out nint pData);
-						if (hr >= 0)
-						{
-							try
-							{
-								var elem0 = Marshal.PtrToStructure<Keysharp.Builtins.COM.VARIANT>(pData);
-								System.Diagnostics.Debug.WriteLine($"{indent}elem[0] vt=0x{elem0.vt:X4} ({(VarEnum)elem0.vt})");
-								// Optional: preview BSTR
-								if ((VarEnum)elem0.vt == VarEnum.VT_BSTR && elem0.ptrVal != 0)
-								{
-									var s = Marshal.PtrToStringBSTR(elem0.ptrVal) ?? "";
-									var prev = s.Length > 80 ? s.Substring(0, 80) + "…" : s;
-									System.Diagnostics.Debug.WriteLine($"{indent}elem[0] BSTR=\"{prev}\"");
-								}
-							}
-							finally
-							{
-								_ = Keysharp.Builtins.COM.OleAuto.SafeArrayUnaccessData(psa);
-							}
-						}
-						else
-						{
-							System.Diagnostics.Debug.WriteLine($"{indent}SafeArrayAccessData failed: hr=0x{hr:X8}");
-						}
-					}
-					else
-					{
-						// For typed arrays we know element VT; still try reading value via GetElement for convenience
-						try
-						{
-							int[] idx = { lb };
-							_ = Keysharp.Builtins.COM.OleAuto.SafeArrayGetElement(psa, idx, out object pv);
-							System.Diagnostics.Debug.WriteLine($"{indent}elem[0] (typed {vtElem}) = {Preview(pv)}");
-						}
-						catch (Exception ex)
-						{
-							System.Diagnostics.Debug.WriteLine($"{indent}elem[0] read failed: {ex.Message}");
-						}
-					}
-				}
-			}
-		}
-
-		static string Preview(object pv)
-		{
-			if (pv is string s) return s.Length > 80 ? s.Substring(0, 80) + "…" : s;
-			if (pv is null) return "null";
-			return pv.ToString();
-		}
-	}
-
 	/// <summary>
 	/// Describes the bounds (element count and lower bound) of a single dimension of a SAFEARRAY.
 	/// </summary>
@@ -1653,30 +588,17 @@ namespace Keysharp.Builtins.COM
 		[LibraryImport(WindowsAPI.oleaut, EntryPoint = "SafeArrayDestroy")]
 		public static partial int SafeArrayDestroy(
 			nint psa);
-		/// <summary>
-		/// Retrieves an element from a SafeArray by index.
-		/// </summary>
-		[DllImport(WindowsAPI.oleaut)]
-		public static extern int SafeArrayGetElement(
-			nint psa,
-			[In] int[] rgIndices,
-			out object pv);
-		/// <summary>
-		/// Stores an element into a SafeArray by index.
-		/// </summary>
-		[DllImport(WindowsAPI.oleaut, PreserveSig = true)]
-		public static extern int SafeArrayPutElement(
-			nint psa,
-			[In] int[] rgIndices,
-			[MarshalAs(UnmanagedType.Struct)] object pv
-		);
+		[LibraryImport(WindowsAPI.oleaut)]
+		internal static partial int SafeArrayLock(nint psa);
 
-		// Raw-pointer version: for all non-VARIANT base types.
-		[LibraryImport(WindowsAPI.oleaut, EntryPoint = "SafeArrayGetElement")]
-		public static partial int SafeArrayGetElementPtr(nint psa, [In] int[] rgIndices, IntPtr pv);
+		[LibraryImport(WindowsAPI.oleaut)]
+		internal static partial int SafeArrayUnlock(nint psa);
 
-		[LibraryImport(WindowsAPI.oleaut, EntryPoint = "SafeArrayPutElement")]
-		public static partial int SafeArrayPutElementPtr(nint psa, [In] int[] rgIndices, IntPtr pv);
+		[LibraryImport(WindowsAPI.oleaut)]
+		internal static partial int SafeArrayPtrOfIndex(nint psa, [In] int[] indices, out nint data);
+
+		[LibraryImport(WindowsAPI.oleaut)]
+		internal static partial uint SafeArrayGetElemsize(nint psa);
 
 		[LibraryImport(WindowsAPI.oleaut)]
 		public static partial int SysStringLen(nint bstr);
