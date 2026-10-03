@@ -1,8 +1,5 @@
 using Keysharp.Builtins;
 using KsDebug = Keysharp.Builtins.Debug;
-// PEReader.GetMetadataReader() is an extension method declared in this namespace, so it must be imported by name.
-using System.Reflection.Metadata;
-
 namespace Keysharp.Internals.Os
 {
 	/// <summary>
@@ -51,6 +48,7 @@ namespace Keysharp.Internals.Os
 		/// re-loading and re-reading metadata for work already done.
 		/// </summary>
 		private static readonly Dictionary<string, bool> applied = new(StringComparer.OrdinalIgnoreCase);
+		private static readonly Dictionary<string, Assembly[]> loadedByPackage = new(StringComparer.OrdinalIgnoreCase);
 		/// <summary>
 		/// Resets bookkeeping so a test starts from a known state. Package content and already-loaded assemblies are
 		/// untouched — .NET cannot unload them.
@@ -61,7 +59,11 @@ namespace Keysharp.Internals.Os
 			{
 				requested.Clear();
 				applied.Clear();
+				loadedByPackage.Clear();
 				assembliesByPackage.Clear();
+				managedByName.Clear();
+				nativeByName.Clear();
+				label = "#Package";
 				PackageResolver.ResetCounters();
 			}
 		}
@@ -135,6 +137,9 @@ namespace Keysharp.Internals.Os
 					error = $"{label}: '{providerName}' is not a valid package provider name";
 					return null;
 				}
+				var key = PackageKey(providerName, id);
+				if (applied.GetValueOrDefault(key) && string.IsNullOrWhiteSpace(version))
+					return GetAppliedAssemblies(key, id, optional, out error);
 
 				var scriptAssembly = Script.TheScript?.ProgramType?.Assembly ?? Assembly.GetEntryAssembly();
 
@@ -168,32 +173,31 @@ namespace Keysharp.Internals.Os
 					error = $"{label}: {verr} for package '{id}'";
 					return null;
 				}
+				if (applied.GetValueOrDefault(key) && requested.Any(request =>
+					PackageKey(request.Provider, request.Id).Equals(key, StringComparison.OrdinalIgnoreCase)
+					&& request.Version.Equals(range, StringComparison.OrdinalIgnoreCase)))
+					return GetAppliedAssemblies(key, id, optional, out error);
 
 				if (!Add([new PackageResolver.PackageRef(id, range, optional, providerName)], out error))
 					return null;
 
-				// Absent, or present but empty (a package whose only asset for this framework is the `_._` placeholder):
-				// either way there is nothing to hand back.
-				if (!assembliesByPackage.TryGetValue(PackageKey(providerName, id), out var paths) || paths.Count == 0)
-				{
-					if (!optional)
-						error = $"{label}: '{id}' resolved but contributed no assemblies for this framework.";
-
-					return null;
-				}
-
-				var loaded = new List<Assembly>(paths.Count);
-
-				foreach (var path in paths)
-				{
-					// Apply already loaded these; re-resolving by path is how the Assembly objects are recovered. An
-					// identity the shared framework also ships throws here, exactly as it does in Apply, and is benign.
-					try { loaded.Add(AssemblyLoadContext.Default.LoadFromAssemblyPath(path)); }
-					catch (FileLoadException) { }
-				}
-
-				return loaded.Count == 0 ? null : loaded.ToArray();
+				return GetAppliedAssemblies(key, id, optional, out error);
 			}
+		}
+
+		private static Assembly[] GetAppliedAssemblies(string key, string id, bool optional, out string error)
+		{
+			error = null;
+			if (!optional)
+				for (var i = 0; i < requested.Count; i++)
+					if (PackageKey(requested[i].Provider, requested[i].Id).Equals(key, StringComparison.OrdinalIgnoreCase))
+						requested[i] = requested[i] with { Optional = false };
+			if (!assembliesByPackage.TryGetValue(key, out var paths) || paths.Count == 0)
+			{
+				if (!optional) error = $"{label}: '{id}' resolved but contributed no assemblies for this framework.";
+				return null;
+			}
+			return loadedByPackage.TryGetValue(key, out var loaded) && loaded.Length > 0 ? loaded : null;
 		}
 
 		/// <summary>
@@ -278,10 +282,8 @@ namespace Keysharp.Internals.Os
 		// ---- loading ----
 
 		/// <summary>
-		/// Makes a resolved closure usable. Packages the script named itself are loaded now; everything they drag in
-		/// is only *registered*, by reading its type and namespace names out of PE metadata — a dependency is then
-		/// loaded on the first lookup that resolves into it and not before, the same laziness a compiled C# program
-		/// gets from its assembly references (see <c>TypeResolver.RegisterDeferredAssembly</c>).
+		/// Makes a resolved closure usable. Direct packages are loaded; dependencies are registered by path.
+		/// The first lookup miss reads deferred metadata and only a matching type lookup loads the dependency.
 		///
 		/// Re-resolving after a later <c>Clr.LoadPackage</c> replays the same closure, so packages already applied are
 		/// skipped: reloading is idempotent but re-reading every dependency's metadata is not free.
@@ -302,7 +304,7 @@ namespace Keysharp.Internals.Os
 					continue;
 
 				foreach (var path in pkg.Managed.Concat(pkg.Resources))
-					managedByName[ManagedKeyFor(path)] = path;
+					managedByName[pkg.ManagedKeys.GetValueOrDefault(path) ?? ManagedKeyFor(path)] = path;
 
 				foreach (var path in pkg.Native)
 					AddNativeAliases(path);
@@ -310,15 +312,19 @@ namespace Keysharp.Internals.Os
 				// What this package itself contributed, so Clr.LoadPackage can hand back exactly those assemblies
 				// rather than the whole closure.
 				assembliesByPackage[packageKey] = pkg.Managed;
+				var loaded = new List<Assembly>();
 
 				foreach (var path in pkg.Managed)
 				{
-					if (!direct && TryRegisterDeferred(path))
+					if (!direct)
+					{
+						TypeResolver.RegisterDeferredAssembly(path);
 						continue;
+					}
 
 					try
 					{
-						_ = AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
+						loaded.Add(AssemblyLoadContext.Default.LoadFromAssemblyPath(path));
 					}
 					catch (Exception e)
 					{
@@ -338,68 +344,11 @@ namespace Keysharp.Internals.Os
 				// through, and marking it applied any earlier would let a later LoadPackage hand back the partial set
 				// as if it had succeeded.
 				applied[packageKey] = direct;
+				if (direct) loadedByPackage[packageKey] = loaded.ToArray();
 			}
 		}
 
 		private static string PackageKey(string provider, string id) => provider + "\0" + id;
-
-		/// <summary>
-		/// Registers an assembly's public top-level type names with the resolver without loading it. Reading the
-		/// metadata tables directly is what makes deferral worth having: it yields strings out of the metadata heap
-		/// and allocates no <see cref="Type"/> objects, whereas loading would pull the assembly's entire type set into
-		/// the resolver's index (via <c>GetTypes()</c>) for a dependency the script may never touch.
-		///
-		/// Nested types are intentionally skipped. `Clr` walks dotted names, which never match the <c>Outer+Inner</c>
-		/// spelling anyway, and reaching a nested type requires naming its declaring type first — which materializes
-		/// the assembly and re-indexes it properly.
-		///
-		/// Returns false if the file has no managed metadata or cannot be read, in which case the caller falls back
-		/// to loading it.
-		/// </summary>
-		private static bool TryRegisterDeferred(string path)
-		{
-			try
-			{
-				using var fs = File.OpenRead(path);
-				using var pe = new System.Reflection.PortableExecutable.PEReader(fs);
-
-				if (!pe.HasMetadata)
-					return false;
-
-				var mr = pe.GetMetadataReader();
-				var names = new List<(string, string)>(mr.TypeDefinitions.Count);
-
-				foreach (var handle in mr.TypeDefinitions)
-				{
-					var td = mr.GetTypeDefinition(handle);
-
-					if ((td.Attributes & TypeAttributes.VisibilityMask) != TypeAttributes.Public)
-						continue;
-
-					names.Add((mr.GetString(td.Namespace), mr.GetString(td.Name)));
-				}
-
-				// Type forwarders: names this assembly publicly answers to even though the type lives elsewhere.
-				// Loading it is still the right response, since the forward is what redirects the lookup.
-				foreach (var handle in mr.ExportedTypes)
-				{
-					var et = mr.GetExportedType(handle);
-
-					if (et.IsForwarder)
-						names.Add((mr.GetString(et.Namespace), mr.GetString(et.Name)));
-				}
-
-				if (names.Count == 0)
-					return false;
-
-				TypeResolver.RegisterDeferredAssembly(path, names);
-				return true;
-			}
-			catch (Exception)
-			{
-				return false;
-			}
-		}
 
 		/// <summary>
 		/// Registers the spellings a P/Invoke might use for one native file: DllImport("e_sqlite3") and

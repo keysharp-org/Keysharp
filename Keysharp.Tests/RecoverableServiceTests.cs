@@ -39,7 +39,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
-		public void FailureBudget()
+		public void RetryAfterBurst()
 		{
 			var attempts = 0;
 			var clock = new ManualTimeProvider();
@@ -57,11 +57,11 @@ namespace Keysharp.Tests
 			}
 
 			Assert.That(service.TryAcquire(), Is.Null);
-			Assert.That(attempts, Is.EqualTo(3));
+			Assert.That(attempts, Is.EqualTo(4));
 
 			service.Rearm();
 			Assert.That(service.TryAcquire(), Is.Null);
-			Assert.That(attempts, Is.EqualTo(4));
+			Assert.That(attempts, Is.EqualTo(5));
 		}
 
 		[Test]

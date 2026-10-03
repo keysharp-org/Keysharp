@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using static Keysharp.Internals.Os.EmbeddedExtraction;
 
 namespace Keysharp.Internals.Os
 {
@@ -18,6 +19,8 @@ namespace Keysharp.Internals.Os
 
 			/// <summary>A package/version-scoped path used both beside full artifacts and inside minimal ones.</summary>
 			[JsonPropertyName("deployed")] public string Deployed { get; set; }
+			[JsonPropertyName("assembly")] public string AssemblyName { get; set; }
+			[JsonPropertyName("culture")] public string Culture { get; set; }
 		}
 
 		internal sealed class Entry
@@ -67,9 +70,14 @@ namespace Keysharp.Internals.Os
 			foreach (var source in sources)
 			{
 				var relative = RelativeAssetPath(package, source);
+				var identity = kind is "managed" or "resources"
+					? package.ManagedKeys.GetValueOrDefault(source) ?? NuGetPackageLoader.ManagedKeyFor(source) : null;
+				var separator = identity?.IndexOf('\0') ?? -1;
 				result.Add(new Asset
 				{
 					Source = source,
+					AssemblyName = separator < 0 ? null : identity[..separator],
+					Culture = separator < 0 ? null : identity[(separator + 1)..],
 					Deployed = Path.Combine(".keysharp", "packages", package.Provider.ToLowerInvariant(),
 						IdentitySegment(package.Id), IdentitySegment(package.Version), kind, relative)
 				});
@@ -171,38 +179,51 @@ namespace Keysharp.Internals.Os
 				Keysharp.Builtins.Accessors.A_ScriptDir as string,
 				Path.GetDirectoryName(Environment.ProcessPath ?? Assembly.GetEntryAssembly()?.Location ?? "")
 			}.Where(p => !string.IsNullOrEmpty(p)).Distinct(PathComparer).ToArray();
+			var extractedRoots = new HashSet<string>(PathComparer);
 
-			foreach (var entry in Packages)
+			try
 			{
-				var package = new PackageResolver.ResolvedPackage { Provider = entry.Provider, Id = entry.Id, Version = entry.Resolved };
-				var ok = LocateAll(scriptAssembly, besides, entry.Managed, package.Managed)
-						 && LocateAll(scriptAssembly, besides, entry.Resources, package.Resources)
-						 && LocateAll(scriptAssembly, besides, entry.Native, package.Native);
-
-				if (ok)
+				foreach (var entry in Packages)
 				{
-					resolved.Add(package);
-					continue;
+					var package = new PackageResolver.ResolvedPackage { Provider = entry.Provider, Id = entry.Id, Version = entry.Resolved };
+					var ok = LocateAll(scriptAssembly, besides, entry.Managed, package.Managed, extractedRoots, package.ManagedKeys)
+							 && LocateAll(scriptAssembly, besides, entry.Resources, package.Resources, extractedRoots, package.ManagedKeys)
+							 && LocateAll(scriptAssembly, besides, entry.Native, package.Native, extractedRoots);
+
+					if (ok)
+					{
+						resolved.Add(package);
+						continue;
+					}
+
+					if (entry.Optional)
+						continue;
+
+					missing = $"package '{entry.Id} {entry.Resolved}' is incomplete. Rebuild the artifact, or restore it by running the source script.";
+					return false;
 				}
 
-				if (entry.Optional)
-					continue;
-
-				missing = $"package '{entry.Id} {entry.Resolved}' is incomplete. Rebuild the artifact, or restore it by running the source script.";
-				return false;
+				return true;
 			}
-
-			return true;
+			finally
+			{
+				foreach (var root in extractedRoots) ExtractionCache.TouchAndPrune(Path.GetDirectoryName(root), root);
+			}
 		}
 
-		private static bool LocateAll(Assembly scriptAssembly, string[] besides, IEnumerable<Asset> assets, List<string> into)
+		private static bool LocateAll(Assembly scriptAssembly, string[] besides, IEnumerable<Asset> assets, List<string> into,
+			HashSet<string> extractedRoots, Dictionary<string, string> managedKeys = null)
 		{
 			foreach (var asset in assets)
 			{
-				if (TryExtract(scriptAssembly, asset, out var path)
+				if (TryExtract(scriptAssembly, asset, extractedRoots, out var path)
 						|| TryFindDeployed(besides, asset, out path)
 						|| File.Exists(asset.Source) && Set(asset.Source, out path))
+				{
 					into.Add(path);
+					if (managedKeys != null && asset.AssemblyName != null)
+						managedKeys[path] = asset.AssemblyName + "\0" + (asset.Culture ?? "");
+				}
 				else
 					return false;
 			}
@@ -228,7 +249,7 @@ namespace Keysharp.Internals.Os
 			return false;
 		}
 
-		private static bool TryExtract(Assembly assembly, Asset asset, out string path)
+		private static bool TryExtract(Assembly assembly, Asset asset, HashSet<string> extractedRoots, out string path)
 		{
 			path = null;
 
@@ -253,32 +274,8 @@ namespace Keysharp.Internals.Os
 
 				var cacheRoot = Path.Combine(userRoot, "Keysharp", "embedded-packages");
 				var root = Path.Combine(cacheRoot, assembly.ManifestModule.ModuleVersionId.ToString("N"));
-				path = SafePath(root, asset.Deployed);
-
-				if (File.Exists(path))
-				{
-					ExtractionCache.Touch(root);
-					return true;
-				}
-
-				_ = Directory.CreateDirectory(Path.GetDirectoryName(path));
-				var temporary = path + "." + Environment.ProcessId + "." + Guid.NewGuid().ToString("N") + ".tmp";
-
-				try
-				{
-					using (var target = File.Create(temporary))
-						source.CopyTo(target);
-
-					try { File.Move(temporary, path, true); }
-					catch (IOException) when (File.Exists(path)) { }   // another process extracted this asset first
-				}
-				finally
-				{
-					try { File.Delete(temporary); } catch { }
-				}
-
-				// Every build gets its own directory, so each extraction is also when old builds' copies are let go.
-				ExtractionCache.TouchAndPrune(cacheRoot, root);
+				path = EmbeddedExtraction.Extract(source, root, asset.Deployed);
+				extractedRoots.Add(root);
 				return true;
 			}
 			catch
@@ -286,18 +283,6 @@ namespace Keysharp.Internals.Os
 				path = null;
 				return false;
 			}
-		}
-
-		private static string SafePath(string root, string relative)
-		{
-			var fullRoot = Path.GetFullPath(root);
-			var full = Path.GetFullPath(Path.Combine(fullRoot, relative));
-			var prefix = Path.TrimEndingDirectorySeparator(fullRoot) + Path.DirectorySeparatorChar;
-
-			if (!full.StartsWith(prefix, PathComparison))
-				throw new InvalidDataException("A package manifest contains an invalid deployment path.");
-
-			return full;
 		}
 
 		private static bool Set(string value, out string result)

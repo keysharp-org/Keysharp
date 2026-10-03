@@ -32,12 +32,19 @@ namespace Keysharp.Builtins
 
 	internal static class TypeResolver
 	{
+		private static readonly StringComparer DeferredPathComparer =
+			OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+
 		private static readonly ConcurrentDictionary<string, Type> FullNameCache =
 			new(StringComparer.OrdinalIgnoreCase);
 
 		// Simple name → possibly many types (ambiguous across assemblies/namespaces)
-		private static readonly ConcurrentDictionary<string, ConcurrentBag<Type>> SimpleNameIndex =
+		private static readonly Dictionary<string, object> SimpleNameIndex =
 			new(StringComparer.OrdinalIgnoreCase);
+		private static readonly ConcurrentQueue<Assembly> PendingAssemblies = new();
+		private static readonly HashSet<Assembly> IndexedAssemblies = [];
+		private static readonly Dictionary<Assembly, HashSet<string>> AssemblyNamespaces = [];
+		private static readonly HashSet<string> PendingDeferredPaths = new(DeferredPathComparer);
 
 		// Namespaces and namespace prefixes contributed by every indexed assembly; see IsKnownNamespace.
 		private static readonly ConcurrentDictionary<string, byte> NamespaceIndex =
@@ -46,20 +53,8 @@ namespace Keysharp.Builtins
 		private static readonly ConcurrentDictionary<string, byte> TriedAssemblyLoads =
 			new(StringComparer.OrdinalIgnoreCase);
 
-		// ---- Deferred (known-but-not-loaded) assemblies ----
-		//
-		// A compiled C# program gets laziness for free: the compiler recorded an assembly reference for every type the
-		// code names, so the runtime can bind on first use. Name-based lookup through Clr has no such record -- it
-		// searches an index, and an index can only contain types from assemblies that are loaded. Registering an
-		// assembly's type NAMES (read straight from PE metadata, without loading it) restores the missing half: a
-		// lookup can now be answered from names alone, and the assembly is loaded only when a lookup actually hits
-		// it. #Package registers a package's dependencies this way.
-		//
-		// Both the full name and the simple name of every type land in ONE map: they cannot disagree about which
-		// assembly declares a type, and the only key they can share is a namespace-less type, where both would name
-		// the same path anyway. The value is every declaring assembly rather than the first, because all of them must
-		// be materialized before a unique-vs-ambiguous verdict is trustworthy — keeping only the first would make the
-		// answer depend on registration order.
+		// Deferred metadata is read on the first lookup miss. All declaring paths are retained so ambiguity does
+		// not depend on which dependency happened to load first.
 		private static readonly ConcurrentDictionary<string, ConcurrentBag<string>> DeferredNames =
 			new(StringComparer.OrdinalIgnoreCase);
 
@@ -71,14 +66,62 @@ namespace Keysharp.Builtins
 
 		/// <summary>Deferred assemblies that could not be loaded, so a repeat lookup does not retry them forever.</summary>
 		private static readonly ConcurrentDictionary<string, byte> DeferredLoadFailures =
-			new(StringComparer.OrdinalIgnoreCase);
+			new(DeferredPathComparer);
 
 		private static volatile bool _indexed;
 		private static readonly Lock _indexLock = new();
 
 		static TypeResolver()
 		{
-			AppDomain.CurrentDomain.AssemblyLoad += (_, e) => IndexAssemblySafe(e.LoadedAssembly);
+			AppDomain.CurrentDomain.AssemblyLoad += (_, e) => PendingAssemblies.Enqueue(e.LoadedAssembly);
+		}
+
+		internal static void RegisterDeferredAssembly(string path)
+		{
+			_ = DeferredLoadFailures.TryRemove(path, out _);
+			lock (_indexLock)
+				PendingDeferredPaths.Add(path);
+		}
+
+		private static void EnsureDeferredNames()
+		{
+			lock (_indexLock)
+			{
+				List<string> inspected = [];
+				foreach (var path in PendingDeferredPaths)
+				{
+					try
+					{
+						using var stream = File.OpenRead(path);
+						using var pe = new System.Reflection.PortableExecutable.PEReader(stream);
+						if (!pe.HasMetadata)
+						{
+							inspected.Add(path);
+							continue;
+						}
+						var metadata = pe.GetMetadataReader();
+						var names = new List<(string, string)>();
+						foreach (var handle in metadata.TypeDefinitions)
+						{
+							var type = metadata.GetTypeDefinition(handle);
+							if ((type.Attributes & TypeAttributes.VisibilityMask) == TypeAttributes.Public)
+								names.Add((metadata.GetString(type.Namespace), metadata.GetString(type.Name)));
+						}
+						foreach (var handle in metadata.ExportedTypes)
+						{
+							var type = metadata.GetExportedType(handle);
+							if (type.IsForwarder)
+								names.Add((metadata.GetString(type.Namespace), metadata.GetString(type.Name)));
+						}
+						RegisterDeferredAssembly(path, names);
+						inspected.Add(path);
+					}
+					// File sharing and transient IO failures must leave the path available for a later lookup.
+					catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+					catch { inspected.Add(path); }
+				}
+				PendingDeferredPaths.ExceptWith(inspected);
+			}
 		}
 
 		/// <summary>
@@ -107,13 +150,15 @@ namespace Keysharp.Builtins
 		/// </summary>
 		private static bool Materialize(string name)
 		{
+			EnsureDeferredNames();
 			if (!DeferredNames.TryGetValue(name, out var paths))
 				return false;
 
 			var any = false;
 
-			foreach (var path in paths.Distinct())
+			foreach (var path in paths.Distinct(DeferredPathComparer))
 				any |= LoadDeferred(path);
+			EnsureIndex();
 
 			return any;
 		}
@@ -128,11 +173,10 @@ namespace Keysharp.Builtins
 				_ = AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
 				return true;
 			}
+			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return false; }
 			catch (Exception)
 			{
-				// Unloadable (wrong architecture, already present under another path, corrupt). The path is recorded
-				// rather than its names pruned: a ConcurrentBag cannot have entries removed, and every name the
-				// assembly declared points at it, so a lookup would otherwise retry the load on every miss.
+				// Invalid images remain suppressed until the path is registered again.
 				_ = DeferredLoadFailures.TryAdd(path, 0);
 				return false;
 			}
@@ -142,12 +186,9 @@ namespace Keysharp.Builtins
 		internal static IReadOnlyList<Type> GetBySimpleName(string simpleName)
 		{
 			EnsureIndex();
-			if (!SimpleNameIndex.TryGetValue(simpleName, out var bag) || bag == null)
-				return System.Array.Empty<Type>();
-
-			// Distinct in case the same type appears multiple times (rare but possible).
-			// Distinct() is cheap here since the bag is usually small.
-			return bag.Distinct().ToArray();
+			lock (_indexLock)
+				return !SimpleNameIndex.TryGetValue(simpleName, out var value) ? System.Array.Empty<Type>()
+					: value is Type type ? [type] : (Type[])value;
 		}
 
 		/// <summary>
@@ -171,10 +212,8 @@ namespace Keysharp.Builtins
 			// 1) Preferred assemblies first.
 			if (preferredAssemblies != null)
 			{
-				var pref = preferredAssemblies
-					.SelectMany(SafeGetTypes)
-					.Where(x => x.Name.Equals(simpleName, StringComparison.OrdinalIgnoreCase))
-					.Distinct()
+				var pref = GetBySimpleName(simpleName)
+					.Where(x => preferredAssemblies.Contains(x.Assembly))
 					.Take(2)                      // detect ambiguity cheaply
 					.ToArray();
 
@@ -217,7 +256,7 @@ namespace Keysharp.Builtins
 			}
 
 			// 3) Type.GetType (assembly-qualified, or already loaded)
-			t = Type.GetType(fullName, throwOnError: false, ignoreCase: true);
+			t = fullName.IndexOfAny([',', '[', '*', '&']) >= 0 ? Type.GetType(fullName, throwOnError: false, ignoreCase: true) : null;
 			if (t != null) return CacheAndReturn(t);
 
 			// 4) A deferred assembly known to declare this exact type. Checked before the prefix guessing below
@@ -232,7 +271,7 @@ namespace Keysharp.Builtins
 
 			// 6) OPTIONAL: attempt to Assembly.Load likely prefixes
 			var lastDot = fullName.LastIndexOf('.');
-			if (lastDot > 0)
+			if (lastDot > 0 && !IsKnownNamespace(fullName))
 			{
 				var ns = fullName.Substring(0, lastDot);
 				foreach (var prefix in EnumeratePrefixes(ns))
@@ -240,13 +279,14 @@ namespace Keysharp.Builtins
 					if (!TriedAssemblyLoads.TryAdd(prefix, 1)) continue;
 					try { Assembly.Load(prefix); } catch { /* ignore */ }
 				}
+				EnsureIndex();
 
 				// After attempted loads, re-check
 				if (FullNameCache.TryGetValue(fullName, out t))
 					return t;
 
 				// And ask GetType again (new assemblies may expose it)
-				t = Type.GetType(fullName, false, true);
+				t = fullName.IndexOfAny([',', '[', '*', '&']) >= 0 ? Type.GetType(fullName, false, true) : null;
 				if (t != null) return CacheAndReturn(t);
 			}
 
@@ -254,9 +294,7 @@ namespace Keysharp.Builtins
 
 			static Type CacheAndReturn(Type x)
 			{
-				FullNameCache.TryAdd(x.FullName, x);
-				var bag = SimpleNameIndex.GetOrAdd(x.Name, _ => new ConcurrentBag<Type>());
-				bag.Add(x);
+				if (x.FullName != null) FullNameCache.TryAdd(x.FullName, x);
 				return x;
 			}
 		}
@@ -319,42 +357,16 @@ namespace Keysharp.Builtins
 				if (FullNameCache.TryGetValue(id, out var t1))
 					return t1;
 
-				// Simple-name index (ambiguous → null; let caller decide)
-				if (SimpleNameIndex.TryGetValue(id, out var bag))
-				{
-					if (bag != null)
-					{
-						Type one = null;
-						int count = 0;
-						foreach (var ty in bag)
-						{
-							one ??= ty;
-							count++;
-							if (count > 1) break;
-						}
-						if (count == 1) return one;
-					}
-				}
+				_ = Materialize(id);
+				if (FullNameCache.TryGetValue(id, out var materialized)) return materialized;
+				var matches = GetBySimpleName(id);
+				if (matches.Count == 1) return matches[0];
 
-				// Assembly-qualified / already loaded
-				var t2 = Type.GetType(id, throwOnError: false, ignoreCase: true);
+				var t2 = id.IndexOfAny([',', '[', '*', '&']) >= 0 ? Type.GetType(id, throwOnError: false, ignoreCase: true) : null;
 				if (t2 != null)
 				{
-					FullNameCache.TryAdd(t2.FullName, t2);
-					SimpleNameIndex.GetOrAdd(t2.Name, _ => new ConcurrentBag<Type>()).Add(t2);
+					if (t2.FullName != null) FullNameCache.TryAdd(t2.FullName, t2);
 					return t2;
-				}
-
-				// A deferred assembly may declare it under either spelling; loading one re-populates both indexes.
-				if (Materialize(id))
-				{
-					if (FullNameCache.TryGetValue(id, out var t3))
-						return t3;
-
-					var byName = GetBySimpleName(id);
-
-					if (byName.Count == 1)
-						return byName[0];
 				}
 
 				return null;
@@ -386,40 +398,73 @@ namespace Keysharp.Builtins
 
 		private static void EnsureIndex()
 		{
-			if (_indexed) return;
+			if (_indexed && PendingAssemblies.IsEmpty) return;
 			lock (_indexLock)
 			{
-				if (_indexed) return;
-				foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
-					IndexAssemblySafe(a);
-				_indexed = true;
+				if (!_indexed)
+				{
+					foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+						PendingAssemblies.Enqueue(assembly);
+					_indexed = true;
+				}
+				while (PendingAssemblies.TryDequeue(out var assembly))
+					if (IndexedAssemblies.Add(assembly)) IndexAssemblySafe(assembly);
 			}
 		}
 
 		internal static IEnumerable<Type> SafeGetTypes(Assembly a)
 		{
-			try { return a.GetTypes(); } catch { return Enumerable.Empty<Type>(); }
-       }
+			try { return a.GetTypes(); }
+			catch (ReflectionTypeLoadException ex) { return ex.Types.Where(t => t != null); }
+			catch { return System.Array.Empty<Type>(); }
+		}
 
 		private static void IndexAssemblySafe(Assembly a)
 		{
-			IEnumerable<Type> types;
-			types = SafeGetTypes(a);
+			var namespaces = new HashSet<string>(StringComparer.Ordinal);
+			AssemblyNamespaces[a] = namespaces;
 
-			foreach (var t in types)
+			foreach (var t in SafeGetTypes(a))
 			{
-				// full name can be null for generic parameters etc.
-				if (!string.IsNullOrEmpty(t.FullName))
-					FullNameCache.TryAdd(t.FullName, t);
+				string fullName, name, ns;
+				try { fullName = t.FullName; name = t.Name; ns = t.Namespace; }
+				catch (Exception ex) when (ex is TypeLoadException or IOException or BadImageFormatException) { continue; }
+				if (!string.IsNullOrEmpty(fullName))
+					FullNameCache.TryAdd(fullName, t);
 
-				SimpleNameIndex.GetOrAdd(t.Name, _ => new ConcurrentBag<Type>()).Add(t);
-
-				// Types overwhelmingly share a namespace with their neighbours, so one lookup skips the prefix walk
-				// (an iterator plus a substring per level) for all but the first type of each namespace.
-				if (!string.IsNullOrEmpty(t.Namespace) && !NamespaceIndex.ContainsKey(t.Namespace))
-					foreach (var prefix in EnumeratePrefixes(t.Namespace))
+				if (!name.Contains('<'))
+				{
+					if (!SimpleNameIndex.TryGetValue(name, out var existing)) SimpleNameIndex[name] = t;
+					else if (existing is Type one && one != t) SimpleNameIndex[name] = new[] { one, t };
+					else if (existing is Type[] many && !many.Contains(t)) SimpleNameIndex[name] = many.Append(t).ToArray();
+				}
+				if (!string.IsNullOrEmpty(ns) && namespaces.Add(ns))
+					foreach (var prefix in EnumeratePrefixes(ns))
+					{
+						namespaces.Add(prefix);
 						_ = NamespaceIndex.TryAdd(prefix, 0);
+					}
 			}
+			try
+			{
+				if (a.IsDynamic || a.Location.IsNullOrEmpty()) return;
+				using var stream = File.OpenRead(a.Location);
+				using var pe = new System.Reflection.PortableExecutable.PEReader(stream);
+				if (!pe.HasMetadata) return;
+				var metadata = pe.GetMetadataReader();
+				foreach (var handle in metadata.ExportedTypes)
+				{
+					var type = metadata.GetExportedType(handle);
+					var ns = metadata.GetString(type.Namespace);
+					if (type.IsForwarder && !string.IsNullOrEmpty(ns))
+						foreach (var prefix in EnumeratePrefixes(ns))
+						{
+							namespaces.Add(prefix);
+							_ = NamespaceIndex.TryAdd(prefix, 0);
+						}
+				}
+			}
+			catch { }
 		}
 
 		/// <summary>
@@ -436,6 +481,7 @@ namespace Keysharp.Builtins
 
 			if (NamespaceIndex.ContainsKey(ns))
 				return true;
+			EnsureDeferredNames();
 
 			// A deferred assembly's namespaces count as known without loading it -- the whole point of walking a
 			// namespace is to reach a type, and the type's own lookup is what materializes the assembly. Answering
@@ -443,9 +489,6 @@ namespace Keysharp.Builtins
 			if (DeferredNamespaceIndex.ContainsKey(ns))
 				return true;
 
-			// No re-index on a miss: assemblies loaded after EnsureIndex are picked up by the AssemblyLoad hook in
-			// the static constructor, so the index is already current. Re-indexing here would also append every type
-			// to SimpleNameIndex's bags again on each miss, growing them without bound.
 			return false;
 		}
 
@@ -461,58 +504,9 @@ namespace Keysharp.Builtins
 			if (assemblies == null)
 				return IsKnownNamespace(ns);
 
-			var withDot = ns + ".";
-
-			foreach (var a in assemblies)
-			{
-				foreach (var t in SafeGetTypes(a))
-					if (t.Namespace is string n && (n.Equals(ns, StringComparison.Ordinal) || n.StartsWith(withDot, StringComparison.Ordinal)))
-						return true;
-
-				// Compatibility facades such as System.dll define no types themselves; they expose the real types through
-				// metadata forwarders. Assembly.GetForwardedTypes() resolves every target and can fail merely because an
-				// unrelated optional target is absent, so inspect the forwarder names without loading their assemblies.
-				if (ForwardsNamespace(a, ns, withDot))
-					return true;
-			}
-
-			return false;
-		}
-
-		private static bool ForwardsNamespace(Assembly assembly, string ns, string withDot)
-		{
-			try
-			{
-				if (assembly.IsDynamic || assembly.Location.IsNullOrEmpty())
-					return false;
-
-				using var fs = File.OpenRead(assembly.Location);
-				using var pe = new System.Reflection.PortableExecutable.PEReader(fs);
-
-				if (!pe.HasMetadata)
-					return false;
-
-				var metadata = pe.GetMetadataReader();
-
-				foreach (var handle in metadata.ExportedTypes)
-				{
-					var exported = metadata.GetExportedType(handle);
-
-					if (!exported.IsForwarder)
-						continue;
-
-					var candidate = metadata.GetString(exported.Namespace);
-
-					if (candidate.Equals(ns, StringComparison.Ordinal) || candidate.StartsWith(withDot, StringComparison.Ordinal))
-						return true;
-				}
-			}
-			catch
-			{
-				// A dynamic, bundled or unreadable assembly simply cannot contribute metadata evidence here.
-			}
-
-			return false;
+			EnsureIndex();
+			lock (_indexLock)
+				return assemblies.Any(assembly => AssemblyNamespaces.TryGetValue(assembly, out var namespaces) && namespaces.Contains(ns));
 		}
 
 		private static IEnumerable<string> EnumeratePrefixes(string ns)
@@ -556,6 +550,7 @@ namespace Keysharp.Builtins
 		internal static readonly ConcurrentDictionary<(Type t, string name, bool idxOnly), PropertyInfo[]> PropertyCache = new();
 		internal static readonly ConcurrentDictionary<(Type t, string name), FieldInfo> FieldCache = new();
 		private static readonly ConcurrentDictionary<MethodInfo, ByteSpanInvoker> ByteSpanInvokerCache = new();
+		private static readonly ConcurrentDictionary<MethodInfo, MethodDescriptor> MethodMetadata = new();
 
 		// False, without calling the method, when the script continued the conversion error of a byte-span argument.
 		private delegate bool ByteSpanInvoker(object instance, object[] args, out object result);
@@ -575,7 +570,7 @@ namespace Keysharp.Builtins
 			=> InvokeCore(null, t, name, args, isSet: false, putValue: null);
 
 		internal static object GetStatic(Type t, string name)
-			=> InvokeCore(null, t, name, System.Array.Empty<object>(), isSet: false, putValue: null, preferPropertyGet: name);
+			=> InvokeCore(null, t, name, System.Array.Empty<object>(), isSet: false, putValue: null);
 
 		internal static void SetStatic(Type t, string name, object value)
 			=> _ = InvokeCore(null, t, name, System.Array.Empty<object>(), isSet: true, putValue: value);
@@ -585,7 +580,7 @@ namespace Keysharp.Builtins
 			=> InvokeCore(instance, t, name, args, isSet: false, putValue: null);
 
 		internal static object GetInstance(object instance, Type t, string name, object[] args)
-			=> InvokeCore(instance, t, name, args, isSet: false, putValue: null, preferPropertyGet: name);
+			=> InvokeCore(instance, t, name, args, isSet: false, putValue: null);
 
 		internal static void SetInstance(object instance, Type t, string name, object[] args, object value)
 			=> _ = InvokeCore(instance, t, name, args, isSet: true, putValue: value);
@@ -603,23 +598,16 @@ namespace Keysharp.Builtins
 
 		// -------- Core dispatch --------
 
-		private static object InvokeCore(object instance, Type type, string name, object[] args, bool isSet, object putValue, string preferPropertyGet = null)
+		private static object InvokeCore(object instance, Type type, string name, object[] args, bool isSet, object putValue)
 		{
 			// 1) Fast field path
 			if (args.Length == 0 && TryField(instance, type, name, isSet, putValue, out var fieldResult))
 				return fieldResult;
 
-			// 2) Property (including indexers). If preferPropertyGet is set, try property first.
-			if (preferPropertyGet != null)
-			{
-				if (TryPropertyCore(instance, type, name, args, isSet, putValue, out var propResult))
-					return propResult;
-			}
-			else
-			{
-				if (TryPropertyCore(instance, type, name, args, isSet, putValue, out var propResult2))
-					return propResult2;
-			}
+			if (TryPropertyCore(instance, type, name, args, isSet, putValue, out var propResult))
+				return propResult;
+			if (isSet)
+				return Errors.PropertyErrorOccurred(NoMatchMessage(type, name, args));
 
 			// 3) Methods (instance or static)
 			if (TryMethod(instance, type, name, args, out var callResult))
@@ -642,7 +630,7 @@ namespace Keysharp.Builtins
 
 			// Every overload's parameter names, so the caller can see which spelling was meant. Overloads differ,
 			// hence the union rather than one list.
-			var accepted = set.Methods.SelectMany(m => Keysharp.Internals.Invoke.MethodPropertyHolder.GetOrAdd(m).ParamScan
+			var accepted = set.Methods.SelectMany(m => Keysharp.Internals.Invoke.MethodPropertyHolder.GetOrAdd(m.Method).ParamScan
 													 .Where(p => !p.Variadic).Select(p => p.Name))
 									  .Distinct(StringComparer.OrdinalIgnoreCase)
 									  .OrderBy(n => n, StringComparer.OrdinalIgnoreCase);
@@ -737,14 +725,14 @@ namespace Keysharp.Builtins
 			var keyIndex = (type, hasName ? name : "", true);
 
 
-			var idxProps = PropertyCache.GetOrAdd(keyIndex, k =>
+			var idxProps = PropertyCache.GetOrAdd(keyIndex, static k =>
 				k.t.GetProperties(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
-				 .Where(p => !hasName || p.Name.Equals(k.name, StringComparison.OrdinalIgnoreCase))
+				 .Where(p => k.name.Length == 0 || p.Name.Equals(k.name, StringComparison.OrdinalIgnoreCase))
 				 .Where(p => p.GetIndexParameters().Length > 0).ToArray());
 
-			var simpleProp = PropertyCache.GetOrAdd(keySimple, k =>
+			var simpleProp = PropertyCache.GetOrAdd(keySimple, static k =>
 				k.t.GetProperties(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
-				 .Where(p => !hasName || p.Name.Equals(k.name, StringComparison.OrdinalIgnoreCase))
+				 .Where(p => k.name.Length == 0 || p.Name.Equals(k.name, StringComparison.OrdinalIgnoreCase))
 				 .Where(p => p.GetIndexParameters().Length == 0).ToArray());
 
 			// -------------------- GET --------------------
@@ -753,7 +741,7 @@ namespace Keysharp.Builtins
 				// 1) Named indexer properties (rare, but support them): obj.Prop[...]
 				if (hasName && argc > 0)
 				{
-					var idxCandidates = idxProps
+					var idxCandidates = idxProps.Length == 0 ? System.Array.Empty<PropertyInfo>() : idxProps
 						.Where(p => p.CanRead && CanAcceptArgCount(p, argc))
 						.OrderBy(p => ScoreParameters(p.GetIndexParameters(), args))
 						.ToArray();
@@ -789,7 +777,7 @@ namespace Keysharp.Builtins
 				// 3) Pure indexer access: obj[...]
 				if (!hasName)
 				{
-					var idxCandidates = idxProps
+					var idxCandidates = idxProps.Length == 0 ? System.Array.Empty<PropertyInfo>() : idxProps
 						.Where(p => p.CanRead && CanAcceptArgCount(p, argc))
 						.OrderBy(p => ScoreParameters(p.GetIndexParameters(), args))
 						.ToArray();
@@ -828,7 +816,7 @@ namespace Keysharp.Builtins
 				// 1) Named indexer set: obj.Prop[...] = value
 				if (hasName && argc > 0)
 				{
-					var idxCandidates = idxProps
+					var idxCandidates = idxProps.Length == 0 ? System.Array.Empty<PropertyInfo>() : idxProps
 						.Where(p => p.CanWrite && CanAcceptArgCount(p, argc))
 						.OrderBy(p => ScoreParameters(p.GetIndexParameters(), args))
 						.ToArray();
@@ -864,7 +852,7 @@ namespace Keysharp.Builtins
 				// 3) Pure indexer set: obj[...] = value
 				if (!hasName)
 				{
-					var idxCandidates = idxProps
+					var idxCandidates = idxProps.Length == 0 ? System.Array.Empty<PropertyInfo>() : idxProps
 						.Where(p => p.CanWrite && CanAcceptArgCount(p, argc))
 						.OrderBy(p => ScoreParameters(p.GetIndexParameters(), args))
 						.ToArray();
@@ -945,80 +933,80 @@ namespace Keysharp.Builtins
 			// Named arguments (`Clr.System.Math.Round(digits: 2, value: x)`) arrive as a trailing container.
 			var positional = Keysharp.Internals.Invoke.NamedArgBinder.Split(args, out var named);
 			var hasNamed = named != null;
-			var argc = positional.Length;   // Split returns an empty array for null, and the head when names are present
 
 			var key = (type, name);
 			var set = MemberCache.GetOrAdd(key, k => MemberSet.Create(k.t, k.name));
 			if (set == null || set.Methods.Count == 0) return false;
 
-			// Order by best fit. Named arguments have to be expanded BEFORE scoring, not after: scoring compares
-			// argument types against parameter types, and the positional prefix alone (empty for an all-named call)
-			// carries none -- which would pick whichever overload merely declares the names. Expansion also acts as
-			// the arity filter here, since it rejects any overload that cannot take them.
-			var ordered = hasNamed
-				? set.Methods.Select(m => (m, a: ExpandNamedArgs(m, positional, named, m.GetParameters())))
-							 .Where(c => c.a != null)
-							 .OrderBy(c => ScoreMethodCandidate(c.m, c.a))
-							 .ToArray()
-				: set.Methods.Where(m => CanAcceptArgCount(m, argc))
-							 .OrderBy(m => ScoreMethodCandidate(m, args))
-							 .Select(m => (m, a: args))
-							 .ToArray();
-
-			foreach (var (m0, callArgs0) in ordered)
+			var candidates = ArrayPool<MethodCandidate>.Shared.Rent(set.Methods.Count);
+			var candidateCount = 0;
+			try
 			{
-				var m = ClrDelegateMarshaler.TryCloseGenericMethod(m0, callArgs0);
-				if (m.IsGenericMethodDefinition) continue;
-
-				var ps = m.GetParameters();
-				// Closing a generic can change the parameter list, so re-expand against the closed one.
-				var callArgs = hasNamed && !ReferenceEquals(m, m0) ? ExpandNamedArgs(m, positional, named, ps) : callArgs0;
-
-				if (callArgs == null) continue;
-
-				object[] inArgs;
-				List<(int, object)> boxes;
-
-				if (!TryBuildArguments(callArgs, ps, out inArgs, out boxes, out var stop))
+				for (var i = 0; i < set.Methods.Count; i++)
 				{
-					if (stop)
-						return Stopped(out result);
-
-					continue;
+					var descriptor = set.Methods[i];
+					var callArgs = hasNamed ? ExpandNamedArgs(descriptor.Method, positional, named, descriptor.Parameters) : positional;
+					if (callArgs == null || !descriptor.CanAcceptArgCount(callArgs.Length)) continue;
+					candidates[candidateCount++] = new(descriptor, callArgs, ScoreMethodCandidate(descriptor, callArgs), i);
 				}
-
-				var usesByteSpan = ps.Any(p => ArgCoercer.IsByteSpan(p.ParameterType));
-				object callResult;
-				try
+				System.Array.Sort(candidates, 0, candidateCount, MethodCandidateComparer.Instance);
+				for (var i = 0; i < candidateCount; i++)
 				{
-					if (!usesByteSpan)
-						callResult = m.Invoke(m.IsStatic ? null : instance, inArgs);
-					else if (!ByteSpanInvokerCache.GetOrAdd(m, CreateByteSpanInvoker)(instance, inArgs, out callResult))
-						return Stopped(out result);
-
-					if (m.ReturnType == typeof(void))
-						callResult = DefaultObject;
+					var candidate = candidates[i];
+					MethodInfo m;
+					try
+					{
+						m = candidate.Descriptor.GenericDefinition
+							? ClrDelegateMarshaler.TryCloseGenericMethod(candidate.Descriptor.Method, candidate.Args, candidate.Descriptor.Parameters)
+							: candidate.Descriptor.Method;
+					}
+					catch (ArgumentException) { continue; }
+					if (m.IsGenericMethodDefinition) continue;
+					var descriptor = MethodMetadata.GetOrAdd(m, static method => new(method));
+					var ps = descriptor.Parameters;
+					var callArgs = hasNamed && !ReferenceEquals(m, candidate.Descriptor.Method)
+						? ExpandNamedArgs(m, positional, named, ps) : candidate.Args;
+					if (callArgs == null) continue;
+					if (!TryBuildArguments(callArgs, descriptor, out var inArgs, out var boxes, out var stop))
+					{
+						if (stop) return Stopped(out result);
+						continue;
+					}
+					object callResult;
+					try
+					{
+						if (!descriptor.UsesByteSpan)
+							callResult = m.Invoke(m.IsStatic ? null : instance, inArgs);
+						else if (!ByteSpanInvokerCache.GetOrAdd(m, CreateByteSpanInvoker)(instance, inArgs, out callResult))
+							return Stopped(out result);
+						if (m.ReturnType == typeof(void)) callResult = DefaultObject;
+					}
+					catch (TargetInvocationException ex) { return ThrowInvokeError(ex.InnerException ?? ex, m); }
+					catch (Exception ex) when (descriptor.UsesByteSpan) { return ThrowInvokeError(ex, m); }
+					for (var p = 0; p < ps.Length && p < callArgs.Length; p++)
+						if (ps[p].ParameterType.IsByRef) callArgs[p] = ConvertOut(inArgs[p]);
+					WriteBackRefs(callArgs, boxes);
+					result = ConvertOut(callResult);
+					return true;
 				}
-				catch (TargetInvocationException ex)
-				{
-					return ThrowInvokeError(ex.InnerException ?? ex, m);
-				}
-				catch (Exception ex) when (usesByteSpan)
-				{
-					return ThrowInvokeError(ex, m);
-				}
-
-				// push back ref/out into the array the call was built from (identical to `args` when no names
-				// were used; a distinct expansion otherwise, whose indices are the ones `boxes` refers to).
-				for (int i = 0; i < ps.Length && i < callArgs.Length; i++)
-					if (ps[i].ParameterType.IsByRef) callArgs[i] = ConvertOut(inArgs[i]);
-
-				WriteBackRefs(callArgs, boxes);
-
-				result = ConvertOut(callResult);
-				return true;
+				return false;
 			}
-			return false;
+			finally
+			{
+				ArrayPool<MethodCandidate>.Shared.Return(candidates, clearArray: true);
+			}
+		}
+
+		private readonly record struct MethodCandidate(MethodDescriptor Descriptor, object[] Args, int Score, int Order);
+
+		private sealed class MethodCandidateComparer : IComparer<MethodCandidate>
+		{
+			internal static readonly MethodCandidateComparer Instance = new();
+			public int Compare(MethodCandidate x, MethodCandidate y)
+			{
+				var comparison = x.Score.CompareTo(y.Score);
+				return comparison != 0 ? comparison : x.Order.CompareTo(y.Order);
+			}
 		}
 
 		private static ByteSpanInvoker CreateByteSpanInvoker(MethodInfo method)
@@ -1102,28 +1090,22 @@ namespace Keysharp.Builtins
 		}
 
 		// Convenience wrappers to keep call-sites tidy.
-		private static bool CanAcceptArgCount(MethodBase m, int argc) => CanAcceptArgCount(m.GetParameters(), argc);
 		private static bool CanAcceptArgCount(PropertyInfo p, int argc) => CanAcceptArgCount(p.GetIndexParameters(), argc);
 
 
 		// Build full argument array for MethodInfo.Invoke, handling optionals and params arrays. False when this overload
 		// cannot take the arguments, or with stop set when the script continued a conversion error, which ends the call.
-		private static bool TryBuildArguments(object[] src, ParameterInfo[] ps, out object[] finalArgs,
+		private static bool TryBuildArguments(object[] src, MethodDescriptor descriptor, out object[] finalArgs,
 											 out List<(int, object)> boxes, out bool stop)
 		{
 			stop = false;
 			src ??= System.Array.Empty<object>();
 			var argc = src.Length;
+			var ps = descriptor.Parameters;
 
-			bool hasParams = ps.Length > 0 && ps[^1].GetCustomAttribute<ParamArrayAttribute>() != null;
-			Type paramsElemType = null;
-			int fixedCount = ps.Length;
-
-			if (hasParams)
-			{
-				paramsElemType = ps[^1].ParameterType.GetElementType();
-				fixedCount--; // all before the params array
-			}
+			var hasParams = descriptor.HasParams;
+			var paramsElemType = descriptor.ParamsElementType;
+			var fixedCount = ps.Length - (hasParams ? 1 : 0);
 
 			// If too few for required, fail early (kept in CanAcceptArgCount)
 			finalArgs = new object[ps.Length];
@@ -1144,20 +1126,17 @@ namespace Keysharp.Builtins
 						continue;
 					}
 
-					// Convert single arg to this parameter type
-					if (!TryConvertIn(new object[] { src[i] }, new[] { ps[i].ParameterType }, out var arr, out var bx))
+					var value = src[i];
+					if (Refs.DeclaresValue(value))
+					{
+						(boxes ??= []).Add((i, value));
+						value = Refs.GetValueOrNull(value);
+					}
+					if (!TryConvertScalarToCLR(value, ps[i].ParameterType, out finalArgs[i]))
 					{
 						stop = true;
 						return false;
 					}
-
-					if (bx != null)
-					{
-						boxes ??= new();
-						// offset index mapping into flattened passback
-						boxes.AddRange(bx.Select(b => (i + b.i, b.box)));
-					}
-					finalArgs[i] = arr[0];
 				}
 				else
 				{
@@ -1184,18 +1163,18 @@ namespace Keysharp.Builtins
 					var packed = System.Array.CreateInstance(paramsElemType, tail);
 					for (int k = 0; k < tail; k++)
 					{
-						if (!TryConvertIn(new object[] { src[fixedCount + k] }, new[] { paramsElemType }, out var arr2, out var bx2))
+						var value = src[fixedCount + k];
+						if (Refs.DeclaresValue(value))
+						{
+							(boxes ??= []).Add((fixedCount + k, value));
+							value = Refs.GetValueOrNull(value);
+						}
+						if (!TryConvertScalarToCLR(value, paramsElemType, out var converted))
 						{
 							stop = true;
 							return false;
 						}
-
-						if (bx2 != null)
-						{
-							boxes ??= new();
-							boxes.AddRange(bx2.Select(b => (fixedCount + k + b.i, b.box)));
-						}
-						packed.SetValue(arr2[0], k);
+						packed.SetValue(converted, k);
 					}
 					finalArgs[^1] = packed;
 				}
@@ -1313,18 +1292,18 @@ namespace Keysharp.Builtins
 			return score;
 		}
 
-		private static int ScoreMethodCandidate(MethodInfo m, object[] rawArgs)
+		private static int ScoreMethodCandidate(MethodDescriptor descriptor, object[] rawArgs)
 		{
-			var ps = m.GetParameters();
+			var ps = descriptor.Parameters;
 
-			if (ps.Any(p => ArgCoercer.IsByteSpan(p.ParameterType)) && m.ReturnType.IsByRefLike)
+			if (descriptor.UsesByteSpan && descriptor.ByRefLikeReturn)
 				return int.MaxValue;
 
 			int score = ScoreParameters(ps, rawArgs, favorDelegates: true, penalizeComparerForCallable: true);
 
 			// Method-only tie-breakers
-			if (m.IsGenericMethod) score += 1;
-			if (ps.Length > 0 && ps[^1].GetCustomAttributes(typeof(ParamArrayAttribute), false).Length > 0) score += 2;
+			if (descriptor.Method.IsGenericMethod) score += 1;
+			if (descriptor.HasParams) score += 2;
 
 			return score;
 		}
@@ -1608,16 +1587,40 @@ namespace Keysharp.Builtins
 
 		internal sealed class MemberSet
 		{
-			public List<MethodInfo> Methods { get; } = new();
+			internal List<MethodDescriptor> Methods { get; } = new();
 
 			public static MemberSet Create(Type t, string name)
 			{
 				var set = new MemberSet();
 				var flags = BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.IgnoreCase;
 				foreach (var m in t.GetMember(name, MemberTypes.Method, flags))
-					if (m is MethodInfo mi) set.Methods.Add(mi);
+					if (m is MethodInfo mi)
+						set.Methods.Add(MethodMetadata.GetOrAdd(mi, static method => new(method)));
 				return set;
 			}
+		}
+
+		internal sealed class MethodDescriptor
+		{
+			internal readonly MethodInfo Method;
+			internal readonly ParameterInfo[] Parameters;
+			internal readonly int RequiredCount;
+			internal readonly bool HasParams, UsesByteSpan, ByRefLikeReturn, GenericDefinition;
+			internal readonly Type ParamsElementType;
+
+			internal MethodDescriptor(MethodInfo method)
+			{
+				Method = method;
+				Parameters = method.GetParameters();
+				HasParams = Parameters.Length > 0 && Parameters[^1].IsDefined(typeof(ParamArrayAttribute), false);
+				ParamsElementType = HasParams ? Parameters[^1].ParameterType.GetElementType() : null;
+				RequiredCount = Parameters.Take(Parameters.Length - (HasParams ? 1 : 0)).Count(p => !p.IsOptional);
+				UsesByteSpan = Parameters.Any(p => ArgCoercer.IsByteSpan(p.ParameterType));
+				ByRefLikeReturn = method.ReturnType.IsByRefLike;
+				GenericDefinition = method.IsGenericMethodDefinition;
+			}
+
+			internal bool CanAcceptArgCount(int count) => count >= RequiredCount && (HasParams || count <= Parameters.Length);
 		}
 	}
 }

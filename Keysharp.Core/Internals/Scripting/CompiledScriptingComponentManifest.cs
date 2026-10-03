@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using Keysharp.Components.Scripting;
+using static Keysharp.Internals.Os.EmbeddedExtraction;
 
 namespace Keysharp.Internals.Scripting
 {
@@ -152,6 +153,7 @@ namespace Keysharp.Internals.Scripting
 							|| !IsHash(asset.Hash) || !seen.Add(normalized))
 						throw new InvalidDataException("The embedded scripting-component manifest contains an invalid payload entry.");
 
+					Keysharp.Internals.Os.ExtractionCache.Use(root);
 					var target = SafePath(root, normalized);
 					if (File.Exists(target) && MatchesHash(target, asset.Hash))
 						continue;
@@ -160,24 +162,7 @@ namespace Keysharp.Internals.Scripting
 					if (source == null)
 						throw new InvalidDataException($"Embedded scripting-component asset '{normalized}' is missing.");
 
-					_ = Directory.CreateDirectory(Path.GetDirectoryName(target));
-					var temporary = target + "." + Environment.ProcessId + "." + Guid.NewGuid().ToString("N") + ".tmp";
-					try
-					{
-						using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-						{
-							source.CopyTo(output);
-							output.Flush(true);
-						}
-
-						if (!MatchesHash(temporary, asset.Hash))
-							throw new InvalidDataException($"Embedded scripting-component asset '{normalized}' failed its SHA-256 check.");
-						File.Move(temporary, target, true);
-					}
-					finally
-					{
-						try { File.Delete(temporary); } catch { }
-					}
+					Keysharp.Internals.Os.EmbeddedExtraction.Extract(source, root, normalized, asset.Hash);
 				}
 
 				ScriptingComponentRegistry.AddSearchRoot(root);
@@ -240,37 +225,12 @@ namespace Keysharp.Internals.Scripting
 			}
 		}
 
-		private static string HashFile(string path)
-		{
-			using var stream = File.OpenRead(path);
-			return Convert.ToHexString(SHA256.HashData(stream));
-		}
-
-		private static bool MatchesHash(string path, string expected)
-		{
-			try { return HashFile(path).Equals(expected, StringComparison.OrdinalIgnoreCase); }
-			catch { return false; }
-		}
-
 		private static bool IsHash(string hash) => hash is { Length: 64 } && hash.All(Uri.IsHexDigit);
 
 		private static bool IsSafeRelative(string relative) =>
 			!string.IsNullOrEmpty(relative) && !Path.IsPathRooted(relative) && relative != ".."
 			&& !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
 			&& !relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal);
-
-		private static string SafePath(string root, string relative)
-		{
-			if (!IsSafeRelative(relative))
-				throw new InvalidDataException("A scripting-component manifest contains an invalid deployment path.");
-
-			var fullRoot = Path.GetFullPath(root);
-			var full = Path.GetFullPath(Path.Combine(fullRoot, relative));
-			var prefix = Path.TrimEndingDirectorySeparator(fullRoot) + Path.DirectorySeparatorChar;
-			if (!full.StartsWith(prefix, PathComparison))
-				throw new InvalidDataException("A scripting-component manifest contains an invalid deployment path.");
-			return full;
-		}
 
 #if WINDOWS
 		private const StringComparison PathComparison = StringComparison.OrdinalIgnoreCase;

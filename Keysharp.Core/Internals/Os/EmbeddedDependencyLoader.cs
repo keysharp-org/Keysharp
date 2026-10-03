@@ -20,6 +20,7 @@ namespace Keysharp.Internals.Os
 					assemblyResources[name] = asm;
 
 			asm = Assembly.GetEntryAssembly();
+			if (asm == null) return;
 			foreach (var name in asm.GetManifestResourceNames())
 				if (name.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".so", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".dylib", StringComparison.OrdinalIgnoreCase))
 					assemblyResources[name] = asm;
@@ -67,15 +68,16 @@ namespace Keysharp.Internals.Os
 				return 0;
 			}
 
-			var tmp = Path.Combine(Path.GetDirectoryName(Environment.ProcessPath), resourceName);
-
-			if (File.Exists(tmp)) return NativeLibrary.Load(tmp);
-
-			using var fs = File.Create(tmp);
-			rs.CopyTo(fs);
-			rs.Close();
-			fs.Close();
-			return NativeLibrary.Load(tmp);
+			using (rs)
+			{
+				var userRoot = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+				if (string.IsNullOrEmpty(userRoot)) return 0;
+				var cacheRoot = Path.Combine(userRoot, "Keysharp", "embedded-dependencies");
+				var root = Path.Combine(cacheRoot, resourceAsm.ManifestModule.ModuleVersionId.ToString("N"));
+				var extracted = EmbeddedExtraction.Extract(rs, root, resourceName);
+				ExtractionCache.TouchAndPrune(cacheRoot, root);
+				return NativeLibrary.Load(NativeLibraryResolver.NormalizeLoaderPath(extracted));
+			}
 		}
 
 		// Keyed by simple name because Assembly.Load(byte[]) mints a new identity per call and does not satisfy

@@ -515,34 +515,48 @@ namespace Keysharp.Builtins
 					return null;
 				}
 
-				var enumType = source.GetType();
-				moveNextMethod ??= enumType.GetMethod("MoveNext", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
-				currentProperty ??= enumType.GetProperty("Current", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
-				var resetMethod = enumType.GetMethod("Reset", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
-				var index = -1L;
-
-				if (moveNextMethod == null || currentProperty == null)
+				Func<bool> moveNext;
+				Func<object> current;
+				Action reset;
+				if (source is IEnumerator enumerator)
 				{
-					_ = Errors.ErrorOccurred($"Object of type '{instance._type.FullName}' is not enumerable.");
-					return null;
+					moveNext = enumerator.MoveNext;
+					current = () => enumerator.Current;
+					reset = enumerator.Reset;
 				}
+				else
+				{
+					var enumType = source.GetType();
+					moveNextMethod ??= enumType.GetMethod("MoveNext", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+					currentProperty ??= enumType.GetProperty("Current", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+					var resetMethod = enumType.GetMethod("Reset", BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+					if (moveNextMethod == null || currentProperty == null)
+					{
+						_ = Errors.ErrorOccurred($"Object of type '{instance._type.FullName}' is not enumerable.");
+						return null;
+					}
+					moveNext = () => (bool)moveNextMethod.Invoke(source, null);
+					current = () => currentProperty.GetValue(source);
+					reset = () => resetMethod?.Invoke(source, null);
+				}
+				var index = -1L;
 
 				return new Enumerator(
 						   instance,
 						   count,
 						   () =>
 				{
-					var moved = (bool)moveNextMethod.Invoke(source, null);
+					var moved = moveNext();
 
 					if (moved)
 						index++;
 
 					return moved;
 				},
-				() => ManagedInvoke.ConvertOut(currentProperty.GetValue(source)),
+				() => ManagedInvoke.ConvertOut(current()),
 				() =>
 				{
-					var parts = TryDecompose(currentProperty.GetValue(source));
+					var parts = TryDecompose(current());
 
 					if (parts == null || parts.Length == 0)
 						return (null, null);
@@ -557,7 +571,7 @@ namespace Keysharp.Builtins
 
 					try
 					{
-						resetMethod?.Invoke(source, null);
+						reset();
 					}
 					catch
 					{
@@ -575,6 +589,8 @@ namespace Keysharp.Builtins
 					}
 				});
 			}
+
+			private static readonly ConcurrentDictionary<Type, (PropertyInfo Key, PropertyInfo Value)> PairGetters = new();
 
 			private static object[] TryDecompose(object current)
 			{
@@ -594,8 +610,9 @@ namespace Keysharp.Builtins
 
 				if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(KeyValuePair<,>))
 				{
-					var key = type.GetProperty("Key")?.GetValue(current);
-					var value = type.GetProperty("Value")?.GetValue(current);
+					var getters = PairGetters.GetOrAdd(type, static type => (type.GetProperty("Key"), type.GetProperty("Value")));
+					var key = getters.Key.GetValue(current);
+					var value = getters.Value.GetValue(current);
 					return
 					[
 						ManagedInvoke.ConvertOut(key),

@@ -219,11 +219,11 @@ namespace Keysharp.Builtins
 				il.Emit(OpCodes.Ldc_I4, value);
 		}
 
-		internal static MethodInfo TryCloseGenericMethod(MethodInfo m, object[] args)
+		internal static MethodInfo TryCloseGenericMethod(MethodInfo m, object[] args, ParameterInfo[] parameters = null)
 		{
 			if (!m.IsGenericMethodDefinition) return m;
 
-			var ps = m.GetParameters();
+			var ps = parameters ?? m.GetParameters();
 			var map = new Dictionary<Type, Type>();
 
 			// 1) Bind generics from actual runtime arg types (unwrapped)

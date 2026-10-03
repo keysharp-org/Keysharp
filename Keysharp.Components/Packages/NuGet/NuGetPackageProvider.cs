@@ -52,7 +52,6 @@ public sealed class NuGetPackageProvider : IPackageProvider
 
 		try
 		{
-			DefaultCredentialServiceUtility.SetupDefaultCredentialService(logger, nonInteractive: true);
 			var settings = Settings.LoadDefaultSettings(context.SettingsDirectory);
 			var packageSourceProvider = new PackageSourceProvider(settings);
 			var sources = packageSourceProvider.LoadPackageSources().Where(source => source.IsEnabled).ToList();
@@ -75,6 +74,7 @@ public sealed class NuGetPackageProvider : IPackageProvider
 
 			if (!context.AllowRestore)
 				return Failure(context, packages, "these packages have not been restored yet, and restoring is disabled here");
+			DefaultCredentialServiceUtility.SetupDefaultCredentialService(logger, nonInteractive: true);
 
 			Invalidate(assetsPath, cachePath, stampPath);
 			var spec = CreateSpec(context with { CacheDirectory = graphDirectory }, packages, sources, packagesPath,

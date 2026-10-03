@@ -1,6 +1,6 @@
 namespace Keysharp.Internals
 {
-	/// <summary>Owns one replaceable service. Creation is bounded and retired values outlive active borrowers.</summary>
+	/// <summary>Owns one replaceable service. Creation backs off and retired values outlive active borrowers.</summary>
 	internal sealed class RecoverableService<T> : IDisposable where T : class
 	{
 		internal sealed class Entry(T value)
@@ -26,36 +26,33 @@ namespace Keysharp.Internals
 		private readonly object sync = new();
 		private readonly Func<T> factory;
 		private readonly Action<T> disposer;
-		private readonly TimeProvider clock;
-		private readonly int maximumAttempts;
-		private readonly TimeSpan initialDelay, maximumDelay;
+		private readonly RetryGate retry;
 		private Entry current;
 		private Exception lastError;
-		private long version, lastFailure;
-		private int failures;
-		private bool creating, suspended, disposed;
+		private long version;
+		private bool creating, disposed;
 
 		internal RecoverableService(Func<T> factory, Action<T> disposer = null, TimeProvider timeProvider = null,
 			int maximumAttempts = 3, TimeSpan? initialRetryDelay = null, TimeSpan? maximumRetryDelay = null)
 		{
 			this.factory = factory ?? throw new ArgumentNullException(nameof(factory));
 			this.disposer = disposer ?? (value => (value as IDisposable)?.Dispose());
-			clock = timeProvider ?? TimeProvider.System;
-			this.maximumAttempts = Math.Max(1, maximumAttempts);
-			initialDelay = initialRetryDelay ?? TimeSpan.FromMilliseconds(250);
-			maximumDelay = maximumRetryDelay ?? TimeSpan.FromSeconds(5);
+			retry = new RetryGate(timeProvider, maximumAttempts, initialRetryDelay, maximumRetryDelay, retryIndefinitely: true);
 		}
 
 		internal Exception LastError { get { lock (sync) return lastError; } }
-		internal int FailureCount { get { lock (sync) return failures; } }
+		internal int FailureCount => retry.FailureCount;
 
 		internal Lease TryAcquire()
 		{
 			long attemptVersion;
+			RetryGate.Attempt attempt;
 			lock (sync)
 			{
-				if (disposed || suspended || creating || failures >= maximumAttempts || Delayed()) return null;
+				if (disposed || creating) return null;
 				if (current != null) return Borrow(current);
+				attempt = retry.TryBegin();
+				if (attempt == null) return null;
 				creating = true;
 				attemptVersion = version;
 			}
@@ -70,13 +67,19 @@ namespace Keysharp.Internals
 			{
 				creating = false;
 				if (disposed || version != attemptVersion || current != null) discard = created;
-				else if (created == null) Failed(error);
+				else if (created == null)
+				{
+					lastError = error;
+					attempt.Fail(error);
+				}
 				else
 				{
 					current = new Entry(created);
 					lease = Borrow(current);
-					failures = 0; lastFailure = 0; lastError = null;
+					attempt.Succeed();
+					lastError = null;
 				}
+				attempt.Dispose();
 			}
 			Dispose(discard);
 			return lease;
@@ -90,7 +93,8 @@ namespace Keysharp.Internals
 				if (disposed || current == null || !ReferenceEquals(current.Value, value)) return;
 				retire = Retire();
 				version++;
-				Failed(error);
+				retry.Invalidate();
+				lastError = error;
 			}
 			Dispose(retire);
 		}
@@ -100,7 +104,7 @@ namespace Keysharp.Internals
 			lock (sync)
 			{
 				if (disposed) return;
-				version++; failures = 0; lastFailure = 0; lastError = null; suspended = false;
+				version++; retry.Rearm(); lastError = null;
 			}
 		}
 
@@ -110,28 +114,12 @@ namespace Keysharp.Internals
 			lock (sync)
 			{
 				if (disposed) return;
-				version++; suspended = true; retire = Retire();
+				version++; retry.Suspend(); retire = Retire();
 			}
 			Dispose(retire);
 		}
 
 		private Lease Borrow(Entry entry) { entry.Borrowers++; return new Lease(this, entry); }
-
-		private bool Delayed()
-		{
-			if (failures == 0 || lastFailure == 0) return false;
-			var factor = 1L << Math.Min(20, failures - 1);
-			var delay = TimeSpan.FromMilliseconds(Math.Min(maximumDelay.TotalMilliseconds,
-				initialDelay.TotalMilliseconds * factor));
-			return clock.GetElapsedTime(lastFailure, clock.GetTimestamp()) < delay;
-		}
-
-		private void Failed(Exception error)
-		{
-			failures = Math.Min(maximumAttempts, failures + 1);
-			lastFailure = clock.GetTimestamp();
-			lastError = error;
-		}
 
 		private T Retire()
 		{
@@ -158,7 +146,7 @@ namespace Keysharp.Internals
 			lock (sync)
 			{
 				if (disposed) return;
-				disposed = true; version++; retire = Retire();
+				disposed = true; version++; retry.Suspend(); retire = Retire();
 			}
 			Dispose(retire);
 		}

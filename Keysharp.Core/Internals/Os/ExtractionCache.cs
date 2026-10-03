@@ -2,7 +2,7 @@ namespace Keysharp.Internals.Os
 {
 	/// <summary>
 	/// Bounds the per-user directories that compiled scripts extract embedded payloads into. Each entry's last-write
-	/// time records when it was last used, so the cache keeps what is in use and lets everything else go.
+	/// time records recency; a shared lease prevents pruning while a process can still load its payloads.
 	/// </summary>
 	internal static class ExtractionCache
 	{
@@ -12,6 +12,50 @@ namespace Keysharp.Internals.Os
 		// removed once it has gone unused for a while.
 		private static readonly TimeSpan IdleGrace = TimeSpan.FromHours(1);
 		private static readonly TimeSpan MaxIdle = TimeSpan.FromDays(30);
+		private static readonly Dictionary<string, FileStream> active = new(OperatingSystem.IsWindows()
+			? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+
+		internal static void Use(string entryRoot)
+		{
+			entryRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(entryRoot));
+			lock (active)
+			{
+				if (active.ContainsKey(entryRoot)) return;
+				Directory.CreateDirectory(Path.GetDirectoryName(entryRoot));
+				if (!TryLease(entryRoot, false, out var lease))
+					throw new IOException("The embedded payload cache entry is being pruned.");
+				try { Directory.CreateDirectory(entryRoot); }
+				catch { lease.Dispose(); throw; }
+				active.Add(entryRoot, lease);
+			}
+		}
+
+		internal static bool TryLease(string entryRoot, bool exclusive, out FileStream lease)
+		{
+			lease = null;
+			try
+			{
+				// Keep the lock inode outside the entry so pruning cannot replace it beneath a waiting user.
+				lease = new FileStream(Path.TrimEndingDirectorySeparator(Path.GetFullPath(entryRoot)) + ".in-use", FileMode.OpenOrCreate,
+					exclusive ? FileAccess.ReadWrite : FileAccess.Read, exclusive ? FileShare.None : FileShare.Read);
+#if !WINDOWS
+				if (flock(lease.SafeFileHandle.DangerousGetHandle().ToInt32(), (exclusive ? 2 : 1) | 4) != 0)
+					throw new IOException("The embedded payload cache entry is in use.");
+#endif
+				return true;
+			}
+			catch
+			{
+				lease?.Dispose();
+				lease = null;
+				return false;
+			}
+		}
+
+#if !WINDOWS
+		[DllImport("libc", SetLastError = true)]
+		private static extern int flock(int descriptor, int operation);
+#endif
 
 		internal static void Touch(string entryRoot)
 		{
@@ -20,6 +64,7 @@ namespace Keysharp.Internals.Os
 
 		internal static void TouchAndPrune(string cacheRoot, string entryRoot)
 		{
+			Use(entryRoot);
 			Touch(entryRoot);
 
 			try
@@ -38,7 +83,11 @@ namespace Keysharp.Internals.Os
 
 					if (idle > MaxIdle || (i >= KeepRecent - 1 && idle > IdleGrace))
 					{
-						try { Directory.Delete(others[i].Root, true); } catch { }
+						if (!TryLease(others[i].Root, true, out var lease)) continue;
+						using (lease)
+							try
+							{ Directory.Delete(others[i].Root, true); }
+							catch { }
 					}
 				}
 			}

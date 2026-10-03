@@ -141,7 +141,7 @@ namespace Keysharp.Tests
 		{
 			void Check(string written, string expected)
 			{
-				var ok = Keysharp.Internals.Os.PackageResolver.TryTranslateVersion(written, out var range, out var err);
+				var ok = Keysharp.Internals.Os.PackageResolver.TryNormalizeVersion("nuget", written, out var range, out var err);
 				Assert.IsTrue(ok, $"'{written}' -> {err}");
 				Assert.AreEqual(expected, range, $"'{written}'");
 			}
@@ -152,6 +152,7 @@ namespace Keysharp.Tests
 			Check("13.0.3", "[13.0.3]");          // full -> exact
 			Check("1.2.3.4", "[1.2.3.4]");
 			Check("1.0.0-beta.1", "[1.0.0-beta.1]");
+			Check("1.0-beta", "[1.0-beta]");
 			Check("v13.0", "13.0.*");             // #Requires-style "v" prefix
 			Check("=13.0.3", "[13.0.3]");
 			Check(">=13.0", "[13.0,)");
@@ -165,7 +166,7 @@ namespace Keysharp.Tests
 			// Nothing may emit a character that is illegal inside Version="…".
 			foreach (var v in new[] { "", "13", "13.0.3", ">=13.0 <14", "<14", "v2" })
 			{
-				_ = Keysharp.Internals.Os.PackageResolver.TryTranslateVersion(v, out var r, out _);
+				_ = Keysharp.Internals.Os.PackageResolver.TryNormalizeVersion("nuget", v, out var r, out _);
 				Assert.IsFalse(r.Contains('<') || r.Contains('>') || r.Contains('"') || r.Contains('&'), $"'{v}' -> '{r}'");
 			}
 
@@ -175,12 +176,12 @@ namespace Keysharp.Tests
 
 			foreach (var bad in new[] { "abc", "1.0 2.0", ">=", "1.0 >=2.0", ">=x", "1..2", "1.",
 											 "1.2.3.4.5", "1.0-", "1.0+", "1.0-beta..1" })
-				Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.TryTranslateVersion(bad, out _, out _), bad);
+				Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.TryNormalizeVersion("nuget", bad, out _, out _), bad);
 
 			// A literal range is passed through to the provider, so a malformed one has to be caught here rather
 			// than surfacing during graph resolution — this method's whole contract is compile-time rejection.
 			foreach (var bad in new[] { "[[[", "***", "[]", "[,]", "(1.0)", "[1.0,2.0,3.0]", "[abc,)", "1.*.3", "*.1" })
-				Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.TryTranslateVersion(bad, out _, out _), bad);
+				Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.TryNormalizeVersion("nuget", bad, out _, out _), bad);
 		}
 
 		[Test, Category("Directives")]
@@ -494,36 +495,6 @@ namespace Keysharp.Tests
 		}
 
 		/// <summary>
-		/// A NuGet restore that FAILS can still write a complete, well-formed project.assets.json describing whichever
-		/// packages did resolve. Trusting that file would turn a hard "package not found" error into a silently
-		/// missing package on every subsequent run — loud once, then never again. NuGet's own verdict lives in
-		/// project.nuget.cache beside it, and that is what gates the cache hit.
-		/// </summary>
-		[Test, Category("Directives")]
-		public void FailedRestoreCache()
-		{
-			var dir = Path.Combine(Path.GetTempPath(), "ks-restore-verdict", Guid.NewGuid().ToString("N"));
-			var obj = Path.Combine(dir, "obj");
-			_ = Directory.CreateDirectory(obj);
-			var cache = Path.Combine(obj, "project.nuget.cache");
-
-			// No project.nuget.cache at all: an interrupted restore, which must re-run rather than be trusted.
-			Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.RestoreSucceeded(dir));
-
-			File.WriteAllText(cache, "{\"version\":2,\"success\":false,\"expectedPackageFiles\":[],\"logs\":[]}");
-			Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.RestoreSucceeded(dir),
-						   "a restore NuGet itself recorded as failed must not count as a cache hit");
-
-			File.WriteAllText(cache, "{\"version\":2,\"success\":true,\"expectedPackageFiles\":[],\"logs\":[]}");
-			Assert.IsTrue(Keysharp.Internals.Os.PackageResolver.RestoreSucceeded(dir));
-
-			File.WriteAllText(cache, "{ not json");
-			Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.RestoreSucceeded(dir));
-
-			try { Directory.Delete(dir, true); } catch { }
-		}
-
-		/// <summary>
 		/// A directive nobody handles is rejected rather than dropped: dropping it runs the script with the setting
 		/// silently absent, so the failure surfaces somewhere unrelated. Deprecated AutoHotkey v1 directives are in
 		/// that set deliberately — Keysharp targets v2, and ignoring a v1 leftover hides a porting bug.
@@ -559,13 +530,9 @@ namespace Keysharp.Tests
 			AssertEmits(Packages(), "LoadPackages((\"Newtonsoft.Json\", \"[13.0.3]\", false), (\"Serilog\", \"[4.0,5)\", true), (\"A.B\", \"*\", false))");
 		}
 
-		/// <summary>
-		/// Reading a NuGet assets file is retained for cache compatibility and package-manifest fixtures. A
-		/// live restore is otherwise the only way to exercise. A fixture pins the shapes that matter: RID-suffixed
-		/// target selection, the `_._` placeholder, and native assets landing separately from managed ones.
-		/// </summary>
+		/// <summary>Package assets retain their relative paths when deployed beside compiled scripts.</summary>
 		[Test, Category("Directives")]
-		public void AssetsFile()
+		public void ManifestAssetPaths()
 		{
 			var root = Path.Combine(Path.GetTempPath(), "ks-assets-fixture", Guid.NewGuid().ToString("N"));
 			var pkgDir = Path.Combine(root, "packages", "demo.pkg", "1.0.0");
@@ -574,40 +541,18 @@ namespace Keysharp.Tests
 			File.WriteAllText(Path.Combine(pkgDir, "lib", "net6.0", "Demo.dll"), "");
 			File.WriteAllText(Path.Combine(pkgDir, "lib", "net6.0", "_._"), "");
 			File.WriteAllText(Path.Combine(pkgDir, "runtimes", "win-x64", "native", "demo_native.dll"), "");
-			var tfm = Keysharp.Internals.Os.PackageResolver.TargetFramework;
-			var rid = Keysharp.Internals.Os.PackageResolver.RuntimeId;
-			var assets = Path.Combine(root, "obj", "project.assets.json");
-			_ = Directory.CreateDirectory(Path.GetDirectoryName(assets));
-			File.WriteAllText(assets, $$"""
+			var package = new Keysharp.Internals.Os.PackageResolver.ResolvedPackage
 			{
-			  "targets": {
-			    "{{tfm}}": { "demo.pkg/1.0.0": { "runtime": { "lib/net6.0/Demo.dll": {} } } },
-			    "{{tfm}}/{{rid}}": { "demo.pkg/1.0.0": {
-			        "runtime": { "lib/net6.0/Demo.dll": {}, "lib/net6.0/_._": {} },
-			        "native":  { "runtimes/win-x64/native/demo_native.dll": {} } } }
-			  },
-			  "libraries": { "demo.pkg/1.0.0": { "type": "package", "path": "demo.pkg/1.0.0" } },
-			  "packageFolders": { "{{Path.Combine(root, "packages").Replace("\\", "\\\\")}}": {} }
-			}
-			""");
-			var read = Keysharp.Internals.Os.PackageResolver.TryReadAssets(assets);
-			Assert.IsNotNull(read, "fixture should parse");
-			Assert.AreEqual(1, read.Count);
-			// The RID-qualified target wins, `_._` is dropped, and native assets do not land among the managed ones.
-			Assert.AreEqual(1, read[0].Managed.Count, "managed: " + string.Join(", ", read[0].Managed));
-			StringAssert.EndsWith("Demo.dll", read[0].Managed[0]);
-			Assert.AreEqual(1, read[0].Native.Count);
-			StringAssert.EndsWith("demo_native.dll", read[0].Native[0]);
+				Id = "demo.pkg", Version = "1.0.0", Root = pkgDir
+			};
+			package.Managed.Add(Path.Combine(pkgDir, "lib", "net6.0", "Demo.dll"));
+			package.Native.Add(Path.Combine(pkgDir, "runtimes", "win-x64", "native", "demo_native.dll"));
 			var manifest = new Keysharp.Internals.Os.PackageManifest();
-			manifest.Add(read[0], "[1.0.0]", false, true);
+			manifest.Add(package, "[1.0.0]", false, true);
 			StringAssert.EndsWith(Path.Combine("managed", "lib", "net6.0", "Demo.dll"), manifest.Packages[0].Managed[0].Deployed);
 			StringAssert.EndsWith(Path.Combine("native", "runtimes", "win-x64", "native", "demo_native.dll"),
 				manifest.Packages[0].Native[0].Deployed);
 
-			// A file the assets list names but which is gone means the shared package folder was cleared: the whole
-			// entry is stale and must force a fresh restore rather than half-load.
-			File.Delete(Path.Combine(pkgDir, "lib", "net6.0", "Demo.dll"));
-			Assert.IsNull(Keysharp.Internals.Os.PackageResolver.TryReadAssets(assets));
 			try { Directory.Delete(root, true); } catch { }
 		}
 
@@ -688,7 +633,7 @@ namespace Keysharp.Tests
 		/// <summary>
 		/// The runtime form. Its accumulate-then-re-resolve behaviour is the mitigation for the hazard that makes the
 		/// directive preferable: two independent resolutions could each pick a different version of a shared
-		/// dependency, so every call resolves the union of everything requested so far.
+		/// dependency, so each new request resolves the union of everything requested so far.
 		/// </summary>
 		[Test, Category("NuGet")]
 		public void LoadPackage()
@@ -699,8 +644,13 @@ namespace Keysharp.Tests
 			Assert.IsTrue(pkg.Any(a => string.Equals(a.GetName().Name, "Newtonsoft.Json", StringComparison.OrdinalIgnoreCase)));
 
 			// Same package/version again is a no-op, not a second resolution.
+			Keysharp.Internals.Os.PackageResolver.ResetCounters();
 			_ = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Newtonsoft.Json", "13.0.3", false, out var again);
 			Assert.IsNull(again, again);
+			var unversioned = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Newtonsoft.Json", "", false, out var unversionedError);
+			Assert.IsNull(unversionedError, unversionedError);
+			CollectionAssert.AreEqual(pkg, unversioned);
+			Assert.AreEqual(0, Keysharp.Internals.Os.PackageResolver.ResolveCount);
 
 			// A different version for an already-requested package is reported rather than silently loading a second copy.
 			_ = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Newtonsoft.Json", "12.0.3", false, out var conflict);

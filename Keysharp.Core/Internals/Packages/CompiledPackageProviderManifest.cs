@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using static Keysharp.Internals.Os.EmbeddedExtraction;
 
 namespace Keysharp.Internals.Os
 {
@@ -7,6 +8,7 @@ namespace Keysharp.Internals.Os
 	{
 		internal const string ResourceName = "Keysharp.Components.Packages.Providers.json";
 		internal const string AssetResourcePrefix = "Keysharp.Components.Packages.Provider/";
+		private static readonly HashSet<(Assembly Assembly, string Provider)> prepared = [];
 
 		[JsonPropertyName("providers")] public List<Entry> Providers { get; set; } = [];
 
@@ -123,6 +125,19 @@ namespace Keysharp.Internals.Os
 		/// <summary>Extracts and registers an embedded provider before the first imperative package resolution.</summary>
 		internal static bool TryPrepare(Assembly assembly, string providerName, out string failure)
 		{
+			var key = (assembly, providerName.ToLowerInvariant());
+			lock (prepared)
+			{
+				failure = null;
+				if (prepared.Contains(key)) return true;
+				if (!TryPrepareCore(assembly, providerName, out failure)) return false;
+				prepared.Add(key);
+				return true;
+			}
+		}
+
+		private static bool TryPrepareCore(Assembly assembly, string providerName, out string failure)
+		{
 			failure = null;
 
 			if (!TryRead(assembly, out var manifest, out var present, out failure))
@@ -166,6 +181,7 @@ namespace Keysharp.Internals.Os
 							|| !IsHash(asset.Hash) || !seen.Add(normalized))
 						throw new InvalidDataException("The embedded package-provider manifest contains an invalid payload entry.");
 
+					Keysharp.Internals.Os.ExtractionCache.Use(root);
 					var target = SafePath(root, normalized);
 
 					if (File.Exists(target) && MatchesHash(target, asset.Hash))
@@ -176,29 +192,7 @@ namespace Keysharp.Internals.Os
 					if (source == null)
 						throw new InvalidDataException($"Embedded package-provider asset '{normalized}' is missing.");
 
-					_ = Directory.CreateDirectory(Path.GetDirectoryName(target));
-					var temporary = target + "." + Environment.ProcessId + "." + Guid.NewGuid().ToString("N") + ".tmp";
-
-					try
-					{
-						using (var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-						{
-							source.CopyTo(output);
-							output.Flush(true);
-						}
-
-						if (!MatchesHash(temporary, asset.Hash))
-							throw new InvalidDataException($"Embedded package-provider asset '{normalized}' failed its SHA-256 check.");
-
-						File.Move(temporary, target, true);
-					}
-					finally
-					{
-						try { File.Delete(temporary); } catch { }
-					}
-
-					if (!MatchesHash(target, asset.Hash))
-						throw new InvalidDataException($"Extracted package-provider asset '{normalized}' failed its SHA-256 check.");
+					Keysharp.Internals.Os.EmbeddedExtraction.Extract(source, root, normalized, asset.Hash);
 				}
 
 				PackageProviderRegistry.AddSearchRoot(root);
@@ -263,39 +257,12 @@ namespace Keysharp.Internals.Os
 			}
 		}
 
-		private static string HashFile(string path)
-		{
-			using var stream = File.OpenRead(path);
-			return Convert.ToHexString(SHA256.HashData(stream));
-		}
-
-		private static bool MatchesHash(string path, string expected)
-		{
-			try { return HashFile(path).Equals(expected, StringComparison.OrdinalIgnoreCase); }
-			catch { return false; }
-		}
-
 		private static bool IsHash(string hash) => hash is { Length: 64 } && hash.All(Uri.IsHexDigit);
 
 		private static bool IsSafeRelative(string relative) =>
 			!string.IsNullOrEmpty(relative) && !Path.IsPathRooted(relative) && relative != ".."
 			&& !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
 			&& !relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal);
-
-		private static string SafePath(string root, string relative)
-		{
-			if (!IsSafeRelative(relative))
-				throw new InvalidDataException("A package-provider manifest contains an invalid deployment path.");
-
-			var fullRoot = Path.GetFullPath(root);
-			var full = Path.GetFullPath(Path.Combine(fullRoot, relative));
-			var prefix = Path.TrimEndingDirectorySeparator(fullRoot) + Path.DirectorySeparatorChar;
-
-			if (!full.StartsWith(prefix, PathComparison))
-				throw new InvalidDataException("A package-provider manifest contains an invalid deployment path.");
-
-			return full;
-		}
 
 #if WINDOWS
 		private const StringComparison PathComparison = StringComparison.OrdinalIgnoreCase;
