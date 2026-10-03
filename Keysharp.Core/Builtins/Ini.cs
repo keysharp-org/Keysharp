@@ -21,13 +21,13 @@ namespace Keysharp.Builtins
 
 			file = Path.GetFullPath(file);
 
+#if WINDOWS
 			if (!File.Exists(file))
 			{
 				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return DefaultObject;
 			}
 
-#if WINDOWS
 			bool ok = WindowsAPI.WritePrivateProfileString(s, key == null ? null : k, null, file);
 			ThreadAccessors.A_LastError = Marshal.GetLastWin32Error();
 			_ = WindowsAPI.WritePrivateProfileString(null, null, null, file);
@@ -41,7 +41,21 @@ namespace Keysharp.Builtins
 
 			try
 			{
-				var lines = IniLoad(file, out var encoding, out var newLine);
+				string target, newLine;
+				Encoding encoding;
+				List<string> lines;
+
+				try
+				{
+					target = IniResolveTarget(file);
+					lines = IniLoad(target, out encoding, out newLine);
+				}
+				catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+				{
+					ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
+					return DefaultObject;
+				}
+
 				var header = IniFindSection(lines, s, out var end, out var contentEnd);
 
 				if (header < 0)
@@ -55,7 +69,7 @@ namespace Keysharp.Builtins
 				else
 					return DefaultObject;
 
-				IniSave(file, lines, encoding, newLine);
+				IniSave(target, lines, encoding, newLine);
 				return DefaultObject;
 			}
 			catch (Exception ex)
@@ -262,9 +276,19 @@ namespace Keysharp.Builtins
 			try
 			{
 				// A new file gets UTF-8 without a byte order mark, the usual encoding of text files outside Windows.
+				var target = IniResolveTarget(file);
 				Encoding encoding = new UTF8Encoding(false);
 				var newLine = "\n";
-				var lines = File.Exists(file) ? IniLoad(file, out encoding, out newLine) : [];
+				List<string> lines;
+
+				try
+				{
+					lines = IniLoad(target, out encoding, out newLine);
+				}
+				catch (FileNotFoundException)
+				{
+					lines = [];
+				}
 				var header = IniFindSection(lines, s, out var end, out var contentEnd);
 
 				if (header < 0)
@@ -303,7 +327,7 @@ namespace Keysharp.Builtins
 					lines.InsertRange(header + 1, pairs);
 				}
 
-				IniSave(file, lines, encoding, newLine);
+				IniSave(target, lines, encoding, newLine);
 				return DefaultObject;
 			}
 			catch (Exception ex)
@@ -316,6 +340,18 @@ namespace Keysharp.Builtins
 		}
 
 #if !WINDOWS
+		private static string IniResolveTarget(string file)
+		{
+			try
+			{
+				return File.ResolveLinkTarget(file, returnFinalTarget: true)?.FullName ?? file;
+			}
+			catch (FileNotFoundException)
+			{
+				return file;
+			}
+		}
+
 		/// <summary>
 		/// The lines of an .ini file, with the encoding and line break it uses so that a rewrite keeps them.
 		/// </summary>
@@ -343,16 +379,10 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Writes the lines to a temporary file beside the .ini file and moves it over the file, so that a failure leaves
-		/// the old contents whole. A symbolic link keeps pointing to the edited target.
+		/// Writes beside the resolved target and replaces it atomically, retaining its mode and any symbolic links.
 		/// </summary>
 		private static void IniSave(string file, List<string> lines, Encoding encoding, string newLine)
 		{
-			var info = new FileInfo(file);
-
-			if (info.LinkTarget != null)
-				file = info.ResolveLinkTarget(returnFinalTarget: true).FullName;
-
 			var temp = file + "." + Path.GetRandomFileName();
 
 			try
@@ -367,7 +397,17 @@ namespace Keysharp.Builtins
 			}
 			catch
 			{
-				File.Delete(temp);
+				var error = Marshal.GetLastSystemError();
+
+				try
+				{
+					File.Delete(temp);
+				}
+				catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+				{
+				}
+
+				Marshal.SetLastSystemError(error);
 				throw;
 			}
 		}
