@@ -14,7 +14,7 @@ namespace Keysharp.Internals.Audio
 	/// All work goes through one <c>pa_mainloop</c> on a managed thread and one <c>pa_context</c>. Management callers hold
 	/// the mainloop lock across every <c>pa_*</c> call and wait on a condition variable; Pulse
 	/// callbacks already run on the mainloop thread with that lock held, so they only copy borrowed data and
-	/// signal. The render write callback additionally allocates nothing and touches no managed lock.
+	/// signal. The render write callback additionally allocates nothing and already holds the mainloop lock.
 	/// </para>
 	/// </summary>
 	internal sealed class PulseAudioBackend : IAudioBackend
@@ -108,7 +108,6 @@ namespace Keysharp.Internals.Audio
 
 		/// <summary>How long a connect may take before it is treated as a server that will not answer.</summary>
 		private const long ConnectTimeoutMs = 5000;
-		private const int ConnectPollMs = 5;
 
 		// ---- struct offsets --------------------------------------------------------------------
 
@@ -158,7 +157,7 @@ namespace Keysharp.Internals.Audio
 		// 1.0, so they are read only when the loaded library reports major version 1 or above: an older struct
 		// simply ends before them.
 		private const int SessionIndexOffset = 0;
-		private const int SessionNameOffset = 8;
+		private const int SessionClientOffset = 20;
 		private const int SessionDeviceOffset = 24;
 		private const int SinkInputVolumeOffset = 172;
 		private const int SinkInputMuteOffset = 336;
@@ -279,7 +278,7 @@ namespace Keysharp.Internals.Audio
 
 				return capability switch
 				{
-					AudioCapability.Playback => Pa.StreamNew != null,
+					AudioCapability.Playback => true,
 					AudioCapability.DeviceRunning => Lp64,
 					AudioCapability.MicrophoneCapture => EnsureCaptureUsable(AudioCaptureSource.Microphone, out _),
 					AudioCapability.SystemAudioCapture => EnsureCaptureUsable(AudioCaptureSource.SystemOutput, out _),
@@ -405,12 +404,6 @@ namespace Keysharp.Internals.Audio
 					return false;
 				}
 
-				if (Pa.StreamNew == null)
-				{
-					error = "This libpulse.so.0 does not export the playback API; install a PulseAudio 0.9.15 or newer client library.";
-					return false;
-				}
-
 				// A blank id follows the current default: the stream is connected with a null device name so the
 				// server keeps moving it, and the format is negotiated against whatever the default sink is now.
 				var followDefault = string.IsNullOrEmpty(request.DeviceId);
@@ -478,22 +471,11 @@ namespace Keysharp.Internals.Audio
 				if (!TryReadEndpoint(kind, id, out var endpoint))
 					return false;
 
-				if (Pa.CVolumeScale == null || endpoint.ChannelVolumes.Length == 0)
-					return false;
-
-				var channels = endpoint.ChannelVolumes.Length;
 				var raw = (uint)Math.Round(Math.Clamp(volume, 0.0, 1.0) * 65536.0);
-				var block = EnsureVolumeBlock();
+				var block = ScaleVolume(endpoint.ChannelVolumes, raw);
 
 				if (block == 0)
 					return false;
-
-				Marshal.WriteByte(block, (byte)channels);
-
-				for (var i = 0; i < channels; i++)
-					Marshal.WriteInt32(block, CVolumeValuesOffset + (i * 4), unchecked((int)endpoint.ChannelVolumes[i]));
-
-				Pa.CVolumeScale(block, raw);
 
 				var setter = endpoint.Kind == AudioDeviceKind.Output ? Pa.SetSinkVolumeByIndex : Pa.SetSourceVolumeByIndex;
 				var ok = RunLocked(() =>
@@ -501,7 +483,6 @@ namespace Keysharp.Internals.Audio
 					scratchSuccess = 0;
 					return RunOperation(setter(context, endpoint.Index, block, onSuccess, 0)) && scratchSuccess != 0;
 				});
-				Volatile.Write(ref snapshotDirty, 1);
 				return ok;
 			}
 		}
@@ -533,7 +514,6 @@ namespace Keysharp.Internals.Audio
 					scratchSuccess = 0;
 					return RunOperation(setter(context, endpoint.Index, mute ? 1 : 0, onSuccess, 0)) && scratchSuccess != 0;
 				});
-				Volatile.Write(ref snapshotDirty, 1);
 				return ok;
 			}
 		}
@@ -579,7 +559,7 @@ namespace Keysharp.Internals.Audio
 
 			lock (sync)
 			{
-				if (!EnsureReady(out _) || Pa.Subscribe == null)
+				if (!EnsureReady(out _))
 					return null;
 
 				var next = new Action[watchers.Length + 1];
@@ -762,17 +742,17 @@ namespace Keysharp.Internals.Audio
 
 				int state;
 
-				// Bounded by polling rather than a condition wait: a server that accepts the socket and
-				// then stalls in AUTHORIZING signals nothing, and an unbounded wait here parks the calling script
-				// thread for good. The lock is released around the sleep so the mainloop can make progress.
+				// The timed condition wait lets the mainloop progress without relying on a stalled server to signal.
 				var deadline = Environment.TickCount64 + ConnectTimeoutMs;
 
 				while ((state = Pa.ContextGetState(context)) != ContextReady && state != ContextFailed && state != ContextTerminated)
 				{
-					if (Environment.TickCount64 >= deadline)
+					var remaining = deadline - Environment.TickCount64;
+
+					if (remaining <= 0)
 						break;
 
-					PollWait(ConnectPollMs);
+					_ = System.Threading.Monitor.Wait(mainloopGate, (int)remaining);
 				}
 
 				if (state != ContextReady)
@@ -788,12 +768,9 @@ namespace Keysharp.Internals.Audio
 				ResetSessionCache();
 
 				// Subscribing unconditionally keeps the device snapshot honest even when no script watcher exists.
-				if (Pa.Subscribe != null)
-				{
-					Pa.SetSubscribeCallback(context, onSubscribe, 0);
-					scratchSuccess = 0;
-					_ = RunOperation(Pa.Subscribe(context, desiredMask, onSuccess, 0));
-				}
+				Pa.SetSubscribeCallback(context, onSubscribe, 0);
+				scratchSuccess = 0;
+				_ = RunOperation(Pa.Subscribe(context, desiredMask, onSuccess, 0));
 
 				return true;
 			}
@@ -813,7 +790,7 @@ namespace Keysharp.Internals.Audio
 		{
 			var detail = "";
 
-			if (context != 0 && Pa.ContextErrno != null && Pa.StrError != null)
+			if (context != 0)
 			{
 				var text = Marshal.PtrToStringUTF8(Pa.StrError(Pa.ContextErrno(context)));
 
@@ -858,17 +835,6 @@ namespace Keysharp.Internals.Audio
 		internal void LockMainloop() => System.Threading.Monitor.Enter(mainloopGate);
 
 		internal void UnlockMainloop() => System.Threading.Monitor.Exit(mainloopGate);
-
-		/// <summary>
-		/// Releases the mainloop lock for a moment instead of waiting to be signalled. Used where the thing being
-		/// waited for may never signal at all, so the caller needs its own deadline to remain answerable.
-		/// </summary>
-		internal void PollWait(int milliseconds)
-		{
-			UnlockMainloop();
-			Thread.Sleep(milliseconds);
-			LockMainloop();
-		}
 
 		internal void Signal() => System.Threading.Monitor.PulseAll(mainloopGate);
 
@@ -924,29 +890,47 @@ namespace Keysharp.Internals.Audio
 		}
 
 		/// <summary>
-		/// Waits out one pa_operation. Called with the mainloop locked; a context that dies mid-flight breaks the
-		/// wait so a vanished server cannot park the caller forever.
+		/// Waits for a management reply with the mainloop locked. Cancellation stops a late callback from writing
+		/// scratch state after the next operation has started.
 		/// </summary>
 		internal bool RunOperation(nint operation)
 		{
 			if (operation == 0)
 				return false;
 
-			while (Pa.OperationGetState(operation) == OperationRunning)
+			var deadline = Environment.TickCount64 + ConnectTimeoutMs;
+
+			try
 			{
-				if (Pa.ContextGetState(context) != ContextReady)
-					break;
+				while (Pa.OperationGetState(operation) == OperationRunning)
+				{
+					if (Pa.ContextGetState(context) != ContextReady)
+						break;
 
-				_ = System.Threading.Monitor.Wait(mainloopGate);
+					var remaining = deadline - Environment.TickCount64;
+
+					if (remaining <= 0)
+					{
+						Pa.OperationCancel(operation);
+						return false;
+					}
+
+					_ = System.Threading.Monitor.Wait(mainloopGate, (int)remaining);
+				}
+
+				return Pa.OperationGetState(operation) == OperationDone;
 			}
-
-			var done = Pa.OperationGetState(operation) == OperationDone;
-			Pa.OperationUnref(operation);
-			return done;
+			finally
+			{
+				Pa.OperationUnref(operation);
+			}
 		}
 
-		private nint EnsureVolumeBlock()
+		private nint ScaleVolume(ReadOnlySpan<uint> channels, uint maximum)
 		{
+			if (Pa.CVolumeScale == null || channels.IsEmpty)
+				return 0;
+
 			if (volumeBlock == 0)
 			{
 				volumeBlock = Marshal.AllocHGlobal(CVolumeSize);
@@ -960,7 +944,16 @@ namespace Keysharp.Internals.Audio
 				}
 			}
 
-			return volumeBlock;
+			if (volumeBlock == 0)
+				return 0;
+
+			Marshal.WriteByte(volumeBlock, (byte)channels.Length);
+
+			for (var i = 0; i < channels.Length; i++)
+				Marshal.WriteInt32(volumeBlock, CVolumeValuesOffset + (i * 4), unchecked((int)channels[i]));
+
+			// Pulse retains channel proportions; an all-zero vector is set uniformly because no balance remains.
+			return Pa.CVolumeScale(volumeBlock, maximum);
 		}
 
 		// ---- snapshots and lookups -------------------------------------------------------------
@@ -1242,11 +1235,7 @@ namespace Keysharp.Internals.Audio
 			if (string.IsNullOrEmpty(name))
 				return null;
 
-			var slider = ReadVolume(info, InfoVolumeOffset, out var volumeChannels, linear: false);
-			var channelVolumes = new uint[volumeChannels];
-
-			for (var i = 0; i < volumeChannels; i++)
-				channelVolumes[i] = unchecked((uint)Marshal.ReadInt32(info, InfoVolumeOffset + CVolumeValuesOffset + i * 4));
+			var slider = ReadVolume(info, InfoVolumeOffset, out var channelVolumes, linear: false);
 			return new PaEndpoint
 			{
 				Kind = kind,
@@ -1264,23 +1253,25 @@ namespace Keysharp.Internals.Audio
 
 		/// <summary>
 		/// Reads the loudest channel from a borrowed pa_cvolume, as linear amplitude for sessions or slider position
-		/// for endpoints. An unreadable block reports zero channels.
+		/// for endpoints, retaining the channel volumes for balanced writes. An unreadable block reports no channels.
 		/// </summary>
-		private static double ReadVolume(nint info, int cvolumeOffset, out int channels, bool linear = true)
+		private static double ReadVolume(nint info, int cvolumeOffset, out uint[] channelVolumes, bool linear = true)
 		{
-			channels = Marshal.ReadByte(info, cvolumeOffset);
+			var channels = Marshal.ReadByte(info, cvolumeOffset);
 
-			if (channels <= 0 || channels > MaxCVolumeChannels || Pa.SwVolumeToLinear == null)
+			if (channels <= 0 || channels > MaxCVolumeChannels)
 			{
-				channels = 0;
+				channelVolumes = [];
 				return 0.0;
 			}
 
+			channelVolumes = new uint[channels];
 			var loudest = 0u;
 
 			for (var i = 0; i < channels; i++)
 			{
 				var raw = unchecked((uint)Marshal.ReadInt32(info, cvolumeOffset + CVolumeValuesOffset + (i * 4)));
+				channelVolumes[i] = raw;
 
 				if (raw > loudest)
 					loudest = raw;
@@ -1376,7 +1367,7 @@ namespace Keysharp.Internals.Audio
 		}
 
 		private static bool CaptureExportsPresent()
-			=> Pa.StreamNew != null && Pa.StreamConnectRecord != null && Pa.StreamSetReadCallback != null
+			=> Pa.StreamConnectRecord != null && Pa.StreamSetReadCallback != null
 			   && Pa.StreamPeek != null && Pa.StreamDrop != null;
 
 		private bool HasMonitorSource()
@@ -1548,19 +1539,14 @@ namespace Keysharp.Internals.Audio
 
 				var setter = session.IsSinkInput ? Pa.SetSinkInputVolume : Pa.SetSourceOutputVolume;
 
-				if (!session.HasVolume || setter == null || Pa.SwVolumeFromLinear == null || session.VolumeChannels <= 0)
-					return false;
-
-				var block = EnsureVolumeBlock();
-
-				if (block == 0)
+				if (!session.HasVolume || setter == null)
 					return false;
 
 				var raw = Pa.SwVolumeFromLinear(Math.Clamp(linearVolume, 0.0, 1.0));
-				Marshal.WriteByte(block, (byte)session.VolumeChannels);
+				var block = ScaleVolume(session.ChannelVolumes, raw);
 
-				for (var i = 0; i < session.VolumeChannels; i++)
-					Marshal.WriteInt32(block, CVolumeValuesOffset + (i * 4), unchecked((int)raw));
+				if (block == 0)
+					return false;
 
 				var index = session.Index;
 				var ok = RunLocked(() =>
@@ -1568,7 +1554,6 @@ namespace Keysharp.Internals.Audio
 					scratchSuccess = 0;
 					return RunOperation(setter(context, index, block, onSuccess, 0)) && scratchSuccess != 0;
 				});
-				Volatile.Write(ref sessionsDirty, 1);
 				return ok;
 			}
 		}
@@ -1605,7 +1590,6 @@ namespace Keysharp.Internals.Audio
 					scratchSuccess = 0;
 					return RunOperation(setter(context, index, mute ? 1 : 0, onSuccess, 0)) && scratchSuccess != 0;
 				});
-				Volatile.Write(ref sessionsDirty, 1);
 				return ok;
 			}
 		}
@@ -1648,7 +1632,7 @@ namespace Keysharp.Internals.Audio
 			if ((desiredMask & SessionSubscriptionMask) == SessionSubscriptionMask)
 				return true;
 
-			if (Pa.Subscribe == null || context == 0)
+			if (context == 0)
 				return false;
 
 			var mask = desiredMask | SessionSubscriptionMask;
@@ -1896,11 +1880,19 @@ namespace Keysharp.Internals.Audio
 			else if (!id.StartsWith(SourceOutputPrefix, StringComparison.Ordinal))
 				return false;
 
-			var parts = id.Substring((sinkInput ? SinkInputPrefix : SourceOutputPrefix).Length).Split(':');
-			return parts.Length == 3
-				   && long.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out generation)
-				   && uint.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out index)
-				   && long.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out admission);
+			var parts = id.AsSpan(SinkInputPrefix.Length);
+			var first = parts.IndexOf(':');
+
+			if (first < 0)
+				return false;
+
+			var rest = parts[(first + 1)..];
+			var second = rest.IndexOf(':');
+
+			return second >= 0
+				   && long.TryParse(parts[..first], NumberStyles.None, CultureInfo.InvariantCulture, out generation)
+				   && uint.TryParse(rest[..second], NumberStyles.None, CultureInfo.InvariantCulture, out index)
+				   && long.TryParse(rest[(second + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out admission);
 		}
 
 		/// <summary>
@@ -2150,7 +2142,7 @@ namespace Keysharp.Internals.Audio
 		{
 			var modern = Pa.SessionFieldsSince1;
 			var proplist = Marshal.ReadIntPtr(info, sinkInput ? SinkInputProplistOffset : SourceOutputProplistOffset);
-			var streamName = Marshal.PtrToStringUTF8(Marshal.ReadIntPtr(info, SessionNameOffset)) ?? "";
+			var clientIndex = unchecked((uint)Marshal.ReadInt32(info, SessionClientOffset));
 			var processName = ReadProperty(proplist, keyProcessBinary);
 			var processText = ReadProperty(proplist, keyProcessId);
 			_ = long.TryParse(processText, NumberStyles.None, CultureInfo.InvariantCulture, out var processId);
@@ -2162,18 +2154,18 @@ namespace Keysharp.Internals.Audio
 				ProcessId = processId > 0 ? processId : 0,
 				ProcessName = processName,
 				DisplayName = ReadProperty(proplist, keyApplicationName),
-				Identity = string.Concat(streamName, "|", processText, "|", processName),
+				Identity = string.Concat(clientIndex.ToString(CultureInfo.InvariantCulture), "|", processText, "|", processName),
 			};
 
 			if (sinkInput)
 			{
-				session.Volume = ReadVolume(info, SinkInputVolumeOffset, out var channels);
-				session.VolumeChannels = channels;
+				session.Volume = ReadVolume(info, SinkInputVolumeOffset, out var channelVolumes);
+				session.ChannelVolumes = channelVolumes;
 				session.Mute = Marshal.ReadInt32(info, SinkInputMuteOffset) != 0;
 				session.HasMute = Pa.SetSinkInputMute != null;
 
 				// Before 1.0 a sink-input had no has_volume/volume_writable pair and its volume was always writable.
-				session.HasVolume = Pa.SetSinkInputVolume != null && channels > 0
+				session.HasVolume = Pa.SetSinkInputVolume != null && channelVolumes.Length > 0
 									&& (!modern
 										|| (Marshal.ReadInt32(info, SinkInputHasVolumeOffset) != 0
 											&& Marshal.ReadInt32(info, SinkInputVolumeWritableOffset) != 0));
@@ -2187,13 +2179,13 @@ namespace Keysharp.Internals.Audio
 			else if (modern)
 			{
 				// A source-output carries no volume, mute, or corked field before 1.0: its struct ends at proplist.
-				session.Volume = ReadVolume(info, SourceOutputVolumeOffset, out var channels);
-				session.VolumeChannels = channels;
+				session.Volume = ReadVolume(info, SourceOutputVolumeOffset, out var channelVolumes);
+				session.ChannelVolumes = channelVolumes;
 				session.Mute = Marshal.ReadInt32(info, SourceOutputMuteOffset) != 0;
 				session.Corked = Marshal.ReadInt32(info, SourceOutputCorkedOffset) != 0;
 				session.CorkedKnown = true;
 				session.HasMute = Pa.SetSourceOutputMute != null;
-				session.HasVolume = Pa.SetSourceOutputVolume != null && channels > 0
+				session.HasVolume = Pa.SetSourceOutputVolume != null && channelVolumes.Length > 0
 									&& Marshal.ReadInt32(info, SourceOutputHasVolumeOffset) != 0
 									&& Marshal.ReadInt32(info, SourceOutputVolumeWritableOffset) != 0;
 			}
@@ -2925,7 +2917,7 @@ namespace Keysharp.Internals.Audio
 
 					try
 					{
-						if (stream != 0 && Pa.StreamGetLatency != null && Pa.StreamGetLatency(stream, out var usec, out var negative) >= 0)
+						if (stream != 0 && Pa.StreamGetLatency(stream, out var usec, out var negative) >= 0)
 						{
 							latencyMs = negative != 0 ? 0 : usec / 1000.0;
 							Volatile.Write(ref latencyStale, 0);
@@ -2994,14 +2986,9 @@ namespace Keysharp.Internals.Audio
 					Pa.StreamSetWriteCallback(stream, onWrite, 0);
 					Pa.StreamSetStateCallback(stream, onState, 0);
 
-					if (Pa.StreamSetUnderflowCallback != null)
-						Pa.StreamSetUnderflowCallback(stream, onUnderflow, 0);
-
-					if (Pa.StreamSetLatencyUpdateCallback != null)
-						Pa.StreamSetLatencyUpdateCallback(stream, onLatency, 0);
-
-					if (Pa.StreamSetMovedCallback != null)
-						Pa.StreamSetMovedCallback(stream, onMoved, 0);
+					Pa.StreamSetUnderflowCallback(stream, onUnderflow, 0);
+					Pa.StreamSetLatencyUpdateCallback(stream, onLatency, 0);
+					Pa.StreamSetMovedCallback(stream, onMoved, 0);
 
 					if (Pa.StreamConnectPlayback(stream, device, ref attr, flags, 0, 0) < 0)
 					{
@@ -3015,12 +3002,12 @@ namespace Keysharp.Internals.Audio
 
 					while ((state = Pa.StreamGetState(stream)) != StreamReady && state != StreamFailed && state != StreamTerminated)
 					{
-						// A context that dies under the connect, or a server that never answers, must not park this
-						// caller in a wait nothing will wake.
-						if (Pa.ContextGetState(owner.Context) != ContextReady || Environment.TickCount64 >= deadline)
+						var remaining = deadline - Environment.TickCount64;
+
+						if (Pa.ContextGetState(owner.Context) != ContextReady || remaining <= 0)
 							break;
 
-						owner.PollWait(ConnectPollMs);
+						_ = System.Threading.Monitor.Wait(owner.mainloopGate, (int)remaining);
 					}
 
 					if (state != StreamReady)
@@ -3097,14 +3084,9 @@ namespace Keysharp.Internals.Audio
 					Pa.StreamSetWriteCallback(handle, null, 0);
 					Pa.StreamSetStateCallback(handle, null, 0);
 
-					if (Pa.StreamSetUnderflowCallback != null)
-						Pa.StreamSetUnderflowCallback(handle, null, 0);
-
-					if (Pa.StreamSetLatencyUpdateCallback != null)
-						Pa.StreamSetLatencyUpdateCallback(handle, null, 0);
-
-					if (Pa.StreamSetMovedCallback != null)
-						Pa.StreamSetMovedCallback(handle, null, 0);
+					Pa.StreamSetUnderflowCallback(handle, null, 0);
+					Pa.StreamSetLatencyUpdateCallback(handle, null, 0);
+					Pa.StreamSetMovedCallback(handle, null, 0);
 
 					_ = Pa.StreamDisconnect(handle);
 					Pa.StreamUnref(handle);
@@ -3215,7 +3197,7 @@ namespace Keysharp.Internals.Audio
 			internal bool Corked;
 			internal bool CorkedKnown;
 			internal double Volume;
-			internal int VolumeChannels;
+			internal uint[] ChannelVolumes = [];
 			internal bool Mute;
 			internal bool HasVolume;
 			internal bool HasMute;
@@ -3238,7 +3220,7 @@ namespace Keysharp.Internals.Audio
 				Corked = fresh.Corked;
 				CorkedKnown = fresh.CorkedKnown;
 				Volume = fresh.Volume;
-				VolumeChannels = fresh.VolumeChannels;
+				ChannelVolumes = fresh.ChannelVolumes;
 				Mute = fresh.Mute;
 				HasVolume = fresh.HasVolume;
 				HasMute = fresh.HasMute;
@@ -3347,12 +3329,12 @@ namespace Keysharp.Internals.Audio
 
 					while ((state = Pa.StreamGetState(stream)) != StreamReady && state != StreamFailed && state != StreamTerminated)
 					{
-						// A context that dies under the connect, or a server that never answers, must not park this
-						// caller in a wait nothing will wake.
-						if (Pa.ContextGetState(owner.Context) != ContextReady || Environment.TickCount64 >= deadline)
+						var remaining = deadline - Environment.TickCount64;
+
+						if (Pa.ContextGetState(owner.Context) != ContextReady || remaining <= 0)
 							break;
 
-						owner.PollWait(ConnectPollMs);
+						_ = System.Threading.Monitor.Wait(owner.mainloopGate, (int)remaining);
 					}
 
 					if (state != StreamReady)
@@ -3578,10 +3560,12 @@ namespace Keysharp.Internals.Audio
 
 					while ((state = Pa.StreamGetState(stream)) != StreamReady && state != StreamFailed && state != StreamTerminated)
 					{
-						if (Pa.ContextGetState(owner.Context) != ContextReady || Environment.TickCount64 >= deadline)
+						var remaining = deadline - Environment.TickCount64;
+
+						if (Pa.ContextGetState(owner.Context) != ContextReady || remaining <= 0)
 							break;
 
-						owner.PollWait(ConnectPollMs);
+						_ = System.Threading.Monitor.Wait(owner.mainloopGate, (int)remaining);
 					}
 
 					if (state != StreamReady)
@@ -3776,14 +3760,34 @@ namespace Keysharp.Internals.Audio
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 		private delegate void StreamSuccessCb(nint stream, int success, nint userData);
 
+		private static T Bind<T>(nint handle, string name, ref string missing) where T : Delegate
+		{
+			var bound = BindOptional<T>(handle, name);
+
+			if (bound == null)
+				missing ??= name;
+
+			return bound;
+		}
+
+		private static T BindOptional<T>(nint handle, string name) where T : Delegate
+		{
+			try
+			{
+				if (NativeLibrary.TryGetExport(handle, name, out var address) && address != 0)
+					return Marshal.GetDelegateForFunctionPointer<T>(address);
+			}
+			catch (Exception)
+			{
+			}
+
+			return null;
+		}
+
 		/// <summary>
-		/// The resolved libpulse entry points. Every field is filled once by <see cref="TryLoad"/>; a static
-		/// initializer never runs native code, so a missing library can only surface as a cached reason.
-		/// <para>
-		/// The accepted minimum is PulseAudio 0.9.15 (2009): every export below, and every struct offset above,
-		/// has been stable from that release forward, including under pipewire-pulse, which uses this same client
-		/// library. <c>pa_stream_cork</c> is the only optional binding.
-		/// </para>
+		/// The resolved libpulse entry points, loaded once without a native static initializer. The required
+		/// exports date from PulseAudio 0.9.15; capture, sessions, corking and write cancellation are optional.
+		/// Session fields added in 1.0 are read only after checking the loaded version.
 		/// </summary>
 		private static class Pa
 		{
@@ -3854,6 +3858,7 @@ namespace Keysharp.Internals.Audio
 			internal static FnSetContextStateCb SetContextStateCallback;
 			internal static FnIntP OperationGetState;
 			internal static FnVoidP OperationUnref;
+			internal static FnVoidP OperationCancel;
 			internal static FnGetServerInfo GetServerInfo;
 			internal static FnGetSinkInfoList GetSinkInfoList;
 			internal static FnGetSourceInfoList GetSourceInfoList;
@@ -3933,66 +3938,67 @@ namespace Keysharp.Internals.Audio
 					}
 
 					string missing = null;
-					GetLibraryVersionRaw = Bind<FnNew>("pa_get_library_version", ref missing);
-					StrError = Bind<FnStrError>("pa_strerror", ref missing);
-					MainloopNew = Bind<FnNew>("pa_mainloop_new", ref missing);
-					MainloopFree = Bind<FnVoidP>("pa_mainloop_free", ref missing);
-					MainloopRun = Bind<FnIntPP>("pa_mainloop_run", ref missing);
-					MainloopQuit = Bind<FnVoidPI>("pa_mainloop_quit", ref missing);
-					MainloopGetApi = Bind<FnPtrP>("pa_mainloop_get_api", ref missing);
-					MainloopSetPollFunc = Bind<FnSetPollFunc>("pa_mainloop_set_poll_func", ref missing);
-					ContextNew = Bind<FnContextNew>("pa_context_new", ref missing);
-					ContextUnref = Bind<FnVoidP>("pa_context_unref", ref missing);
-					ContextConnect = Bind<FnContextConnect>("pa_context_connect", ref missing);
-					ContextDisconnect = Bind<FnVoidP>("pa_context_disconnect", ref missing);
-					ContextGetState = Bind<FnIntP>("pa_context_get_state", ref missing);
-					ContextErrno = Bind<FnIntP>("pa_context_errno", ref missing);
-					SetContextStateCallback = Bind<FnSetContextStateCb>("pa_context_set_state_callback", ref missing);
-					OperationGetState = Bind<FnIntP>("pa_operation_get_state", ref missing);
-					OperationUnref = Bind<FnVoidP>("pa_operation_unref", ref missing);
-					GetServerInfo = Bind<FnGetServerInfo>("pa_context_get_server_info", ref missing);
-					GetSinkInfoList = Bind<FnGetSinkInfoList>("pa_context_get_sink_info_list", ref missing);
-					GetSourceInfoList = Bind<FnGetSourceInfoList>("pa_context_get_source_info_list", ref missing);
-					GetSinkInfoByIndex = Bind<FnGetSinkInfoByIndex>("pa_context_get_sink_info_by_index", ref missing);
-					GetSourceInfoByIndex = Bind<FnGetSourceInfoByIndex>("pa_context_get_source_info_by_index", ref missing);
-					SetSinkVolumeByIndex = Bind<FnSetVolumeByIndex>("pa_context_set_sink_volume_by_index", ref missing);
-					SetSourceVolumeByIndex = Bind<FnSetVolumeByIndex>("pa_context_set_source_volume_by_index", ref missing);
-					SetSinkMuteByIndex = Bind<FnSetMuteByIndex>("pa_context_set_sink_mute_by_index", ref missing);
-					SetSourceMuteByIndex = Bind<FnSetMuteByIndex>("pa_context_set_source_mute_by_index", ref missing);
-					Subscribe = Bind<FnSubscribe>("pa_context_subscribe", ref missing);
-					SetSubscribeCallback = Bind<FnSetSubscribeCb>("pa_context_set_subscribe_callback", ref missing);
-					SwVolumeToLinear = Bind<FnVolumeToLinear>("pa_sw_volume_to_linear", ref missing);
-					SwVolumeFromLinear = Bind<FnVolumeFromLinear>("pa_sw_volume_from_linear", ref missing);
-					CVolumeScale = Bind<FnCVolumeScale>("pa_cvolume_scale", ref missing);
-					StreamNew = Bind<FnStreamNew>("pa_stream_new", ref missing);
-					StreamUnref = Bind<FnVoidP>("pa_stream_unref", ref missing);
-					StreamConnectPlayback = Bind<FnStreamConnectPlayback>("pa_stream_connect_playback", ref missing);
-					StreamDisconnect = Bind<FnIntP>("pa_stream_disconnect", ref missing);
-					StreamGetState = Bind<FnIntP>("pa_stream_get_state", ref missing);
-					StreamSetStateCallback = Bind<FnStreamSetNotifyCb>("pa_stream_set_state_callback", ref missing);
-					StreamSetWriteCallback = Bind<FnStreamSetRequestCb>("pa_stream_set_write_callback", ref missing);
-					StreamSetUnderflowCallback = Bind<FnStreamSetNotifyCb>("pa_stream_set_underflow_callback", ref missing);
-					StreamSetLatencyUpdateCallback = Bind<FnStreamSetNotifyCb>("pa_stream_set_latency_update_callback", ref missing);
-					StreamSetMovedCallback = Bind<FnStreamSetNotifyCb>("pa_stream_set_moved_callback", ref missing);
-					StreamBeginWrite = Bind<FnStreamBeginWrite>("pa_stream_begin_write", ref missing);
-					StreamCancelWrite = BindOptional<FnStreamCancelWrite>("pa_stream_cancel_write");
-					StreamWrite = Bind<FnStreamWrite>("pa_stream_write", ref missing);
-					StreamGetLatency = Bind<FnStreamGetLatency>("pa_stream_get_latency", ref missing);
-					StreamCork = BindOptional<FnStreamCork>("pa_stream_cork");
-					StreamConnectRecord = BindOptional<FnStreamConnectRecord>("pa_stream_connect_record");
-					StreamSetReadCallback = BindOptional<FnStreamSetRequestCb>("pa_stream_set_read_callback");
-					StreamPeek = BindOptional<FnStreamPeek>("pa_stream_peek");
-					StreamDrop = BindOptional<FnIntP>("pa_stream_drop");
-					SetMonitorStream = BindOptional<FnStreamSetMonitorStream>("pa_stream_set_monitor_stream");
-					GetSinkInputInfoList = BindOptional<FnGetSinkInputInfoList>("pa_context_get_sink_input_info_list");
-					GetSinkInputInfo = BindOptional<FnGetSinkInputInfoByIndex>("pa_context_get_sink_input_info");
-					GetSourceOutputInfoList = BindOptional<FnGetSourceOutputInfoList>("pa_context_get_source_output_info_list");
-					GetSourceOutputInfo = BindOptional<FnGetSourceOutputInfoByIndex>("pa_context_get_source_output_info");
-					SetSinkInputVolume = BindOptional<FnSetVolumeByIndex>("pa_context_set_sink_input_volume");
-					SetSinkInputMute = BindOptional<FnSetMuteByIndex>("pa_context_set_sink_input_mute");
-					SetSourceOutputVolume = BindOptional<FnSetVolumeByIndex>("pa_context_set_source_output_volume");
-					SetSourceOutputMute = BindOptional<FnSetMuteByIndex>("pa_context_set_source_output_mute");
-					ProplistGets = BindOptional<FnProplistGets>("pa_proplist_gets");
+					GetLibraryVersionRaw = Bind<FnNew>(Handle, "pa_get_library_version", ref missing);
+					StrError = Bind<FnStrError>(Handle, "pa_strerror", ref missing);
+					MainloopNew = Bind<FnNew>(Handle, "pa_mainloop_new", ref missing);
+					MainloopFree = Bind<FnVoidP>(Handle, "pa_mainloop_free", ref missing);
+					MainloopRun = Bind<FnIntPP>(Handle, "pa_mainloop_run", ref missing);
+					MainloopQuit = Bind<FnVoidPI>(Handle, "pa_mainloop_quit", ref missing);
+					MainloopGetApi = Bind<FnPtrP>(Handle, "pa_mainloop_get_api", ref missing);
+					MainloopSetPollFunc = Bind<FnSetPollFunc>(Handle, "pa_mainloop_set_poll_func", ref missing);
+					ContextNew = Bind<FnContextNew>(Handle, "pa_context_new", ref missing);
+					ContextUnref = Bind<FnVoidP>(Handle, "pa_context_unref", ref missing);
+					ContextConnect = Bind<FnContextConnect>(Handle, "pa_context_connect", ref missing);
+					ContextDisconnect = Bind<FnVoidP>(Handle, "pa_context_disconnect", ref missing);
+					ContextGetState = Bind<FnIntP>(Handle, "pa_context_get_state", ref missing);
+					ContextErrno = Bind<FnIntP>(Handle, "pa_context_errno", ref missing);
+					SetContextStateCallback = Bind<FnSetContextStateCb>(Handle, "pa_context_set_state_callback", ref missing);
+					OperationGetState = Bind<FnIntP>(Handle, "pa_operation_get_state", ref missing);
+					OperationUnref = Bind<FnVoidP>(Handle, "pa_operation_unref", ref missing);
+					OperationCancel = Bind<FnVoidP>(Handle, "pa_operation_cancel", ref missing);
+					GetServerInfo = Bind<FnGetServerInfo>(Handle, "pa_context_get_server_info", ref missing);
+					GetSinkInfoList = Bind<FnGetSinkInfoList>(Handle, "pa_context_get_sink_info_list", ref missing);
+					GetSourceInfoList = Bind<FnGetSourceInfoList>(Handle, "pa_context_get_source_info_list", ref missing);
+					GetSinkInfoByIndex = Bind<FnGetSinkInfoByIndex>(Handle, "pa_context_get_sink_info_by_index", ref missing);
+					GetSourceInfoByIndex = Bind<FnGetSourceInfoByIndex>(Handle, "pa_context_get_source_info_by_index", ref missing);
+					SetSinkVolumeByIndex = Bind<FnSetVolumeByIndex>(Handle, "pa_context_set_sink_volume_by_index", ref missing);
+					SetSourceVolumeByIndex = Bind<FnSetVolumeByIndex>(Handle, "pa_context_set_source_volume_by_index", ref missing);
+					SetSinkMuteByIndex = Bind<FnSetMuteByIndex>(Handle, "pa_context_set_sink_mute_by_index", ref missing);
+					SetSourceMuteByIndex = Bind<FnSetMuteByIndex>(Handle, "pa_context_set_source_mute_by_index", ref missing);
+					Subscribe = Bind<FnSubscribe>(Handle, "pa_context_subscribe", ref missing);
+					SetSubscribeCallback = Bind<FnSetSubscribeCb>(Handle, "pa_context_set_subscribe_callback", ref missing);
+					SwVolumeToLinear = Bind<FnVolumeToLinear>(Handle, "pa_sw_volume_to_linear", ref missing);
+					SwVolumeFromLinear = Bind<FnVolumeFromLinear>(Handle, "pa_sw_volume_from_linear", ref missing);
+					CVolumeScale = Bind<FnCVolumeScale>(Handle, "pa_cvolume_scale", ref missing);
+					StreamNew = Bind<FnStreamNew>(Handle, "pa_stream_new", ref missing);
+					StreamUnref = Bind<FnVoidP>(Handle, "pa_stream_unref", ref missing);
+					StreamConnectPlayback = Bind<FnStreamConnectPlayback>(Handle, "pa_stream_connect_playback", ref missing);
+					StreamDisconnect = Bind<FnIntP>(Handle, "pa_stream_disconnect", ref missing);
+					StreamGetState = Bind<FnIntP>(Handle, "pa_stream_get_state", ref missing);
+					StreamSetStateCallback = Bind<FnStreamSetNotifyCb>(Handle, "pa_stream_set_state_callback", ref missing);
+					StreamSetWriteCallback = Bind<FnStreamSetRequestCb>(Handle, "pa_stream_set_write_callback", ref missing);
+					StreamSetUnderflowCallback = Bind<FnStreamSetNotifyCb>(Handle, "pa_stream_set_underflow_callback", ref missing);
+					StreamSetLatencyUpdateCallback = Bind<FnStreamSetNotifyCb>(Handle, "pa_stream_set_latency_update_callback", ref missing);
+					StreamSetMovedCallback = Bind<FnStreamSetNotifyCb>(Handle, "pa_stream_set_moved_callback", ref missing);
+					StreamBeginWrite = Bind<FnStreamBeginWrite>(Handle, "pa_stream_begin_write", ref missing);
+					StreamCancelWrite = BindOptional<FnStreamCancelWrite>(Handle, "pa_stream_cancel_write");
+					StreamWrite = Bind<FnStreamWrite>(Handle, "pa_stream_write", ref missing);
+					StreamGetLatency = Bind<FnStreamGetLatency>(Handle, "pa_stream_get_latency", ref missing);
+					StreamCork = BindOptional<FnStreamCork>(Handle, "pa_stream_cork");
+					StreamConnectRecord = BindOptional<FnStreamConnectRecord>(Handle, "pa_stream_connect_record");
+					StreamSetReadCallback = BindOptional<FnStreamSetRequestCb>(Handle, "pa_stream_set_read_callback");
+					StreamPeek = BindOptional<FnStreamPeek>(Handle, "pa_stream_peek");
+					StreamDrop = BindOptional<FnIntP>(Handle, "pa_stream_drop");
+					SetMonitorStream = BindOptional<FnStreamSetMonitorStream>(Handle, "pa_stream_set_monitor_stream");
+					GetSinkInputInfoList = BindOptional<FnGetSinkInputInfoList>(Handle, "pa_context_get_sink_input_info_list");
+					GetSinkInputInfo = BindOptional<FnGetSinkInputInfoByIndex>(Handle, "pa_context_get_sink_input_info");
+					GetSourceOutputInfoList = BindOptional<FnGetSourceOutputInfoList>(Handle, "pa_context_get_source_output_info_list");
+					GetSourceOutputInfo = BindOptional<FnGetSourceOutputInfoByIndex>(Handle, "pa_context_get_source_output_info");
+					SetSinkInputVolume = BindOptional<FnSetVolumeByIndex>(Handle, "pa_context_set_sink_input_volume");
+					SetSinkInputMute = BindOptional<FnSetMuteByIndex>(Handle, "pa_context_set_sink_input_mute");
+					SetSourceOutputVolume = BindOptional<FnSetVolumeByIndex>(Handle, "pa_context_set_source_output_volume");
+					SetSourceOutputMute = BindOptional<FnSetMuteByIndex>(Handle, "pa_context_set_source_output_mute");
+					ProplistGets = BindOptional<FnProplistGets>(Handle, "pa_proplist_gets");
 
 					if (missing != null)
 					{
@@ -4032,30 +4038,6 @@ namespace Keysharp.Internals.Audio
 				return digits != 0 && int.TryParse(version.AsSpan(0, digits), NumberStyles.None, CultureInfo.InvariantCulture, out var major)
 					   ? major
 					   : 0;
-			}
-
-			private static T Bind<T>(string name, ref string missing) where T : Delegate
-			{
-				var bound = BindOptional<T>(name);
-
-				if (bound == null)
-					missing ??= name;
-
-				return bound;
-			}
-
-			private static T BindOptional<T>(string name) where T : Delegate
-			{
-				try
-				{
-					if (NativeLibrary.TryGetExport(Handle, name, out var address) && address != 0)
-						return Marshal.GetDelegateForFunctionPointer<T>(address);
-				}
-				catch (Exception)
-				{
-				}
-
-				return null;
 			}
 		}
 
@@ -4157,11 +4139,11 @@ namespace Keysharp.Internals.Audio
 					}
 
 					string missing = null;
-					Open = Bind<FnOpen>("sf_open", ref missing);
-					Close = Bind<FnClose>("sf_close", ref missing);
-					ReadFloat = Bind<FnReadFloat>("sf_readf_float", ref missing);
-					StrErrorRaw = Bind<FnStrError>("sf_strerror", ref missing);
-					Command = BindOptional<FnCommand>("sf_command");
+					Open = Bind<FnOpen>(Handle, "sf_open", ref missing);
+					Close = Bind<FnClose>(Handle, "sf_close", ref missing);
+					ReadFloat = Bind<FnReadFloat>(Handle, "sf_readf_float", ref missing);
+					StrErrorRaw = Bind<FnStrError>(Handle, "sf_strerror", ref missing);
+					Command = BindOptional<FnCommand>(Handle, "sf_command");
 
 					if (missing != null)
 					{
@@ -4260,30 +4242,6 @@ namespace Keysharp.Internals.Audio
 				}
 
 				return false;
-			}
-
-			private static T Bind<T>(string name, ref string missing) where T : Delegate
-			{
-				var bound = BindOptional<T>(name);
-
-				if (bound == null)
-					missing ??= name;
-
-				return bound;
-			}
-
-			private static T BindOptional<T>(string name) where T : Delegate
-			{
-				try
-				{
-					if (NativeLibrary.TryGetExport(Handle, name, out var address) && address != 0)
-						return Marshal.GetDelegateForFunctionPointer<T>(address);
-				}
-				catch (Exception)
-				{
-				}
-
-				return null;
 			}
 		}
 

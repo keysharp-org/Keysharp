@@ -21,9 +21,6 @@ namespace Keysharp.Internals.Audio
 		private const uint kAudioHardwarePropertyDevices                          = 0x64657623u; // 'dev#'
 		private const uint kAudioHardwarePropertyDefaultOutputDevice              = 0x644F7574u; // 'dOut'
 		private const uint kAudioHardwarePropertyDefaultInputDevice               = 0x64496E20u; // 'dIn '
-		private const uint kAudioHardwareServiceDevicePropertyVirtualMasterVolume = 0x766D7663u; // 'vmvc'
-		private const uint kAudioDevicePropertyVolumeScalar                       = 0x766F6C75u; // 'volu'
-		private const uint kAudioDevicePropertyMute                               = 0x6D757465u; // 'mute'
 		private const uint kAudioDevicePropertyDeviceUID                          = 0x75696420u; // 'uid '
 		private const uint kAudioDevicePropertyDeviceIsRunningSomewhere           = 0x676F6E65u; // 'gone'
 		private const uint kAudioDevicePropertyNominalSampleRate                  = 0x6E737274u; // 'nsrt'
@@ -518,15 +515,24 @@ namespace Keysharp.Internals.Audio
 			if (!TryParseKind(id, out kind))
 				return false;
 
-			foreach (var entry in Snapshot(kind))
+			try
 			{
-				if (string.Equals(entry.Descriptor.Id, id, StringComparison.Ordinal))
-				{
-					deviceId = entry.Native;
+				var uid = id.AsSpan(kind == AudioDeviceKind.Output ? 4 : 3);
+				deviceId = GetDeviceId(uid);
+
+				if (deviceId == 0 && uid.Length > 1 && uid[0] == '#'
+					&& uint.TryParse(uid[1..], NumberStyles.None, CultureInfo.InvariantCulture, out var numericId)
+					&& GetPropertyString(numericId, Address(kAudioDevicePropertyDeviceUID, kAudioObjectPropertyScopeGlobal)).Length == 0)
+					deviceId = numericId;
+
+				if (deviceId != 0 && GetChannelCount(deviceId, ScopeOf(kind)) > 0)
 					return true;
-				}
+			}
+			catch (Exception)
+			{
 			}
 
+			deviceId = 0;
 			return false;
 		}
 
@@ -558,7 +564,7 @@ namespace Keysharp.Internals.Audio
 
 			try
 			{
-				if (GetDeviceVolume(deviceId, kind, out var value) != 0)
+				if (GetDeviceVolume(deviceId, ScopeOf(kind), out var value) != 0)
 					return false;
 
 				volume = Math.Clamp(value, 0f, 1f);
@@ -577,7 +583,7 @@ namespace Keysharp.Internals.Audio
 
 			try
 			{
-				return SetDeviceVolume(deviceId, kind, (float)Math.Clamp(volume, 0.0, 1.0)) == 0;
+				return SetDeviceVolume(deviceId, ScopeOf(kind), (float)Math.Clamp(volume, 0.0, 1.0)) == 0;
 			}
 			catch (Exception)
 			{
@@ -594,7 +600,7 @@ namespace Keysharp.Internals.Audio
 
 			try
 			{
-				return GetDeviceMute(deviceId, kind, out mute) == 0;
+				return GetDeviceMute(deviceId, ScopeOf(kind), out mute) == 0;
 			}
 			catch (Exception)
 			{
@@ -609,7 +615,7 @@ namespace Keysharp.Internals.Audio
 
 			try
 			{
-				return SetDeviceMute(deviceId, kind, mute) == 0;
+				return SetDeviceMute(deviceId, ScopeOf(kind), mute) == 0;
 			}
 			catch (Exception)
 			{
@@ -1999,82 +2005,9 @@ namespace Keysharp.Internals.Audio
 			}
 		}
 
-		/// <summary>
-		/// Virtual master volume on the output scope, then the input gain fallbacks, exactly as Sound.cs
-		/// resolves it: an output-only device answers the first, an input-only device one of the others.
-		/// </summary>
-		/// <summary>The HAL scope a direction lives on. A duplex device exposes both, so reading the wrong one
-		/// silently returns the other direction's level.</summary>
+		/// <summary>The HAL scope a direction lives on. A duplex device exposes both.</summary>
 		private static uint ScopeOf(AudioDeviceKind kind)
 			=> kind == AudioDeviceKind.Output ? kAudioObjectPropertyScopeOutput : kAudioObjectPropertyScopeInput;
-
-		private static int GetDeviceVolume(uint deviceId, AudioDeviceKind kind, out float volume)
-		{
-			var addr = Address(kAudioHardwareServiceDevicePropertyVirtualMasterVolume, ScopeOf(kind));
-			var result = GetPropertyFloat(deviceId, addr, out volume);
-
-			if (result != 0)
-			{
-				addr.mSelector = kAudioDevicePropertyVolumeScalar;
-				result = GetPropertyFloat(deviceId, addr, out volume);
-
-				if (result != 0)
-				{
-					addr.mElement = 1u;
-					result = GetPropertyFloat(deviceId, addr, out volume);
-				}
-			}
-
-			return result;
-		}
-
-		private static int SetDeviceVolume(uint deviceId, AudioDeviceKind kind, float volume)
-		{
-			var addr = Address(kAudioHardwareServiceDevicePropertyVirtualMasterVolume, ScopeOf(kind));
-			var result = SetPropertyFloat(deviceId, addr, volume);
-
-			if (result != 0)
-			{
-				addr.mSelector = kAudioDevicePropertyVolumeScalar;
-				result = SetPropertyFloat(deviceId, addr, volume);
-
-				if (result != 0)
-				{
-					addr.mElement = 1u;
-					result = SetPropertyFloat(deviceId, addr, volume);
-				}
-			}
-
-			return result;
-		}
-
-		private static int GetDeviceMute(uint deviceId, AudioDeviceKind kind, out bool muted)
-		{
-			var addr = Address(kAudioDevicePropertyMute, ScopeOf(kind));
-			var result = GetPropertyUInt(deviceId, addr, out var value);
-
-			if (result != 0)
-			{
-				result = GetPropertyUInt(deviceId, addr, out value);
-			}
-
-			muted = value != 0;
-			return result;
-		}
-
-		private static int SetDeviceMute(uint deviceId, AudioDeviceKind kind, bool muted)
-		{
-			var value = muted ? 1u : 0u;
-			var addr = Address(kAudioDevicePropertyMute, ScopeOf(kind));
-			var result = SetPropertyUInt(deviceId, addr, value);
-
-			if (result != 0)
-			{
-				result = SetPropertyUInt(deviceId, addr, value);
-			}
-
-			return result;
-		}
 	}
 }
 #endif

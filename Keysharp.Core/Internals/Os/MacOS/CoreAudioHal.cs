@@ -23,6 +23,10 @@ namespace Keysharp.Internals.Os.MacOS
 		internal const uint kAudioObjectPropertyElementMain = 0u;
 		internal const uint kAudioObjectPropertyName = 0x6C6E616Du;          // 'lnam'
 		internal const uint kAudioDevicePropertyStreamConfiguration = 0x736C6179u;   // 'slay'
+		internal const uint kAudioHardwareServiceDevicePropertyVirtualMasterVolume = 0x766D7663u; // 'vmvc'
+		internal const uint kAudioDevicePropertyVolumeScalar = 0x766F6C75u; // 'volu'
+		internal const uint kAudioDevicePropertyMute = 0x6D757465u; // 'mute'
+		private const uint kAudioHardwarePropertyTranslateUIDToDevice = 0x75696464u; // 'uidd'
 
 		[StructLayout(LayoutKind.Sequential)]
 		internal struct AudioObjectPropertyAddress
@@ -67,68 +71,146 @@ namespace Keysharp.Internals.Os.MacOS
 			mElement = element,
 		};
 
-		internal static int GetPropertyFloat(uint objectId, AudioObjectPropertyAddress addr, out float value)
+		internal static unsafe uint GetDeviceId(ReadOnlySpan<char> uid)
 		{
-			var ptr = Marshal.AllocHGlobal(sizeof(float));
+			if (uid.IsEmpty)
+				return 0;
+
+			nint cfUid;
+
+			fixed (char* chars = uid)
+				cfUid = CFStringCreateWithCharacters(0, (nint)chars, uid.Length);
+
+			if (cfUid == 0)
+				return 0;
 
 			try
 			{
-				uint size = sizeof(float);
-				var result = AudioObjectGetPropertyData(objectId, ref addr, 0, nint.Zero, ref size, ptr);
-				value = result == 0 ? BitConverter.Int32BitsToSingle(Marshal.ReadInt32(ptr)) : 0f;
-				return result;
-			}
-			finally
-			{
-				Marshal.FreeHGlobal(ptr);
-			}
-		}
-
-		internal static int SetPropertyFloat(uint objectId, AudioObjectPropertyAddress addr, float value)
-		{
-			var ptr = Marshal.AllocHGlobal(sizeof(float));
-
-			try
-			{
-				Marshal.WriteInt32(ptr, BitConverter.SingleToInt32Bits(value));
-				return AudioObjectSetPropertyData(objectId, ref addr, 0, nint.Zero, sizeof(float), ptr);
-			}
-			finally
-			{
-				Marshal.FreeHGlobal(ptr);
-			}
-		}
-
-		internal static int GetPropertyUInt(uint objectId, AudioObjectPropertyAddress addr, out uint value)
-		{
-			var ptr = Marshal.AllocHGlobal(sizeof(uint));
-
-			try
-			{
+				var addr = Address(kAudioHardwarePropertyTranslateUIDToDevice, kAudioObjectPropertyScopeGlobal);
+				uint deviceId = 0;
 				uint size = sizeof(uint);
-				var result = AudioObjectGetPropertyData(objectId, ref addr, 0, nint.Zero, ref size, ptr);
-				value = result == 0 ? (uint)Marshal.ReadInt32(ptr) : 0u;
-				return result;
+				return AudioObjectGetPropertyData(kAudioObjectSystemObject, ref addr, (uint)sizeof(nint), (nint)(&cfUid), ref size, (nint)(&deviceId)) == 0
+					   ? deviceId : 0;
 			}
 			finally
 			{
-				Marshal.FreeHGlobal(ptr);
+				CFRelease(cfUid);
 			}
 		}
 
-		internal static int SetPropertyUInt(uint objectId, AudioObjectPropertyAddress addr, uint value)
+		/// <summary>Reads a direction's virtual master, scalar master, then first channel control.</summary>
+		internal static int GetDeviceVolume(uint deviceId, uint scope, out float volume)
 		{
-			var ptr = Marshal.AllocHGlobal(sizeof(uint));
+			var addr = Address(kAudioHardwareServiceDevicePropertyVirtualMasterVolume, scope);
+			var result = GetPropertyFloat(deviceId, addr, out volume);
 
-			try
+			if (result != 0)
 			{
-				Marshal.WriteInt32(ptr, (int)value);
-				return AudioObjectSetPropertyData(objectId, ref addr, 0, nint.Zero, sizeof(uint), ptr);
+				addr.mSelector = kAudioDevicePropertyVolumeScalar;
+				result = GetPropertyFloat(deviceId, addr, out volume);
+
+				if (result != 0)
+				{
+					addr.mElement = 1;
+					result = GetPropertyFloat(deviceId, addr, out volume);
+				}
 			}
-			finally
+
+			return result;
+		}
+
+		internal static int SetDeviceVolume(uint deviceId, uint scope, float volume)
+		{
+			var addr = Address(kAudioHardwareServiceDevicePropertyVirtualMasterVolume, scope);
+			var result = SetPropertyFloat(deviceId, addr, volume);
+
+			if (result != 0)
 			{
-				Marshal.FreeHGlobal(ptr);
+				addr.mSelector = kAudioDevicePropertyVolumeScalar;
+				result = SetPropertyFloat(deviceId, addr, volume);
+
+				if (result != 0)
+				{
+					var channels = GetChannelCount(deviceId, scope);
+
+					for (var channel = 1; channel <= channels; channel++)
+					{
+						addr.mElement = (uint)channel;
+						result = SetPropertyFloat(deviceId, addr, volume);
+
+						if (result != 0)
+							return result;
+					}
+				}
 			}
+
+			return result;
+		}
+
+		internal static int GetDeviceMute(uint deviceId, uint scope, out bool muted)
+		{
+			var addr = Address(kAudioDevicePropertyMute, scope);
+			var result = GetPropertyUInt(deviceId, addr, out var value);
+
+			if (result != 0)
+			{
+				addr.mElement = 1;
+				result = GetPropertyUInt(deviceId, addr, out value);
+			}
+
+			muted = value != 0;
+			return result;
+		}
+
+		internal static int SetDeviceMute(uint deviceId, uint scope, bool muted)
+		{
+			var addr = Address(kAudioDevicePropertyMute, scope);
+			var value = muted ? 1u : 0u;
+			var result = SetPropertyUInt(deviceId, addr, value);
+
+			if (result != 0)
+			{
+				var channels = GetChannelCount(deviceId, scope);
+
+				for (var channel = 1; channel <= channels; channel++)
+				{
+					addr.mElement = (uint)channel;
+					result = SetPropertyUInt(deviceId, addr, value);
+
+					if (result != 0)
+						return result;
+				}
+			}
+
+			return result;
+		}
+
+		internal static unsafe int GetPropertyFloat(uint objectId, AudioObjectPropertyAddress addr, out float value)
+		{
+			float buffer = 0;
+			uint size = sizeof(float);
+			var result = AudioObjectGetPropertyData(objectId, ref addr, 0, 0, ref size, (nint)(&buffer));
+			value = result == 0 ? buffer : 0f;
+			return result;
+		}
+
+		internal static unsafe int SetPropertyFloat(uint objectId, AudioObjectPropertyAddress addr, float value)
+		{
+			return AudioObjectSetPropertyData(objectId, ref addr, 0, 0, sizeof(float), (nint)(&value));
+		}
+
+		internal static unsafe int GetPropertyUInt(uint objectId, AudioObjectPropertyAddress addr, out uint value)
+		{
+			uint buffer = 0;
+			uint size = sizeof(uint);
+			var result = AudioObjectGetPropertyData(objectId, ref addr, 0, 0, ref size, (nint)(&buffer));
+			value = result == 0 ? buffer : 0;
+			return result;
+		}
+
+		internal static unsafe int SetPropertyUInt(uint objectId, AudioObjectPropertyAddress addr, uint value)
+		{
+			return AudioObjectSetPropertyData(objectId, ref addr, 0, 0, sizeof(uint), (nint)(&value));
 		}
 
 		internal static uint[] GetPropertyUInts(uint objectId, AudioObjectPropertyAddress addr)
