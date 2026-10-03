@@ -25,6 +25,46 @@ namespace Keysharp.Internals.AppleEvents
 		internal static partial void CFRelease(nint cf);
 
 		[LibraryImport(CoreFoundation)]
+		internal static partial nint CFRetain(nint cf);
+
+		[LibraryImport(CoreFoundation)]
+		[return: MarshalAs(UnmanagedType.U1)]
+		internal static partial bool CFEqual(nint first, nint second);
+
+		[LibraryImport(CoreFoundation)]
+		internal static partial nint CFRunLoopGetMain();
+
+		[LibraryImport(CoreFoundation)]
+		internal static partial void CFRunLoopAddSource(nint runLoop, nint source, nint mode);
+
+		[LibraryImport(CoreFoundation)]
+		internal static partial void CFRunLoopRemoveSource(nint runLoop, nint source, nint mode);
+
+		[LibraryImport(CoreFoundation)]
+		internal static partial nint CFArrayCreate(nint allocator, nint[] values, nint count, nint callbacks);
+
+		[LibraryImport(CoreFoundation)]
+		internal static partial nint CFArrayGetCount(nint array);
+
+		[LibraryImport(CoreFoundation)]
+		internal static partial nint CFArrayGetValueAtIndex(nint array, nint index);
+
+		[LibraryImport(CoreFoundation)]
+		internal static partial nint CFDictionaryCreate(nint allocator, nint[] keys, nint[] values, nint count, nint keyCallbacks, nint valueCallbacks);
+
+		[LibraryImport(CoreFoundation)]
+		[return: MarshalAs(UnmanagedType.U1)]
+		internal static partial bool CFDictionaryGetValueIfPresent(nint dictionary, nint key, out nint value);
+
+		[LibraryImport(CoreFoundation)]
+		[return: MarshalAs(UnmanagedType.U1)]
+		internal static partial bool CFNumberGetValue(nint number, int type, out int value);
+
+		[LibraryImport(CoreFoundation)]
+		[return: MarshalAs(UnmanagedType.U1)]
+		internal static partial bool CFNumberGetValue(nint number, int type, out double value);
+
+		[LibraryImport(CoreFoundation)]
 		internal static partial nint CFGetTypeID(nint cf);
 
 		[LibraryImport(CoreFoundation)]
@@ -110,16 +150,14 @@ namespace Keysharp.Internals.AppleEvents
 			if (length <= 0)
 				return "";
 
-			// CFStringGetCharacters hands back UTF-16, which is what a C# string already is.
-			var buffer = new char[length];
-
-			unsafe
+			return string.Create(checked((int)length), theString, static (buffer, value) =>
 			{
-				fixed (char* p = buffer)
-					CFStringGetCharacters(theString, new CFRange { Location = 0, Length = length }, (nint)p);
-			}
-
-			return new string(buffer);
+				unsafe
+				{
+					fixed (char* p = buffer)
+						CFStringGetCharacters(value, new CFRange { Location = 0, Length = buffer.Length }, (nint)p);
+				}
+			});
 		}
 
 		/// <summary>Creates a file URL the caller must release. Path style 0 is the POSIX one.</summary>

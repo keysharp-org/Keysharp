@@ -2,7 +2,8 @@
 namespace Keysharp.Internals.AppleEvents
 {
 	/// <summary>One outgoing Apple event, described in script terms. Its descriptors are built on the script thread,
-	/// since that converts script values, and sent and read on the one thread that owns sending.</summary>
+	/// since that converts script values. Native sending happens on the target's worker; replies are decoded
+	/// on the waiting script thread.</summary>
 	internal sealed class AECallRequest
 	{
 		internal AETarget Target;
@@ -22,10 +23,8 @@ namespace Keysharp.Internals.AppleEvents
 	}
 
 	/// <summary>
-	/// Sends Apple events. Every send happens on one dedicated thread: a reply comes back to whichever thread sent
-	/// the event, and sending from the main thread would both risk reentrancy and stall timers, hotkeys and the
-	/// GUI for as long as the other application takes to answer. The script thread instead waits on the result
-	/// while pumping, exactly as the D-Bus layer does on Linux.
+	/// Sends Apple events in order per target, on workers which exit when their queues empty.
+	/// The script thread waits while pumping, so a slow target does not stall other applications.
 	/// </summary>
 	internal static class AECalls
 	{
@@ -36,10 +35,6 @@ namespace Keysharp.Internals.AppleEvents
 		/// <summary>Targets already known to be permitted. A refusal is not cached, so granting permission and
 		/// trying again works without restarting the script.</summary>
 		private static readonly ConcurrentDictionary<string, bool> permitted = new (StringComparer.Ordinal);
-
-		private static readonly BlockingCollection<Action> queue = new ();
-		private static readonly Lock workerGate = new ();
-		private static Thread worker;
 
 		// ---- the public surface ------------------------------------------------------------------
 
@@ -91,87 +86,78 @@ namespace Keysharp.Internals.AppleEvents
 		/// </summary>
 		internal static object Send(AECallRequest request)
 		{
-			EnsurePermitted(request.Target);
-			EnsureWorker();
+			var permissionStatus = GetPermissionStatus(request.Target, true);
+			if (permissionStatus != 0)
+				throw new AEException(permissionStatus, $"{request.Target}: {AE.DescribeStatus(permissionStatus, "Automation permission")}");
 
 			// Converting a value can raise an error or run a script's ToString method, so it happens here, on the
 			// script thread. After a continued error nothing is sent.
 			if (BuildParameters(request) is not { } parameters)
 				return Script.DefaultObject;
 
-			var completion = new TaskCompletionSource<object>(TaskCreationOptions.RunContinuationsAsynchronously);
+			var completion = new TaskCompletionSource<AEValue>(TaskCreationOptions.RunContinuationsAsynchronously);
+			var state = 0; // Pending, started, or cancelled; only pending sends can be cancelled.
 
 			// The sending thread disposes the descriptors, since a timed-out wait below returns while it may still
 			// be using them.
-			queue.Add(() =>
+			try
 			{
-				try
+				var pid = AETargets.RunningPid(request.Target);
+				var targetKey = pid != 0 ? $"pid:{pid}" : request.Target.CacheKey;
+				AETargetQueue.Enqueue(targetKey, () =>
 				{
-					completion.SetResult(Execute(request, parameters));
-				}
-				catch (Exception ex)
-				{
-					completion.SetException(ex);
-				}
-				finally
-				{
-					Dispose(parameters);
-				}
-			});
+					try
+					{
+						if (Interlocked.CompareExchange(ref state, 1, 0) == 0)
+							completion.SetResult(Execute(request, parameters));
+						else
+							completion.SetCanceled();
+					}
+					catch (Exception ex)
+					{
+						completion.SetException(ex);
+					}
+					finally
+					{
+						Dispose(parameters);
+					}
+				});
+			}
+			catch
+			{
+				Dispose(parameters);
+				throw;
+			}
 			// The native send has its own deadline; the outer wait allows a little longer so the inner timeout is
 			// the one that fires and the error names the application rather than the plumbing.
-			var task = (Task)completion.Task;
-			bool completed;
+			var task = completion.Task;
+			var replyConsumed = false;
 
 			try
 			{
-				completed = task.WaitInterruptible(request.TimeoutMs + 5_000);
+				if (!task.WaitInterruptible(request.TimeoutMs + 5_000))
+					throw new AEException(AE.ErrAETimeout, $"{request.Target} did not answer within {request.TimeoutMs} ms.");
+
+				using var reply = task.GetAwaiter().GetResult();
+				replyConsumed = true;
+				return ReadReply(reply, request);
 			}
 			catch (AggregateException ae) when (ae.InnerException != null)
 			{
 				throw ae.InnerException;
 			}
-
-			if (!completed)
-				throw new AEException(AE.ErrAETimeout, $"{request.Target} did not answer within {request.TimeoutMs} ms.");
-
-			return completion.Task.GetAwaiter().GetResult();
-		}
-
-		// ---- the sending thread -------------------------------------------------------------------
-
-		private static void EnsureWorker()
-		{
-			if (worker != null)
-				return;
-
-			lock (workerGate)
+			finally
 			{
-				if (worker != null)
-					return;
-
-				worker = new Thread(Pump)
+				if (!replyConsumed)
 				{
-					IsBackground = true,
-					Name = "Keysharp Apple Events"
-				};
-				worker.Start();
-			}
-		}
-
-		private static void Pump()
-		{
-			foreach (var work in queue.GetConsumingEnumerable())
-			{
-				try
-				{
-					work();
-				}
-				catch (Exception ex)
-				{
-					// Execute already reports failures through its completion source; anything reaching here would
-					// otherwise take the whole process down with it.
-					Diagnostics.Debug.WriteLine($"Apple event dispatch failed: {ex.Message}");
+					_ = Interlocked.CompareExchange(ref state, 2, 0);
+					_ = task.ContinueWith(static completed =>
+					{
+						if (completed.IsCompletedSuccessfully)
+							completed.Result.Dispose();
+						else
+							_ = completed.Exception;
+					}, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 				}
 			}
 		}
@@ -221,7 +207,7 @@ namespace Keysharp.Internals.AppleEvents
 				value.Dispose();
 		}
 
-		private static object Execute(AECallRequest request, List<(uint Keyword, AEValue Value)> parameters)
+		private static AEValue Execute(AECallRequest request, List<(uint Keyword, AEValue Value)> parameters)
 		{
 			using var address = request.Target.MakeAddress();
 			using var @event = AE.NewEvent(request.EventClass, request.EventId, address);
@@ -231,15 +217,18 @@ namespace Keysharp.Internals.AppleEvents
 
 			// Apple event timeouts are counted in sixtieths of a second, not milliseconds.
 			var ticks = (nint)Math.Max(1, (long)request.TimeoutMs * 60 / 1000);
-			var status = AE.AESendMessage(ref @event.Desc, out var replyDesc, AE.KAEWaitReply | AE.KAECanInteract, ticks);
+			var status = AE.SendOnWorker(ref @event.Desc, out var replyDesc, AE.KAEWaitReply | AE.KAECanInteract, ticks);
 
 			// Checked before the reply is wrapped: a failed send leaves nothing worth disposing, and handing the
 			// descriptor to a disposer on that path would be disposing whatever the call left behind.
 			if (status != 0)
 				throw new AEException(status, $"{request.Target}: {AE.DescribeStatus(status, "The Apple event")}");
 
-			using var reply = new AEValue(replyDesc);
+			return new AEValue(replyDesc);
+		}
 
+		private static object ReadReply(AEValue reply, AECallRequest request)
+		{
 			ThrowIfErrorReply(ref reply.Desc, request);
 
 			if (!AE.TryGetParam(ref reply.Desc, AE.KeyDirectObject, out var result))
@@ -279,24 +268,21 @@ namespace Keysharp.Internals.AppleEvents
 		}
 
 		/// <summary>
-		/// Asks the system whether this process may control the target, which is what makes the consent prompt
-		/// appear attributed to Keysharp with its stated reason rather than as a bare refusal at the first send.
-		/// The check is by application, not by event, so it uses the wildcard.
-		/// <para>
-		/// Deliberately not on the sending thread, and deliberately not on a deadline: the prompt is answered by a
-		/// person, and asking on the one thread that owns sending would hold up events to every other application
-		/// until they did. The script thread waits by pumping, so it stays responsive meanwhile.
-		/// </para>
+		/// Checks per-application Automation permission off the UI and sending threads.
+		/// A requested consent prompt has no deadline; the caller waits while pumping.
 		/// </summary>
-		private static void EnsurePermitted(AETarget target)
+		internal static bool EnsurePermitted(AETarget target, bool requestPrompt = true)
+			=> GetPermissionStatus(target, requestPrompt) == 0;
+
+		private static int GetPermissionStatus(AETarget target, bool requestPrompt)
 		{
 			if (permitted.ContainsKey(target.CacheKey))
-				return;
+				return 0;
 
 			var task = Task.Run(() =>
 			{
 				using var address = target.MakeAddress();
-				return AE.AEDeterminePermissionToAutomateTarget(ref address.Desc, AE.TypeWildCard, AE.TypeWildCard, 1);
+				return AE.AEDeterminePermissionToAutomateTarget(ref address.Desc, AE.TypeWildCard, AE.TypeWildCard, requestPrompt ? (byte)1 : (byte)0);
 			});
 
 			try
@@ -311,9 +297,13 @@ namespace Keysharp.Internals.AppleEvents
 			var status = task.GetAwaiter().GetResult();
 
 			if (status != 0)
-				throw new AEException(status, $"{target}: {AE.DescribeStatus(status, "Automation permission")}");
+			{
+				Diagnostics.Debug.WriteLine($"{target}: {AE.DescribeStatus(status, "Automation permission")}");
+				return status;
+			}
 
 			_ = permitted.TryAdd(target.CacheKey, true);
+			return 0;
 		}
 	}
 }

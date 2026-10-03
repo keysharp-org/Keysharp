@@ -258,15 +258,33 @@ namespace Keysharp.Internals.Os.Unix
 			else return;
 
 #elif OSX
-			if (vk != VK_LBUTTON && vk != VK_RBUTTON || d || u)
+			if (d || u || vkIsWheel)
+			{
+				_ = Errors.ValueErrorOccurred("macOS native ControlClick supports Left, Right, Middle, X1 and X2 clicks; D/U and wheel input are unsupported.");
 				return;
+			}
+
+			uint button;
+			if (vk == VK_LBUTTON) button = 1;
+			else if (vk == VK_RBUTTON) button = 2;
+			else if (vk == VK_MBUTTON) button = 3;
+			else if (vk == VK_XBUTTON1) button = 4;
+			else if (vk == VK_XBUTTON2) button = 5;
+			else
+			{
+				_ = Errors.ValueErrorOccurred($"Invalid macOS ControlClick button '{whichButton}'. Expected Left, Right, Middle, X1 or X2.");
+				return;
+			}
+
+			if (Platform.Window.TryClick(item.Handle, clickPoint, button, clickCount))
+				WindowInfoBase.DoControlDelay();
 #else
 #error Unsupported platform. Only WINDOWS, LINUX, and OSX are supported.
 #endif
 
+#if LINUX
 			for (var i = 0; i < clickCount; i++)
 			{
-#if LINUX
 				if (vkIsWheel || !u)
 				{
 					if (!SendX11MouseEvent(item.Handle, button, clickPoint, true)) return;
@@ -278,15 +296,8 @@ namespace Keysharp.Internals.Os.Unix
 					if (!SendX11MouseEvent(item.Handle, button, clickPoint, false)) return;
 					WindowInfoBase.DoControlDelay();
 				}
-#elif OSX
-				if (!Platform.Window.TryClick(item.Handle, clickPoint, (uint)(vk == VK_RBUTTON ? 2 : 1), 1))
-					return;
-
-				WindowInfoBase.DoControlDelay();
-#else
-#error Unsupported platform. Only WINDOWS, LINUX, and OSX are supported.
-#endif
 			}
+#endif
 		}
 
 #if LINUX

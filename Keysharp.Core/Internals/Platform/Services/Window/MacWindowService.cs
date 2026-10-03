@@ -182,7 +182,8 @@ namespace Keysharp.Internals
 			if (bounds.Width != Unchanged) rect.Width = bounds.Width;
 			if (bounds.Height != Unchanged) rect.Height = bounds.Height;
 
-			if (!MacAccessibility.TryMoveResizeWindow(native, rect, setPos, setSize))
+			using var window = MacAccessibility.ResolveWindowElement(native, "move/resize window");
+			if (!MacAccessibility.TryMoveResizeWindow(window, rect, setPos, setSize))
 				_ = Errors.OSErrorOccurred("Move/resize for macOS window failed.");
 
 			return true;
@@ -196,7 +197,8 @@ namespace Keysharp.Internals
 			if (!TryNative(h, out var native))
 				return false;
 
-			if (!MacAccessibility.TrySetWindowState(native, FormWindowState.Normal))
+			using var window = MacAccessibility.ResolveWindowElement(native, "unminimize window");
+			if (!MacAccessibility.TrySetWindowState(window, FormWindowState.Normal))
 				_ = Errors.OSErrorOccurred("Unminimizing the macOS window failed.");
 
 			return true;
@@ -207,30 +209,23 @@ namespace Keysharp.Internals
 			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TrySetState(h, state);
 
+			using var window = MacAccessibility.ResolveWindowElement(native, "set window state");
 			switch (state)
 			{
 				// macOS has no "maximized" window state; the nearest equivalent to a Windows/Linux maximize
 				// is native full screen (what the green button does by default), so map WinMaximize onto it.
 				case FormWindowState.Maximized:
-					if (!MacAccessibility.TrySetFullScreen(native, true))
-						Diagnostics.Debug.WriteLine("Full screen (maximize) for macOS window failed.");
-
-					return true;
+					return MacAccessibility.TrySetFullScreen(window, true);
 
 				// WinRestore: leave full screen first (AppKit restores the prior frame), then un-minimize + raise.
 				case FormWindowState.Normal:
-					_ = MacAccessibility.TrySetFullScreen(native, false);
-
-					if (!MacAccessibility.TrySetWindowState(native, state))
-						Diagnostics.Debug.WriteLine("WindowState for macOS window failed.");
-
-					return true;
+					if (MacAccessibility.TryGetWindowState(window, out var current) && current == FormWindowState.Maximized
+						&& !MacAccessibility.TrySetFullScreen(window, false))
+						return false;
+					return MacAccessibility.TrySetWindowState(window, state);
 
 				default: // Minimized
-					if (!MacAccessibility.TrySetWindowState(native, state))
-						Diagnostics.Debug.WriteLine("WindowState for macOS window failed.");
-
-					return true;
+					return MacAccessibility.TrySetWindowState(window, state);
 			}
 		}
 
@@ -294,12 +289,9 @@ namespace Keysharp.Internals
 			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TryActivate(h);
 
-			// Restore before activating — a minimized window is un-minimized even if already foreground.
-			if (MacAccessibility.TryGetWindowState(native, out var st) && st == FormWindowState.Minimized)
-				_ = MacAccessibility.TrySetWindowState(native, FormWindowState.Normal);
-
-			_ = MacAccessibility.TryActivateWindow(native);
-			return true;
+			using var window = MacAccessibility.ResolveWindowElement(native, "activate window");
+			return window != null ? MacAccessibility.TryActivateWindow(window)
+				: MacNativeWindows.ActivateAppByPid(native.OwnerPid);
 		}
 
 		public override bool TrySetZOrder(nint h, ZOrder z)
@@ -309,10 +301,8 @@ namespace Keysharp.Internals
 
 			if (z != ZOrder.Bottom)   // raise to top
 			{
-				if (!MacAccessibility.TryRaiseWindow(native))
-					Diagnostics.Debug.WriteLine("Raising macOS window to top failed.");
-
-				return true;
+				using var window = MacAccessibility.ResolveWindowElement(native, "raise window");
+				return MacAccessibility.TryRaiseWindow(window);
 			}
 
 			if (native.OwnerPid == Environment.ProcessId && MacNativeWindows.TrySendOwnWindowToBack(native.WindowNumber))
@@ -323,13 +313,17 @@ namespace Keysharp.Internals
 		}
 
 		public override bool TryClose(nint h)
-			=> MacNativeWindows.TryGetWindowInfo(h, out var native)
-				? MacAccessibility.TryCloseWindow(native)
-				: base.TryClose(h);
+		{
+			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
+				return base.TryClose(h);
+
+			using var window = MacAccessibility.ResolveWindowElement(native, "close window");
+			return MacAccessibility.TryCloseWindow(window);
+		}
 
 		public override bool TryKill(nint h)
 		{
-			if (!MacNativeWindows.TryGetWindowInfo(h, out _))
+			if (!MacNativeWindows.TryGetWindowInfo(h, out _, includeTextMetadata: false))
 				return base.TryKill(h);
 
 			_ = TryClose(h);
@@ -337,10 +331,10 @@ namespace Keysharp.Internals
 			// Give a responsive app time to process the close and shut down gracefully (saving prompts, etc.)
 			// before escalating to a hard Process.Kill. AHK waits ~500ms; poll with a real delay so we don't
 			// force-kill a healthy window that simply hasn't handled the close request yet.
-			for (var waited = 0; MacNativeWindows.TryGetWindowInfo(h, out _) && waited < 500; waited += 10)
+			for (var waited = 0; MacNativeWindows.TryGetWindowInfo(h, out _, includeTextMetadata: false) && waited < 500; waited += 10)
 				Flow.SleepWithoutInterruption(10);
 
-			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
+			if (!MacNativeWindows.TryGetWindowInfo(h, out var native, includeTextMetadata: false))
 				return true;
 
 			try
@@ -352,7 +346,7 @@ namespace Keysharp.Internals
 			{
 			}
 
-			return !MacNativeWindows.TryGetWindowInfo(h, out _);
+			return !MacNativeWindows.TryGetWindowInfo(h, out _, includeTextMetadata: false);
 		}
 
 		public override bool TryHide(nint h)
@@ -360,14 +354,14 @@ namespace Keysharp.Internals
 			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TryHide(h);
 
-			if (native.OwnerPid == Environment.ProcessId)
-				// One of our own windows: order it out of the window server so only this window disappears.
-				return MacNativeWindows.TryHideOwnWindow(native.WindowNumber, native)
-					   || MacAccessibility.TrySetWindowState(native, FormWindowState.Minimized);
+			var hidden = native.OwnerPid == Environment.ProcessId
+				? MacNativeWindows.TryHideOwnWindow(native.WindowNumber, native)
+				: MacNativeWindows.HideApplication(native.OwnerPid);
+			if (hidden)
+				return true;
 
-			// Another app's window: macOS gives no way to hide just one, so hide the whole app (closest to WinHide).
-			return MacNativeWindows.HideApplication(native.OwnerPid)
-				   || MacAccessibility.TrySetWindowState(native, FormWindowState.Minimized);
+			using var window = MacAccessibility.ResolveWindowElement(native, "minimize window");
+			return MacAccessibility.TrySetWindowState(window, FormWindowState.Minimized);
 		}
 
 		public override bool TryShow(nint h)
@@ -379,8 +373,9 @@ namespace Keysharp.Internals
 							? MacNativeWindows.TryShowOwnWindow(native.WindowNumber)
 							: MacNativeWindows.UnhideApplication(native.OwnerPid);
 
-			_ = MacAccessibility.TrySetWindowState(native, FormWindowState.Normal);
-			var activated = MacAccessibility.TryActivateWindow(native);
+			using var window = MacAccessibility.ResolveWindowElement(native, "show window");
+			var activated = window != null ? MacAccessibility.TryActivateWindow(window)
+				: MacNativeWindows.ActivateAppByPid(native.OwnerPid);
 			return restored || activated;
 		}
 
@@ -388,18 +383,19 @@ namespace Keysharp.Internals
 		// foreign windows on its own schedule and exposes no "invalidate that window" call, so for those the
 		// verb only reports that the window exists rather than doing anything.
 		public override bool TryRedraw(nint h)
-			=> base.TryRedraw(h) || MacNativeWindows.TryGetWindowInfo(h, out _);
+			=> base.TryRedraw(h) || MacNativeWindows.TryGetWindowInfo(h, out _, includeTextMetadata: false);
 
 		public override bool TryClick(nint h, Point at, uint button, int count)
 		{
 			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TryClick(h, at, button, count);
 
-			for (var i = 0; i < count; i++)
-				if (!MacAccessibility.TryClickWindow(native, at, rightButton: button == 2))
-					Diagnostics.Debug.WriteLine("Native click failed on macOS window.");
+			using var window = MacAccessibility.ResolveWindowElement(native, "post mouse click");
+			var clicked = MacAccessibility.TryClickWindow(window, at, button, count);
+			if (!clicked)
+				Diagnostics.Debug.WriteLine("Native click failed on macOS window.");
 
-			return true;
+			return clicked;
 		}
 
 		public override bool TrySetTitle(nint h, string title)
@@ -407,14 +403,19 @@ namespace Keysharp.Internals
 			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TrySetTitle(h, title);
 
-			var ok = native.OwnerPid == Environment.ProcessId
-				? MacNativeWindows.TrySetOwnWindowTitle(native.WindowNumber, title)
-				: MacAccessibility.TrySetWindowTitle(native, title);
+			bool ok;
+			if (native.OwnerPid == Environment.ProcessId)
+				ok = MacNativeWindows.TrySetOwnWindowTitle(native.WindowNumber, title);
+			else
+			{
+				using var window = MacAccessibility.ResolveWindowElement(native, "set window title");
+				ok = MacAccessibility.TrySetWindowTitle(window, title);
+			}
 
 			if (!ok)
 				Diagnostics.Debug.WriteLine("Setting the window title failed on macOS.");
 
-			return true;
+			return ok;
 		}
 
 		public override bool TrySetVisible(nint h, bool visible) => visible ? TryShow(h) : TryHide(h);
@@ -454,11 +455,6 @@ namespace Keysharp.Internals
 			for (int i = 0; i < wins.Count; i++)
 			{
 				var info = wins[i];
-
-				// Off-screen entries some apps register for menu-bar/status items aren't real windows and can't be
-				// queried individually; only exclude them when hidden windows aren't being searched.
-				if (!includeHidden && !info.IsOnScreen && !MacNativeWindows.TryGetWindowInfo((nint)info.WindowNumber, out _))
-					continue;
 
 				if (includeHidden || info.Visible)
 					list.Add(new MacWindowInfo(info, includesTextMetadata: true));   // seeded from the batch

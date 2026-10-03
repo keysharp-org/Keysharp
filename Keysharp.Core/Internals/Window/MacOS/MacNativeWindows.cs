@@ -1,6 +1,7 @@
 #if OSX
 using MonoMac.AppKit;
 using MonoMac.Foundation;
+using static Keysharp.Internals.AppleEvents.CF;
 
 namespace Keysharp.Internals.Window.MacOS
 {
@@ -57,16 +58,38 @@ namespace Keysharp.Internals.Window.MacOS
 		}
 	}
 
+	internal struct MacWindowMatch(Rectangle targetBounds, string targetTitle)
+	{
+		private nint boundsMatch;
+		private nint titleMatch;
+		private int boundsMatches;
+		private int titleMatches;
+
+		internal readonly nint Handle => boundsMatches == 1 ? boundsMatch : titleMatches == 1 ? titleMatch : 0;
+
+		internal void Consider(nint handle, Rectangle bounds, string title)
+		{
+			if (handle == 0 || bounds != targetBounds)
+				return;
+
+			boundsMatch = handle;
+			boundsMatches++;
+			if (!string.IsNullOrEmpty(targetTitle) && string.Equals(title, targetTitle, StringComparison.Ordinal))
+			{
+				titleMatch = handle;
+				titleMatches++;
+			}
+		}
+	}
+
 	internal static partial class MacNativeWindows
 	{
 		private static readonly Lock mouseTransparentWindowsLock = new();
 		private static readonly HashSet<uint> mouseTransparentWindows = [];
-		private const uint kCFStringEncodingUTF8 = 0x08000100;
 		private const int kCFNumberSInt32Type = 3;
 		private const int kCFNumberDoubleType = 13;
 		private const uint kCGWindowListOptionAll = 0u;
 		private const uint kCGWindowListOptionOnScreenOnly = 1u;
-		private const uint kCGWindowListOptionOnScreenAboveWindow = 2u;
 		private const uint kCGWindowListOptionIncludingWindow = 8u;
 		private const uint kCGWindowListExcludeDesktopElements = 16u;
 
@@ -89,6 +112,9 @@ namespace Keysharp.Internals.Window.MacOS
 
 		[LibraryImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
 		private static partial nint CGWindowListCopyWindowInfo(uint option, uint relativeToWindow);
+
+		[LibraryImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
+		private static partial nint CGWindowListCreateDescriptionFromArray(nint windowArray);
 
 		[LibraryImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
 		private static partial nint CGWindowListCreateImage(CGRectNative screenBounds, uint listOption, uint windowID, uint imageOption);
@@ -119,56 +145,6 @@ namespace Keysharp.Internals.Window.MacOS
 			return (bounds.Width, bounds.Height);
 		}
 
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", StringMarshalling = StringMarshalling.Utf8)]
-		private static partial nint CFStringCreateWithCString(nint alloc, string cStr, uint encoding);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial void CFRelease(nint cfTypeRef);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial nint CFArrayGetCount(nint theArray);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial nint CFArrayGetValueAtIndex(nint theArray, nint idx);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		[return: MarshalAs(UnmanagedType.I1)]
-		private static partial bool CFDictionaryGetValueIfPresent(nint theDict, nint key, out nint value);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial nint CFGetTypeID(nint cf);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial nint CFStringGetTypeID();
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial nint CFStringGetLength(nint theString);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial nint CFStringGetMaximumSizeForEncoding(nint length, uint encoding);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		[return: MarshalAs(UnmanagedType.I1)]
-		private static partial bool CFStringGetCString(nint theString, byte[] buffer, nint bufferSize, uint encoding);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial nint CFNumberGetTypeID();
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		[return: MarshalAs(UnmanagedType.I1)]
-		private static partial bool CFNumberGetValue(nint number, int theType, out int value);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		[return: MarshalAs(UnmanagedType.I1)]
-		private static partial bool CFNumberGetValue(nint number, int theType, out double value);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial nint CFBooleanGetTypeID();
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		[return: MarshalAs(UnmanagedType.I1)]
-		private static partial bool CFBooleanGetValue(nint boolean);
-
 		internal static List<MacNativeWindow> Snapshot(bool onScreenOnly = false) => SnapshotCore(onScreenOnly, includeTextMetadata: true);
 
 		internal static bool TryGetWindowInfo(nint handle, out MacNativeWindow info) => TryGetWindowInfo(handle, out info, includeTextMetadata: true);
@@ -182,17 +158,27 @@ namespace Keysharp.Internals.Window.MacOS
 			}
 
 			var id = unchecked((uint)handle.ToInt64());
-			var snapshot = SnapshotCore(onScreenOnly: false, includeTextMetadata, includeSingleWindow: true, relativeToWindow: id);
-
-			if (TryFindWindowInfo(snapshot, id, out info))
-				return true;
-
-			// A minimized window is off-screen. If the relative lookup omits it, the all-window list is
-			// the documented way to include off-screen windows; keep the common on-screen path cheap.
-			snapshot = SnapshotCore(onScreenOnly: false, includeTextMetadata);
-
-			if (TryFindWindowInfo(snapshot, id, out info))
-				return true;
+			// CGWindowListCreateDescriptionFromArray takes raw IDs, not CFNumber objects.
+			var ids = CFArrayCreate(0, [(nint)id], 1, 0);
+			if (ids != 0)
+			{
+				try
+				{
+					var descriptions = CGWindowListCreateDescriptionFromArray(ids);
+					if (descriptions != 0)
+					{
+						try
+						{
+							if (CFArrayGetCount(descriptions) > 0
+								&& TryReadWindowInfo(CFArrayGetValueAtIndex(descriptions, 0), out info,
+									includeTextMetadata, false, false) && info.WindowNumber == id)
+								return true;
+						}
+						finally { CFRelease(descriptions); }
+					}
+				}
+				finally { CFRelease(ids); }
+			}
 
 			// A window we ordered out via TryHideOwnWindow() drops out of the window server's
 			// list entirely (its NSWindow.WindowNumber even becomes -1), so it can no longer be
@@ -211,28 +197,13 @@ namespace Keysharp.Internals.Window.MacOS
 			return false;
 		}
 
-		internal static bool TryFindWindowInfo(IReadOnlyList<MacNativeWindow> windows, uint id, out MacNativeWindow info)
-		{
-			foreach (var candidate in windows)
-			{
-				if (candidate.WindowNumber == id)
-				{
-					info = candidate;
-					return true;
-				}
-			}
-
-			info = default;
-			return false;
-		}
-
 		internal static bool TryGetWindowAtPoint(POINT location, out MacNativeWindow info)
 		{
 			// Owner name is needed to recognize the Dock's full-screen overlay window below.
 			var snapshot = SnapshotCore(
 				onScreenOnly: true,
 				includeTextMetadata: false,
-				includeOwnerName: true);
+				includeOwnerName: true, containingPoint: location);
 
 			return TrySelectWindowAtPoint(snapshot, location, out info);
 		}
@@ -590,17 +561,11 @@ namespace Keysharp.Internals.Window.MacOS
 			if (pid <= 0)
 				return false;
 
-			// Prefer the Accessibility-based AXHidden approach: it's gated by Accessibility
-			// permission (already required for window control) rather than the separate,
-			// per-target Automation/AppleEvents permission that NSRunningApplication.Hide()
-			// needs and which macOS doesn't reliably grant/prompt for on unsigned/ad-hoc builds.
-			if (Application.Instance.Invoke(() => MacAccessibility.TrySetApplicationHidden(pid, true)))
+			if (MacAccessibility.TrySetApplicationHidden(pid, true))
 				return true;
 
-			// AEDeterminePermissionToAutomateTarget with wildcard event class/ID only reports an
-			// *existing* decision and doesn't reliably trigger the actual permission prompt --
-			// only the real Apple Event send below does that. Logged for diagnostics only.
-			_ = Application.Instance.Invoke(() => MacAccessibility.EnsureAutomationAccess(pid, "hide window", prompt: true));
+			if (!MacAccessibility.EnsureAutomationAccess(pid, "hide window", prompt: true))
+				return false;
 
 			try
 			{
@@ -625,11 +590,11 @@ namespace Keysharp.Internals.Window.MacOS
 			if (pid <= 0)
 				return false;
 
-			// See HideApplication for why AXHidden is preferred over Unhide().
-			if (Application.Instance.Invoke(() => MacAccessibility.TrySetApplicationHidden(pid, false)))
+			if (MacAccessibility.TrySetApplicationHidden(pid, false))
 				return true;
 
-			_ = Application.Instance.Invoke(() => MacAccessibility.EnsureAutomationAccess(pid, "show window", prompt: true));
+			if (!MacAccessibility.EnsureAutomationAccess(pid, "show window", prompt: true))
+				return false;
 
 			try
 			{
@@ -858,12 +823,12 @@ namespace Keysharp.Internals.Window.MacOS
 				mask &= ~flag;
 		}
 
-		private static List<MacNativeWindow> SnapshotCore(bool onScreenOnly, bool includeTextMetadata, bool includeSingleWindow = false, uint relativeToWindow = 0, bool includeOwnerName = false)
+		private static List<MacNativeWindow> SnapshotCore(bool onScreenOnly, bool includeTextMetadata,
+			bool includeOwnerName = false, POINT? containingPoint = null)
 		{
-			var options = includeSingleWindow
-				? kCGWindowListOptionOnScreenAboveWindow | kCGWindowListOptionIncludingWindow | kCGWindowListExcludeDesktopElements
-				: (onScreenOnly ? kCGWindowListOptionOnScreenOnly : kCGWindowListOptionAll) | kCGWindowListExcludeDesktopElements;
-			var arrayRef = CGWindowListCopyWindowInfo(options, relativeToWindow);
+			var options = (onScreenOnly ? kCGWindowListOptionOnScreenOnly : kCGWindowListOptionAll)
+				| kCGWindowListExcludeDesktopElements;
+			var arrayRef = CGWindowListCopyWindowInfo(options, 0);
 			if (arrayRef == 0)
 				return [];
 
@@ -872,40 +837,10 @@ namespace Keysharp.Internals.Window.MacOS
 				var count = CFArrayGetCount(arrayRef);
 				var capacity = count > int.MaxValue ? int.MaxValue : (int)count;
 				var list = new List<MacNativeWindow>(capacity);
-
 				for (nint i = 0; i < count; i++)
-				{
-					var dictRef = CFArrayGetValueAtIndex(arrayRef, i);
-					if (!TryGetUInt32(dictRef, kWindowNumber, out var windowNumber))
-						continue;
-
-					_ = TryGetInt32(dictRef, kOwnerPid, out var ownerPid);
-					var ownerName = string.Empty;
-					var title = string.Empty;
-
-					if (includeTextMetadata || includeOwnerName)
-						_ = TryGetString(dictRef, kOwnerName, out ownerName);
-
-					if (includeTextMetadata)
-						_ = TryGetString(dictRef, kWindowName, out title);
-
-					var rect = Rectangle.Empty;
-					if (TryGetDictionaryValue(dictRef, kWindowBounds, out var boundsRef)
-						&& CGRectMakeWithDictionaryRepresentation(boundsRef, out var cgRect))
-					{
-						rect = new Rectangle(
-							Convert.ToInt32(cgRect.X),
-							Convert.ToInt32(cgRect.Y),
-							Convert.ToInt32(cgRect.Width),
-							Convert.ToInt32(cgRect.Height));
-					}
-
-					var hasAlpha = TryGetDouble(dictRef, kWindowAlpha, out var alpha);
-					var hasIsOnScreen = TryGetBool(dictRef, kWindowIsOnscreen, out var isOnscreen);
-					var effectiveAlpha = hasAlpha ? alpha : 1.0;
-					var effectiveOnScreen = hasIsOnScreen ? isOnscreen : onScreenOnly;
-					list.Add(new MacNativeWindow(windowNumber, ownerPid, ownerName, title, rect, effectiveOnScreen, effectiveAlpha));
-				}
+					if (TryReadWindowInfo(CFArrayGetValueAtIndex(arrayRef, i), out var info,
+						includeTextMetadata, includeOwnerName, onScreenOnly, containingPoint))
+						list.Add(info);
 
 				return list;
 			}
@@ -913,6 +848,51 @@ namespace Keysharp.Internals.Window.MacOS
 			{
 				CFRelease(arrayRef);
 			}
+		}
+
+		private static bool TryReadWindowInfo(nint dictionary, out MacNativeWindow info, bool includeTextMetadata,
+			bool includeOwnerName, bool onScreenOnly, POINT? containingPoint = null)
+		{
+			info = default;
+			if (!TryGetUInt32(dictionary, kWindowNumber, out var windowNumber))
+				return false;
+
+			_ = TryGetInt32(dictionary, kOwnerPid, out var ownerPid);
+			var bounds = Rectangle.Empty;
+			if (TryGetDictionaryValue(dictionary, kWindowBounds, out var boundsRef)
+				&& CGRectMakeWithDictionaryRepresentation(boundsRef, out var rectangle))
+				bounds = new Rectangle(Convert.ToInt32(rectangle.X), Convert.ToInt32(rectangle.Y),
+					Convert.ToInt32(rectangle.Width), Convert.ToInt32(rectangle.Height));
+
+			var alpha = TryGetDouble(dictionary, kWindowAlpha, out var opacity) ? opacity : 1.0;
+			var onScreen = TryGetBool(dictionary, kWindowIsOnscreen, out var visible) ? visible : onScreenOnly;
+			if (containingPoint is POINT point && (!onScreen || alpha <= 0.001
+				|| !bounds.Contains(point.X, point.Y) || IsMouseTransparentWindow(windowNumber)))
+				return false;
+
+			var ownerName = string.Empty;
+			var title = string.Empty;
+			if (includeTextMetadata || includeOwnerName)
+				_ = TryGetString(dictionary, kOwnerName, out ownerName);
+			if (includeTextMetadata)
+				_ = TryGetString(dictionary, kWindowName, out title);
+
+			info = new MacNativeWindow(windowNumber, ownerPid, ownerName, title, bounds, onScreen, alpha);
+			return true;
+		}
+
+		internal static bool TryMatchWindow(IReadOnlyList<MacNativeWindow> windows, int pid,
+			Rectangle bounds, string title, out uint id)
+		{
+			var match = new MacWindowMatch(bounds, title);
+			foreach (var window in windows)
+			{
+				if (window.OwnerPid == pid)
+					match.Consider((nint)window.WindowNumber, window.Bounds, window.Title);
+			}
+
+			id = (uint)match.Handle;
+			return id != 0;
 		}
 
 		private static bool TryGetDictionaryValue(nint dictRef, nint key, out nint value)
@@ -969,18 +949,7 @@ namespace Keysharp.Internals.Window.MacOS
 			if (CFGetTypeID(stringRef) != CFStringGetTypeID())
 				return false;
 
-			var len = CFStringGetLength(stringRef);
-			var maxSize = CFStringGetMaximumSizeForEncoding(len, kCFStringEncodingUTF8) + 1;
-			var buffer = new byte[(int)maxSize];
-
-			if (!CFStringGetCString(stringRef, buffer, maxSize, kCFStringEncodingUTF8))
-				return false;
-
-			var terminator = System.Array.IndexOf(buffer, (byte)0);
-			if (terminator < 0)
-				terminator = buffer.Length;
-
-			value = System.Text.Encoding.UTF8.GetString(buffer, 0, terminator);
+			value = ReadString(stringRef);
 			return true;
 		}
 
@@ -1023,7 +992,7 @@ namespace Keysharp.Internals.Window.MacOS
 		{
 			try
 			{
-				return CFStringCreateWithCString(0, value, kCFStringEncodingUTF8);
+				return CreateString(value);
 			}
 			catch
 			{

@@ -30,6 +30,55 @@ namespace Keysharp.Tests
 			script = null;
 		}
 
+		[Test]
+		public void CoveredWindowIdentity()
+		{
+			var bounds = new Rectangle(100, 100, 640, 480);
+			MacNativeWindow[] windows =
+			[
+				new(11, 2, "Cover", "Target", bounds, true, 1),
+				new(12, 1, "App", "Target", new Rectangle(120, 120, 320, 240), true, 1),
+				new(13, 1, "App", "Target", bounds, false, 1)
+			];
+
+			Assert.IsTrue(MacNativeWindows.TryMatchWindow(windows, 1, bounds, "Target", out var id));
+			Assert.AreEqual(13u, id, "a covering window or off-screen state changed the identity");
+			Assert.IsFalse(MacNativeWindows.TryMatchWindow(windows, 3, bounds, "Target", out _));
+		}
+
+		[Test]
+		public void SameBoundsIdentity()
+		{
+			var bounds = new Rectangle(100, 100, 640, 480);
+			MacNativeWindow[] windows =
+			[
+				new(11, 1, "App", "First", bounds, true, 1),
+				new(12, 1, "App", "Second", bounds, true, 1)
+			];
+
+			Assert.IsTrue(MacNativeWindows.TryMatchWindow(windows, 1, bounds, "Second", out var id));
+			Assert.AreEqual(12u, id);
+			Assert.IsFalse(MacNativeWindows.TryMatchWindow(windows, 1, bounds, "Missing", out _));
+			Assert.IsFalse(MacNativeWindows.TryMatchWindow(windows, 1, bounds, "", out _));
+
+			windows[0] = new(11, 1, "App", "", bounds, true, 1);
+			Assert.IsFalse(MacNativeWindows.TryMatchWindow(windows, 1, bounds, "", out _),
+				"an unavailable title must not disambiguate windows with the same bounds");
+
+			windows[0] = new(11, 1, "App", "Second", bounds, true, 1);
+			Assert.IsFalse(MacNativeWindows.TryMatchWindow(windows, 1, bounds, "Second", out _),
+				"ambiguous bounds and titles must not choose an arbitrary window");
+		}
+
+		[Test]
+		public void UntitledWindowIdentity()
+		{
+			var bounds = new Rectangle(100, 100, 640, 480);
+			MacNativeWindow[] windows = [new(11, 1, "App", "", bounds, false, 1)];
+			Assert.IsTrue(MacNativeWindows.TryMatchWindow(windows, 1, bounds, "Unavailable title", out var id));
+			Assert.AreEqual(11u, id);
+		}
+
 		[Test, Category("Input")]
 		public void InjectedMetadata()
 		{

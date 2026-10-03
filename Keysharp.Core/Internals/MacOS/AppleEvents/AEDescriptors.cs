@@ -182,6 +182,42 @@ namespace Keysharp.Internals.AppleEvents
 		internal static partial int AESendMessage(ref AEDesc @event, out AEDesc reply, int sendMode, nint timeOutInTicks);
 
 		[LibraryImport(CoreServices)]
+		private static partial short AEPutAttributePtr(ref AEDesc @event, uint key, uint type, in uint data, nint size);
+
+		[LibraryImport("/usr/lib/libSystem.B.dylib", EntryPoint = "mach_task_self")]
+		private static partial uint MachTaskSelf();
+
+		[LibraryImport("/usr/lib/libSystem.B.dylib", EntryPoint = "mach_port_allocate")]
+		private static partial int MachPortAllocate(uint task, int right, out uint port);
+
+		[LibraryImport("/usr/lib/libSystem.B.dylib", EntryPoint = "mach_port_destroy")]
+		private static partial int MachPortDestroy(uint task, uint port);
+
+		internal static int SendOnWorker(ref AEDesc @event, out AEDesc reply, int sendMode, nint timeoutTicks)
+		{
+			var task = MachTaskSelf();
+			var status = MachPortAllocate(task, 1, out var port);
+
+			if (status != 0)
+				throw new AEException(status, $"Could not allocate an Apple Events reply port ({status}).");
+
+			try
+			{
+				// Each worker waits on its own port so other targets cannot consume its replies.
+				status = AEPutAttributePtr(ref @event, AEFourCharCode.Pack("repp"), AEFourCharCode.Pack("port"), in port, sizeof(uint));
+
+				if (status != 0)
+					throw new AEException(status, $"Could not address the Apple Events reply port ({status}).");
+
+				return AESendMessage(ref @event, out reply, sendMode, timeoutTicks);
+			}
+			finally
+			{
+				_ = MachPortDestroy(task, port);
+			}
+		}
+
+		[LibraryImport(CoreServices)]
 		internal static partial int AEDeterminePermissionToAutomateTarget(ref AEDesc target, uint theAEEventClass,
 				uint theAEEventID, byte askUserIfNeeded);
 

@@ -386,5 +386,71 @@ namespace Keysharp.Tests
 			Assert.That(dict.PropertyCodesByKey["name"], Is.EqualTo(AEFourCharCode.Pack("pnam")));
 			Assert.That(dict.PropertyNamesByCode[AEFourCharCode.Pack("ppth")], Is.EqualTo("file name"));
 		}
+
+#if OSX
+		[Test]
+		public void IndependentTargets()
+		{
+			using var started = new ManualResetEventSlim();
+			using var release = new ManualResetEventSlim();
+			using var finished = new ManualResetEventSlim();
+			using var otherFinished = new ManualResetEventSlim();
+			var target = Guid.NewGuid().ToString();
+
+			AETargetQueue.Enqueue(target, () =>
+			{
+				started.Set();
+				release.Wait();
+				finished.Set();
+			});
+
+			try
+			{
+				Assert.That(started.Wait(5_000), Is.True);
+				AETargetQueue.Enqueue(Guid.NewGuid().ToString(), otherFinished.Set);
+				Assert.That(otherFinished.Wait(5_000), Is.True, "A blocked target delayed an independent target.");
+			}
+			finally
+			{
+				release.Set();
+				Assert.That(finished.Wait(5_000), Is.True);
+			}
+		}
+
+		[Test]
+		public void TargetOrder()
+		{
+			using var started = new ManualResetEventSlim();
+			using var release = new ManualResetEventSlim();
+			using var finished = new ManualResetEventSlim();
+			var target = Guid.NewGuid().ToString();
+			var order = new List<int>();
+
+			AETargetQueue.Enqueue(target, () =>
+			{
+				started.Set();
+				release.Wait();
+				order.Add(1);
+			});
+
+			try
+			{
+				Assert.That(started.Wait(5_000), Is.True);
+				AETargetQueue.Enqueue(target, () => order.Add(2));
+				AETargetQueue.Enqueue(target, () =>
+				{
+					order.Add(3);
+					finished.Set();
+				});
+			}
+			finally
+			{
+				release.Set();
+			}
+
+			Assert.That(finished.Wait(5_000), Is.True);
+			Assert.That(order, Is.EqualTo(new[] { 1, 2, 3 }));
+		}
+#endif
 	}
 }

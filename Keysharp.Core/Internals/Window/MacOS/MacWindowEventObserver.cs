@@ -3,6 +3,7 @@ using Keysharp.Builtins;
 using System.Runtime.InteropServices;
 using MonoMac.AppKit;
 using MonoMac.Foundation;
+using static Keysharp.Internals.AppleEvents.CF;
 
 namespace Keysharp.Internals.Window.MacOS
 {
@@ -24,7 +25,6 @@ namespace Keysharp.Internals.Window.MacOS
 	internal static partial class MacAccessibility
 	{
 		private const string ApplicationServices = "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices";
-		private const string CoreFoundationPath = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
 
 		// AXObserver notification names (their documented constant string values). Created once and reused for both
 		// AXObserverAddNotification and CFEqual dispatch in the callback.
@@ -56,19 +56,6 @@ namespace Keysharp.Internals.Window.MacOS
 
 		[LibraryImport(ApplicationServices)]
 		private static partial nint AXObserverGetRunLoopSource(nint observer);
-
-		[LibraryImport(CoreFoundationPath)]
-		private static partial nint CFRunLoopGetMain();
-
-		[LibraryImport(CoreFoundationPath)]
-		private static partial void CFRunLoopAddSource(nint rl, nint source, nint mode);
-
-		[LibraryImport(CoreFoundationPath)]
-		private static partial void CFRunLoopRemoveSource(nint rl, nint source, nint mode);
-
-		[LibraryImport(CoreFoundationPath)]
-		[return: MarshalAs(UnmanagedType.I1)]
-		private static partial bool CFEqual(nint cf1, nint cf2);
 
 		/// <summary>One application's observer, the app-level AX element it is attached to, and the set of its
 		/// windows we have registered per-window notifications for (tracked by CGWindowID for terminate cleanup).</summary>
@@ -312,7 +299,7 @@ namespace Keysharp.Internals.Window.MacOS
 			// the stall at a fraction of a second so a wedged app is skipped rather than deadlocking us. Note this
 			// governs copy/attribute calls but not AXObserverAddNotification itself; those are fast in practice, so a
 			// fully wedged app remains a (narrow, unavoidable) risk there.
-			_ = AXUIElementSetMessagingTimeout(appElement, 0.2f);
+			_ = AXUIElementSetMessagingTimeout(appElement, WindowMessagingTimeout);
 
 			if (AXObserverCreate(pid, axCallbackPtr, out var observer) != kAXErrorSuccess || observer == 0)
 			{
@@ -357,8 +344,10 @@ namespace Keysharp.Internals.Window.MacOS
 
 			foreach (var id in state.windowIds)
 			{
-				if (windowElements.Remove(id, out var element))
-					CFRelease(element);
+				if (!windowElements.Remove(id, out var element))
+					continue;
+
+				CFRelease(element);
 
 				// An app quitting destroys its windows; surface a confirmed Close for the ones we were tracking (the
 				// manager de-dupes against any per-window destroyed notifications that also fired).
@@ -440,38 +429,6 @@ namespace Keysharp.Internals.Window.MacOS
 			return id;
 		}
 
-		/// <summary>Resolves a window AX element to its CGWindowID, preferring the (undocumented but usually present)
-		/// AXWindowNumber and falling back to a centre-point hit-test against the CG window list.</summary>
-		private static bool TryResolveWindowId(nint windowElement, out uint id)
-		{
-			id = 0;
-
-			if (windowElement == 0)
-				return false;
-
-			if (TryReadInt32(windowElement, attrWindowNumber, out var number) && number > 0)
-			{
-				id = (uint)number;
-				return true;
-			}
-
-			if (TryReadRect(windowElement, out var rect) && !rect.IsEmpty)
-			{
-				var centre = new POINT(rect.X + rect.Width / 2, rect.Y + rect.Height / 2);
-
-				if (MacNativeWindows.TryGetWindowAtPoint(centre, out var native) && native.WindowNumber != 0)
-				{
-					id = native.WindowNumber;
-					return true;
-				}
-			}
-
-			return false;
-		}
-
-		// A just-created window whose CGWindowID isn't resolvable yet is retried a few times at a short interval before
-		// being given up on (a window that never resolves — e.g. a transient that closed immediately — must not retry
-		// forever). ~5 * 60ms covers the typical AXWindowNumber-population lag without a perceptible Create/Show delay.
 		private const int WindowCreateResolveRetries = 5;
 		private const int WindowCreateResolveRetryMs = 60;
 
@@ -554,6 +511,9 @@ namespace Keysharp.Internals.Window.MacOS
 					if (!hidden && id != 0 && windowElements.Remove(id, out var dead))
 					{
 						CFRelease(dead);
+						foreach (var state in appObservers.Values)
+							if (state.windowIds.Remove(id))
+								break;
 
 						// Forget a recycled active window so the next genuine activation isn't deduped away if the
 						// window server later reuses this CGWindowID.

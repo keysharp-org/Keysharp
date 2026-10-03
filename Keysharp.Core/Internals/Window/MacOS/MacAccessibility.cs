@@ -1,12 +1,13 @@
 using Keysharp.Builtins;
 #if OSX
 using System.Runtime.InteropServices;
+using Keysharp.Internals.AppleEvents;
+using static Keysharp.Internals.AppleEvents.CF;
 
 namespace Keysharp.Internals.Window.MacOS
 {
 	internal static partial class MacAccessibility
 	{
-		private const uint kCFStringEncodingUTF8 = 0x08000100;
 		private const int kCFNumberSInt32Type = 3;
 		private const int kAXErrorSuccess = 0;
 		private const int kAXValueCGPointType = 1;
@@ -14,19 +15,25 @@ namespace Keysharp.Internals.Window.MacOS
 		private const int kAXValueCGRectType = 3;
 		private const int kAXValueCFRangeType = 4;
 		private const uint kCGHIDEventTap = 0;
+		private const float WindowMessagingTimeout = 0.2f;
 
 		private enum CGEventType : uint
 		{
 			LeftMouseDown = 1,
 			LeftMouseUp = 2,
 			RightMouseDown = 3,
-			RightMouseUp = 4
+			RightMouseUp = 4,
+			OtherMouseDown = 25,
+			OtherMouseUp = 26
 		}
 
 		private enum CGMouseButton : uint
 		{
 			Left = 0,
-			Right = 1
+			Right = 1,
+			Center = 2,
+			Extra1 = 3,
+			Extra2 = 4
 		}
 
 		[StructLayout(LayoutKind.Sequential)]
@@ -93,6 +100,7 @@ namespace Keysharp.Internals.Window.MacOS
 		private static readonly nint cfBoolTrue = ResolveCFBooleanSymbol("kCFBooleanTrue");
 		private static readonly nint cfBoolFalse = ResolveCFBooleanSymbol("kCFBooleanFalse");
 		private static readonly nint axTrustedCheckOptionPrompt = ResolveAppServicesPointerSymbol("kAXTrustedCheckOptionPrompt");
+		private static readonly nint windowMetadataAttributes = CFArrayCreate(0, [attrTitle, attrPosition, attrSize], 3, 0);
 
 		private static int loggedTrustFailure;
 		private static int loggedListenFailure;
@@ -115,6 +123,15 @@ namespace Keysharp.Internals.Window.MacOS
 
 			[LibraryImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
 			private static partial int AXUIElementCopyAttributeValue(nint element, nint attribute, out nint value);
+
+		[LibraryImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
+		private static partial int AXUIElementCopyMultipleAttributeValues(nint element, nint attributes, uint options, out nint values);
+
+		[LibraryImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
+		private static partial int AXUIElementGetPid(nint element, out int pid);
+
+		[LibraryImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
+		private static partial nint AXValueGetTypeID();
 
 		[LibraryImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
 		private static partial int AXUIElementCopyParameterizedAttributeValue(nint element, nint parameterizedAttribute,
@@ -157,29 +174,6 @@ namespace Keysharp.Internals.Window.MacOS
 		[return: MarshalAs(UnmanagedType.I1)]
 		private static partial bool CGRequestScreenCaptureAccess();
 
-		// Apple Event "address" descriptor, used to identify the target application of an Apple
-		// Event by pid when checking/requesting Automation ("control this app") permission.
-		[StructLayout(LayoutKind.Sequential)]
-		private struct AEDesc
-		{
-			public uint DescriptorType;
-			public nint DataHandle;
-		}
-
-		private const uint TypeKernelProcessId = 0x6B706964; // 'kpid'
-		private const uint TypeWildCard = 0x2A2A2A2A; // '****'
-
-		// AECreateDesc/AEDisposeDesc return OSErr (16-bit), unlike AEDeterminePermissionToAutomateTarget
-		// which returns the 32-bit OSStatus.
-		[LibraryImport("/System/Library/Frameworks/CoreServices.framework/CoreServices")]
-		private static partial short AECreateDesc(uint typeCode, in int dataPtr, int dataSize, out AEDesc result);
-
-		[LibraryImport("/System/Library/Frameworks/CoreServices.framework/CoreServices")]
-		private static partial int AEDeterminePermissionToAutomateTarget(in AEDesc target, uint theAEEventClass, uint theAEEventID, [MarshalAs(UnmanagedType.I1)] bool askUserIfNeeded);
-
-		[LibraryImport("/System/Library/Frameworks/CoreServices.framework/CoreServices")]
-		private static partial short AEDisposeDesc(in AEDesc desc);
-
 		[LibraryImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
 		[return: MarshalAs(UnmanagedType.I1)]
 		private static partial bool AXValueGetValue(nint value, int theType, out CGPointD point);
@@ -205,255 +199,118 @@ namespace Keysharp.Internals.Window.MacOS
 		[LibraryImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices", EntryPoint = "AXValueCreate")]
 		private static partial nint AXValueCreateRange(int theType, in CFRangeNative range);
 
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial void CFRelease(nint cfTypeRef);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", StringMarshalling = StringMarshalling.Utf8)]
-		private static partial nint CFStringCreateWithCString(nint alloc, string cStr, uint encoding);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial nint CFRetain(nint cfTypeRef);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial nint CFArrayGetCount(nint theArray);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial nint CFArrayGetValueAtIndex(nint theArray, nint idx);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial nint CFDictionaryCreate(nint allocator, nint[] keys, nint[] values, nint numValues, nint keyCallBacks, nint valueCallBacks);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial nint CFGetTypeID(nint cf);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial nint CFBooleanGetTypeID();
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		[return: MarshalAs(UnmanagedType.I1)]
-		private static partial bool CFBooleanGetValue(nint boolean);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial nint CFNumberGetTypeID();
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		[return: MarshalAs(UnmanagedType.I1)]
-		private static partial bool CFNumberGetValue(nint number, int theType, out int value);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial nint CFStringGetTypeID();
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial nint CFStringGetLength(nint theString);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static partial nint CFStringGetMaximumSizeForEncoding(nint length, uint encoding);
-
-		[LibraryImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		[return: MarshalAs(UnmanagedType.I1)]
-		private static partial bool CFStringGetCString(nint theString, byte[] buffer, nint bufferSize, uint encoding);
-
 		[LibraryImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
 		private static partial nint CGEventCreateMouseEvent(nint source, CGEventType mouseType, CGPointNative mouseCursorPosition, CGMouseButton mouseButton);
 
 		[LibraryImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
 		private static partial void CGEventPost(uint tap, nint @event);
 
-		internal static bool TryActivateWindow(MacNativeWindow info)
+		[LibraryImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
+		private static partial void CGEventSetIntegerValueField(nint @event, uint field, long value);
+
+		internal sealed class WindowElement : IDisposable
 		{
-			if (!EnsureAccessibilityAccess("activate window", prompt: true))
-				return MacNativeWindows.ActivateAppByPid(info.OwnerPid);
+			internal nint Element { get; private set; }
+			internal MacNativeWindow Info { get; }
 
-			if (!TryFindWindowElement(info, out var windowElement))
-				return MacNativeWindows.ActivateAppByPid(info.OwnerPid);
+			internal WindowElement(nint element, MacNativeWindow info)
+			{
+				Element = element;
+				Info = info;
+			}
 
-			_ = MacNativeWindows.ActivateAppByPid(info.OwnerPid);
-			var ok = AXUIElementPerformAction(windowElement, actionRaise) == kAXErrorSuccess;
-			CFRelease(windowElement);
-			return ok;
+			public void Dispose()
+			{
+				if (Element != 0)
+				{
+					CFRelease(Element);
+					Element = 0;
+				}
+			}
 		}
 
-		// Raises the window within its own application's window list, without activating that
-		// application (unlike TryActivateWindow). This is the closest macOS equivalent to
-		// bringing a window to the top of the Z order without stealing focus from the user.
-		internal static bool TryRaiseWindow(MacNativeWindow info)
+		internal static WindowElement ResolveWindowElement(MacNativeWindow info, string operation, bool prompt = true)
+			=> EnsureAccessibilityAccess(operation, prompt) && TryFindWindowElement(info, out var element)
+				? new WindowElement(element, info) : null;
+
+		internal static bool TryActivateWindow(WindowElement window)
 		{
-			if (!EnsureAccessibilityAccess("raise window", prompt: true))
+			if (window == null)
 				return false;
 
-			if (!TryFindWindowElement(info, out var windowElement))
+			if (TryReadBool(window.Element, attrMinimized, out var minimized) && minimized
+				&& !TryWriteBool(window.Element, attrMinimized, false))
+				return false;
+
+			return MacNativeWindows.ActivateAppByPid(window.Info.OwnerPid) && TryRaiseWindow(window);
+		}
+
+		internal static bool TryRaiseWindow(WindowElement window)
+			=> window != null && AXUIElementPerformAction(window.Element, actionRaise) == kAXErrorSuccess;
+
+		internal static bool TrySetWindowTitle(WindowElement window, string title)
+		{
+			if (window == null)
+				return false;
+
+			var titleRef = CreateString(title);
+			if (titleRef == 0)
 				return false;
 
 			try
 			{
-				return AXUIElementPerformAction(windowElement, actionRaise) == kAXErrorSuccess;
+				return AXUIElementSetAttributeValue(window.Element, attrTitle, titleRef) == kAXErrorSuccess;
 			}
 			finally
 			{
-				CFRelease(windowElement);
+				CFRelease(titleRef);
 			}
 		}
 
-		// Most apps treat AXTitle as read-only, but a few (e.g. Electron-based apps) honor writes
-		// to it, so it's worth attempting before falling back/logging.
-		internal static bool TrySetWindowTitle(MacNativeWindow info, string title)
+		internal static bool TryCloseWindow(WindowElement window)
+			=> window != null && (AXUIElementPerformAction(window.Element, actionClose) == kAXErrorSuccess
+				|| TryPressButton(window.Element, attrCloseButton));
+
+		internal static bool TryGetWindowState(WindowElement window, out FormWindowState state)
 		{
-			if (!EnsureAccessibilityAccess("set window title", prompt: true))
-				return false;
-
-			if (!TryFindWindowElement(info, out var windowElement))
-				return false;
-
-			try
-			{
-				var titleRef = CFStringCreateWithCString(0, title ?? string.Empty, kCFStringEncodingUTF8);
-
-				if (titleRef == 0)
-					return false;
-
-				try
-				{
-					return AXUIElementSetAttributeValue(windowElement, attrTitle, titleRef) == kAXErrorSuccess;
-				}
-				finally
-				{
-					CFRelease(titleRef);
-				}
-			}
-			finally
-			{
-				CFRelease(windowElement);
-			}
-		}
-
-		internal static bool TryCloseWindow(MacNativeWindow info)
-		{
-			if (!EnsureAccessibilityAccess("close window", prompt: true))
-				return false;
-
-			if (!TryFindWindowElement(info, out var windowElement))
-				return false;
-
-			try
-			{
-				if (AXUIElementPerformAction(windowElement, actionClose) == kAXErrorSuccess)
-					return true;
-
-				if (TryCopyAttributeValue(windowElement, attrCloseButton, out var closeButton))
-				{
-					try
-					{
-						return AXUIElementPerformAction(closeButton, actionPress) == kAXErrorSuccess;
-					}
-					finally
-					{
-						CFRelease(closeButton);
-					}
-				}
-			}
-			finally
-			{
-				CFRelease(windowElement);
-			}
-
-			return false;
-		}
-
-			internal static bool TryGetWindowState(MacNativeWindow info, out FormWindowState state)
-			{
 			state = FormWindowState.Normal;
-			if (!EnsureAccessibilityAccess("query window state"))
+			if (window == null)
 				return false;
 
-			if (!TryFindWindowElement(info, out var windowElement))
-				return false;
+			if (TryReadBool(window.Element, attrMinimized, out var minimized) && minimized)
+				state = FormWindowState.Minimized;
+			else if (TryReadBool(window.Element, attrFullScreen, out var full) && full)
+				state = FormWindowState.Maximized;
 
-			try
-			{
-				// macOS has no "maximized" state; WinMaximize maps to native full screen (see TrySetFullScreen),
-				// reported here via the undocumented-but-standard AXFullScreen flag. Minimized takes priority
-				// because a window can't be both, and there is no AXZoomed attribute to consult.
-				if (TryReadBool(windowElement, attrMinimized, out var minimized) && minimized)
-					state = FormWindowState.Minimized;
-				else if (TryReadBool(windowElement, attrFullScreen, out var full) && full)
-					state = FormWindowState.Maximized;
-				else
-					state = FormWindowState.Normal;
-
-				return true;
-			}
-			finally
-			{
-				CFRelease(windowElement);
-			}
+			return true;
 		}
 
-		internal static bool TrySetWindowState(MacNativeWindow info, FormWindowState state)
+		internal static bool TrySetWindowState(WindowElement window, FormWindowState state)
 		{
-			if (!EnsureAccessibilityAccess("set window state", prompt: true))
+			if (window == null)
 				return false;
 
-			if (!TryFindWindowElement(info, out var windowElement))
-				return false;
+			if (state == FormWindowState.Minimized)
+				return TryWriteBool(window.Element, attrMinimized, true);
 
-			try
-			{
-				// Only minimize/un-minimize is handled here. "Maximize" maps to native full screen, which
-				// MacWindow.TrySetState drives separately via TrySetFullScreen — a Maximized request is never
-				// routed down to this primitive, and the un-minimize path deliberately leaves full screen alone
-				// (so WinShow/WinActivate don't kick a full-screen window out of full screen).
-				if (state == FormWindowState.Minimized)
-					return TryWriteBool(windowElement, attrMinimized, true);
-
-				var ok = TryWriteBool(windowElement, attrMinimized, false);
-				_ = AXUIElementPerformAction(windowElement, actionRaise);
-				return ok;
-			}
-			finally
-			{
-				CFRelease(windowElement);
-			}
+			return TryWriteBool(window.Element, attrMinimized, false) && TryRaiseWindow(window);
 		}
 
-		// Enters (on=true) or leaves (on=false) native full screen — the closest macOS equivalent to a
-		// Windows/Linux maximize/restore, and what the green traffic-light button triggers by default.
-		// AppKit remembers the pre-full-screen frame itself, so leaving full screen restores the old size.
-		internal static bool TrySetFullScreen(MacNativeWindow info, bool on)
+		internal static bool TrySetFullScreen(WindowElement window, bool on)
 		{
-			if (!EnsureAccessibilityAccess(on ? "enter full screen" : "leave full screen", prompt: true))
+			if (window == null)
 				return false;
 
-			if (!TryFindWindowElement(info, out var windowElement))
-				return false;
-
-			try
-			{
-				return TrySetFullScreen(windowElement, on);
-			}
-			finally
-			{
-				CFRelease(windowElement);
-			}
-		}
-
-		// AXFullScreen is an undocumented but widely-supported settable boolean on Cocoa windows: prefer
-		// writing it (idempotent and direction-explicit). If it isn't settable, fall back to pressing the
-		// green AXFullScreenButton — but only when we could read the current state and it differs from the
-		// target, since that button merely toggles and a blind press could do the opposite of what's asked.
-		private static bool TrySetFullScreen(nint windowElement, bool on)
-		{
-			var known = TryReadBool(windowElement, attrFullScreen, out var current);
-
+			var element = window.Element;
+			var known = TryReadBool(element, attrFullScreen, out var current);
 			if (known && current == on)
 				return true;
 
-			if (IsAttributeSettable(windowElement, attrFullScreen) && TryWriteBool(windowElement, attrFullScreen, on))
+			if (IsAttributeSettable(element, attrFullScreen) && TryWriteBool(element, attrFullScreen, on))
 				return true;
 
-			if (known && current != on)
-				return TryPressButton(windowElement, attrFullScreenButton);
-
-			return false;
+			// The green button toggles, so press it only when the current direction is known.
+			return known && current != on && TryPressButton(element, attrFullScreenButton);
 		}
 
 		private static bool TryPressButton(nint windowElement, nint buttonAttr)
@@ -471,22 +328,18 @@ namespace Keysharp.Internals.Window.MacOS
 			}
 		}
 
-		// Hides/unhides an entire other application via its top-level Accessibility element's
-		// AXHidden attribute. This achieves the same result as NSRunningApplication.Hide()/Unhide()
-		// but is gated by Accessibility permission (already required for window control) instead of
-		// the separate, per-target Automation/AppleEvents permission that Hide()/Unhide() need.
 		internal static bool TrySetApplicationHidden(int pid, bool hidden)
 		{
 			if (pid <= 0 || !EnsureAccessibilityAccess("hide/show application", prompt: true))
 				return false;
 
 			var appElement = AXUIElementCreateApplication(pid);
-
 			if (appElement == 0)
 				return false;
 
 			try
 			{
+				_ = AXUIElementSetMessagingTimeout(appElement, WindowMessagingTimeout);
 				return TryWriteBool(appElement, attrHidden, hidden);
 			}
 			finally
@@ -495,102 +348,86 @@ namespace Keysharp.Internals.Window.MacOS
 			}
 		}
 
-		internal static bool TryMoveResizeWindow(MacNativeWindow info, Rectangle rect, bool setPosition, bool setSize)
+		internal static bool TryMoveResizeWindow(WindowElement window, Rectangle rect, bool setPosition, bool setSize)
 		{
-			if (!EnsureAccessibilityAccess("move/resize window", prompt: true))
+			if (window == null)
 				return false;
 
-			if (!TryFindWindowElement(info, out var windowElement))
-				return false;
-
-			try
+			var element = window.Element;
+			var ok = true;
+			if (setPosition && IsAttributeSettable(element, attrPosition))
 			{
-				var ok = true;
-
-				if (setPosition && IsAttributeSettable(windowElement, attrPosition))
+				var point = new CGPointD { X = rect.X, Y = rect.Y };
+				var value = AXValueCreatePoint(kAXValueCGPointType, in point);
+				if (value == 0)
+					ok = false;
+				else
 				{
-					var point = new CGPointD { X = rect.X, Y = rect.Y };
-					var posValue = AXValueCreatePoint(kAXValueCGPointType, in point);
-					if (posValue != 0)
-					{
-						ok &= AXUIElementSetAttributeValue(windowElement, attrPosition, posValue) == kAXErrorSuccess;
-						CFRelease(posValue);
-					}
-					else
-					{
-						ok = false;
-					}
+					try { ok &= AXUIElementSetAttributeValue(element, attrPosition, value) == kAXErrorSuccess; }
+					finally { CFRelease(value); }
 				}
-
-				// Some windows (e.g. macOS Calculator) are not resizable, so their AXSize
-				// attribute is not settable. Attempting to set it would fail; skip it instead
-				// of reporting an error so move-only and restore operations still succeed.
-				if (setSize && rect.Width > 0 && rect.Height > 0 && IsAttributeSettable(windowElement, attrSize))
-				{
-					var size = new CGSizeD { Width = rect.Width, Height = rect.Height };
-					var sizeValue = AXValueCreateSize(kAXValueCGSizeType, in size);
-					if (sizeValue != 0)
-					{
-						ok &= AXUIElementSetAttributeValue(windowElement, attrSize, sizeValue) == kAXErrorSuccess;
-						CFRelease(sizeValue);
-					}
-					else
-					{
-						ok = false;
-					}
-				}
-
-				return ok;
 			}
-			finally
+
+			// A fixed-size window can still be moved; an unsettable size is not an error.
+			if (setSize && rect.Width > 0 && rect.Height > 0 && IsAttributeSettable(element, attrSize))
 			{
-				CFRelease(windowElement);
+				var size = new CGSizeD { Width = rect.Width, Height = rect.Height };
+				var value = AXValueCreateSize(kAXValueCGSizeType, in size);
+				if (value == 0)
+					ok = false;
+				else
+				{
+					try { ok &= AXUIElementSetAttributeValue(element, attrSize, value) == kAXErrorSuccess; }
+					finally { CFRelease(value); }
+				}
 			}
+
+			return ok;
 		}
 
-		internal static bool TryClickWindow(MacNativeWindow info, Point? location, bool rightButton)
+		internal static bool TryClickWindow(WindowElement window, Point location, uint buttonNumber, int count)
 		{
-			if (!EnsureAccessibilityAccess("post mouse click", prompt: true))
-				return false;
-			if (!EnsurePostEventAccess("post mouse click", prompt: true))
+			if (window == null || !EnsurePostEventAccess("post mouse click", prompt: true))
 				return false;
 
-			_ = TryActivateWindow(info);
-
-			var clickX = location?.X ?? (info.Bounds.Width / 2);
-			var clickY = location?.Y ?? (info.Bounds.Height / 2);
-			var absX = info.Bounds.X + clickX;
-			var absY = info.Bounds.Y + clickY;
-			var point = new CGPointNative(absX, absY);
-
-			var button = rightButton ? CGMouseButton.Right : CGMouseButton.Left;
-			var downType = rightButton ? CGEventType.RightMouseDown : CGEventType.LeftMouseDown;
-			var upType = rightButton ? CGEventType.RightMouseUp : CGEventType.LeftMouseUp;
-
-			var down = CGEventCreateMouseEvent(0, downType, point, button);
-			if (down == 0)
-				return false;
-
-			try
+			if (buttonNumber < 1 || buttonNumber > 5)
 			{
-				CGEventPost(kCGHIDEventTap, down);
-			}
-			finally
-			{
-				CFRelease(down);
+				_ = Errors.ValueErrorOccurred($"Invalid macOS mouse button '{buttonNumber}'. Expected 1, 2, 3, 4 or 5.");
+				return false;
 			}
 
-			var up = CGEventCreateMouseEvent(0, upType, point, button);
-			if (up == 0)
-				return false;
+			if (count <= 0)
+				return true;
 
-			try
+			if (!TryActivateWindow(window))
+				return false;
+			var info = window.Info;
+			var point = new CGPointNative(info.Bounds.X + location.X, info.Bounds.Y + location.Y);
+			var button = (CGMouseButton)(buttonNumber - 1);
+			var downType = button == CGMouseButton.Left ? CGEventType.LeftMouseDown
+				: button == CGMouseButton.Right ? CGEventType.RightMouseDown : CGEventType.OtherMouseDown;
+			var upType = button == CGMouseButton.Left ? CGEventType.LeftMouseUp
+				: button == CGMouseButton.Right ? CGEventType.RightMouseUp : CGEventType.OtherMouseUp;
+
+			for (var i = 0; i < count; i++)
 			{
-				CGEventPost(kCGHIDEventTap, up);
-			}
-			finally
-			{
-				CFRelease(up);
+				var down = CGEventCreateMouseEvent(0, downType, point, button);
+				var up = CGEventCreateMouseEvent(0, upType, point, button);
+				try
+				{
+					if (down == 0 || up == 0)
+						return false;
+
+					CGEventSetIntegerValueField(down, 1, i + 1L); // kCGMouseEventClickState
+					CGEventSetIntegerValueField(up, 1, i + 1L);
+					CGEventPost(kCGHIDEventTap, down);
+					CGEventPost(kCGHIDEventTap, up);
+				}
+				finally
+				{
+					if (down != 0) CFRelease(down);
+					if (up != 0) CFRelease(up);
+				}
 			}
 
 			return true;
@@ -736,57 +573,27 @@ namespace Keysharp.Internals.Window.MacOS
 			return false;
 		}
 
-		// Apple Events ("Automation") permission lets this process control another app (e.g. via
-		// NSRunningApplication.Hide()/Unhide(), used by WinHide/WinShow). Unlike the other
-		// permissions, it's granted per target app, the system prompts automatically the first
-		// time an Apple Event is actually sent (given NSAppleEventsUsageDescription and the
-		// com.apple.security.automation.apple-events entitlement), and there's no separate
-		// "request access" call -- passing askUserIfNeeded triggers that prompt as a side effect.
 		internal static bool EnsureAutomationAccess(int pid, string operation, bool prompt = false)
 		{
 			if (pid <= 0)
-				return true;
-
-			const int errAEEventNotPermitted = -1743;
-			const int errAEEventWouldRequireUserConsent = -1744;
+				return false;
 
 			try
 			{
-				var pidValue = pid;
-
-				if (AECreateDesc(TypeKernelProcessId, in pidValue, sizeof(int), out var target) != 0)
-					return true; // Couldn't build the address descriptor; don't block the caller on this check.
-
-				try
-				{
-					var status = AEDeterminePermissionToAutomateTarget(in target, TypeWildCard, TypeWildCard, prompt);
-
-					if (status == 0 || status == errAEEventWouldRequireUserConsent)
-						return true;
-
-					if (status != errAEEventNotPermitted)
-						return true; // Target not found or some other transient error; don't block.
-				}
-				finally
-				{
-					_ = AEDisposeDesc(in target);
-				}
+				var bundleId = MonoMac.AppKit.NSRunningApplication.GetRunningApplication(pid)?.BundleIdentifier;
+				var target = new AETarget { Pid = pid, BundleId = bundleId, DisplayName = bundleId };
+				if (AECalls.EnsurePermitted(target, prompt))
+					return true;
 			}
-			catch
+			catch (AEException)
 			{
-				// Older macOS without this check, or the symbols aren't available: rely on the
-				// Apple Event call itself rather than blocking here.
-				return true;
 			}
 
 			lock (loggedAutomationFailurePids)
 			{
 				if (loggedAutomationFailurePids.Add(pid))
-				{
-					Diagnostics.Debug.WriteLine(
-						$"macOS Automation permission is required for '{operation}'. " +
+					Diagnostics.Debug.WriteLine($"macOS Automation permission is required for '{operation}'. " +
 						"Grant access in System Settings -> Privacy & Security -> Automation, then try again.");
-				}
 			}
 
 			return false;
@@ -921,63 +728,50 @@ namespace Keysharp.Internals.Window.MacOS
 				}
 			}
 
-			internal static bool TryGetFocusedWindowHandle(out nint handle)
-			{
-				handle = 0;
-				if (!EnsureAccessibilityAccess("query active window"))
-					return false;
+		internal static bool TryGetFocusedWindowHandle(out nint handle)
+		{
+			handle = 0;
+			if (!EnsureAccessibilityAccess("query active window"))
+				return false;
 
-				var systemElement = AXUIElementCreateSystemWide();
-				if (systemElement == 0)
+			var systemElement = AXUIElementCreateSystemWide();
+			if (systemElement == 0)
+				return false;
+
+			try
+			{
+				if (!TryCopyAttributeValue(systemElement, attrFocusedApplication, out var appElement))
 					return false;
 
 				try
 				{
-					if (!TryCopyAttributeValue(systemElement, attrFocusedApplication, out var appElement))
+					_ = AXUIElementSetMessagingTimeout(appElement, WindowMessagingTimeout);
+					if (!TryCopyAttributeValue(appElement, attrFocusedWindow, out var focusedWindow))
 						return false;
 
 					try
 					{
-						if (!TryCopyAttributeValue(appElement, attrFocusedWindow, out var focusedWindow))
+						if (!TryResolveWindowId(focusedWindow, out var id))
 							return false;
 
-						try
-						{
-							if (TryReadInt32(focusedWindow, attrWindowNumber, out var windowNumber) && windowNumber > 0)
-							{
-								handle = (nint)windowNumber;
-								return true;
-							}
-
-							// AXWindowNumber is undocumented and not always present.
-							// Fall back: find the CG window whose centre is under the focused AX window.
-							if (TryReadRect(focusedWindow, out var focusedRect) && !focusedRect.IsEmpty)
-							{
-								var centre = new POINT(focusedRect.X + focusedRect.Width / 2, focusedRect.Y + focusedRect.Height / 2);
-								if (MacNativeWindows.TryGetWindowAtPoint(centre, out var native) && native.WindowNumber != 0)
-								{
-									handle = (nint)native.WindowNumber;
-									return true;
-								}
-							}
-
-							return false;
-						}
-						finally
-						{
-							CFRelease(focusedWindow);
-						}
+						handle = (nint)id;
+						return true;
 					}
 					finally
 					{
-						CFRelease(appElement);
+						CFRelease(focusedWindow);
 					}
 				}
 				finally
 				{
-					CFRelease(systemElement);
+					CFRelease(appElement);
 				}
 			}
+			finally
+			{
+				CFRelease(systemElement);
+			}
+		}
 
 			private static bool CheckPostAccess()
 			{
@@ -1020,48 +814,53 @@ namespace Keysharp.Internals.Window.MacOS
 
 			try
 			{
+				_ = AXUIElementSetMessagingTimeout(appElement, WindowMessagingTimeout);
 				if (!TryCopyAttributeValue(appElement, attrWindows, out var windowsArray))
 					return false;
 
 				try
 				{
 					var count = CFArrayGetCount(windowsArray);
-					if (count <= 0)
-						return false;
-
-					nint best = 0;
-					double bestScore = double.NegativeInfinity;
-
+					var unresolved = new List<nint>();
 					for (nint i = 0; i < count; i++)
 					{
 						var entry = CFArrayGetValueAtIndex(windowsArray, i);
 						if (entry == 0)
 							continue;
 
-						var candidate = CFRetain(entry);
-						if (candidate == 0)
-							continue;
-
-						var score = ScoreWindowElement(candidate, info);
-						if (score > bestScore)
+						if (TryReadInt32(entry, attrWindowNumber, out var number) && number > 0)
 						{
-							if (best != 0)
-								CFRelease(best);
+							if (unchecked((uint)number) == info.WindowNumber)
+							{
+								windowElement = CFRetain(entry);
+								if (windowElement == 0)
+									return false;
 
-							best = candidate;
-							bestScore = score;
+								_ = AXUIElementSetMessagingTimeout(windowElement, WindowMessagingTimeout);
+								return true;
+							}
 						}
 						else
-						{
-							CFRelease(candidate);
-						}
+							unresolved.Add(entry);
 					}
 
-					if (best != 0)
+					// An available window number is authoritative; only unidentified entries need metadata.
+					var match = new MacWindowMatch(info.Bounds, info.Title);
+					foreach (var entry in unresolved)
 					{
-						windowElement = best;
-						return true;
+						if (TryReadWindowMetadata(entry, out var bounds, out var title))
+							match.Consider(entry, bounds, title);
 					}
+
+					if (match.Handle == 0)
+						return false;
+
+					windowElement = CFRetain(match.Handle);
+					if (windowElement == 0)
+						return false;
+
+					_ = AXUIElementSetMessagingTimeout(windowElement, WindowMessagingTimeout);
+					return true;
 				}
 				finally
 				{
@@ -1072,44 +871,67 @@ namespace Keysharp.Internals.Window.MacOS
 			{
 				CFRelease(appElement);
 			}
-
-			return false;
 		}
 
-		private static double ScoreWindowElement(nint windowElement, MacNativeWindow target)
+		private static bool TryResolveWindowId(nint windowElement, out uint id)
 		{
-			double score = 0.0;
+			id = 0;
+			if (windowElement == 0)
+				return false;
 
-			if (TryReadInt32(windowElement, attrWindowNumber, out var windowNumber)
-				&& unchecked((uint)windowNumber) == target.WindowNumber)
-				return 1e9; // definitive match — skip remaining scoring
-
-			if (TryReadString(windowElement, attrTitle, out var title))
+			_ = AXUIElementSetMessagingTimeout(windowElement, WindowMessagingTimeout);
+			if (TryReadInt32(windowElement, attrWindowNumber, out var number) && number > 0)
 			{
-				if (!title.IsNullOrEmpty())
-				{
-					if (string.Equals(title, target.Title, StringComparison.Ordinal))
-						score += 1000.0;
-					else if (!target.Title.IsNullOrEmpty() && title.Contains(target.Title, StringComparison.Ordinal))
-						score += 500.0;
-				}
-				else if (target.Title.IsNullOrEmpty())
-				{
-					score += 200.0;
-				}
+				id = (uint)number;
+				return true;
 			}
 
-			if (TryReadRect(windowElement, out var rect))
-			{
-				var dx = rect.X - target.Bounds.X;
-				var dy = rect.Y - target.Bounds.Y;
-				var dw = rect.Width - target.Bounds.Width;
-				var dh = rect.Height - target.Bounds.Height;
-				var distance = Math.Abs(dx) + Math.Abs(dy) + Math.Abs(dw) + Math.Abs(dh);
-				score += Math.Max(0.0, 400.0 - distance);
-			}
+			if (AXUIElementGetPid(windowElement, out var pid) != kAXErrorSuccess || pid <= 0
+				|| !TryReadWindowMetadata(windowElement, out var bounds, out var title))
+				return false;
 
-			return score;
+			return MacNativeWindows.TryMatchWindow(MacNativeWindows.Snapshot(), pid, bounds, title, out id);
+		}
+
+		private static bool TryReadWindowMetadata(nint element, out Rectangle bounds, out string title)
+		{
+			bounds = Rectangle.Empty;
+			title = string.Empty;
+			if (windowMetadataAttributes == 0)
+				return false;
+
+			var status = AXUIElementCopyMultipleAttributeValues(element, windowMetadataAttributes, 0, out var values);
+			try
+			{
+				if (status != kAXErrorSuccess || values == 0 || CFArrayGetCount(values) != 3)
+					return false;
+
+				var titleValue = CFArrayGetValueAtIndex(values, 0);
+				if (titleValue != 0 && CFGetTypeID(titleValue) == CFStringGetTypeID())
+					title = ReadString(titleValue);
+
+				var positionValue = CFArrayGetValueAtIndex(values, 1);
+				var sizeValue = CFArrayGetValueAtIndex(values, 2);
+				if (positionValue == 0 || sizeValue == 0
+					|| CFGetTypeID(positionValue) != AXValueGetTypeID() || CFGetTypeID(sizeValue) != AXValueGetTypeID()
+					|| !AXValueGetValue(positionValue, kAXValueCGPointType, out CGPointD position)
+					|| !AXValueGetValue(sizeValue, kAXValueCGSizeType, out CGSizeD size)
+					|| !double.IsFinite(position.X) || !double.IsFinite(position.Y)
+					|| !double.IsFinite(size.Width) || !double.IsFinite(size.Height)
+					|| position.X < int.MinValue || position.X > int.MaxValue
+					|| position.Y < int.MinValue || position.Y > int.MaxValue
+					|| size.Width <= 0 || size.Width > int.MaxValue || size.Height <= 0 || size.Height > int.MaxValue)
+					return false;
+
+				bounds = new Rectangle(Convert.ToInt32(position.X), Convert.ToInt32(position.Y),
+					Convert.ToInt32(size.Width), Convert.ToInt32(size.Height));
+				return true;
+			}
+			finally
+			{
+				if (values != 0)
+					CFRelease(values);
+			}
 		}
 
 		private static bool TryReadRect(nint windowElement, out Rectangle rect)
@@ -1169,37 +991,6 @@ namespace Keysharp.Internals.Window.MacOS
 			}
 		}
 
-		private static bool TryReadString(nint element, nint attr, out string value)
-		{
-			value = string.Empty;
-			if (!TryCopyAttributeValue(element, attr, out var obj))
-				return false;
-
-			try
-			{
-				if (CFGetTypeID(obj) != CFStringGetTypeID())
-					return false;
-
-				var len = CFStringGetLength(obj);
-				var maxSize = CFStringGetMaximumSizeForEncoding(len, kCFStringEncodingUTF8) + 1;
-				var buffer = new byte[(int)maxSize];
-
-				if (!CFStringGetCString(obj, buffer, maxSize, kCFStringEncodingUTF8))
-					return false;
-
-				var terminator = System.Array.IndexOf(buffer, (byte)0);
-				if (terminator < 0)
-					terminator = buffer.Length;
-
-				value = System.Text.Encoding.UTF8.GetString(buffer, 0, terminator);
-				return value.Length != 0;
-			}
-			finally
-			{
-				CFRelease(obj);
-			}
-		}
-
 			private static bool TryReadBool(nint element, nint attr, out bool value)
 			{
 			value = false;
@@ -1216,7 +1007,7 @@ namespace Keysharp.Internals.Window.MacOS
 					return true;
 				}
 
-				if (typeId == CFNumberGetTypeID() && CFNumberGetValue(obj, kCFNumberSInt32Type, out var i))
+				if (typeId == CFNumberGetTypeID() && CFNumberGetValue(obj, kCFNumberSInt32Type, out int i))
 				{
 					value = i != 0;
 					return true;
@@ -1259,7 +1050,7 @@ namespace Keysharp.Internals.Window.MacOS
 		{
 			try
 			{
-				return CFStringCreateWithCString(0, value, kCFStringEncodingUTF8);
+				return CreateString(value);
 			}
 			catch
 			{

@@ -210,7 +210,8 @@ namespace Keysharp.Internals.Window.MacOS
 				if (!TryGetNativeInfo(out var native))
 					return FormWindowState.Normal;
 
-				return MacAccessibility.TryGetWindowState(native, out var state)
+				using var window = MacAccessibility.ResolveWindowElement(native, "query window state", prompt: false);
+				return MacAccessibility.TryGetWindowState(window, out var state)
 					? state
 					: native.VisibleOnScreen ? FormWindowState.Normal : FormWindowState.Minimized;
 			}
