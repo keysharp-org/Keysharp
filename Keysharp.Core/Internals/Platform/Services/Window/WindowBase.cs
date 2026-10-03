@@ -186,6 +186,11 @@ namespace Keysharp.Internals
 #endif
 			return NotYet<Rectangle>();
 		}
+		public virtual bool TryGetBounds(nint h, bool client, out Rectangle bounds)
+		{
+			bounds = client ? GetClientBounds(h) : GetBounds(h);
+			return true;
+		}
 		public virtual long GetStyle(nint h)
 		{
 #if !WINDOWS

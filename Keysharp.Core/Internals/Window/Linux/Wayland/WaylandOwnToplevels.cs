@@ -4,31 +4,33 @@ using System.Threading;
 using System.Threading.Tasks;
 
 #if LINUX
+using Keysharp.Internals.Linux;
+
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
 	/// <summary>
-	/// Positions Keysharp's OWN top-level windows on Wayland. A GTK/Eto client cannot set its own
-	/// xdg-toplevel position (Eto's <c>window.Location</c> is a silent no-op on Wayland), so — just
-	/// like <c>WinMove</c> does for foreign windows — we drive the active compositor backend to move
-	/// the window once it has been mapped. This is the one place that tells the compositor about our
-	/// windows, so what it holds is never contradicted by another path.
+	/// Positions Keysharp's own top-level windows on Wayland. A GTK/Eto client cannot set its own
+	/// xdg-toplevel position (Eto's <c>window.Location</c> is a silent no-op on Wayland), so, as
+	/// <c>WinMove</c> does for foreign windows, the active compositor backend moves the window once it has
+	/// been mapped. This is the one place that tells the compositor about our windows, so what it holds is
+	/// never contradicted by another path.
 	///
-	/// <para>The tricky part is correlating our just-shown Eto window with the compositor's window
-	/// id. We first stamp the window with a unique temporary Wayland app_id and match that exact
-	/// value in the compositor's list. If a backend can't observe app_id, a metadata match is allowed only
-	/// when the compositor also reports this process as the owner; an unproven match is never mutated.
-	/// Resolved compositor ids are claimed so two Keysharp windows cannot resolve to the same one. The id is cached per form, so only
-	/// the first Show pays the correlation/polling cost; later Move calls reuse it.</para>
+	/// <para>The form's GTK window says when there is a compositor window to talk to: mapping creates one and
+	/// unmapping destroys it, whichever path hid the form. A mapped form is correlated with its compositor window
+	/// once, through a reservation made before Show or a unique temporary app_id; a metadata match is allowed
+	/// only when the compositor also reports this process as the owner, and an unproven match is never mutated.
+	/// Resolved compositor ids are claimed so two Keysharp windows cannot resolve to the same one. The binding
+	/// lasts until the form is unmapped, so later requests cost no lookup.</para>
 	///
 	/// <para>Each move is a compositor round-trip, so moves requested through <see cref="Position"/> run on a
-	/// background thread and are coalesced per form (latest position wins). A rapid stream of Moves — e.g. a
-	/// Highlight tracking a moving target — collapses to the most recent position instead of queuing.
+	/// background thread and are coalesced per form (latest position wins). A rapid stream of Moves, such as a
+	/// Highlight tracking a moving target, collapses to the most recent position instead of queuing.
 	/// <c>Gui.Move</c> and <c>WinMove</c> go through <see cref="MoveResize"/> instead, which applies on the
 	/// caller's thread as AutoHotkey's do, serialized with that background pass.</para>
 	///
-	/// <para>This is best-effort: a brief map-then-move is unavoidable (Wayland maps the window
-	/// where the compositor chooses, then we move it), and on compositors that cannot move windows
-	/// (foreign-toplevel-only: sway/COSMIC) it degrades to a no-op.</para>
+	/// <para>This is best-effort: a brief map-then-move is unavoidable (Wayland maps the window where the
+	/// compositor chooses, then it is moved), and on compositors that cannot move windows (foreign-toplevel-only:
+	/// sway/COSMIC) it degrades to a no-op.</para>
 	/// </summary>
 	internal static class WaylandOwnToplevels
 	{
@@ -37,7 +39,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		private sealed class FormState
 		{
-			internal TaskCompletionSource<bool> CorrelationCompletion;
+			internal TaskCompletionSource<WaylandWindowInfo> CorrelationCompletion;
+			internal int CorrelationGeneration;       // the map CorrelationCompletion is searching for
 			internal nint FormHandle;
 			internal Eto.Forms.Form Form;
 			internal nint CompositorHandle;          // resolved compositor window handle; 0 until correlated
@@ -61,8 +64,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			internal Point SurfaceOrigin;             // where the compositor last said this form's surface starts
 			internal long SurfaceTick;                // ...and when, since the user can move the window at any time
 			internal bool SurfaceKnown;               // false = the compositor could not say
+			internal bool Mapped;                     // GTK has the window mapped, the only time the compositor has one
+			internal int MapGeneration;               // counts maps, so a correlation is only ever for the current one
+			internal bool CorrelationFailed;          // no compositor window was found for the current map
 			internal bool Retired;
 			internal readonly object Applying = new(); // held while telling the compositor, by the background pass or a caller
+
+			// The traits the compositor is to be told, in the shape Applied records what it has been told.
+			internal Traits Wanted => new(TargetX, TargetY, RemoveBorder, KeepAbove, SkipTaskbar, Opacity);
 		}
 
 		/// <summary>
@@ -85,6 +94,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		//and only while the record can still answer; a plain Show whose form is never correlated must not tax
 		//a much later window op. Every other window keeps the plain search.
 		private static readonly Dictionary<nint, long> pendingReservations = new();
+		private static int prewarmed;
 
 		// A freshly-shown window may not be in the compositor's list instantly; poll briefly.
 		private const int CorrelateTimeoutMs = 1000;
@@ -112,6 +122,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		{
 			lock (sync)
 			{
+				// Retired first, so a pass still running for one of them cannot claim an id again afterwards.
+				foreach (var state in states.Values)
+					RetireStateLocked(state);
+
 				states.Clear();
 				claimedIds.Clear();
 				correlationAppIds.Clear();
@@ -123,12 +137,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// The app_id a form should be carrying right now: the caller's value, unless a correlation is matching
 		/// this window, in which case its unique token wins until it is done.
 		/// <para>
-		/// The Wayland app_id is single-valued and has two writers - the taskbar icon wants <c>keysharp</c> on
-		/// every window, correlation needs something unique on one - and the icon's write is deferred to an
-		/// AsyncInvoke whenever the window is still unmapped, which is the normal case at Shown. That deferred
-		/// write used to land in the middle of a correlation and erase the token, so the match could never
-		/// succeed and every first correlation paid the full poll timeout before falling back to guessing by
-		/// title and size. Routing both writers through here is what keeps a single owner of the value.
+		/// The Wayland app_id is single-valued and has two writers: the taskbar icon wants <c>keysharp</c> on every
+		/// window, and correlation needs something unique on one. The icon's write is deferred to an AsyncInvoke
+		/// while the window is still unmapped, which is the normal case at Shown, so it can land in the middle of
+		/// a correlation. Routing both writers through here keeps the token in place until the match is done.
 		/// </para>
 		/// </summary>
 		internal static string CurrentAppId(Eto.Forms.Form form, string baseAppId)
@@ -152,8 +164,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// id is enough for the compositor to know the window is ours, and it hands back the cookie we chose.
 		/// </para>
 		/// <para>
-		/// Best-effort: false on a compositor with no such support, leaving <see cref="Correlate"/> on the search
-		/// path it has always had.
+		/// Best-effort: false on a compositor with no such support, leaving <see cref="Correlate"/> to search for
+		/// the window.
 		/// </para>
 		/// </summary>
 		internal static bool ReserveWindow(Eto.Forms.Form form, int x, int y)
@@ -189,8 +201,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// A tiling compositor decides whether to tile a window when it maps it, and floats a fixed-size one at
 		/// its own size. Keep-above is floating there, so an always-on-top window that maps resizable is first
 		/// tiled and then floated with the tile's geometry, losing the size it was shown at. The reconcile pass
-		/// that <see cref="Position"/> starts releases the hold once correlation has found the mapped window or
-		/// given up on it, so the caller must follow the Show with a Position for this form.
+		/// that mapping the window starts releases the hold once correlation has found the mapped window or
+		/// given up on it.
 		/// </para>
 		/// </summary>
 		internal static void HoldFixedSizeUntilMapped(Eto.Forms.Form form, Action release)
@@ -204,29 +216,34 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return;
 
 			form.Resizable = false;
+			var state = Track(form, formHandle, form.Title, 0, 0);
 
 			lock (sync)
-				Track(formHandle, form, form.Title, 0, 0).ReleaseFixedSize = release;
+				state.ReleaseFixedSize = release;
 		}
 
 		/// <summary>
-		/// Establishes the compositor backend and its command channel on a background thread, so the first
-		/// <see cref="Position"/> doesn't pay that setup while the window is already on screen at the wrong
-		/// position. Fire-and-forget and idempotent: the backend caches its probe and the channel is resident,
-		/// so a later query reuses whatever this warmed; if it fails, the normal (re-probing) paths are
-		/// unaffected. No-op off Wayland.
+		/// Connects the window sessions on a background thread when the script creates its first window of its
+		/// own, so the first <see cref="Position"/> does not pay for that while the window is already on screen
+		/// in the wrong place. Only the connections are made; nothing is listed. No-op off Wayland.
 		/// </summary>
 		internal static void Prewarm()
 		{
-			if (!Platform.Desktop.IsWaylandSession)
+			if (!Platform.Desktop.IsWaylandSession || Interlocked.Exchange(ref prewarmed, 1) != 0)
 				return;
 
 			_ = Task.Run(() =>
 			{
-				// Probe() resolves the backend; the window list is the cheapest op that builds the command
-				// channel, and is exactly what Correlate issues first.
-				try { _ = WaylandBackend.Current?.TryListWindows(true, out _); }
-				catch { }
+				try
+				{
+					// Each connection reports the backend as it opens, so resolving it afterwards costs no probe.
+					_ = DesktopClient.OpenSession(LinuxPermissionScope.WindowMonitoring);
+					_ = DesktopClient.OpenSession(LinuxPermissionScope.WindowControl);
+					_ = WaylandBackend.Current;
+				}
+				catch
+				{
+				}
 			});
 		}
 
@@ -234,9 +251,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// Request that our own window (identified by <paramref name="form"/>) be
 		/// moved so its top-left sits at screen (<paramref name="x"/>, <paramref name="y"/>). Either
 		/// coordinate may be <see cref="WindowInfoBase.Unchanged"/> to leave it untouched.
-		/// <paramref name="title"/> and the match size are used only to correlate the window the
-		/// first time. Returns immediately; the move runs asynchronously. No-op off Wayland or when
-		/// there is no capable backend.
+		/// <paramref name="title"/> and the match size are used only to correlate the window.
+		/// Returns immediately; the move runs asynchronously, or once the window is mapped. No-op off
+		/// Wayland or when there is no capable backend.
 		/// </summary>
 		internal static void Position(Eto.Forms.Form form, string title, int x, int y, int matchW, int matchH, bool removeBorder = false, bool keepAbove = false, bool skipTaskbar = false)
 		{
@@ -245,29 +262,34 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (formHandle == 0 || !IsSupported)
 				return;
 
+			var asserts = x != WindowInfoBase.Unchanged || y != WindowInfoBase.Unchanged
+						  || removeBorder || keepAbove || skipTaskbar;
+
+			// A plain Show only refreshes what correlation matches on: mapping the window is what reconciles it.
 			lock (sync)
-			{
-				// A window with nothing to assert has nothing to reconcile. One that already has desired state
-				// still does, even on a plain Show: unmapping dropped everything the compositor had been told.
-				if (!states.ContainsKey(formHandle) && x == WindowInfoBase.Unchanged && y == WindowInfoBase.Unchanged
-						&& !removeBorder && !keepAbove && !skipTaskbar)
+				if (!asserts && !states.ContainsKey(formHandle))
 					return;
 
-				var state = Track(formHandle, form, title, matchW, matchH);
+			var state = Track(form, formHandle, title, matchW, matchH);
 
+			if (!asserts)
+				return;
+
+			lock (sync)
+			{
 				if (x != WindowInfoBase.Unchanged) state.TargetX = x;
 				if (y != WindowInfoBase.Unchanged) state.TargetY = y;
 				if (removeBorder) state.RemoveBorder = true;
 				if (keepAbove) state.KeepAbove = true;
 				if (skipTaskbar) state.SkipTaskbar = true;
 
-				Reconcile(state);
+				if (state.Mapped)
+					Reconcile(state);
 			}
 		}
 
 		/// <summary>
-		/// The inverse of <see cref="TryGetCompositorHandle"/>: the handle one of OUR OWN windows is known by in
-		/// Eto/GTK, given the handle the compositor knows it by.
+		/// The handle one of our own windows is known by in Eto/GTK, given the handle the compositor knows it by.
 		/// <para>
 		/// Every window of ours ends up with BOTH, because a client cannot place itself on Wayland and so has to
 		/// be correlated to its compositor window to be moved at all. Only the compositor's handle reaches the
@@ -278,7 +300,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// <para>
 		/// Reads only what correlation has already cached, so it costs no IPC and cannot itself correlate: a
 		/// window that has never been shown simply is not found, and the caller leaves the compositor's handle
-		/// alone - exactly what it did before this existed.
+		/// alone.
 		/// </para>
 		/// </summary>
 		internal static bool TryGetFormHandle(nint compositorHandle, out nint formHandle)
@@ -308,14 +330,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			return false;
 		}
 
-		/// <summary>
-		/// Resolve one of our OWN top-level windows to the active compositor's window handle, correlating once
-		/// and caching the result. Lets the synchronous
-		/// window verbs (WinMove / WinGetPos against a Gui object) take the same compositor path foreign windows
-		/// use, instead of Eto's self-position/-query which is a no-op on Wayland. Returns false off Wayland,
-		/// without a capable backend, or when the window can't be correlated (e.g. foreign-toplevel-only
-		/// compositors).
-		/// </summary>
 		//The window can be dragged, tiled or maximized at any moment and a Wayland client is never told, so the
 		//origin is only ever a snapshot; one frame is as current as anything on screen can be. A form nothing can
 		//answer for is re-asked far less often, since that only changes when it is correlated.
@@ -340,39 +354,46 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (formHandle == 0 || !IsSupported)
 				return false;
 
+			FormState state;
 			nint compositorHandle;
+			int generation;
 
 			lock (sync)
 			{
-				if (!states.TryGetValue(formHandle, out var cached))
+				if (!states.TryGetValue(formHandle, out state) || !state.Mapped)
 					return false;
 
-				if (Environment.TickCount64 - cached.SurfaceTick < (cached.SurfaceKnown ? surfaceOriginValidMs : surfaceOriginMissMs))
+				if (Environment.TickCount64 - state.SurfaceTick < (state.SurfaceKnown ? surfaceOriginValidMs : surfaceOriginMissMs))
 				{
-					origin = cached.SurfaceOrigin;
-					return cached.SurfaceKnown;
+					origin = state.SurfaceOrigin;
+					return state.SurfaceKnown;
 				}
 
-				compositorHandle = cached.CompositorHandle;
+				compositorHandle = state.CompositorHandle;
+				generation = state.MapGeneration;
 			}
 
 			//Outside the lock: this is IPC, and every other holder of it is on the placement path.
 			var backend = WaylandBackend.Current;
 			var known = false;
 
-			if (compositorHandle != 0 && backend != null && backend.TryGetWindow(compositorHandle, out var info))
-				known = TryGetSurfaceOrigin(form, info, out origin);
+			if (compositorHandle != 0 && backend != null)
+			{
+				if (backend.TryGetWindow(compositorHandle, out var info, out var notFound))
+					known = TryGetSurfaceOrigin(form, info, out origin);
+				else if (notFound)
+					Unbind(state, generation, compositorHandle);
+			}
 
 			lock (sync)
 			{
-				if (states.TryGetValue(formHandle, out var state))
-				{
-					//Stamped after the round trip, not before: a slow answer would otherwise be born expired and
-					//every control of the same walk would repeat it. A failure is cached for the same reason.
-					state.SurfaceOrigin = origin;
-					state.SurfaceTick = Environment.TickCount64;
-					state.SurfaceKnown = known;
-				}
+				if (!IsBoundLocked(state, generation, compositorHandle))
+					return false;
+
+				// Timestamp after the round trip so a slow answer is not already expired.
+				state.SurfaceOrigin = origin;
+				state.SurfaceTick = Environment.TickCount64;
+				state.SurfaceKnown = known;
 			}
 
 			return known;
@@ -411,49 +432,49 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return true;
 
 			origin = default;
+			return TryGetOwnWindow(form, out var info) && TryGetSurfaceOrigin(form, info, out origin);
+		}
 
-			if (form is not { IsDisposed: false })
+		/// <summary>Queries a mapped form's compositor window, correlating it once per map.
+		/// False when its global geometry cannot be queried.</summary>
+		internal static bool TryGetOwnWindow(Eto.Forms.Form form, out WaylandWindowInfo info)
+		{
+			info = null;
+			var backend = WaylandBackend.Current;
+			var formHandle = IsSupported && form is { IsDisposed: false } ? form.Handle : 0;
+
+			if (formHandle == 0 || backend == null)
 				return false;
 
 			var size = form.GetSize();
-
-			return TryGetCompositorHandle(form, form.Title, size.Width, size.Height, out _)
-				&& TryGetSurfaceOrigin(form, out origin);
-		}
-
-		internal static bool TryGetCompositorHandle(Eto.Forms.Form form, string title, int matchW, int matchH, out nint compositorHandle)
-		{
-			compositorHandle = 0;
-			var formHandle = form?.Handle ?? 0;
-
-			if (formHandle == 0 || !IsSupported)
-				return false;
-
-			var backend = WaylandBackend.Current;
-
-			if (backend == null)
-				return false;
-
-			FormState state;
+			var state = Track(form, formHandle, form.Title, size.Width, size.Height);
+			nint handle;
+			int generation;
 
 			lock (sync)
-				state = Track(formHandle, form, title, matchW, matchH);
-
-			if (StillLive(backend, state))
 			{
-				lock (sync)
-					compositorHandle = state.CompositorHandle;
+				if (!IsCurrentLocked(state) || !state.Mapped)
+					return false;
 
-				return true;
+				handle = state.CompositorHandle;
+				generation = state.MapGeneration;
 			}
 
-			if (!Correlate(backend, state))
-				return false;
+			if (handle != 0)
+			{
+				if (backend.TryGetWindow(handle, out info, out var notFound))
+					lock (sync)
+						return IsBoundLocked(state, generation, info.Handle);
 
+				if (!notFound)
+					return false;
+
+				Unbind(state, generation, handle);
+			}
+
+			info = Correlate(backend, state);
 			lock (sync)
-				compositorHandle = state.CompositorHandle;
-
-			return compositorHandle != 0;
+				return info != null && IsBoundLocked(state, generation, info.Handle);
 		}
 
 		/// <summary>
@@ -461,8 +482,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// backend. Eto's <c>WindowState</c> setter (gtk_window_(un)maximize / iconify, i.e. an xdg-toplevel
 		/// request) is the primary path and works on most compositors, but some drop a client's request, so
 		/// driving the backend too makes it stick. Best-effort and asynchronous; no-op off Wayland or without
-		/// a capable backend. <paramref name="title"/> and the match size correlate the window the first time,
-		/// exactly like <see cref="Position"/>.
+		/// a capable backend. <paramref name="title"/> and the match size correlate the window, exactly like
+		/// <see cref="Position"/>.
 		/// </summary>
 		internal static void SetWindowState(Eto.Forms.Form form, string title, int matchW, int matchH, FormWindowState windowState)
 		{
@@ -471,16 +492,19 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (formHandle == 0 || !IsSupported)
 				return;
 
+			var state = Track(form, formHandle, title, matchW, matchH);
+
 			lock (sync)
 			{
-				var state = Track(formHandle, form, title, matchW, matchH);
 				state.PendingWindowState = windowState;
-				Reconcile(state);
+
+				if (state.Mapped)
+					Reconcile(state);
 			}
 		}
 
 		/// <summary>
-		/// Set whole-window opacity on one of OUR OWN windows (AHK alpha: 0 transparent, 255 opaque, "Off" opaque).
+		/// Set whole-window opacity on one of our own windows (AHK alpha: 0 transparent, 255 opaque, "Off" opaque).
 		/// A Wayland client cannot make its own surface translucent, so the request goes through the compositor
 		/// backend. Returns false only when the compositor cannot do this at all, which is what makes
 		/// <c>WinSetTransparent</c> raise its OSError there.
@@ -493,35 +517,51 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (formHandle == 0 || !IsSupported || backend?.SupportsTransparency != true)
 				return false;
 
-			FormState state;
+			var state = Track(form, formHandle, title, matchW, matchH);
+			nint handle;
 
 			lock (sync)
 			{
-				state = Track(formHandle, form, title, matchW, matchH);
 				state.Opacity = alpha;
-			}
+				handle = state.CompositorHandle;
 
-			// Issue it here when the compositor already knows the window, so the caller gets the real result and a
-			// WinGetTransparent straight after reads back what was just set rather than racing a background pass.
-			if (StillLive(backend, state))
-			{
-				lock (state.Applying)
+				// Not bound yet: the pass started here, or the map of a form not yet shown, applies it. Setting
+				// transparency before Show is ordinary usage.
+				if (handle == 0)
 				{
-					nint live;
+					if (state.Mapped)
+						Reconcile(state);
 
-					lock (sync)
-						live = state.CompositorHandle;
-
-					return backend.TrySetTransparency(live, alpha);
+					return true;
 				}
 			}
 
-			// Not mapped yet, so there is nothing to correlate to: the desired state is recorded and the Show that
-			// maps the window reconciles it. Setting transparency before Show is ordinary usage.
-			lock (sync)
-				Reconcile(state);
+			// Issued here when the compositor already knows the window, so the caller gets the real result and a
+			// WinGetTransparent straight after reads back what was just set rather than racing a background pass.
+			lock (state.Applying)
+			{
+				int generation;
+				lock (sync)
+				{
+					if (!IsCurrentLocked(state) || !state.Mapped || state.CompositorHandle != handle)
+						return false;
+					generation = state.MapGeneration;
+				}
 
-			return true;
+				if (!backend.TrySetTransparency(handle, alpha))
+					return false;
+
+				lock (sync)
+				{
+					if (IsBoundLocked(state, generation, handle))
+					{
+						state.Applied = (state.AppliedTo == handle ? state.Applied : Traits.None) with { Opacity = alpha };
+						state.AppliedTo = handle;
+					}
+				}
+
+				return true;
+			}
 		}
 
 		/// <summary>
@@ -540,37 +580,28 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return false;
 
 			var size = form.GetSize();
-			FormState state;
+			var state = Track(form, formHandle, form.Title, size.Width, size.Height);
 
 			lock (sync)
 			{
-				state = Track(formHandle, form, form.Title, size.Width, size.Height);
-
 				if (setPos && bounds.X != WindowInfoBase.Unchanged) state.TargetX = bounds.X;
 				if (setPos && bounds.Y != WindowInfoBase.Unchanged) state.TargetY = bounds.Y;
 
-				if (!form.Visible)
-				{
-					if (setPos)
-						Reconcile(state);
-
+				if (!state.Mapped)
 					return true;
-				}
 			}
 
-			if (!StillLive(backend, state) && !Correlate(backend, state))
+			if (!backend.SupportsWindowMove || !TryBind(backend, state, out var handle))
 				return !setPos;
 
 			lock (state.Applying)
 			{
-				nint handle;
-
+				int generation;
 				lock (sync)
 				{
-					if (!IsCurrentLocked(state))
-						return false;
-
-					handle = state.CompositorHandle;
+					if (!IsCurrentLocked(state) || !state.Mapped || state.CompositorHandle != handle)
+						return !setPos;
+					generation = state.MapGeneration;
 				}
 
 				var resize = setSize && form.Resizable;
@@ -580,18 +611,26 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				// A fixed-size window resizes itself on the toolkit's next frame, and a compositor that keeps a floating
 				// window's centre as it resizes (Hyprland) would carry it off its corner, so it is placed again once
 				// that has landed, where AutoHotkey keeps it.
-				if (setSize && !resize && backend.TryGetWindow(handle, out var own)
-						&& own.HasKnownField(WaylandWindowFields.Frame))
+				if (setSize && !resize)
 				{
-					var frame = own.FrameGeometry;
-
-					if ((bounds.Width != WindowInfoBase.Unchanged && bounds.Width != frame.Width)
-							|| (bounds.Height != WindowInfoBase.Unchanged && bounds.Height != frame.Height))
+					if (backend.TryGetWindow(handle, out var own, out var gone))
 					{
-						WaitForSelfResize(backend, handle, frame.Width, frame.Height);
-						place = true;
-						if (rect.X == WindowInfoBase.Unchanged) rect.X = frame.X;
-						if (rect.Y == WindowInfoBase.Unchanged) rect.Y = frame.Y;
+						var frame = own.FrameGeometry;
+
+						if (own.HasKnownField(WaylandWindowFields.Frame)
+								&& ((bounds.Width != WindowInfoBase.Unchanged && bounds.Width != frame.Width)
+									|| (bounds.Height != WindowInfoBase.Unchanged && bounds.Height != frame.Height)))
+						{
+							WaitForSelfResize(backend, state, generation, handle, frame.Width, frame.Height);
+							place = true;
+							if (rect.X == WindowInfoBase.Unchanged) rect.X = frame.X;
+							if (rect.Y == WindowInfoBase.Unchanged) rect.Y = frame.Y;
+						}
+					}
+					else if (gone)
+					{
+						Unbind(state, generation, handle);
+						return !setPos;
 					}
 				}
 
@@ -605,7 +644,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				{
 					lock (sync)
 					{
-						if (IsCurrentLocked(state) && state.CompositorHandle == handle)
+						if (IsBoundLocked(state, generation, handle))
 						{
 							// A window's first placement can still lose to the compositor's own, so the background pass
 							// verifies it. After that the move stands, and the pass is told it need not repeat it.
@@ -625,35 +664,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
-		/// <summary>Drops cached correlation for a destroyed form so a recycled native handle can't
-		/// inherit a stale compositor window.</summary>
-		internal static void Forget(Eto.Forms.Form form)
-		{
-			var formHandle = form is { IsDisposed: false } ? form.Handle : 0;
-
-			if (formHandle == 0)
-				return;
-
-			lock (sync)
-			{
-				if (states.TryGetValue(formHandle, out var state)
-					&& ReferenceEquals(state.Form, form))
-				{
-					_ = states.Remove(formHandle);
-					RetireStateLocked(state);
-					_ = pendingReservations.Remove(formHandle);
-				}
-			}
-		}
-
-		/// <summary>
-		/// Schedules a reconcile pass. Caller must hold <see cref="sync"/>.
-		/// <para>
-		/// Marking dirty before the check is what makes this lossless: a request landing while a pass is running
-		/// either sets the flag before that pass tests it (so the pass loops) or after it cleared <c>Busy</c> (so
-		/// this starts a new one). There is no window in which a request is seen by neither.
-		/// </para>
-		/// </summary>
+		// Caller holds sync. Mark dirty before testing Busy so a running pass sees the new request.
 		private static void Reconcile(FormState state)
 		{
 			state.Dirty = true;
@@ -665,80 +676,155 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			_ = Task.Run(() => Worker(state));
 		}
 
-		/// <summary>
-		/// Whether the cached correlation still names a window the compositor knows, dropping it if it doesn't so the
-		/// caller re-correlates. Hiding a window unmaps it and destroys its xdg-toplevel, so the Show that follows
-		/// produces a NEW compositor window: without this, every trait reasserted after a re-Show would be applied to
-		/// a window that is gone.
-		/// </summary>
-		private static bool StillLive(IWaylandBackend backend, FormState state)
+		// Refresh correlation metadata and watch newly tracked forms.
+		private static FormState Track(Eto.Forms.Form form, nint formHandle, string title, int matchW, int matchH)
 		{
-			nint cached;
+			FormState state;
+			bool created;
 
+			lock (sync)
+			{
+				created = !states.TryGetValue(formHandle, out state);
+
+				if (created)
+					states[formHandle] = state = new FormState { FormHandle = formHandle, Form = form };
+
+				state.Title = title ?? "";
+				if (matchW > 0) state.MatchW = matchW;
+				if (matchH > 0) state.MatchH = matchH;
+			}
+
+			if (created)
+				Watch(state, form);
+
+			return state;
+		}
+
+		// Watch GTK so hiding or disposing through any caller invalidates the compositor binding.
+		private static void Watch(FormState state, Eto.Forms.Form form)
+		{
+			var app = Eto.Forms.Application.Instance;
+
+			if (app != null && !app.IsUIThread)
+			{
+				app.Invoke(() => Watch(state, form));
+				return;
+			}
+
+			if (form.IsDisposed || form.ToNative() is not Gtk.Window window)
+			{
+				Retire(state);
+				return;
+			}
+
+			window.Mapped += (_, _) => OnMapped(state);
+			window.Unmapped += (_, _) => OnUnmapped(state);
+			window.Destroyed += (_, _) => Retire(state);
+			form.Closed += (_, _) => Retire(state);
+
+			if (window.IsMapped)
+				OnMapped(state);
+		}
+
+		private static void OnMapped(FormState state)
+		{
 			lock (sync)
 			{
 				if (!IsCurrentLocked(state))
-					return false;
+					return;
 
-				cached = state.CompositorHandle;
+				state.Mapped = true;
+				state.MapGeneration++;
+				state.CorrelationFailed = false;
+
+				// Whatever the compositor was told went with the window the last unmap destroyed.
+				if (state.Wanted != Traits.None || state.PendingWindowState.HasValue || state.ReleaseFixedSize != null)
+					Reconcile(state);
 			}
-
-			if (cached == 0)
-				return false;
-
-			if (backend.TryGetWindow(cached, out _))
-			{
-				lock (sync)
-					return IsCurrentLocked(state) && state.CompositorHandle == cached;
-			}
-
-			lock (sync)
-			{
-				if (IsCurrentLocked(state) && state.CompositorHandle == cached)
-				{
-					if (state.CompositorId.Length > 0)
-						_ = claimedIds.Remove(state.CompositorId);
-
-					state.CompositorHandle = 0;
-					state.CompositorId = "";
-					// The map-time placement race is back for the new window, so let its first move be verified again.
-					state.PositionSettled = false;
-				}
-			}
-
-			return false;
 		}
 
-		/// <summary>The form's desired state, refreshed with the correlation metadata every request carries.
-		/// Caller must hold <see cref="sync"/>.</summary>
-		private static FormState Track(nint formHandle, Eto.Forms.Form form, string title, int matchW, int matchH)
+		private static void OnUnmapped(FormState state)
 		{
-			if (states.TryGetValue(formHandle, out var state)
-				&& form != null && state.Form != null && !ReferenceEquals(state.Form, form))
+			lock (sync)
 			{
+				if (!IsCurrentLocked(state))
+					return;
+
+				state.Mapped = false;
+				UnbindLocked(state);
+			}
+		}
+
+		private static void Retire(FormState state)
+		{
+			lock (sync)
+			{
+				if (state.Retired)
+					return;
+
+				if (states.TryGetValue(state.FormHandle, out var current) && ReferenceEquals(current, state))
+				{
+					_ = states.Remove(state.FormHandle);
+					_ = pendingReservations.Remove(state.FormHandle);
+				}
+
 				RetireStateLocked(state);
-				_ = states.Remove(formHandle);
-				state = null;
+			}
+		}
+
+		// The compositor's window is gone, so the next request correlates the form afresh, and the first placement
+		// of the window it gets next can lose to the compositor's own again.
+		private static void UnbindLocked(FormState state)
+		{
+			if (state.CompositorId.Length > 0)
+				_ = claimedIds.Remove(state.CompositorId);
+
+			state.CompositorHandle = 0;
+			state.CompositorId = "";
+			state.AppliedTo = 0;
+			state.Applied = Traits.None;
+			state.PositionSettled = false;
+			state.SurfaceKnown = false;
+			state.SurfaceTick = 0;
+		}
+
+		private static void Unbind(FormState state, int generation, nint handle)
+		{
+			lock (sync)
+				if (IsBoundLocked(state, generation, handle))
+					UnbindLocked(state);
+		}
+
+		/// <summary>The compositor's handle for a mapped form, correlating it once per map. A bound form costs no
+		/// request: the binding is dropped when the form is unmapped or a query reports the window gone.</summary>
+		private static bool TryBind(IWaylandBackend backend, FormState state, out nint handle)
+		{
+			int generation;
+			lock (sync)
+			{
+				handle = state.CompositorHandle;
+				generation = state.MapGeneration;
+
+				if (!IsCurrentLocked(state) || !state.Mapped)
+					return false;
+
+				if (handle != 0)
+					return true;
 			}
 
-			if (state == null)
-				states[formHandle] = state = new FormState { FormHandle = formHandle };
-
-			// Always adopt the caller's form, never just the first one seen: GTK can recycle a native handle, so a
-			// state that outlived its window (a teardown path that never reached Forget) would otherwise keep
-			// stamping the correlation app_id on the DEAD form and hand TryGetFormHandle a handle that answers
-			// nothing. The live form is the one this call is about.
-			if (form != null)
-				state.Form = form;
-
-			state.Title = title ?? "";
-			if (matchW > 0) state.MatchW = matchW;
-			if (matchH > 0) state.MatchH = matchH;
-			return state;
+			handle = Correlate(backend, state)?.Handle ?? 0;
+			lock (sync)
+				return handle != 0 && IsBoundLocked(state, generation, handle);
 		}
 
 		private static bool IsCurrentLocked(FormState state)
 			=> state is { Retired: false };
+
+		private static bool IsBindableLocked(FormState state, int mapGeneration)
+			=> IsCurrentLocked(state) && state.Mapped && state.MapGeneration == mapGeneration;
+
+		private static bool IsBoundLocked(FormState state, int mapGeneration, nint handle)
+			=> IsBindableLocked(state, mapGeneration) && state.CompositorHandle == handle;
 
 		private static void RetireStateLocked(FormState state)
 		{
@@ -746,9 +832,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return;
 
 			state.Retired = true;
-
-			if (state.CompositorId.Length > 0)
-				_ = claimedIds.Remove(state.CompositorId);
+			UnbindLocked(state);
 
 			if (correlationAppIds.TryGetValue(state.FormHandle, out var token)
 				&& token.StartsWith(CorrelationAppIdPrefix, StringComparison.Ordinal))
@@ -771,10 +855,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					}
 
 					var backend = WaylandBackend.Current;
-
-					// Failing to correlate normally just means the window is not mapped yet. The desired state stays
-					// recorded and the Show that maps it reconciles again - the only moment this can succeed.
-					var live = backend != null && (StillLive(backend, state) || Correlate(backend, state));
+					var live = backend != null && TryBind(backend, state, out _);
 
 					// Correlation waits for the compositor to list the window, which it does once mapped, so the
 					// tiling decision is behind us whether it found the window or gave up.
@@ -807,27 +888,25 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
-		// Tell the compositor what it does not already know about this window. Skipping what matches Applied keeps a
-		// stream of Moves from re-issuing traits, while a window that was unmapped and shown again has a new handle,
-		// so it is told everything afresh - the flags cannot go stale against a live window. The caller holds
-		// state.Applying.
+		// Push changed traits while holding state.Applying. Unmapping invalidates the applied state.
 		private static void Push(IWaylandBackend backend, FormState state)
 		{
 			nint handle;
 			FormWindowState? ws;
 			Traits want, have;
+			int generation;
 
 			lock (sync)
 			{
-				if (!IsCurrentLocked(state))
+				if (!IsCurrentLocked(state) || !state.Mapped || state.CompositorHandle == 0)
 					return;
 
 				handle = state.CompositorHandle;
+				generation = state.MapGeneration;
 				ws = state.PendingWindowState;
 				// A state change is a one-shot reassert; repeating it would undo a later user action.
 				state.PendingWindowState = null;
-				want = new Traits(state.TargetX, state.TargetY, state.RemoveBorder,
-								  state.KeepAbove, state.SkipTaskbar, state.Opacity);
+				want = state.Wanted;
 				have = state.AppliedTo == handle ? state.Applied : Traits.None;
 			}
 
@@ -835,15 +914,15 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			// stick on compositors that drop a client's xdg-toplevel state request).
 			if (ws.HasValue && !backend.TrySetWindowState(handle, ws.Value))
 				lock (sync)
-					if (IsCurrentLocked(state) && state.CompositorHandle == handle
+					if (IsBoundLocked(state, generation, handle)
 						&& !state.PendingWindowState.HasValue)
 						state.PendingWindowState = ws;
 
 			var applied = have;
 
 			if ((want.X != WindowInfoBase.Unchanged || want.Y != WindowInfoBase.Unchanged)
-					&& (want.X != have.X || want.Y != have.Y))
-				if (ApplyPosition(backend, state, handle, want.X, want.Y))
+					&& (want.X != have.X || want.Y != have.Y) && backend.SupportsWindowMove)
+				if (ApplyPosition(backend, state, generation, handle, want.X, want.Y))
 					applied = applied with { X = want.X, Y = want.Y };
 
 			// The traits GTK cannot express on Wayland go AFTER the move: a freshly mapped window may not be fully
@@ -871,7 +950,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			lock (sync)
 			{
-				if (IsCurrentLocked(state) && state.CompositorHandle == handle)
+				if (IsBoundLocked(state, generation, handle))
 				{
 					state.AppliedTo = handle;
 					state.Applied = applied;
@@ -884,14 +963,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		// the compositor's default spot (a Muffin/Mutter window asked for a corner appears at the top-left).
 		// Re-issue while the frame still disagrees with the target. Only the axes actually requested are
 		// checked, so a one-axis move isn't retried forever over the axis we never set.
-		private static bool ApplyPosition(IWaylandBackend backend, FormState state,
+		private static bool ApplyPosition(IWaylandBackend backend, FormState state, int generation,
 			nint handle, int tx, int ty)
 		{
 			bool settled;
 
 			lock (sync)
 			{
-				if (!IsCurrentLocked(state) || state.CompositorHandle != handle)
+				if (!IsBoundLocked(state, generation, handle))
 					return false;
 
 				settled = state.PositionSettled;
@@ -899,12 +978,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			// Already where it belongs - the compositor placed it from a reservation before it was ever painted -
 			// so there is nothing to move and nothing to verify. Costs one cheap query to save the move plus a
-			// verify delay on the path that is now the common one.
-			if (!settled && TryAtTarget(backend, handle, tx, ty, out var alreadyAtTarget)
+			// verify delay on the common path.
+			if (!settled && TryAtTarget(backend, state, generation, handle, tx, ty, out var alreadyAtTarget)
 				&& alreadyAtTarget)
 			{
 				lock (sync)
-					if (IsCurrentLocked(state) && state.CompositorHandle == handle)
+					if (IsBoundLocked(state, generation, handle))
 						state.PositionSettled = true;
 
 				return true;
@@ -928,14 +1007,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				// the worker loop re-read the target, so the move that actually matters is the one we verify.
 				lock (sync)
 				{
-					if (!IsCurrentLocked(state) || state.CompositorHandle != handle
+					if (!IsBoundLocked(state, generation, handle)
 						|| tx != state.TargetX || ty != state.TargetY)
 						return false;
 				}
 
 				Thread.Sleep(PositionVerifyDelayMs);
 
-				if (!TryAtTarget(backend, handle, tx, ty, out var atTarget) || atTarget)
+				if (!TryAtTarget(backend, state, generation, handle, tx, ty, out var atTarget) || atTarget)
 					break;
 
 				_ = backend.TryMoveResizeWindow(handle, rect, true, false);
@@ -945,19 +1024,24 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			// once per window either way, so a compositor whose reported geometry never matches (a frame origin we
 			// measure differently) can't make every later move pay the full verify budget.
 			lock (sync)
-				if (IsCurrentLocked(state) && state.CompositorHandle == handle)
+				if (IsBoundLocked(state, generation, handle))
 					state.PositionSettled = true;
 
 			return true;
 		}
 
-		private static bool TryAtTarget(IWaylandBackend backend, nint handle,
+		private static bool TryAtTarget(IWaylandBackend backend, FormState state, int generation, nint handle,
 			int tx, int ty, out bool atTarget)
 		{
 			atTarget = false;
 
-			if (!backend.TryGetWindow(handle, out var info) || info == null)
+			if (!backend.TryGetWindow(handle, out var info, out var notFound) || info == null)
+			{
+				if (notFound)
+					Unbind(state, generation, handle);
+
 				return false;
+			}
 
 			var frame = info.FrameGeometry;
 			atTarget = (tx == WindowInfoBase.Unchanged || Math.Abs(frame.X - tx) <= PositionTolerance)
@@ -965,24 +1049,29 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			return true;
 		}
 
-		// Locate our window in the compositor's list and claim it. Polls because a just-mapped
-		// window may not be reported on the first list.
-		private static bool Correlate(IWaylandBackend backend, FormState state)
+		// Locate our window in the compositor's list and claim it, returning what the compositor reported for it.
+		// Only a mapped form has a window to find. One the compositor's list did not contain stays unfound until it
+		// is mapped again; an attempt that could not read the list says nothing, so the next request tries again.
+		private static WaylandWindowInfo Correlate(IWaylandBackend backend, FormState state)
 		{
-			TaskCompletionSource<bool> completion;
+			TaskCompletionSource<WaylandWindowInfo> completion;
+			int mapGeneration;
 			var ownsAttempt = false;
 
 			lock (sync)
 			{
-				if (!IsCurrentLocked(state))
-					return false;
+				if (!IsCurrentLocked(state) || !state.Mapped || state.CorrelationFailed)
+					return null;
 
+				mapGeneration = state.MapGeneration;
 				completion = state.CorrelationCompletion;
 
-				if (completion == null)
+				// An attempt for an earlier map is looking for a window that is gone, and ends at its next poll.
+				if (completion == null || state.CorrelationGeneration != mapGeneration)
 				{
 					completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 					state.CorrelationCompletion = completion;
+					state.CorrelationGeneration = mapGeneration;
 					ownsAttempt = true;
 				}
 			}
@@ -992,41 +1081,50 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				// The owner can need the UI thread to stamp the temporary app id. Pumping here lets a
 				// synchronous UI caller join the attempt without deadlocking that dispatch.
 				return completion.Task.WaitWithoutInterruption(CorrelateTimeoutMs + 1000)
-					&& completion.Task.GetAwaiter().GetResult();
+					? completion.Task.GetAwaiter().GetResult() : null;
 			}
+
+			WaylandWindowInfo result = null;
+			var listed = false;
 
 			try
 			{
-				var result = CorrelateExclusive(backend, state);
-				_ = completion.TrySetResult(result);
+				result = CorrelateExclusive(backend, state, mapGeneration, out listed);
 				return result;
-			}
-			catch
-			{
-				_ = completion.TrySetResult(false);
-				throw;
 			}
 			finally
 			{
+				_ = completion.TrySetResult(result);
+
 				lock (sync)
+				{
 					if (ReferenceEquals(state.CorrelationCompletion, completion))
 						state.CorrelationCompletion = null;
+
+					if (result == null && listed && IsBindableLocked(state, mapGeneration))
+						state.CorrelationFailed = true;
+				}
 			}
 		}
 
-		private static bool CorrelateExclusive(IWaylandBackend backend, FormState state)
+		// listed: whether the compositor's list was read at all, which is what makes a miss mean anything.
+		private static WaylandWindowInfo CorrelateExclusive(IWaylandBackend backend, FormState state, int mapGeneration,
+			out bool listed)
 		{
+			listed = false;
 			var pid = (long)Environment.ProcessId;
 			string title, token;
 			Eto.Forms.Form form;
 			int mw, mh;
+			bool reserved;
+			long reservationExpiry;
 
 			lock (sync)
 			{
 				form = state.Form;
 
-				if (!IsCurrentLocked(state) || form is not { IsDisposed: false })
-					return false;
+				if (!IsBindableLocked(state, mapGeneration) || form is not { IsDisposed: false })
+					return null;
 
 				title = state.Title;
 				mw = state.MatchW;
@@ -1035,14 +1133,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				//Claim the app_id for the whole attempt, so the icon's deferred write re-applies the token
 				//rather than erasing it. See CurrentAppId.
 				correlationAppIds[state.FormHandle] = token;
-			}
-
-			bool reserved;
-
-			lock (sync)
-			{
-				reserved = pendingReservations.TryGetValue(state.FormHandle, out var expires)
-						   && Environment.TickCount64 < expires;
+				reserved = pendingReservations.TryGetValue(state.FormHandle, out reservationExpiry)
+						   && Environment.TickCount64 < reservationExpiry;
 
 				if (!reserved)
 					_ = pendingReservations.Remove(state.FormHandle);
@@ -1056,24 +1148,15 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			{
 				while (true)
 				{
-					string existingId;
-
 					lock (sync)
-					{
-						if (!IsCurrentLocked(state))
-							return false;
-
-						if (state.CompositorHandle != 0)
-							return true;
-
-						existingId = state.CompositorId;
-					}
+						if (!IsBindableLocked(state, mapGeneration))
+							return null;
 
 					// Exact, and one cheap query, so it goes first. Retried every poll rather than once up front:
 					// the compositor only records the reservation when it CREATES the window, which is after the
 					// first polls have already gone out.
-					if (reserved && TryClaimReserved(backend, state, deadline))
-						return true;
+					if (reserved && TryClaimReserved(backend, state, mapGeneration, deadline) is { } claimed)
+						return claimed;
 
 					// Give that a moment before falling back to stamping an app_id and matching metadata. Doing
 					// both from the start triples the traffic - and puts a UI-thread Wayland call in every poll -
@@ -1084,15 +1167,18 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						continue;
 					}
 
-					// Retry the stamp only until it takes (the window must be realized for the app_id to stick);
-					// once stamped, don't re-invoke the UI-thread setter every 20ms poll.
+					// Retry the stamp only until it takes; once stamped, don't re-invoke the UI-thread setter every
+					// 20ms poll.
 					if (!stamped)
 						stamped = TrySetAppIdOnUiThread(form, token);
 
-					if (backend.TryListWindows(true, out var windows) && windows != null
-						&& Pick(windows, pid, title, mw, mh, existingId, stamped ? token : "") is WaylandWindowInfo pick)
+					if (backend.TryListWindows(true, out var windows) && windows != null)
 					{
-						return Claim(state, pick);
+						listed = true;
+
+						if (Pick(windows, pid, title, mw, mh, stamped ? token : "") is { } pick
+							&& Claim(state, mapGeneration, pick) is { } bound)
+							return bound;
 					}
 
 					if (Environment.TickCount64 >= deadline)
@@ -1102,12 +1188,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						// accepted app_id disables fallback so we don't race app_id propagation and pick the wrong
 						// same-title/same-size window.
 						if (stamped && backend.TryListWindows(true, out windows) && windows != null
-							&& Pick(windows, pid, title, mw, mh, existingId, "") is { } fallback)
+							&& Pick(windows, pid, title, mw, mh, "") is { } fallback)
 						{
-							return Claim(state, fallback);
+							return Claim(state, mapGeneration, fallback);
 						}
 
-						return false;
+						return null;
 					}
 
 					PollWait();
@@ -1128,7 +1214,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 					//Only when this correlate actually serviced it: one already in flight when Show armed the
 					//flag must leave it for the next correlate, which can still claim the record exactly.
-					if (reserved)
+					if (reserved && state.MapGeneration == mapGeneration
+						&& pendingReservations.TryGetValue(state.FormHandle, out var expires)
+						&& expires == reservationExpiry)
 						_ = pendingReservations.Remove(state.FormHandle);
 				}
 
@@ -1139,11 +1227,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		// A reservation the compositor has consumed names our window outright: exact, with no app_id stamp and
 		// no chance of matching another window of the same title and size.
-		private static bool TryClaimReserved(IWaylandBackend backend, FormState state, long deadline)
+		private static WaylandWindowInfo TryClaimReserved(IWaylandBackend backend, FormState state, int mapGeneration, long deadline)
 		{
-			if (!backend.TryGetReservedWindow((ulong)state.FormHandle.ToInt64(), out var reserved, out var reservedId)
+			if (!backend.TryGetReservedWindow((ulong)state.FormHandle.ToInt64(), out var reserved, out _)
 					|| reserved == 0)
-				return false;
+				return null;
 
 			// The window is named as it is CREATED, which is before it has committed a buffer, so for a frame or
 			// two the compositor can report no geometry for it. Correlating that early hands the caller a window
@@ -1160,28 +1248,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			//A window that never became readable is gone (destroyed before committing) or unreadable to this
 			//backend; claiming it would hand the caller a handle that answers nothing.
-			if (!readable)
-				return false;
-
-			lock (sync)
-			{
-				if (!IsCurrentLocked(state))
-					return false;
-
-				if (state.CompositorId.Length > 0 && state.CompositorId != reservedId)
-					_ = claimedIds.Remove(state.CompositorId);
-
-				state.CompositorHandle = reserved;
-				state.CompositorId = reservedId;
-				SetSurfaceOriginLocked(state, info);
-				_ = claimedIds.Add(reservedId);
-			}
-
-			return true;
+			return readable ? Claim(state, mapGeneration, info) : null;
 		}
 
 		// Waits briefly for one of our own windows to stop reporting width x height.
-		private static void WaitForSelfResize(IWaylandBackend backend, nint compositorHandle, int width, int height)
+		private static void WaitForSelfResize(IWaylandBackend backend, FormState state, int generation, nint compositorHandle, int width, int height)
 		{
 			var deadline = Environment.TickCount64 + SelfResizeWaitMs;
 
@@ -1189,8 +1260,15 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			{
 				PollWait();
 
-				if (!backend.TryGetWindow(compositorHandle, out var info)
-						|| info.FrameGeometry.Width != width || info.FrameGeometry.Height != height)
+				if (!backend.TryGetWindow(compositorHandle, out var info, out var notFound))
+				{
+					if (notFound)
+						Unbind(state, generation, compositorHandle);
+
+					return;
+				}
+
+				if (info.FrameGeometry.Width != width || info.FrameGeometry.Height != height)
 					return;
 			}
 		}
@@ -1207,21 +1285,18 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				Thread.Sleep(ms);
 		}
 
-		private static bool Claim(FormState state, WaylandWindowInfo pick)
+		private static WaylandWindowInfo Claim(FormState state, int mapGeneration, WaylandWindowInfo pick)
 		{
 			lock (sync)
 			{
-				if (!IsCurrentLocked(state))
-					return false;
-
-				if (state.CompositorId.Length > 0 && state.CompositorId != pick.CompositorId)
-					_ = claimedIds.Remove(state.CompositorId);
+				if (!IsBindableLocked(state, mapGeneration) || claimedIds.Contains(pick.CompositorId))
+					return null;
 
 				state.CompositorHandle = pick.Handle;
 				state.CompositorId = pick.CompositorId;
 				SetSurfaceOriginLocked(state, pick);
 				_ = claimedIds.Add(pick.CompositorId);
-				return true;
+				return pick;
 			}
 		}
 
@@ -1267,11 +1342,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			try
 			{
 				var app = Eto.Forms.Application.Instance;
+				bool SetAppId() => Eto.Forms.EtoExtensions.SetWaylandAppId(form, CurrentAppId(form, appId));
 
-				if (app == null || app.IsUIThread)
-					return Eto.Forms.EtoExtensions.SetWaylandAppId(form, appId);
-
-				return app.Invoke(() => Eto.Forms.EtoExtensions.SetWaylandAppId(form, appId));
+				return app == null || app.IsUIThread ? SetAppId() : app.Invoke(SetAppId);
 			}
 			catch
 			{
@@ -1280,7 +1353,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		private static WaylandWindowInfo Pick(IReadOnlyList<WaylandWindowInfo> windows,
-			long pid, string title, int matchW, int matchH, string existingId, string appIdToken)
+			long pid, string title, int matchW, int matchH, string appIdToken)
 		{
 			List<WaylandWindowInfo> candidates;
 
@@ -1290,7 +1363,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					// A reported foreign owner is definitive. An unknown owner remains eligible only for the
 					// exact correlation token below, never for a title/geometry guess.
 					&& (w.PID <= 0 || w.PID == pid)
-					&& (w.CompositorId == existingId || !claimedIds.Contains(w.CompositorId))).ToList();
+					&& !claimedIds.Contains(w.CompositorId)).ToList();
 
 			if (candidates.Count == 0)
 				return null;
@@ -1315,14 +1388,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			if (!string.IsNullOrEmpty(appIdToken))
 				return Unique(w => string.Equals(w.AppId, appIdToken, StringComparison.Ordinal));
-
-			if (!string.IsNullOrEmpty(existingId))
-			{
-				var existing = Unique(w => w.CompositorId == existingId);
-
-				if (existing != null)
-					return existing;
-			}
 
 			candidates = candidates.Where(w => w.PID == pid).ToList();
 

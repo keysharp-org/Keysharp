@@ -1,4 +1,6 @@
 #if LINUX
+using Keysharp.Internals.Linux;
+
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
 	/// <summary>Window, clipboard and pointer operations served by keysharp-desktop.</summary>
@@ -88,18 +90,39 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			return parsed;
 		}
 
-		public virtual bool TryGetWindow(nint handle, out WaylandWindowInfo window)
-		{
-			if (TryGetServiceHandle(handle, out var id)
-				&& TryParseWindow(DesktopClient.QueryWindow(id), out window)
-				&& window.Handle == handle)
-				return true;
+		public bool TryGetWindow(nint handle, out WaylandWindowInfo window)
+			=> TryGetWindow(handle, out window, out _);
 
-			if (IsKnown(handle) && TryListWindows(true, out var windows))
-			{
-				window = windows.FirstOrDefault(candidate => candidate.Handle == handle);
-				return window != null;
-			}
+		public bool TryGetWindow(nint handle, out WaylandWindowInfo window, out bool notFound)
+		{
+			window = null;
+			notFound = false;
+
+			if (!TryGetServiceHandle(handle, out var id))
+				return false;
+
+			var json = DesktopClient.QueryWindow(id, out var status);
+
+			// The list answers the same question only where the provider has no per-window query.
+			if (status != NativeClientStatus.Unsupported)
+				return TryReadWindow(handle, json, status, out window, out notFound);
+
+			if (!TryListWindows(true, out var windows))
+				return false;
+
+			window = windows.FirstOrDefault(candidate => candidate.Handle == handle);
+			notFound = window == null;
+			return window != null;
+		}
+
+		/// <summary>What a window query's reply says about <paramref name="handle"/>.</summary>
+		internal bool TryReadWindow(nint handle, ReadOnlyMemory<byte> json, NativeClientStatus status,
+			out WaylandWindowInfo window, out bool notFound)
+		{
+			notFound = status == NativeClientStatus.NotFound;
+
+			if (status == NativeClientStatus.Ok && TryParseWindow(json, out window) && window.Handle == handle)
+				return true;
 
 			window = null;
 			return false;
@@ -254,6 +277,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		public bool SupportsTransparency
 			=> DesktopClient.ProviderSupportsTransparency();
+
+		public bool SupportsWindowMove
+			=> DesktopClient.ProviderSupportsWindowMove();
 
 		public bool TryCloseWindow(nint handle)
 			=> TryGetServiceHandle(handle, out var id) && DesktopClient.CloseWindow(id);

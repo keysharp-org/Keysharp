@@ -36,6 +36,9 @@ namespace Keysharp.Internals.Window
 
 		internal override Rectangle ClientBounds => client ??= Platform.Window.GetClientBounds(Handle);
 
+		internal override bool TryGetBounds(bool client, out Rectangle bounds)
+			=> Platform.Window.TryGetBounds(Handle, client, out bounds);
+
 		internal override bool Enabled => enabled ??= Platform.Window.GetEnabled(Handle);
 
 		internal override bool Exists => exists ??= Platform.Window.GetExists(Handle);

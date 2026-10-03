@@ -397,6 +397,116 @@ namespace Keysharp.Tests
 			});
 		}
 
+		// GTK unmap invalidates bindings even when hiding bypasses Gui.Hide.
+		[Test, Category("Gui")]
+		public void WaylandOwnToplevelFollowsWindowLifecycle()
+		{
+			SkipIfUiInitializationBlocked("The lifecycle comes from a GTK window.");
+			s.InvokeOnUIThread(() =>
+			{
+				var states = (IDictionary)OwnToplevelsField("states");
+				var claimedIds = (HashSet<string>)OwnToplevelsField("claimedIds");
+				var form = new Eto.Forms.Form { Content = new PixelLayout(), ClientSize = new Size(200, 100) };
+				var handle = form.Handle;
+				var state = TrackOwnToplevel(form, handle);
+
+				void Bind()
+				{
+					SetOwnToplevelField(state, "CompositorHandle", (nint)42);
+					SetOwnToplevelField(state, "AppliedTo", (nint)42);
+					SetOwnToplevelField(state, "CompositorId", "lifecycle");
+					_ = claimedIds.Add("lifecycle");
+				}
+
+				try
+				{
+					Assert.IsTrue(states.Contains(handle));
+					Assert.IsFalse(OwnToplevelField<bool>(state, "Mapped"));
+					form.Show();
+					Application.Instance.RunIteration();
+					Assert.IsTrue(OwnToplevelField<bool>(state, "Mapped"));
+					var generation = OwnToplevelField<int>(state, "MapGeneration");
+					Bind();
+					form.Visible = false;
+					Assert.IsFalse(OwnToplevelField<bool>(state, "Mapped"));
+					Assert.AreEqual((nint)0, OwnToplevelField<nint>(state, "CompositorHandle"));
+					Assert.AreEqual((nint)0, OwnToplevelField<nint>(state, "AppliedTo"));
+					Assert.IsFalse(claimedIds.Contains("lifecycle"));
+					form.Show();
+					Application.Instance.RunIteration();
+					Assert.AreEqual(generation + 1, OwnToplevelField<int>(state, "MapGeneration"));
+					Bind();
+				}
+				finally
+				{
+					form.Dispose();
+				}
+
+				Assert.IsTrue(OwnToplevelField<bool>(state, "Retired"));
+				Assert.IsFalse(states.Contains(handle));
+				Assert.IsFalse(claimedIds.Contains("lifecycle"));
+			});
+		}
+
+		// Failure to read a list leaves correlation retryable; a confirmed miss lasts until the next map.
+		[Test, Category("Gui")]
+		public void WaylandCorrelationFailsOnlyOnAListWithoutTheWindow()
+		{
+			SkipIfUiInitializationBlocked("Correlation needs a GTK window.");
+			s.InvokeOnUIThread(() =>
+			{
+				var form = new Eto.Forms.Form { Content = new PixelLayout(), ClientSize = new Size(200, 100) };
+				var correlate = typeof(WaylandOwnToplevels).GetMethod("Correlate", BindingFlags.NonPublic | BindingFlags.Static);
+
+				try
+				{
+					var state = TrackOwnToplevel(form, form.Handle);
+					SetOwnToplevelField(state, "Mapped", true);
+					SetOwnToplevelField(state, "MapGeneration", 1);
+					Assert.IsNull(correlate.Invoke(null, [new ListingBackend(false), state]));
+					Assert.IsFalse(OwnToplevelField<bool>(state, "CorrelationFailed"));
+					Assert.IsNull(correlate.Invoke(null, [new ListingBackend(true), state]));
+					Assert.IsTrue(OwnToplevelField<bool>(state, "CorrelationFailed"));
+				}
+				finally
+				{
+					form.Dispose();
+				}
+			});
+		}
+
+		private static object OwnToplevelsField(string name)
+			=> typeof(WaylandOwnToplevels).GetField(name, BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+
+		private static object TrackOwnToplevel(Eto.Forms.Form form, nint handle)
+			=> typeof(WaylandOwnToplevels).GetMethod("Track", BindingFlags.NonPublic | BindingFlags.Static)
+				.Invoke(null, [form, handle, "own toplevel", 200, 100]);
+
+		private static T OwnToplevelField<T>(object state, string name)
+			=> (T)state.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(state);
+
+		private static void SetOwnToplevelField(object state, string name, object value)
+			=> state.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance).SetValue(state, value);
+
+		// A compositor that can only list its windows, and either lists none or cannot list at all.
+		private sealed class ListingBackend(bool lists) : IWaylandBackend
+		{
+			public string BackendKey => "test";
+			public string Name => "test";
+
+			public bool TryGetCursorPos(out int x, out int y)
+			{
+				x = y = 0;
+				return false;
+			}
+
+			public bool TryListWindows(bool includeHidden, out IReadOnlyList<WaylandWindowInfo> windows)
+			{
+				windows = [];
+				return lists;
+			}
+		}
+
 #endif
 
 		// The canvas is the backing's presentable memory (on Windows the DIB the compositor reads), so no

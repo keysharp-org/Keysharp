@@ -71,6 +71,8 @@ namespace Keysharp.Internals
 		long GetPid(nint h);
 		Rectangle GetBounds(nint h);
 		Rectangle GetClientBounds(nint h);
+		/// <summary>The window's bounds, or its client area's: false when the platform cannot report that geometry for it.</summary>
+		bool TryGetBounds(nint h, bool client, out Rectangle bounds);
 		long GetStyle(nint h);
 		long GetExStyle(nint h);
 		bool GetActive(nint h);

@@ -98,6 +98,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		internal override long PID => pid;
 		internal override Rectangle Bounds => FrameGeometry;
 		internal override Rectangle ClientBounds => ClientGeometry;
+
+		internal override bool TryGetBounds(bool client, out Rectangle bounds)
+		{
+			bounds = client ? ClientGeometry : FrameGeometry;
+			return HasKnownField(client ? WaylandWindowFields.Client : WaylandWindowFields.Frame);
+		}
 		internal override long Style => Decorated ? WsCaption : 0L;
 		internal override long ExStyle => 0L;
 		internal override bool Active => active;

@@ -135,6 +135,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			return false;
 		}
 
+		/// <summary>As <see cref="TryGetWindow(nint, out WaylandWindowInfo)"/>, with <paramref name="notFound"/> true
+		/// only when the backend reports that no such window exists, as opposed to being unable to answer.</summary>
+		bool TryGetWindow(nint handle, out WaylandWindowInfo window, out bool notFound)
+		{
+			notFound = false;
+			return TryGetWindow(handle, out window);
+		}
+
 		bool TryGetWindowAt(int x, int y, out WaylandWindowInfo window)
 		{
 			window = null;
@@ -173,6 +181,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		bool TryMoveResizeWindow(nint handle, Rectangle bounds, bool setPosition, bool setSize) => false;
+
+		/// <summary>True when <see cref="TryMoveResizeWindow"/> is implemented at all, which a compositor that only
+		/// lists its windows does not.</summary>
+		bool SupportsWindowMove => false;
 
 		/// <summary>Remove (true) / restore (false) the server-side window decoration (titlebar) for one of our
 		/// own borderless windows, without forcing GTK client-side decorations. False = unsupported.</summary>

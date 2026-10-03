@@ -61,18 +61,11 @@ namespace Keysharp.Internals
 		// doesn't key on, so Backend(h) misses and Eto's self position/query (which is a Wayland no-op) is used.
 		// Correlate such a handle to its compositor window so self-window verbs (move, bounds) take the same
 		// compositor path foreign windows do. Returns false for child controls and non-own handles.
-		private bool OwnBackend(nint h, out WaylandWindowInfo info)
+		private static bool OwnBackend(nint h, out Form form, out WaylandWindowInfo info)
 		{
 			info = null;
-
-			var wayland = Wayland;
-
-			if (wayland == null || !TryOwnControl(h, out var ctrl) || ctrl is not Form form)
-				return false;
-
-			var size = form.GetSize();
-			return WaylandOwnToplevels.TryGetCompositorHandle(form, form.Title, size.Width, size.Height, out var compHandle)
-				   && wayland.TryGetWindow(compHandle, out info);
+			form = TryOwnControl(h, out var ctrl) ? ctrl as Form : null;
+			return form != null && WaylandOwnToplevels.TryGetOwnWindow(form, out info);
 		}
 
 		// Used by getters whose Wayland answer is a constant. Membership is a cheap tagged-handle/map check and
@@ -104,7 +97,7 @@ namespace Keysharp.Internals
 		public override Rectangle GetBounds(nint h)
 		{
 			if (Backend(h, out var info)) return info.Bounds;
-			if (OwnBackend(h, out var own)) return own.Bounds;   // real compositor position, not Eto's no-op location
+			if (OwnBackend(h, out _, out var own)) return own.Bounds;   // real compositor position, not Eto's no-op location
 			if (TryOwnControl(h, out _)) return base.GetBounds(h);
 			return Rectangle.Empty;
 		}
@@ -112,9 +105,30 @@ namespace Keysharp.Internals
 		public override Rectangle GetClientBounds(nint h)
 		{
 			if (Backend(h, out var info)) return info.ClientBounds;
-			if (OwnBackend(h, out var own)) return OwnClientBounds(h, own);
+			if (OwnBackend(h, out var form, out var own)) return OwnClientBounds(form, own);
 			if (TryOwnControl(h, out _)) return base.GetClientBounds(h);
 			return Rectangle.Empty;
+		}
+
+		// A compositor need not report every geometry, so this is the one read that can say it has none.
+		public override bool TryGetBounds(nint h, bool client, out Rectangle bounds)
+		{
+			if (Backend(h, out var info))
+				return info.TryGetBounds(client, out bounds);
+
+			if (!OwnBackend(h, out var form, out var own))
+			{
+				bounds = Rectangle.Empty;
+				return form == null && !Known(h) && base.TryGetBounds(h, client, out bounds);
+			}
+
+			if (!own.TryGetBounds(client, out bounds))
+				return false;
+
+			if (client)
+				bounds = OwnClientBounds(form, own);
+
+			return true;
 		}
 
 		public override long GetStyle(nint h)
@@ -185,7 +199,7 @@ namespace Keysharp.Internals
 		public override object GetTransparency(nint h)
 		{
 			if (Backend(h, out var info)) return info.Transparency;
-			if (OwnBackend(h, out var own)) return own.Transparency;   // the compositor holds our own opacity too
+			if (OwnBackend(h, out _, out var own)) return own.Transparency;   // the compositor holds our own opacity too
 			if (TryOwnControl(h, out _)) return base.GetTransparency(h);
 			// -1L is the "no explicit transparency set" sentinel (WinGetTransparent -> ""), matching Windows/X11.
 			if (IsWayland(h)) return -1L;
@@ -202,7 +216,7 @@ namespace Keysharp.Internals
 		public override POINT ClientToScreen(nint h)
 		{
 			if (Backend(h, out var info)) { var r = info.ClientGeometry; return new POINT(r.X, r.Y); }
-			if (OwnBackend(h, out var own)) { var r = OwnClientBounds(h, own); return new POINT(r.X, r.Y); }
+			if (OwnBackend(h, out var form, out var own)) { var r = OwnClientBounds(form, own); return new POINT(r.X, r.Y); }
 			if (TryOwnControl(h, out _)) return base.ClientToScreen(h);
 			return new POINT(0, 0);
 		}
@@ -232,12 +246,11 @@ namespace Keysharp.Internals
 		/// Where our own window's client area sits, composed from the one thing each side knows: the compositor
 		/// says where the surface is, the toolkit says where the content sits inside it.
 		/// </summary>
-		private Rectangle OwnClientBounds(nint h, WaylandWindowInfo own)
+		private static Rectangle OwnClientBounds(Form form, WaylandWindowInfo own)
 		{
 			var frame = own.FrameGeometry;
 
-			if (TryOwnControl(h, out var ctrl) && ctrl is Form form && form.Content is Control content
-					&& WaylandOwnToplevels.TryGetSurfaceOrigin(form, own, out var surface))
+			if (form.Content is Control content && WaylandOwnToplevels.TryGetSurfaceOrigin(form, own, out var surface))
 			{
 				var offset = content.PointToScreen(Point.Empty);   // surface-relative, which is what we correct
 				var size = form.ClientSize;
@@ -247,7 +260,7 @@ namespace Keysharp.Internals
 										 size.Width, size.Height);
 			}
 
-			var local = TryOwnControl(h, out _) ? base.GetClientBounds(h) : Rectangle.Empty;
+			var local = form.GetClientScreenRect(true);
 
 			if (local.Width > 0 && local.Height > 0 && frame.Width > 0 && frame.Height > 0)
 			{

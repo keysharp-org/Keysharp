@@ -1463,16 +1463,6 @@ namespace Keysharp.Runtime
 			InitializeUIThreadContext();
 			persistent = _persistent;
 
-#if LINUX
-			// Establish the compositor channel only after this Script instance is fully constructed. This used to
-			// run from Script's static constructor, before TheScript and its scheduler/thread state existed; a cold
-			// D-Bus connection could then enter the task-wait message pump, fault, and poison the shared bridge's
-			// retry state before auto-execute resolved process-global services such as the clipboard.
-			//
-			// It is still early enough to hide the cold-start cost: no native main window has been created yet.
-			Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Prewarm();
-#endif
-
 #if WINDOWS
 			EnsureMainWindowHandle();
 			AttachMainWindowChrome(title, true, true);

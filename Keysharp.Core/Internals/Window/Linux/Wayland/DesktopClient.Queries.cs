@@ -6,12 +6,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 {
 	internal static unsafe partial class DesktopClient
 	{
-		internal static byte[] QueryWindow(ulong handle)
+		internal static byte[] QueryWindow(ulong handle, out NativeClientStatus status)
 		{
 			byte[] value = null;
 			return Call(Operation.WindowQuery,
 				connection => connection.WindowQuery(handle, out value),
-				NativeClientStatus.NotFound) ? value : null;
+				out status, NativeClientStatus.NotFound) ? value : null;
 		}
 
 		internal static byte[] QueryChildren(ulong handle)

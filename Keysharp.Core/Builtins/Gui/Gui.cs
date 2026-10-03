@@ -2618,12 +2618,6 @@ namespace Keysharp.Builtins
 
 		public object Destroy()
 		{
-#if LINUX
-			// Drop any cached Wayland self-position correlation so a recycled native handle can't
-			// inherit this window's compositor id. IsSupported first, to avoid form.Handle on X11.
-			if (form != null && Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.IsSupported)
-				Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Forget(form);
-#endif
 			//Owned by this window: the icon would otherwise be freed only whenever GC got round to it. The window
 			//is let go of it first, so a later read of Icon finds nothing rather than a disposed something.
 			var icon = ownedIcon;

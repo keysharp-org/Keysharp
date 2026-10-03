@@ -269,6 +269,10 @@ namespace Keysharp.Builtins
 				});
 
 #endif
+#if LINUX
+				// Scripts that create no window of their own do not need a compositor connection.
+				Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Prewarm();
+#endif
 			}
 
 			Shown += (o, e) =>

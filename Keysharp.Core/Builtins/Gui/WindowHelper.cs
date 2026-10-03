@@ -104,31 +104,13 @@ namespace Keysharp.Builtins
 			{
 				if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win)
 				{
-#if LINUX
-					var wayland = win as Keysharp.Internals.Window.Linux.Wayland.WaylandWindowInfo;
-
-					if (wayland == null && Platform.Desktop.IsWaylandSession
-						&& Control.FromHandle(win.Handle) is Form form)
-					{
-						var size = form.GetSize();
-						if (Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.TryGetCompositorHandle(
-								form, form.Title, size.Width, size.Height, out var compositorHandle)
-							&& Keysharp.Internals.Window.Linux.Wayland.WaylandBackend.Current is { } backend)
-							_ = backend.TryGetWindow(compositorHandle, out wayland);
-					}
-
-					if (wayland != null && !wayland.HasKnownField(client
-							? Keysharp.Internals.Window.Linux.Wayland.WaylandWindowFields.Client
-							: Keysharp.Internals.Window.Linux.Wayland.WaylandWindowFields.Frame))
+					if (!win.TryGetBounds(client, out var rect))
 					{
 						_ = Errors.UnsupportedErrorOccurred($"{(client ? "WinGetClientPos" : "WinGetPos")} is unavailable: the compositor does not expose {(client ? "client" : "frame")} geometry for this window.");
 						outX = outY = outWidth = outHeight = 0L;
 						return;
 					}
-#endif
-					// Both ClientBounds and Bounds are screen-relative rectangles on every platform (ClientBounds
-					// takes its origin from ClientToScreen()), so report them directly.
-					var rect = client ? win.ClientBounds : win.Bounds;
+
 					outX = (long)rect.Left;
 					outY = (long)rect.Top;
 					outWidth  = (long)rect.Width;

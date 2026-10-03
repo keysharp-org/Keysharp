@@ -32,6 +32,26 @@ namespace Keysharp.Tests
 			(backend as IDisposable)?.Dispose();
 		}
 
+		/// <summary>Only a reply that names the window answers it, and only NotFound says that it is gone.</summary>
+		[TestCase((int)NativeClientStatus.Ok, "24", true, false)]
+		[TestCase((int)NativeClientStatus.Ok, "25", false, false)]
+		[TestCase((int)NativeClientStatus.Ok, null, false, false)]
+		[TestCase((int)NativeClientStatus.NotFound, null, false, true)]
+		[TestCase((int)NativeClientStatus.Unavailable, null, false, false)]
+		[TestCase((int)NativeClientStatus.Denied, null, false, false)]
+		public void WindowRepliesSayWhetherTheWindowIsGone(int status, string id, bool found, bool gone)
+		{
+			byte[] json = id == null ? [] : Encoding.UTF8.GetBytes(
+				$"{{\"ok\":true,\"window\":{{\"id\":\"{id}\",\"validFields\":[\"id\"]}}}}");
+			Assert.Multiple(() =>
+			{
+				Assert.That(DesktopBackend.X11.TryReadWindow(24, json, (NativeClientStatus)status, out var window,
+					out var notFound), Is.EqualTo(found));
+				Assert.That(window != null, Is.EqualTo(found));
+				Assert.That(notFound, Is.EqualTo(gone));
+			});
+		}
+
 		[TestCase((int)NativeClientStatus.Ok, 0, false, false, true)]
 		[TestCase((int)NativeClientStatus.Unavailable, 0, true, false, false)]
 		[TestCase((int)NativeClientStatus.Timeout, 110, true, false, false)]
@@ -107,6 +127,8 @@ namespace Keysharp.Tests
 				Assert.Multiple(() =>
 				{
 					Assert.That(window.ClientBounds, Is.EqualTo(new Rectangle(1, 2, 300, 200)), fixture.Name);
+					Assert.That(window.TryGetBounds(true, out var bounds), Is.True, fixture.Name);
+					Assert.That(bounds, Is.EqualTo(window.ClientBounds), fixture.Name);
 					Assert.That(window.Active, Is.True, fixture.Name);
 					Assert.That(window.Visible, Is.False, fixture.Name);
 					Assert.That(window.Decorated, Is.False, fixture.Name);
@@ -150,6 +172,8 @@ namespace Keysharp.Tests
 				Assert.That(window.Path, Is.Empty);
 				Assert.That(window.Bounds, Is.EqualTo(Rectangle.Empty));
 				Assert.That(window.ClientBounds, Is.EqualTo(Rectangle.Empty));
+				Assert.That(window.TryGetBounds(false, out _), Is.False);
+				Assert.That(window.TryGetBounds(true, out _), Is.False);
 				Assert.That(window.SurfaceGeometry, Is.EqualTo(Rectangle.Empty));
 				Assert.That(window.Active, Is.False);
 				Assert.That(window.Visible, Is.True);

@@ -479,14 +479,6 @@ namespace Keysharp.Internals
 		{
 			owner.InvokeOnUIThread(() =>
 			{
-#if LINUX
-				// Before the handle dies, since the correlation is keyed by it and holds a claimed compositor id:
-				// leaving it would keep that id claimed, so a later overlay - a reshown card gets a new form -
-				// could never claim its own window.
-				if (form != null && Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.IsSupported)
-					Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Forget(form);
-
-#endif
 				var closing = form;
 				form = null;
 #if LINUX

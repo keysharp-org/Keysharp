@@ -53,6 +53,15 @@ namespace Keysharp.Internals.Window
 			   : ClassName;
 
 		internal abstract Rectangle ClientBounds { get; }
+
+		/// <summary>Bounds or client bounds, both screen-relative: false when the platform cannot report that geometry
+		/// for this window.</summary>
+		internal virtual bool TryGetBounds(bool client, out Rectangle bounds)
+		{
+			bounds = client ? ClientBounds : Bounds;
+			return true;
+		}
+
 		internal abstract bool Enabled { get; }
 		internal abstract bool Exists { get; }
 		internal abstract long ExStyle { get; }
