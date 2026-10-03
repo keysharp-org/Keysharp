@@ -60,6 +60,8 @@ Do not assert token sequences, AST printer output, generated C# text, reflected 
 - Name tests after the feature or compact scenario, such as `PowerPrecedence`, `NamedArgErrors`, or `RetryLimit`.
 - Put detailed inputs and expectations in the test body, assertion message, or `[TestCase]` data rather than encoding a sentence in the method name.
 - Prefer one behavior script with related checks over many one-assertion C# methods.
+- Add a check to the existing script that owns its topic, such as `class-props.ahk` or `func-opt-params.ahk`, rather than creating a script to collect one change's checks. Create a new script only when there is a strong reason, such as a test that fits none of the existing ones. First look for an existing check that already covers the behavior.
+- A script run with `TestScript(name, true)` is also compiled wrapped in a function, where a class cannot be declared, so a check added to one builds the objects it needs with `DefineProp`.
 - Before keeping an internal test, check whether an existing behavior script already covers its observable result. Remove redundant coverage.
 - When fixing a regression, add the script-level test first. Add an internal test only when it contributes deterministic coverage the script cannot provide.
 

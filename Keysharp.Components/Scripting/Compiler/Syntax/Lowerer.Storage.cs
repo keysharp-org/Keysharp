@@ -22,7 +22,8 @@ namespace Keysharp.Compilation.Syntax
 
 		private LocalStorage Storage(ScopeVar variable) => variable.Owner.Variables.GetOrAdd(variable.Key);
 		private ExpressionSyntax LocalValue(ScopeVar variable) => Storage(variable).Read(this, variable.Key);
-		private ScopeVar Receiver() => new("this", VarStorage.Local, _scope.Root);
+		private ScopeVar Receiver() => _scope.Find("this") is { Storage: not VarStorage.None } parameter
+			? parameter : new("this", VarStorage.Local, _scope.Root);
 
 		private ExpressionSyntax LocalBox(ScopeVar variable)
 		{

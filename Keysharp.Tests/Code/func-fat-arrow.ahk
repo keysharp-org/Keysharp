@@ -1,3 +1,6 @@
+#ErrorStdOut
+#Warn All, StdOut
+#Warn LocalSameAsGlobal, Off
 #NoTrayIcon
 #Include <assert>
 
@@ -511,5 +514,29 @@ AssertEq(count, 5, A_LineNumber)
 for v in Filter([1, -2, 3], (x) { return x > 0 })
 	count++
 AssertEq(count, 7, A_LineNumber)
+
+class CallbackReceiver {
+	Value := 100
+	Create() {
+		obj := {Value: 7}
+		obj.DefineProp("Read", {Call: (this, *) => this.Value})
+		obj.DefineProp("Reader", {Get: (this) => () => this.Value})
+		return obj
+	}
+	static Reference() => (&this) => &this
+	static Default() => (this := {Value: 9}) => this.Value
+}
+callbackObject := CallbackReceiver().Create()
+AssertEq(callbackObject.Read(), 7, A_LineNumber)
+reader := callbackObject.Reader
+AssertEq(reader(), 7, A_LineNumber)
+callbackObject.Value := 8
+AssertEq(reader(), 8, A_LineNumber)
+referenceCallback := CallbackReceiver.Reference()
+reference := referenceCallback(&callbackObject)
+reference.__Value := {Value: 10}
+AssertEq(callbackObject.Value, 10, A_LineNumber)
+defaultCallback := CallbackReceiver.Default()
+AssertEq(defaultCallback(), 9, A_LineNumber)
 
 FileAppend "pass", "*"

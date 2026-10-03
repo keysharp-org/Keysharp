@@ -2271,7 +2271,7 @@ namespace Keysharp.Compilation.Syntax
 
 		private ExpressionSyntax NameRefLower(string lower)
 		{
-			if (_inMethod && lower == "this") { CaptureThis(); return LocalValue(Receiver()); }
+			if (_inMethod && lower == "this" && _scope.Find(lower).Storage == VarStorage.None) { CaptureThis(); return LocalValue(Receiver()); }
 
 			var binding = Bind(lower);
 
@@ -7272,9 +7272,9 @@ namespace Keysharp.Compilation.Syntax
 					_ = scope.Kinds.TryAdd(n, VarKind.ImplicitLocal);
 			}
 
-			// In a method (or a closure nested in one), `this` is always the special @this (the receiver), never a variable —
-			// even when assigned (`this := 0`), which reassigns the captured receiver.
-			if (_inMethod)
+			// A callback's explicit `this` parameter shadows the enclosing method's receiver.
+			// Other assignments to `this` reassign that receiver rather than declaring a local.
+			if (_inMethod && !paramLowers.Contains("this"))
 			{
 				_ = scope.Locals.Remove("this");
 				_ = scope.Globals.Remove("this");
