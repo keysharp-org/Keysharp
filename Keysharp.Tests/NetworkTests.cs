@@ -32,7 +32,7 @@ namespace Keysharp.Tests
 			Assert.IsFalse(File.Exists(filename));
 		}
 
-		private static Error ScriptError(TestDelegate action) => Assert.Throws<KeysharpException>(action).UserError;
+		private static Error ScriptError(Action action) => Assert.Throws<KeysharpException>(action).UserError;
 
 		/// <summary>
 		/// <c>Ks.Http</c> and the <c>Url</c> codec, against loopback HTTP and FTP servers the script starts

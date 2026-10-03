@@ -6,6 +6,30 @@ namespace Eto.Forms
 {
     internal static class EtoExtensions
     {
+        // Friend assemblies can call the getter without importing an internal extension property.
+        internal static Color GetForeColor(Control control)
+        {
+            if (control is TextControl tc)
+                return tc.TextColor;
+            if (control is ListControl lc)
+                return lc.TextColor;
+            if (control is DateTimePicker dtp)
+                return dtp.TextColor;
+            if (control is GroupBox gb)
+                return gb.TextColor;
+            if (control is NumericStepper ns)
+                return ns.TextColor;
+
+            var prop = control.GetType().GetProperty("TextColor");
+            if (prop != null && prop.PropertyType == typeof(Color) && prop.CanRead && prop.GetValue(control) is Color color)
+                return color;
+
+            if (control.Properties.TryGetValue("ForeColor", out var stored) && stored is Color storedColor)
+                return storedColor;
+
+            return SystemColors.ControlText;
+        }
+
         extension(Eto.Forms.Form)
         {
             internal static Form ActiveForm => Application.Instance.MainForm;
@@ -403,28 +427,7 @@ namespace Eto.Forms
             }
             internal Color ForeColor
             {
-                get
-                {
-                    if (control is TextControl tc)
-                        return tc.TextColor;
-                    if (control is ListControl lc)
-                        return lc.TextColor;
-                    if (control is DateTimePicker dtp)
-                        return dtp.TextColor;
-                    if (control is GroupBox gb)
-                        return gb.TextColor;
-                    if (control is NumericStepper ns)
-                        return ns.TextColor;
-
-                    var prop = control.GetType().GetProperty("TextColor");
-                    if (prop != null && prop.PropertyType == typeof(Color) && prop.CanRead && prop.GetValue(control) is Color color)
-                        return color;
-
-                    if (control.Properties.TryGetValue("ForeColor", out var stored) && stored is Color storedColor)
-                        return storedColor;
-
-                    return SystemColors.ControlText;
-                }
+                get => GetForeColor(control);
                 set
                 {
                     if (control is TextControl tc)

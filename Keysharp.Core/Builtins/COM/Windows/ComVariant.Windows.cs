@@ -1291,6 +1291,8 @@ namespace Keysharp.Builtins.COM
 
 						// 2) Clear previous contents, release BSTRs etc
 						_ = VariantHelper.VariantClear(dataPtr);
+						// VariantClear leaves the payload behind; the scalar writer must not release it as the new type.
+						Marshal.WriteInt64(dataPtr + 8, 0);
 						// 3) Write the VT and clear the four reserved words
 						//    [vt:2][res1:2][res2:2][res3:2]  <-- totals 8 bytes header
 						Marshal.WriteInt16(dataPtr, (short)innerVt);

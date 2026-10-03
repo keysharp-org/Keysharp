@@ -4425,11 +4425,12 @@ namespace Keysharp.Compilation.Syntax
 					List<ExpressionSyntax> IdxArgs() =>
 						ix.Args.Any(ia => ia.Spread) ? [SpreadParams(ix.Args)] : LowerArgs(ix.Args);
 
-					if (!ix.NullConditional && ix.Target is MemberExpr { NullConditional: false } im)
+					// Literal `obj.member[]` indexes the member's value; even an empty spread still addresses the property.
+					if (ix.Args.Count > 0 && !ix.NullConditional && ix.Target is MemberExpr { NullConditional: false } im)
 						return MayYieldUnset(im.Target)
 							? NullCondWrap(im.Target, tt => Op("GetPropertyValue", [ tt, Str(im.Name), ..IdxArgs() ]))
 							: Op("GetPropertyValue", [ LowerExpr(im.Target), Str(im.Name), ..IdxArgs() ]);
-					if (!ix.NullConditional && ix.Target is DynMemberExpr { NullConditional: false } idm)
+					if (ix.Args.Count > 0 && !ix.NullConditional && ix.Target is DynMemberExpr { NullConditional: false } idm)
 						return MayYieldUnset(idm.Target)
 							? NullCondWrap(idm.Target, tt => Op("GetPropertyValue", [ tt, LowerExpr(idm.NameExpr), ..IdxArgs()]))
 							: Op("GetPropertyValue", [ LowerExpr(idm.Target), LowerExpr(idm.NameExpr), ..IdxArgs()]);
@@ -4727,7 +4728,7 @@ namespace Keysharp.Compilation.Syntax
 		// GetPropertyValue(obj, name, args), so a write reaches its setter, COM propput or __Set with the index.
 		private static bool IsMemberIndex(IndexExpr ie, out Expr owner, out Expr dynamicName, out string name)
 		{
-			(owner, dynamicName, name) = ie.NullConditional ? default : ie.Target switch
+			(owner, dynamicName, name) = ie.NullConditional || ie.Args.Count == 0 ? default : ie.Target switch
 			{
 				MemberExpr { NullConditional: false } m => (m.Target, (Expr)null, m.Name),
 				DynMemberExpr { NullConditional: false } d => (d.Target, d.NameExpr, null),
@@ -7327,10 +7328,10 @@ namespace Keysharp.Compilation.Syntax
 					return Op("Invoke", LowerExpr(dme.Target), Str("__Ref"), LowerExpr(dme.NameExpr));
 				// `&obj.prop[i,j]` binds to the parameterized PROPERTY slot (obj.__Ref("prop", i, j)), re-reading the
 				// property each access — not to whatever array `obj.prop` currently resolves to.
-				case IndexExpr ie when ie.Target is MemberExpr ipm:
+				case IndexExpr ie when ie.Args.Count > 0 && ie.Target is MemberExpr ipm:
 					ExpressionSyntax[] pmArgs = [LowerExpr(ipm.Target), Str("__Ref"), Str(ipm.Name), ..LowerArgs(ie.Args)];
 					return Op("Invoke", pmArgs);
-				case IndexExpr ie when ie.Target is DynMemberExpr ipd:
+				case IndexExpr ie when ie.Args.Count > 0 && ie.Target is DynMemberExpr ipd:
 					ExpressionSyntax[] pdArgs = [LowerExpr(ipd.Target), Str("__Ref"), LowerExpr(ipd.NameExpr), ..LowerArgs(ie.Args)];
 					return Op("Invoke", pdArgs);
 				case IndexExpr ie:   // &obj[i] (obj a plain value/var) -> obj.__Ref("__Item", i)

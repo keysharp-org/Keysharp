@@ -1,4 +1,6 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 #Include <assert>
 
 class testclass
@@ -230,5 +232,75 @@ class IndexedMetaSet {
 IndexedMetaSet().nope[1] := "Z"
 AssertEq(setLog.Pop(), "nope 1 Z", A_LineNumber)
 Throws(() => ({}).nope[1] := 1, A_LineNumber, PropertyError)
+
+; Empty brackets index a member's value rather than calling or replacing the member itself.
+class EmptyIndexValue {
+	Value := 10
+	__Item {
+		get => this.Value
+		set => this.Value := value
+	}
+}
+class EmptyIndexHolder {
+	Data := EmptyIndexValue()
+	Reads := 0
+	Accessor {
+		get {
+			this.Reads++
+			return this.Data
+		}
+	}
+}
+emptyHolder := EmptyIndexHolder()
+AssertEq(emptyHolder.Data[], 10, A_LineNumber)
+emptyHolder.Data[] := 20
+Assert(emptyHolder.Data is EmptyIndexValue, A_LineNumber)
+AssertEq(emptyHolder.Data.Value, 20, A_LineNumber)
+emptyName := "Data"
+AssertEq(emptyHolder.%emptyName%[], 20, A_LineNumber)
+emptyHolder.%emptyName%[] := 30
+emptyHolder.Accessor[] += 2
+AssertEq(emptyHolder.Reads, 1, A_LineNumber)
+AssertEq(emptyHolder.Accessor[]++, 32, A_LineNumber)
+AssertEq(emptyHolder.Reads, 2, A_LineNumber)
+AssertEq(--emptyHolder.%emptyName%[], 32, A_LineNumber)
+AssertEq(emptyHolder.Data[] ?? 0, 32, A_LineNumber)
+emptyRef := &emptyHolder.Data[]
+AssertEq(emptyRef.__Value, 32, A_LineNumber)
+emptyRef.__Value := 34
+AssertEq(emptyHolder.Data[], 34, A_LineNumber)
+emptyRef := &emptyHolder.%emptyName%[]
+emptyRef.__Value := 36
+AssertEq(emptyHolder.Data[], 36, A_LineNumber)
+emptyIndexes := []
+Assert(emptyHolder.Data[emptyIndexes*] is EmptyIndexValue, A_LineNumber)
+
+#if WINDOWS
+; UIA wraps native property VARIANTs in an object whose indexer reads a stored COM reference.
+class PropertyVariant {
+	__New() {
+		this.Storage := Buffer(8 + 2 * A_PtrSize, 0)
+		this.Reference := ComValue(0x400C, this.Storage.Ptr)
+	}
+	__Item {
+		get => this.Reference[]
+		set => this.Reference[] := value
+	}
+}
+variantProperty := PropertyVariant()
+NumPut("UShort", 3, variantProperty.Storage)
+NumPut("Int", 42, variantProperty.Storage, 8)
+AssertEq(variantProperty[], 42, A_LineNumber)
+variantProperty[] := "UIA property"
+AssertEq(variantProperty[], "UIA property", A_LineNumber)
+variantProperty[] := "Updated property"
+AssertEq(variantProperty[], "Updated property", A_LineNumber)
+DllCall("oleaut32\VariantClear", "Ptr", variantProperty.Storage)
+NumPut("UShort", 11, variantProperty.Storage)
+NumPut("Short", -1, variantProperty.Storage, 8)
+Assert(variantProperty[], A_LineNumber)
+NumPut("Short", 0, variantProperty.Storage, 8)
+Assert(!variantProperty[], A_LineNumber)
+#endif
 
 FileAppend "pass", "*"
