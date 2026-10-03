@@ -1,4 +1,6 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 #Include <assert>
 #Import Ks { A_DirSeparator }
 
@@ -74,6 +76,11 @@ Loop Files root A_DirSeparator "*", "F"
 {
 	AssertEq(A_LoopFileExt, A_LoopFileName = "noext" ? "" : "txt", A_LineNumber)
 	AssertEq(A_LoopFileSize, 1, A_LineNumber)
+	AssertEq(Type(A_LoopFileSize), "Integer", A_LineNumber)
+	AssertEq(A_LoopFileSizeKB, 0, A_LineNumber)
+	AssertEq(A_LoopFileSizeMB, 0, A_LineNumber)
+	AssertEq(Type(A_LoopFileSizeKB), "Integer", A_LineNumber)
+	AssertEq(Type(A_LoopFileSizeMB), "Integer", A_LineNumber)
 	AssertEq(A_LoopFileTimeModified, FileGetTime(A_LoopFilePath), A_LineNumber)
 }
 
@@ -94,6 +101,15 @@ Loop Files root A_DirSeparator "*", "D"
 
 ; Outside a loop the attributes, names and paths are empty.
 AssertEq(A_LoopFileAttrib A_LoopFileName A_LoopFilePath A_LoopFileDir A_LoopFileExt A_LoopFileFullPath, "", A_LineNumber)
+AssertEq(A_LoopFileSize, "", A_LineNumber)
+AssertEq(A_LoopFileSizeKB, "", A_LineNumber)
+AssertEq(A_LoopFileSizeMB, "", A_LineNumber)
+AssertEq(Type(A_LoopFileSize), "String", A_LineNumber)
+Loop Files root A_DirSeparator "*", "D"
+{
+	AssertEq(A_LoopFileSize, 0, A_LineNumber)
+	AssertEq(Type(A_LoopFileSize), "Integer", A_LineNumber)
+}
 
 DirDelete root, true
 FileAppend "pass", "*"

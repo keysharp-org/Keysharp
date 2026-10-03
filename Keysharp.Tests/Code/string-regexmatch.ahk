@@ -1,4 +1,6 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 #Include <assert>
 
 match := ""
@@ -231,7 +233,7 @@ m := ""
 Assert(RegExMatch("hello", "h", &m, 100) == 0 && m == "", A_LineNumber)
 
 ; Syntax-error throws an exception
-Throws(() => RegExMatch("abc", "(unclosed", &m), A_LineNumber)
+Throws(() => RegExMatch("abc", "(unclosed"), A_LineNumber)
 
 
 pos := RegExMatch("2025-12-31", "(?P<Year>\d{4})-(\d{2})-(?P<Day>\d{2})", &m)
@@ -315,6 +317,10 @@ AssertEq(RegExMatch("a`nb", "S)a.b"), 0, A_LineNumber)
 AssertEq(RegExMatch("a`nb", "s)a.b"), 1, A_LineNumber)
 AssertEq(RegExMatch("a b", "X)a b"), 1, A_LineNumber)
 AssertEq(RegExMatch("x`r`ny", "m`r`n)x$"), 1, A_LineNumber)
+RegExMatch("aaaa", "U)a+", &optionMatch)
+AssertEq(optionMatch[0], "a", A_LineNumber)
+AssertEq(RegExMatch("ab", "(*NO_AUTO_POSSESS)(*NO_START_OPT)(*NO_DOTSTAR_ANCHOR)a+b"), 1, A_LineNumber)
+Throws(() => RegExMatch("x", "u)x"), A_LineNumber)
 
 
 ; Without a newline option, CR, LF and CRLF are all newlines, as AutoHotkey builds PCRE; `n makes LF the only one.

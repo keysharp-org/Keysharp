@@ -408,19 +408,7 @@ namespace Keysharp.Builtins.COM
 		}
 
 		public static object ComObjValue(object comObj)
-		{
-			if (comObj is ComValue co)
-			{
-				return co.Ptr;
-			}
-			else//Unsure if this logic even makes sense.
-			{
-				var gch = GCHandle.Alloc(comObj, GCHandleType.Pinned);
-				var val = gch.AddrOfPinnedObject();
-				gch.Free();
-				return val;
-			}
-		}
+			=> comObj is ComValue co ? co.Ptr : Errors.TypeErrorOccurred(comObj, typeof(ComValue), DefaultObject);
 
 		public static object ObjAddRef(object ptr)
 		{

@@ -1,4 +1,6 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 #Include <assert>
 
 str := "
@@ -243,5 +245,18 @@ contPlain := 1
 )
 
 AssertEq(contPlain, 3, A_LineNumber)
+
+joinedPercent := "
+(Join%
+one
+two
+)"
+AssertEq(joinedPercent, "one%two", A_LineNumber)
+joinedCodePercent :=
+(Join%
+"one
+two"
+)
+AssertEq(joinedCodePercent, "one%two", A_LineNumber)
 
 FileAppend "pass", "*"

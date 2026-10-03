@@ -468,7 +468,7 @@ namespace Keysharp.Parsing.Lexing
 
 		// Reads an AHK continuation section. _pos is at the '(' that opens it. The raw section text (from '(' through
 		// the closing ')') is handed to the shared Parser.MultilineString, which honors all options (Join, LTrim/
-		// LTrim0, RTrim/RTrim0, Comments, `, %, indent-trim) and escapes the result for a double-quoted literal; the
+		// LTrim0, RTrim/RTrim0, Comments, `, indent-trim) and escapes the result for a double-quoted literal; the
 		// result is wrapped in quotes and used as the token text so the parser's DecodeString reproduces it.
 		private void ScanContinuationSection(char quote, int startLine, int startCol, string prefix = "")
 		{
@@ -832,13 +832,12 @@ namespace Keysharp.Parsing.Lexing
 			_ = text.Append(_s, from, length);
 		}
 
-		// Appends one content line, honouring the two options that alter the text as it is merged: the accent option
-		// doubles every backtick so it survives as a literal one, and the legacy `%` option escapes every percent sign.
-		// Both insert a character that came from no line, so the run is split around it and the source map stays exact.
+		// The accent option doubles every backtick so it survives as a literal one. Split the source map around each
+		// inserted character, which came from no source line.
 		private void AppendContent(System.Text.StringBuilder text, List<MergeSegment> segs, int from, int to, int line, int col,
 								   Keysharp.Parsing.Parser.ContinuationOptions opts)
 		{
-			if (!opts.LiteralEscape && !opts.PercentLiteral)
+			if (!opts.LiteralEscape)
 			{
 				AppendMerged(text, segs, from, to - from, line, col);
 				return;
@@ -848,13 +847,10 @@ namespace Keysharp.Parsing.Lexing
 
 			for (var i = from; i < to; i++)
 			{
-				// The backtick keeps its place and gains a second one; the percent sign gets one put in front of it.
-				var after = opts.LiteralEscape && _s[i] == '`';
-
-				if (!after && !(opts.PercentLiteral && _s[i] == '%'))
+				if (_s[i] != '`')
 					continue;
 
-				var cut = after ? i + 1 : i;
+				var cut = i + 1;
 				AppendMerged(text, segs, run, cut - run, line, col + (run - from));
 				_ = text.Append('`');
 				run = cut;

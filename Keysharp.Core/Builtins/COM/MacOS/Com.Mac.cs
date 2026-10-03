@@ -100,7 +100,8 @@ namespace Keysharp.Builtins.COM
 			=> Unsupported("ObjRelease", "Apple Events objects are not reference counted.");
 
 		public static object ComObjValue(object comObj)
-			=> Unsupported("ComObjValue", "An Apple Events object is a query against an application, not a pointer.");
+			=> comObj is ComValue ? Unsupported("ComObjValue", "An Apple Events object is a query against an application, not a pointer.")
+				: Errors.TypeErrorOccurred(comObj, typeof(ComValue), DefaultObject);
 
 		public static object ComObjFlags(object comObj, object newFlags = null, object mask = null)
 			=> Unsupported("ComObjFlags", "Apple Events have no VARIANT flags.");

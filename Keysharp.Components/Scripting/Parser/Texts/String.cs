@@ -71,8 +71,6 @@ namespace Keysharp.Parsing
 			internal bool RTrim = true;
 			internal bool Comments;
 			internal bool LiteralEscape;
-			/// <summary>Legacy <c>%</c> option: keep percent signs literal instead of resolving them.</summary>
-			internal bool PercentLiteral;
 		}
 
 		// AHK stores the Join string in a TCHAR[16], so anything past 15 characters is dropped.
@@ -103,12 +101,6 @@ namespace Keysharp.Parsing
 
 			if (string.IsNullOrEmpty(optionText))
 				return opts;
-
-			if (optionText.Contains('%'))
-			{
-				opts.PercentLiteral = true;
-				optionText = optionText.Replace("%", string.Empty);
-			}
 
 			var span = optionText.AsSpan().Trim();
 
@@ -188,7 +180,7 @@ namespace Keysharp.Parsing
 			var opts = ParseContinuationOptions(line.Substring(1), lineNumber, code, name);
 			var join = opts.Join;
 			var ltrim = opts.LTrim;
-			bool rtrim = opts.RTrim, stripComments = opts.Comments, percentResolve = !opts.PercentLiteral, literalEscape = opts.LiteralEscape;
+			bool rtrim = opts.RTrim, stripComments = opts.Comments, literalEscape = opts.LiteralEscape;
 			var sb = new StringBuilder(code.Length);
 			// Track default indent from first content line
 			string indentSample = null;
@@ -267,7 +259,7 @@ namespace Keysharp.Parsing
 						continue;
 					}
 
-					if (ch is Escape or '"' or Multicast || ch == Resolve && !percentResolve)
+					if (ch is Escape or '"' or Multicast)
 						_ = sb.Append(Escape);
 
 					_ = sb.Append(ch);

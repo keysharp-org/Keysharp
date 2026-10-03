@@ -177,7 +177,7 @@ namespace Keysharp.Compilation.Syntax
 
 		// Names provided at the module top-level. Keysharp resolves any bare name that isn't a local to a module-level
 		// global field (see LowerName's EnsureGlobalField fallback), so a top-level-assigned name is readable from EVERY
-		// nested scope — including class methods/properties, which do NOT inherit `outerProvided`. CheckReadsExpr consults
+		// nested scope — including class methods/properties, which do NOT inherit `outerProvided`. CheckReads consults
 		// it for every scope so a read of such a global isn't a false "never assigned" positive (null when VarUnset off).
 		private HashSet<string> _warnGlobalReadable;
 		// The globals the module assigns, and the unset reads found, which are warned about once every assignment is known
@@ -357,7 +357,7 @@ namespace Keysharp.Compilation.Syntax
 			bool IsFileImport(ImportDirective im) =>
 				_includeDir != null && im.Module.Length > 0 && ResolveModuleFile(im.Module, _includeDir) != null;
 			var allImports = new List<ImportDirective>();
-			foreach (var s in prog.Body) CollectAllImports(s, allImports);
+			foreach (var s in prog.Body) CollectStatements(s, allImports);
 			if (prog.Body.Any(s => s is DirectiveStmt d && d.Name.Equals("Module", System.StringComparison.OrdinalIgnoreCase))
 				|| allImports.Any(IsFileImport))
 				return BuildMultiModule(prog, name);
@@ -559,7 +559,7 @@ namespace Keysharp.Compilation.Syntax
 					cur.Body.Add(s);
 					CollectNestedImports(s, cur.ModuleBindings);   // control-flow-nested → module-scope binding
 					var all = new List<ImportDirective>();
-					CollectAllImports(s, all);                     // any nesting → loading / execution order
+					CollectStatements(s, all);                     // any nesting → loading / execution order
 					cur.AllImports.AddRange(all);
 					foreach (var import in all)
 						if (import.ReExport && !cur.ModuleBindings.Contains(import)) cur.ModuleBindings.Add(import);
@@ -570,7 +570,7 @@ namespace Keysharp.Compilation.Syntax
 
 		// AHK processes `#import` directives at load time regardless of nesting, so an import inside a block / if / loop
 		// (e.g. `if true { #import "M" { X as Y } }`) still binds at module scope. Recursively lift those out. This
-		// covers only CONTROL FLOW — an import inside a function/class body is lexically scoped (see CollectAllImports).
+		// covers only CONTROL FLOW — an import inside a function/class body is lexically scoped (see CollectStatements).
 		private static void CollectNestedImports(Stmt s, List<ImportDirective> into) =>
 			VisitScope(s, statement =>
 			{
@@ -584,69 +584,9 @@ namespace Keysharp.Compilation.Syntax
 		{
 			if (s == null) return;
 			visit(s);
-			switch (s)
-			{
-				case Block b: foreach (var x in b.Body) VisitScope(x, visit); break;
-				case IfStmt iff: VisitScope(iff.Then, visit); VisitScope(iff.Else, visit); break;
-				case WhileStmt w: VisitScope(w.Body, visit); VisitScope(w.Else, visit); break;
-				case LoopStmt lp: VisitScope(lp.Body, visit); VisitScope(lp.Else, visit); break;
-				case SpecialLoopStmt slp: VisitScope(slp.Body, visit); VisitScope(slp.Else, visit); break;
-				case ForStmt fr: VisitScope(fr.Body, visit); VisitScope(fr.Else, visit); break;
-				case SwitchStmt sw:
-					foreach (var c in sw.Cases) foreach (var x in c.Body) VisitScope(x, visit);
-					foreach (var x in sw.Default ?? []) VisitScope(x, visit);
-					break;
-				case TryStmt tr:
-					VisitScope(tr.Body, visit);
-					foreach (var cb in tr.Catches) VisitScope(cb.Body, visit);
-					VisitScope(tr.Else, visit);
-					VisitScope(tr.Finally, visit);
-					break;
-			}
-		}
-
-		// Every `#import` reachable from a statement regardless of nesting depth — control flow AND function/class/switch/
-		// hotkey-hotstring bodies. Feeds file loading and execution order, which are load-time and position-independent
-		// even though the BINDING of a function/class-nested import is lexically scoped (Phase 3). Superset of
-		// CollectNestedImports; the two are kept separate so a function-scoped import never binds at module scope.
-		private static void CollectAllImports(Stmt s, List<ImportDirective> into)
-		{
-			switch (s)
-			{
-				case ImportDirective d: into.Add(d); break;
-				case Block b: foreach (var c in b.Body) CollectAllImports(c, into); break;
-				case IfStmt i: CollectAllImports(i.Then, into); if (i.Else != null) CollectAllImports(i.Else, into); break;
-				case WhileStmt w: CollectAllImports(w.Body, into); if (w.Else != null) CollectAllImports(w.Else, into); break;
-				case LoopStmt l: CollectAllImports(l.Body, into); if (l.Else != null) CollectAllImports(l.Else, into); break;
-				case SpecialLoopStmt sl: CollectAllImports(sl.Body, into); if (sl.Else != null) CollectAllImports(sl.Else, into); break;
-				case ForStmt f: CollectAllImports(f.Body, into); if (f.Else != null) CollectAllImports(f.Else, into); break;
-				case SwitchStmt sw:
-					foreach (var c in sw.Cases) foreach (var cs in c.Body) CollectAllImports(cs, into);
-					if (sw.Default != null) foreach (var ds in sw.Default) CollectAllImports(ds, into);
-					break;
-				case TryStmt t:
-					CollectAllImports(t.Body, into);
-					foreach (var cb in t.Catches) CollectAllImports(cb.Body, into);
-					if (t.Else != null) CollectAllImports(t.Else, into);
-					if (t.Finally != null) CollectAllImports(t.Finally, into);
-					break;
-				case FunctionDecl fn: if (fn.Body != null) CollectAllImports(fn.Body, into); break;
-				case HotkeyDef hk: if (hk.Body != null) CollectAllImports(hk.Body, into); if (hk.Func?.Body != null) CollectAllImports(hk.Func.Body, into); break;
-				case HotstringDef hs: if (hs.Body != null) CollectAllImports(hs.Body, into); if (hs.Func?.Body != null) CollectAllImports(hs.Func.Body, into); break;
-				case ClassDecl cd: CollectClassImports(cd, into); break;
-			}
-		}
-
-		// Every `#import` declared anywhere in a class: its class-body imports (ClassDecl.Imports), method bodies,
-		// property get/set bodies, member initializers, and nested classes. Load/order only, like CollectAllImports.
-		private static void CollectClassImports(ClassDecl cd, List<ImportDirective> into)
-		{
-			into.AddRange(cd.Imports);
-			foreach (var mth in cd.Methods) if (mth.Body != null) CollectAllImports(mth.Body, into);
-			foreach (var pr in cd.Properties) { if (pr.GetBody != null) CollectAllImports(pr.GetBody, into); if (pr.SetBody != null) CollectAllImports(pr.SetBody, into); }
-			foreach (var init in cd.StaticInit) CollectAllImports(init, into);
-			foreach (var init in cd.InstanceInit) CollectAllImports(init, into);
-			foreach (var nc in cd.Nested) CollectClassImports(nc, into);
+			if (s is FunctionDecl or ClassDecl or HotkeyDef or HotstringDef) return;
+			foreach (var child in AstChildren.Of(s))
+				if (child is Stmt statement) VisitScope(statement, visit);
 		}
 
 		// Script declarations are implicitly exportable. Inline C# retains its explicit [Export] wildcard boundary.
@@ -672,9 +612,9 @@ namespace Keysharp.Compilation.Syntax
 					case DeclStmt d:
 						foreach (var item in d.Items)
 							if (DeclItemName(item) is { } declared) Declare(declared);
-						CollectAssignedStmt(d, assigned, seen);
+						CollectAssigned(d, assigned, seen);
 						break;
-					default: CollectAssignedStmt(s, assigned, seen); break;
+					default: CollectAssigned(s, assigned, seen); break;
 				}
 			}
 			// A variable keeps the spelling it first has at the top level, which errors and ListVars name it by.
@@ -724,10 +664,10 @@ namespace Keysharp.Compilation.Syntax
 					else if (statement is TryStmt tr)
 						tr.Catches.ForEach(cb => Add(cb.Var));
 				});
-				_ = AnyStmt(s, AddName);
+				_ = AnyNode(s, AddName);
 			}
 
-			_ = AnyExpr(arrow, AddName);
+			_ = AnyNode(arrow, AddName);
 		}
 
 		// Whether an import binds `name` explicitly: as the module alias or bare leaf name (member null), or as a named
@@ -2587,174 +2527,11 @@ namespace Keysharp.Compilation.Syntax
 
 		// Every statement of type T at any depth: in control flow, and in function, method, property, hotkey and fat-arrow
 		// bodies alike.
-		private static void CollectStatements<T>(Stmt stmt, List<T> into) where T : Stmt
+		private static void CollectStatements<T>(Node node, List<T> into) where T : Stmt
 		{
-			if (stmt == null) return;
-			if (stmt is T match) into.Add(match);
-
-			switch (stmt)
-			{
-				case ExpressionStmt expression: CollectStatements(expression.Expr, into); break;
-				case Block block: foreach (var child in block.Body) CollectStatements(child, into); break;
-				case IfStmt conditional:
-					CollectStatements(conditional.Cond, into);
-					CollectStatements(conditional.Then, into);
-					CollectStatements(conditional.Else, into);
-					break;
-				case WhileStmt whileLoop:
-					CollectStatements(whileLoop.Cond, into);
-					CollectStatements(whileLoop.Body, into);
-					CollectStatements(whileLoop.Until, into);
-					CollectStatements(whileLoop.Else, into);
-					break;
-				case LoopStmt countedLoop:
-					CollectStatements(countedLoop.Count, into);
-					CollectStatements(countedLoop.Body, into);
-					CollectStatements(countedLoop.Until, into);
-					CollectStatements(countedLoop.Else, into);
-					break;
-				case SpecialLoopStmt specialLoop:
-					foreach (var argument in specialLoop.Args ?? []) CollectStatements(argument, into);
-					CollectStatements(specialLoop.Body, into);
-					CollectStatements(specialLoop.Until, into);
-					CollectStatements(specialLoop.Else, into);
-					break;
-				case ForStmt forLoop:
-					CollectStatements(forLoop.Enumerable, into);
-					CollectStatements(forLoop.Body, into);
-					CollectStatements(forLoop.Until, into);
-					CollectStatements(forLoop.Else, into);
-					break;
-				case SwitchStmt choice:
-					CollectStatements(choice.Value, into);
-					CollectStatements(choice.CaseSense, into);
-					foreach (var branch in choice.Cases)
-					{
-						foreach (var value in branch.Values) CollectStatements(value, into);
-						foreach (var child in branch.Body) CollectStatements(child, into);
-					}
-					if (choice.Default != null)
-						foreach (var child in choice.Default) CollectStatements(child, into);
-					break;
-				case TryStmt attempt:
-					CollectStatements(attempt.Body, into);
-					foreach (var catcher in attempt.Catches) CollectStatements(catcher.Body, into);
-					CollectStatements(attempt.Else, into);
-					CollectStatements(attempt.Finally, into);
-					break;
-				case ReturnStmt ret: CollectStatements(ret.Value, into); break;
-				case ThrowStmt thrown: CollectStatements(thrown.Value, into); break;
-				case DeclStmt declaration:
-					foreach (var item in declaration.Items) CollectStatements(item, into);
-					break;
-				case HotkeyDef hotkey:
-					CollectStatements(hotkey.Body, into);
-					CollectStatements(hotkey.Func, into);
-					break;
-				case HotstringDef hotstring:
-					CollectStatements(hotstring.Body, into);
-					CollectStatements(hotstring.Func, into);
-					break;
-				case FunctionDecl function:
-					foreach (var parameter in function.Params) CollectStatements(parameter.Default, into);
-					CollectStatements(function.Body, into);
-					CollectStatements(function.ArrowBody, into);
-					break;
-				case ClassDecl type:
-					foreach (var field in type.Fields)
-					{
-						CollectStatements(field.Init, into);
-						CollectStatements(field.TypeExpr, into);
-					}
-					foreach (var method in type.Methods)
-					{
-						foreach (var parameter in method.Params) CollectStatements(parameter.Default, into);
-						CollectStatements(method.Body, into);
-						CollectStatements(method.ArrowBody, into);
-					}
-					foreach (var property in type.Properties)
-					{
-						foreach (var parameter in property.Params) CollectStatements(parameter.Default, into);
-						CollectStatements(property.GetBody, into);
-						CollectStatements(property.GetArrow, into);
-						CollectStatements(property.SetBody, into);
-						CollectStatements(property.SetArrow, into);
-					}
-					foreach (var init in type.StaticInit) CollectStatements(init, into);
-					foreach (var init in type.InstanceInit) CollectStatements(init, into);
-					foreach (var nested in type.Nested) CollectStatements(nested, into);
-					break;
-			}
-		}
-
-		private static void CollectStatements<T>(Expr expression, List<T> into) where T : Stmt
-		{
-			if (expression == null) return;
-
-			void Arguments(IEnumerable<Argument> arguments)
-			{
-				foreach (var argument in arguments)
-				{
-					CollectStatements(argument.Value, into);
-					CollectStatements(argument.NameExpr, into);
-				}
-			}
-
-			switch (expression)
-			{
-				case UnaryExpr unary: CollectStatements(unary.Operand, into); break;
-				case BinaryExpr binary:
-					CollectStatements(binary.Left, into);
-					CollectStatements(binary.Right, into);
-					break;
-				case AssignExpr assignment:
-					CollectStatements(assignment.Target, into);
-					CollectStatements(assignment.Value, into);
-					break;
-				case TernaryExpr ternary:
-					CollectStatements(ternary.Cond, into);
-					CollectStatements(ternary.Then, into);
-					CollectStatements(ternary.Else, into);
-					break;
-				case CallExpr call:
-					CollectStatements(call.Callee, into);
-					Arguments(call.Args);
-					break;
-				case MemberExpr member: CollectStatements(member.Target, into); break;
-				case DynMemberExpr dynamicMember:
-					CollectStatements(dynamicMember.Target, into);
-					CollectStatements(dynamicMember.NameExpr, into);
-					break;
-				case IndexExpr index:
-					CollectStatements(index.Target, into);
-					Arguments(index.Args);
-					break;
-				case GroupExpr group: CollectStatements(group.Inner, into); break;
-				case SequenceExpr sequence:
-					foreach (var item in sequence.Items) CollectStatements(item, into);
-					break;
-				case DerefExpr dereference: CollectStatements(dereference.Name, into); break;
-				case ArrayExpr array: Arguments(array.Elements); break;
-				case MapExpr map:
-					foreach (var entry in map.Entries)
-					{
-						CollectStatements(entry.Key, into);
-						CollectStatements(entry.Value, into);
-					}
-					break;
-				case ObjectExpr obj:
-					foreach (var entry in obj.Entries)
-					{
-						CollectStatements(entry.Key, into);
-						CollectStatements(entry.Value, into);
-					}
-					break;
-				case FatArrowExpr function:
-					foreach (var parameter in function.Params) CollectStatements(parameter.Default, into);
-					CollectStatements(function.Body, into);
-					CollectStatements(function.BlockBody, into);
-					break;
-			}
+			if (node == null) return;
+			if (node is T match) into.Add(match);
+			foreach (var child in AstChildren.Of(node)) CollectStatements(child, into);
 		}
 
 		private void ApplyManifestDirectiveOnce(DirectiveStmt directive)
@@ -4184,7 +3961,7 @@ namespace Keysharp.Compilation.Syntax
 			_warnGlobalReadable = null;
 			// What the top level assigns in any form is a global, as is what a function assigns while it is global.
 			var assigned = new List<string>();
-			foreach (var s in body) CollectAssignedStmt(s, assigned, new HashSet<string>());
+			foreach (var s in body) CollectAssigned(s, assigned, new HashSet<string>());
 			_warnAssignedGlobals = new(assigned, System.StringComparer.OrdinalIgnoreCase);
 			_warnUnsetReads = new();
 			var globals = _warnLocalSameAsGlobal != null ? new HashSet<string>(assigned, System.StringComparer.OrdinalIgnoreCase) : null;
@@ -4221,14 +3998,14 @@ namespace Keysharp.Compilation.Syntax
 				// LocalSameAsGlobal for this scope's own reads/locals (params still resolve normally).
 				var provided = new HashSet<string>(paramLowers, System.StringComparer.OrdinalIgnoreCase);
 				if (body != null) foreach (var s in body) CollectProvided(s, provided);
-				if (arrow != null) CollectProvidedExpr(arrow, provided);
+				if (arrow != null) CollectProvided(arrow, provided);
 				foreach (var fd in scope.Nested) provided.Add(fd.Name.ToLowerInvariant());   // named fat arrows among them
 				// What this function assigns while it is global lets a read of a global a function declares stand.
 				foreach (var n in assigned ?? [])
 					if (scope.Find(n).Storage == VarStorage.Global)
 						_warnAssignedGlobals.Add(n);
 				// The top-level scope's names are the module globals, which every nested scope can read (Keysharp resolves
-				// any non-local bare name to a global field, so such a read is never "unset"). CheckReadsExpr consults them
+				// any non-local bare name to a global field, so such a read is never "unset"). CheckReads consults them
 				// directly: copying them into each scope's set was quadratic in the number of callables.
 				if (topLevel) _warnGlobalReadable = provided;
 				// Names readable here = this scope's provided + everything from enclosing scopes (closure capture).
@@ -4248,8 +4025,8 @@ namespace Keysharp.Compilation.Syntax
 				if (_warnVarUnset != null && !scope.AssumeGlobal)
 				{
 					var warned = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
-					if (body != null) foreach (var s in body) CheckReadsStmt(s, readable, warned);
-					if (arrow != null) CheckReadsExpr(arrow, readable, warned);
+					if (body != null) foreach (var s in body) CheckReads(s, readable, warned);
+					if (arrow != null) CheckReads(arrow, readable, warned);
 				}
 				// LocalSameAsGlobal compares only THIS scope's own undeclared locals against the globals: as in AHK, a
 				// parameter or a local or static declaration already says the name is meant to be local. A global is any
@@ -4267,7 +4044,7 @@ namespace Keysharp.Compilation.Syntax
 			// closures over our locals aren't flagged.
 			_warnScope = topLevel ? null : scope;
 			if (body != null) foreach (var s in body) RecurseScopes(s, globals, visible);
-			if (arrow != null) RecurseScopesExpr(arrow, globals, visible);
+			if (arrow != null) RecurseScopes(arrow, globals, visible);
 			_warnScope = savedScope;
 		}
 
@@ -4296,120 +4073,47 @@ namespace Keysharp.Compilation.Syntax
 
 		// Collects names "provided" (so a read of them is not unset) in THIS scope only (not descending into nested
 		// function/lambda bodies): params, direct `:=` targets, `&var`, `IsSet(var)`, for/catch vars, and declarations.
-		private void CollectProvided(Stmt s, HashSet<string> provided)
+		private void CollectProvided(Node node, HashSet<string> provided)
 		{
-			switch (s)
+			switch (node)
 			{
-				// A nested function/class declaration binds its name as a (read-only) local throughout the enclosing
-				// scope (AHK hoists nested functions), so a reference to it is not "unset". Only TOP-LEVEL functions are
-				// in _userFuncByLower, so nested ones must be recorded here. The body is a separate scope (analyzed by
-				// RecurseScopes) — do not descend into it.
-				case FunctionDecl fd: provided.Add(fd.Name.ToLowerInvariant()); break;
-				case ClassDecl cd: provided.Add(cd.Name.ToLowerInvariant()); break;
-				case DeclStmt d:
-					foreach (var item in d.Items)
-					{
-						if (DeclItemName(item) is { } name)
-							provided.Add(name.ToLowerInvariant());
-
-						CollectProvidedExpr(item, provided);
-					}
+				case FunctionDecl function: provided.Add(function.Name.ToLowerInvariant()); return;
+				case ClassDecl type: provided.Add(type.Name.ToLowerInvariant()); return;
+				case DeclStmt declaration:
+					foreach (var item in declaration.Items)
+						if (DeclItemName(item) is { } name) provided.Add(name.ToLowerInvariant());
 					break;
-				case ExpressionStmt es: CollectProvidedExpr(es.Expr, provided); break;
-				case ReturnStmt r: if (r.Value != null) CollectProvidedExpr(r.Value, provided); break;
-				case ThrowStmt t: if (t.Value != null) CollectProvidedExpr(t.Value, provided); break;
-				case IfStmt iff: CollectProvidedExpr(iff.Cond, provided); CollectProvided(iff.Then, provided); if (iff.Else != null) CollectProvided(iff.Else, provided); break;
-				case Block b: foreach (var x in b.Body) CollectProvided(x, provided); break;
-				case WhileStmt w: CollectProvidedExpr(w.Cond, provided); CollectProvided(w.Body, provided); break;
-				case LoopStmt lp: if (lp.Count != null) CollectProvidedExpr(lp.Count, provided); CollectProvided(lp.Body, provided); break;
-				case SpecialLoopStmt slp: if (slp.Args != null) foreach (var a in slp.Args) if (a != null) CollectProvidedExpr(a, provided); CollectProvided(slp.Body, provided); break;
-				case ForStmt fr: foreach (var v in fr.Vars) if (v != null) provided.Add(v.ToLowerInvariant()); CollectProvidedExpr(fr.Enumerable, provided); CollectProvided(fr.Body, provided); break;
-				case SwitchStmt sw:
-					if (sw.Value != null) CollectProvidedExpr(sw.Value, provided);
-					if (sw.CaseSense != null) CollectProvidedExpr(sw.CaseSense, provided);
-					foreach (var c in sw.Cases) { foreach (var v in c.Values) CollectProvidedExpr(v, provided); foreach (var st in c.Body) CollectProvided(st, provided); }
-					if (sw.Default != null) foreach (var st in sw.Default) CollectProvided(st, provided);
+				case ForStmt loop:
+					foreach (var name in loop.Vars) if (name != null) provided.Add(name.ToLowerInvariant());
 					break;
-				case TryStmt tr:
-					CollectProvided(tr.Body, provided);
-					foreach (var cb in tr.Catches) { if (cb.Var != null) provided.Add(cb.Var.ToLowerInvariant()); CollectProvided(cb.Body, provided); }
-					if (tr.Else != null) CollectProvided(tr.Else, provided);
-					if (tr.Finally != null) CollectProvided(tr.Finally, provided);
+				case TryStmt attempt:
+					foreach (var catcher in attempt.Catches)
+						if (catcher.Var != null) provided.Add(catcher.Var.ToLowerInvariant());
+					break;
+				// Numeric compound assignments read the target before assigning; concat assignment accepts an unset target.
+				case AssignExpr assignment when assignment.Op is ":=" or ".=" && assignment.Target is NameExpr target:
+					provided.Add(target.Name.ToLowerInvariant());
+					break;
+				case UnaryExpr { Op: "&", Operand: NameExpr reference }:
+					provided.Add(reference.Name.ToLowerInvariant());
+					break;
+				case CallExpr call when call.Callee is NameExpr callee && callee.Name.Equals("IsSet", System.StringComparison.OrdinalIgnoreCase)
+					&& call.Args.Count == 1 && call.Args[0].Value is NameExpr argument:
+					provided.Add(argument.Name.ToLowerInvariant());
+					break;
+				case BinaryExpr binary when UnsetTestOperand(binary) is NameExpr name:
+					provided.Add(name.Name.ToLowerInvariant());
 					break;
 			}
-		}
 
-		private void CollectProvidedExpr(Expr e, HashSet<string> provided)
-		{
-			switch (e)
-			{
-				case AssignExpr a:
-					// `:=` plainly assigns the target. `.=` (concat-assign) also counts: AHK treats an unset target as ""
-					// for string concatenation, so `x .= 'a'` is a valid assignment to `x` and must not warn. Numeric
-					// compound ops (`+=`, `-=`, `*=`, ...) require a value and DO warn on an unset target, so they are excluded.
-					if ((a.Op == ":=" || a.Op == ".=") && a.Target is NameExpr tn) provided.Add(tn.Name.ToLowerInvariant());
-					CollectProvidedExpr(a.Target, provided); CollectProvidedExpr(a.Value, provided);
-					break;
-				case UnaryExpr u:
-					if (u.Op == "&" && u.Operand is NameExpr rn) provided.Add(rn.Name.ToLowerInvariant());      // &var
-					CollectProvidedExpr(u.Operand, provided);
-					break;
-				case CallExpr c:
-					if (c.Callee is NameExpr ne && ne.Name.Equals("IsSet", System.StringComparison.OrdinalIgnoreCase)
-						&& c.Args.Count == 1 && c.Args[0].Value is NameExpr iv) provided.Add(iv.Name.ToLowerInvariant());   // IsSet(var)
-					CollectProvidedExpr(c.Callee, provided); foreach (var ar in c.Args) if (ar.Value != null) CollectProvidedExpr(ar.Value, provided);
-					break;
-				case BinaryExpr b:
-					// `x = unset` (and friends) tests x the same way IsSet(x) does, so it counts as a provide too.
-					if (UnsetTestOperand(b) is NameExpr uv) provided.Add(uv.Name.ToLowerInvariant());
-					CollectProvidedExpr(b.Left, provided); CollectProvidedExpr(b.Right, provided); break;
-				case TernaryExpr t: CollectProvidedExpr(t.Cond, provided); CollectProvidedExpr(t.Then, provided); CollectProvidedExpr(t.Else, provided); break;
-				case GroupExpr g: CollectProvidedExpr(g.Inner, provided); break;
-				case SequenceExpr sq: foreach (var it in sq.Items) CollectProvidedExpr(it, provided); break;
-				case MemberExpr m: CollectProvidedExpr(m.Target, provided); break;
-				case DynMemberExpr dm: CollectProvidedExpr(dm.Target, provided); CollectProvidedExpr(dm.NameExpr, provided); break;
-				case IndexExpr ix: CollectProvidedExpr(ix.Target, provided); foreach (var ar in ix.Args) if (ar.Value != null) CollectProvidedExpr(ar.Value, provided); break;
-				case ObjectExpr oe: foreach (var en in oe.Entries) { CollectProvidedExpr(en.Key, provided); CollectProvidedExpr(en.Value, provided); } break;
-				case ArrayExpr ar2: foreach (var el in ar2.Elements) if (el.Value != null) CollectProvidedExpr(el.Value, provided); break;
-				case MapExpr mp: foreach (var (k, v) in mp.Entries) { CollectProvidedExpr(k, provided); CollectProvidedExpr(v, provided); } break;
-				case DerefExpr dr: CollectProvidedExpr(dr.Name, provided); break;
-			}
+			foreach (var child in ScopeChildren(node)) CollectProvided(child, provided);
 		}
 
 		// Walks reads; warns at the first read of a name that is not provided/param/builtin/user-func/class/keyword.
 		// Does NOT descend into nested function/lambda bodies (separate scopes) or into the OK positions themselves.
-		private void CheckReadsStmt(Stmt s, HashSet<string> provided, HashSet<string> warned)
+		private void CheckReads(Node node, HashSet<string> provided, HashSet<string> warned)
 		{
-			switch (s)
-			{
-				case DeclStmt d: foreach (var item in d.Items) CheckReadsExpr(item, provided, warned); break;
-				case ExpressionStmt es: CheckReadsExpr(es.Expr, provided, warned); break;
-				case ReturnStmt r: if (r.Value != null) CheckReadsExpr(r.Value, provided, warned); break;
-				case ThrowStmt t: if (t.Value != null) CheckReadsExpr(t.Value, provided, warned); break;
-				case IfStmt iff: CheckReadsExpr(iff.Cond, provided, warned); CheckReadsStmt(iff.Then, provided, warned); if (iff.Else != null) CheckReadsStmt(iff.Else, provided, warned); break;
-				case Block b: foreach (var x in b.Body) CheckReadsStmt(x, provided, warned); break;
-				case WhileStmt w: CheckReadsExpr(w.Cond, provided, warned); CheckReadsStmt(w.Body, provided, warned); break;
-				case LoopStmt lp: if (lp.Count != null) CheckReadsExpr(lp.Count, provided, warned); CheckReadsStmt(lp.Body, provided, warned); break;
-				case SpecialLoopStmt slp: if (slp.Args != null) foreach (var a in slp.Args) if (a != null) CheckReadsExpr(a, provided, warned); CheckReadsStmt(slp.Body, provided, warned); break;
-				case ForStmt fr: CheckReadsExpr(fr.Enumerable, provided, warned); CheckReadsStmt(fr.Body, provided, warned); break;
-				case SwitchStmt sw:
-					if (sw.Value != null) CheckReadsExpr(sw.Value, provided, warned);
-					if (sw.CaseSense != null) CheckReadsExpr(sw.CaseSense, provided, warned);
-					foreach (var c in sw.Cases) { foreach (var v in c.Values) CheckReadsExpr(v, provided, warned); foreach (var st in c.Body) CheckReadsStmt(st, provided, warned); }
-					if (sw.Default != null) foreach (var st in sw.Default) CheckReadsStmt(st, provided, warned);
-					break;
-				case TryStmt tr:
-					CheckReadsStmt(tr.Body, provided, warned);
-					foreach (var cb in tr.Catches) CheckReadsStmt(cb.Body, provided, warned);
-					if (tr.Else != null) CheckReadsStmt(tr.Else, provided, warned);
-					if (tr.Finally != null) CheckReadsStmt(tr.Finally, provided, warned);
-					break;
-			}
-		}
-
-		private void CheckReadsExpr(Expr e, HashSet<string> provided, HashSet<string> warned)
-		{
-			switch (e)
+			switch (node)
 			{
 				case NameExpr n:
 					var lo = n.Name.ToLowerInvariant();
@@ -4421,42 +4125,32 @@ namespace Keysharp.Compilation.Syntax
 						var unheld = _warnScope == null || _warnScope.Find(lo).Storage is VarStorage.None or VarStorage.Global;
 						_warnUnsetReads.Add((n, unheld, _warnScope == null || unheld && moduleVariable));
 					}
-					break;
-				case AssignExpr a:   // a direct `:=` target is NOT a read; a compound/member/index target IS evaluated.
-					if (!(a.Op == ":=" && a.Target is NameExpr)) CheckReadsExpr(a.Target, provided, warned);
-					CheckReadsExpr(a.Value, provided, warned);
-					break;
-				case UnaryExpr u:
-					if (u.Op == "&") break;                            // &var is a provide, not a read
-					if (u.Op == "?" && u.Operand is NameExpr) break;   // `var?` (maybe) is a guarded read — never warns
-					CheckReadsExpr(u.Operand, provided, warned);
-					break;
-				case CallExpr c:
-					var isIsSet = c.Callee is NameExpr cn && cn.Name.Equals("IsSet", System.StringComparison.OrdinalIgnoreCase) && c.Args.Count == 1 && c.Args[0].Value is NameExpr;
-					CheckReadsExpr(c.Callee, provided, warned);
-					if (!isIsSet) foreach (var ar in c.Args) if (ar.Value != null) CheckReadsExpr(ar.Value, provided, warned);
-					break;
-				case BinaryExpr b:
-					// `x = unset` and friends test for unset rather than reading x, so they never warn (like IsSet()).
-					if (UnsetTestOperand(b) != null) break;
-					// `a ?? b`: the left operand is a maybe-unset (guarded) read — a bare unset variable there is
-					// intentional (it falls back to the right), so AHK does not warn (like IsSet()). Still check the right
-					// operand, and sub-reads of a non-bare left (e.g. `obj.p ?? x` still needs `obj` to be set).
-					if (!(b.Op == "??" && b.Left is NameExpr)) CheckReadsExpr(b.Left, provided, warned);
-					CheckReadsExpr(b.Right, provided, warned);
-					break;
-				case TernaryExpr t: CheckReadsExpr(t.Cond, provided, warned); CheckReadsExpr(t.Then, provided, warned); CheckReadsExpr(t.Else, provided, warned); break;
-				case GroupExpr g: CheckReadsExpr(g.Inner, provided, warned); break;
-				case SequenceExpr sq: foreach (var it in sq.Items) CheckReadsExpr(it, provided, warned); break;
-				case MemberExpr m: CheckReadsExpr(m.Target, provided, warned); break;
-				case DynMemberExpr dm: CheckReadsExpr(dm.Target, provided, warned); CheckReadsExpr(dm.NameExpr, provided, warned); break;
-				case IndexExpr ix: CheckReadsExpr(ix.Target, provided, warned); foreach (var ar in ix.Args) if (ar.Value != null) CheckReadsExpr(ar.Value, provided, warned); break;
-				case ObjectExpr oe: foreach (var en in oe.Entries) { if (en.Key is not NameExpr) CheckReadsExpr(en.Key, provided, warned); CheckReadsExpr(en.Value, provided, warned); } break;
-				case ArrayExpr ar2: foreach (var el in ar2.Elements) if (el.Value != null) CheckReadsExpr(el.Value, provided, warned); break;
-				case MapExpr mp: foreach (var (k, v) in mp.Entries) { CheckReadsExpr(k, provided, warned); CheckReadsExpr(v, provided, warned); } break;
-				case DerefExpr dr: CheckReadsExpr(dr.Name, provided, warned); break;
-				// FatArrowExpr: a separate scope, analyzed via RecurseScopes — do NOT check its reads here.
+					return;
+				case AssignExpr assignment:
+					if (!(assignment.Op == ":=" && assignment.Target is NameExpr)) CheckReads(assignment.Target, provided, warned);
+					CheckReads(assignment.Value, provided, warned);
+					return;
+				case UnaryExpr unary when unary.Op == "&" || unary.Op == "?" && unary.Operand is NameExpr:
+					return;
+				case CallExpr call when call.Callee is NameExpr callee && callee.Name.Equals("IsSet", System.StringComparison.OrdinalIgnoreCase)
+					&& call.Args.Count == 1 && call.Args[0].Value is NameExpr:
+					CheckReads(call.Callee, provided, warned);
+					return;
+				case BinaryExpr binary:
+					if (UnsetTestOperand(binary) != null) return;
+					if (!(binary.Op == "??" && binary.Left is NameExpr)) CheckReads(binary.Left, provided, warned);
+					CheckReads(binary.Right, provided, warned);
+					return;
+				case ObjectExpr obj:
+					foreach (var entry in obj.Entries)
+					{
+						if (entry.Key is not NameExpr) CheckReads(entry.Key, provided, warned);
+						CheckReads(entry.Value, provided, warned);
+					}
+					return;
 			}
+
+			foreach (var child in ScopeChildren(node)) CheckReads(child, provided, warned);
 		}
 
 		private static bool IsValueKeyword(string lower) => lower is "this" or "true" or "false" or "unset" or "super";
@@ -4479,14 +4173,15 @@ namespace Keysharp.Compilation.Syntax
 			return BuiltinMember("AHK", true, lower) == null && WildcardMember(lower) == null;
 		}
 
-		// Recurses into the scopes nested in a statement (function/method/property/lambda bodies are separate scopes).
+		// Recurses into nested scopes; function, method, property and lambda bodies own their scopes.
 		// `outerProvided` flows the enclosing scope's visible names into nested closures; same-scope blocks pass it
 		// through unchanged. Class methods/properties do NOT close over enclosing function locals, so they reset it.
-		private void RecurseScopes(Stmt s, HashSet<string> globals, HashSet<string> outerProvided = null)
+		private void RecurseScopes(Node node, HashSet<string> globals, HashSet<string> outerProvided = null)
 		{
-			switch (s)
+			switch (node)
 			{
 				case FunctionDecl fd: AnalyzeScope(fd.Body?.Body, fd.ArrowBody, fd.Params.Select(p => p.Name), globals, topLevel: false, outerProvided, fd.Static); break;
+				case FatArrowExpr function: AnalyzeScope(function.BlockBody?.Body, function.Body, function.Params.Select(p => p.Name), globals, topLevel: false, outerProvided); break;
 				case HotkeyDef hk: AnalyzeHotCallback(hk.Body, hk.Func, globals, outerProvided); break;
 				case HotstringDef hs: AnalyzeHotCallback(hs.Body, hs.Func, globals, outerProvided); break;
 				case ClassDecl cd:
@@ -4505,25 +4200,9 @@ namespace Keysharp.Compilation.Syntax
 					}
 					foreach (var nc in cd.Nested) RecurseScopes(nc, globals, classArg);
 					break;
-				case Block b: foreach (var x in b.Body) RecurseScopes(x, globals, outerProvided); break;
-				case IfStmt iff: RecurseScopes(iff.Then, globals, outerProvided); if (iff.Else != null) RecurseScopes(iff.Else, globals, outerProvided); RecurseScopesExpr(iff.Cond, globals, outerProvided); break;
-				case WhileStmt w: RecurseScopesExpr(w.Cond, globals, outerProvided); RecurseScopes(w.Body, globals, outerProvided); break;
-				case LoopStmt lp: RecurseScopes(lp.Body, globals, outerProvided); break;
-				case SpecialLoopStmt slp: RecurseScopes(slp.Body, globals, outerProvided); break;
-				case ForStmt fr: RecurseScopesExpr(fr.Enumerable, globals, outerProvided); RecurseScopes(fr.Body, globals, outerProvided); break;
-				case SwitchStmt sw:
-					foreach (var c in sw.Cases) foreach (var st in c.Body) RecurseScopes(st, globals, outerProvided);
-					if (sw.Default != null) foreach (var st in sw.Default) RecurseScopes(st, globals, outerProvided);
+				default:
+					foreach (var child in ScopeChildren(node)) RecurseScopes(child, globals, outerProvided);
 					break;
-				case TryStmt tr:
-					RecurseScopes(tr.Body, globals, outerProvided);
-					foreach (var cb in tr.Catches) RecurseScopes(cb.Body, globals, outerProvided);
-					if (tr.Else != null) RecurseScopes(tr.Else, globals, outerProvided);
-					if (tr.Finally != null) RecurseScopes(tr.Finally, globals, outerProvided);
-					break;
-				case ExpressionStmt es: RecurseScopesExpr(es.Expr, globals, outerProvided); break;
-				case ReturnStmt r: if (r.Value != null) RecurseScopesExpr(r.Value, globals, outerProvided); break;
-				case DeclStmt d: foreach (var item in d.Items) RecurseScopesExpr(item, globals, outerProvided); break;
 			}
 		}
 
@@ -4534,27 +4213,6 @@ namespace Keysharp.Compilation.Syntax
 			else if (body != null)
 				// Anonymous callbacks receive ThisHotkey, just as EmitHotCallback declares it.
 				AnalyzeScope(body is Block block ? block.Body : [body], null, ["ThisHotkey"], globals, topLevel: false, outerProvided);
-		}
-
-		private void RecurseScopesExpr(Expr e, HashSet<string> globals, HashSet<string> outerProvided = null)
-		{
-			switch (e)
-			{
-				case FatArrowExpr fa: AnalyzeScope(fa.BlockBody?.Body, fa.Body, fa.Params.Select(p => p.Name), globals, topLevel: false, outerProvided); break;
-				case AssignExpr a: RecurseScopesExpr(a.Target, globals, outerProvided); RecurseScopesExpr(a.Value, globals, outerProvided); break;
-				case BinaryExpr b: RecurseScopesExpr(b.Left, globals, outerProvided); RecurseScopesExpr(b.Right, globals, outerProvided); break;
-				case UnaryExpr u: RecurseScopesExpr(u.Operand, globals, outerProvided); break;
-				case TernaryExpr t: RecurseScopesExpr(t.Cond, globals, outerProvided); RecurseScopesExpr(t.Then, globals, outerProvided); RecurseScopesExpr(t.Else, globals, outerProvided); break;
-				case GroupExpr g: RecurseScopesExpr(g.Inner, globals, outerProvided); break;
-				case SequenceExpr sq: foreach (var it in sq.Items) RecurseScopesExpr(it, globals, outerProvided); break;
-				case CallExpr c: RecurseScopesExpr(c.Callee, globals, outerProvided); foreach (var ar in c.Args) if (ar.Value != null) RecurseScopesExpr(ar.Value, globals, outerProvided); break;
-				case MemberExpr m: RecurseScopesExpr(m.Target, globals, outerProvided); break;
-				case DynMemberExpr dm: RecurseScopesExpr(dm.Target, globals, outerProvided); RecurseScopesExpr(dm.NameExpr, globals, outerProvided); break;
-				case IndexExpr ix: RecurseScopesExpr(ix.Target, globals, outerProvided); foreach (var ar in ix.Args) if (ar.Value != null) RecurseScopesExpr(ar.Value, globals, outerProvided); break;
-				case ObjectExpr oe: foreach (var en in oe.Entries) { RecurseScopesExpr(en.Key, globals, outerProvided); RecurseScopesExpr(en.Value, globals, outerProvided); } break;
-				case ArrayExpr ar2: foreach (var el in ar2.Elements) if (el.Value != null) RecurseScopesExpr(el.Value, globals, outerProvided); break;
-				case MapExpr mp: foreach (var (k, v) in mp.Entries) { RecurseScopesExpr(k, globals, outerProvided); RecurseScopesExpr(v, globals, outerProvided); } break;
-			}
 		}
 
 		// The node a statement-level warning is positioned at — read BOTH its Line and its File, never one from here and
@@ -6103,8 +5761,8 @@ namespace Keysharp.Compilation.Syntax
 			// falls out of the two InitMethod calls each computing this from their own field list.
 			var assignedOrdered = new List<string>();
 			var seen = new HashSet<string>();
-			foreach (var f in fieldList) if (f.Init != null) CollectAssignedExpr(f.Init, assignedOrdered, seen);
-			if (extraList != null) foreach (var st in extraList) CollectAssignedStmt(st, assignedOrdered, seen);
+			foreach (var f in fieldList) if (f.Init != null) CollectAssigned(f.Init, assignedOrdered, seen);
+			if (extraList != null) foreach (var st in extraList) CollectAssigned(st, assignedOrdered, seen);
 			var scope = _scope = new FunctionScope(null);
 			var savedSettlement = _settlement; _settlement = new();
 			foreach (var n in assignedOrdered)
@@ -6118,7 +5776,7 @@ namespace Keysharp.Compilation.Syntax
 				_ = scope.Closures.Add(fd.Name.ToLowerInvariant());
 			}
 			bool InitHas(Func<Expr, bool> pred) =>
-				fieldList.Any(f => AnyExpr(f.Init, pred)) || (extraList != null && extraList.Any(s => AnyStmt(s, pred)));
+				fieldList.Any(f => AnyNode(f.Init, pred)) || (extraList != null && extraList.Any(s => AnyNode(s, pred)));
 			// A `%name%` in an initializer must resolve against those locals, as in a function body.
 			_derefScope = InitHas(IsDeref) ? InitHas(IsDerefWrite) : null;
 			var stmts = new List<StatementSyntax>();
@@ -7135,49 +6793,20 @@ namespace Keysharp.Compilation.Syntax
 				SyntaxFactory.ArrayCreationExpression(ArrayOf(Ty("Keysharp.Runtime.FuncScope.Declaration")),
 					SyntaxFactory.InitializerExpression(SyntaxKind.ArrayInitializerExpression, SyntaxFactory.SeparatedList(
 						arms.Where(a => a.Name != null).Select(a => New("Keysharp.Runtime.FuncScope.Declaration", Str(a.Name), Access("Keysharp.Runtime.VarKind." + a.Kind)))))));
-		// Generic "does any node in this scope's OWN body satisfy <pred>?" walk, shared by the deref / scope-trigger /
-		// deref-write checks below. It walks control flow and the whole expression tree but NOT into nested
-		// functions/closures (no FatArrowExpr / FunctionDecl cases) — a nested construct belongs to that nested scope,
-		// which is analysed when it is lowered. <pred> is tested on every node; the switch only handles recursion.
+		// Scope passes share structural children, but declarations, callbacks, and lambdas own separate bodies.
+		private static IEnumerable<Node> ScopeChildren(Node node) =>
+			node is FunctionDecl or ClassDecl or HotkeyDef or HotstringDef or FatArrowExpr or DirectiveStmt ? [] : AstChildren.Of(node);
+
 		private static bool BodyHas(Block body, Expr arrow, Func<Expr, bool> pred) =>
-			(body != null && body.Body.Any(s => AnyStmt(s, pred))) || AnyExpr(arrow, pred);
+			AnyNode(body, pred) || AnyNode(arrow, pred);
 
-		private static bool AnyStmt(Stmt s, Func<Expr, bool> pred) => s switch
+		private static bool AnyNode(Node node, Func<Expr, bool> pred)
 		{
-			ExpressionStmt es => AnyExpr(es.Expr, pred),
-			ReturnStmt r => AnyExpr(r.Value, pred),
-			Block b => b.Body.Any(x => AnyStmt(x, pred)),
-			IfStmt iff => AnyExpr(iff.Cond, pred) || AnyStmt(iff.Then, pred) || (iff.Else != null && AnyStmt(iff.Else, pred)),
-			// Each loop also lowers its trailing `Until` condition (WrapLoopBody) and `Else` body, so a
-			// %name% / scope-trigger / deref-write confined to either must be seen here too — else _derefScope /
-			// the scope's writer would be wrong (mislowering, or RequireWriter's internal error). AnyExpr tolerates nulls.
-			WhileStmt w => AnyExpr(w.Cond, pred) || AnyStmt(w.Body, pred) || AnyExpr(w.Until, pred) || (w.Else != null && AnyStmt(w.Else, pred)),
-			LoopStmt lp => AnyExpr(lp.Count, pred) || AnyStmt(lp.Body, pred) || AnyExpr(lp.Until, pred) || (lp.Else != null && AnyStmt(lp.Else, pred)),
-			ForStmt fr => AnyExpr(fr.Enumerable, pred) || AnyStmt(fr.Body, pred) || AnyExpr(fr.Until, pred) || (fr.Else != null && AnyStmt(fr.Else, pred)),
-			SpecialLoopStmt slp => (slp.Args != null && slp.Args.Any(a => AnyExpr(a, pred))) || AnyStmt(slp.Body, pred) || AnyExpr(slp.Until, pred) || (slp.Else != null && AnyStmt(slp.Else, pred)),
-			SwitchStmt sw => AnyExpr(sw.Value, pred) || AnyExpr(sw.CaseSense, pred) || sw.Cases.Any(c => c.Values.Any(v => AnyExpr(v, pred)) || c.Body.Any(x => AnyStmt(x, pred))) || (sw.Default != null && sw.Default.Any(x => AnyStmt(x, pred))),
-			TryStmt tr => AnyStmt(tr.Body, pred) || tr.Catches.Any(cb => AnyStmt(cb.Body, pred)) || (tr.Else != null && AnyStmt(tr.Else, pred)) || (tr.Finally != null && AnyStmt(tr.Finally, pred)),
-			ThrowStmt th => AnyExpr(th.Value, pred),
-			DeclStmt d => d.Items.Any(x => AnyExpr(x, pred)),
-			_ => false
-		};
-
-		private static bool AnyExpr(Expr e, Func<Expr, bool> pred) => e != null && (pred(e) || e switch
-		{
-			BinaryExpr b => AnyExpr(b.Left, pred) || AnyExpr(b.Right, pred),
-			UnaryExpr u => AnyExpr(u.Operand, pred),
-			AssignExpr a => AnyExpr(a.Target, pred) || AnyExpr(a.Value, pred),
-			TernaryExpr t => AnyExpr(t.Cond, pred) || AnyExpr(t.Then, pred) || AnyExpr(t.Else, pred),
-			GroupExpr g => AnyExpr(g.Inner, pred),
-			SequenceExpr seq => seq.Items.Any(x => AnyExpr(x, pred)),
-			CallExpr c => AnyExpr(c.Callee, pred) || c.Args.Any(ar => AnyExpr(ar.Value, pred)),
-			MemberExpr m => AnyExpr(m.Target, pred),
-			DynMemberExpr dm => AnyExpr(dm.Target, pred) || AnyExpr(dm.NameExpr, pred),
-			IndexExpr ix => AnyExpr(ix.Target, pred) || ix.Args.Any(ar => AnyExpr(ar.Value, pred)),
-			ArrayExpr ar => ar.Elements.Any(el => AnyExpr(el.Value, pred)),
-			ObjectExpr o => o.Entries.Any(en => AnyExpr(en.Key, pred) || AnyExpr(en.Value, pred)),
-			_ => false
-		});
+			if (node is Expr expression && pred(expression)) return true;
+			foreach (var child in ScopeChildren(node))
+				if (AnyNode(child, pred)) return true;
+			return false;
+		}
 
 		// A %name% dereference — in-body reads and writes route through the function's scope (DerefGet, DerefTarget).
 		private static bool IsDeref(Expr e) => e is DerefExpr;
@@ -7248,8 +6877,8 @@ namespace Keysharp.Compilation.Syntax
 
 			assigned = new();
 			var seen = new HashSet<string>();
-			if (arrow != null) CollectAssignedExpr(arrow, assigned, seen);
-			else foreach (var st in body ?? []) CollectAssignedStmt(st, assigned, seen);
+			if (arrow != null) CollectAssigned(arrow, assigned, seen);
+			else foreach (var st in body ?? []) CollectAssigned(st, assigned, seen);
 
 			// A bare `global` makes it assume-global and a bare `static` assume-static; otherwise it inherits assume-global.
 			bool Bare(string keyword) => body?.Any(st => st is DeclStmt { Items.Count: 0 } d && d.Keyword == keyword) == true;
@@ -7298,9 +6927,9 @@ namespace Keysharp.Compilation.Syntax
 			}
 
 			foreach (var st in body ?? [])
-				_ = AnyStmt(st, Collect);
+				_ = AnyNode(st, Collect);
 
-			_ = AnyExpr(arrow, Collect);
+			_ = AnyNode(arrow, Collect);
 			return named;
 		}
 
@@ -7326,92 +6955,31 @@ namespace Keysharp.Compilation.Syntax
 
 		// ---- collect assigned (local) names ----
 
-		private static void CollectAssignedStmt(Stmt s, List<string> acc, HashSet<string> seen)
+		private static void CollectAssigned(Node node, List<string> acc, HashSet<string> seen)
 		{
-			switch (s)
+			void Add(string name)
 			{
-				case ExpressionStmt es: CollectAssignedExpr(es.Expr, acc, seen); break;
-				// A declaration's initializers may contain nested assignments / `&`-refs (`local a := (b := 5)`); those
-				// targets are function-locals too. The declared names themselves are registered by ClassifyScope.
-				case DeclStmt d: foreach (var item in d.Items) CollectAssignedExpr(item, acc, seen); break;
-				case ReturnStmt r: if (r.Value != null) CollectAssignedExpr(r.Value, acc, seen); break;
-				case Block b: foreach (var x in b.Body) CollectAssignedStmt(x, acc, seen); break;
-				case IfStmt iff:
-					CollectAssignedExpr(iff.Cond, acc, seen);
-					CollectAssignedStmt(iff.Then, acc, seen);
-					if (iff.Else != null) CollectAssignedStmt(iff.Else, acc, seen);
-					break;
-				case WhileStmt w: CollectAssignedExpr(w.Cond, acc, seen); CollectAssignedStmt(w.Body, acc, seen); if (w.Else != null) CollectAssignedStmt(w.Else, acc, seen); break;
-				case LoopStmt lp: if (lp.Count != null) CollectAssignedExpr(lp.Count, acc, seen); CollectAssignedStmt(lp.Body, acc, seen); if (lp.Else != null) CollectAssignedStmt(lp.Else, acc, seen); break;
-				case SpecialLoopStmt slp:
-					if (slp.Args != null) foreach (var a in slp.Args) if (a != null) CollectAssignedExpr(a, acc, seen);
-					CollectAssignedStmt(slp.Body, acc, seen); if (slp.Else != null) CollectAssignedStmt(slp.Else, acc, seen);
-					break;
-				case ForStmt fr:
-					foreach (var v in fr.Vars) { if (v == null) continue; var lo = v.ToLowerInvariant(); if (seen.Add(lo)) acc.Add(lo); }
-					CollectAssignedExpr(fr.Enumerable, acc, seen); CollectAssignedStmt(fr.Body, acc, seen); if (fr.Else != null) CollectAssignedStmt(fr.Else, acc, seen);
-					break;
-				case SwitchStmt sw:
-					CollectAssignedExpr(sw.Value, acc, seen);
-					CollectAssignedExpr(sw.CaseSense, acc, seen);
-					foreach (var c in sw.Cases) { foreach (var v in c.Values) CollectAssignedExpr(v, acc, seen); foreach (var st in c.Body) CollectAssignedStmt(st, acc, seen); }
-					if (sw.Default != null) foreach (var st in sw.Default) CollectAssignedStmt(st, acc, seen);
-					break;
-				case TryStmt tr:
-					CollectAssignedStmt(tr.Body, acc, seen);
-					foreach (var cb in tr.Catches)
-					{
-						if (cb.Var != null) { var lo = cb.Var.ToLowerInvariant(); if (seen.Add(lo)) acc.Add(lo); }
-						CollectAssignedStmt(cb.Body, acc, seen);
-					}
-					if (tr.Else != null) CollectAssignedStmt(tr.Else, acc, seen);
-					if (tr.Finally != null) CollectAssignedStmt(tr.Finally, acc, seen);
-					break;
-				case ThrowStmt th: if (th.Value != null) CollectAssignedExpr(th.Value, acc, seen); break;
+				if (name != null && seen.Add(name.ToLowerInvariant())) acc.Add(name.ToLowerInvariant());
 			}
-		}
 
-		private static void CollectAssignedExpr(Expr e, List<string> acc, HashSet<string> seen)
-		{
-			switch (e)
+			if (node is ForStmt loop)
+				foreach (var name in loop.Vars) Add(name);
+			else if (node is TryStmt attempt)
+				foreach (var catcher in attempt.Catches) Add(catcher.Var);
+
+			var assigned = node switch
 			{
-				case AssignExpr a:
-					// A builtin var (A_Clipboard, A_SendLevel, …) is never a local even when assigned inside a function —
-					// it resolves to its accessor (whose setter validates/throws), so don't shadow it with a local slot.
-					if (a.Target is NameExpr n)
-					{
-						var lower = n.Name.ToLowerInvariant();
-
-						if (!IsBuiltinVariable(lower) && seen.Add(lower))
-							acc.Add(lower);
-					}
-					CollectAssignedExpr(a.Target, acc, seen);   // a nested `x:=` inside a member/index target (e.g. obj[x:=v]:=w)
-					CollectAssignedExpr(a.Value, acc, seen);
-					break;
-				case BinaryExpr b: CollectAssignedExpr(b.Left, acc, seen); CollectAssignedExpr(b.Right, acc, seen); break;
-				case UnaryExpr u:
-					// `&var` (a reference, typically an output param like `SplitPath(p,,,, &name)`) makes that variable a
-					// local — it may be written through the ref — and so does `var++`/`--var`, which is an assignment.
-					// (`&obj.prop` is a PropRef, not a local; handled by recursion.)
-					if (u.Op is "&" or "++" or "--" && u.Operand is NameExpr rn)
-					{
-						var lower = rn.Name.ToLowerInvariant();
-
-						if (!IsBuiltinVariable(lower) && seen.Add(lower))
-							acc.Add(lower);
-					}
-					CollectAssignedExpr(u.Operand, acc, seen);
-					break;
-				case TernaryExpr t: CollectAssignedExpr(t.Cond, acc, seen); CollectAssignedExpr(t.Then, acc, seen); CollectAssignedExpr(t.Else, acc, seen); break;
-				case GroupExpr g: CollectAssignedExpr(g.Inner, acc, seen); break;
-				case SequenceExpr seq: foreach (var it in seq.Items) CollectAssignedExpr(it, acc, seen); break;
-				case DerefExpr dr: CollectAssignedExpr(dr.Name, acc, seen); break;
-				case MemberExpr m: CollectAssignedExpr(m.Target, acc, seen); break;
-				case DynMemberExpr dm: CollectAssignedExpr(dm.Target, acc, seen); CollectAssignedExpr(dm.NameExpr, acc, seen); break;
-				case IndexExpr ix: CollectAssignedExpr(ix.Target, acc, seen); foreach (var ar in ix.Args) if (ar.Value != null) CollectAssignedExpr(ar.Value, acc, seen); break;
-				case ObjectExpr oe: foreach (var en in oe.Entries) { CollectAssignedExpr(en.Key, acc, seen); CollectAssignedExpr(en.Value, acc, seen); } break;
-				case CallExpr c: CollectAssignedExpr(c.Callee, acc, seen); foreach (var ar in c.Args) if (ar.Value != null) CollectAssignedExpr(ar.Value, acc, seen); break;
+				AssignExpr { Target: NameExpr name } => name,
+				UnaryExpr unary when unary.Op is "&" or "++" or "--" && unary.Operand is NameExpr name => name,
+				_ => null
+			};
+			if (assigned != null)
+			{
+				var lower = assigned.Name.ToLowerInvariant();
+				if (!IsBuiltinVariable(lower) && seen.Add(lower)) acc.Add(lower);
 			}
+
+			foreach (var child in ScopeChildren(node)) CollectAssigned(child, acc, seen);
 		}
 
 		// ---- scaffold ----

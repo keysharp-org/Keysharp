@@ -105,6 +105,21 @@ Throws(() => StrReplace("abc", "a", "b", "Logical"), A_LineNumber, ValueError)
 AssertEq(A_DefaultHotstringSendMode, "Input", A_LineNumber)
 AssertEq(A_DefaultHotstringSendRaw, "NotRaw", A_LineNumber)
 
+for invalid in [0, "text", {}, [], Buffer(8)]
+    Throws(() => ComObjValue(invalid), A_LineNumber, TypeError)
+
+#if WINDOWS
+AssertEq(ComObjValue(ComValue(3, 42)), 42, A_LineNumber)
+AssertEq(ComObjValue(ComValue(5, 1.5)), 1.5, A_LineNumber)
+#endif
+
+continued := {Count: 0}
+handler := (error, mode) => error is TypeError ? (continued.Count++, -1) : 0
+OnError(handler)
+ComObjValue({})
+OnError(handler, 0)
+AssertEq(continued.Count, 1, A_LineNumber)
+
 for bad in ["Nromal", "Nonsense", "Normal,High", "", 1]
     Throws(() => ProcessSetPriority(bad, "keysharp-enum-test-no-such-process.exe"), A_LineNumber, ValueError)
 

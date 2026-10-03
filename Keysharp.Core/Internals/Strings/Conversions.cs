@@ -564,7 +564,7 @@ namespace Keysharp.Internals.Strings
 					case ')':
 						return i + 1;
 
-					case 'i' or 'm' or 's' or 'x' or 'A' or 'D' or 'J' or 'U' or 'X' or 'C' or 'S' or 'u' or '\a' or '\n' or '\r' or ' ' or '\t':
+					case 'i' or 'm' or 's' or 'x' or 'A' or 'D' or 'J' or 'U' or 'X' or 'C' or 'S' or '\a' or '\n' or '\r' or ' ' or '\t':
 						continue;
 
 					default:
@@ -775,9 +775,7 @@ namespace Keysharp.Internals.Strings
 			return Loops.GetFiles(Path.GetDirectoryName(fullPath) ?? fullPath, pattern, dirs, files, recurse).Select(item => item.Info.FullName);
 		}
 
-		// AutoHotkey's option letters. S (study) is implied by compiling every pattern, and X (PCRE_EXTRA's strict
-		// escapes) is always in effect in PCRE2. u is Keysharp's own, which turns off the optimizations that can skip
-		// callouts.
+		// S (study) is implied by compiling every pattern, and X (PCRE_EXTRA's strict escapes) is always in effect in PCRE2.
 		internal static PcreRegexSettings ToRegexOptions(ReadOnlySpan<char> sequence)
 		{
 			// AutoHotkey builds PCRE to take CR, LF and CRLF as newlines, for \R as well, unless an option says otherwise.
@@ -796,7 +794,6 @@ namespace Keysharp.Internals.Strings
 					case 'J': settings.Options |= PcreOptions.DupNames; break;
 					case 'U': settings.Options |= PcreOptions.Ungreedy; break;
 					case 'C': settings.Options |= PcreOptions.AutoCallout; break;
-					case 'u': settings.Options |= PcreOptions.NoAutoPossess | PcreOptions.NoStartOptimize | PcreOptions.NoDotStarAnchor; break;
 					case '\n': settings.NewLine = PcreNewLine.Lf; break;
 
 					case '\a':

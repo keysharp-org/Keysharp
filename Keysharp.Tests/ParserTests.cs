@@ -514,6 +514,17 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Parser")]
+		public void ContinuationOptions()
+		{
+			foreach (var source in new[] { "value := \"\n(%\none\n)\"\n", "value :=\n(%\n\"one\"\n)\n", "value := \"\n(Join% %\none\ntwo\n)\"\n" })
+			{
+				var (bytes, error) = Compile(source);
+				Assert.IsNull(bytes, source);
+				Assert.IsNotEmpty(error, source);
+			}
+		}
+
+		[Test, Category("Parser")]
 		public void MalformedInput()
 		{
 			foreach (var source in new[] { "\"", "(((('", "}}}", "class", "if (", "for x", "switch {", "x := [" })

@@ -37,7 +37,7 @@ namespace Keysharp.Builtins
 			{
 				ListViewCaseMode.Sensitive => string.CompareOrdinal(x, y),
 				ListViewCaseMode.Locale => string.Compare(x, y, StringComparison.CurrentCultureIgnoreCase),
-				ListViewCaseMode.Logical => NaturalComparer.NaturalCompare(x, y),
+				ListViewCaseMode.Logical => LogicalComparer.Compare(x, y),
 				_ => string.Compare(x, y, StringComparison.OrdinalIgnoreCase)
 			}
 		};

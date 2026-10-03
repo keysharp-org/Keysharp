@@ -747,17 +747,17 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The size in bytes of the file currently retrieved. Files larger than 4 gigabytes are also supported.
 		/// </summary>
-		public static long A_LoopFileSize => Loops.GetDirLoop()?.file.Info is FileInfo file ? file.Length : 0L;
+		public static object A_LoopFileSize => Loops.GetDirLoop() is { } loop ? loop.file.Info is FileInfo file ? file.Length : 0L : "";
 
 		/// <summary>
 		/// The size in Kbytes of the file currently retrieved, rounded down to the nearest integer.
 		/// </summary>
-		public static long A_LoopFileSizeKB => A_LoopFileSize / 1024L;
+		public static object A_LoopFileSizeKB => A_LoopFileSize is long size ? size / 1024L : "";
 
 		/// <summary>
 		/// The size in Mbytes of the file currently retrieved, rounded down to the nearest integer.
 		/// </summary>
-		public static long A_LoopFileSizeMB => A_LoopFileSize / (1024L * 1024L);
+		public static object A_LoopFileSizeMB => A_LoopFileSize is long size ? size / (1024L * 1024L) : "";
 
 		/// <summary>
 		/// The time the file was last accessed. Format YYYYMMDDHH24MISS.

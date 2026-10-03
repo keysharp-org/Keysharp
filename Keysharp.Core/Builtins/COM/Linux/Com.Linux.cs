@@ -91,7 +91,8 @@ namespace Keysharp.Builtins.COM
 			=> Unsupported("ObjRelease", "D-Bus objects are not reference counted.");
 
 		public static object ComObjValue(object comObj)
-			=> Unsupported("ComObjValue", "A D-Bus object is addressed by name and path, not by pointer.");
+			=> comObj is ComValue ? Unsupported("ComObjValue", "A D-Bus object is addressed by name and path, not by pointer.")
+				: Errors.TypeErrorOccurred(comObj, typeof(ComValue), DefaultObject);
 
 		public static object ComObjFlags(object comObj, object newFlags = null, object mask = null)
 			=> Unsupported("ComObjFlags", "D-Bus has no VARIANT flags.");

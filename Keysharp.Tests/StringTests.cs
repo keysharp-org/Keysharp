@@ -72,7 +72,19 @@ namespace Keysharp.Tests
 		public void StartsEndsWith() => Assert.IsTrue(TestScript("string-startsendswith", true));
 
 		[Test, Category("String")]
-		public void StrCompare() => Assert.IsTrue(TestScript("string-strcompare", true));
+		public void StrCompare()
+		{
+			var saved = Keysharp.Internals.Strings.CaseCompare.UserCulture;
+			Keysharp.Internals.Strings.CaseCompare.UserCulture = new System.Globalization.CultureInfo("cs-CZ");
+			try
+			{
+				Assert.IsTrue(TestScript("string-strcompare", true));
+			}
+			finally
+			{
+				Keysharp.Internals.Strings.CaseCompare.UserCulture = saved;
+			}
+		}
 
 		// Locale compares in the user's culture, which differs by machine, so the test chooses one: Turkish does not fold i
 		// to I, where the invariant culture the threads run in would. Searches fold one character at a time, as AHK's do.

@@ -884,7 +884,7 @@ namespace Keysharp.Builtins
 					}
 					else
 					{
-						result = logical ? NaturalComparer.NaturalCompare(keys[x], keys[y]) : CaseCompare.Compare(keys[x], keys[y], comparison);
+						result = logical ? LogicalComparer.Compare(keys[x], keys[y]) : CaseCompare.Compare(keys[x], keys[y], comparison);
 
 						if (result == 0 && wordSort)
 							result = strippedCount[x].CompareTo(strippedCount[y]);
@@ -907,7 +907,7 @@ namespace Keysharp.Builtins
 
 				if (unique && prev != null
 						&& (numeric && offset == 0 ? Atof(item) == Atof(prev)
-							: logical ? NaturalComparer.NaturalCompare(item, prev) == 0
+							: logical ? LogicalComparer.Compare(item, prev) == 0
 							: CaseCompare.Equals(item, prev, comparison)))
 					continue;
 
@@ -955,7 +955,7 @@ namespace Keysharp.Builtins
 				return 0L;
 
 			if (s3.Equals("Logical", StringComparison.OrdinalIgnoreCase))
-				return NaturalComparer.NaturalCompare(s1, s2);
+				return LogicalComparer.Compare(s1, s2);
 
 			if (!Conversions.TryParseComparisonOption(s3, out var comparison, additionalDiagnosticChoice: "Logical"))
 				return 0L;

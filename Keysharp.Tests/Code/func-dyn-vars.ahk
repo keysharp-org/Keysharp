@@ -1,4 +1,7 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
+#Warn LocalSameAsGlobal, Off
 #Include <assert>
 
 x := 1
@@ -611,5 +614,32 @@ LoopVariableSpelling() {
 		return Described(err)
 }
 AssertEq(LoopVariableSpelling(), unsetLocalError " [Item]", A_LineNumber)
+
+ScopeTails() {
+	local value := 1, name := "value", caseMode := "On", modeName := "caseMode"
+	while false {
+	} else {
+		%name% := 2
+	}
+	AssertEq(value, 2, A_LineNumber)
+	Loop 1 {
+	}
+	Until (%name% := 3)
+	AssertEq(value, 3, A_LineNumber)
+	for item in [] {
+	} else {
+		%name% := 4
+	}
+	AssertEq(value, 4, A_LineNumber)
+	Loop Parse "" {
+	} else {
+		%name% := 5
+	}
+	switch "A", %modeName% {
+		case "a": return 0
+	}
+	return value
+}
+AssertEq(ScopeTails(), 5, A_LineNumber)
 
 FileAppend "pass", "*"

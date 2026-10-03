@@ -1,4 +1,7 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
+#Warn LocalSameAsGlobal, Off
 #Include <assert>
 
 x := 1
@@ -197,5 +200,44 @@ x := 5
 func11()
 
 AssertEq(x, 12, A_LineNumber)
+
+global untilOnly := 90, arrayOnly := 91, mapOnly := 92, switchOnly := 94
+
+UntilAssignments() {
+	Loop 1 {
+	}
+	Until (untilOnly := 5)
+	return untilOnly
+}
+AssertEq(UntilAssignments(), 5, A_LineNumber)
+AssertEq(untilOnly, 90, A_LineNumber)
+
+ContainerAssignments() {
+	items := [(arrayOnly := 11)]
+	items.Push([(mapOnly := 12): 13])
+	return arrayOnly + mapOnly + items[2][12]
+}
+AssertEq(ContainerAssignments(), 36, A_LineNumber)
+AssertEq(arrayOnly, 91, A_LineNumber)
+AssertEq(mapOnly, 92, A_LineNumber)
+
+SwitchAssignments() {
+	result := 0
+	switch "A", (switchOnly := "On") {
+		case "a": result := 1
+		default: result := 2
+	}
+	return result ":" switchOnly
+}
+AssertEq(SwitchAssignments(), "2:On", A_LineNumber)
+AssertEq(switchOnly, 94, A_LineNumber)
+
+GuardedReads() {
+	obj := {UnassignedKey: 1}
+	Assert(!IsSet(unassigned), A_LineNumber)
+	Assert(!IsSet(anotherUnassigned?), A_LineNumber)
+	return obj.UnassignedKey + (fallback ?? 2)
+}
+AssertEq(GuardedReads(), 3, A_LineNumber)
 
 FileAppend "pass", "*"
