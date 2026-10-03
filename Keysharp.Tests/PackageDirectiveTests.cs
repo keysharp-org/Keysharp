@@ -1,6 +1,6 @@
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using StringAssert = NUnit.Framework.Legacy.StringAssert;
-using CollectionAssert = NUnit.Framework.Legacy.CollectionAssert;
+using StringAssert = NUnit.Framework.StringAssert;
+using CollectionAssert = NUnit.Framework.CollectionAssert;
 using KP = Keysharp.Parsing.Syntax;
 using KC = Keysharp.Compilation.Syntax;
 
@@ -370,7 +370,7 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("NuGet")]
-		public void ProviderRestoreLockHonorsCancellation()
+		public async Task ProviderRestoreLockHonorsCancellation()
 		{
 			Assert.IsTrue(Keysharp.Internals.Os.PackageProviderRegistry.TryGet("nuget", out var provider, out var failure), failure);
 			var root = Path.Combine(Path.GetTempPath(), "keysharp-provider-lock-" + Guid.NewGuid().ToString("N"));
@@ -386,7 +386,7 @@ namespace Keysharp.Tests
 					Keysharp.Internals.Os.PackageResolver.TargetFramework, Keysharp.Internals.Os.PackageResolver.RuntimeId,
 					true, TimeSpan.FromMinutes(3), "lock test");
 
-				Assert.CatchAsync<OperationCanceledException>(async () => await provider.ResolveAsync(context,
+				await Assert.CatchAsync<OperationCanceledException>(async () => await provider.ResolveAsync(context,
 					[new Keysharp.Components.Packages.PackageRequest("Newtonsoft.Json", "[13.0.3]")], timeout.Token));
 			}
 			finally

@@ -228,7 +228,7 @@ namespace Keysharp.Tests
 					_ = overlay.OnEvent("Click", second);
 					overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.Click, 3, 4));
 					Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
-					NUnit.Framework.Legacy.CollectionAssert.AreEqual(secondRuns ? new[] { "first", "second 3,4" } : new[] { "first" }, order, $"Click after {what}");
+					NUnit.Framework.CollectionAssert.AreEqual(secondRuns ? new[] { "first", "second 3,4" } : new[] { "first" }, order, $"Click after {what}");
 					_ = overlay.OnEvent("Click", first, 0L);
 					_ = overlay.OnEvent("Click", second, 0L);
 				}
@@ -819,7 +819,7 @@ namespace Keysharp.Tests
 
 				var m = Message.Create(gui.form.Handle, msgId, 0, 0);
 				Assert.IsFalse(gui.InvokeWindowMessageHandlers(ref m), "handlers returning \"\" must not claim the message");
-				NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "first", "second" }, order);
+				NUnit.Framework.CollectionAssert.AreEqual(new[] { "first", "second" }, order);
 
 				// A non-empty return claims the message and supplies its result, skipping later handlers.
 				order.Clear();
@@ -828,7 +828,7 @@ namespace Keysharp.Tests
 				m = Message.Create(gui.form.Handle, msgId, 0, 0);
 				Assert.IsTrue(gui.InvokeWindowMessageHandlers(ref m));
 				Assert.AreEqual(7, m.Result.ToInt64());
-				NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "claim" }, order);
+				NUnit.Framework.CollectionAssert.AreEqual(new[] { "claim" }, order);
 
 				// 0 unregisters.
 				order.Clear();
@@ -837,7 +837,7 @@ namespace Keysharp.Tests
 				_ = gui.OnMessage(msgId, second, 0L);
 				m = Message.Create(gui.form.Handle, msgId, 0, 0);
 				Assert.IsFalse(gui.InvokeWindowMessageHandlers(ref m));
-				NUnit.Framework.Legacy.CollectionAssert.IsEmpty(order);
+				NUnit.Framework.CollectionAssert.IsEmpty(order);
 
 				// Only an EMPTY return leaves the message unclaimed, per AHK. An empty string and no return at
 				// all both let the next handler (and then the default window procedure) run.
@@ -849,7 +849,7 @@ namespace Keysharp.Tests
 					_ = gui.OnMessage(msgId, second);
 					m = Message.Create(gui.form.Handle, msgId, 0, 0);
 					Assert.IsFalse(gui.InvokeWindowMessageHandlers(ref m), $"a return of '{inert ?? "(no return)"}' must not claim the message");
-					NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "quiet", "second" }, order, "an unclaimed message must still reach later handlers");
+					NUnit.Framework.CollectionAssert.AreEqual(new[] { "quiet", "second" }, order, "an unclaimed message must still reach later handlers");
 					Assert.AreEqual(0, m.Result.ToInt64());
 					_ = gui.OnMessage(msgId, quiet, 0L);
 					_ = gui.OnMessage(msgId, second, 0L);
@@ -864,7 +864,7 @@ namespace Keysharp.Tests
 				m = Message.Create(gui.form.Handle, msgId, 0, 0);
 				Assert.IsTrue(gui.InvokeWindowMessageHandlers(ref m), "an explicit 0 is non-empty and claims the message");
 				Assert.AreEqual(0, m.Result.ToInt64(), "the claimed message replies with the returned 0");
-				NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "zero" }, order, "claiming must skip the remaining handlers");
+				NUnit.Framework.CollectionAssert.AreEqual(new[] { "zero" }, order, "claiming must skip the remaining handlers");
 				_ = gui.OnMessage(msgId, repliesZero, 0L);
 				_ = gui.OnMessage(msgId, second, 0L);
 
@@ -908,7 +908,7 @@ namespace Keysharp.Tests
 					_ = gui.OnEvent("Close", firstClose);
 					_ = gui.OnEvent("Close", secondClose);
 					var result = gui.form.closedHandlers.InvokeSynchronousEventHandlers(gui);
-					NUnit.Framework.Legacy.CollectionAssert.AreEqual(expected, order, $"Close after a return of {what}");
+					NUnit.Framework.CollectionAssert.AreEqual(expected, order, $"Close after a return of {what}");
 
 					// Close decides whether the window stays open from the value that stopped the chain.
 					if (!secondRuns)
@@ -924,7 +924,7 @@ namespace Keysharp.Tests
 					_ = gui.OnEvent("DpiChanged", secondDpi);
 					gui.form.CallDpiChangeHandlers(96, 144);
 					Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
-					NUnit.Framework.Legacy.CollectionAssert.AreEqual(expected, order, $"DpiChanged after a return of {what}");
+					NUnit.Framework.CollectionAssert.AreEqual(expected, order, $"DpiChanged after a return of {what}");
 					_ = gui.OnEvent("DpiChanged", firstDpi, 0L);
 					_ = gui.OnEvent("DpiChanged", secondDpi, 0L);
 				}
@@ -966,7 +966,7 @@ namespace Keysharp.Tests
 					_ = gui.OnEvent("Close", firstClose);
 					_ = gui.OnEvent("Close", secondClose);
 					var result = gui.form.closedHandlers.InvokeSynchronousEventHandlers(gui);
-					NUnit.Framework.Legacy.CollectionAssert.AreEqual(expected, order, $"Close when the first handler {how}");
+					NUnit.Framework.CollectionAssert.AreEqual(expected, order, $"Close when the first handler {how}");
 					Assert.IsTrue(result.IsNullOrEmpty(), $"a chain whose first handler {how} must not keep the window open");
 					_ = gui.OnEvent("Close", firstClose, 0L);
 					_ = gui.OnEvent("Close", secondClose, 0L);
@@ -978,7 +978,7 @@ namespace Keysharp.Tests
 					_ = gui.OnEvent("DpiChanged", secondDpi);
 					gui.form.CallDpiChangeHandlers(96, 144);
 					Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
-					NUnit.Framework.Legacy.CollectionAssert.AreEqual(expected, order, $"DpiChanged when the first handler {how}");
+					NUnit.Framework.CollectionAssert.AreEqual(expected, order, $"DpiChanged when the first handler {how}");
 					_ = gui.OnEvent("DpiChanged", firstDpi, 0L);
 					_ = gui.OnEvent("DpiChanged", secondDpi, 0L);
 
@@ -989,7 +989,7 @@ namespace Keysharp.Tests
 					_ = gui.OnMessage(msgId, secondMsg);
 					var m = Message.Create(gui.form.Handle, msgId, 0, 0);
 					Assert.IsFalse(gui.InvokeWindowMessageHandlers(ref m), $"a message whose first handler {how} must stay unclaimed");
-					NUnit.Framework.Legacy.CollectionAssert.AreEqual(expected, order, $"OnMessage when the first handler {how}");
+					NUnit.Framework.CollectionAssert.AreEqual(expected, order, $"OnMessage when the first handler {how}");
 					_ = gui.OnMessage(msgId, firstMsg, 0L);
 					_ = gui.OnMessage(msgId, secondMsg, 0L);
 				}
@@ -1076,14 +1076,14 @@ namespace Keysharp.Tests
 				var b = btn.Ctrl.Bounds;
 				long expectedX = b.Left, expectedY = b.Top + 2 + b.Height / 2;
 				Send(btn.Ctrl.Handle, -1);
-				NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "the control's handler runs first, then the window's");
+				NUnit.Framework.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "the control's handler runs first, then the window's");
 				AssertArgs(calls[0].Args, [btn, 0L, 0L, expectedX, expectedY], "the control's handler");
 				AssertArgs(calls[1].Args, [gui, btn, 0L, 0L, expectedX, expectedY], "the window's handler");
 
 				//A right-click reports the supplied screen point in the same menu-free client coordinates.
 				var at = btn.Ctrl.PointToScreen(new Point(b.Width / 2, b.Height / 2));
 				Send(btn.Ctrl.Handle, ((at.Y & 0xFFFF) << 16) | (at.X & 0xFFFF));
-				NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "a right-click");
+				NUnit.Framework.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "a right-click");
 				Assert.AreEqual(1L, calls[0].Args[2]);
 				Assert.AreEqual((long)(b.Left + b.Width / 2), calls[0].Args[3]);
 				Assert.AreEqual((long)(b.Top + b.Height / 2), calls[0].Args[4]);
@@ -1095,14 +1095,14 @@ namespace Keysharp.Tests
 				{
 					ctrlReturns = stop;
 					Send(btn.Ctrl.Handle, -1);
-					NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "ctrl" }, Pump(), $"a control handler returning '{stop}'");
+					NUnit.Framework.CollectionAssert.AreEqual(new[] { "ctrl" }, Pump(), $"a control handler returning '{stop}'");
 				}
 
 				ctrlReturns = "";
 
 				//On the window itself there is no control: GuiCtrlObj is "" and Item 0.
 				Send(gui.form.Handle, -1);
-				NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "gui" }, Pump(), "the window itself");
+				NUnit.Framework.CollectionAssert.AreEqual(new[] { "gui" }, Pump(), "the window itself");
 				Assert.AreEqual("", calls[0].Args[1]);
 				Assert.AreEqual(0L, calls[0].Args[2]);
 
@@ -1119,7 +1119,7 @@ namespace Keysharp.Tests
 					Marshal.WriteInt32(nm, hdrSize, 1);//NMITEMACTIVATE.iItem: the second row.
 					calls.Clear();
 					_ = WindowsAPI.SendMessage(gui.form.Handle, (uint)WindowsAPI.WM_NOTIFY, (nint)0, nm);
-					NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "a ListView row");
+					NUnit.Framework.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "a ListView row");
 					Assert.AreSame(lv, calls[0].Args[0]);
 					Assert.AreEqual(2L, calls[0].Args[1]);
 					Assert.AreEqual(1L, calls[0].Args[2]);
@@ -1134,19 +1134,19 @@ namespace Keysharp.Tests
 				//The Menu key on a ListView reports its focused row.
 				((System.Windows.Forms.ListView)lv.Ctrl).Items[1].Focused = true;
 				Send(lv.Ctrl.Handle, -1);
-				NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "the Menu key on a ListView");
+				NUnit.Framework.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "the Menu key on a ListView");
 				Assert.AreEqual(2L, calls[0].Args[1]);
 				Assert.AreEqual(0L, calls[0].Args[2]);
 				Assert.AreEqual(2L, calls[1].Args[2]);
 
 				//The Hotkey control suppresses its native edit menu, but still forwards WM_CONTEXTMENU to the Gui.
 				Send(hotkey.Ctrl.Handle, -1);
-				NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "the Menu key on a Hotkey control");
+				NUnit.Framework.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "the Menu key on a Hotkey control");
 				Assert.AreSame(hotkey, calls[0].Args[0]);
 				Assert.AreEqual(0L, calls[0].Args[2]);
 
 				Send(gui.form.ContentContainer.Handle, -1);
-				NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "gui" }, Pump(), "the Menu key on the content background");
+				NUnit.Framework.CollectionAssert.AreEqual(new[] { "gui" }, Pump(), "the Menu key on the content background");
 				Assert.AreEqual("", calls[0].Args[1]);
 			}
 			finally
@@ -1306,8 +1306,8 @@ namespace Keysharp.Tests
 			}
 
 			var plain = Build(false, false);
-			NUnit.Framework.Legacy.CollectionAssert.AreEqual(plain, Build(true, false), "a menu bar assigned first");
-			NUnit.Framework.Legacy.CollectionAssert.AreEqual(plain, Build(false, true), "a menu bar assigned between controls");
+			NUnit.Framework.CollectionAssert.AreEqual(plain, Build(true, false), "a menu bar assigned first");
+			NUnit.Framework.CollectionAssert.AreEqual(plain, Build(false, true), "a menu bar assigned between controls");
 		}
 
 		//A native control keeps notifying the parent it was created under, so its window is created only once it has been
@@ -1335,7 +1335,7 @@ namespace Keysharp.Tests
 
 				Assert.AreEqual(gui.form.Handle, WindowsAPI.GetParent(edit.Ctrl.Handle));
 				edit.Ctrl.Text = "changed";
-				NUnit.Framework.Legacy.CollectionAssert.Contains(codes, EN_CHANGE);
+				NUnit.Framework.CollectionAssert.Contains(codes, EN_CHANGE);
 			}
 			finally
 			{

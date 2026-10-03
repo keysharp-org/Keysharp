@@ -1,5 +1,5 @@
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using StringAssert = NUnit.Framework.Legacy.StringAssert;
+using StringAssert = NUnit.Framework.StringAssert;
 
 namespace Keysharp.Tests
 {

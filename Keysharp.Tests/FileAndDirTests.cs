@@ -160,7 +160,7 @@ namespace Keysharp.Tests
 			var (memoryBytes, memoryError, memoryCompilation) = helper.CompileCodeToByteArray(
 				scriptPath, "file-install-memory", output: ScriptCompilationOutput.InMemory, sourceIsFile: true);
 			Assert.IsNotNull(memoryBytes, memoryError);
-			NUnit.Framework.Legacy.CollectionAssert.AreEqual(
+			NUnit.Framework.CollectionAssert.AreEqual(
 				new[] { "file-fileinstall.ahk", "Gui/monkey.ico" }, memoryCompilation.Manifest.Files);
 			Assert.IsEmpty(memoryCompilation.Manifest.FileSources,
 				"source execution keeps logical declarations but must not carry build-machine payload paths");
@@ -173,7 +173,7 @@ namespace Keysharp.Tests
 			Assert.AreEqual(2, artifactCompilation.Manifest.FileSources.Count);
 			var artifactAssembly = Assembly.Load(artifactBytes);
 			var resources = artifactAssembly.GetManifestResourceNames();
-			NUnit.Framework.Legacy.CollectionAssert.IsSubsetOf(new[]
+			NUnit.Framework.CollectionAssert.IsSubsetOf(new[]
 			{
 				resourcePrefix + "file-fileinstall.ahk",
 				resourcePrefix + "Gui/monkey.ico",
@@ -211,7 +211,7 @@ namespace Keysharp.Tests
 				s.ProgramType = artifactAssembly.GetType("Keysharp.CompiledMain.Program");
 				var iconDest = Path.Combine(temp, "icon.ico");
 				_ = Files.FileInstall(@"Gui\monkey.ico", iconDest);
-				NUnit.Framework.Legacy.CollectionAssert.AreEqual(
+				NUnit.Framework.CollectionAssert.AreEqual(
 					File.ReadAllBytes(Path.Combine(path, "Gui", "monkey.ico")), File.ReadAllBytes(iconDest));
 			}
 			finally

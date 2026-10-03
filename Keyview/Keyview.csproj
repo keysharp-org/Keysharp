@@ -60,7 +60,7 @@
 		<!-- Scintilla.NET loads Scintilla.dll/Lexilla.dll from <appbase>\runtimes\win-<arch>\native\ and never
 		     from the app root, and the package's own scintilla5.net.targets already copies its whole
 		     runtimes/** tree there for every Windows RID. So nothing needs copying by hand. -->
-		<PackageReference Include="Scintilla5.NET" Version="6.1.1" />
+		<PackageReference Include="Scintilla5.NET" Version="7.0.0" />
 
 		<Compile Update="Keyview.Designer.cs">
 			<DependentUpon>Keyview.resx</DependentUpon>

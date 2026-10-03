@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 using Keysharp.Internals;
 using Array = Keysharp.Builtins.Array;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using CollectionAssert = NUnit.Framework.Legacy.CollectionAssert;
+using CollectionAssert = NUnit.Framework.CollectionAssert;
 
 namespace Keysharp.Tests
 {

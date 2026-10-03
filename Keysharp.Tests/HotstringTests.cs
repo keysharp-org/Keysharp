@@ -1,6 +1,6 @@
 using static Keysharp.Internals.Input.Keyboard.KeyboardUtils;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using CollectionAssert = NUnit.Framework.Legacy.CollectionAssert;
+using CollectionAssert = NUnit.Framework.CollectionAssert;
 using Keyboard = Keysharp.Builtins.Keyboard;
 
 namespace Keysharp.Tests

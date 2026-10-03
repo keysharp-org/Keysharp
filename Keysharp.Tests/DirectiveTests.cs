@@ -738,7 +738,7 @@ namespace Keysharp.Tests
 			var included = Split("--include", "lib.ahk", "--force");
 			Assert.IsNull(included.error);
 			Assert.AreEqual(Path.GetFullPath("lib.ahk"), included.includeFile, "--include takes the next argument, resolved against the working folder");
-			NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "--force" }, included.rest);
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "--force" }, included.rest);
 			Assert.IsNotNull(Split("--include", "a.ahk", "--include", "b.ahk").error, "only one file can be given with --include");
 			Assert.IsNotNull(Split("--include").error, "--include needs a file");
 
@@ -748,17 +748,17 @@ namespace Keysharp.Tests
 			var mixed = Split("--define:FEATURE_X", "--force", "/define:A,B", "--errorstdout");
 			Assert.IsNull(mixed.error);
 #if WINDOWS
-			NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "FEATURE_X", "A", "B" }, mixed.defines, "every --define form should be extracted");
-			NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "--force", "--errorstdout" }, mixed.rest, "other switches must be forwarded untouched");
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "FEATURE_X", "A", "B" }, mixed.defines, "every --define form should be extracted");
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "--force", "--errorstdout" }, mixed.rest, "other switches must be forwarded untouched");
 #else
-			NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "FEATURE_X" }, mixed.defines, "only the dash forms are switches here");
-			NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "--force", "/define:A,B", "--errorstdout" }, mixed.rest, "a path-shaped argument must be forwarded untouched");
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "FEATURE_X" }, mixed.defines, "only the dash forms are switches here");
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "--force", "/define:A,B", "--errorstdout" }, mixed.rest, "a path-shaped argument must be forwarded untouched");
 #endif
 
 			// Nothing to extract: the whole command line is forwarded.
 			var none = Split("--force", "--restart");
 			Assert.IsEmpty(none.defines);
-			NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "--force", "--restart" }, none.rest);
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "--force", "--restart" }, none.rest);
 
 			// A bad symbol is reported rather than forwarded as if it were an ordinary switch.
 			Assert.IsNotNull(Split("--define:FOO=1").error, "an invalid symbol name should be rejected");
@@ -774,21 +774,21 @@ namespace Keysharp.Tests
 				return (List<string>)parameters[1];
 			}
 
-			NUnit.Framework.Legacy.CollectionAssert.AreEqual(
+			NUnit.Framework.CollectionAssert.AreEqual(
 				new[] { "--define:FEATURE_X", "--include", "My include.ahk", "--force" },
 				Args(@"--define:FEATURE_X --include ""My include.ahk"" --force"),
 				"a quoted argument containing spaces must stay a single argument");
 
 			// Quotes group anywhere in an argument, not just around the whole of it.
-			NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "--include=My include.ahk" }, Args(@"--include=""My include.ahk"""));
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "--include=My include.ahk" }, Args(@"--include=""My include.ahk"""));
 			// A deliberate empty argument survives, so the arguments after it keep their positions.
-			NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "--a", "", "--b" }, Args(@"--a """" --b"));
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "--a", "", "--b" }, Args(@"--a """" --b"));
 			// Tabs and runs of spaces separate exactly like single spaces.
-			NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "--a", "--b" }, Args("  --a \t\t --b  "));
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "--a", "--b" }, Args("  --a \t\t --b  "));
 			// An unterminated quote takes the rest of the line rather than dropping it.
-			NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "--include", "My include.ahk" }, Args(@"--include ""My include.ahk"));
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "--include", "My include.ahk" }, Args(@"--include ""My include.ahk"));
 			// An Array element is already one argument, so it needs no quoting even with spaces in it.
-			NUnit.Framework.Legacy.CollectionAssert.AreEqual(new[] { "--include", "My include.ahk" },
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "--include", "My include.ahk" },
 				Args(new Keysharp.Builtins.Array(["--include", "My include.ahk"])));
 		}
 

@@ -35,7 +35,7 @@
 		<ProjectReference Include="..\Contracts\Keysharp.Components.Scripting.csproj" Private="false" />
 		<ProjectReference Include="..\Parser\Keysharp.Components.Scripting.Parser.csproj" />
 		<ProjectReference Include="..\..\..\Keysharp.Core\Keysharp.Core.csproj" Private="false" />
-		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
 		<None Update="component.json" CopyToOutputDirectory="Always" />
 		<_ComponentPayloadName Include="Keysharp.Components.Scripting.Compiler.dll;
 			Keysharp.Components.Scripting.Compiler.deps.json;

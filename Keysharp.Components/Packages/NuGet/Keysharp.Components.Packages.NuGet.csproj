@@ -17,14 +17,12 @@
 	</PropertyGroup>
 	<ItemGroup>
 		<ProjectReference Include="../Contracts/Keysharp.Components.Packages.csproj" Private="false" />
-		<PackageReference Include="NuGet.Commands" Version="7.6.0" />
-		<PackageReference Include="NuGet.Credentials" Version="7.6.0" />
+		<PackageReference Include="NuGet.Commands" Version="7.9.0" />
+		<PackageReference Include="NuGet.Credentials" Version="7.9.0" />
 		<None Update="provider.json" CopyToOutputDirectory="Always" />
 		<_ProviderPayloadName Include="Keysharp.Components.Packages.NuGet.dll;
 			Keysharp.Components.Packages.NuGet.deps.json;
-			Microsoft.Extensions.FileProviders.Abstractions.dll;
 			Microsoft.Extensions.FileSystemGlobbing.dll;
-			Microsoft.Extensions.Primitives.dll;
 			Newtonsoft.Json.dll;
 			NuGet.Commands.dll;
 			NuGet.Common.dll;

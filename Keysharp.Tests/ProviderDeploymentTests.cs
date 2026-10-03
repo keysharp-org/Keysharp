@@ -1,5 +1,5 @@
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using CollectionAssert = NUnit.Framework.Legacy.CollectionAssert;
+using CollectionAssert = NUnit.Framework.CollectionAssert;
 
 namespace Keysharp.Tests
 {
@@ -105,8 +105,8 @@ namespace Keysharp.Tests
 		{
 			Assert.IsTrue(Keysharp.Internals.Os.PackageProviderRegistry.TryGetPayload("nuget", out var payload),
 				"the test host must ship the NuGet provider under components/packages/nuget");
-			Assert.AreEqual(18, payload.Files.Count,
-				"provider.json plus its explicit 17-file payload should be the complete provider directory");
+			Assert.AreEqual(16, payload.Files.Count,
+				"provider.json plus its explicit 15-file payload should be the complete provider directory");
 			Assert.IsTrue(payload.Files.Any(path => Path.GetFileName(path).Equals("NuGet.Commands.dll", StringComparison.OrdinalIgnoreCase)));
 			Assert.IsTrue(payload.Files.Any(path => Path.GetFileName(path).Equals("NuGet.Credentials.dll", StringComparison.OrdinalIgnoreCase)));
 			Assert.IsTrue(payload.Files.Any(path => Path.GetFileName(path).Equals("Keysharp.Components.Packages.NuGet.deps.json", StringComparison.OrdinalIgnoreCase)));
