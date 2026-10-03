@@ -1526,7 +1526,7 @@ namespace Keysharp.Internals.Os.Windows
 		internal static partial bool TerminateProcess(nint hProcess, uint uExitCode);
 
 		[LibraryImport(user32, StringMarshalling = StringMarshalling.Utf16)]
-		internal static partial int ToUnicodeEx(uint wVirtKey, uint wScanCode, byte[] lpKeyState, [Out] char[] pwszBuff, int cchBuff, uint wFlags, nint dwhkl);
+		internal static partial int ToUnicodeEx(uint wVirtKey, uint wScanCode, byte[] lpKeyState, Span<char> pwszBuff, int cchBuff, uint wFlags, nint dwhkl);
 
 		[LibraryImport(user32, EntryPoint = "UnhookWindowsHookEx")]
 		[return: MarshalAs(UnmanagedType.Bool)]

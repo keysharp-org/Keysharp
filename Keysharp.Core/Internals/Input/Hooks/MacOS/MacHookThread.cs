@@ -211,8 +211,6 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 
 		private bool ProcessNativeKeyboardEvent(KeyboardHookEventArgs args, uint vk, uint sc, bool keyUp, ulong eventExtraInfo)
 		{
-			lastHookEventWasKeyboard = true;
-			lastKeyboardEventVk = vk;
 			var isInjected = HasKeysharpInjectedExtraInfo(eventExtraInfo) || args.IsEventSimulated;
 
 			if (ShouldSuppressForBlockInput(isInjected))
@@ -231,7 +229,7 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 			}
 
 			var result = LowLevelCommon(args, vk, sc, sc, keyUp, eventExtraInfo, isInjected ? HOOK_EVENT_INJECTED : 0);
-			ApplyKeyStateAfterKeyboardDecision(vk, keyUp, isInjected, result);
+			UpdateObservedPhysicalKeyState(vk, keyUp, isInjected);
 
 			if (result != 0)
 			{
@@ -278,7 +276,6 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 
 			if (isMoveEvent)
 			{
-				lastHookEventWasKeyboard = false;
 				var suppressMove = !isInjected
 					&& (script.KeyboardData.blockMouseMove || script.KeyboardData.blockInput);
 
@@ -325,8 +322,6 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 
 			if (type == MacNativeInput.kCGEventScrollWheel)
 			{
-				lastHookEventWasKeyboard = false;
-
 				if (!isInjected)
 					script.timeLastInputPhysical = script.timeLastInputMouse = DateTime.UtcNow;
 
@@ -370,8 +365,6 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 			var keyUp = type == MacNativeInput.kCGEventLeftMouseUp
 				|| type == MacNativeInput.kCGEventRightMouseUp
 				|| type == MacNativeInput.kCGEventOtherMouseUp;
-
-			lastHookEventWasKeyboard = false;
 
 			if (!isInjected)
 				script.timeLastInputPhysical = script.timeLastInputMouse = DateTime.UtcNow;

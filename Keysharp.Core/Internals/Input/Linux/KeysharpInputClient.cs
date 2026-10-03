@@ -19,7 +19,7 @@ namespace Keysharp.Internals.Input.Linux
 		internal const int DeviceButtonCapacity = 128;
 		internal const int DefaultRequestTimeoutMs = 5000;
 		internal const int AuthorizationTimeoutMs = 125_000;
-		private const int HookPollTimeoutMs = 500;
+		internal const int HookPollTimeoutMs = 500;
 		private const int NestedHookLimit = 16;
 		private const LinuxPermissionScope ManagedScopes =
 			LinuxPermissionScope.InputMonitoring | LinuxPermissionScope.InputControl;
@@ -426,6 +426,22 @@ namespace Keysharp.Internals.Input.Linux
 			}
 		}
 
+		internal Operations UnsubscribeHook(HookType hookType)
+		{
+			if (hookType is not (HookType.KeyboardLowLevel or HookType.MouseLowLevel))
+				throw new ArgumentOutOfRangeException(nameof(hookType));
+
+			lock (nativeLock)
+			{
+				ThrowIfDisposed();
+				Native.ksi_error_init(out var error);
+				var status = (NativeClientStatus)Native.ksi_hook_unsubscribe(connection,
+					(uint)hookType, out var activeOperations, ref error);
+				ThrowIfFailed(status, "unsubscribe hook", error);
+				return (Operations)activeOperations;
+			}
+		}
+
 		internal void SendInput(IReadOnlyList<Input> inputs,
 			SynthFlags flags = SynthFlags.None, ulong parentHookEventId = 0)
 		{
@@ -590,13 +606,13 @@ namespace Keysharp.Internals.Input.Linux
 		{
 			RequireOperations(Operations.QueryGamepads);
 			var gamepads = new List<GamepadInfo>();
-			var handle = GCHandle.Alloc(gamepads);
 			generation = 0;
 
 			lock (nativeLock)
 			{
 				ThrowIfDisposed();
 				Native.ksi_error_init(out var error);
+				var handle = GCHandle.Alloc(gamepads);
 
 				try
 				{
@@ -667,7 +683,9 @@ namespace Keysharp.Internals.Input.Linux
 			return true;
 		}
 
-		internal HookEvent ReadHookEvent()
+		/// <summary>Reads the next hook event. Returns false when a poll ends with none, so the reader can act
+		/// between messages.</summary>
+		internal bool TryReadHookEvent(out HookEvent hookEvent)
 		{
 			if (connectionRole != ConnectionRole.CallbackStream)
 				throw new InvalidOperationException("Hook events require a callback-stream connection.");
@@ -693,14 +711,16 @@ namespace Keysharp.Internals.Input.Linux
 				{
 					if (leaseLivenessProbe?.Invoke() == false)
 						throw new IOException("keysharp-input hook consumer stopped responding.");
-					continue;
+					hookEvent = default;
+					return false;
 				}
 				switch (message.Kind)
 				{
 					case 1:
 						currentHookEvent = message.Data.Event;
 						currentHookEventId = currentHookEvent.RequestId;
-						return ToManaged(currentHookEvent);
+						hookEvent = ToManaged(currentHookEvent);
+						return true;
 					case 2:
 						var quarantine = message.Data.Quarantined;
 						hookQuarantineHandler?.Invoke(new((HookType)quarantine.HookType,
@@ -1385,6 +1405,9 @@ namespace Keysharp.Internals.Input.Linux
 				NestedHookHandler handler, nint context, ref NativeError error);
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksi_hook_subscribe(nint connection, uint hookType,
+				out ulong activeOperations, ref NativeError error);
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+			internal static extern uint ksi_hook_unsubscribe(nint connection, uint hookType,
 				out ulong activeOperations, ref NativeError error);
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksi_hook_next(nint connection, uint timeoutMs,

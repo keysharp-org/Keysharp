@@ -143,7 +143,6 @@ namespace Keysharp.Internals.Input.Linux
 			if (eventQueue.Count == 0)
 				return;
 
-			// SendInput bypasses hooks, then reconciles logical modifier state.
 			try
 			{
 				var batch = new List<KeysharpInputClient.Input>(Math.Min(eventQueue.Count, MaxInputBatchSize));
@@ -180,8 +179,7 @@ namespace Keysharp.Internals.Input.Linux
 		/// <summary>Reconciles logical modifiers after bypass-hook SendInput.</summary>
 		private void ReconcileLogicalModifiersFromOs()
 		{
-			var ht = script.HookThread;
-			var sender = ht.kbdMsSender;
+			var sender = script.HookThread.kbdMsSender;
 
 			if (sender == null)
 				return;

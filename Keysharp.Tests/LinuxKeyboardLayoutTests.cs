@@ -21,6 +21,13 @@ namespace Keysharp.Tests
 
 			Assert.IsTrue(mapper.TryMapRuneToKeystroke(new Rune('ä'), null, out var vk, out _, out _));
 			Assert.AreNotEqual(0u, vk);
+
+			mapper.ConfigureLayout("evdev", "pc105", "us", null, null);
+			Assert.IsFalse(mapper.TryMapRuneToKeystroke(new Rune('ä'), null, out _, out _, out _));
+			Assert.IsFalse(mapper.TryMapRuneToKeystroke(new Rune('ä'), null, out _, out _, out _));
+			mapper.ConfigureLayout("evdev", "pc105", "ee", null, null);
+			Assert.IsTrue(mapper.TryMapRuneToKeystroke(new Rune('ä'), null, out vk, out _, out _));
+			Assert.AreNotEqual(0u, vk);
 		}
 
 		[Test, Category("Misc")]
@@ -112,23 +119,111 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Internal")]
-		public void DesktopKeyboardStateReadDoesNotRunTheQueryInline()
+		public void DesktopKeyboardStateRefreshesInlineOnlyForCurrentReadsOffTheHook()
 		{
+			long now = 0;
 			var calls = 0;
 			Action pending = null;
 			var state = new DesktopKeyboardState(_ =>
 			{
 				calls++;
 				return Encoding.UTF8.GetBytes(
-					"{\"ok\":true,\"mapRevision\":\"one\",\"keymap\":\"map text\"}");
-			}, () => 0, action => pending = action);
+					"{\"ok\":true,\"mapRevision\":\"one\",\"keymap\":\"map text\",\"group\":" + calls + "}");
+			}, () => now, action => pending = action);
 
-			Assert.That(state.Get(), Is.Null);
+			// Until a refresh has succeeded, even a current read never waits on the query.
+			Assert.That(state.GetCurrent(), Is.Null);
 			Assert.That(calls, Is.Zero);
 			Assert.That(pending, Is.Not.Null);
 			pending();
-			Assert.That(state.Get()?.Keymap, Is.EqualTo("map text"));
+			Assert.That(state.GetCurrent()?.Group, Is.EqualTo(1u));
+
+			// A plain read of a stale snapshot refreshes it in the background.
+			pending = null;
+			now = 100;
+			Assert.That(state.Get()?.Group, Is.EqualTo(1u));
 			Assert.That(calls, Is.EqualTo(1));
+			Assert.That(pending, Is.Not.Null);
+			pending();
+			Assert.That(state.Get()?.Group, Is.EqualTo(2u));
+
+			pending = null;
+			now = 200;
+			Assert.That(state.GetCurrent()?.Group, Is.EqualTo(3u));
+			Assert.That(pending, Is.Null);
+
+			now = 300;
+			using (Keysharp.Internals.Input.Hooks.HookThread.BeginHookCallback(100))
+				Assert.That(state.GetCurrent()?.Group, Is.EqualTo(3u));
+
+			Assert.That(calls, Is.EqualTo(3));
+			Assert.That(pending, Is.Not.Null);
+			pending();
+			Assert.That(state.Get()?.Group, Is.EqualTo(4u));
+		}
+
+		[Test, Category("Internal")]
+		public void DesktopRefreshIsSingleFlight()
+		{
+			var timeout = TimeSpan.FromSeconds(5);
+			using var querying = new ManualResetEventSlim();
+			using var release = new ManualResetEventSlim();
+			using var reading = new ManualResetEventSlim();
+			long now = 0;
+			var calls = 0;
+			var currentReader = 0;
+			Action pending = null;
+			var state = new DesktopKeyboardState(_ =>
+			{
+				var call = Interlocked.Increment(ref calls);
+
+				if (call > 1)
+				{
+					querying.Set();
+					if (!release.Wait(timeout))
+						throw new TimeoutException("The blocked desktop query was not released.");
+				}
+
+				return Encoding.UTF8.GetBytes("{\"ok\":true,\"group\":" + call + "}");
+			}, () =>
+			{
+				if (Environment.CurrentManagedThreadId == Volatile.Read(ref currentReader))
+					reading.Set();
+				return Volatile.Read(ref now);
+			}, action => pending = action);
+
+			Assert.That(state.Get(), Is.Null);
+			pending();
+			Volatile.Write(ref now, 100);
+			Assert.That(state.Get()?.Group, Is.EqualTo(1u));
+			var background = Task.Run(pending);
+			Task<DesktopKeyboardSnapshot> current = null, cached = null;
+
+			try
+			{
+				Assert.That(querying.Wait(timeout), Is.True);
+				current = Task.Run(() =>
+				{
+					Volatile.Write(ref currentReader, Environment.CurrentManagedThreadId);
+					return state.GetCurrent();
+				});
+				Assert.That(reading.Wait(timeout), Is.True);
+				cached = Task.Run(state.Get);
+				Assert.That(cached.Wait(timeout), Is.True, "A cached read must stay available while the query waits.");
+				Assert.That(cached.Result?.Group, Is.EqualTo(1u));
+				Assert.That(current.Wait(TimeSpan.FromMilliseconds(100)), Is.False);
+				release.Set();
+				Assert.That(Task.WaitAll([background, current], timeout), Is.True);
+				Assert.That(current.Result?.Group, Is.EqualTo(2u));
+				Assert.That(calls, Is.EqualTo(2), "Concurrent refreshes must share one query.");
+			}
+			finally
+			{
+				release.Set();
+				background.Wait(timeout);
+				current?.Wait(timeout);
+				cached?.Wait(timeout);
+			}
 		}
 
 		[Test, Category("Internal")]

@@ -171,7 +171,7 @@ namespace Keysharp.Internals.Input
 				match.Add(sb.ToString());
 		}
 
-		internal void CollectChar(string ch, int charCount)
+		internal void CollectChar(ReadOnlySpan<char> ch, int charCount)
 		{
 			var end = Math.Min(ch.Length, charCount);
 

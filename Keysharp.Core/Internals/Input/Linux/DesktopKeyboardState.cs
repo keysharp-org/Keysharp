@@ -21,12 +21,12 @@ namespace Keysharp.Internals.Input.Linux
 
 	internal sealed class DesktopKeyboardState
 	{
-		internal static readonly DesktopKeyboardState X11 = new(
+		internal static readonly DesktopKeyboardState Current = new(
 			revision => DesktopClient.QueryKeyboardState(revision));
-		internal static readonly DesktopKeyboardState Wayland = new(
-			revision => DesktopClient.QueryKeyboardState(revision));
-		internal static DesktopKeyboardState Current => Platform.Desktop.IsWaylandSession ? Wayland : X11;
+		private const int SnapshotLifetimeMs = 16;
+		private const int FailureBackoffMs = 250;
 		private readonly object gate = new();
+		private readonly object refreshGate = new();
 		private readonly Func<string, byte[]> query;
 		private readonly Func<long> clock;
 		private readonly Action<Action> scheduleRefresh;
@@ -34,6 +34,7 @@ namespace Keysharp.Internals.Input.Linux
 		private DesktopKeyboardSnapshot previousKeymap;
 		private long refreshAt;
 		private bool refreshRunning;
+		private bool lastRefreshSucceeded;
 
 		internal DesktopKeyboardState(Func<string, byte[]> query, Func<long> clock = null,
 			Action<Action> scheduleRefresh = null)
@@ -43,45 +44,102 @@ namespace Keysharp.Internals.Input.Linux
 			this.scheduleRefresh = scheduleRefresh ?? (action => Task.Run(action));
 		}
 
+		/// <summary>Returns the snapshot as it is, refreshing a stale one in the background, so it never waits on IPC.</summary>
 		internal DesktopKeyboardSnapshot Get()
 		{
 			lock (gate)
 			{
-				if (!refreshRunning && clock() >= refreshAt)
-				{
-					refreshRunning = true;
-					scheduleRefresh(Refresh);
-				}
+				if (clock() >= refreshAt)
+					RefreshInBackgroundLocked();
+
 				return snapshot;
+			}
+		}
+
+		/// <summary>
+		/// Returns the current state: off the hook thread a stale snapshot is refreshed first, as AutoHotkey reads the
+		/// layout once per Send and key state at each GetKeyState. The hook thread must not wait on IPC, and no reader
+		/// waits on a service whose last refresh failed, so those read as <see cref="Get"/> does.
+		/// </summary>
+		internal DesktopKeyboardSnapshot GetCurrent()
+		{
+			lock (gate)
+			{
+				if (clock() < refreshAt)
+					return snapshot;
+
+				if (!lastRefreshSucceeded || Keysharp.Internals.Input.Hooks.HookThread.InHookCallback)
+				{
+					RefreshInBackgroundLocked();
+					return snapshot;
+				}
+			}
+
+			Refresh();
+
+			lock (gate)
+				return snapshot;
+		}
+
+		private void RefreshInBackgroundLocked()
+		{
+			if (refreshRunning)
+				return;
+
+			refreshRunning = true;
+			scheduleRefresh(RefreshInBackground);
+		}
+
+		private void RefreshInBackground()
+		{
+			try
+			{
+				Refresh();
+			}
+			finally
+			{
+				lock (gate)
+					refreshRunning = false;
 			}
 		}
 
 		private void Refresh()
 		{
-			var previous = previousKeymap;
-
-			DesktopKeyboardSnapshot refreshed = null;
-
-			try
+			lock (refreshGate)
 			{
-				refreshed = Parse(query(previous?.MapRevision), previous);
-			}
-			catch
-			{
-			}
+				DesktopKeyboardSnapshot previous;
 
-			lock (gate)
-			{
-				if (refreshed != null)
+				lock (gate)
 				{
-					snapshot = refreshed;
+					if (clock() < refreshAt)
+						return;
 
-					if (refreshed.Keymap != null)
-						previousKeymap = refreshed;
+					previous = previousKeymap;
 				}
 
-				refreshAt = clock() + (refreshed == null ? 250 : 16);
-				refreshRunning = false;
+				DesktopKeyboardSnapshot refreshed = null;
+
+				try
+				{
+					refreshed = Parse(query(previous?.MapRevision), previous);
+				}
+				catch
+				{
+				}
+
+				lock (gate)
+				{
+					if (refreshed != null)
+					{
+						snapshot = refreshed;
+
+						if (refreshed.Keymap != null)
+							previousKeymap = refreshed;
+					}
+
+					lastRefreshSucceeded = refreshed != null;
+					refreshAt = clock() + (refreshed == null ? FailureBackoffMs : SnapshotLifetimeMs);
+				}
 			}
 		}
 
@@ -150,7 +208,7 @@ namespace Keysharp.Internals.Input.Linux
 
 		private static bool HasField(JsonElement root, string name)
 			=> root.TryGetProperty(name, out _) && (!root.TryGetProperty("validFields", out var fields)
-				|| fields.ValueKind == JsonValueKind.Array && fields.EnumerateArray().Any(field => field.ValueKind == JsonValueKind.String && field.GetString() == name));
+				|| fields.ValueKind == JsonValueKind.Array && fields.EnumerateArray().Any(field => field.ValueKind == JsonValueKind.String && field.ValueEquals(name)));
 	}
 }
 #endif

@@ -192,7 +192,8 @@ namespace Keysharp.Internals.Input.Linux
 		}
 
 		/// <summary>Queries logical and physical keyboard state. This full bitmap is input-monitoring data.</summary>
-		internal static bool TryGetKeyState(out uint modifiersLR, out bool capsLock, out bool numLock, out bool scrollLock, out byte[] logicalKeys, out byte[] physicalKeys, uint deviceID = 0)
+		internal static bool TryGetKeyState(out uint modifiersLR, out bool capsLock, out bool numLock, out bool scrollLock,
+			out byte[] logicalKeys, out byte[] physicalKeys, uint deviceID = 0)
 		{
 			modifiersLR = 0;
 			capsLock = false;

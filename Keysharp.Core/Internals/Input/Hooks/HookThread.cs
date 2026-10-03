@@ -146,6 +146,8 @@ namespace Keysharp.Internals.Input.Hooks
 		}
 		protected virtual KeyboardMouseSender CreateKbdMsSender() => null;
 		internal byte[] physicalKeyState = new byte[VK_ARRAY_COUNT];
+		// The key state EarlyCollectInput builds for each translation. Only the hook thread translates, one key at a time.
+		protected readonly byte[] translationKeyState = new byte[VK_ARRAY_COUNT];
 
 		internal bool pendingDeadKeyInvisible;
 		internal readonly List<DeadKeyRecord> pendingDeadKeys = [];
@@ -1073,7 +1075,7 @@ namespace Keysharp.Internals.Input.Hooks
 			AddRemoveHooks(hooksToBeActive);
 		}
 
-		internal virtual bool CollectHotstring(ulong extraInfo, char[] ch, int charCount, nint activeWindow,
+		internal virtual bool CollectHotstring(ulong extraInfo, ReadOnlySpan<char> ch, int charCount, nint activeWindow,
 											  KeyHistoryItem keyHistoryCurr, ref HotstringDefinition hsOut, ref CaseConformModes caseConformMode, ref char endChar, ref int skipChars)
 		{
 			var suppressHotstringFinalChar = false; // Set default.
@@ -1340,7 +1342,7 @@ namespace Keysharp.Internals.Input.Hooks
 			return true;
 		}
 
-		internal bool CollectInputHook(ulong extraInfo, uint vk, uint sc, char[] ch, int charCount, bool early, object eventInfo)
+		internal bool CollectInputHook(ulong extraInfo, uint vk, uint sc, ReadOnlySpan<char> ch, int charCount, bool early, object eventInfo)
 		{
 			var input = script.input;
 
@@ -1385,7 +1387,7 @@ namespace Keysharp.Internals.Input.Hooks
 				// Collect before backspacing, so if VK_BACK was preceded by a dead key, we delete it instead of the
 				// previous char.  For example, {vkDE}{BS} on the US-Intl layout produces '\b (but we discarded \b).
 				if (collectChars)
-					input.CollectChar(new string(ch), charCount);
+					input.CollectChar(ch, charCount);
 
 				// Fix for v2.0: Shift is allowed as it generally has no effect on the native function of Backspace.
 				// This is probably connected with the fact that Shift+BS is also transcribed to `b, which we don't want.
@@ -1607,7 +1609,7 @@ namespace Keysharp.Internals.Input.Hooks
 			int charCount = state.charCount;
 			var activeWindow = state.activeWindow;
 			var activeWindowKeybdLayout = state.keyboardLayout;
-			var ch = state.ch;
+			ReadOnlySpan<char> ch = state.ch;
 			var hm = script.HotstringManager;
 			var hsBuf = hm.hsBuf;
 

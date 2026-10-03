@@ -33,6 +33,10 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 		private string pendingRecoveryReason;
 		private HookType inputServiceSubscribedKinds;
 		private bool usingInputServiceHooks;
+		private bool modifiersStale;
+		// The reader applies subscription changes between hook decisions.
+		private HookKindChange pendingKindChange;
+		private const int KindChangeTimeoutMs = HotIfCallbackBudgetMilliseconds + KeysharpInputClient.HookPollTimeoutMs + 250;
 		internal static KeysharpInputClient CurrentHookClient
 			=> callbackContext.Client;
 		internal static ulong CurrentHookEventId
@@ -146,9 +150,6 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 			if (vk == 0 && sc == 0)
 				return false;
 
-			lastHookEventWasKeyboard = true;
-			lastKeyboardEventVk = vk;
-
 			if (!isInjected)
 				script.timeLastInputPhysical = DateTime.UtcNow;
 
@@ -163,10 +164,8 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 			if (extraInfo == (ulong)KeyboardMouseSender.KeyBlockThis)
 				return true;
 
-			var result = LowLevelCommon(args, vk, sc, ev.ScanCode, keyUp, extraInfo,
-				isInjected ? HOOK_EVENT_INJECTED : 0, ev.DeviceId);
-			ApplyKeyStateAfterKeyboardDecision(vk, keyUp, isInjected, result);
-			return result != 0;
+			return LowLevelCommon(args, vk, sc, ev.ScanCode, keyUp, extraInfo,
+				isInjected ? HOOK_EVENT_INJECTED : 0, ev.DeviceId) != 0;
 		}
 
 		// Pure Wayland and normal X11-ready sessions return immediately.
@@ -196,15 +195,8 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 			if (wantMouse)
 				wantedHooks |= HookType.Mouse;
 
-			var hookRunning = inputServiceHookClient != null
-				&& inputServiceHookTask != null
-				&& !inputServiceHookTask.IsCompleted;
-
-			if (hookRunning && inputServiceSubscribedKinds == wantedHooks)
+			if (InputServiceReaderRunning && inputServiceSubscribedKinds == wantedHooks)
 				return true;
-
-			WaitForDisplayServerBeforeGrab();
-			StopInputServiceHookCore();
 
 			var required = KeysharpInputClient.Operations.None;
 
@@ -221,9 +213,17 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 
 			if (!permission.IsGranted)
 			{
+				StopInputServiceHookCore();
 				message = $"keysharp-input hook unavailable; global hooks disabled. {permission.Message}";
 				return false;
 			}
+
+			WaitForDisplayServerBeforeGrab();
+
+			if (TryChangeSubscribedKinds(wantedHooks))
+				return true;
+
+			StopInputServiceHookCore();
 
 			try
 			{
@@ -251,15 +251,117 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 			}
 		}
 
+		private bool InputServiceReaderRunning
+			=> inputServiceHookClient is { IsConnected: true } && inputServiceHookTask is { IsCompleted: false };
+
+		// Keep unchanged hook kinds subscribed while the reader changes the others.
+		private bool TryChangeSubscribedKinds(HookType wanted)
+		{
+			if (wanted == HookType.None || !InputServiceReaderRunning)
+				return false;
+
+			if (wanted == inputServiceSubscribedKinds)
+				return true;
+
+			var change = new HookKindChange(inputServiceHookClient, inputServiceSubscribedKinds, wanted);
+			Volatile.Write(ref pendingKindChange, change);
+
+			if (!change.Completion.Task.WaitWithoutInterruption(KindChangeTimeoutMs))
+			{
+				// Withdraw it unless the reader has already taken it.
+				_ = Interlocked.CompareExchange(ref pendingKindChange, null, change);
+				return false;
+			}
+
+			if (!change.Completion.Task.Result)
+				return false;
+
+			inputServiceSubscribedKinds = wanted;
+			return true;
+		}
+
+		// Reader thread only, before each read.
+		private void ApplyPendingKindChange(KeysharpInputClient client)
+		{
+			var change = Volatile.Read(ref pendingKindChange);
+
+			if (change == null || !ReferenceEquals(change.Client, client)
+				|| Interlocked.CompareExchange(ref pendingKindChange, null, change) != change)
+				return;
+
+			var added = change.Wanted & ~change.Current;
+			var removed = change.Current & ~change.Wanted;
+
+			try
+			{
+				// New kinds first, so the stream never has none while it changes.
+				if ((added & HookType.Mouse) != 0)
+					_ = client.SubscribeHook(KeysharpInputClient.HookType.MouseLowLevel);
+
+				if ((added & HookType.Keyboard) != 0)
+					_ = client.SubscribeHook(KeysharpInputClient.HookType.KeyboardLowLevel);
+
+				if ((removed & HookType.Mouse) != 0)
+					_ = client.UnsubscribeHook(KeysharpInputClient.HookType.MouseLowLevel);
+
+				if ((removed & HookType.Keyboard) != 0)
+					_ = client.UnsubscribeHook(KeysharpInputClient.HookType.KeyboardLowLevel);
+
+				change.Completion.TrySetResult(true);
+			}
+			catch (Exception ex)
+			{
+				Diagnostics.Debug.WriteLine($"keysharp-input hook change failed: {ex.Message}");
+				change.Completion.TrySetResult(false);
+			}
+		}
+
+		private sealed class HookKindChange(KeysharpInputClient client, HookType current, HookType wanted)
+		{
+			internal readonly KeysharpInputClient Client = client;
+			internal readonly HookType Current = current;
+			internal readonly HookType Wanted = wanted;
+			internal readonly TaskCompletionSource<bool> Completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		}
+
 		private void HandleHookQuarantined(KeysharpInputClient.HookQuarantine quarantine)
 		{
 			Diagnostics.Debug.WriteLine(
 				$"keysharp-input quarantined {quarantine.HookType} hook at event {quarantine.EventId}; " +
 				$"strike {quarantine.StrikeCount}; the service will retry it after {quarantine.RetryAfterMs} ms.");
+
+			// Keyboard events can bypass a quarantined hook while the mouse hook stays active.
+			if (quarantine.HookType == KeysharpInputClient.HookType.KeyboardLowLevel)
+				modifiersStale = true;
+		}
+
+		private void ResyncModifiers(bool keyboardResumed)
+		{
+			if (KeysharpInputManager.TryGetModifierState(out var logicalMods, out var physicalMods, out _, out _, out _))
+			{
+				kbdMsSender.modifiersLRLogical = kbdMsSender.modifiersLRLogicalNonIgnored = logicalMods;
+				kbdMsSender.modifiersLRPhysical = physicalMods;
+				AdjustKeyState(physicalKeyState, physicalMods);
+
+				// Scan-code hotkeys can track their prefix in ksc instead of kvk.
+				foreach (var key in kvk)
+					if (key.isDown && key.asModifiersLR != 0 && (key.asModifiersLR & physicalMods) == 0)
+						RecordKeyDownState(key, false, physicalMods);
+
+				foreach (var key in ksc)
+					if (key.isDown && key.asModifiersLR != 0 && (key.asModifiersLR & physicalMods) == 0)
+						RecordKeyDownState(key, false, physicalMods);
+
+				if (prefixKey != null && prefixKey.asModifiersLR != 0 && (prefixKey.asModifiersLR & physicalMods) == 0)
+					prefixKey = null;
+
+				modifiersStale = !keyboardResumed && HasKbdHook();
+			}
 		}
 
 		private void StopInputServiceHookCore()
 		{
+			Interlocked.Exchange(ref pendingKindChange, null)?.Completion.TrySetResult(false);
 			var cancellation = inputServiceHookCancel;
 			inputServiceHookCancel = null;
 			usingInputServiceHooks = false;
@@ -272,6 +374,7 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 			cancellation?.Dispose();
 			inputServiceHookClient = null;
 			inputServiceHookTask = null;
+			modifiersStale = false;
 		}
 
 		protected override void OnPlatformHookStateCommitted(HookType activeHooks)
@@ -300,7 +403,9 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 			var hookToken = inputServiceHookCancel.Token;
 			usingInputServiceHooks = true;
 			inputServiceCommittedKinds = activeHooks;
-			inputServiceHookTask = Task.Run(() => InputServiceHookLoop(hookClient, hookToken));
+			// The reader blocks for the hook's lifetime, so it needs its own thread.
+			inputServiceHookTask = Task.Factory.StartNew(() => InputServiceHookLoop(hookClient, hookToken),
+				CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 		}
 
 		private sealed class HookReaderLiveness
@@ -349,11 +454,13 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 			while (!token.IsCancellationRequested)
 			{
 				KeysharpInputClient.HookEvent hookEvent;
+				bool received;
+				ApplyPendingKindChange(client);
 				liveness.MarkWaiting();
 
 				try
 				{
-					hookEvent = client.ReadHookEvent();
+					received = client.TryReadHookEvent(out hookEvent);
 				}
 				catch (ObjectDisposedException)
 				{
@@ -372,6 +479,9 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 
 				if (token.IsCancellationRequested)
 					return;
+
+				if (!received)
+					continue;
 
 				liveness.MarkProgress();
 
@@ -420,6 +530,11 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 			{
 				try
 				{
+					var isKeyboard = hookEvent.HookType == KeysharpInputClient.HookType.KeyboardLowLevel;
+
+					if (modifiersStale && (isKeyboard || hookEvent.Mouse.Message != (uint)KeysharpInputClient.MessageKind.MouseMove))
+						ResyncModifiers(isKeyboard);
+
 					block = hookEvent.HookType switch
 					{
 						KeysharpInputClient.HookType.KeyboardLowLevel => ProcessInputServiceKeyboardHook(hookEvent.Keyboard, hookKinds),
@@ -624,7 +739,6 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 
 			var isInjected = ((KeysharpInputClient.HookFlags)ev.Flags
 				& KeysharpInputClient.HookFlags.MouseInjected) != 0;
-			lastHookEventWasKeyboard = false;
 
 			if (!isInjected)
 			{

@@ -617,7 +617,7 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 			}
 
 			int charCount;
-			var ch = new char[8];
+			Span<char> ch = state.ch = new char[8];
 
 			if (vk == VK_PACKET)
 			{
@@ -627,7 +627,8 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 			}
 			else if (transcribeKey && vk != VK_MENU)
 			{
-				var keyState = new byte[physicalKeyState.Length];
+				var keyState = translationKeyState;
+				System.Array.Clear(keyState);
 				bool interfere = pendingDeadKeys.Count > 0 && (pendingDeadKeyInvisible || uwpAppFocused);
 
 				if (interfere)
@@ -640,7 +641,7 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 						var dead_key = pendingDeadKeys[i];
 						AdjustKeyState(keyState, dead_key.modLR);
 						keyState[VK_CAPITAL] = (byte)dead_key.caps;
-						System.Array.Clear(ch, 0, ch.Length);
+						ch.Clear();
 						_ = ToUnicode(dead_key.vk, dead_key.sc, keyState, ch, 0, activeWindowKeybdLayout);
 					}
 				}
@@ -658,7 +659,7 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 				// Provide the correct logical modifier and CapsLock state for any translation below.
 				AdjustKeyState(keyState, kbdMsSender.modifiersLRLogical);
 				keyState[VK_CAPITAL] = (byte)(IsKeyToggledOn(VK_CAPITAL) ? 1 : 0);
-				System.Array.Clear(ch, 0, ch.Length);
+				ch.Clear();
 				charCount = ToUnicode(vk, scanCode, keyState, ch, flags, activeWindowKeybdLayout);
 
 				if (charCount == 0 && (kbdMsSender.modifiersLRLogical & (MOD_LALT | MOD_RALT)) != 0 && (kbdMsSender.modifiersLRLogical & (MOD_LCONTROL | MOD_RCONTROL)) == 0u && !interfere)
@@ -667,7 +668,7 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 					// For consistency with prior versions (and Win, but not Ctrl/Shift), let the Alt state be ignored under these
 					// conditions.  transcribe_key and modifier state checked above imply that the M option was used.
 					keyState[VK_MENU] = 0;
-					System.Array.Clear(ch, 0, ch.Length);
+					ch.Clear();
 					charCount = ToUnicode(vk, scanCode, keyState, ch, flags, activeWindowKeybdLayout);
 				}
 
@@ -740,7 +741,6 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 					charCount--;// Remove '\b' to simplify the backspacing and collection stages.
 			}
 
-			state.ch = ch;
 			state.charCount = charCount;
 
 			if (!CollectInputHook(extraInfo, vk, sc, ch, charCount, true, eventInfo))

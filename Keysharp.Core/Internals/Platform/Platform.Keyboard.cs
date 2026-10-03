@@ -84,7 +84,7 @@ namespace Keysharp.Internals
 				}
 			}
 
-			public static int ToUnicode(uint wVirtKey, uint wScanCode, byte[] lpKeyState, [Out] char[] pwszBuff, uint wFlags, nint dwhkl)
+			public static int ToUnicode(uint wVirtKey, uint wScanCode, byte[] lpKeyState, Span<char> pwszBuff, uint wFlags, nint dwhkl)
 				=> Os.Windows.WindowsAPI.ToUnicodeEx(wVirtKey, wScanCode, lpKeyState, pwszBuff, pwszBuff.Length, wFlags, dwhkl);
 
 			public static uint MapVirtualKeyToChar(uint wVirtKey, nint hkl)
@@ -118,13 +118,13 @@ namespace Keysharp.Internals
 			/// active layout's stateful translator and falls back to the stateless <see cref="ToUnicode"/>.
 			/// Return convention matches Windows ToUnicode: &gt;0 chars, 0 no text, &lt;0 dead key.
 			/// </summary>
-			public static int ToUnicodeWithDeadKeys(uint wVirtKey, uint wScanCode, byte[] lpKeyState, [Out] char[] pwszBuff, uint wFlags, nint dwhkl)
+			public static int ToUnicodeWithDeadKeys(uint wVirtKey, uint wScanCode, byte[] lpKeyState, Span<char> pwszBuff, uint wFlags, nint dwhkl)
 			{
-				if (pwszBuff == null || pwszBuff.Length == 0)
+				if (pwszBuff.IsEmpty)
 					return 0;
 
 				DeriveModifierState(lpKeyState, out var shift, out var caps, out var altGr);
-				var n = KeyCodes.TranslateKeyWithDeadKeys(wVirtKey, shift, altGr, caps, pwszBuff.AsSpan());
+				var n = KeyCodes.TranslateKeyWithDeadKeys(wVirtKey, shift, altGr, caps, pwszBuff);
 
 				if (n != KeyCodes.TranslateNotHandled)
 					return n;
@@ -132,11 +132,11 @@ namespace Keysharp.Internals
 				return ToUnicode(wVirtKey, wScanCode, lpKeyState, pwszBuff, wFlags, dwhkl);
 			}
 
-			public static int ToUnicode(uint wVirtKey, uint wScanCode, byte[] lpKeyState, [Out] char[] pwszBuff, uint wFlags, nint dwhkl)
+			public static int ToUnicode(uint wVirtKey, uint wScanCode, byte[] lpKeyState, Span<char> pwszBuff, uint wFlags, nint dwhkl)
 			{
 				// Best-effort VK->char mapping for Linux; limited to US-style keys. Similar to Windows
 				// ToUnicodeEx but without dead-key handling.
-				if (pwszBuff == null || pwszBuff.Length == 0)
+				if (pwszBuff.IsEmpty)
 					return 0;
 
 				DeriveModifierState(lpKeyState, out var shift, out var caps, out var altGr);

@@ -14,7 +14,6 @@ namespace Keysharp.Internals.Input.Unix
 		private readonly Func<DesktopKeyboardSnapshot> desktopStateOverride;
 		private DesktopKeyboardSnapshot desktopSnapshot;
 		private string appliedDesktopKeymap;
-		private int operationDepth;
 
 		private bool initTried;
 		private bool ready;
@@ -37,7 +36,8 @@ namespace Keysharp.Internals.Input.Unix
 
 		private readonly Dictionary<(uint keysym, uint layout), (uint vk, bool s, bool g)> cache = new(256);
 		private readonly Dictionary<(uint vk, uint group), List<uint>> vkToKeycodesCache = new(128);
-		private readonly Dictionary<uint, uint> keycodeToVkCache = new(128);
+		// The VK each keycode's xkb name gives, 0 for none, indexed from minKeycode.
+		private uint[] vkByKeycode = [];
 
 		// Pending dead-key composition for TranslateKeyWithDeadKeys: the combining mark used for
 		// NFC composition with the following base character, plus the spacing form emitted when the
@@ -126,10 +126,11 @@ namespace Keysharp.Internals.Input.Unix
 			var group = layout.HasValue ? (uint)layout.Value : GetActiveLayout();
 			var cacheKey = (keysym, group);
 
+			// A rune the group cannot type is cached as vk 0, so it is not searched for again.
 			if (cache.TryGetValue(cacheKey, out var cached))
 			{
 				(vk, needShift, needAltGr) = cached;
-				return true;
+				return vk != 0;
 			}
 
 			for (uint key = (uint)minKeycode; key <= (uint)maxKeycode; key++)
@@ -159,6 +160,7 @@ namespace Keysharp.Internals.Input.Unix
 				}
 			}
 
+			cache[cacheKey] = default;
 			return false;
 		}
 
@@ -376,20 +378,7 @@ namespace Keysharp.Internals.Input.Unix
 			using var operation = EnterOperation();
 			vk = 0;
 
-			if (keycode == 0 || !TryGetReadyKeymap(out _))
-				return false;
-
-			if (keycodeToVkCache.TryGetValue(keycode, out vk))
-				return vk != 0;
-
-			if (TryGetNamedVk(keycode, out vk))
-			{
-				keycodeToVkCache[keycode] = vk;
-				return true;
-			}
-
-			keycodeToVkCache[keycode] = 0;
-			return false;
+			return keycode != 0 && TryGetReadyKeymap(out _) && TryGetNamedVk(keycode, out vk);
 		}
 
 		public bool TryMapVkToXKeycode(uint vk, out uint keycode, bool returnSecondary)
@@ -470,12 +459,15 @@ namespace Keysharp.Internals.Input.Unix
 
 		private Operation EnterOperation()
 		{
+			// Only the outermost operation applies the desktop state; nested ones keep what it applied.
+			var nested = System.Threading.Monitor.IsEntered(initLock);
 			System.Threading.Monitor.Enter(initLock);
 			try
 			{
-				if (operationDepth == 0 && !HasPreferredLayoutNames())
+				if (!nested && !HasPreferredLayoutNames())
 				{
 					var snapshot = desktopStateOverride != null ? desktopStateOverride() : DesktopKeyboardState.Current.Get();
+
 					if (snapshot?.Keymap != appliedDesktopKeymap)
 					{
 						ResetState();
@@ -483,7 +475,6 @@ namespace Keysharp.Internals.Input.Unix
 					}
 					desktopSnapshot = snapshot;
 				}
-				operationDepth++;
 				return new Operation(this);
 			}
 			catch
@@ -495,11 +486,7 @@ namespace Keysharp.Internals.Input.Unix
 
 		private readonly struct Operation(LinuxXkbCharMapperProvider owner) : IDisposable
 		{
-			public void Dispose()
-			{
-				owner.operationDepth--;
-				System.Threading.Monitor.Exit(owner.initLock);
-			}
+			public void Dispose() => System.Threading.Monitor.Exit(owner.initLock);
 		}
 
 		private void EnsureInitialized()
@@ -564,13 +551,9 @@ namespace Keysharp.Internals.Input.Unix
 
 		private bool TryGetNamedVk(uint keycode, out uint vk)
 		{
-			vk = 0;
-
-			if (!TryGetReadyKeymap(out var currentKeymap))
-				return false;
-
-			var name = xkb_keymap_key_get_name_safe(currentKeymap, keycode);
-			return !string.IsNullOrEmpty(name) && xkbName2Vk.TryGetValue(name, out vk);
+			var index = keycode - (uint)minKeycode;
+			vk = index < (uint)vkByKeycode.Length ? vkByKeycode[index] : 0;
+			return vk != 0;
 		}
 
 		private List<uint> BuildKeycodesForVk(uint targetVk)
@@ -694,6 +677,16 @@ namespace Keysharp.Internals.Input.Unix
 		{
 			minKeycode = xkb_keymap_min_keycode(keymap);
 			maxKeycode = xkb_keymap_max_keycode(keymap);
+			vkByKeycode = new uint[Math.Max(0, maxKeycode - minKeycode + 1)];
+
+			for (var i = 0; i < vkByKeycode.Length; i++)
+			{
+				var name = xkb_keymap_key_get_name_safe(keymap, (uint)(minKeycode + i));
+
+				if (name != null && xkbName2Vk.TryGetValue(name, out var vk))
+					vkByKeycode[i] = vk;
+			}
+
 			shiftIndex = xkb_keymap_mod_get_index(keymap, "Shift");
 
 			mod5Index = xkb_keymap_mod_get_index(keymap, "Mod5");
@@ -838,7 +831,7 @@ namespace Keysharp.Internals.Input.Unix
 			ResetNativeHandles();
 			cache.Clear();
 			vkToKeycodesCache.Clear();
-			keycodeToVkCache.Clear();
+			vkByKeycode = [];
 			pendingDead.Clear();
 			ready = false;
 			initTried = false;

@@ -683,6 +683,51 @@ namespace Keysharp.Tests
 			fixture.ThrowReaderFailure();
 		}
 
+		[Test, Category("External")]
+		public void HookKindsChangeInPlace()
+		{
+			using var fixture = new LiveHookFixture(subscribeMouse: true);
+			var keys = 0;
+			var changes = 0;
+
+			void Observe(KeysharpInputClient.HookEvent hookEvent)
+			{
+				if (hookEvent.HookType == KeysharpInputClient.HookType.KeyboardLowLevel && hookEvent.Keyboard.VkCode == F13)
+					Interlocked.Increment(ref keys);
+			}
+
+			// An event that arrives before a subscription reply reaches the nested handler, as it does for the hook thread.
+			fixture.Hook.SetNestedHookEventHandler((client, hookEvent) =>
+			{
+				Observe(hookEvent);
+				client.SendHookDecision(hookEvent.EventId, KeysharpInputClient.HookDecision.Pass);
+			});
+			fixture.StartReader(hookEvent =>
+			{
+				Observe(hookEvent);
+				fixture.Hook.SendHookDecision(hookEvent.EventId, KeysharpInputClient.HookDecision.Pass);
+
+				// Between messages on the reader, as the hook thread changes kinds: the mouse hook goes and comes back
+				// while keys keep arriving on the keyboard hook.
+				if (Interlocked.Increment(ref changes) % 2 == 1)
+					_ = fixture.Hook.UnsubscribeHook(KeysharpInputClient.HookType.MouseLowLevel);
+				else
+					_ = fixture.Hook.SubscribeHook(KeysharpInputClient.HookType.MouseLowLevel);
+			});
+
+			const int strokes = 20;
+			var send = Task.Run(() =>
+			{
+				for (var i = 0; i < strokes; i++)
+					fixture.Sender.SendInput(KeyStroke(F13));
+			});
+
+			Assert.IsTrue(send.Wait(TestTimeout), "Sends stalled while hook kinds changed.");
+			Assert.AreEqual(strokes * 2, Volatile.Read(ref keys), "A key event was lost while hook kinds changed in place.");
+			Assert.Greater(Volatile.Read(ref changes), 1);
+			fixture.ThrowReaderFailure();
+		}
+
 		private static IReadOnlyList<KeysharpInputClient.Input> KeyStroke(uint vk) =>
 		[
 			KeysharpInputClient.Input.Key((ushort)vk),
@@ -733,7 +778,8 @@ namespace Keysharp.Tests
 					try
 					{
 						while (!cancellation.IsCancellationRequested)
-							handler(Hook.ReadHookEvent());
+							if (Hook.TryReadHookEvent(out var hookEvent))
+								handler(hookEvent);
 					}
 					catch (Exception ex) when (cancellation.IsCancellationRequested)
 					{

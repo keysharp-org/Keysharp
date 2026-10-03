@@ -242,20 +242,20 @@ namespace Keysharp.Internals
 			return false;
 		}
 
-		private static bool TryGetEvdevBit(byte[] keys, uint evdev, out bool isDown)
+		private static bool TryGetEvdevBit(ReadOnlySpan<byte> keys, uint evdev, out bool isDown)
 		{
 			isDown = false;
 
-			if (keys == null || evdev >= keys.Length * 8u)
+			if (evdev >= keys.Length * 8u)
 				return false;
 
-			isDown = (keys[evdev >> 3] & (1 << ((int)evdev & 7))) != 0;
+			isDown = (keys[(int)(evdev >> 3)] & (1 << ((int)evdev & 7))) != 0;
 			return true;
 		}
 
 		internal static bool TryGetVkFromEvdevBitmap(
 			uint vk,
-			byte[] keys,
+			ReadOnlySpan<byte> keys,
 			bool numLockOn,
 			bool shiftDown,
 			out bool isDown)
@@ -263,7 +263,7 @@ namespace Keysharp.Internals
 			isDown = false;
 
 			// A missing bitmap is not a valid all-keys-up snapshot.
-			if (keys == null || keys.Length == 0)
+			if (keys.IsEmpty)
 				return false;
 
 			switch (vk)
@@ -316,7 +316,7 @@ namespace Keysharp.Internals
 			return true;
 		}
 
-		private static bool AnyEvdevBitSet(byte[] keys, ReadOnlySpan<uint> evdevCodes)
+		private static bool AnyEvdevBitSet(ReadOnlySpan<byte> keys, ReadOnlySpan<uint> evdevCodes)
 		{
 			foreach (var evdev in evdevCodes)
 				if (TryGetEvdevBit(keys, evdev, out var down) && down)
@@ -330,7 +330,7 @@ namespace Keysharp.Internals
 	{
 		public bool TryGetModifierLRStateLogical(out uint mods, byte[] keymapBuffer = null)
 		{
-			var snapshot = Keysharp.Internals.Input.Linux.DesktopKeyboardState.X11.Get();
+			var snapshot = Keysharp.Internals.Input.Linux.DesktopKeyboardState.Current.GetCurrent();
 			mods = snapshot?.Modifiers ?? 0;
 			return snapshot?.ModifiersKnown ?? false;
 		}
@@ -366,7 +366,7 @@ namespace Keysharp.Internals
 
 		public bool TryGetIndicatorStatesLogical(out bool capsOn, out bool numOn, out bool scrollOn)
 		{
-			var snapshot = Keysharp.Internals.Input.Linux.DesktopKeyboardState.X11.Get();
+			var snapshot = Keysharp.Internals.Input.Linux.DesktopKeyboardState.Current.GetCurrent();
 			capsOn = snapshot?.CapsLock ?? false;
 			numOn = snapshot?.NumLock ?? false;
 			scrollOn = snapshot?.ScrollLock ?? false;
