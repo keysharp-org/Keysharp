@@ -97,8 +97,8 @@ namespace Keysharp.Internals.Window.MacOS
 		private static readonly nint actionRaise = CreateCFString("AXRaise");
 		private static readonly nint actionClose = CreateCFString("AXClose");
 		private static readonly nint actionPress = CreateCFString("AXPress");
-		private static readonly nint cfBoolTrue = ResolveCFBooleanSymbol("kCFBooleanTrue");
-		private static readonly nint cfBoolFalse = ResolveCFBooleanSymbol("kCFBooleanFalse");
+		private static readonly nint cfBoolTrue = ResolvePointerConstant("kCFBooleanTrue");
+		private static readonly nint cfBoolFalse = ResolvePointerConstant("kCFBooleanFalse");
 		private static readonly nint axTrustedCheckOptionPrompt = ResolveAppServicesPointerSymbol("kAXTrustedCheckOptionPrompt");
 		private static readonly nint windowMetadataAttributes = CFArrayCreate(0, [attrTitle, attrPosition, attrSize], 3, 0);
 
@@ -1055,24 +1055,6 @@ namespace Keysharp.Internals.Window.MacOS
 			catch
 			{
 				return 0;
-			}
-		}
-
-		private static nint ResolveCFBooleanSymbol(string symbolName)
-		{
-			if (!NativeLibrary.TryLoad("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation", out var coreFoundation))
-				return 0;
-
-			try
-			{
-				if (!NativeLibrary.TryGetExport(coreFoundation, symbolName, out var symbol) || symbol == 0)
-					return 0;
-
-				return Marshal.ReadIntPtr(symbol);
-			}
-			finally
-			{
-				NativeLibrary.Free(coreFoundation);
 			}
 		}
 

@@ -128,6 +128,24 @@ namespace Keysharp.Internals.AppleEvents
 		[LibraryImport(CoreFoundation)]
 		internal static partial int CFRunLoopRunInMode(nint mode, double seconds, byte returnAfterSourceHandled);
 
+		/// <summary>Reads a borrowed CF object reference from an exported constant.</summary>
+		internal static nint ResolvePointerConstant(string symbolName)
+		{
+			if (!NativeLibrary.TryLoad(CoreFoundation, out var coreFoundation))
+				return 0;
+
+			try
+			{
+				return NativeLibrary.TryGetExport(coreFoundation, symbolName, out var symbol) && symbol != 0
+					? Marshal.ReadIntPtr(symbol)
+					: 0;
+			}
+			finally
+			{
+				NativeLibrary.Free(coreFoundation);
+			}
+		}
+
 		/// <summary>Creates a CFString the caller must release.</summary>
 		internal static nint CreateString(string value)
 		{

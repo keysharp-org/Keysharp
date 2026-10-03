@@ -116,7 +116,7 @@ namespace Keysharp.Internals.Window.MacOS
 				}
 
 				if (runLoopMode == 0)
-					runLoopMode = ResolveCoreFoundationConstant("kCFRunLoopCommonModes");
+					runLoopMode = ResolvePointerConstant("kCFRunLoopCommonModes");
 
 				var wsnc = NSWorkspace.SharedWorkspace.NotificationCenter;
 				// On launch, add the new app's observer straight from the notification: NSWorkspace's
@@ -661,23 +661,6 @@ namespace Keysharp.Internals.Window.MacOS
 
 			if (ReferenceEquals(Volatile.Read(ref eventOwner), owner) && !owner.IsDisposed)
 				sink(raw);
-		}
-
-		private static nint ResolveCoreFoundationConstant(string symbolName)
-		{
-			if (!NativeLibrary.TryLoad(CoreFoundationPath, out var coreFoundation))
-				return 0;
-
-			try
-			{
-				return NativeLibrary.TryGetExport(coreFoundation, symbolName, out var symbol) && symbol != 0
-					? Marshal.ReadIntPtr(symbol)
-					: 0;
-			}
-			finally
-			{
-				NativeLibrary.Free(coreFoundation);
-			}
 		}
 	}
 }
