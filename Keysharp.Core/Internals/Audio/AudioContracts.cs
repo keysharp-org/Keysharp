@@ -1,4 +1,4 @@
-namespace Keysharp.Internals.Audio
+﻿namespace Keysharp.Internals.Audio
 {
 	/// <summary>Which direction an endpoint carries audio. A device has exactly one.</summary>
 	internal enum AudioDeviceKind
@@ -87,6 +87,9 @@ namespace Keysharp.Internals.Audio
 		/// <summary>Whether this backend loaded at all. False means the library or server is absent.</summary>
 		bool IsAvailable { get; }
 
+		/// <summary>The last native error on the calling thread, or zero when no native status is available.</summary>
+		int LastError => 0;
+
 		/// <summary>Whether one capability is usable right now. Cached; never performs a device open.</summary>
 		bool Supports(AudioCapability capability);
 
@@ -95,6 +98,8 @@ namespace Keysharp.Internals.Audio
 
 		/// <summary>Currently present, usable endpoints of one kind, in the backend's stable order.</summary>
 		AudioDeviceDescriptor[] EnumerateDevices(AudioDeviceKind kind);
+
+		AudioDeviceDescriptor[] EnumerateAllDevices() => [.. EnumerateDevices(AudioDeviceKind.Output), .. EnumerateDevices(AudioDeviceKind.Input)];
 
 		bool TryGetDefaultDevice(AudioDeviceKind kind, out AudioDeviceDescriptor device);
 
@@ -107,7 +112,7 @@ namespace Keysharp.Internals.Audio
 		/// </summary>
 		bool TryOpenOutput(in AudioOutputRequest request, IAudioRenderSource source, out IAudioOutputStream stream, out string error);
 
-		/// <summary>Endpoint volume as a linear scalar from 0 through 1.</summary>
+		/// <summary>Endpoint volume as the system mixer slider position from 0 through 1.</summary>
 		bool TryGetVolume(AudioDeviceKind kind, string id, out double volume);
 
 		bool TrySetVolume(AudioDeviceKind kind, string id, double volume);

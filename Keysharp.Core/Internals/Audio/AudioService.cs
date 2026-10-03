@@ -315,6 +315,12 @@ namespace Keysharp.Internals.Audio
 					return null;
 				}
 
+				if (convenience.TryGetValue(key, out var winner) && winner.Status == AudioOutputStatus.Open)
+				{
+					core.Dispose();
+					return winner;
+				}
+
 				convenience[key] = core;
 
 				if (!outputs.Contains(core))
@@ -329,6 +335,8 @@ namespace Keysharp.Internals.Audio
 
 					outputs.Add(core);
 				}
+
+				core.EnableIdleSuspension();
 			}
 
 			return core;

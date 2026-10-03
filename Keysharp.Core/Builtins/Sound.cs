@@ -1,32 +1,10 @@
-namespace Keysharp.Builtins
+﻿namespace Keysharp.Builtins
 {
 	/// <summary>
 	/// Public interface for sound-related functions.
 	/// </summary>
 	public static class Sound
 	{
-#if LINUX
-		private static Dictionary<int, string> GetDevices(bool sinks)
-		{
-			var devices = new Dictionary<int, string>();
-			var arg = sinks ? "sinks" : "sources";
-			if ($"pactl list {arg} short".Bash(out var str) != 0)
-				return devices;
-
-			foreach (var line in str.SplitLines())
-			{
-				var splits = line.Split(SpaceTab, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-				if (splits.Length > 1)
-				{
-					if (int.TryParse(splits[0], out var index))
-						_ = devices.GetOrAdd(index, splits[1]);
-				}
-			}
-
-			return devices;
-		}
-#endif
 
 		/// <summary>
 		/// Emits a tone from the PC speaker.
@@ -40,9 +18,14 @@ namespace Keysharp.Builtins
 
 			if (freq is < SoundPlayback.MinFrequency or > SoundPlayback.MaxFrequency)
 				return Errors.ValueErrorOccurred($"Frequency must be from {SoundPlayback.MinFrequency} through {SoundPlayback.MaxFrequency}.", frequency);
+			if (time < 0)
+				time = 150;
+
+			if (time == 0)
+				return DefaultObject;
 #if WINDOWS
 			// Console.Beep is Win32 Beep(), which is exactly what AHK calls.
-			Console.Beep(freq, Math.Max(0, time));
+			Console.Beep(freq, time);
 #else
 
 			// Linux and macOS have no tone generator, so synthesize the sine and play it. This is what makes
@@ -216,206 +199,158 @@ namespace Keysharp.Builtins
 			return DefaultObject;
 		}
 
-#if LINUX
-		private static object DoSound(SoundCommands soundCmd, object obj0, object obj1 = null, object obj2 = null)
+		private static object DoSound(SoundCommands command, object value, object componentOrDevice = null, object device = null)
 		{
-			var soundSet = false;
-			var device = obj1;
-			SoundControlType type;
-			var sink = true;
-
-			if (soundCmd >= SoundCommands.SoundSetVolume)
+			var setting = command >= SoundCommands.SoundSetVolume;
+			var component = setting ? componentOrDevice : value;
+			var selector = setting ? device : componentOrDevice;
+#if WINDOWS
+			if (command == SoundCommands.SoundGetInterface)
 			{
-				soundSet = true;
-				type = (SoundControlType)((int)soundCmd - (int)SoundCommands.SoundSetVolume);
-				sink = obj1 is "" || obj1.Ab(true);
-				device = obj2;
-			}
-			else
-			{
-				sink = obj0 is "" || obj0.Ab(true);
-				type = (SoundControlType)(int)soundCmd;
-			}
-
-			var settingScalar = 0.0;
-
-			if (soundSet)
-			{
-				if (!obj0.CoerceDouble(out var settingPercent))
+				if (!value.CoerceString(out var iid) || !componentOrDevice.CoerceString(out var interfaceComponent) || !device.CoerceString(out var interfaceDevice))
 					return DefaultObject;
 
-				settingScalar = Math.Clamp(settingPercent * 0.01 * 65536.0, -65536.0, 65536.0);//pactl uses a range of 0-65536.
+				try { return DoSoundWindows(command, iid, interfaceComponent, interfaceDevice); }
+				catch (COMException ex) { return Errors.OSErrorOccurredForHR(ex.HResult); }
+			}
+#endif
+			if (!component.CoerceString(out var componentText) || !selector.CoerceString(out var selectorText))
+				return DefaultObject;
+
+			if (componentText.Length > 0)
+			{
+#if WINDOWS
+				try { return DoSoundWindows(command, value, componentText, selectorText); }
+				catch (COMException ex) { return Errors.OSErrorOccurredForHR(ex.HResult); }
+#else
+				return Errors.TargetErrorOccurred($"Component {componentText} not found.");
+#endif
 			}
 
-			var valStr = obj0 == null ? "" : obj0.ToString();
-			var adjust = valStr.Length > 0 && (valStr[0] == '-' || valStr[0] == '+');
-			var found = false;
-			var sinkStr = sink ? "Sink" : "Source";
-			var devices = GetDevices(sink);
-			var devStr = "";
+			var volumeControl = command is SoundCommands.SoundGetVolume or SoundCommands.SoundSetVolume;
+			double newValue = 0;
+			var adjust = false;
 
-			if (device == null)
+			if (setting)
 			{
-				devStr = sink ? "@DEFAULT_SINK@" : "@DEFAULT_SOURCE@";
-				found = true;
+				if (!value.CoerceDouble(out newValue) || !value.CoerceString(out var text))
+					return DefaultObject;
+
+				adjust = text.Length > 0 && text[0] is '+' or '-';
+			}
+
+			var backend = Script.TheScript.AudioService.Backend;
+
+			if (backend == null)
+				return Errors.TargetErrorOccurred($"Sound device {selectorText} not found.");
+			if (!TryResolveSoundDevice(backend, selectorText, out var endpoint, out var resolveError))
+				return resolveError != 0 ? Errors.OSErrorOccurredForHR(resolveError) : Errors.TargetErrorOccurred($"Sound device {selectorText} not found.");
+
+			if (command == SoundCommands.SoundGetName)
+				return endpoint.Name;
+
+
+			if (volumeControl)
+			{
+				double current = 0;
+
+				if ((!setting || adjust) && !backend.TryGetVolume(endpoint.Kind, endpoint.Id, out current))
+					return SoundControlError(backend);
+
+				if (!setting)
+					return current * 100.0;
+
+				if (!backend.TrySetVolume(endpoint.Kind, endpoint.Id, Math.Clamp(newValue / 100.0 + (adjust ? current : 0), 0, 1)))
+					return SoundControlError(backend);
 			}
 			else
 			{
-				devStr = device.ToString();
+				var current = false;
 
-				if (int.TryParse(devStr, out var deviceIndex) && devices.TryGetValue(deviceIndex, out var _))
-				{
-					found = true;
-				}
-				else
-				{
-					foreach (var devKv in devices)
-					{
-						if (devKv.Value.StartsWith(devStr, StringComparison.OrdinalIgnoreCase))
-						{
-							found = true;
-							break;
-						}
-					}
-				}
+				if ((!setting || adjust) && !backend.TryGetMute(endpoint.Kind, endpoint.Id, out current))
+					return SoundControlError(backend);
 
-				if (!found)
-					return Errors.TargetErrorOccurred($"{sinkStr} device {device} not found.");
-			}
+				if (!setting)
+					return current ? 1L : 0L;
 
-			sinkStr = sinkStr.ToLower();
-
-			switch (soundCmd)
-			{
-				case SoundCommands.SoundGetVolume:
-				{
-					if ($"pactl get-{sinkStr}-volume {devStr}".Bash(out var ret) != 0)
-						return Errors.OSErrorOccurred("", $"Failed to query volume for {devStr}.");
-					var lines = ret.SplitLines().ToList();
-
-					if (lines.Count > 1)
-					{
-						var lines0 = lines[0];
-						var firstPercent = lines0.IndexOf('%');
-						var lastPercent = lines0.LastIndexOf('%');
-						double prc1 = 1.0, prc2 = 1.0;
-
-						if (firstPercent != -1)
-						{
-							var val1Index = lines0.AsSpan(0, firstPercent).LastIndexOf(' ');
-
-							if (val1Index != -1)
-							{
-								var val1 = lines0.AsSpan(val1Index + 1, (firstPercent - val1Index) - 1);
-
-								if (!double.TryParse(val1, out prc1))
-									return Errors.OSErrorOccurred("", $"Could not parse first volume value of {val1}.");
-							}
-						}
-
-						if (lastPercent != -1 && lastPercent > firstPercent)
-						{
-							var val2Index = lines0.AsSpan(0, lastPercent).LastIndexOf(' ');
-
-							if (val2Index != -1)
-							{
-								var val2 = lines0.AsSpan(val2Index + 1, (lastPercent - val2Index) - 1);
-
-								if (!double.TryParse(val2, out prc2))
-									return Errors.OSErrorOccurred("", $"Could not parse second volume value of {val2}.");
-							}
-						}
-
-						return (prc1 + prc2) / 2.0;
-					}
-				}
-				break;
-
-				case SoundCommands.SoundGetMute:
-				{
-					if ($"pactl get-{sinkStr}-mute {devStr}".Bash(out var ret) != 0)
-						return Errors.OSErrorOccurred("", $"Failed to query mute state for {devStr}.");
-					return ret.EndsWith("yes", StringComparison.OrdinalIgnoreCase) ? 1L : 0L;
-				}
-
-				case SoundCommands.SoundGetName:
-				{
-					if (device == null)
-					{
-						return "pactl get-default-sink".Bash(out var defSink) == 0
-							? defSink
-							: Errors.OSErrorOccurred("", "Failed to query default sink.");
-					}
-					else if (int.TryParse(devStr, out var deviceIndex))
-					{
-						if (!devices.TryGetValue(deviceIndex, out var deviceName))
-							return Errors.TargetErrorOccurred($"{sinkStr} device {device} not found.");
-						else
-							return deviceName;
-					}
-					else
-						return Errors.TargetErrorOccurred($"{devStr} was not a valid integer.");
-				}
-
-				case SoundCommands.SoundSetVolume:
-				{
-					if (adjust)
-					{
-						_ = SoundGetVolume(obj0, obj1).TryCoerceDouble(out var currentVolumePercent);
-						var currentVolume = currentVolumePercent * 0.01 * 65536.0;
-						settingScalar = Math.Clamp(currentVolume + settingScalar, 0.0, 65536.0);
-					}
-
-					if ($"pactl set-{sinkStr}-volume {devStr} {(int)settingScalar}".Bash() != 0)
-						return Errors.OSErrorOccurred("", $"Failed to set volume for {devStr}.");
-				}
-				break;
-
-				case SoundCommands.SoundSetMute:
-				{
-					var act = Conversions.ConvertOnOffToggle(obj0);
-					if ($"pactl set-{sinkStr}-mute {devStr} {(act == ToggleValueType.On ? "1" : act == ToggleValueType.Toggle ? "-1" : "0")}".Bash() != 0)
-						return Errors.OSErrorOccurred("", $"Failed to set mute state for {devStr}.");
-				}
-				break;
-
-				default:
-					break;
+				if (!backend.TrySetMute(endpoint.Kind, endpoint.Id, adjust ? !current : newValue > 0))
+					return SoundControlError(backend);
 			}
 
 			return DefaultObject;
 		}
 
-#elif WINDOWS
+		private static object SoundControlError(Keysharp.Internals.Audio.IAudioBackend backend) => backend.LastError != 0
+			? Errors.OSErrorOccurredForHR(backend.LastError)
+			: Errors.OSErrorOccurredWithMessage("The sound device does not expose the requested control or the operation failed.");
+
+		internal static bool TryResolveSoundDevice(Keysharp.Internals.Audio.IAudioBackend backend, string selector,
+			out Keysharp.Internals.Audio.AudioDeviceDescriptor device)
+			=> TryResolveSoundDevice(backend, selector, out device, out _);
+
+		internal static bool TryResolveSoundDevice(Keysharp.Internals.Audio.IAudioBackend backend, string selector,
+			out Keysharp.Internals.Audio.AudioDeviceDescriptor device, out int error)
+		{
+			device = default;
+			error = 0;
+
+			if (selector.Length == 0)
+			{
+				var found = backend.TryGetDefaultDevice(Keysharp.Internals.Audio.AudioDeviceKind.Output, out device);
+				if (!found) error = backend.LastError;
+				return found;
+			}
+
+			var name = selector;
+			var instance = 1;
+			var colon = selector.LastIndexOf(':');
+
+			if (colon >= 0)
+			{
+				name = selector[..colon];
+
+				if (!int.TryParse(selector.AsSpan(colon + 1), out instance))
+					return false;
+			}
+			else if (int.TryParse(selector, out var number))
+			{
+				name = "";
+				instance = number;
+			}
+
+			if (instance < 1)
+				return false;
+
+			foreach (var endpoint in backend.EnumerateAllDevices())
+				if (endpoint.Name.StartsWith(name, StringComparison.OrdinalIgnoreCase) && --instance == 0)
+				{
+					device = endpoint;
+					return true;
+				}
+
+			error = backend.LastError;
+			return false;
+		}
+
+#if WINDOWS
 
 		/// <summary>
 		/// Internal helper to help with various sound processing commands.
 		/// </summary>
 		/// <param name="soundCmd">The sound command to perform.</param>
 		/// <param name="obj0">The sound component to operate on, or the value to use.</param>
-		/// <param name="obj1">The sound device to operate on, or the sound component.</param>
-		/// <param name="obj2">The sound device to operate on.</param>
+		/// <param name="comp">The component selector.</param>
+		/// <param name="dev">The device selector.</param>
 		/// <returns>Various values depending on the sound command being processed.</returns>
 		/// <exception cref="TargetError">A <see cref="TargetError"/> exception is thrown if the component/device cannot not found.</exception>
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if the channels, levels or range cannot not found.</exception>
-		private static object DoSound(SoundCommands soundCmd, object obj0, object obj1 = null, object obj2 = null)
+		private static object DoSoundWindows(SoundCommands soundCmd, object obj0, string comp, string dev)
 		{
-			var soundSet = false;
-			var search = new SoundComponentSearch();
-			var comp = obj0;
-			var dev = obj1;
-
-			if (soundCmd >= SoundCommands.SoundSetVolume)
+			var soundSet = soundCmd >= SoundCommands.SoundSetVolume;
+			var search = new SoundComponentSearch
 			{
-				soundSet = true;
-				search.targetControl = (SoundControlType)((int)soundCmd - (int)SoundCommands.SoundSetVolume);
-				comp = obj1;
-				dev = obj2;
-			}
-			else
-			{
-				search.targetControl = (SoundControlType)(int)soundCmd;
-			}
+				targetControl = (SoundControlType)((int)soundCmd - (soundSet ? (int)SoundCommands.SoundSetVolume : 0))
+			};
 
 			switch (search.targetControl)
 			{
@@ -428,264 +363,236 @@ namespace Keysharp.Builtins
 					break;
 
 				case SoundControlType.IID:
-					if (!obj0.CoerceString(out var iid))
-						return DefaultObject;
-
-					search.targetIid = new Guid(iid);
-					comp = obj1;
-					dev = obj2;
+					search.targetIid = new Guid((string)obj0);
 					break;
 			}
 
 			var settingScalar = 0.0f;
+			var adjust = false;
 
 			if (soundSet)
 			{
-				if (!obj0.CoerceDouble(out var settingPercent))
+				if (!obj0.CoerceDouble(out var settingPercent) || !obj0.CoerceString(out var settingText))
 					return DefaultObject;
 
 				settingScalar = Math.Clamp((float)(settingPercent * 0.01), -1.0f, 1.0f);
+				adjust = settingText.Length > 0 && settingText[0] is '-' or '+';
 			}
 
+			object controlObject = null;
 			var resultFloat = 0.0f;
 			var resultBool = false;
-			var valStr = obj0 == null ? "" : obj0.ToString();
-			var adjust = valStr.Length > 0 && (valStr[0] == '-' || valStr[0] == '+');
-			var mmDev = GetDevice(dev);
+			using var mmDev = GetDevice(dev, Script.TheScript.AudioService.Backend);
 
-			if (mmDev == null)
-				return Errors.TargetErrorOccurred($"Component {comp}, device {dev} not found.");
-
-			if (comp == null || comp.ToString().Length == 0)//Component is Master (omitted).
+			try
 			{
-				if (search.targetControl == SoundControlType.IID)
+				if (mmDev == null)
+					return Errors.TargetErrorOccurred($"Component {comp}, device {dev} not found.");
+
+				if (comp.Length == 0)//Component is Master (omitted).
 				{
-					//Query the device itself first and only then Activate(), matching AHK: an interface the
-					//device implements directly (IMMEndpoint, IPropertyStore, ...) is not reachable via Activate.
-					var devPtr = Marshal.GetIUnknownForObject(mmDev.deviceInterface);
-					nint resultPtr;
-
-					try
+					if (search.targetControl == SoundControlType.IID)
 					{
-						if (Marshal.QueryInterface(devPtr, in search.targetIid, out resultPtr) < 0)
+						//Query the device itself first and only then Activate(), matching AHK: an interface the
+						//device implements directly (IMMEndpoint, IPropertyStore, ...) is not reachable via Activate.
+						var devPtr = Marshal.GetIUnknownForObject(mmDev.deviceInterface);
+						nint resultPtr;
+
+						try
 						{
-							resultPtr = 0;
-
-							//An IID the device does not support is an expected outcome here, not an error.
-							if (mmDev.deviceInterface.Activate(ref search.targetIid, ClsCtx.ALL, 0, out var activated) >= 0 && activated != null)
+							if (Marshal.QueryInterface(devPtr, in search.targetIid, out resultPtr) < 0)
 							{
-								//Need the specific interface pointer, else ComCall() will fail when using IAudioMeterInformation.
-								var iptr = Marshal.GetIUnknownForObject(activated);
+								resultPtr = 0;
 
-								if (Marshal.QueryInterface(iptr, in search.targetIid, out var ptr) >= 0)
-									resultPtr = ptr;
-
-								_ = Marshal.Release(iptr);
+								//An IID the device does not support is an expected outcome here, not an error.
+								if (mmDev.deviceInterface.Activate(ref search.targetIid, ClsCtx.ALL, 0, out var activated) >= 0 && activated != null)
+								{
+									//Need the specific interface pointer, else ComCall() will fail when using IAudioMeterInformation.
+									try
+									{
+										var iptr = Marshal.GetIUnknownForObject(activated);
+										try
+										{
+											if (Marshal.QueryInterface(iptr, in search.targetIid, out var ptr) >= 0)
+												resultPtr = ptr;
+										}
+										finally { Marshal.Release(iptr); }
+									}
+									finally { Marshal.ReleaseComObject(activated); }
+								}
 							}
 						}
-					}
-					finally
-					{
-						_ = Marshal.Release(devPtr);
-					}
+						finally
+						{
+							_ = Marshal.Release(devPtr);
+						}
 
-					//For consistency with ComObjQuery, the result is returned even on failure.
-					return resultPtr.ToInt64();
-				}
-				else if (search.targetControl == SoundControlType.Name)
-				{
-					return mmDev.FriendlyName;
+						//For consistency with ComObjQuery, the result is returned even on failure.
+						return resultPtr.ToInt64();
+					}
+					else if (search.targetControl == SoundControlType.Name)
+					{
+						return mmDev.FriendlyName;
+					}
 				}
 				else
 				{
-					var aev = mmDev.AudioEndpointVolume;
+					//Mirrors AHK's SoundConvertComponent(): a component which parses as an integer is an instance
+					//index with no name filter, otherwise it is Name[:Instance] split at the *last* colon.
+					var cs = comp;
 
-					if (search.targetControl == SoundControlType.Volume)
+					if (int.TryParse(cs, out var compInstance))
 					{
-						if (!soundSet || adjust)
-						{
-							resultFloat = aev.MasterVolumeLevelScalar;
-						}
-
-						if (soundSet)
-						{
-							if (adjust)
-								settingScalar = Math.Clamp(settingScalar + resultFloat, 0.0f, 1.0f);
-
-							aev.MasterVolumeLevelScalar = settingScalar;
-						}
-						else
-						{
-							resultFloat *= 100;
-							return (double)resultFloat;
-						}
-					}
-					else//Mute.
-					{
-						if (!soundSet || adjust)
-							resultBool = aev.Mute;
-
-						if (soundSet)
-							aev.Mute = adjust ? !resultBool : settingScalar > 0;
-						else
-							return resultBool ? 1L : 0L;
-					}
-				}
-			}
-			else
-			{
-				//Mirrors AHK's SoundConvertComponent(): a component which parses as an integer is an instance
-				//index with no name filter, otherwise it is Name[:Instance] split at the *last* colon.
-				var cs = comp as string ?? comp.ToString();
-
-				if (int.TryParse(cs, out var compInstance))
-				{
-					search.targetName = "";
-					search.targetInstance = compInstance;
-				}
-				else
-				{
-					var colon = cs.LastIndexOf(':');
-
-					if (colon != -1)
-					{
-						search.targetName = cs[..colon];
-						_ = cs[(colon + 1)..].TryCoerceInt(out var instanceIdx);
-						search.targetInstance = instanceIdx;
+						search.targetName = "";
+						search.targetInstance = compInstance;
 					}
 					else
 					{
-						search.targetName = cs;
-						search.targetInstance = 1;
-					}
-				}
+						var colon = cs.LastIndexOf(':');
 
-				if (!FindComponent(mmDev, search))
-				{
-					return Errors.TargetErrorOccurred($"Component {comp} not found.");
-				}
-				else if (search.targetControl == SoundControlType.IID)
-				{
-					return search.control;//The nint.
-				}
-				else if (search.targetControl == SoundControlType.Name)
-				{
-					return search.name;
-				}
-				else if (search.control == null)
-				{
-					//AHK raises ERR_SOUND_CONTROLTYPE here; returning 0 silently reports a real volume.
-					return Errors.TargetErrorOccurred($"Component {comp} doesn't support this control type.");
-				}
-				else if (search.targetControl == SoundControlType.Volume)
-				{
-					object comobj = search.control is long ll ? Marshal.GetObjectForIUnknown((nint)ll) : search.control;
-
-					if (comobj is IAudioVolumeLevel avl)
-					{
-						if (avl.GetChannelCount(out var channelCount) < 0)
+						if (colon != -1)
 						{
-							ReleaseControl(search);
-							return Errors.ErrorOccurred("Could not get channel count.");
+							search.targetName = cs[..colon];
+							_ = cs[(colon + 1)..].TryCoerceInt(out var instanceIdx);
+							search.targetInstance = instanceIdx;
 						}
-
-						//One block holding three per-channel slices, matching AHK's level/level_min/level_range.
-						float[] level = new float[3 * channelCount];
-						float f, maxLevel = 0;
-
-						for (var ii = 0u; ii < channelCount; ++ii)
+						else
 						{
-							if (avl.GetLevel(ii, out var db) < 0 ||
-									avl.GetLevelRange(ii, out var minDb, out var maxDb, out f) < 0)
+							search.targetName = cs;
+							search.targetInstance = 1;
+						}
+					}
+
+					if (!FindComponent(mmDev, search))
+					{
+						return Errors.TargetErrorOccurred($"Component {comp} not found.");
+					}
+					else if (search.targetControl == SoundControlType.IID)
+					{
+						return search.control;//The nint.
+					}
+					else if (search.targetControl == SoundControlType.Name)
+					{
+						return search.name;
+					}
+					else if (search.control == null)
+					{
+						//AHK raises ERR_SOUND_CONTROLTYPE here; returning 0 silently reports a real volume.
+						return Errors.TargetErrorOccurred($"Component {comp} doesn't support this control type.");
+					}
+					else if (search.targetControl == SoundControlType.Volume)
+					{
+						object comobj = controlObject = search.control is long ll ? Marshal.GetObjectForIUnknown((nint)ll) : search.control;
+
+						if (comobj is IAudioVolumeLevel avl)
+						{
+							var channelHr = avl.GetChannelCount(out var channelCount);
+							if (channelHr < 0)
 							{
 								ReleaseControl(search);
-								return Errors.ErrorOccurred("Could not get level or level range.");
+								return Errors.OSErrorOccurredForHR(channelHr);
 							}
 
-							//Convert dB to scalar.
-							var levelMin = channelCount + ii;
-							var levelRange = (channelCount * 2) + ii;
-							level[levelMin] = (float)Math.Pow(10.0, minDb / 20.0);
-							level[levelRange] = (float)Math.Pow(10.0, maxDb / 20.0) - level[levelMin];
-							//Compensate for differing level ranges. (No effect if range is -96..0 dB.)
-							level[ii] = ((float)Math.Pow(10.0, db / 20.0) - level[levelMin]) / level[levelRange];
-
-							// Windows reports the highest level as the overall volume.
-							if (maxLevel < level[ii])
-								maxLevel = level[ii];
-						}
-
-						if (soundSet)
-						{
-							if (adjust)
-								settingScalar = Math.Clamp(settingScalar + maxLevel, 0.0f, 1.0f);
+							//One block holding three per-channel slices, matching AHK's level/level_min/level_range.
+							float[] level = new float[3 * channelCount];
+							float f, maxLevel = 0;
 
 							for (var ii = 0u; ii < channelCount; ++ii)
 							{
+								var levelHr = avl.GetLevel(ii, out var db);
+								var rangeHr = avl.GetLevelRange(ii, out var minDb, out var maxDb, out f);
+								if (levelHr < 0 || rangeHr < 0)
+								{
+									ReleaseControl(search);
+									return Errors.OSErrorOccurredForHR(levelHr < 0 ? levelHr : rangeHr);
+								}
+
+								//Convert dB to scalar.
 								var levelMin = channelCount + ii;
 								var levelRange = (channelCount * 2) + ii;
-								f = settingScalar;
+								level[levelMin] = (float)Math.Pow(10.0, minDb / 20.0);
+								level[levelRange] = (float)Math.Pow(10.0, maxDb / 20.0) - level[levelMin];
+								//Compensate for differing level ranges. (No effect if range is -96..0 dB.)
+								level[ii] = ((float)Math.Pow(10.0, db / 20.0) - level[levelMin]) / level[levelRange];
 
-								if (maxLevel != 0)
-									f *= level[ii] / maxLevel;//Preserve balance.
-
-								f = level[levelMin] + f * level[levelRange];//Compensate for differing level ranges.
-								level[ii] = 20 * (float)Math.Log10(f);//Convert scalar to dB.
+								// Windows reports the highest level as the overall volume.
+								if (maxLevel < level[ii])
+									maxLevel = level[ii];
 							}
 
-							//SetLevelAllChannel used to throw from the marshaller on failure; now that it carries
-							//[PreserveSig] the status has to be raised here, or a failed set looks like success.
-							//AHK assigns hr here too and raises an OSError from it, so this matches.
-							Guid guid = Guid.Empty;
-							var setHr = avl.SetLevelAllChannel(level, channelCount, ref guid);
+							if (soundSet)
+							{
+								if (adjust)
+									settingScalar = Math.Clamp(settingScalar + maxLevel, 0.0f, 1.0f);
 
-							if (setHr < 0)
+								for (var ii = 0u; ii < channelCount; ++ii)
+								{
+									var levelMin = channelCount + ii;
+									var levelRange = (channelCount * 2) + ii;
+									f = settingScalar;
+
+									if (maxLevel != 0)
+										f *= level[ii] / maxLevel;//Preserve balance.
+
+									f = level[levelMin] + f * level[levelRange];//Compensate for differing level ranges.
+									level[ii] = 20 * (float)Math.Log10(f);//Convert scalar to dB.
+								}
+
+																Guid guid = Guid.Empty;
+								var setHr = avl.SetLevelAllChannel(level, channelCount, ref guid);
+
+								if (setHr < 0)
+								{
+									ReleaseControl(search);
+									return Errors.OSErrorOccurredForHR(setHr);
+								}
+							}
+							else
+								resultFloat = maxLevel * 100;
+						}
+					}
+					else if (search.targetControl == SoundControlType.Mute)
+					{
+						object comobj = controlObject = search.control is long ll ? Marshal.GetObjectForIUnknown((nint)ll) : search.control;
+
+						if (comobj is IAudioMute am)
+						{
+							var res = 0;
+
+							if (!soundSet || adjust)
+								res = am.GetMute(out resultBool);
+
+							if (soundSet && res >= 0)
+							{
+								Guid guid = Guid.Empty;
+								res = am.SetMute(adjust ? !resultBool : settingScalar > 0, ref guid);
+							}
+
+							//AHK assigns hr for both calls and raises an OSError from it before returning.
+							if (res < 0)
 							{
 								ReleaseControl(search);
-								return Errors.OSErrorOccurredForHR(setHr);
+								return Errors.OSErrorOccurredForHR(res);
 							}
 						}
-						else
-							resultFloat = maxLevel * 100;
 					}
-				}
-				else if (search.targetControl == SoundControlType.Mute)
-				{
-					object comobj = search.control is long ll ? Marshal.GetObjectForIUnknown((nint)ll) : search.control;
 
-					if (comobj is IAudioMute am)
-					{
-						var res = 0;
-
-						if (!soundSet || adjust)
-							res = am.GetMute(out resultBool);
-
-						if (soundSet && res >= 0)
-						{
-							Guid guid = Guid.Empty;
-							res = am.SetMute(adjust ? !resultBool : settingScalar > 0, ref guid);
-						}
-
-						//AHK assigns hr for both calls and raises an OSError from it before returning.
-						if (res < 0)
-						{
-							ReleaseControl(search);
-							return Errors.OSErrorOccurredForHR(res);
-						}
-					}
+					ReleaseControl(search);
 				}
 
-				ReleaseControl(search);
+								return search.targetControl switch
+			{
+					SoundControlType.Volume => (double)resultFloat,
+						SoundControlType.Mute => resultBool ? 1L : 0L,
+						_ => null,
+				};
+			}
+			finally
+			{
+				if (search.targetControl != SoundControlType.IID) ReleaseControl(search);
+				if (controlObject != null && Marshal.IsComObject(controlObject)) Marshal.ReleaseComObject(controlObject);
 			}
 
-			//Mute is documented as returning 0 or 1, and Linux/macOS already do. Returning a bool made
-			//SoundSetMute(SoundGetMute()) a no-op, because a bool does not convert back to a number.
-			return search.targetControl switch
-		{
-				SoundControlType.Volume => (double)resultFloat,
-					SoundControlType.Mute => resultBool ? 1L : 0L,
-					_ => null,
-			};
 		}
 
 		/// <summary>
@@ -714,23 +621,21 @@ namespace Keysharp.Builtins
 			search.control = null;
 			search.name = null;
 			search.ignoreRemainingSubunits = false;
-			var top = mmDev.DeviceTopology;
-
-			if (top.GetConnector(0, out var conn) >= 0)
+			var topology = mmDev.DeviceTopology;
+			IConnector connector = null;
+			IConnector connected = null;
+			try
 			{
-				//The endpoint's data flow decides which direction FindComponent walks, so it must be
-				//recorded on the search rather than discarded, or capture devices search the wrong way.
-				if (conn.GetDataFlow(out search.dataFlow) >= 0)
-				{
-					if (conn.GetConnectedTo(out var conTo) >= 0)
-					{
-						if (conTo is IPart part)
-							_ = FindComponent(part, search);
-					}
-				}
+				if (topology.GetConnector(0, out connector) >= 0 && connector.GetDataFlow(out search.dataFlow) >= 0
+					&& connector.GetConnectedTo(out connected) >= 0 && connected is IPart part)
+					FindComponent(part, search);
+				return search.count == search.targetInstance;
 			}
-
-			return search.count == search.targetInstance;
+			finally
+			{
+				if (connected != null) Marshal.ReleaseComObject(connected);
+				if (connector != null) Marshal.ReleaseComObject(connector);
+			}
 		}
 
 		/// <summary>
@@ -748,49 +653,89 @@ namespace Keysharp.Builtins
 					root.EnumPartsOutgoing(out partsList)) < 0)
 				return false;
 
-			if (partsList.GetCount(out var partCount) < 0)
-				partCount = 0;
-
-			for (var i = 0u; i < partCount; i++)
+			try
 			{
-				if (partsList.GetPart(i, out var part) < 0)
-					continue;
+				if (partsList.GetCount(out var partCount) < 0)
+					partCount = 0;
 
-				//The type of the enumerated child decides Connector vs Subunit, not the type of the
-				//part being recursed from; testing root here classified every child as its parent.
-				if (part.GetPartType(out var partType) >= 0)
+				for (var i = 0u; i < partCount; i++)
 				{
-					if (partType == PartTypeEnum.Connector)
+					if (partsList.GetPart(i, out var part) < 0)
+						continue;
+
+					try
 					{
-						//An empty target name matches any connector; otherwise the name must match in full,
-						//as AHK compares with _wcsicmp (prefix matching is used for devices, not components).
-						if (partCount == 1//Ignore Connectors with no Subunits of their own.
-								&& (string.IsNullOrEmpty(search.targetName) ||
-									(part.GetName(out var partName) >= 0 && string.Equals(partName, search.targetName, StringComparison.OrdinalIgnoreCase))
-								   )
-						   )
+					//The type of the enumerated child decides Connector vs Subunit, not the type of the
+					//part being recursed from; testing root here classified every child as its parent.
+					if (part.GetPartType(out var partType) >= 0)
+					{
+						if (partType == PartTypeEnum.Connector)
 						{
-							if (++search.count == search.targetInstance)
+							//An empty target name matches any connector; otherwise the name must match in full,
+							//as AHK compares with _wcsicmp (prefix matching is used for devices, not components).
+							if (partCount == 1//Ignore Connectors with no Subunits of their own.
+									&& (string.IsNullOrEmpty(search.targetName) ||
+										(part.GetName(out var partName) >= 0 && string.Equals(partName, search.targetName, StringComparison.OrdinalIgnoreCase))
+									   )
+							   )
 							{
-								switch (search.targetControl)
+								if (++search.count == search.targetInstance)
 								{
-									case SoundControlType.Volume:
-										break;
-
-									case SoundControlType.Mute:
-										break;
-
-									case SoundControlType.Name:
-										_ = part.GetName(out search.name);
-										break;
-
-									case SoundControlType.IID:
+									switch (search.targetControl)
 									{
-										//Permit retrieving the IPart or IConnector itself.  Since there may be
-										//multiple connected Subunits (and they can be enumerated or retrieved
-										//via the Connector IPart), this is only done for the Connector.
+										case SoundControlType.Volume:
+											break;
+
+										case SoundControlType.Mute:
+											break;
+
+										case SoundControlType.Name:
+											_ = part.GetName(out search.name);
+											break;
+
+										case SoundControlType.IID:
+										{
+											//Permit retrieving the IPart or IConnector itself.  Since there may be
+											//multiple connected Subunits (and they can be enumerated or retrieved
+											//via the Connector IPart), this is only done for the Connector.
+											//Need the specific interface pointer, else ComCall() will fail when using IAudioMeterInformation.
+											var iptr = Marshal.GetIUnknownForObject(part);
+
+											if (Marshal.QueryInterface(iptr, in search.targetIid, out var ptr) >= 0)
+											{
+												if (ptr != 0)
+													search.control = ptr.ToInt64();
+											}
+
+											_ = Marshal.Release(iptr);
+											break;
+										}
+									}
+
+									return true;
+								}
+							}
+						}
+						else//Subunit.
+						{
+							//Recursively find the Connector nodes linked to this part.
+							if (FindComponent(part, search))
+							{
+								//A matching connector part has been found with this part as one of the nodes used
+								//to reach it.  Therefore, if this part supports the requested control interface,
+								//it can in theory be used to control the component.  An example path might be:
+								//   Output < Master Mute < Master Volume < Sum < Mute < Volume < CD Audio
+								//Parts are considered from right to left, as we return from recursion.
+								if (search.control == null && !search.ignoreRemainingSubunits)
+								{
+									//Query this part for the requested interface and let caller check the result.
+									//Most subunits do not support it, which is expected and must not throw.
+									if (part.Activate(ClsCtx.ALL, ref search.targetIid, out search.control) >= 0 && search.control != null)
+									{
 										//Need the specific interface pointer, else ComCall() will fail when using IAudioMeterInformation.
-										var iptr = Marshal.GetIUnknownForObject(part);
+										var activated = search.control;
+										search.control = null;
+										var iptr = Marshal.GetIUnknownForObject(activated);
 
 										if (Marshal.QueryInterface(iptr, in search.targetIid, out var ptr) >= 0)
 										{
@@ -799,120 +744,47 @@ namespace Keysharp.Builtins
 										}
 
 										_ = Marshal.Release(iptr);
-										break;
+										Marshal.ReleaseComObject(activated);
 									}
+
+									//If this subunit has siblings, ignore any controls further up the line
+									//as they're likely shared by other components (i.e. master controls).
+									if (partCount > 1)
+										search.ignoreRemainingSubunits = true;
 								}
 
 								return true;
 							}
 						}
 					}
-					else//Subunit.
-					{
-						//Recursively find the Connector nodes linked to this part.
-						if (FindComponent(part, search))
-						{
-							//A matching connector part has been found with this part as one of the nodes used
-							//to reach it.  Therefore, if this part supports the requested control interface,
-							//it can in theory be used to control the component.  An example path might be:
-							//   Output < Master Mute < Master Volume < Sum < Mute < Volume < CD Audio
-							//Parts are considered from right to left, as we return from recursion.
-							if (search.control == null && !search.ignoreRemainingSubunits)
-							{
-								//Query this part for the requested interface and let caller check the result.
-								//Most subunits do not support it, which is expected and must not throw.
-								if (part.Activate(ClsCtx.ALL, ref search.targetIid, out search.control) >= 0 && search.control != null)
-								{
-									//Need the specific interface pointer, else ComCall() will fail when using IAudioMeterInformation.
-									var iptr = Marshal.GetIUnknownForObject(search.control);
-
-									if (Marshal.QueryInterface(iptr, in search.targetIid, out var ptr) >= 0)
-									{
-										if (ptr != 0)
-											search.control = ptr.ToInt64();
-									}
-
-									_ = Marshal.Release(iptr);
-								}
-
-								//If this subunit has siblings, ignore any controls further up the line
-								//as they're likely shared by other components (i.e. master controls).
-								if (partCount > 1)
-									search.ignoreRemainingSubunits = true;
-							}
-
-							return true;
-						}
 					}
+					finally { Marshal.ReleaseComObject(part); }
 				}
-			}
 
-			return false;
+				return false;
+			}
+			finally { Marshal.ReleaseComObject(partsList); }
+
 		}
 
 		/// <summary>
 		/// Internal helper to get a device from a string description or a number.
 		/// </summary>
-		/// <param name="obj0">The name or number of the device to search for.</param>
+		/// <param name="selector">The name or number of the device to search for.</param>
+		/// <param name="backend">The endpoint backend.</param>
 		/// <returns>The device if found, else null.</returns>
-		private static MMDevice GetDevice(object obj0)
+		internal static MMDevice GetDevice(string selector, Keysharp.Internals.Audio.IAudioBackend backend)
 		{
-			var deviceEnum = new MMDeviceEnumerator();
-			MMDevice mmDev = null;
-
-			if (obj0 == null || obj0.ToString() == "")
+			if (backend == null)
+				return null;
+			if (!TryResolveSoundDevice(backend, selector, out var descriptor, out var error))
 			{
-				mmDev = deviceEnum.GetDefaultAudioEndpoint(DataFlow.Render, Role.Console);
-			}
-			else
-			{
-				var targetIndex = 0;
-				var targetName = "";
-
-				//Mirrors AHK's SoundSetGet_GetDevice(): Name:Index (split at the *last* colon), else a bare
-				//index, else a name. A numeric string is an index, exactly as a numeric value is.
-				var ds = obj0 as string ?? obj0.ToString();
-				var colon = ds.LastIndexOf(':');
-
-				if (colon != -1)
-				{
-					targetName = ds[..colon];
-					_ = ds[(colon + 1)..].TryCoerceInt(out targetIndex);
-					--targetIndex;
-				}
-				else if (int.TryParse(ds, out targetIndex))
-				{
-					targetName = "";
-					--targetIndex;
-				}
-				else
-					targetName = ds;
-
-				var devices = deviceEnum.EnumerateAudioEndPoints(DataFlow.All, DeviceState.Active | DeviceState.Unplugged).ToList();
-
-				if (targetName.Length > 0)
-				{
-					foreach (var device in devices)
-					{
-						//Keysharp.Builtins.Dialogs.MsgBox(device.FriendlyName
-						//                           + "\r\n" + device.DeviceFriendlyName
-						//                           + "\r\n" + device.ID
-						//                           + "\r\n" + device.InstanceId);
-						if (device.FriendlyName.StartsWith(targetName, StringComparison.OrdinalIgnoreCase) && targetIndex-- == 0)
-						{
-							mmDev = device;
-							break;
-						}
-					}
-				}
-				else
-				{
-					if (targetIndex < devices.Count)
-						mmDev = devices[targetIndex];
-				}
+				if (error != 0) throw new COMException(null, error);
+				return null;
 			}
 
-			return mmDev;
+			using var enumerator = new MMDeviceEnumerator();
+			return enumerator.TryGetDevice(descriptor.Id, out var device) ? device : null;
 		}
 
 		/// <summary>
@@ -939,503 +811,6 @@ namespace Keysharp.Builtins
 			internal string targetName;
 			// Valid only when target_control == SoundControlType::Name.
 		};
-#elif OSX
-		// CoreAudio property selectors (FourCC values)
-		private const uint kAudioObjectSystemObject = 1u;
-		private const uint kAudioHardwarePropertyDefaultOutputDevice              = 0x644F7574u; // 'dOut'
-		private const uint kAudioHardwarePropertyDevices                          = 0x64657623u; // 'dev#'
-		private const uint kAudioHardwareServiceDevicePropertyVirtualMasterVolume = 0x766D7663u; // 'vmvc'
-		private const uint kAudioDevicePropertyVolumeScalar                       = 0x766F6C75u; // 'volu'
-		private const uint kAudioDevicePropertyMute                               = 0x6D757465u; // 'mute'
-		private const uint kAudioDevicePropertyTransportType                      = 0x7472616Eu; // 'tran'
-		private const uint kAudioObjectPropertyName                               = 0x6C6E616Du; // 'lnam'
-		private const uint kAudioObjectPropertyScopeGlobal                        = 0x676C6F62u; // 'glob'
-		private const uint kAudioObjectPropertyScopeOutput                        = 0x6F757470u; // 'outp'
-		private const uint kAudioObjectPropertyScopeInput                         = 0x696E7074u; // 'inpt'
-		private const uint kAudioObjectPropertyElementMain                        = 0u;
-		private const uint kAudioDeviceTransportTypeAggregate                     = 0x61676772u; // 'aggr'
-		private const uint kAudioDeviceTransportTypeVirtual                       = 0x76697274u; // 'virt'
-
-		[StructLayout(LayoutKind.Sequential)]
-		private struct AudioObjectPropertyAddress
-		{
-			public uint mSelector;
-			public uint mScope;
-			public uint mElement;
-		}
-
-		[StructLayout(LayoutKind.Sequential)]
-		private struct CFRange
-		{
-			public long location;
-			public long length;
-		}
-
-		[DllImport("/System/Library/Frameworks/CoreAudio.framework/CoreAudio")]
-		private static extern int AudioObjectGetPropertyData(uint objectId, ref AudioObjectPropertyAddress addr, uint qualifierSize, nint qualifierData, ref uint dataSize, nint outData);
-
-		[DllImport("/System/Library/Frameworks/CoreAudio.framework/CoreAudio")]
-		private static extern int AudioObjectSetPropertyData(uint objectId, ref AudioObjectPropertyAddress addr, uint qualifierSize, nint qualifierData, uint dataSize, nint inData);
-
-		[DllImport("/System/Library/Frameworks/CoreAudio.framework/CoreAudio")]
-		private static extern int AudioObjectGetPropertyDataSize(uint objectId, ref AudioObjectPropertyAddress addr, uint qualifierSize, nint qualifierData, out uint outDataSize);
-
-		[DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static extern long CFStringGetLength(nint cfStr);
-
-		[DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static extern void CFStringGetCharacters(nint cfStr, CFRange range, nint buffer);
-
-		[DllImport("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")]
-		private static extern void CFRelease(nint cfTypeRef);
-
-		private static int GetPropertyFloat(uint objectId, AudioObjectPropertyAddress addr, out float value)
-		{
-			var ptr = Marshal.AllocHGlobal(sizeof(float));
-
-			try
-			{
-				uint size = sizeof(float);
-				var result = AudioObjectGetPropertyData(objectId, ref addr, 0, nint.Zero, ref size, ptr);
-				value = result == 0 ? BitConverter.Int32BitsToSingle(Marshal.ReadInt32(ptr)) : 0f;
-				return result;
-			}
-			finally
-			{
-				Marshal.FreeHGlobal(ptr);
-			}
-		}
-
-		private static int SetPropertyFloat(uint objectId, AudioObjectPropertyAddress addr, float value)
-		{
-			var ptr = Marshal.AllocHGlobal(sizeof(float));
-
-			try
-			{
-				Marshal.WriteInt32(ptr, BitConverter.SingleToInt32Bits(value));
-				return AudioObjectSetPropertyData(objectId, ref addr, 0, nint.Zero, sizeof(float), ptr);
-			}
-			finally
-			{
-				Marshal.FreeHGlobal(ptr);
-			}
-		}
-
-		private static int GetPropertyUInt(uint objectId, AudioObjectPropertyAddress addr, out uint value)
-		{
-			var ptr = Marshal.AllocHGlobal(sizeof(uint));
-
-			try
-			{
-				uint size = sizeof(uint);
-				var result = AudioObjectGetPropertyData(objectId, ref addr, 0, nint.Zero, ref size, ptr);
-				value = result == 0 ? (uint)Marshal.ReadInt32(ptr) : 0u;
-				return result;
-			}
-			finally
-			{
-				Marshal.FreeHGlobal(ptr);
-			}
-		}
-
-		private static int SetPropertyUInt(uint objectId, AudioObjectPropertyAddress addr, uint value)
-		{
-			var ptr = Marshal.AllocHGlobal(sizeof(uint));
-
-			try
-			{
-				Marshal.WriteInt32(ptr, (int)value);
-				return AudioObjectSetPropertyData(objectId, ref addr, 0, nint.Zero, sizeof(uint), ptr);
-			}
-			finally
-			{
-				Marshal.FreeHGlobal(ptr);
-			}
-		}
-
-		private static uint[] GetPropertyUInts(uint objectId, AudioObjectPropertyAddress addr)
-		{
-			if (AudioObjectGetPropertyDataSize(objectId, ref addr, 0, nint.Zero, out var dataSize) != 0 || dataSize == 0)
-				return [];
-
-			var ptr = Marshal.AllocHGlobal((int)dataSize);
-
-			try
-			{
-				if (AudioObjectGetPropertyData(objectId, ref addr, 0, nint.Zero, ref dataSize, ptr) != 0)
-					return [];
-
-				var count = (int)(dataSize / sizeof(uint));
-				var result = new uint[count];
-
-				for (var i = 0; i < count; i++)
-					result[i] = (uint)Marshal.ReadInt32(ptr, i * sizeof(uint));
-
-				return result;
-			}
-			finally
-			{
-				Marshal.FreeHGlobal(ptr);
-			}
-		}
-
-		private static string GetPropertyString(uint objectId, AudioObjectPropertyAddress addr)
-		{
-			var ptrSize = nint.Size;
-			var cfStrHolder = Marshal.AllocHGlobal(ptrSize);
-
-			try
-			{
-				uint size = (uint)ptrSize;
-
-				if (AudioObjectGetPropertyData(objectId, ref addr, 0, nint.Zero, ref size, cfStrHolder) != 0)
-					return "";
-
-				var cfStr = Marshal.ReadIntPtr(cfStrHolder);
-
-				if (cfStr == nint.Zero)
-					return "";
-
-				try
-				{
-					var len = CFStringGetLength(cfStr);
-
-					if (len <= 0)
-						return "";
-
-					var charBuf = Marshal.AllocHGlobal((int)(len * 2));
-
-					try
-					{
-						CFStringGetCharacters(cfStr, new CFRange { location = 0, length = len }, charBuf);
-						return Marshal.PtrToStringUni(charBuf, (int)len) ?? "";
-					}
-					finally
-					{
-						Marshal.FreeHGlobal(charBuf);
-					}
-				}
-				finally
-				{
-					CFRelease(cfStr);
-				}
-			}
-			finally
-			{
-				Marshal.FreeHGlobal(cfStrHolder);
-			}
-		}
-
-		private static uint GetDefaultOutputDevice()
-		{
-			var addr = new AudioObjectPropertyAddress
-			{
-				mSelector = kAudioHardwarePropertyDefaultOutputDevice,
-				mScope = kAudioObjectPropertyScopeGlobal,
-				mElement = kAudioObjectPropertyElementMain
-			};
-			GetPropertyUInt(kAudioObjectSystemObject, addr, out var deviceId);
-			return deviceId;
-		}
-
-		private static Dictionary<int, (uint id, string name)> GetDevices()
-		{
-			var result = new Dictionary<int, (uint, string)>();
-			var devicesAddr = new AudioObjectPropertyAddress
-			{
-				mSelector = kAudioHardwarePropertyDevices,
-				mScope = kAudioObjectPropertyScopeGlobal,
-				mElement = kAudioObjectPropertyElementMain
-			};
-			var nameAddr = new AudioObjectPropertyAddress
-			{
-				mSelector = kAudioObjectPropertyName,
-				mScope = kAudioObjectPropertyScopeGlobal,
-				mElement = kAudioObjectPropertyElementMain
-			};
-			var transportAddr = new AudioObjectPropertyAddress
-			{
-				mSelector = kAudioDevicePropertyTransportType,
-				mScope = kAudioObjectPropertyScopeGlobal,
-				mElement = kAudioObjectPropertyElementMain
-			};
-			var deviceIds = GetPropertyUInts(kAudioObjectSystemObject, devicesAddr);
-			var outputDevices = new System.Collections.Generic.List<(uint id, string name)>();
-			var inputDevices = new System.Collections.Generic.List<(uint id, string name)>();
-			var vmvcAddr = new AudioObjectPropertyAddress
-			{
-				mSelector = kAudioHardwareServiceDevicePropertyVirtualMasterVolume,
-				mScope = kAudioObjectPropertyScopeOutput,
-				mElement = kAudioObjectPropertyElementMain
-			};
-
-			foreach (var did in deviceIds)
-			{
-				GetPropertyUInt(did, transportAddr, out var transport);
-
-				if (transport == kAudioDeviceTransportTypeAggregate || transport == kAudioDeviceTransportTypeVirtual)
-					continue;
-
-				var name = GetPropertyString(did, nameAddr);
-				// Devices with vmvc on output scope are output-capable; enumerate them first.
-				if (AudioObjectGetPropertyDataSize(did, ref vmvcAddr, 0, nint.Zero, out _) == 0)
-					outputDevices.Add((did, name));
-				else
-					inputDevices.Add((did, name));
-			}
-
-			var idx = 0;
-			foreach (var dev in outputDevices) result[idx++] = dev;
-			foreach (var dev in inputDevices) result[idx++] = dev;
-			return result;
-		}
-
-		private static int GetDeviceVolume(uint deviceId, out float volume)
-		{
-			var addr = new AudioObjectPropertyAddress
-			{
-				mSelector = kAudioHardwareServiceDevicePropertyVirtualMasterVolume,
-				mScope = kAudioObjectPropertyScopeOutput,
-				mElement = kAudioObjectPropertyElementMain
-			};
-			var result = GetPropertyFloat(deviceId, addr, out volume);
-
-			if (result != 0)
-			{
-				// Input-only devices (e.g. microphone): read input gain via scalar on input scope.
-				addr.mSelector = kAudioDevicePropertyVolumeScalar;
-				addr.mScope = kAudioObjectPropertyScopeInput;
-				result = GetPropertyFloat(deviceId, addr, out volume);
-
-				if (result != 0)
-				{
-					addr.mElement = 1u;
-					result = GetPropertyFloat(deviceId, addr, out volume);
-				}
-			}
-
-			return result;
-		}
-
-		private static int SetDeviceVolume(uint deviceId, float volume)
-		{
-			var addr = new AudioObjectPropertyAddress
-			{
-				mSelector = kAudioHardwareServiceDevicePropertyVirtualMasterVolume,
-				mScope = kAudioObjectPropertyScopeOutput,
-				mElement = kAudioObjectPropertyElementMain
-			};
-			var result = SetPropertyFloat(deviceId, addr, volume);
-
-			if (result != 0)
-			{
-				// Input-only devices (e.g. microphone): set input gain via scalar on input scope.
-				addr.mSelector = kAudioDevicePropertyVolumeScalar;
-				addr.mScope = kAudioObjectPropertyScopeInput;
-				result = SetPropertyFloat(deviceId, addr, volume);
-
-				if (result != 0)
-				{
-					addr.mElement = 1u;
-					result = SetPropertyFloat(deviceId, addr, volume);
-				}
-			}
-
-			return result;
-		}
-
-		private static int GetDeviceMute(uint deviceId, out bool muted)
-		{
-			var addr = new AudioObjectPropertyAddress
-			{
-				mSelector = kAudioDevicePropertyMute,
-				mScope = kAudioObjectPropertyScopeOutput,
-				mElement = kAudioObjectPropertyElementMain
-			};
-			var result = GetPropertyUInt(deviceId, addr, out var val);
-
-			if (result != 0)
-			{
-				// Input-only devices (e.g. microphone) use input scope.
-				addr.mScope = kAudioObjectPropertyScopeInput;
-				result = GetPropertyUInt(deviceId, addr, out val);
-			}
-
-			muted = val != 0;
-			return result;
-		}
-
-		private static int SetDeviceMute(uint deviceId, bool muted)
-		{
-			var muteVal = muted ? 1u : 0u;
-			var addr = new AudioObjectPropertyAddress
-			{
-				mSelector = kAudioDevicePropertyMute,
-				mScope = kAudioObjectPropertyScopeOutput,
-				mElement = kAudioObjectPropertyElementMain
-			};
-			var result = SetPropertyUInt(deviceId, addr, muteVal);
-
-			if (result != 0)
-			{
-				// Input-only devices (e.g. microphone) use input scope.
-				addr.mScope = kAudioObjectPropertyScopeInput;
-				result = SetPropertyUInt(deviceId, addr, muteVal);
-			}
-
-			return result;
-		}
-
-		private static object DoSound(SoundCommands soundCmd, object obj0, object obj1 = null, object obj2 = null)
-		{
-			var soundSet = soundCmd >= SoundCommands.SoundSetVolume;
-			var device = soundSet ? obj2 : obj1;
-
-			// macOS has no component topology like Windows. If a caller passes a numeric component
-			// with no device (e.g. SoundGetName(n)), treat it as a device index so scripts that
-			// enumerate devices via the component parameter work correctly.
-			if (!soundSet && device == null)
-			{
-				var compStr = obj0?.ToString() ?? "";
-
-				if (compStr.Length > 0 && int.TryParse(compStr, out _))
-					device = obj0;
-			}
-
-			uint deviceId;
-
-			if (device == null || device.ToString().Length == 0)
-			{
-				deviceId = GetDefaultOutputDevice();
-
-				if (deviceId == 0)
-					return Errors.OSErrorOccurred("", "No default output device found.");
-			}
-			else
-			{
-				var devStr = device.ToString();
-				var devs = GetDevices();
-				deviceId = 0;
-
-				if (int.TryParse(devStr, out var idx) && devs.TryGetValue(idx - 1, out var byIndex))
-					deviceId = byIndex.id;
-
-				if (deviceId == 0)
-				{
-					foreach (var kv in devs)
-					{
-						if (kv.Value.name.StartsWith(devStr, StringComparison.OrdinalIgnoreCase))
-						{
-							deviceId = kv.Value.id;
-							break;
-						}
-					}
-				}
-
-				if (deviceId == 0)
-					return Errors.TargetErrorOccurred($"Device {device} not found.");
-			}
-
-			switch (soundCmd)
-			{
-				case SoundCommands.SoundGetVolume:
-				{
-					var rc = GetDeviceVolume(deviceId, out var vol);
-
-					if (rc != 0)
-						return Errors.OSErrorOccurred("", $"Failed to query volume (CoreAudio error 0x{(uint)rc:X8}).");
-
-					return (double)(vol * 100f);
-				}
-
-				case SoundCommands.SoundGetMute:
-				{
-					var rc = GetDeviceMute(deviceId, out var muted);
-
-					if (rc != 0)
-						return Errors.OSErrorOccurred("", $"Failed to query mute state (CoreAudio error 0x{(uint)rc:X8}).");
-
-					return muted ? 1L : 0L;
-				}
-
-				case SoundCommands.SoundGetName:
-				{
-					var nameAddr = new AudioObjectPropertyAddress
-					{
-						mSelector = kAudioObjectPropertyName,
-						mScope = kAudioObjectPropertyScopeGlobal,
-						mElement = kAudioObjectPropertyElementMain
-					};
-					return GetPropertyString(deviceId, nameAddr);
-				}
-
-				case SoundCommands.SoundSetVolume:
-				{
-					var valStr = obj0?.ToString() ?? "";
-					var adjust = valStr.Length > 0 && (valStr[0] == '-' || valStr[0] == '+');
-					float newVol;
-
-					if (adjust)
-					{
-						var rc = GetDeviceVolume(deviceId, out var currentVol);
-
-						if (rc != 0)
-							return Errors.OSErrorOccurred("", $"Failed to query current volume (CoreAudio error 0x{(uint)rc:X8}).");
-
-						if (!obj0.CoerceDouble(out var settingPercent))
-							return DefaultObject;
-
-						newVol = Math.Clamp(currentVol + (float)(settingPercent * 0.01), 0f, 1f);
-					}
-					else
-					{
-						if (!obj0.CoerceDouble(out var settingPercent))
-							return DefaultObject;
-
-						newVol = Math.Clamp((float)(settingPercent * 0.01), 0f, 1f);
-					}
-
-					var setRc = SetDeviceVolume(deviceId, newVol);
-
-					if (setRc != 0)
-						return Errors.OSErrorOccurred("", $"Failed to set volume (CoreAudio error 0x{(uint)setRc:X8}).");
-				}
-				break;
-
-				case SoundCommands.SoundSetMute:
-				{
-					var act = Conversions.ConvertOnOffToggle(obj0);
-					bool muted;
-
-					if (act == ToggleValueType.Toggle)
-					{
-						var rc = GetDeviceMute(deviceId, out var currentMute);
-
-						if (rc != 0)
-							return Errors.OSErrorOccurred("", $"Failed to query mute state (CoreAudio error 0x{(uint)rc:X8}).");
-
-						muted = !currentMute;
-					}
-					else
-					{
-						muted = act == ToggleValueType.On;
-					}
-
-					var setRc = SetDeviceMute(deviceId, muted);
-
-					if (setRc != 0)
-						return Errors.OSErrorOccurred("", $"Failed to set mute state (CoreAudio error 0x{(uint)setRc:X8}).");
-				}
-				break;
-			}
-
-			return DefaultObject;
-		}
-#else
-		private static object DoSound(SoundCommands soundCmd, object obj0, object obj1 = null, object obj2 = null)
-		{
-			return DefaultObject;
-		}
 #endif
 
 		/// <summary>

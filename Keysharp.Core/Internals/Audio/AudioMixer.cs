@@ -242,6 +242,8 @@ namespace Keysharp.Internals.Audio
 
 		internal float Peak => Volatile.Read(ref peak);
 
+		internal bool IsIdle => Volatile.Read(ref enqueuePosition) == Volatile.Read(ref dequeuePosition) && ActiveVoiceCount == 0;
+
 		internal string VoicePolicy
 		{
 			get => Volatile.Read(ref policy);
@@ -267,7 +269,7 @@ namespace Keysharp.Internals.Audio
 				var n = 0;
 
 				for (var i = 0; i < voices.Length; i++)
-					if (voices[i] != null)
+					if (Volatile.Read(ref voices[i]) != null)
 						n++;
 
 				return n;
@@ -527,23 +529,21 @@ namespace Keysharp.Internals.Audio
 					return;
 
 				var command = ring[index];
-				ring[index].Control = null;
-				dequeuePosition = pos + 1;
-				Volatile.Write(ref ringSequence[index], (int)pos + ringMask + 1);
-
 				var control = command.Control;
 
-				if (control == null || control.IsTerminal)
-					continue;
-
-				// A command reserved before the last StopAll must not revive after the silence it was cut by.
-				if (command.StopEpoch < epoch)
+				if (control != null && !control.IsTerminal)
 				{
-					_ = control.TryFinish(AudioPlaybackState.Stopped);
-					continue;
+					// A command reserved before the last StopAll must not revive after the silence it was cut by.
+					if (command.StopEpoch < epoch)
+						_ = control.TryFinish(AudioPlaybackState.Stopped);
+					else
+						Admit(control, command.StartFrame);
 				}
 
-				Admit(control, command.StartFrame);
+				ring[index].Control = null;
+				// An idle observer must see the admitted voice before it sees the queue become empty.
+				Volatile.Write(ref dequeuePosition, pos + 1);
+				Volatile.Write(ref ringSequence[index], (int)pos + ringMask + 1);
 			}
 		}
 

@@ -1,5 +1,7 @@
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 using Keysharp.Internals.Audio;
+using Keysharp.Internals.Os;
+using System.Runtime.CompilerServices;
 
 namespace Keysharp.Tests
 {
@@ -9,7 +11,7 @@ namespace Keysharp.Tests
 	/// automated coverage at all — playback into a real endpoint stays a manual probe.
 	/// </summary>
 	[TestFixture, Category("Internal"), Category("Curated"), NonParallelizable]
-	public class AudioInternalsTests
+	public partial class AudioInternalsTests
 	{
 		// ---- helpers -------------------------------------------------------------------------
 
@@ -356,15 +358,19 @@ namespace Keysharp.Tests
 		private sealed class LosableBackend : IAudioBackend
 		{
 			internal LosableStream Opened;
+			internal TestMeter Meter;
 			internal bool Available = true;
 			internal bool Present = true;
 			internal bool? Running;
+			internal int EnumerationError;
+			internal Func<(IAudioOutputStream Stream, string Error)> OutputFactory;
 
 			public bool IsAvailable => Available;
+			public int LastError => EnumerationError;
 			public bool Supports(AudioCapability capability)
-				=> capability is AudioCapability.Playback or AudioCapability.DeviceEnumeration;
+				=> capability is AudioCapability.Playback or AudioCapability.DeviceEnumeration or AudioCapability.Metering;
 			public string UnsupportedReason(AudioCapability capability) => "";
-			public AudioDeviceDescriptor[] EnumerateDevices(AudioDeviceKind kind) => [Descriptor(kind)];
+			public AudioDeviceDescriptor[] EnumerateDevices(AudioDeviceKind kind) => EnumerationError == 0 ? [Descriptor(kind)] : [];
 
 			public bool TryGetDefaultDevice(AudioDeviceKind kind, out AudioDeviceDescriptor device)
 			{
@@ -380,6 +386,14 @@ namespace Keysharp.Tests
 
 			public bool TryOpenOutput(in AudioOutputRequest request, IAudioRenderSource source, out IAudioOutputStream stream, out string error)
 			{
+				if (OutputFactory != null)
+				{
+					var result = OutputFactory();
+					stream = result.Stream;
+					error = result.Error;
+					return stream != null;
+				}
+
 				Opened = new LosableStream();
 				stream = Opened;
 				error = null;
@@ -394,7 +408,7 @@ namespace Keysharp.Tests
 			public object GetNativeDeviceObject(AudioDeviceKind kind, string id) => null;
 			public IAudioDeviceWatcher WatchDevices(Action sink) => null;
 
-			// Capture, sessions, metering and decoding are all reported unsupported by Supports above, so these are
+			// Capture, sessions and decoding are all reported unsupported by Supports above, so these are
 			// the refusals a caller that ignored that would get.
 			public bool TryOpenInput(in AudioInputRequest request, IAudioCaptureSink sink, out IAudioInputStream stream, out string error)
 			{
@@ -413,9 +427,10 @@ namespace Keysharp.Tests
 
 			public bool TryOpenMeter(string targetId, bool isSession, double intervalMilliseconds, out IAudioNativeMeter meter, out string error)
 			{
-				meter = null;
-				error = "unsupported";
-				return false;
+				Meter = new TestMeter();
+				meter = Meter;
+				error = null;
+				return true;
 			}
 
 			public string[] SupportedFormats => [];
@@ -437,12 +452,13 @@ namespace Keysharp.Tests
 		private sealed class LosableStream : IAudioOutputStream
 		{
 			internal int Lost;
+			internal int StartCount, StopCount;
 
 			public AudioStreamFormat Format => new (48000, 2);
 			public double LatencyMilliseconds => 10;
 			public bool IsDeviceLost => Volatile.Read(ref Lost) != 0;
-			public void Start() { }
-			public void Stop() { }
+			public void Start() => Interlocked.Increment(ref StartCount);
+			public void Stop() => Interlocked.Increment(ref StopCount);
 			public void Dispose() { }
 		}
 
@@ -620,5 +636,560 @@ namespace Keysharp.Tests
 							"one second in is 48000 frames of the prepared buffer, not 8000");
 			core.Dispose();
 		}
+
+		private sealed class TestMeter : IAudioNativeMeter
+		{
+			internal bool Disposed;
+			public double Peak => 0.5;
+			public void Dispose() => Disposed = true;
+		}
+
+		[TestCase("", "test:Output")]
+		[TestCase("1", "test:Output")]
+		[TestCase("2", "test:Input")]
+		[TestCase("Test:2", "test:Input")]
+		[TestCase("test input", "test:Input")]
+		public void SoundDeviceSelectors(string selector, string expected)
+		{
+			Assert.IsTrue(Sound.TryResolveSoundDevice(new LosableBackend(), selector, out var device));
+			Assert.AreEqual(expected, device.Id);
+		}
+
+		private sealed class PendingOutputStream(int channels = 2) : IAudioOutputStream
+		{
+			internal int Starts;
+			internal int Disposals;
+			internal Action OnDispose;
+			internal Exception StopError;
+			internal Func<bool> DeviceLost;
+			public AudioStreamFormat Format => new(48000, channels);
+			public double LatencyMilliseconds => 10;
+			public bool IsDeviceLost => DeviceLost?.Invoke() ?? false;
+			public void Start() => Interlocked.Increment(ref Starts);
+			public void Stop() { if (StopError != null) throw StopError; }
+			public void Dispose() { Interlocked.Increment(ref Disposals); OnDispose?.Invoke(); }
+		}
+
+		[TestCase(false), TestCase(true)]
+		public void DisposeRejectsReopenBeforeNativeCleanup(bool stopFails)
+		{
+			using var entered = new ManualResetEventSlim();
+			using var release = new ManualResetEventSlim();
+			var native = new PendingOutputStream
+			{
+				StopError = stopFails ? new IOException("injected stop failure") : null,
+				OnDispose = () =>
+				{
+					entered.Set();
+					if (!release.Wait(5000)) throw new TimeoutException("The native cleanup was not released.");
+				}
+			};
+			var opens = 0;
+			var backend = new LosableBackend { OutputFactory = () => { opens++; return (native, null); } };
+			using var core = new AudioOutputCore(backend, "", 4, AudioMixer.PolicyOldest, 20);
+			Assert.IsTrue(core.TryOpen(out var error), error);
+			var disposing = System.Threading.Tasks.Task.Run(core.Dispose);
+
+			try
+			{
+				Assert.IsTrue(entered.Wait(5000), "native disposal began, including after a stop failure");
+				Assert.AreEqual(AudioOutputStatus.Disposed, core.Status);
+				Assert.IsFalse(core.TryOpen(out _), "terminal ownership must be published before native cleanup");
+				Assert.AreEqual(1, opens, "a disposed output cannot request another native generation");
+				Assert.IsNull(core.Mixer);
+			}
+			finally
+			{
+				release.Set();
+				Assert.IsTrue(disposing.Wait(5000));
+			}
+			Assert.AreEqual(1, native.Disposals);
+		}
+
+		[Test]
+		public void RetiredDeviceLossCannotCloseReopenedOutput()
+		{
+			using var entered = new ManualResetEventSlim();
+			using var release = new ManualResetEventSlim();
+			var first = new PendingOutputStream();
+			var second = new PendingOutputStream();
+			var opens = 0;
+			var backend = new LosableBackend { OutputFactory = () => (++opens == 1 ? first : second, null) };
+			using var core = new AudioOutputCore(backend, "", 4, AudioMixer.PolicyOldest, 20);
+			Assert.IsTrue(core.TryOpen(out var error), error);
+			first.DeviceLost = () =>
+			{
+				entered.Set();
+				if (!release.Wait(5000)) throw new TimeoutException("The old device-loss observation was not released.");
+				return true;
+			};
+			var observing = System.Threading.Tasks.Task.Run(() => core.Status);
+
+			try
+			{
+				Assert.IsTrue(entered.Wait(5000));
+				core.Close();
+				Assert.IsTrue(core.TryOpen(out error), error);
+				release.Set();
+				Assert.IsTrue(observing.Wait(5000));
+				Assert.AreEqual(AudioOutputStatus.Open, observing.Result);
+				Assert.AreEqual(0, second.Disposals, "loss observed on a retired generation cannot release its successor");
+				Assert.AreEqual(1, second.Starts);
+				Assert.IsNotNull(core.Mixer);
+			}
+			finally
+			{
+				release.Set();
+				_ = observing.Wait(5000);
+			}
+		}
+
+		[TestCase(false, 0)]
+		[TestCase(false, 1)]
+		[TestCase(false, 2)]
+		[TestCase(true, 0)]
+		[TestCase(true, 1)]
+		[TestCase(true, 2)]
+		public void PendingOpenCannotUndoCloseOrDispose(bool dispose, int outcome)
+		{
+			using var entered = new ManualResetEventSlim();
+			using var release = new ManualResetEventSlim();
+			var native = outcome == 0 ? null : new PendingOutputStream(outcome == 1 ? 0 : 2);
+			var backend = new LosableBackend
+			{
+				OutputFactory = () =>
+				{
+					entered.Set();
+					if (!release.Wait(5000)) throw new TimeoutException("The pending open was not released.");
+					return (native, outcome == 0 ? "injected open failure" : null);
+				}
+			};
+			using var core = new AudioOutputCore(backend, "", 4, AudioMixer.PolicyOldest, 20);
+			var opening = System.Threading.Tasks.Task.Run(() => core.TryOpen(out _));
+
+			try
+			{
+				Assert.IsTrue(entered.Wait(5000), "the backend received the open request");
+				if (dispose) core.Dispose(); else core.Close();
+				release.Set();
+				Assert.IsTrue(opening.Wait(5000), "the pending open completed");
+				Assert.IsFalse(opening.Result);
+				Assert.AreEqual(dispose ? AudioOutputStatus.Disposed : AudioOutputStatus.Closed, core.Status);
+				Assert.IsNull(core.Error, "retired attempts cannot publish an error into the current state");
+				Assert.IsNull(core.Mixer);
+				if (native != null)
+				{
+					Assert.AreEqual(0, native.Starts);
+					Assert.AreEqual(1, native.Disposals);
+				}
+			}
+			finally
+			{
+				release.Set();
+				_ = opening.Wait(5000);
+			}
+		}
+
+		[TestCase(0)]
+		[TestCase(1)]
+		[TestCase(2)]
+		[TestCase(3)]
+		public void RetiredOpenCannotPublishIntoReopen(int outcome)
+		{
+			using var firstEntered = new ManualResetEventSlim();
+			using var secondEntered = new ManualResetEventSlim();
+			using var releaseFirst = new ManualResetEventSlim();
+			using var releaseSecond = new ManualResetEventSlim();
+			var firstNative = outcome is 0 or 3 ? null : new PendingOutputStream(outcome == 1 ? 0 : 2);
+			var secondNative = new PendingOutputStream();
+			var calls = 0;
+			var backend = new LosableBackend
+			{
+				OutputFactory = () =>
+				{
+					if (Interlocked.Increment(ref calls) == 1)
+					{
+						firstEntered.Set();
+						if (!releaseFirst.Wait(5000)) throw new TimeoutException("The first open was not released.");
+						if (outcome == 3) throw new IOException("injected open exception");
+						return (firstNative, outcome == 0 ? "injected open failure" : null);
+					}
+
+					secondEntered.Set();
+					if (!releaseSecond.Wait(5000)) throw new TimeoutException("The second open was not released.");
+					return (secondNative, null);
+				}
+			};
+			using var core = new AudioOutputCore(backend, "", 4, AudioMixer.PolicyOldest, 20);
+			var first = System.Threading.Tasks.Task.Run(() =>
+			{
+				try { return core.TryOpen(out _); }
+				catch (IOException) when (outcome == 3) { return false; }
+			});
+			System.Threading.Tasks.Task<bool> second = null;
+
+			try
+			{
+				Assert.IsTrue(firstEntered.Wait(5000));
+				core.Close();
+				second = System.Threading.Tasks.Task.Run(() => core.TryOpen(out _));
+				Assert.IsTrue(secondEntered.Wait(5000));
+				releaseFirst.Set();
+				Assert.IsTrue(first.Wait(5000));
+				Assert.IsFalse(first.Result);
+				Assert.AreEqual(AudioOutputStatus.Opening, core.Status, "only the current attempt may publish its outcome");
+				Assert.IsNull(core.Error);
+				releaseSecond.Set();
+				Assert.IsTrue(second.Wait(5000));
+				Assert.IsTrue(second.Result);
+				Assert.AreEqual(AudioOutputStatus.Open, core.Status);
+				Assert.AreEqual(1, secondNative.Starts);
+				Assert.AreEqual(0, secondNative.Disposals);
+				if (firstNative != null) Assert.AreEqual(1, firstNative.Disposals);
+			}
+			finally
+			{
+				releaseFirst.Set();
+				releaseSecond.Set();
+				_ = first.Wait(5000);
+				_ = second?.Wait(5000);
+			}
+		}
+
+		[MethodImpl(MethodImplOptions.NoInlining)]
+		private static WeakReference PlayTemporaryClip(AudioOutputCore core, bool prepare)
+		{
+			var clip = new AudioClipData(new float[480], 48000, 1, AudioFormats.Float32);
+			if (prepare) Assert.IsTrue(core.TryPrepare(clip, out var error), error);
+			Assert.IsNotNull(core.TryPlay(clip, 1f, 0f, false, 0, out var playError), playError);
+			return new WeakReference(clip);
+		}
+
+		[Test]
+		public void TemporaryClipLifetime()
+		{
+			using var core = new AudioOutputCore(new LosableBackend(), "", 4, AudioMixer.PolicyOldest, 20);
+			Assert.IsTrue(core.TryOpen(out var error), error);
+			var temporary = PlayTemporaryClip(core, false);
+			GC.Collect();
+			GC.WaitForPendingFinalizers();
+			GC.Collect();
+			Assert.IsFalse(temporary.IsAlive, "a queued playback keeps its samples without rooting its source clip");
+			core.Mixer.Fill(new float[1024]);
+			var pinned = PlayTemporaryClip(core, true);
+			GC.Collect();
+			Assert.IsTrue(pinned.IsAlive, "Prepare keeps a clip available for later format changes");
+			GC.KeepAlive(core);
+		}
+
+		[Test]
+		public void ConvenienceOutputSuspendsAndResumes()
+		{
+			var backend = new LosableBackend();
+			using var service = new AudioService(null, backend);
+			var core = service.GetConvenienceOutput("", out var error);
+			Assert.IsNotNull(core, error);
+			Assert.IsTrue(SpinWait.SpinUntil(() => Volatile.Read(ref backend.Opened.StopCount) > 0, 6000), "idle output stops its native stream");
+			var starts = backend.Opened.StartCount;
+			PlayTemporaryClip(core, false);
+			Assert.AreEqual(starts + 1, backend.Opened.StartCount);
+			Assert.IsFalse(core.Mixer.IsIdle, "queued commands prevent suspension before admission");
+			core.Mixer.Fill(new float[1024]);
+			Assert.IsTrue(core.Mixer.IsIdle);
+		}
+
+		[MethodImpl(MethodImplOptions.NoInlining)]
+		private static WeakReference StartTemporaryMeter(AudioService service)
+		{
+			var meter = new Ks.Audio.Meter((object[])null) { service = service, targetId = "test:Output" };
+			meter.Start();
+			return new WeakReference(meter);
+		}
+
+		[Test]
+		public void MeterRegistryDoesNotRootWrapper()
+		{
+			var backend = new LosableBackend();
+			using var service = new AudioService(null, backend);
+			var wrapper = StartTemporaryMeter(service);
+			GC.Collect();
+			GC.WaitForPendingFinalizers();
+			GC.Collect();
+			Assert.IsFalse(wrapper.IsAlive);
+			service.Dispose();
+			Assert.IsTrue(backend.Meter.Disposed, "service teardown also owns the native observation");
+		}
+
+		[TestCase("0", false)]
+		[TestCase("-1", false)]
+		[TestCase("Test:x", false)]
+		[TestCase("Missing", true)]
+		public void SoundSelectorErrorIdentity(string selector, bool nativeQuery)
+		{
+			const int NativeFailure = unchecked((int)0x80004005);
+			var backend = new LosableBackend { EnumerationError = NativeFailure };
+			Assert.IsFalse(Sound.TryResolveSoundDevice(backend, selector, out _, out var error));
+			Assert.AreEqual(nativeQuery ? NativeFailure : 0, error, "invalid selectors must not inherit a previous native error");
+		}
+
+#if WINDOWS
+		[TestCase("0", false), TestCase("Test:x", false), TestCase("Missing", true)]
+		public void ComponentDeviceQueryPreservesNativeError(string selector, bool nativeQuery)
+		{
+			const int NativeFailure = unchecked((int)0x80004005);
+			var backend = new LosableBackend { EnumerationError = NativeFailure };
+			if (nativeQuery)
+				Assert.AreEqual(NativeFailure, Assert.Throws<COMException>(() => Sound.GetDevice(selector, backend)).HResult);
+			else
+				Assert.IsNull(Sound.GetDevice(selector, backend));
+		}
+#endif
+
+		[Test]
+		public void MixerAdmissionPreventsIdle()
+		{
+			using var requested = new AutoResetEvent(false);
+			using var rendered = new AutoResetEvent(false);
+			AudioMixer mixer = null;
+			var stopping = 0;
+			var worker = new Thread(() =>
+			{
+				while (requested.WaitOne())
+				{
+					if (Volatile.Read(ref stopping) != 0) return;
+					mixer.Fill(new float[1]);
+					rendered.Set();
+				}
+			}) { IsBackground = true };
+			worker.Start();
+
+			try
+			{
+				for (var i = 0; i < 4096; i++)
+				{
+					mixer = new AudioMixer(1, 1);
+					var voice = Voice(8, 1);
+					Assert.IsTrue(voice.SetLoop(true));
+					Assert.IsTrue(mixer.TrySubmit(voice, 0));
+					requested.Set();
+					Assert.IsTrue(SpinWait.SpinUntil(() =>
+					{
+						Assert.IsFalse(mixer.IsIdle, "a command transferring into a voice must keep the output awake");
+						return rendered.WaitOne(0);
+					}, 5000), "the renderer completed");
+					Assert.IsFalse(mixer.IsIdle);
+				}
+			}
+			finally
+			{
+				Volatile.Write(ref stopping, 1);
+				requested.Set();
+				Assert.IsTrue(worker.Join(5000), "the renderer stopped");
+			}
+		}
+
+#if WINDOWS
+		[Test]
+		public void DisposedOwnerCannotOpenMci()
+		{
+			using var owner = new Script();
+			owner.Dispose();
+			Assert.IsFalse(SoundPlayback.TryPlay(owner, "keysharp-retired-player.wav", false, out var error));
+			Assert.AreEqual("Cannot play sound file keysharp-retired-player.wav after its script has exited.", error);
+		}
+#else
+		private static Process StartSleepingPlayer()
+		{
+			var start = new ProcessStartInfo("/bin/sh") { UseShellExecute = false };
+			start.ArgumentList.Add("-c");
+			start.ArgumentList.Add("exec sleep 30");
+			return Process.Start(start);
+		}
+
+		[Test]
+		public void ExternalPlayerConcurrentStarts()
+		{
+			using var owner = new Script();
+			using var firstEntered = new ManualResetEventSlim();
+			using var releaseFirst = new ManualResetEventSlim();
+			using var secondAttempted = new ManualResetEventSlim();
+			using var secondEntered = new ManualResetEventSlim();
+			var first = System.Threading.Tasks.Task.Run(() => SoundPlayback.StartPlayer(owner, () =>
+			{
+				firstEntered.Set();
+				if (!releaseFirst.Wait(5000)) throw new TimeoutException("The first player start was not released.");
+				return StartSleepingPlayer();
+			}));
+			System.Threading.Tasks.Task<Process> second = null;
+			System.Threading.Tasks.Task firstCleanup = null, secondCleanup = null;
+
+			try
+			{
+				Assert.IsTrue(firstEntered.Wait(5000));
+				second = System.Threading.Tasks.Task.Run(() =>
+				{
+					secondAttempted.Set();
+					return SoundPlayback.StartPlayer(owner, () => { secondEntered.Set(); return StartSleepingPlayer(); });
+				});
+				Assert.IsTrue(secondAttempted.Wait(5000));
+				Assert.IsFalse(secondEntered.Wait(100), "the second start waits for the first publication");
+				releaseFirst.Set();
+				Assert.IsTrue(System.Threading.Tasks.Task.WaitAll([first, second], 5000));
+				firstCleanup = SoundPlayback.ReleaseWhenExited(first.Result);
+				secondCleanup = SoundPlayback.ReleaseWhenExited(second.Result);
+				Assert.IsTrue(firstCleanup.Wait(5000), "replacement kills and reaps the first player");
+				Assert.IsFalse(secondCleanup.IsCompleted);
+				SoundPlayback.StopCurrent(owner);
+				Assert.IsTrue(secondCleanup.Wait(5000), "the current player remains reachable by its owner");
+			}
+			finally
+			{
+				releaseFirst.Set();
+				_ = first.Wait(5000);
+				_ = second?.Wait(5000);
+				SoundPlayback.StopCurrent();
+				if (first.IsCompletedSuccessfully) firstCleanup ??= SoundPlayback.ReleaseWhenExited(first.Result);
+				if (second?.IsCompletedSuccessfully == true) secondCleanup ??= SoundPlayback.ReleaseWhenExited(second.Result);
+				Assert.IsTrue(firstCleanup?.Wait(5000) ?? true);
+				Assert.IsTrue(secondCleanup?.Wait(5000) ?? true);
+			}
+		}
+
+		[Test]
+		public void ExternalPlayerPendingStartIsStopped()
+		{
+			using var owner = new Script();
+			using var entered = new ManualResetEventSlim();
+			using var release = new ManualResetEventSlim();
+			using var stopAttempted = new ManualResetEventSlim();
+			var starting = System.Threading.Tasks.Task.Run(() => SoundPlayback.StartPlayer(owner, () =>
+			{
+				entered.Set();
+				if (!release.Wait(5000)) throw new TimeoutException("The pending player start was not released.");
+				return StartSleepingPlayer();
+			}));
+			System.Threading.Tasks.Task stopping = null, cleanup = null;
+
+			try
+			{
+				Assert.IsTrue(entered.Wait(5000));
+				stopping = System.Threading.Tasks.Task.Run(() => { stopAttempted.Set(); SoundPlayback.StopCurrent(owner); });
+				Assert.IsTrue(stopAttempted.Wait(5000));
+				Assert.IsFalse(stopping.Wait(100), "stop waits for the pending player's publication");
+				release.Set();
+				Assert.IsTrue(System.Threading.Tasks.Task.WaitAll([starting, stopping], 5000));
+				cleanup = SoundPlayback.ReleaseWhenExited(starting.Result);
+				Assert.IsTrue(cleanup.Wait(5000), "stop must see the player published by an in-flight start");
+			}
+			finally
+			{
+				release.Set();
+				_ = starting.Wait(5000);
+				_ = stopping?.Wait(5000);
+				SoundPlayback.StopCurrent();
+				if (starting.IsCompletedSuccessfully) cleanup ??= SoundPlayback.ReleaseWhenExited(starting.Result);
+				Assert.IsTrue(cleanup?.Wait(5000) ?? true);
+			}
+		}
+
+		[Test]
+		public void ExternalPlayerRedirectedReadersReleased()
+		{
+			var start = new ProcessStartInfo("/bin/sh")
+			{
+				UseShellExecute = false,
+				RedirectStandardOutput = true,
+				RedirectStandardError = true,
+			};
+			start.ArgumentList.Add("-c");
+			start.ArgumentList.Add("i=0; while [ $i -lt 8192 ]; do printf 'output exceeding the pipe buffer\\n'; i=$((i + 1)); done; printf 'injected player failure\\n' >&2; exit 7");
+			using var process = Process.Start(start);
+			var output = process.StandardOutput;
+			var errors = process.StandardError;
+			var waiting = System.Threading.Tasks.Task.Run(() =>
+			{
+				var played = SoundPlayback.WaitForPlayer(process, false, "test", "/bin/sh", out var error);
+				return (Played: played, Error: error);
+			});
+
+			try
+			{
+				Assert.IsTrue(waiting.Wait(5000), "both redirected pipes drain while the child runs");
+				Assert.IsFalse(waiting.Result.Played);
+				Assert.AreEqual("Playing test with sh failed: injected player failure", waiting.Result.Error);
+				Assert.Throws<ObjectDisposedException>(() => output.Peek());
+				Assert.Throws<ObjectDisposedException>(() => errors.Peek());
+			}
+			finally
+			{
+				try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+				catch (InvalidOperationException) { }
+				Assert.IsTrue(waiting.Wait(5000));
+			}
+		}
+
+		[TestCase(0)]
+		[TestCase(7)]
+		public void ExternalPlayerInheritedPipesAreBounded(int exitCode)
+		{
+			var pidFile = Path.Combine(Path.GetTempPath(), $"keysharp-player-child-{Guid.NewGuid():N}");
+			var start = new ProcessStartInfo("/bin/sh")
+			{
+				UseShellExecute = false,
+				RedirectStandardOutput = true,
+				RedirectStandardError = true,
+			};
+			start.ArgumentList.Add("-c");
+			start.ArgumentList.Add("sleep 10 & printf '%s' \"$!\" > \"$1\"; exit \"$2\"");
+			start.ArgumentList.Add("keysharp-drain-test");
+			start.ArgumentList.Add(pidFile);
+			start.ArgumentList.Add(exitCode.ToString(CultureInfo.InvariantCulture));
+			using var process = Process.Start(start);
+			var output = process.StandardOutput;
+			var errors = process.StandardError;
+			var waiting = System.Threading.Tasks.Task.Run(() =>
+				SoundPlayback.WaitForPlayer(process, false, "test", "/bin/sh", out _));
+
+			try
+			{
+				Assert.IsTrue(waiting.Wait(3000), "an exited player must not wait for a descendant's pipe handles");
+				Assert.AreEqual(exitCode == 0, waiting.Result);
+				using var child = Process.GetProcessById(int.Parse(File.ReadAllText(pidFile), CultureInfo.InvariantCulture));
+				Assert.IsFalse(child.HasExited, "the descendant still owns the inherited pipes");
+				Assert.Throws<ObjectDisposedException>(() => output.Peek());
+				Assert.Throws<ObjectDisposedException>(() => errors.Peek());
+			}
+			finally
+			{
+				try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+				catch (InvalidOperationException) { }
+				try
+				{
+					if (File.Exists(pidFile) && int.TryParse(File.ReadAllText(pidFile), out var childId))
+					{
+						try
+						{
+							using var child = Process.GetProcessById(childId);
+							if (!child.HasExited) child.Kill();
+							Assert.IsTrue(child.WaitForExit(5000));
+						}
+						catch (ArgumentException) { }
+					}
+				}
+				finally { File.Delete(pidFile); }
+				Assert.IsTrue(waiting.Wait(5000));
+			}
+		}
+
+		[Test]
+		public void ExternalPlayerDisposedOwnerCannotStart()
+		{
+			using var owner = new Script();
+			owner.Dispose();
+			var called = false;
+			Assert.IsNull(SoundPlayback.StartPlayer(owner, () => { called = true; return null; }));
+			Assert.IsFalse(called);
+		}
+#endif
 	}
 }

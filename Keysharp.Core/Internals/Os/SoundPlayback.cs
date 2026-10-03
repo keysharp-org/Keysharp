@@ -136,6 +136,12 @@ namespace Keysharp.Internals.Os
 
 			lock (gate)
 			{
+				if (owner?.IsDisposed == true)
+				{
+					error = $"Cannot play sound file {path} after its script has exited.";
+					return false;
+				}
+
 				// Another script can start playback between the documented early stop above and this open.
 				StopCurrentLocked(null);
 
@@ -246,33 +252,27 @@ namespace Keysharp.Internals.Os
 
 		internal static void StopCurrent(Script owner)
 		{
-			Process previous;
-
 			lock (gate)
 			{
 				if (owner != null && !ReferenceEquals(currentOwner, owner))
 					return;
 
-				previous = current;
+				var previous = current;
 				current = null;
 				currentOwner = null;
+				StopPlayer(previous);
 			}
+		}
 
-			if (previous == null)
+		private static void StopPlayer(Process process)
+		{
+			if (process == null)
 				return;
 
 			try
 			{
-				if (!previous.HasExited)
-					previous.Kill(entireProcessTree: true);
-			}
-			catch
-			{
-			}
-
-			try
-			{
-				previous.Dispose();
+				if (!process.HasExited)
+					process.Kill(entireProcessTree: true);
 			}
 			catch
 			{
@@ -292,7 +292,7 @@ namespace Keysharp.Internals.Os
 			{
 				temp = Path.Combine(Path.GetTempPath(), $"keysharp-tone-{Environment.ProcessId}-{Guid.NewGuid():N}.wav");
 				File.WriteAllBytes(temp, BuildToneWav(frequency, durationMs));
-				return TryPlay(owner, temp, wait: true, out error);
+				return TryPlayCore(owner, temp, wait: true, out error, manageCurrent: false);
 			}
 			catch (Exception ex)
 			{
@@ -322,6 +322,9 @@ namespace Keysharp.Internals.Os
 		/// <param name="wait">Whether to block until playback finishes.</param>
 		/// <param name="error">Failure description when this returns false.</param>
 		internal static bool TryPlay(Script owner, string path, bool wait, out string error)
+			=> TryPlayCore(owner, path, wait, out error, manageCurrent: true);
+
+		private static bool TryPlayCore(Script owner, string path, bool wait, out string error, bool manageCurrent)
 		{
 			error = null;
 			string full;
@@ -338,7 +341,8 @@ namespace Keysharp.Internals.Os
 
 			// Starting a new file stops the old one, and SoundPlay on a nonexistent file is the documented way
 			// to stop playback — so the stop happens before the existence check, not after.
-			StopCurrent();
+			if (manageCurrent)
+				StopCurrent();
 
 			if (!File.Exists(full))
 			{
@@ -360,8 +364,8 @@ namespace Keysharp.Internals.Os
 					FileName = exe,
 					UseShellExecute = false,
 					CreateNoWindow = true,
-					RedirectStandardOutput = true,
-					RedirectStandardError = true,
+					RedirectStandardOutput = wait,
+					RedirectStandardError = wait,
 				};
 
 				foreach (var arg in args)
@@ -370,7 +374,7 @@ namespace Keysharp.Internals.Os
 				// ArgumentList (not a shell string): a path with spaces, quotes or $ is passed verbatim and
 				// cannot be re-parsed as shell syntax.
 				psi.ArgumentList.Add(full);
-				var process = Process.Start(psi);
+				var process = manageCurrent ? StartPlayer(owner, () => Process.Start(psi)) : Process.Start(psi);
 
 				if (process == null)
 				{
@@ -380,37 +384,139 @@ namespace Keysharp.Internals.Os
 
 				if (!wait)
 				{
-					lock (gate)
-					{
-						current = process;
-						currentOwner = owner;
-					}
-
+					_ = ReleaseWhenExited(process);
 					return true;
 				}
 
-				// Drain both pipes so a chatty player cannot fill its buffer and deadlock the wait.
-				_ = process.StandardOutput.ReadToEndAsync();
-				var stderr = process.StandardError.ReadToEndAsync();
-				process.WaitForExit();
-
-				if (process.ExitCode != 0)
-				{
-					var detail = stderr.IsCompletedSuccessfully ? stderr.Result?.Trim() : null;
-					error = $"Playing {path} with {Path.GetFileName(exe)} failed"
-							+ (detail.IsNullOrEmpty() ? "." : $": {detail}");
-					process.Dispose();
-					return false;
-				}
-
-				process.Dispose();
-				return true;
+				return WaitForPlayer(process, manageCurrent, path, exe, out error);
 			}
 			catch (Exception ex)
 			{
 				error = ex.Message;
 				return false;
 			}
+		}
+
+		internal static bool WaitForPlayer(Process process, bool manageCurrent, string path, string exe, out string error)
+		{
+			error = null;
+
+			try
+			{
+				using var output = process.StandardOutput;
+				using var errors = process.StandardError;
+				using var drainCancellation = new CancellationTokenSource();
+				System.Threading.Tasks.Task<string> stdout = null, stderr = null;
+				int exitCode;
+
+				try
+				{
+					stdout = output.ReadToEndAsync(drainCancellation.Token);
+					stderr = errors.ReadToEndAsync(drainCancellation.Token);
+
+					if (manageCurrent)
+					{
+						for (;;)
+						{
+							lock (gate)
+							{
+								if (!ReferenceEquals(current, process))
+									return true;
+
+								if (process.WaitForExit(20))
+								{
+									exitCode = process.ExitCode;
+									break;
+								}
+							}
+
+							Flow.Sleep(20);
+						}
+					}
+					else
+					{
+						process.WaitForExit();
+						exitCode = process.ExitCode;
+					}
+				}
+				finally
+				{
+					lock (gate) StopPlayer(process);
+					// Descendants can keep inherited pipes open after the player exits.
+					drainCancellation.CancelAfter(1000);
+					ObserveDrain(stdout, drainCancellation.Token);
+					ObserveDrain(stderr, drainCancellation.Token);
+				}
+
+				if (exitCode != 0)
+				{
+					var detail = stderr.IsCompletedSuccessfully ? stderr.Result?.Trim() : null;
+					error = $"Playing {path} with {Path.GetFileName(exe)} failed"
+							+ (detail.IsNullOrEmpty() ? "." : $": {detail}");
+					return false;
+				}
+
+				return true;
+			}
+			catch (InvalidOperationException) when (manageCurrent && !OwnsPlayback(process))
+			{
+				return true;
+			}
+			finally
+			{
+				ReleasePlayback(process);
+			}
+		}
+
+		internal static Process StartPlayer(Script owner, Func<Process> start)
+		{
+			lock (gate)
+			{
+				StopCurrent();
+				if (owner?.IsDisposed == true) return null;
+				var process = start();
+				current = process;
+				currentOwner = process == null ? null : owner;
+				return process;
+			}
+		}
+
+		internal static async System.Threading.Tasks.Task ReleaseWhenExited(Process process)
+		{
+			try { await process.WaitForExitAsync().ConfigureAwait(false); }
+			catch (ObjectDisposedException) { }
+			catch (InvalidOperationException) { }
+			finally { ReleasePlayback(process); }
+		}
+
+		private static void ObserveDrain(System.Threading.Tasks.Task drain, CancellationToken cancellation)
+		{
+			if (drain == null) return;
+			try { drain.GetAwaiter().GetResult(); }
+			catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+			catch (IOException) { }
+			catch (ObjectDisposedException) { }
+			catch (InvalidOperationException) { }
+		}
+
+		private static bool OwnsPlayback(Process process)
+		{
+			lock (gate)
+				return ReferenceEquals(current, process);
+		}
+
+		private static void ReleasePlayback(Process process)
+		{
+			lock (gate)
+			{
+				if (ReferenceEquals(current, process))
+				{
+					current = null;
+					currentOwner = null;
+				}
+			}
+
+			process.Dispose();
 		}
 
 		private static bool TryResolvePlayer(string file, out string exe, out string[] args)

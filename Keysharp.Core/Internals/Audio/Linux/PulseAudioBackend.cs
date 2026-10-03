@@ -1,4 +1,4 @@
-#if LINUX
+﻿#if LINUX
 namespace Keysharp.Internals.Audio
 {
 	/// <summary>
@@ -478,11 +478,11 @@ namespace Keysharp.Internals.Audio
 				if (!TryReadEndpoint(kind, id, out var endpoint))
 					return false;
 
-				if (Pa.SwVolumeFromLinear == null)
+				if (Pa.CVolumeScale == null || endpoint.ChannelVolumes.Length == 0)
 					return false;
 
-				var channels = endpoint.Channels > 0 && endpoint.Channels <= MaxCVolumeChannels ? endpoint.Channels : 2;
-				var raw = Pa.SwVolumeFromLinear(Math.Clamp(volume, 0.0, 1.0));
+				var channels = endpoint.ChannelVolumes.Length;
+				var raw = (uint)Math.Round(Math.Clamp(volume, 0.0, 1.0) * 65536.0);
 				var block = EnsureVolumeBlock();
 
 				if (block == 0)
@@ -491,7 +491,9 @@ namespace Keysharp.Internals.Audio
 				Marshal.WriteByte(block, (byte)channels);
 
 				for (var i = 0; i < channels; i++)
-					Marshal.WriteInt32(block, CVolumeValuesOffset + (i * 4), unchecked((int)raw));
+					Marshal.WriteInt32(block, CVolumeValuesOffset + (i * 4), unchecked((int)endpoint.ChannelVolumes[i]));
+
+				Pa.CVolumeScale(block, raw);
 
 				var setter = endpoint.Kind == AudioDeviceKind.Output ? Pa.SetSinkVolumeByIndex : Pa.SetSourceVolumeByIndex;
 				var ok = RunLocked(() =>
@@ -1240,7 +1242,11 @@ namespace Keysharp.Internals.Audio
 			if (string.IsNullOrEmpty(name))
 				return null;
 
-			var linear = ReadLinearVolume(info, InfoVolumeOffset, out _);
+			var slider = ReadVolume(info, InfoVolumeOffset, out var volumeChannels, linear: false);
+			var channelVolumes = new uint[volumeChannels];
+
+			for (var i = 0; i < volumeChannels; i++)
+				channelVolumes[i] = unchecked((uint)Marshal.ReadInt32(info, InfoVolumeOffset + CVolumeValuesOffset + i * 4));
 			return new PaEndpoint
 			{
 				Kind = kind,
@@ -1249,17 +1255,18 @@ namespace Keysharp.Internals.Audio
 				Description = Marshal.PtrToStringUTF8(Marshal.ReadIntPtr(info, InfoDescriptionOffset)) ?? "",
 				Rate = Marshal.ReadInt32(info, InfoSampleSpecOffset + 4),
 				Channels = Marshal.ReadByte(info, InfoSampleSpecOffset + 8),
-				Volume = linear,
+				Volume = slider,
+				ChannelVolumes = channelVolumes,
 				Mute = Marshal.ReadInt32(info, InfoMuteOffset) != 0,
 				State = Lp64 ? Marshal.ReadInt32(info, InfoStateOffset) : -1,
 			};
 		}
 
 		/// <summary>
-		/// Reduces one borrowed pa_cvolume to its loudest channel as a linear scalar, which is all a single number
-		/// can honestly say about a per-channel volume. An unreadable block reports zero channels.
+		/// Reads the loudest channel from a borrowed pa_cvolume, as linear amplitude for sessions or slider position
+		/// for endpoints. An unreadable block reports zero channels.
 		/// </summary>
-		private static double ReadLinearVolume(nint info, int cvolumeOffset, out int channels)
+		private static double ReadVolume(nint info, int cvolumeOffset, out int channels, bool linear = true)
 		{
 			channels = Marshal.ReadByte(info, cvolumeOffset);
 
@@ -1279,7 +1286,7 @@ namespace Keysharp.Internals.Audio
 					loudest = raw;
 			}
 
-			return Pa.SwVolumeToLinear(loudest);
+			return linear ? Pa.SwVolumeToLinear(loudest) : loudest / 65536.0;
 		}
 
 		internal void RemoveWatcher(Action sink)
@@ -2160,7 +2167,7 @@ namespace Keysharp.Internals.Audio
 
 			if (sinkInput)
 			{
-				session.Volume = ReadLinearVolume(info, SinkInputVolumeOffset, out var channels);
+				session.Volume = ReadVolume(info, SinkInputVolumeOffset, out var channels);
 				session.VolumeChannels = channels;
 				session.Mute = Marshal.ReadInt32(info, SinkInputMuteOffset) != 0;
 				session.HasMute = Pa.SetSinkInputMute != null;
@@ -2180,7 +2187,7 @@ namespace Keysharp.Internals.Audio
 			else if (modern)
 			{
 				// A source-output carries no volume, mute, or corked field before 1.0: its struct ends at proplist.
-				session.Volume = ReadLinearVolume(info, SourceOutputVolumeOffset, out var channels);
+				session.Volume = ReadVolume(info, SourceOutputVolumeOffset, out var channels);
 				session.VolumeChannels = channels;
 				session.Mute = Marshal.ReadInt32(info, SourceOutputMuteOffset) != 0;
 				session.Corked = Marshal.ReadInt32(info, SourceOutputCorkedOffset) != 0;
@@ -2837,6 +2844,7 @@ namespace Keysharp.Internals.Audio
 			internal int Rate;
 			internal int Channels;
 			internal double Volume;
+			internal uint[] ChannelVolumes;
 			internal bool Mute;
 			internal int State;
 		}
@@ -3810,6 +3818,7 @@ namespace Keysharp.Internals.Audio
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void FnSetSubscribeCb(nint context, ContextSubscribeCb cb, nint userData);
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate double FnVolumeToLinear(uint volume);
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate uint FnVolumeFromLinear(double linear);
+			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate nint FnCVolumeScale(nint volume, uint maximum);
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate nint FnStreamNew(nint context, nint name, ref PaSampleSpec spec, nint channelMap);
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate int FnStreamConnectPlayback(nint stream, nint device, ref PaBufferAttr attr, int flags, nint volume, nint syncStream);
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)] internal delegate void FnStreamSetRequestCb(nint stream, StreamRequestCb cb, nint userData);
@@ -3858,6 +3867,7 @@ namespace Keysharp.Internals.Audio
 			internal static FnSetSubscribeCb SetSubscribeCallback;
 			internal static FnVolumeToLinear SwVolumeToLinear;
 			internal static FnVolumeFromLinear SwVolumeFromLinear;
+			internal static FnCVolumeScale CVolumeScale;
 			internal static FnStreamNew StreamNew;
 			internal static FnVoidP StreamUnref;
 			internal static FnStreamConnectPlayback StreamConnectPlayback;
@@ -3953,6 +3963,7 @@ namespace Keysharp.Internals.Audio
 					SetSubscribeCallback = Bind<FnSetSubscribeCb>("pa_context_set_subscribe_callback", ref missing);
 					SwVolumeToLinear = Bind<FnVolumeToLinear>("pa_sw_volume_to_linear", ref missing);
 					SwVolumeFromLinear = Bind<FnVolumeFromLinear>("pa_sw_volume_from_linear", ref missing);
+					CVolumeScale = Bind<FnCVolumeScale>("pa_cvolume_scale", ref missing);
 					StreamNew = Bind<FnStreamNew>("pa_stream_new", ref missing);
 					StreamUnref = Bind<FnVoidP>("pa_stream_unref", ref missing);
 					StreamConnectPlayback = Bind<FnStreamConnectPlayback>("pa_stream_connect_playback", ref missing);

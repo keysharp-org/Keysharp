@@ -73,6 +73,8 @@ namespace Keysharp.Internals.Audio
 		private readonly Lock classifyGate = new();
 		private AudioDeviceDescriptor[] lastDevices = [];
 		private bool started;
+		private int classifyPending;
+		private int classifyWorker;
 
 		protected override ThreadKind CallbackThreadKind => ThreadKind.Event;
 
@@ -128,7 +130,30 @@ namespace Keysharp.Internals.Audio
 			if (disposed)
 				return;
 
-			_ = ThreadPool.UnsafeQueueUserWorkItem(static manager => manager.ClassifyAndDispatch(), this, preferLocal: false);
+			Interlocked.Exchange(ref classifyPending, 1);
+
+			if (Interlocked.CompareExchange(ref classifyWorker, 1, 0) == 0)
+				_ = ThreadPool.UnsafeQueueUserWorkItem(static manager => manager.DrainChanges(), this, preferLocal: false);
+		}
+
+		private void DrainChanges()
+		{
+			try
+			{
+				do
+				{
+					Interlocked.Exchange(ref classifyPending, 0);
+					ClassifyAndDispatch();
+				}
+				while (!disposed && Volatile.Read(ref classifyPending) != 0);
+			}
+			finally
+			{
+				Volatile.Write(ref classifyWorker, 0);
+
+				if (!disposed && Volatile.Read(ref classifyPending) != 0)
+					OnNativeChange();
+			}
 		}
 
 		private void ClassifyAndDispatch()

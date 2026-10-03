@@ -120,6 +120,31 @@ ComObjValue({})
 OnError(handler, 0)
 AssertEq(continued.Count, 1, A_LineNumber)
 
+SoundBeep(523, 0)
+Throws(() => SoundBeep(0, 0), A_LineNumber, ValueError)
+
+#if WINDOWS
+soundErrors := []
+soundHandler := (error, mode) => (soundErrors.Push(error), -1)
+soundComponent := {Calls: 0}
+soundComponent.DefineProp("ToString", {Call: (this) => (this.Calls++, "component")})
+soundIid := "{00000000-0000-0000-C000-000000000046}"
+soundInvalid := {}
+OnError(soundHandler)
+SoundGetInterface(soundInvalid)
+SoundGetInterface(soundIid, soundInvalid)
+SoundGetInterface(soundIid, "", soundInvalid)
+SoundGetInterface(soundIid, soundComponent, soundInvalid)
+SoundGetName(soundComponent, soundInvalid)
+SoundSetVolume(50, soundComponent, soundInvalid)
+SoundSetMute(1, soundComponent, soundInvalid)
+OnError(soundHandler, 0)
+AssertEq(soundErrors.Length, 7, A_LineNumber)
+for soundError in soundErrors
+    Assert(soundError is TypeError, A_LineNumber)
+AssertEq(soundComponent.Calls, 4, A_LineNumber)
+#endif
+
 for bad in ["Nromal", "Nonsense", "Normal,High", "", 1]
     Throws(() => ProcessSetPriority(bad, "keysharp-enum-test-no-such-process.exe"), A_LineNumber, ValueError)
 

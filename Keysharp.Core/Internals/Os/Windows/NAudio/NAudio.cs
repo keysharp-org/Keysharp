@@ -1236,6 +1236,17 @@ namespace Keysharp.Internals.Os.Windows
 			return false;
 		}
 
+		internal bool TryGetDevice(string id, out MMDevice result)
+		{
+			result = null;
+			var hr = realEnumerator.GetDevice(id, out var device);
+			if (hr == unchecked((int)0x80070490)) return false;
+			if (hr < 0) throw new COMException(null, hr);
+			if (device == null) return false;
+			result = new MMDevice(device);
+			return true;
+		}
+
 		/// <summary>
 		/// Get device by ID
 		/// </summary>

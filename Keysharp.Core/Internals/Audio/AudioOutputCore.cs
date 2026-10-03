@@ -34,12 +34,15 @@ namespace Keysharp.Internals.Audio
 		private readonly Dictionary<AudioClipData, byte> preparedClips = [];
 		private readonly Dictionary<AudioClipData, float[]> cache = [];
 
-		// Admission order of the conversions no script pinned, which is what eviction reclaims from.
-		private readonly Queue<AudioClipData> adHocOrder = new ();
+		private readonly ConditionalWeakTable<AudioClipData, float[]> adHocCache = new();
+		private System.Threading.Timer idleTimer;
+		private long idleSince;
+		private bool suspended;
 
 		private AudioMixer mixer;
 		private IAudioOutputStream stream;
 		private string status = AudioOutputStatus.Closed;
+		private long openVersion;
 
 		/// <summary>The backend to work through, resolved on first use when this output was built from a service.</summary>
 		private IAudioBackend backend => explicitBackend ?? owner?.Backend;
@@ -215,6 +218,8 @@ namespace Keysharp.Internals.Audio
 		/// </summary>
 		internal bool TryOpen(out string error)
 		{
+			long version;
+
 			lock (gate)
 			{
 				if (status == AudioOutputStatus.Disposed)
@@ -238,6 +243,7 @@ namespace Keysharp.Internals.Audio
 				}
 
 				status = AudioOutputStatus.Opening;
+				version = ++openVersion;
 			}
 
 			// The mixer cannot exist until the backend has negotiated a channel count, but the backend needs a
@@ -247,19 +253,19 @@ namespace Keysharp.Internals.Audio
 
 			try
 			{
-				return TryOpenCore(out opened, out error);
+				return TryOpenCore(version, out opened, out error);
 			}
 			finally
 			{
 				// An exception between claiming Opening and publishing Open would otherwise leave the output
 				// answering "already being opened" for the rest of its life.
 				lock (gate)
-					if (status == AudioOutputStatus.Opening)
+					if (openVersion == version && status == AudioOutputStatus.Opening)
 						status = AudioOutputStatus.Closed;
 			}
 		}
 
-		private bool TryOpenCore(out IAudioOutputStream opened, out string error)
+		private bool TryOpenCore(long version, out IAudioOutputStream opened, out string error)
 		{
 			var request = new AudioOutputRequest(DeviceId, RequestedLatencyMilliseconds);
 			var adapter = new DeferredRenderSource();
@@ -277,8 +283,11 @@ namespace Keysharp.Internals.Audio
 			{
 				lock (gate)
 				{
-					status = AudioOutputStatus.Unavailable;
-					Error = error;
+					if (openVersion == version && status == AudioOutputStatus.Opening)
+					{
+						status = AudioOutputStatus.Unavailable;
+						Error = error;
+					}
 				}
 
 				return false;
@@ -286,13 +295,16 @@ namespace Keysharp.Internals.Audio
 
 			if (!AudioFormats.IsValidChannels(opened.Format.Channels) || opened.Format.SampleRate <= 0)
 			{
-				opened.Dispose();
 				error = $"The audio device negotiated {opened.Format.Channels} channels at {opened.Format.SampleRate} Hz, which this output cannot render.";
+				opened.Dispose();
 
 				lock (gate)
 				{
-					status = AudioOutputStatus.Unavailable;
-					Error = error;
+					if (openVersion == version && status == AudioOutputStatus.Opening)
+					{
+						status = AudioOutputStatus.Unavailable;
+						Error = error;
+					}
 				}
 
 				return false;
@@ -308,15 +320,24 @@ namespace Keysharp.Internals.Audio
 
 			lock (gate)
 			{
+				if (openVersion != version || status != AudioOutputStatus.Opening)
+				{
+					opened.Dispose();
+					error = "The output was closed while it was opening.";
+					return false;
+				}
+
 				mixer = bound;
 				stream = opened;
 				status = AudioOutputStatus.Open;
 				Error = null;
 				BoundDeviceId = ResolveBoundId();
 				RebuildCacheLocked();
+				opened.Start();
+				suspended = false;
+				idleSince = Environment.TickCount64;
 			}
 
-			opened.Start();
 			error = null;
 			return true;
 		}
@@ -382,10 +403,9 @@ namespace Keysharp.Internals.Audio
 							? (long)(clip.FrameCount * (double)targetRate / clip.SampleRate) * targetChannels * 4L
 							: 0L;
 
-			if (cacheBytes + projected > AudioFormats.MaxClipBytes)
-				EvictUnpinnedLocked(projected);
+			var pinned = preparedClips.ContainsKey(clip);
 
-			if (cacheBytes + projected > AudioFormats.MaxClipBytes)
+			if ((pinned ? cacheBytes : 0) + projected > AudioFormats.MaxClipBytes)
 			{
 				error = $"Preparing this clip would exceed the {AudioFormats.MaxClipBytes / (1024 * 1024)} MiB prepared-cache budget for one output.";
 				return false;
@@ -394,33 +414,55 @@ namespace Keysharp.Internals.Audio
 			var prepared = clip.PrepareFor(targetRate, targetChannels);
 			var bytes = prepared.LongLength * 4L;
 
-			cache[clip] = prepared;
-			cacheBytes += bytes;
-
-			if (!preparedClips.ContainsKey(clip))
-				adHocOrder.Enqueue(clip);
+			if (pinned)
+			{
+				cache[clip] = prepared;
+				cacheBytes += bytes;
+				adHocCache.Remove(clip);
+			}
+			else
+				adHocCache.Add(clip, prepared);
 
 			return true;
 		}
 
-		/// <summary>Drops on-the-fly conversions, oldest first, until the incoming clip fits.</summary>
-		private void EvictUnpinnedLocked(long incoming)
+		internal void EnableIdleSuspension()
 		{
-			while (adHocOrder.Count > 0 && cacheBytes + incoming > AudioFormats.MaxClipBytes)
+			lock (gate)
 			{
-				var oldest = adHocOrder.Dequeue();
+				idleSince = Environment.TickCount64;
+				idleTimer ??= new System.Threading.Timer(static state => ((AudioOutputCore)state).SuspendIfIdle(), this, 1000, 1000);
+			}
+		}
 
-				if (preparedClips.ContainsKey(oldest) || !cache.Remove(oldest, out var evicted))
-					continue;
+		private void SuspendIfIdle()
+		{
+			lock (gate)
+			{
+				if (status != AudioOutputStatus.Open || stream == null || suspended)
+					return;
 
-				cacheBytes -= evicted.LongLength * 4L;
+				if (mixer?.IsIdle != true)
+					idleSince = Environment.TickCount64;
+				else if (Environment.TickCount64 - idleSince >= 2000)
+				{
+					try
+					{
+						stream.Stop();
+						suspended = true;
+					}
+					catch (Exception ex)
+					{
+						Diagnostics.Debug.WriteLine($"Audio idle suspension failed: {ex.Message}");
+					}
+				}
 			}
 		}
 
 		private void RebuildCacheLocked()
 		{
 			cache.Clear();
-			adHocOrder.Clear();
+			adHocCache.Clear();
 			cacheBytes = 0;
 
 			foreach (var clip in preparedClips.Keys)
@@ -430,7 +472,7 @@ namespace Keysharp.Internals.Audio
 		internal bool IsPrepared(AudioClipData clip)
 		{
 			lock (gate)
-				return status == AudioOutputStatus.Open && cache.ContainsKey(clip);
+				return status == AudioOutputStatus.Open && (cache.ContainsKey(clip) || adHocCache.TryGetValue(clip, out _));
 		}
 
 		/// <summary>
@@ -446,42 +488,50 @@ namespace Keysharp.Internals.Audio
 			error = null;
 			AudioMixer m;
 			float[] prepared;
-			int channels, rate;
+			int rate;
 
 			lock (gate)
 			{
 				if (status != AudioOutputStatus.Open || stream == null || mixer == null)
 					return null;
 
-				if (!cache.TryGetValue(clip, out prepared))
+				if (!cache.TryGetValue(clip, out prepared) && !adHocCache.TryGetValue(clip, out prepared))
 				{
 					// An unprepared clip is converted here rather than refused; a caller that needs the bounded
 					// path calls Prepare during setup, exactly as the design's hot path requires.
 					if (!TryCacheLocked(clip, out error))
 						return null;
 
-					prepared = cache[clip];
+					if (!cache.TryGetValue(clip, out prepared))
+						adHocCache.TryGetValue(clip, out prepared);
 				}
 
 				m = mixer;
-				channels = stream.Format.Channels;
 				rate = stream.Format.SampleRate;
+
+				var startFrame = rate > 0 ? (long)(startMilliseconds * rate / 1000.0) : 0L;
+
+				var control = new AudioPlaybackControl
+				{
+					Prepared = prepared,
+				};
+				_ = control.SetVolume(volume);
+				_ = control.SetPan(pan);
+				_ = control.SetLoop(loop);
+
+				if (suspended)
+				{
+					stream.Start();
+					suspended = false;
+				}
+
+				idleSince = Environment.TickCount64;
+
+				if (!m.TrySubmit(control, startFrame))
+					return null;
+
+				return control;
 			}
-
-			var startFrame = rate > 0 ? (long)(startMilliseconds * rate / 1000.0) : 0L;
-
-			var control = new AudioPlaybackControl
-			{
-				Prepared = prepared,
-			};
-			_ = control.SetVolume(volume);
-			_ = control.SetPan(pan);
-			_ = control.SetLoop(loop);
-
-			if (!m.TrySubmit(control, startFrame))
-				return null;
-
-			return control;
 		}
 
 		internal void StopAll()
@@ -495,32 +545,42 @@ namespace Keysharp.Internals.Audio
 		}
 
 		/// <summary>Reversible: retires the native generation but keeps the registered clip set for a later open.</summary>
-		internal void Close()
+		internal void Close() => Close(false);
+
+		private void Close(bool disposing)
 		{
 			IAudioOutputStream toDispose;
 			AudioMixer toStop;
 
 			lock (gate)
 			{
-				if (status == AudioOutputStatus.Disposed || status == AudioOutputStatus.Closed)
+				if (status == AudioOutputStatus.Disposed || (!disposing && status == AudioOutputStatus.Closed))
 					return;
+
+				if (disposing)
+				{
+					preparedClips.Clear();
+					idleTimer?.Dispose();
+					idleTimer = null;
+				}
 
 				toDispose = stream;
 				toStop = mixer;
 				stream = null;
 				mixer = null;
 				cache.Clear();
-				adHocOrder.Clear();
+				adHocCache.Clear();
 				cacheBytes = 0;
-				status = AudioOutputStatus.Closed;
+				status = disposing ? AudioOutputStatus.Disposed : AudioOutputStatus.Closed;
+				openVersion++;
 			}
 
 			// The stream is stopped and released first: disposing it is what quiesces the render callback, and
 			// ending the voices while one is still running would race the sweep against a concurrent admission.
 			try
 			{
-				toDispose?.Stop();
-				toDispose?.Dispose();
+				try { toDispose?.Stop(); }
+				finally { toDispose?.Dispose(); }
 			}
 			catch (Exception ex)
 			{
@@ -548,18 +608,18 @@ namespace Keysharp.Internals.Audio
 			}
 
 			if (current is { IsDeviceLost: true })
-				NoteDeviceLost();
+				NoteDeviceLost(current);
 		}
 
 		/// <summary>Ends every voice and retires the output once the bound device has gone away under it.</summary>
-		private void NoteDeviceLost()
+		private void NoteDeviceLost(IAudioOutputStream lostStream)
 		{
 			AudioMixer toStop;
 			IAudioOutputStream toDispose;
 
 			lock (gate)
 			{
-				if (status != AudioOutputStatus.Open)
+				if (status != AudioOutputStatus.Open || !ReferenceEquals(stream, lostStream))
 					return;
 
 				toStop = mixer;
@@ -574,8 +634,8 @@ namespace Keysharp.Internals.Audio
 			// render callback that is still admitting commands.
 			try
 			{
-				toDispose?.Stop();
-				toDispose?.Dispose();
+				try { toDispose?.Stop(); }
+				finally { toDispose?.Dispose(); }
 			}
 			catch (Exception ex)
 			{
@@ -585,15 +645,6 @@ namespace Keysharp.Internals.Audio
 			toStop?.FinishAll(AudioPlaybackState.DeviceLost);
 		}
 
-		public void Dispose()
-		{
-			Close();
-
-			lock (gate)
-			{
-				preparedClips.Clear();
-				status = AudioOutputStatus.Disposed;
-			}
-		}
+		public void Dispose() => Close(true);
 	}
 }

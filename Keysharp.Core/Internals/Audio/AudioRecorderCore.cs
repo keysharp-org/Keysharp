@@ -43,7 +43,6 @@ namespace Keysharp.Internals.Audio
 		/// Idle poll period for the writer. The capture thread signals nothing, because signalling a waiter is
 		/// the one remaining thing on that thread that could take a lock.
 		/// </summary>
-		private const int WriterIdleMs = 2;
 
 		private readonly AudioService service;
 
@@ -323,7 +322,7 @@ namespace Keysharp.Internals.Audio
 			{
 				while (Volatile.Read(ref terminal) == 0)
 					if (!DrainOnce())
-						Thread.Sleep(WriterIdleMs);
+						Thread.Sleep((int)Math.Clamp(chunkMs / 2, 5, 50));
 
 				// Whoever claimed the terminal transition left the already-captured frames in the ring; they are
 				// part of the recording and are written before the destination is closed.

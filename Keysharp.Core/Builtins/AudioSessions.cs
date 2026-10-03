@@ -413,7 +413,7 @@ namespace Keysharp.Builtins
 				void IDisposable.Dispose() => _ = Dispose();
 
 				internal Engine.AudioService service;
-				internal Engine.IAudioNativeMeter native;
+				internal Engine.AudioMeterCore native;
 				internal string targetId = "";
 				internal bool isSession;
 				internal object target = "";
@@ -519,18 +519,21 @@ namespace Keysharp.Builtins
 					if (targetId.Length == 0)
 						return Errors.OSErrorOccurredWithMessage("This meter has no target; there is no default output device.");
 
-					if (!service.TryRegisterMeter(this))
+					var core = new Engine.AudioMeterCore();
+
+					if (!service.TryRegisterMeter(core))
 						return Errors.OSErrorOccurredWithMessage($"This script already has {Engine.AudioService.MaxOpenMeters} meters running. Stop one before starting another.");
 
-					if (!backend.TryOpenMeter(targetId, isSession, Interval, out var opened, out var openError))
+					if (!core.TryOpen(backend, targetId, isSession, Interval, out var openError))
 					{
-						service.UnregisterMeter(this);
+						core.Dispose();
+						service.UnregisterMeter(core);
 						status = "Error";
 						error = openError;
 						return Errors.OSErrorOccurredWithMessage($"Cannot meter that target: {openError}");
 					}
 
-					native = opened;
+					native = core;
 					status = "Active";
 					error = null;
 					return this;
@@ -551,7 +554,8 @@ namespace Keysharp.Builtins
 						Diagnostics.Debug.WriteLine($"Audio meter stop failed: {ex.Message}");
 					}
 
-					service?.UnregisterMeter(this);
+					if (m != null)
+						service?.UnregisterMeter(m);
 
 					if (status != "Disposed")
 						status = "Stopped";

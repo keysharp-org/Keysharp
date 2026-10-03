@@ -449,7 +449,14 @@ namespace Keysharp.Builtins
 				if (device is not Device && !device.CoerceString(out deviceText))
 					return DefaultObject;
 
-				if (device is Device || deviceText.Length > 0)
+				if (device is Device selected)
+				{
+					if (selected.Snapshot.Kind != Engine.AudioDeviceKind.Output)
+						return Errors.ValueErrorOccurred("Audio.Play requires an output device.", device);
+
+					deviceId = selected.Id;
+				}
+				else if (deviceText.Length > 0)
 				{
 					if (!TryResolveDevice(device, Engine.AudioDeviceKind.Output, true, out var resolved, out failure))
 						return failure;
@@ -463,7 +470,7 @@ namespace Keysharp.Builtins
 					return Errors.OSErrorOccurredWithMessage($"Audio.Play could not open an output: {error}");
 
 				if (data.DurationMilliseconds > 0 && startMs >= data.DurationMilliseconds)
-					return Errors.ValueErrorOccurred($"StartMilliseconds {startMs} is at or past the clip.s {data.DurationMilliseconds:0.##} ms duration.");
+					return Errors.ValueErrorOccurred($"StartMilliseconds {startMs} is at or past the clip's {data.DurationMilliseconds:0.##} ms duration.");
 
 				var control = core.TryPlay(data, volumeValue, panValue, loopValue, startMs, out var playError);
 

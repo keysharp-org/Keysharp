@@ -476,7 +476,11 @@ namespace Keysharp.Internals.Audio
 			};
 		}
 
-		public AudioDeviceDescriptor[] EnumerateDevices(AudioDeviceKind kind)
+		public AudioDeviceDescriptor[] EnumerateDevices(AudioDeviceKind kind) => EnumerateDevicesCore(FlowOf(kind));
+
+		public AudioDeviceDescriptor[] EnumerateAllDevices() => EnumerateDevicesCore(DataFlow.All, DeviceState.Active | DeviceState.Unplugged);
+
+		private AudioDeviceDescriptor[] EnumerateDevicesCore(DataFlow flow, DeviceState states = DeviceState.Active)
 		{
 			if (!EnsureProbed(out _))
 				return [];
@@ -486,9 +490,9 @@ namespace Keysharp.Internals.Audio
 			try
 			{
 				enumerator = new MMDeviceEnumerator();
-				var flow = FlowOf(kind);
-				var defaultId = DefaultIdOrEmpty(enumerator, flow);
-				var collection = enumerator.EnumerateAudioEndPoints(flow, DeviceState.Active);
+				var outputDefault = DefaultIdOrEmpty(enumerator, DataFlow.Render);
+				var inputDefault = DefaultIdOrEmpty(enumerator, DataFlow.Capture);
+				var collection = enumerator.EnumerateAudioEndPoints(flow, states);
 				var count = collection.Count;
 				var result = new List<AudioDeviceDescriptor>(count);
 
@@ -499,8 +503,9 @@ namespace Keysharp.Internals.Audio
 					try
 					{
 						device = collection[i];
+						var kind = KindOf(device.DataFlow);
 						var id = device.ID;
-						result.Add(new AudioDeviceDescriptor(id, NameOf(device), kind, id == defaultId));
+						result.Add(new AudioDeviceDescriptor(id, NameOf(device), kind, id == (kind == AudioDeviceKind.Output ? outputDefault : inputDefault)));
 					}
 					catch (Exception)
 					{
