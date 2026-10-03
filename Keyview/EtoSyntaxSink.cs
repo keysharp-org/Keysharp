@@ -1,48 +1,50 @@
 #if !WINDOWS
 namespace Keyview
 {
-	/// <summary>
-	/// Applies <see cref="SyntaxHighlighter"/> results to an Eto <see cref="RichTextArea"/>.
-	/// The tokenizer itself is platform-neutral; this is only the "what color is that category" half.
-	/// </summary>
 	internal sealed class EtoSyntaxSink : ISyntaxSink
 	{
-		private readonly ITextBuffer buffer;
-		private readonly bool isDark;
-
-		internal EtoSyntaxSink(ITextBuffer buffer, bool isDark)
+		private readonly RichTextArea area;
+		private readonly Action<bool> applying;
+		internal EtoSyntaxSink(RichTextArea area, Action<bool> applying) { this.area = area; this.applying = applying; }
+		public void Style(int start, int endExclusive, SyntaxColor color)
 		{
-			this.buffer = buffer;
-			this.isDark = isDark;
+			applying(true);
+			try
+			{
+				area.Buffer.SetForeground(new Range<int>(start, endExclusive - 1), color == SyntaxColor.Default
+					? area.TextColor : SyntaxPalette.ToColor(color, SyntaxPalette.IsDark));
+			}
+			finally { applying(false); }
 		}
-
-		public void Style(int start, int endExclusive, SyntaxColor color) =>
-			buffer.SetForeground(new Range<int>(start, endExclusive - 1), SyntaxPalette.ToColor(color, isDark));
 	}
 
 	internal static class EtoHighlightExtensions
 	{
-		/// <summary>
-		/// Re-colors the entire contents of <paramref name="area"/>. Stale colors from a previous pass are cleared
-		/// by first resetting the whole buffer to the control's default text color.
-		/// </summary>
-		internal static void Highlight(this SyntaxHighlighter highlighter, RichTextArea area, Action pump = null, Func<int> currentVersion = null)
+		private sealed class Cache { internal SyntaxHighlightSnapshot Snapshot; internal bool Applying; internal long Generation, Version; }
+		private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<RichTextArea, Cache> caches = new ();
+		internal static bool IsApplyingStyle(RichTextArea area) => caches.GetOrCreateValue(area).Applying;
+		internal static void Invalidate(RichTextArea area)
 		{
+			var cache = caches.GetOrCreateValue(area);
+			cache.Snapshot = null;
+			cache.Generation++;
+		}
+
+		internal static bool Highlight(this SyntaxHighlighter highlighter, RichTextArea area, Action pump = null, Func<long> currentVersion = null)
+		{
+			var cache = caches.GetOrCreateValue(area);
+			var generation = cache.Generation;
 			var version = currentVersion?.Invoke() ?? 0;
-			var text = area.Text ?? "";
-			var n = text.Length;
-
-			if (n == 0)
-				return;
-
-			var buffer = area.Buffer;
-			buffer.SetForeground(new Range<int>(0, n - 1), area.TextColor);
-
-			if (!highlighter.CanHighlight(n))
-				return;
-
-			highlighter.Highlight(new EtoSyntaxSink(buffer, SyntaxPalette.IsDark), text, pump,
-				() => currentVersion != null && currentVersion() != version ? -1 : area.TextLength);
+			var snapshot = new SyntaxHighlightSnapshot(highlighter, area.Text ?? "");
+			var sink = new EtoSyntaxSink(area, applying => cache.Applying = applying);
+			// Reinserted text can have lost its native tags even when the source returns to the cached text.
+			var previous = cache.Version != version && cache.Snapshot?.Text == snapshot.Text ? null : cache.Snapshot;
+			// Clear only the changed window; tags elsewhere follow edits in the native buffer.
+			var applied = snapshot.ApplyChangedRange(sink, previous, pump,
+				() => cache.Generation == generation && (currentVersion == null || currentVersion() == version));
+			cache.Snapshot = applied ? snapshot : null;
+			if (applied) cache.Version = version;
+			return applied;
 		}
 	}
 }

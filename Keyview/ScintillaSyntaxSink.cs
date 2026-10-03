@@ -66,28 +66,24 @@ namespace Keyview
 			scintilla.LexerName = "";
 		}
 
-		/// <summary>
-		/// Styles the whole document with <paramref name="highlighter"/>. Called from StyleNeeded. Tokenizes the
-		/// entire text rather than the requested range, since the rules are context-sensitive from the file start.
-		/// </summary>
-		internal static void Restyle(ScintillaNET.Scintilla scintilla, SyntaxHighlighter highlighter)
+		private sealed class Cache { internal SyntaxHighlightSnapshot Snapshot; }
+		private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ScintillaNET.Scintilla, Cache> caches = new ();
+		internal static void Invalidate(ScintillaNET.Scintilla scintilla) => caches.GetOrCreateValue(scintilla).Snapshot = null;
+
+		internal static void Restyle(ScintillaNET.Scintilla scintilla, SyntaxHighlighter highlighter, int requestedEnd)
 		{
-			var text = scintilla.Text ?? "";
-			var n = text.Length;
-
-			scintilla.StartStyling(0);
-
-			if (n == 0)
-				return;
-
-			var sink = new ScintillaSyntaxSink(scintilla, 0);
-
-			// Over the size limit the tokenizer declines to run; everything still has to be styled, or Scintilla
-			// keeps asking for the same range forever.
-			if (highlighter.CanHighlight(n))
-				highlighter.Highlight(sink, text);
-
-			sink.Finish(n);
+			var cache = caches.GetOrCreateValue(scintilla);
+			var snapshot = cache.Snapshot ??= new SyntaxHighlightSnapshot(highlighter, scintilla.Text ?? "");
+			var from = scintilla.Lines[scintilla.LineFromPosition(scintilla.GetEndStyled())].Position;
+			var to = Math.Min(requestedEnd, snapshot.Text.Length);
+			scintilla.StartStyling(from);
+			var sink = new ScintillaSyntaxSink(scintilla, from);
+			for (var i = snapshot.FirstSpan(from); i < snapshot.Spans.Count && snapshot.Spans[i].Start < to; i++)
+			{
+				var span = snapshot.Spans[i];
+				sink.Style(Math.Max(from, span.Start), Math.Min(to, span.End), span.Color);
+			}
+			sink.Finish(to);
 		}
 	}
 }

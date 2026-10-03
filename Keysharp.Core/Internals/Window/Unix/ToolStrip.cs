@@ -48,6 +48,14 @@ namespace Keysharp.Internals.Window.Unix
 			}
 		}
 
+		// Shared menu code uses WinForms Available so closed menus can still toggle items.
+		// Unix Visible already stores that state independently of the parent.
+		public bool Available
+		{
+			get => Visible;
+			set => Visible = value;
+		}
+
 		public bool Enabled
 		{
 			get => enabled;

@@ -15,13 +15,6 @@ namespace Keyview
 		private static partial int SetWindowTheme(nint window, string subAppName, string subIdList);
 
 		/// <summary>
-		/// change this to whatever margin you want the bookmarks/breakpoints to show in
-		/// </summary>
-		private const int BOOKMARK_MARGIN = 2;
-
-		private const int BOOKMARK_MARKER = 2;
-
-		/// <summary>
 		/// set this true to show circular buttons for code folding (the [+] and [-] buttons on the margin)
 		/// </summary>
 		private const bool CODEFOLDING_CIRCULAR = true;
@@ -42,23 +35,22 @@ namespace Keyview
 		private readonly ToolStripLabel documentStatusLabel = new ();
 		private readonly string lastrun;
 		private readonly UITimer timer = new ();
-		private readonly char[] trimend = ['\n', '\r'];
-		private readonly double updateFreqSeconds = 1;
 		private readonly IScriptCompiler ch = KeyviewCompilerRunner.GetCompiler();
 		private byte[] compiledBytes;
 		private readonly CSharpStyler csStyler = new ();
-		private bool force = false;
-		private bool isCompiling = false;
-		private string fullCode = "";
-		private DateTime lastCompileTime = DateTime.UtcNow;
-		private DateTime lastKeyTime = DateTime.UtcNow;
+		private readonly KeyviewCompileScheduler compileScheduler = new (TimeSpan.FromSeconds(1));
+		private KeyviewCompileResult lastCompile;
 		private bool SearchIsOpen = false;
 		private string trimmedCode = "";
-		private readonly string trimstr = "{}\t";
-		private Process scriptProcess = null;
+		private readonly KeyviewScriptRunner scriptRunner = new ();
+		private bool scriptOwnsOutput;
+		private bool runtimeOutputStarted;
+		private const string ScriptOutputHeader = "--- Script output ---\n\n";
 		private readonly Button btnRunScript = new ();
 		private readonly KeyviewDocumentState document = new ();
 		private string baseTitle;
+		private string displayedDocumentPath;
+		private bool? displayedDirty;
 		private bool suppressDocumentChange;
 		private bool scratchAutosavePending;
 		private bool closing;
@@ -71,6 +63,7 @@ namespace Keyview
 		public Keyview(string initialFile = null)
 		{
 			InitializeComponent();
+			InitializeScriptRunner();
 			InitializeScintillaTheme(txtIn);
 			InitializeScintillaTheme(txtOut);
 			lastrun = KeyviewPaths.ScratchDocument;
@@ -141,7 +134,7 @@ namespace Keyview
 		private SyntaxHighlighter inputHighlighter;
 
 		private void TxtIn_StyleNeeded(object sender, StyleNeededEventArgs e) =>
-			ScintillaSyntaxSink.Restyle((Scintilla)sender, inputHighlighter ??= SyntaxHighlighter.ForKeysharp());
+			ScintillaSyntaxSink.Restyle((Scintilla)sender, inputHighlighter ??= SyntaxHighlighter.ForKeysharp(), e.Position);
 
 		private void BtnClearSearch_Click(object sender, EventArgs e) => CloseSearch();
 
@@ -149,13 +142,12 @@ namespace Keyview
 
 		private void BtnPrevSearch_Click(object sender, EventArgs e) => SearchManager.Find(false, false);
 
-		private void chkFullCode_CheckStateChanged(object sender, EventArgs e) => SetTxtOut(chkFullCode.Checked ? fullCode : trimmedCode);
+		private void chkFullCode_CheckStateChanged(object sender, EventArgs e) => SetTxtOut(chkFullCode.Checked ? lastCompile?.FullCode.Value ?? trimmedCode : trimmedCode);
 
 		private void clearSelectionToolStripMenuItem_Click(object sender, EventArgs e)
 		{
 			// Reset selection to the start without changing the caret position more than necessary.
 			txtIn.SetEmptySelection(0);
-			lastKeyTime = DateTime.UtcNow;
 		}
 
 		private void CloseSearch()
@@ -172,15 +164,15 @@ namespace Keyview
 
 		private void collapseAllToolStripMenuItem_Click(object sender, EventArgs e)
 		{
-			txtIn.FoldAll(FoldAction.Contract);
+			txtOut.FoldAll(FoldAction.Contract);
 		}
 
 		private void CopyFullCode_Click(object sender, EventArgs e)
 		{
 			try
 			{
-				if (fullCode != "")
-					Clipboard.SetText(fullCode);
+				if (lastCompile?.Success == true)
+					Clipboard.SetText(lastCompile.FullCode.Value);
 				else
 					Clipboard.SetText(txtOut.Text);
 			}
@@ -193,23 +185,17 @@ namespace Keyview
 		private void copyToolStripMenuItem_Click(object sender, EventArgs e)
 		{
 			txtIn.Copy();
-			lastKeyTime = DateTime.UtcNow;
 		}
 
 		private void cutToolStripMenuItem_Click(object sender, EventArgs e)
 		{
 			txtIn.Cut();
-			lastKeyTime = DateTime.UtcNow;
 		}
 
 		private void expandAllToolStripMenuItem_Click(object sender, EventArgs e)
 		{
-			txtIn.FoldAll(FoldAction.Expand);
+			txtOut.FoldAll(FoldAction.Expand);
 		}
-
-		private void findAndReplaceToolStripMenuItem_Click(object sender, EventArgs e) => OpenReplaceDialog();
-
-		private void findDialogToolStripMenuItem_Click(object sender, EventArgs e) => OpenFindDialog();
 
 		private void findToolStripMenuItem_Click(object sender, EventArgs e) => OpenSearch();
 
@@ -232,7 +218,6 @@ namespace Keyview
 			//We use this hack to send "Shift+Tab" to scintilla, since there is no known API to indent,
 			//although the indentation function exists. Pressing TAB with the editor focused confirms this.
 			GenerateKeystrokes("{TAB}");
-			lastKeyTime = DateTime.UtcNow;
 		}
 
 		private void indentGuidesToolStripMenuItem_Click(object sender, EventArgs e)
@@ -243,21 +228,6 @@ namespace Keyview
 
 		private void indentSelectionToolStripMenuItem_Click(object sender, EventArgs e) => Indent();
 
-		//private void InitBookmarkMargin()
-		//{
-		//  //TextArea.SetFoldMarginColor(true, IntToColor(BACK_COLOR));
-		//  var margin = txtIn.Margins[BOOKMARK_MARGIN];
-		//  margin.Width = 20;
-		//  margin.Sensitive = true;
-		//  margin.Type = MarginType.Symbol;
-		//  margin.Mask = 1 << BOOKMARK_MARKER;
-		//  //margin.Cursor = MarginCursor.Arrow;
-		//  var marker = txtIn.Markers[BOOKMARK_MARKER];
-		//  marker.Symbol = MarkerSymbol.Circle;
-		//  marker.SetBackColor(IntToColor(0xFF003B));
-		//  marker.SetForeColor(IntToColor(0x000000));
-		//  marker.SetAlpha(100);
-		//}
 		private void InitCodeFolding(Scintilla txt)
 		{
 			var marginBackground = SyntaxPalette.ToColor(SyntaxPalette.MarginBackground);
@@ -315,7 +285,6 @@ namespace Keyview
 			nums.Type = MarginType.Number;
 			nums.Sensitive = true;
 			nums.Mask = 0;
-			txt.MarginClick += txtIn_MarginClick;
 
 			UpdateNumberMarginWidth(txt);
 		}
@@ -356,9 +325,6 @@ namespace Keyview
 		{
 			// register the hotkeys with the form
 			HotKeyManager.AddHotKey(this, OpenSearch, Keys.F, true);
-			HotKeyManager.AddHotKey(this, OpenFindDialog, Keys.F, true, false, true);
-			HotKeyManager.AddHotKey(this, OpenReplaceDialog, Keys.R, true);
-			HotKeyManager.AddHotKey(this, OpenReplaceDialog, Keys.H, true);
 			HotKeyManager.AddHotKey(this, Uppercase, Keys.U, true);
 			HotKeyManager.AddHotKey(this, Lowercase, Keys.L, true);
 			HotKeyManager.AddHotKey(this, ZoomIn, Keys.Oemplus, true);
@@ -368,17 +334,17 @@ namespace Keyview
 			HotKeyManager.AddHotKey(this, RunStopScript, Keys.F9);
 			//Remove conflicting hotkeys from scintilla.
 			txtIn.ClearCmdKey(Keys.Control | Keys.F);
-			txtIn.ClearCmdKey(Keys.Control | Keys.R);
-			txtIn.ClearCmdKey(Keys.Control | Keys.H);
 			txtIn.ClearCmdKey(Keys.Control | Keys.L);
 			txtIn.ClearCmdKey(Keys.Control | Keys.U);
 		}
 
 		private void InvokeIfNeeded(Action action)
 		{
+			if (closing || IsDisposed) return;
 			if (InvokeRequired)
 			{
-				_ = BeginInvoke(action);
+				try { _ = BeginInvoke(action); }
+				catch (InvalidOperationException) when (closing || IsDisposed) { }
 			}
 			else
 			{
@@ -395,11 +361,11 @@ namespace Keyview
 			}
 
 			timer.Stop();
-			//Script.Stop();
 			// Save while the editor text is still valid, then block any later (post-close) autosave —
-			// e.g. an in-flight compile's writeLastRun callback — from overwriting with an empty string.
+			// e.g. an idle autosave callback — from overwriting with an empty string.
 			AutosaveScratchDocument();
 			closing = true;
+			scriptRunner.Dispose();
 		}
 
 		private void AutosaveScratchDocument()
@@ -428,6 +394,10 @@ namespace Keyview
 			InitInputStyle(txtIn);
 			ScintillaSyntaxSink.Attach(txtIn);
 			txtIn.StyleNeeded += TxtIn_StyleNeeded;
+			txtIn.Insert += (_, _) => ScintillaSyntaxSink.Invalidate(txtIn);
+			txtIn.Delete += (_, _) => ScintillaSyntaxSink.Invalidate(txtIn);
+			txtIn.SavePointLeft += (_, _) => UpdateDocumentUi();
+			txtIn.SavePointReached += (_, _) => UpdateDocumentUi();
 			txtOut.StyleResetDefault();
 			txtOut.Styles[Style.Default].Font = "Consolas";
 			txtOut.Styles[Style.Default].Size = 10;
@@ -440,8 +410,6 @@ namespace Keyview
 			InitColors(txtOut);
 			InitNumberMargin(txtIn);
 			InitNumberMargin(txtOut);
-			//InitBookmarkMargin();
-			InitCodeFolding(txtIn);
 			InitCodeFolding(txtOut);
 			InitDragDropFile();
 			InitHotkeys();
@@ -467,13 +435,15 @@ namespace Keyview
 				txtIn.Text = text;
 				document.LoadFile(fullPath, text);
 				txtIn.EmptyUndoBuffer();
+				txtIn.SetSavePoint();
 			}
 			finally
 			{
 				suppressDocumentChange = false;
 			}
 
-			lastKeyTime = DateTime.UtcNow;
+			compileScheduler.TextChanged(DateTime.UtcNow);
+			compiledBytes = null;
 			UpdateDocumentUi();
 		}
 
@@ -486,13 +456,15 @@ namespace Keyview
 				txtIn.Text = text;
 				document.LoadScratch();
 				txtIn.EmptyUndoBuffer();
+				txtIn.SetSavePoint();
 			}
 			finally
 			{
 				suppressDocumentChange = false;
 			}
 
-			lastKeyTime = DateTime.UtcNow;
+			compileScheduler.TextChanged(DateTime.UtcNow);
+			compiledBytes = null;
 			UpdateDocumentUi();
 		}
 
@@ -502,18 +474,9 @@ namespace Keyview
 			var end = txtIn.SelectionEnd;
 			txtIn.ReplaceSelection(txtIn.GetTextRange(start, end - start).ToLower());
 			txtIn.SetSelection(start, end);
-			lastKeyTime = DateTime.UtcNow;
 		}
 
 		private void lowercaseSelectionToolStripMenuItem_Click(object sender, EventArgs e) => Lowercase();
-
-		private void OpenFindDialog()
-		{
-		}
-
-		private void OpenReplaceDialog()
-		{
-		}
 
 		private void OpenSearch()
 		{
@@ -551,7 +514,7 @@ namespace Keyview
 
 		private bool ConfirmDiscardChanges()
 		{
-			if (!document.IsDirty(txtIn.Text))
+			if (document.IsScratch || !txtIn.Modified)
 				return true;
 
 			var result = MessageBox.Show(
@@ -577,6 +540,7 @@ namespace Keyview
 			{
 				File.WriteAllText(document.CurrentFilePath, txtIn.Text);
 				document.MarkSaved(txtIn.Text);
+				txtIn.SetSavePoint();
 				UpdateDocumentUi();
 				return true;
 			}
@@ -587,40 +551,59 @@ namespace Keyview
 			}
 		}
 
-		private void CompileDocument()
+		private async void CompileDocument()
 		{
-			if (!document.CanCompile || (document.IsDirty(txtIn.Text) && !SaveDocument()))
-				return;
-
-			btnCompileScript.Enabled = false;
-			tslCodeStatus.ForeColor = SyntaxPalette.ToColor(SyntaxPalette.EditorForeground);
-			tslCodeStatus.Text = "Writing .cks...";
-			Refresh();
-
-			if (KeyviewDocumentCompiler.TryCompile(document.CurrentFilePath, ch, out var outputPath, out var error))
-			{
-				tslCodeStatus.ForeColor = SyntaxPalette.ToColor(SyntaxPalette.StatusSuccess);
-				tslCodeStatus.Text = $"Wrote {outputPath}";
-			}
-			else
-			{
-				tslCodeStatus.ForeColor = SyntaxPalette.ToColor(SyntaxPalette.StatusError);
-				tslCodeStatus.Text = "Compile failed";
-				SetTxtOut(error);
-			}
-
+			if (compileScheduler.IsCompiling || !document.CanCompile || (!document.IsScratch && txtIn.Modified && !SaveDocument())) return;
+			if (!compileScheduler.TryBeginExplicit()) return;
 			UpdateDocumentUi();
+			tslCodeStatus.Text = "Writing .cks...";
+			var sourcePath = document.CurrentFilePath;
+			var version = compileScheduler.EditVersion;
+			try
+			{
+				var result = await Task.Run(() =>
+				{
+					var success = KeyviewDocumentCompiler.TryCompile(sourcePath, ch, out var path, out var error);
+					return (success, path, error);
+				});
+				if (closing || !compileScheduler.IsCurrent(version, sourcePath, document.CurrentFilePath)) return;
+				if (result.success)
+				{
+					tslCodeStatus.ForeColor = SyntaxPalette.ToColor(SyntaxPalette.StatusSuccess);
+					tslCodeStatus.Text = $"Wrote {result.path}";
+				}
+				else
+				{
+					compiledBytes = null;
+					trimmedCode = result.error;
+					lastCompile = new(null, result.error, new Lazy<string>(() => result.error), result.error, TimeSpan.Zero);
+					btnRunScript.Enabled = scriptRunner.IsRunning;
+					tslCodeStatus.ForeColor = SyntaxPalette.ToColor(SyntaxPalette.StatusError);
+					tslCodeStatus.Text = "Compile failed";
+					SetTxtOut(result.error);
+				}
+			}
+			finally
+			{
+				compileScheduler.CompleteExplicit();
+				if (!closing) UpdateDocumentUi();
+			}
 		}
 
 		private void UpdateDocumentUi(string text = null)
 		{
-			var dirty = document.IsDirty(text ?? txtIn.Text);
-			Text = document.GetWindowTitle(baseTitle, dirty);
-			documentStatusLabel.Text = document.GetStatusText(dirty);
+			var dirty = !document.IsScratch && txtIn.Modified;
+			if (displayedDirty != dirty || displayedDocumentPath != document.CurrentFilePath)
+			{
+				Text = document.GetWindowTitle(baseTitle, dirty);
+				documentStatusLabel.Text = document.GetStatusText(dirty);
+				displayedDirty = dirty;
+				displayedDocumentPath = document.CurrentFilePath;
+			}
 			saveToolStripMenuItem.Enabled = !document.IsScratch && dirty;
-			compileToolStripMenuItem.Enabled = document.CanCompile;
+			compileToolStripMenuItem.Enabled = document.CanCompile && !compileScheduler.IsCompiling;
 			btnCompileScript.Visible = !document.IsScratch;
-			btnCompileScript.Enabled = document.CanCompile;
+			btnCompileScript.Enabled = document.CanCompile && !compileScheduler.IsCompiling;
 		}
 
 		private void Outdent()
@@ -628,7 +611,6 @@ namespace Keyview
 			// we use this hack to send "Shift+Tab" to scintilla, since there is no known API to outdent,
 			// although the indentation function exists. Pressing Shift+Tab with the editor focused confirms this.
 			GenerateKeystrokes("+{TAB}");
-			lastKeyTime = DateTime.UtcNow;
 		}
 
 		private void outdentSelectionToolStripMenuItem_Click(object sender, EventArgs e) => Outdent();
@@ -636,7 +618,6 @@ namespace Keyview
 		private void pasteToolStripMenuItem_Click(object sender, EventArgs e)
 		{
 			txtIn.Paste();
-			lastKeyTime = DateTime.UtcNow;
 		}
 
 		private void selectAllToolStripMenuItem_Click(object sender, EventArgs e) => txtIn.SelectAll();
@@ -657,28 +638,28 @@ namespace Keyview
 		{
 			tslCodeStatus.ForeColor = SyntaxPalette.ToColor(SyntaxPalette.StatusError);
 			tslCodeStatus.Text = "Error";
-			SetTxtOut("");
-			Refresh();
 		}
+
 
 		private void SetStart()
 		{
-			fullCode = trimmedCode = "";
+			lastCompile = null;
+			trimmedCode = "";
 			tslCodeStatus.ForeColor = SyntaxPalette.ToColor(SyntaxPalette.EditorForeground);
 			tslCodeStatus.Text = "";
 			//Don't clear txtOut, it causes flicker.
-			Refresh();
 		}
 
 		private void SetSuccess(double seconds)
 		{
 			tslCodeStatus.ForeColor = SyntaxPalette.ToColor(SyntaxPalette.StatusSuccess);
 			tslCodeStatus.Text = $"Ok ({seconds:F1}s)";
-			Refresh();
 		}
 
 		private void SetTxtOut(string txt)
 		{
+			scriptOwnsOutput = false;
+			if (txtOut.Text == txt) return;
 			txtOut.ReadOnly = false;
 			txtOut.Text = txt;
 			txtOut.ReadOnly = true;
@@ -687,132 +668,79 @@ namespace Keyview
 
 		private void splitContainer_DoubleClick(object sender, EventArgs e) => splitContainer.SplitterDistance = Width / 2;
 
-		//private void TextArea_MarginClick(object sender, MarginClickEventArgs e)
-		//{
-		//  if (e.Margin == BOOKMARK_MARGIN)
-		//  {
-		//      // Do we have a marker for this line?
-		//      const uint mask = 1 << BOOKMARK_MARKER;
-		//      var line = txtIn.Lines[txtIn.LineFromPosition(e.Position)];
-
-		//      if ((line.MarkerGet() & mask) > 0)
-		//      {
-		//          // Remove existing bookmark
-		//          line.MarkerDelete(BOOKMARK_MARKER);
-		//      }
-		//      else
-		//      {
-		//          // Add bookmark
-		//          line.MarkerAdd(BOOKMARK_MARKER);
-		//      }
-		//  }
-		//}
-
 		private async void Timer_Tick(object sender, EventArgs e)
 		{
-			// Flush the debounced scratch autosave once typing has paused, keeping disk writes off the
-			// per-keystroke path.
-			if (scratchAutosavePending && (DateTime.UtcNow - lastKeyTime).TotalSeconds >= updateFreqSeconds)
+			if (scratchAutosavePending && compileScheduler.IsIdle(DateTime.UtcNow))
 			{
 				scratchAutosavePending = false;
 				AutosaveScratchDocument();
 			}
-
-			if (!isCompiling && (force || ((DateTime.UtcNow - lastKeyTime).TotalSeconds >= updateFreqSeconds && lastKeyTime > lastCompileTime)) && txtIn.Text != "")
+			if (closing || !compileScheduler.TryBegin(DateTime.UtcNow, txtIn.TextLength > 0, out var version)) return;
+			compiledBytes = null;
+			btnRunScript.Enabled = scriptRunner.IsRunning;
+			SetStart();
+			tslCodeStatus.Text = "Compiling script...";
+			UpdateDocumentUi();
+			var oldIndex = txtOut.FirstVisibleLine;
+			var sourcePath = document.CurrentFilePath;
+			try
 			{
-				timer.Enabled = false;
-				isCompiling = true;
-				lastCompileTime = DateTime.UtcNow;
-				var oldIndex = txtOut.FirstVisibleLine;
-
-				try
-				{
-					await KeyviewCompilerRunner.RunCompile(
-						txtIn.Text,
-						KeyviewCompilerRunner.IncludeDirFor(document),
-						ch,
-						bytes => compiledBytes = bytes,
-						code => fullCode = code,
-						code => trimmedCode = code,
-						trimend,
-						trimstr,
-						SetStart,
-						SetSuccess,
-						SetFailure,
-						text => tslCodeStatus.Text = text,
-						Refresh,
-						SetTxtOut,
-						() => chkFullCode.Checked,
-						() => btnRunScript.Enabled = false,
-						() => btnRunScript.Enabled = true,
-						AutosaveScratchDocument,
-						() => oldIndex = txtOut.FirstVisibleLine,
-						() => txtOut.FirstVisibleLine = oldIndex);
-				}
-				finally
-				{
-					isCompiling = false;
-					timer.Enabled = true;
-				}
+				var result = await KeyviewCompilerRunner.RunCompile(txtIn.Text, KeyviewCompilerRunner.IncludeDirFor(document), ch);
+				if (closing || !compileScheduler.IsCurrent(version, sourcePath, document.CurrentFilePath)) return;
+				lastCompile = result;
+				compiledBytes = result.AssemblyBytes;
+				trimmedCode = result.TrimmedCode;
+				if (result.Success) SetSuccess(result.Elapsed.TotalSeconds); else SetFailure();
+				btnRunScript.Enabled = result.Success || scriptRunner.IsRunning;
+				SetTxtOut(chkFullCode.Checked ? result.FullCode.Value : result.TrimmedCode);
+				txtOut.FirstVisibleLine = oldIndex;
 			}
-
-			if (force)
-				force = false;
+			finally
+			{
+				compileScheduler.Complete(version);
+				if (!closing) UpdateDocumentUi();
+			}
 		}
 
 		private void RunScript_Click(object sender, EventArgs e) => RunStopScript();
 
-		private void RunStopScript()
+		private void InitializeScriptRunner()
 		{
-			if (scriptProcess != null)
+			scriptRunner.RunningChanged += (id, running) => InvokeIfNeeded(() =>
 			{
-				scriptProcess.Kill();
-				scriptProcess = null;
-			}
-
-			if (btnRunScript.Text == btnRunScriptText["Stop"])
-				return;
-
-			if (compiledBytes == null)
+				if (closing || !scriptRunner.IsCurrent(id)) return;
+				btnRunScript.Text = btnRunScriptText[running ? "Stop" : "Run"];
+				btnRunScript.Enabled = running || compiledBytes != null;
+			});
+			scriptRunner.OutputReceived += (id, text) => InvokeIfNeeded(() =>
 			{
-				_ = MessageBox.Show("Please wait, code is still compiling...", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-				return;
-			}
-
-			scriptProcess = new Process
-			{
-				StartInfo = new ProcessStartInfo
+				if (closing || !scriptRunner.IsCurrent(id) || !scriptOwnsOutput) return;
+				if (!runtimeOutputStarted)
 				{
-					FileName = GetKeysharpExecutable(),
-					Arguments = "--assembly *",
-					RedirectStandardInput = true,
-					RedirectStandardOutput = true,
-					UseShellExecute = false,
-					CreateNoWindow = true
+					runtimeOutputStarted = true;
+					SetTxtOut(ScriptOutputHeader);
+					scriptOwnsOutput = true;
 				}
-			};
-			scriptProcess.EnableRaisingEvents = true;
-			scriptProcess.Exited += (object sender, EventArgs e) =>
-			{
-				toolStrip1.Invoke((() =>
-				{
-					btnRunScript.Text = btnRunScriptText["Run"];
-				}));
-				scriptProcess = null;
-			};
-			_ = scriptProcess.Start();
-
-			// Write the raw assembly bytes and close stdin; the child ("--assembly *") reads to EOF.
-			using (var stdin = scriptProcess.StandardInput.BaseStream)
-			{
-				stdin.Write(compiledBytes, 0, compiledBytes.Length);
-				stdin.Flush();
-			}
-
-			btnRunScript.Text = btnRunScriptText["Stop"];
+				txtOut.ReadOnly = false;
+				txtOut.AppendText(text);
+				txtOut.ReadOnly = true;
+			});
 		}
 
-		private static string GetKeysharpExecutable() => "Keysharp.exe";
+		private void RunStopScript()
+		{
+			try
+			{
+				if (scriptRunner.IsRunning) { scriptRunner.Stop(); return; }
+				if (compiledBytes == null) { MessageBox.Show(lastCompile?.Error ?? "Please wait, code is still compiling...", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
+				runtimeOutputStarted = false;
+				scriptOwnsOutput = true;
+				scriptRunner.Start(GetKeysharpExecutable(), compiledBytes);
+			}
+			catch (Exception ex) { scriptOwnsOutput = false; MessageBox.Show(ex.Message, "Process Error", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+		}
+
+		private static string GetKeysharpExecutable() => Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
 
 		private void TxtIn_DragDrop(object sender, DragEventArgs e)
 		{
@@ -846,44 +774,19 @@ namespace Keyview
 		private void txtIn_KeyDown(object sender, KeyEventArgs e)
 		{
 			if (e.KeyCode == Keys.F5)
-				force = true;
-			else if (ReferenceEquals(sender, txtIn))
-				lastKeyTime = DateTime.UtcNow;
-		}
-
-		private void txtIn_MarginClick(object sender, MarginClickEventArgs e)
-		{
-			var txt = sender as Scintilla;
-
-			if (e.Margin == BOOKMARK_MARGIN)
-			{
-				// Do we have a marker for this line?
-				const uint mask = 1 << BOOKMARK_MARKER;
-				var line = txt.Lines[txt.LineFromPosition(e.Position)];
-
-				if ((line.MarkerGet() & mask) > 0)
-				{
-					// Remove existing bookmark
-					line.MarkerDelete(BOOKMARK_MARKER);
-				}
-				else
-				{
-					// Add bookmark
-					_ = line.MarkerAdd(BOOKMARK_MARKER);
-				}
-			}
+				compileScheduler.RequestCompile();
 		}
 
 		private void txtIn_TextChanged(object sender, EventArgs e)
 		{
 			UpdateNumberMarginWidth(txtIn);
-			lastKeyTime = DateTime.UtcNow;
+			compileScheduler.TextChanged(DateTime.UtcNow);
+			compiledBytes = null;
+			btnRunScript.Enabled = scriptRunner.IsRunning;
 
 			if (!suppressDocumentChange)
 			{
-				// Read Text once (Scintilla rebuilds the whole string) and debounce the scratch autosave
-				// onto the timer instead of writing the file to disk on every keystroke.
-				UpdateDocumentUi(txtIn.Text);
+				UpdateDocumentUi();
 				scratchAutosavePending = true;
 			}
 		}
@@ -916,7 +819,6 @@ namespace Keyview
 			var end = txtIn.SelectionEnd;
 			txtIn.ReplaceSelection(txtIn.GetTextRange(start, end - start).ToUpper());
 			txtIn.SetSelection(start, end);
-			lastKeyTime = DateTime.UtcNow;
 		}
 
 		private void uppercaseSelectionToolStripMenuItem_Click(object sender, EventArgs e) => Uppercase();
@@ -967,22 +869,7 @@ namespace Keyview
 			Error
 		}
 
-		private readonly struct TextSnapshot
-		{
-			public TextSnapshot(string text, int selectionStart, int selectionLength)
-			{
-				Text = text ?? "";
-				SelectionStart = selectionStart;
-				SelectionLength = selectionLength;
-			}
-
-			public string Text { get; }
-			public int SelectionStart { get; }
-			public int SelectionLength { get; }
-		}
-
-		private readonly Stack<TextSnapshot> undoStack = new ();
-		private readonly Stack<TextSnapshot> redoStack = new ();
+		private readonly KeyviewEditHistory editHistory = new ();
 		private readonly RichTextArea inputArea = new ();
 		private readonly RichTextArea outputArea = new ();
 		private readonly SyntaxHighlighter inputHighlighter = SyntaxHighlighter.ForKeysharp();
@@ -1012,8 +899,6 @@ namespace Keyview
 		private readonly UITimer timer = new ();
 		private readonly IScriptCompiler ch = KeyviewCompilerRunner.GetCompiler();
 		private byte[] compiledBytes;
-		private readonly char[] trimend = ['\n', '\r'];
-		private readonly string trimstr = "{}\t";
 		private readonly double updateFreqSeconds = 1;
 		private readonly string lastrun;
 		private readonly KeyviewDocumentState document = new ();
@@ -1023,34 +908,35 @@ namespace Keyview
 			{ "Stop", "◾️ Stop script (F9)" }
 		};
 
-		private bool force;
-		private bool isCompiling;
-		private string fullCode = "";
-		private DateTime lastCompileTime = DateTime.UtcNow;
-		private DateTime lastKeyTime = DateTime.UtcNow;
+		private readonly KeyviewCompileScheduler compileScheduler = new (TimeSpan.FromSeconds(1));
+		private KeyviewCompileResult lastCompile;
 		private bool searchIsOpen;
 		private string trimmedCode = "";
-		private Process scriptProcess;
+		private readonly KeyviewScriptRunner scriptRunner = new ();
+		private bool runtimeOutputStarted;
 		// Shown in the output box (replacing the generated C#) the first time a running script emits output.
-		// The C# stays available via "Copy full code" because fullCode/trimmedCode are left untouched.
+		// The C# stays available via "Copy full code" through the last compile result.
 		private const string ScriptOutputHeader = "─── Script output ───\n\n";
 		private string lastSearch = "";
-		private int lastSearchIndex;
 		private bool suppressUndo;
 		private string lastText = "";
 		private int lastSelectionStart;
 		private int lastSelectionLength;
 		private string baseTitle;
+		private string displayedDocumentPath;
+		private bool? displayedDirty;
 		private bool suppressDocumentChange;
 		private bool highlighting;
 		private bool outputHighlighting;
+		private long outputVersion;
+		private string pendingOutput;
 		private bool themeRefreshPending;
 		private StatusTone codeStatusTone;
 		// True while the output box is displaying a running script's output rather than generated C#.
 		// Cleared whenever the compiler writes C# back into the box, so a still-running (now stale)
 		// script can't clobber the freshly displayed code with its continued output.
 		private bool scriptOwnsOutput;
-		private int inputEditVersion;
+
 		private bool closing;
 
 		public Keyview(string initialFile = null)
@@ -1059,6 +945,7 @@ namespace Keyview
 			Title = $"Keyview {Assembly.GetExecutingAssembly().GetName().Version}";
 			baseTitle = Title;
 			InitializeWindowIcon();
+			InitializeScriptRunner();
 			ShowInTaskbar = true;
 			Resizable = true;
 			Minimizable = true;
@@ -1107,13 +994,7 @@ namespace Keyview
 				Application.Instance.ThemeChanged -= Application_ThemeChanged;
 				timer.Stop();
 				highlightTimer.Stop();
-				try
-				{
-					scriptProcess?.Kill();
-				}
-				catch
-				{
-				}
+				scriptRunner.Dispose();
 #if OSX
 				Eto.Mac.AppDelegate.FileOpened -= MacFileOpened;
 				Application.Instance.Quit();
@@ -1149,11 +1030,11 @@ namespace Keyview
 			undoMenuItem.Click += (_, _) => Undo();
 			redoMenuItem.Click += (_, _) => Redo();
 			var cutItem = new ButtonMenuItem { Text = "Cu&t" };
-			cutItem.Click += (_, _) => { CutSelection(); lastKeyTime = DateTime.UtcNow; };
+			cutItem.Click += (_, _) => CutSelection();
 			var copyItem = new ButtonMenuItem { Text = "&Copy" };
-			copyItem.Click += (_, _) => { CopySelection(); lastKeyTime = DateTime.UtcNow; };
+			copyItem.Click += (_, _) => CopySelection();
 			var pasteItem = new ButtonMenuItem { Text = "&Paste" };
-			pasteItem.Click += (_, _) => { PasteFromClipboard(); lastKeyTime = DateTime.UtcNow; };
+			pasteItem.Click += (_, _) => PasteFromClipboard();
 			var selectLineItem = new ButtonMenuItem { Text = "Select &Line" };
 			selectLineItem.Click += (_, _) => SelectLine();
 			var selectAllItem = new ButtonMenuItem { Text = "Select &All" };
@@ -1163,8 +1044,7 @@ namespace Keyview
 			{
 				var (start, _) = GetSelection();
 				SetSelection(start, 0);
-				lastKeyTime = DateTime.UtcNow;
-			};
+				};
 			var indentItem = new ButtonMenuItem { Text = "&Indent" };
 			indentItem.Click += (_, _) => AdjustIndent(false);
 			var outdentItem = new ButtonMenuItem { Text = "&Outdent" };
@@ -1251,6 +1131,13 @@ namespace Keyview
 			ApplyEditorTheme(true);
 		}
 
+		private void SetInputText(string text)
+		{
+			EtoHighlightExtensions.Invalidate(inputArea);
+			inputArea.Text = text;
+			RequestInputHighlight();
+		}
+
 		private void ApplyEditorTheme(bool recolor)
 		{
 			var background = SyntaxPalette.ToColor(SyntaxPalette.EditorBackground);
@@ -1265,6 +1152,8 @@ namespace Keyview
 
 			if (recolor)
 			{
+				EtoHighlightExtensions.Invalidate(inputArea);
+				EtoHighlightExtensions.Invalidate(outputArea);
 				HighlightInput();
 				RecolorOutputForTheme();
 			}
@@ -1328,8 +1217,8 @@ namespace Keyview
 			searchBox.Width = 280;
 			searchBox.TextChanged += (_, _) => UpdateSearchText();
 			searchBox.KeyDown += SearchBox_KeyDown;
-			nextSearchButton.Click += (_, _) => Find(true, false);
-			prevSearchButton.Click += (_, _) => Find(false, false);
+			nextSearchButton.Click += (_, _) => Find(true);
+			prevSearchButton.Click += (_, _) => Find(false);
 			closeSearchButton.Click += (_, _) => CloseSearch();
 			searchPanel.Content = new StackLayout
 			{
@@ -1587,13 +1476,17 @@ namespace Keyview
 
 		private void InputArea_TextChanged(object sender, EventArgs e)
 		{
-			inputEditVersion++;
+			if (EtoHighlightExtensions.IsApplyingStyle(inputArea))
+				return;
 
 			// Read the buffer once: inputArea.Text rebuilds the whole string, so calling it per consumer
 			// (undo, dirty check, autosave) on every keystroke is a major cost on large scripts.
 			var text = inputArea.Text ?? "";
+			if (string.Equals(text, lastText, StringComparison.Ordinal)) return;
 			RecordUndoSnapshot(text);
-			lastKeyTime = DateTime.UtcNow;
+			compileScheduler.TextChanged(DateTime.UtcNow);
+			compiledBytes = null;
+			runScriptButton.Enabled = scriptRunner.IsRunning;
 
 			if (!suppressDocumentChange)
 				UpdateDocumentUi(text);
@@ -1618,14 +1511,15 @@ namespace Keyview
 
 		private void HighlightInput()
 		{
-			if (highlighting)
-				return;
+			if (closing) return;
+			if (highlighting) { RequestInputHighlight(); return; }
 
 			highlighting = true;
 			try
 			{
 				// Yield to the UI loop periodically so re-highlighting a large script doesn't block typing.
-				inputHighlighter.Highlight(inputArea, Application.Instance.RunIteration, () => inputEditVersion);
+				if (!inputHighlighter.Highlight(inputArea, Application.Instance.RunIteration, () => closing ? -1 : compileScheduler.EditVersion)
+					&& !closing) RequestInputHighlight();
 			}
 			finally
 			{
@@ -1637,13 +1531,14 @@ namespace Keyview
 		private void InputArea_KeyDown(object sender, KeyEventArgs e)
 		{
 			var inputIsTarget = ReferenceEquals(sender, inputArea) || inputArea.HasFocus;
+			var shortcutModifier = Application.Instance.CommonModifier;
 
 			if (inputIsTarget)
 				UpdateSelectionSnapshot();
 
 			if (e.Key == Keys.F5)
 			{
-				force = true;
+				compileScheduler.RequestCompile();
 				return;
 			}
 
@@ -1663,21 +1558,21 @@ namespace Keyview
 
 			if (inputIsTarget)
 			{
-				if (e.Key == Keys.Z && e.Modifiers == Keys.Control)
+				if (e.Key == Keys.Z && e.Modifiers == shortcutModifier)
 				{
 					Undo();
 					e.Handled = true;
 					return;
 				}
 
-				if (e.Key == Keys.Y && e.Modifiers == Keys.Control)
+				if (e.Key == Keys.Y && e.Modifiers == shortcutModifier)
 				{
 					Redo();
 					e.Handled = true;
 					return;
 				}
 
-				if (e.Key == Keys.Z && e.Modifiers == (Keys.Control | Keys.Shift))
+				if (e.Key == Keys.Z && e.Modifiers == (shortcutModifier | Keys.Shift))
 				{
 					Redo();
 					e.Handled = true;
@@ -1685,7 +1580,7 @@ namespace Keyview
 				}
 			}
 
-			if (e.Modifiers == Keys.Control)
+			if (e.Modifiers == shortcutModifier)
 			{
 				switch (e.Key)
 				{
@@ -1721,14 +1616,14 @@ namespace Keyview
 		{
 			if (e.Key == Keys.Enter && e.Modifiers == Keys.None)
 			{
-				Find(true, false);
+				Find(true);
 				e.Handled = true;
 				return;
 			}
 
 			if (e.Key == Keys.Enter && (e.Modifiers == Keys.Shift || e.Modifiers == Keys.Control))
 			{
-				Find(false, false);
+				Find(false);
 				e.Handled = true;
 			}
 		}
@@ -1748,8 +1643,7 @@ namespace Keyview
 				return;
 			CopySelection();
 			var text = inputArea.Text ?? "";
-			inputArea.Text = text.Remove(selection.Start, selection.Length());
-			SetSelection(selection.Start, 0);
+			ApplyInputEdit(text.Remove(selection.Start, selection.Length()), selection.Start, 0);
 		}
 
 		private void PasteFromClipboard()
@@ -1761,28 +1655,22 @@ namespace Keyview
 			var text = inputArea.Text ?? "";
 			var before = text.Substring(0, start);
 			var after = text.Substring(start + length);
-			inputArea.Text = before + clip + after;
-			SetSelection(start + clip.Length, 0);
+			ApplyInputEdit(before + clip + after, start + clip.Length, 0);
 		}
 
-			private (int start, int length) GetSelection()
-			{
-				var selection = inputArea.Selection;
-				var start = Math.Max(0, selection.Start);
-				var end = Math.Max(0, selection.End);
-			if (end < start)
-				(end, start) = (start, end);
-			return (start, end - start);
+		private (int start, int length) GetSelection()
+		{
+			var selection = inputArea.Selection;
+			return (Math.Max(0, selection.Start), Math.Max(0, selection.Length()));
 		}
 
-			private void SetSelection(int start, int length)
-			{
-				var safeStart = Math.Max(0, start);
-				var safeLength = Math.Max(0, length);
-				// Eto.Range is inclusive at both ends; use start+length-1 for a length-based selection.
-				var end = safeLength > 0 ? safeStart + safeLength - 1 : safeStart - 1;
-				inputArea.Selection = new Range<int>(safeStart, end);
-			}
+		private void SetSelection(int start, int length)
+		{
+			var safeStart = Math.Max(0, start);
+			var safeLength = Math.Max(0, length);
+			inputArea.Selection = new Range<int>(safeStart, safeStart + safeLength - 1);
+			UpdateSelectionSnapshot();
+		}
 
 		private void UpdateSelectionSnapshot()
 		{
@@ -1791,45 +1679,41 @@ namespace Keyview
 			lastSelectionLength = length;
 		}
 
-		private TextSnapshot CaptureSnapshot()
-		{
-			var (start, length) = GetSelection();
-			return new TextSnapshot(inputArea.Text ?? "", start, length);
-		}
-
-		private void ApplySnapshot(TextSnapshot snapshot)
+		private void ApplyEdit((string Text, EditorSelection Selection) change)
 		{
 			suppressUndo = true;
 			try
 			{
-				inputArea.Text = snapshot.Text ?? "";
-				var textLength = inputArea.Text?.Length ?? 0;
-				var start = Math.Min(Math.Max(0, snapshot.SelectionStart), textLength);
-				var length = Math.Min(Math.Max(0, snapshot.SelectionLength), Math.Max(0, textLength - start));
-				SetSelection(start, length);
-				lastText = inputArea.Text ?? "";
-				lastSelectionStart = start;
-				lastSelectionLength = length;
+				SetInputText(change.Text);
+				SetSelection(change.Selection.Start, change.Selection.Length);
+				lastText = change.Text;
+				UpdateSelectionSnapshot();
 			}
-			finally
-			{
-				suppressUndo = false;
-			}
+			finally { suppressUndo = false; }
+			UpdateUndoRedoState();
+		}
 
-			lastKeyTime = DateTime.UtcNow;
+		private void ApplyInputEdit(string text, int start, int length)
+		{
+			var (beforeStart, beforeLength) = GetSelection();
+			editHistory.RecordAppliedEdit(lastText, text, new EditorSelection(beforeStart, beforeLength), () =>
+			{
+				SetInputText(text);
+				SetSelection(start, length);
+				var (afterStart, afterLength) = GetSelection();
+				return new EditorSelection(afterStart, afterLength);
+			}, DateTime.UtcNow);
+			lastText = text;
+			UpdateSelectionSnapshot();
 			UpdateUndoRedoState();
 		}
 
 		private void RecordUndoSnapshot(string currentText)
 		{
-			if (suppressUndo)
-				return;
-
-			if (currentText == lastText)
-				return;
-
-			undoStack.Push(new TextSnapshot(lastText, lastSelectionStart, lastSelectionLength));
-			redoStack.Clear();
+			if (suppressUndo || editHistory.IsApplying || currentText == lastText) return;
+			var (start, length) = GetSelection();
+			editHistory.Record(lastText, currentText, new EditorSelection(lastSelectionStart, lastSelectionLength),
+				new EditorSelection(start, length), DateTime.UtcNow);
 			lastText = currentText;
 			UpdateSelectionSnapshot();
 			UpdateUndoRedoState();
@@ -1837,8 +1721,7 @@ namespace Keyview
 
 		private void ResetUndoHistory()
 		{
-			undoStack.Clear();
-			redoStack.Clear();
+			editHistory.Clear();
 			lastText = inputArea.Text ?? "";
 			UpdateSelectionSnapshot();
 			UpdateUndoRedoState();
@@ -1846,28 +1729,18 @@ namespace Keyview
 
 		private void UpdateUndoRedoState()
 		{
-			var canUndo = undoStack.Count > 0;
-			var canRedo = redoStack.Count > 0;
-			undoMenuItem.Enabled = canUndo;
-			redoMenuItem.Enabled = canRedo;
+			undoMenuItem.Enabled = editHistory.CanUndo;
+			redoMenuItem.Enabled = editHistory.CanRedo;
 		}
 
 		private void Undo()
 		{
-			if (undoStack.Count == 0)
-				return;
-
-			redoStack.Push(CaptureSnapshot());
-			ApplySnapshot(undoStack.Pop());
+			if (editHistory.CanUndo) ApplyEdit(editHistory.Undo(lastText));
 		}
 
 		private void Redo()
 		{
-			if (redoStack.Count == 0)
-				return;
-
-			undoStack.Push(CaptureSnapshot());
-			ApplySnapshot(redoStack.Pop());
+			if (editHistory.CanRedo) ApplyEdit(editHistory.Redo(lastText));
 		}
 
 		private void OpenSearch()
@@ -1892,10 +1765,9 @@ namespace Keyview
 		private void UpdateSearchText()
 		{
 			lastSearch = searchBox.Text ?? "";
-			lastSearchIndex = 0;
 		}
 
-		private void Find(bool next, bool incremental)
+		private void Find(bool next)
 		{
 			var needle = searchBox.Text ?? "";
 			lastSearch = needle;
@@ -1905,38 +1777,33 @@ namespace Keyview
 
 			var text = inputArea.Text ?? "";
 			var (selectionStart, selectionLength) = GetSelection();
-			var searchStart = next
-				? (incremental ? Math.Max(0, lastSearchIndex - 1) : selectionStart + selectionLength)
-				: Math.Max(0, selectionStart - 1);
+			var searchStart = selectionStart + selectionLength;
 
 			int index;
 
 			if (next)
 			{
-				index = text.IndexOf(needle, searchStart, StringComparison.CurrentCulture);
+				index = text.IndexOf(needle, searchStart, StringComparison.Ordinal);
 				if (index == -1 && searchStart > 0)
-					index = text.IndexOf(needle, 0, StringComparison.CurrentCulture);
+					index = text.IndexOf(needle, 0, StringComparison.Ordinal);
 			}
 			else
 			{
-				index = text.LastIndexOf(needle, searchStart, StringComparison.CurrentCulture);
-				if (index == -1 && text.Length > 0)
-					index = text.LastIndexOf(needle, text.Length - 1, StringComparison.CurrentCulture);
-			}
-
+				index = text.AsSpan(0, selectionStart).LastIndexOf(needle.AsSpan(), StringComparison.Ordinal);
 				if (index == -1)
-				{
-					SetSelection(0, 0);
-					return;
-				}
-
-				lastSearchIndex = index + needle.Length;
-				SetSelection(index, needle.Length);
-				var end = needle.Length > 0 ? index + needle.Length - 1 : index;
-				inputArea.ScrollTo(new Range<int>(index, end));
-				if (!incremental)
-					inputArea.Focus();
+					index = text.LastIndexOf(needle, StringComparison.Ordinal);
 			}
+
+			if (index == -1)
+			{
+				SetSelection(0, 0);
+				return;
+			}
+
+			SetSelection(index, needle.Length);
+			inputArea.ScrollTo(new Range<int>(index, index + needle.Length - 1));
+			inputArea.Focus();
+		}
 
 		private void SelectLine()
 		{
@@ -1994,9 +1861,7 @@ namespace Keyview
 			}
 
 			var newBlock = string.Join("\n", lines);
-			inputArea.Text = before + newBlock + after;
-			SetSelection(startLine, newBlock.Length);
-			lastKeyTime = DateTime.UtcNow;
+			ApplyInputEdit(before + newBlock + after, startLine, newBlock.Length);
 		}
 
 		private void TransformSelection(Func<string, string> transform)
@@ -2009,9 +1874,7 @@ namespace Keyview
 
 			var selected = text.Substring(start, length);
 			var transformed = transform(selected);
-			inputArea.Text = text.Substring(0, start) + transformed + text.Substring(start + length);
-			SetSelection(start, transformed.Length);
-			lastKeyTime = DateTime.UtcNow;
+			ApplyInputEdit(text.Substring(0, start) + transformed + text.Substring(start + length), start, transformed.Length);
 		}
 
 		private void SetWordWrap(bool enabled)
@@ -2045,7 +1908,7 @@ namespace Keyview
 
 		private void CopyFullCode()
 		{
-			var text = string.IsNullOrEmpty(fullCode) ? outputArea.Text : fullCode;
+			var text = lastCompile?.Success == true ? lastCompile.FullCode.Value : outputArea.Text;
 			Clipboard.Instance.Text = text ?? "";
 		}
 
@@ -2071,7 +1934,7 @@ namespace Keyview
 			{
 				var fullPath = Path.GetFullPath(path);
 				var text = File.ReadAllText(fullPath);
-				inputArea.Text = text;
+				SetInputText(text);
 				document.LoadFile(fullPath, text);
 				ResetUndoHistory();
 			}
@@ -2080,7 +1943,8 @@ namespace Keyview
 				suppressDocumentChange = false;
 			}
 
-			lastKeyTime = DateTime.UtcNow;
+			compileScheduler.TextChanged(DateTime.UtcNow);
+			compiledBytes = null;
 			UpdateDocumentUi();
 		}
 
@@ -2089,7 +1953,7 @@ namespace Keyview
 			suppressDocumentChange = true;
 			try
 			{
-				inputArea.Text = File.Exists(lastrun) ? File.ReadAllText(lastrun) : "";
+				SetInputText(File.Exists(lastrun) ? File.ReadAllText(lastrun) : "");
 				document.LoadScratch();
 				ResetUndoHistory();
 			}
@@ -2098,13 +1962,14 @@ namespace Keyview
 				suppressDocumentChange = false;
 			}
 
-			lastKeyTime = DateTime.UtcNow;
+			compileScheduler.TextChanged(DateTime.UtcNow);
+			compiledBytes = null;
 			UpdateDocumentUi();
 		}
 
 		private bool ConfirmDiscardChanges()
 		{
-			if (!document.IsDirty(inputArea.Text))
+			if (!document.IsDirty(lastText))
 				return true;
 
 			var result = MessageBox.Show(
@@ -2129,8 +1994,8 @@ namespace Keyview
 
 			try
 			{
-				File.WriteAllText(document.CurrentFilePath, inputArea.Text ?? "");
-				document.MarkSaved(inputArea.Text);
+				File.WriteAllText(document.CurrentFilePath, lastText);
+				document.MarkSaved(lastText);
 				UpdateDocumentUi();
 				return true;
 			}
@@ -2141,40 +2006,60 @@ namespace Keyview
 			}
 		}
 
-		private void CompileDocument()
+		private async void CompileDocument()
 		{
-			if (!document.CanCompile || (document.IsDirty(inputArea.Text) && !SaveDocument()))
-				return;
-
-			compileScriptButton.Enabled = false;
-			SetCodeStatusTone(StatusTone.Default);
-			codeStatusLabel.Text = "Writing .cks...";
-
-			if (KeyviewDocumentCompiler.TryCompile(document.CurrentFilePath, ch, out var outputPath, out var error))
-			{
-				SetCodeStatusTone(StatusTone.Success);
-				codeStatusLabel.Text = $"Wrote {outputPath}";
-			}
-			else
-			{
-				SetCodeStatusTone(StatusTone.Error);
-				codeStatusLabel.Text = "Compile failed";
-				SetOutputText(error);
-			}
-
+			if (compileScheduler.IsCompiling || !document.CanCompile || (document.IsDirty(lastText) && !SaveDocument())) return;
+			if (!compileScheduler.TryBeginExplicit()) return;
 			UpdateDocumentUi();
+			codeStatusLabel.Text = "Writing .cks...";
+			var sourcePath = document.CurrentFilePath;
+			var version = compileScheduler.EditVersion;
+			try
+			{
+				var result = await Task.Run(() =>
+				{
+					var success = KeyviewDocumentCompiler.TryCompile(sourcePath, ch, out var path, out var error);
+					return (success, path, error);
+				});
+				if (closing || !compileScheduler.IsCurrent(version, sourcePath, document.CurrentFilePath)) return;
+				if (result.success)
+				{
+					SetCodeStatusTone(StatusTone.Success);
+					codeStatusLabel.Text = $"Wrote {result.path}";
+				}
+				else
+				{
+					compiledBytes = null;
+					trimmedCode = result.error;
+					lastCompile = new(null, result.error, new Lazy<string>(() => result.error), result.error, TimeSpan.Zero);
+					runScriptButton.Enabled = scriptRunner.IsRunning;
+					SetCodeStatusTone(StatusTone.Error);
+					codeStatusLabel.Text = "Compile failed";
+					SetOutputText(result.error);
+				}
+			}
+			finally
+			{
+				compileScheduler.CompleteExplicit();
+				if (!closing) UpdateDocumentUi();
+			}
 		}
 
 		private void UpdateDocumentUi(string text = null)
 		{
-			text ??= inputArea.Text;
+			text ??= lastText;
 			var dirty = document.IsDirty(text);
-			Title = document.GetWindowTitle(baseTitle, dirty);
-			documentStatusLabel.Text = document.GetStatusText(dirty);
+			if (displayedDirty != dirty || displayedDocumentPath != document.CurrentFilePath)
+			{
+				Title = document.GetWindowTitle(baseTitle, dirty);
+				documentStatusLabel.Text = document.GetStatusText(dirty);
+				displayedDirty = dirty;
+				displayedDocumentPath = document.CurrentFilePath;
+			}
 			saveMenuItem.Enabled = !document.IsScratch && dirty;
-			compileMenuItem.Enabled = document.CanCompile;
+			compileMenuItem.Enabled = document.CanCompile && !compileScheduler.IsCompiling;
 			compileScriptButton.Visible = !document.IsScratch;
-			compileScriptButton.Enabled = document.CanCompile;
+			compileScriptButton.Enabled = document.CanCompile && !compileScheduler.IsCompiling;
 		}
 
 #if OSX
@@ -2190,7 +2075,8 @@ namespace Keyview
 
 		private void SetStart()
 		{
-			fullCode = trimmedCode = "";
+			lastCompile = null;
+			trimmedCode = "";
 			SetCodeStatusTone(StatusTone.Default);
 			codeStatusLabel.Text = "";
 		}
@@ -2205,40 +2091,43 @@ namespace Keyview
 		{
 			SetCodeStatusTone(StatusTone.Error);
 			codeStatusLabel.Text = "Error";
-			SetOutputText("");
 		}
+
 
 		private void SetOutputText(string text)
 		{
-			if (outputHighlighting)
-				return; // ignore re-entrant updates (e.g. a Full-code toggle) while a pumped highlight runs
-
-			scriptOwnsOutput = false; // the compiler is reclaiming the output box from any running script
+			scriptOwnsOutput = false;
+			if (outputHighlighting) { pendingOutput = text; outputVersion++; return; }
+			if (string.Equals(outputArea.Text, text, StringComparison.Ordinal)) { HighlightOutput(); return; }
+			outputVersion++;
+			EtoHighlightExtensions.Invalidate(outputArea);
 			outputArea.Text = text;
 			HighlightOutput();
 		}
 
 		private void HighlightOutput()
 		{
-			if (outputHighlighting)
+			if (outputHighlighting || closing)
 				return;
 
 			outputHighlighting = true;
 			try
 			{
 				// Yield to the UI loop periodically so highlighting a large generated file doesn't freeze.
-				outputHighlighter.Highlight(outputArea, Application.Instance.RunIteration);
+				outputHighlighter.Highlight(outputArea, Application.Instance.RunIteration, () => closing ? -1 : outputVersion);
 			}
 			finally
 			{
 				outputHighlighting = false;
+				if (closing) pendingOutput = null;
+				else if (pendingOutput is { } next) { pendingOutput = null; SetOutputText(next); }
 				ApplyPendingThemeRefresh();
 			}
 		}
 
 		private void UpdateOutputFromCache()
 		{
-			var desired = fullCodeCheck.Checked == true ? fullCode : trimmedCode;
+			var desired = fullCodeCheck.Checked == true ? lastCompile?.FullCode.Value ?? trimmedCode : trimmedCode;
 			if (string.IsNullOrEmpty(desired))
 				return;
 			SetOutputText(desired);
@@ -2246,141 +2135,72 @@ namespace Keyview
 
 		private async void Timer_Elapsed(object sender, EventArgs e)
 		{
-			if (!isCompiling && (force || ((DateTime.UtcNow - lastKeyTime).TotalSeconds >= updateFreqSeconds && lastKeyTime > lastCompileTime)) && !string.IsNullOrEmpty(inputArea.Text))
+			if (closing || !compileScheduler.TryBegin(DateTime.UtcNow, inputArea.TextLength > 0, out var version)) return;
+			compiledBytes = null;
+			runScriptButton.Enabled = scriptRunner.IsRunning;
+			SetStart();
+			codeStatusLabel.Text = "Compiling script...";
+			UpdateDocumentUi();
+			var sourcePath = document.CurrentFilePath;
+			try
 			{
-				timer.Stop();
-				isCompiling = true;
-				lastCompileTime = DateTime.UtcNow;
-
-				try
-				{
-					await KeyviewCompilerRunner.RunCompile(
-						inputArea.Text,
-						KeyviewCompilerRunner.IncludeDirFor(document),
-						ch,
-						bytes => compiledBytes = bytes,
-						code => fullCode = code,
-						code => trimmedCode = code,
-						trimend,
-						trimstr,
-						SetStart,
-						SetSuccess,
-						SetFailure,
-						text => codeStatusLabel.Text = text,
-						null,
-						SetOutputText,
-						() => fullCodeCheck.Checked == true,
-						() => runScriptButton.Enabled = false,
-						() => runScriptButton.Enabled = true,
-						AutosaveScratchDocument,
-						null,
-						null);
-				}
-				finally
-				{
-					isCompiling = false;
-					timer.Start();
-				}
+				var result = await KeyviewCompilerRunner.RunCompile(inputArea.Text, KeyviewCompilerRunner.IncludeDirFor(document), ch);
+				if (closing || !compileScheduler.IsCurrent(version, sourcePath, document.CurrentFilePath)) return;
+				lastCompile = result;
+				compiledBytes = result.AssemblyBytes;
+				trimmedCode = result.TrimmedCode;
+				if (result.Success) SetSuccess(result.Elapsed.TotalSeconds); else SetFailure();
+				runScriptButton.Enabled = result.Success || scriptRunner.IsRunning;
+				SetOutputText(fullCodeCheck.Checked == true ? result.FullCode.Value : result.TrimmedCode);
 			}
+			finally
+			{
+				compileScheduler.Complete(version);
+				if (!closing) UpdateDocumentUi();
+			}
+		}
 
-			if (force)
-				force = false;
+		private void DispatchScriptUpdate(Action action)
+		{
+			if (!closing) Application.Instance.AsyncInvoke(action);
+		}
+
+		private void InitializeScriptRunner()
+		{
+			scriptRunner.RunningChanged += (id, running) => DispatchScriptUpdate(() =>
+			{
+				if (closing || !scriptRunner.IsCurrent(id)) return;
+				runScriptButton.Text = runScriptText[running ? "Stop" : "Run"];
+				runScriptButton.Enabled = running || compiledBytes != null;
+			});
+			scriptRunner.OutputReceived += (id, text) => DispatchScriptUpdate(() =>
+			{
+				if (closing || !scriptRunner.IsCurrent(id) || !scriptOwnsOutput) return;
+				outputVersion++;
+				if (!runtimeOutputStarted)
+				{
+					runtimeOutputStarted = true;
+					EtoHighlightExtensions.Invalidate(outputArea);
+					outputArea.Text = "";
+					outputArea.Append(ScriptOutputHeader, false);
+				}
+				outputArea.Append(text, true);
+			});
 		}
 
 		private void RunStopScript()
 		{
-			if (scriptProcess != null)
-			{
-				scriptProcess.Kill();
-				scriptProcess = null;
-			}
-
-			if (runScriptButton.Text == runScriptText["Stop"])
-				return;
-
-			if (compiledBytes == null)
-			{
-				MessageBox.Show(this, "Please wait, code is still compiling...", "Error", MessageBoxButtons.OK, MessageBoxType.Error);
-				return;
-			}
-
-			var keysharpExe = GetKeysharpExecutable();
-
-			if (!File.Exists(keysharpExe))
-			{
-				MessageBox.Show(this, $"Keysharp executable not found:\n{keysharpExe}\n\nCopy Keysharp.app to /Applications/ or run Keyview from the same folder as Keysharp.", "Launch Error", MessageBoxButtons.OK, MessageBoxType.Error);
-				return;
-			}
-
-			scriptProcess = new Process
-			{
-				StartInfo = new ProcessStartInfo
-				{
-					FileName = keysharpExe,
-					Arguments = "--assembly *",
-					RedirectStandardInput = true,
-					RedirectStandardOutput = true,
-					RedirectStandardError = true,
-					UseShellExecute = false,
-					CreateNoWindow = true
-				}
-			};
-			scriptProcess.EnableRaisingEvents = true;
-			var runtimeOutputStarted = false;
-			scriptProcess.ErrorDataReceived += (_, e) =>
-			{
-				if (string.IsNullOrEmpty(e.Data))
-					return;
-
-				Application.Instance.AsyncInvoke(() =>
-				{
-					if (!runtimeOutputStarted)
-					{
-						// Replace the generated C# with the script's runtime output so the two don't
-						// get mixed together. The C# remains available via "Copy full code". This
-						// take-over happens once per run, the first time the script emits output.
-						runtimeOutputStarted = true;
-						scriptOwnsOutput = true;
-						outputArea.Text = "";
-						outputArea.Append(ScriptOutputHeader, false);
-					}
-					else if (!scriptOwnsOutput)
-					{
-						// A recompile reclaimed the output box after this script took it over; don't
-						// clobber the freshly displayed C# with this (now stale) run's later output.
-						return;
-					}
-
-					outputArea.Append($"{e.Data}\n", true);
-				});
-			};
-			scriptProcess.Exited += (_, _) =>
-			{
-				Application.Instance.AsyncInvoke(() =>
-				{
-					runScriptButton.Text = runScriptText["Run"];
-					scriptProcess = null;
-				});
-			};
-			_ = scriptProcess.Start();
-			scriptProcess.BeginErrorReadLine();
-
-			// Write the raw assembly bytes and close stdin; the child ("--assembly *") reads to EOF.
 			try
 			{
-				using var stdin = scriptProcess.StandardInput.BaseStream;
-				stdin.Write(compiledBytes, 0, compiledBytes.Length);
-				stdin.Flush();
+				if (scriptRunner.IsRunning) { scriptRunner.Stop(); return; }
+				if (compiledBytes == null) { MessageBox.Show(this, lastCompile?.Error ?? "Please wait, code is still compiling...", "Error", MessageBoxButtons.OK, MessageBoxType.Error); return; }
+				runtimeOutputStarted = false;
+				scriptOwnsOutput = true;
+				pendingOutput = null;
+				outputVersion++;
+				scriptRunner.Start(GetKeysharpExecutable(), compiledBytes);
 			}
-			catch (IOException)
-			{
-				// Keysharp exited before reading stdin — error output will appear via stderr above.
-				runScriptButton.Text = runScriptText["Run"];
-				scriptProcess = null;
-				return;
-			}
-
-			runScriptButton.Text = runScriptText["Stop"];
+			catch (Exception ex) { scriptOwnsOutput = false; MessageBox.Show(this, ex.Message, "Process Error", MessageBoxButtons.OK, MessageBoxType.Error); }
 		}
 
 		private static string GetKeysharpExecutable()
@@ -2428,174 +2248,6 @@ namespace Keyview
 
 		/// <summary>The scratch buffer autosave: the never-saved document Keyview reopens on next launch.</summary>
 		internal static string ScratchDocument => Path.Combine(DataDir, "lastkeyviewrun.txt");
-	}
-
-	internal static class KeyviewCompilerRunner
-	{
-		internal static IScriptCompiler GetCompiler()
-		{
-			if (ScriptingComponentRegistry.TryGetCompiler(out var compiler, out var error))
-				return compiler;
-
-			throw new InvalidOperationException(error);
-		}
-
-		// The base directory for resolving #include directives when compiling the live editor text (which has no
-		// script path of its own). Uses the open document's folder so relative, absolute and library (<Name>)
-		// includes all resolve as they would when the file is run directly; a never-saved scratch buffer falls
-		// back to the current working directory so includes (at least absolute ones) still work.
-		internal static string IncludeDirFor(KeyviewDocumentState document)
-			=> document.IsScratch ? Directory.GetCurrentDirectory() : Path.GetDirectoryName(document.CurrentFilePath);
-
-		internal static async Task RunCompile(
-			string inputText,
-			string includeDir,
-			IScriptCompiler compiler,
-			Action<byte[]> setCompiledBytes,
-			Action<string> setFullCode,
-			Action<string> setTrimmedCode,
-			char[] trimend,
-			string trimstr,
-			Action setStart,
-			Action<double> setSuccess,
-			Action setFailure,
-			Action<string> setStatus,
-			Action refreshStatus,
-			Action<string> setOutput,
-			Func<bool> useFullCode,
-			Action disableRunButton,
-			Action enableRunButton,
-			Action writeLastRun,
-			Action beforeOutput,
-			Action afterOutput)
-		{
-			var startTime = DateTime.UtcNow;
-			try
-			{
-				setCompiledBytes(null);
-				disableRunButton?.Invoke();
-				setStart?.Invoke();
-				setStatus?.Invoke("Compiling script...");
-				refreshStatus?.Invoke();
-				// Live validation must not restore packages; an explicit run may.
-				var result = await Task.Run(() => compiler.Compile(new ScriptCompileRequest
-				{
-					SourceText = inputText,
-					CompilationName = "Keyview",
-					RuntimeDirectory = Path.GetFullPath(Path.GetDirectoryName(Environment.ProcessPath)),
-					IncludeDirectory = includeDir,
-					Output = ScriptCompilationOutput.InMemory,
-					EmitGeneratedCode = true,
-					AllowPackageRestore = false,
-				})).ConfigureAwait(true);
-				// Show the separate inline tree without pretending the two sources form one valid C# unit.
-				var inline = result.InlineCode is { Length: > 0 } inlineCode
-					? Environment.NewLine + Environment.NewLine
-					  + "// ---- #CSharp (compiled as a separate file) ----" + Environment.NewLine + Environment.NewLine
-					  + inlineCode
-					: "";
-				// A script whose C# failed to compile shows the error above the generated code which caused it.
-				var code = string.Join(Environment.NewLine + Environment.NewLine, new[] { result.ErrorText, result.GeneratedCode }.Where(text => text != null)) + inline;
-
-				if (result.Success)
-				{
-					setSuccess?.Invoke((DateTime.UtcNow - startTime).TotalSeconds);
-
-					// Load the compiled assembly and re-enable the Run button as soon as the script is
-					// actually runnable, before the (potentially slow) printing, trimming and C# syntax
-					// highlighting below. Otherwise the button stays greyed out for a second or two after the
-					// compile has really finished, just while the generated code is being highlighted.
-					_ = Assembly.Load(result.AssemblyBytes);
-					setCompiledBytes(result.AssemblyBytes);
-					enableRunButton?.Invoke();
-
-					// The full view is the code as compiled, location stamps included, and the trimmed view the readable
-					// lowering. Both are string work over the whole file, so they are built off the UI thread.
-					var (fullCode, trimmedCode) = await Task.Run(() =>
-					{
-						var token = "[System.STAThread]";
-						var start = code.IndexOf(token);
-						var display = code.AsSpan(start + token.Length + 2).TrimEnd(trimend).ToString();
-						var sb = new StringBuilder(display.Length);
-
-						foreach (var line in display.SplitLines())
-							_ = sb.AppendLine(line.TrimNofAnyFromStart(trimstr, 2));
-
-						return (result.CompiledCode is { } compiled ? compiled + inline : code, sb.ToString().TrimEnd(trimend));
-					}).ConfigureAwait(true);
-
-					setFullCode(fullCode);
-					setTrimmedCode(trimmedCode);
-					beforeOutput?.Invoke();
-					setOutput?.Invoke(useFullCode() ? fullCode : trimmedCode);
-					afterOutput?.Invoke();
-					writeLastRun?.Invoke();
-				}
-				else
-				{
-					setFailure?.Invoke();
-					setOutput?.Invoke(code);
-				}
-			}
-			catch (Exception ex)
-			{
-				setFailure?.Invoke();
-				setOutput?.Invoke(ex.ToString());
-			}
-			finally
-			{
-				enableRunButton?.Invoke();
-			}
-		}
-	}
-
-	internal sealed class KeyviewDocumentState
-	{
-		private string savedText = "";
-
-		internal string CurrentFilePath { get; private set; }
-		internal bool IsScratch => string.IsNullOrEmpty(CurrentFilePath);
-		internal bool CanCompile => !IsScratch && IsSourceFile(CurrentFilePath);
-		internal string DisplayName => IsScratch ? "Scratch document" : Path.GetFileName(CurrentFilePath);
-
-		internal void LoadFile(string path, string text)
-		{
-			CurrentFilePath = Path.GetFullPath(path);
-			savedText = text ?? "";
-		}
-
-		internal void LoadScratch()
-		{
-			CurrentFilePath = null;
-			savedText = "";
-		}
-
-		internal void MarkSaved(string text) => savedText = text ?? "";
-
-		internal bool IsDirty(string text) => !IsScratch && !string.Equals(savedText, text ?? "", StringComparison.Ordinal);
-
-		internal string GetWindowTitle(string baseTitle, bool dirty)
-		{
-			if (IsScratch)
-				return $"{baseTitle} — Scratchpad (autosaved)";
-
-			return $"{DisplayName}{(dirty ? " *" : "")} — {baseTitle}";
-		}
-
-		internal string GetStatusText(bool dirty)
-		{
-			if (IsScratch)
-				return "Scratchpad document — autosaved";
-
-			return $"{CurrentFilePath}{(dirty ? " — Modified" : "")}";
-		}
-
-		private static bool IsSourceFile(string path)
-		{
-			var extension = Path.GetExtension(path);
-			return extension.Equals(".ahk", StringComparison.OrdinalIgnoreCase)
-				   || extension.Equals(".ks", StringComparison.OrdinalIgnoreCase);
-		}
 	}
 
 	internal static class KeyviewDocumentCompiler

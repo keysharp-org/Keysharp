@@ -1,3 +1,5 @@
+using Keysharp.Components.Scripting;
+
 // Platform-neutral: the SAME highlighter drives the Eto RichTextArea (Linux/macOS) and Scintilla
 // (Windows) through ISyntaxSink, so both editors highlight identically and there is one set of rules.
 namespace Keyview
@@ -35,41 +37,27 @@ namespace Keyview
 		// classifying, to avoid freezing the UI thread (GTK tag application is costly on huge buffers).
 		private readonly int maxHighlightLength;
 
-		// Cooperative yielding state for a single Highlight() call: when pumpAction is set, ApplyColor
-		// periodically runs it (a UI event-loop pump) so a large highlight stays responsive, and aborts
-		// if the buffer is edited while yielded (which would make the remaining offsets stale).
-		private const int PumpEvery = 512;
-		private Action pumpAction;
-		private Func<int> pumpLength;
-		private int pumpSnapshotLength;
-		private int applyCount;
-		private bool aborted;
-
 		private readonly HashSet<string> keywords;
 		private readonly HashSet<string> builtins;
 
-		// Explicit rather than inferred from `tokenizer != null`: with no parser component the Keysharp box must stay
-		// uncolored, NOT fall through to C# rules and mis-highlight AutoHotkey source.
+		// Without the parser component, the Keysharp editor stays uncolored.
 		private readonly bool csharpMode;
 
 		private readonly IScriptTokenizer tokenizer;   // Keysharp box only, and only if the component resolved
 
-		// Scintilla raises StyleNeeded per paint region and Restyle always classifies the whole document, so without
-		// this the buffer is re-tokenized on events that changed nothing.
+		// Reuse tokens when an unchanged buffer is reclassified, such as on a theme change.
 		private string cachedText;
 		private IReadOnlyList<ScriptToken> cachedTokens;
 
-		// C#-scanner mode only.
-		private readonly char escapeChar;
+		private static readonly HashSet<string> csharpKeywords = ToSet(CSharpKeywords, StringComparer.Ordinal);
 
 		private SyntaxHighlighter(HashSet<string> keywords, HashSet<string> builtins, IScriptTokenizer tokenizer,
-			bool csharpMode, char escapeChar, int maxHighlightLength)
+			bool csharpMode, int maxHighlightLength)
 		{
 			this.keywords = keywords;
 			this.builtins = builtins;
 			this.tokenizer = tokenizer;
 			this.csharpMode = csharpMode;
-			this.escapeChar = escapeChar;
 			this.maxHighlightLength = maxHighlightLength;
 		}
 
@@ -79,15 +67,14 @@ namespace Keyview
 			var keywords = ToSet("true false this thishotkey super unset isset " + Keywords.GetKeywords(), StringComparer.OrdinalIgnoreCase);
 			var builtins = ToSet(Script.TheScript?.GetPublicStaticPropertyNames() ?? "", StringComparer.OrdinalIgnoreCase);
 			_ = ScriptingComponentRegistry.TryGetTokenizer(out var tokenizer, out _);
-			return new SyntaxHighlighter(keywords, builtins, tokenizer, csharpMode: false, '`', maxHighlightLength: 2_000_000);
+			return new SyntaxHighlighter(keywords, builtins, tokenizer, csharpMode: false, maxHighlightLength: 2_000_000);
 		}
 
 		/// <summary>Highlighter for the generated C# output box, and for `#CSharp` block bodies.</summary>
 		internal static SyntaxHighlighter ForCSharp()
 		{
 			var keywords = ToSet(CSharpKeywords, StringComparer.Ordinal);
-			return new SyntaxHighlighter(keywords, new HashSet<string>(StringComparer.Ordinal), null, csharpMode: true,
-				'\\', maxHighlightLength: 2_000_000);
+			return new SyntaxHighlighter(keywords, new HashSet<string>(StringComparer.Ordinal), null, csharpMode: true, maxHighlightLength: 2_000_000);
 		}
 
 		private static HashSet<string> ToSet(string words, StringComparer comparer) =>
@@ -96,34 +83,13 @@ namespace Keyview
 		/// <summary>Whether <paramref name="length"/> is small enough to classify rather than only reset.</summary>
 		internal bool CanHighlight(int length) => length <= maxHighlightLength;
 
-		/// <summary>
-		/// Classifies <paramref name="text"/> and reports every colored span to <paramref name="sink"/>.
-		/// <para><paramref name="pump"/>, when supplied, is run periodically so a large buffer stays responsive;
-		/// <paramref name="currentLength"/> is then consulted after each pump, and the pass aborts if the text
-		/// changed underneath it (which would make every remaining offset stale). A back end with no event loop
-		/// to pump &mdash; Scintilla styles synchronously in small ranges &mdash; passes neither.</para>
-		/// </summary>
-		internal void Highlight(ISyntaxSink sink, string text, Action pump = null, Func<int> currentLength = null)
+		/// <summary>Reports colored spans in source order.</summary>
+		internal void Highlight(ISyntaxSink sink, string text)
 		{
 			var n = (text ?? "").Length;
-
-			if (n == 0 || !CanHighlight(n))
-				return;
-
-			pumpAction = pump;
-			pumpLength = currentLength;
-			pumpSnapshotLength = n;
-			applyCount = 0;
-			aborted = false;
-
-			if (csharpMode)
-				HighlightCSharpSpan(sink, text, 0, n);
-			else if (tokenizer != null)
-				HighlightTokens(sink, text);
-			// else: no parser component, so no Keysharp rules to color by — leave the buffer at its default color.
-
-			pumpAction = null;
-			pumpLength = null;
+			if (n == 0 || !CanHighlight(n)) return;
+			if (csharpMode) HighlightCSharpSpan(sink, text, 0, n);
+			else if (tokenizer != null) HighlightTokens(sink, text);
 		}
 
 		/// <summary>Tokenizes, reusing the previous result when the text has not changed.</summary>
@@ -144,7 +110,7 @@ namespace Keyview
 			var keywordLookup = keywords.GetAlternateLookup<ReadOnlySpan<char>>();
 			var builtinLookup = builtins.GetAlternateLookup<ReadOnlySpan<char>>();
 
-			for (var i = 0; i < tokens.Count && !aborted; i++)
+			for (var i = 0; i < tokens.Count; i++)
 			{
 				var t = tokens[i];
 
@@ -167,7 +133,7 @@ namespace Keyview
 
 				if (t.Kind == ScriptTokenKind.CSharpBlock)
 				{
-					CSharpRegion.HighlightSpanShared(this, sink, text, t.Offset, t.Offset + t.Length);
+					HighlightCSharpSpan(sink, text, t.Offset, t.Offset + t.Length);
 					continue;
 				}
 
@@ -206,47 +172,15 @@ namespace Keyview
 		private static bool Preceded(IReadOnlyList<ScriptToken> tokens, int i, ScriptTokenKind kind) =>
 			i > 0 && tokens[i - 1].Kind == kind;
 
-		/// <summary>
-		/// The C# highlighter for `#CSharp` regions. One shared instance (it holds only immutable keyword sets);
-		/// the pump/abort state is copied across so a long block still yields and still aborts on an edit.
-		/// </summary>
-		private static class CSharpRegion
-		{
-			private static readonly SyntaxHighlighter instance = ForCSharp();
-
-			internal static void HighlightSpanShared(SyntaxHighlighter owner, ISyntaxSink sink, string text, int from, int to)
-			{
-				instance.pumpAction = owner.pumpAction;
-				instance.pumpLength = owner.pumpLength;
-				instance.pumpSnapshotLength = owner.pumpSnapshotLength;
-				instance.applyCount = owner.applyCount;
-				instance.aborted = owner.aborted;
-
-				try
-				{
-					instance.HighlightCSharpSpan(sink, text, from, to);
-				}
-				finally
-				{
-					owner.applyCount = instance.applyCount;
-					owner.aborted = instance.aborted;   // an edit during the region must stop the outer pass too
-					instance.pumpAction = null;
-					instance.pumpLength = null;
-				}
-			}
-		}
-
 		/// <summary>Hand-written C# scanner for [from, to): the generated-code box and `#CSharp` block bodies.</summary>
 		private void HighlightCSharpSpan(ISyntaxSink sink, string text, int from, int to)
 		{
 			var n = to;
 			var i = from;
+			var keywordLookup = csharpKeywords.GetAlternateLookup<ReadOnlySpan<char>>();
 
 			while (i < n)
 			{
-				if (aborted)
-					break;
-
 				var c = text[i];
 
 				if (char.IsWhiteSpace(c))
@@ -279,7 +213,7 @@ namespace Keyview
 				// String / character literal
 				if (c == '"' || c == '\'')
 				{
-					var end = System.Math.Min(ScanString(text, i, c), n);
+					var end = System.Math.Min(ScanString(text, i, c, '\\'), n);
 					ApplyColor(sink, i, end, StringColor);
 					i = end;
 					continue;
@@ -301,7 +235,7 @@ namespace Keyview
 					while (i < n && IsIdentChar(text[i]))
 						i++;
 
-					if (keywords.Contains(text.Substring(start, i - start)))
+					if (keywordLookup.Contains(text.AsSpan(start, i - start)))
 						ApplyColor(sink, start, i, KeywordColor);
 
 					continue;
@@ -311,7 +245,7 @@ namespace Keyview
 			}
 		}
 
-		private int ScanString(string text, int start, char quote)
+		private static int ScanString(string text, int start, char quote, char escapeChar)
 		{
 			var n = text.Length;
 			var i = start + 1;
@@ -378,22 +312,9 @@ namespace Keyview
 			return i;
 		}
 
-		private void ApplyColor(ISyntaxSink sink, int start, int endExclusive, SyntaxColor color)
+		private static void ApplyColor(ISyntaxSink sink, int start, int endExclusive, SyntaxColor color)
 		{
-			if (aborted || endExclusive <= start)
-				return;
-
-			sink.Style(start, endExclusive, color);
-
-			if (pumpAction != null && ++applyCount >= PumpEvery)
-			{
-				applyCount = 0;
-				pumpAction();
-
-				// An edit slipped in while we yielded, so the remaining token offsets are stale; stop.
-				if (pumpLength != null && pumpLength() != pumpSnapshotLength)
-					aborted = true;
-			}
+			if (endExclusive > start) sink.Style(start, endExclusive, color);
 		}
 
 		private static bool IsIdentStart(char c) => char.IsLetter(c) || c == '_';
