@@ -185,7 +185,6 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 			var mask = keyboardState.ToEventMask(flags);
 			if (isInjected)
 				mask |= EventMask.SimulatedEvent;
-			Keysharp.Internals.MacKeyboard.UpdateIndicatorSnapshotFromMask(mask);
 
 			var args = new KeyboardHookEventArgs(keyUp ? EventType.KeyReleased : EventType.KeyPressed, vk, sc, mask)
 			{
@@ -198,7 +197,6 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 		private bool ProcessSyntheticUnicodeText(ReadOnlySpan<char> chars, ulong flags, ulong extraInfo)
 		{
 			var mask = keyboardState.ToEventMask(flags) | EventMask.SimulatedEvent;
-			Keysharp.Internals.MacKeyboard.UpdateIndicatorSnapshotFromMask(mask);
 			var suppress = false;
 
 			for (var i = 0; i < chars.Length; i++)
@@ -262,12 +260,8 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 			var rawExtraInfo = MacNativeInput.CGEventGetIntegerValueField(cgEvent, MacNativeInput.kCGEventSourceUserData);
 			var hasMetadata = MacNativeInput.TryDecodeInjectedExtraInfo(rawExtraInfo, out var decodedExtraInfo, out _);
 			var extraInfo = unchecked((ulong)(hasMetadata ? decodedExtraInfo : rawExtraInfo));
-			var mask = keyboardState.ToEventMask(flags);
 			var origin = MacNativeInput.ClassifyEventOrigin(cgEvent, hasMetadata);
 			var isInjected = origin is MacKeyboardState.Origin.KeysharpSynthetic or MacKeyboardState.Origin.ForeignSynthetic;
-
-			if (isInjected)
-				mask |= EventMask.SimulatedEvent;
 
 			var loc = MacNativeInput.CGEventGetLocation(cgEvent);
 			var x = (int)Math.Round(loc.X);
@@ -324,6 +318,10 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 
 				return suppressMove;
 			}
+
+			var mask = keyboardState.ToEventMask(flags);
+			if (isInjected)
+				mask |= EventMask.SimulatedEvent;
 
 			if (type == MacNativeInput.kCGEventScrollWheel)
 			{

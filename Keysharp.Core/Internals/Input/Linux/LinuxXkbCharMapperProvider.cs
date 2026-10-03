@@ -114,7 +114,7 @@ namespace Keysharp.Internals.Input.Unix
 			needAltGr = false;
 
 			if (!TryGetReadyKeymap(out var currentKeymap))
-				return false;
+				return KeyCodes.TryMapAsciiToVk(rune, out vk, out needShift);
 
 			uint keysym = KeysymFromRune(rune);
 

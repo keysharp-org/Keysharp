@@ -2,6 +2,7 @@
 using System.Text;
 using Keysharp.Builtins;
 using Keysharp.Internals.Input.Hooks;
+using Keysharp.Internals.Input.Hooks.Unix;
 using Keysharp.Internals.Input.Keyboard;
 using static Keysharp.Internals.Input.Keyboard.KeyboardMouseSender;
 using static Keysharp.Internals.Input.Keyboard.KeyboardUtils;
@@ -9,19 +10,23 @@ using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
 
 namespace Keysharp.Internals.Input.MacOS
 {
-	internal sealed class MacKeyboardMouseSender : MacKeyboardMouseSenderBase
+	internal partial class MacKeyboardMouseSender : KeyboardMouseSender
 	{
 		private readonly MacKeyboardState keyboardState;
 		private readonly MacMouseEventStream mouseStream;
+		private readonly Stack<(int Depth, UnixHookThread.SendScope Scope, bool KeyboardStarted)> sendScopes = new();
+		private int sendInvocationDepth;
+		private readonly Func<uint> queryModifiers;
 
 		internal MacKeyboardMouseSender(Script script, MacKeyboardState keyboardState, MacMouseEventStream mouseStream)
 			: base(script)
 		{
 			this.keyboardState = keyboardState;
 			this.mouseStream = mouseStream;
+			queryModifiers = () => GetModifierLRState(true);
 		}
 
-		private uint CurrentPostedModifiers() => keyboardState.GetModifiers(() => GetModifierLRState(true));
+		private uint CurrentPostedModifiers() => keyboardState.GetModifiers(queryModifiers);
 		private void RefreshButtonsWithoutHook()
 		{
 			if (!script.HookThread.HasMouseHook())
@@ -30,14 +35,47 @@ namespace Keysharp.Internals.Input.MacOS
 
 		protected override void OnSendKeysStarting()
 		{
+			var depth = ++sendInvocationDepth;
+			sendScopes.EnsureCapacity(sendScopes.Count + 1);
+			var scope = ((UnixHookThread)script.HookThread).EnterSendScope();
+			sendScopes.Push((depth, scope, false));
 			keyboardState.BeginSend(GetModifierLRState(true), QueryCapsLockState());
+			_ = sendScopes.Pop();
+			sendScopes.Push((depth, scope, true));
 			RefreshButtonsWithoutHook();
 			mouseStream.InvalidatePosition();
 		}
 
-		protected override void OnSendKeysFinished() => keyboardState.EndSend();
+		protected override void OnSendKeysFinished()
+		{
+			try
+			{
+				// A failed nested start can return here before it owns a scope or keyboard transaction.
+				if (sendScopes.Count == 0 || sendScopes.Peek().Depth != sendInvocationDepth)
+					return;
+				var frame = sendScopes.Pop();
+				try
+				{
+					if (frame.KeyboardStarted)
+						FlushPendingHighSurrogate();
+				}
+				finally
+				{
+					try
+					{
+						if (frame.KeyboardStarted)
+							keyboardState.EndSend();
+					}
+					finally { frame.Scope.Dispose(); }
+				}
+			}
+			finally
+			{
+				sendInvocationDepth--;
+			}
+		}
 
-		private void PostKeyboardWithPredictedState(Keysharp.Internals.Input.Hooks.Unix.UnixHookThread lht, uint vk, bool keyDown,
+		private void PostKeyboardWithPredictedState(UnixHookThread lht, uint vk, bool keyDown,
 											long extraInfo, bool autoRepeat = false)
 		{
 			bool? isNeutral = null;
@@ -64,7 +102,16 @@ namespace Keysharp.Internals.Input.MacOS
 		internal override ToggleValueType ToggleKeyState(uint vk, ToggleValueType toggleValue)
 		{
 			if (vk != VK_CAPITAL || !MacCapsLockState.TryGet(out var capsOn))
-				return base.ToggleKeyState(vk, toggleValue);
+			{
+				var initial = script.HookThread.IsKeyToggledOn(vk) ? ToggleValueType.On : ToggleValueType.Off;
+				if (toggleValue is not (ToggleValueType.On or ToggleValueType.Off) || initial == toggleValue)
+					return initial;
+				if (script.HookThread.IsKeyDownLogical(vk))
+					SendKeyEvent(KeyEventTypes.KeyUp, vk);
+				SendKeyEvent(KeyEventTypes.KeyDownAndUp, vk);
+				Thread.Sleep(1);
+				return initial;
+			}
 
 			var starting = capsOn ? ToggleValueType.On : ToggleValueType.Off;
 			if (toggleValue is not (ToggleValueType.On or ToggleValueType.Off) || starting == toggleValue)
@@ -82,97 +129,74 @@ namespace Keysharp.Internals.Input.MacOS
 			return starting;
 		}
 
-		protected override void DispatchKeybdEvent(Keysharp.Internals.Input.Hooks.Unix.UnixHookThread lht, KeyEventTypes eventType,
+		private void DispatchKeybdEvent(UnixHookThread lht, KeyEventTypes eventType,
 											  uint vk, long extraInfo, bool autoRepeat)
 		{
-			WithSendScope(lht, () =>
+			using var scope = lht.EnterSendScope();
+
+			if (vk == VK_CAPITAL && autoRepeat)
+				return; // A lock key changes state once per physical press, never on repeat metadata.
+
+			if (vk == VK_CAPITAL && eventType != KeyEventTypes.KeyUp && MacCapsLockState.TryToggle())
 			{
-				EnsureInputSendPermission("send keyboard input");
+				RefreshCapsLockState();
+				// IOKit owns the actual lock state; emit the matching CGEvent only as notification
+				// for applications and SendLevel-aware Keysharp hooks.
+				PostKeyboardWithPredictedState(lht, vk, true, extraInfo);
+				if (eventType == KeyEventTypes.KeyDownAndUp)
+					PostKeyboardWithPredictedState(lht, vk, false, extraInfo);
+				return;
+			}
 
-				if (vk == VK_CAPITAL && autoRepeat)
-					return; // A lock key changes state once per physical press, never on repeat metadata.
-
-				if (vk == VK_CAPITAL && eventType != KeyEventTypes.KeyUp && MacCapsLockState.TryToggle())
-				{
-					RefreshCapsLockState();
-					// IOKit owns the actual lock state; emit the matching CGEvent only as notification
-					// for applications and SendLevel-aware Keysharp hooks.
-					PostKeyboardWithPredictedState(lht, vk, true, extraInfo);
-					if (eventType == KeyEventTypes.KeyDownAndUp)
-						PostKeyboardWithPredictedState(lht, vk, false, extraInfo);
-					return;
-				}
-
-				switch (eventType)
-				{
-					case KeyEventTypes.KeyDown:
-						PostKeyboardWithPredictedState(lht, vk, true, extraInfo, autoRepeat);
-						break;
-					case KeyEventTypes.KeyUp:
-						PostKeyboardWithPredictedState(lht, vk, false, extraInfo);
-						break;
-					case KeyEventTypes.KeyDownAndUp:
-						PostKeyboardWithPredictedState(lht, vk, true, extraInfo, autoRepeat);
-						PostKeyboardWithPredictedState(lht, vk, false, extraInfo);
-						break;
-				}
-			});
-		}
-
-		protected override bool TrySendPlatformUnicodeText(Keysharp.Internals.Input.Hooks.Unix.UnixHookThread lht, string text, long extraInfo)
-		{
-			WithSendScope(lht, () =>
+			switch (eventType)
 			{
-				EnsureInputSendPermission("send text input");
-				MacNativeInput.PostUnicodeText(text, extraInfo);
-			});
-
-			return true;
+				case KeyEventTypes.KeyDown:
+					PostKeyboardWithPredictedState(lht, vk, true, extraInfo, autoRepeat);
+					break;
+				case KeyEventTypes.KeyUp:
+					PostKeyboardWithPredictedState(lht, vk, false, extraInfo);
+					break;
+				case KeyEventTypes.KeyDownAndUp:
+					PostKeyboardWithPredictedState(lht, vk, true, extraInfo, autoRepeat);
+					PostKeyboardWithPredictedState(lht, vk, false, extraInfo);
+					break;
+			}
 		}
-
-		protected override bool TrySendPlatformUnicodeChar(Keysharp.Internals.Input.Hooks.Unix.UnixHookThread lht, char ch, long extraInfo, bool hasMappedKeystroke, uint vk, bool needShift, bool needAltGr)
-			=> TrySendPlatformUnicodeText(lht, ch.ToString(), extraInfo);
 
 		protected internal override bool TrySendPlatformRawText(ReadOnlySpan<char> text, ref int keyIndex, uint modifiersLR)
 		{
-			if (sendMode != SendModes.Event || keyIndex < 0 || keyIndex >= text.Length)
+			if (sendMode != SendModes.Event || keyIndex < 0 || keyIndex >= text.Length
+				|| script.HookThread is not UnixHookThread lht)
 				return false;
 
-			var remaining = text[keyIndex..].ToString();
-			var lht = script.HookThread as Keysharp.Internals.Input.Hooks.Unix.UnixHookThread;
-			if (lht == null)
-				return false;
-
+			var remaining = text[keyIndex..];
 			var extraInfo = KeyIgnoreLevel(ThreadAccessors.A_SendLevel);
-			WithSendScope(lht, () =>
+			using var scope = lht.EnterSendScope();
+			if (!KeyDelayWouldSleepOrQueue())
+				EmitMacTextWithControls(remaining, extraInfo);
+			else
 			{
-				EnsureInputSendPermission("send raw keyboard text");
-				if (!KeyDelayWouldSleepOrQueue())
-				{
-					EmitMacTextWithControls(remaining, extraInfo);
-					return;
-				}
-
-				// Preserve SendEvent's configured per-character delay when one is active. Each
-				// scalar is still one text payload rather than a pair of marshalled UTF-16 units.
+				// A CRLF and a surrogate pair each receive one per-character delay.
 				for (var i = 0; i < remaining.Length;)
 				{
 					var length = i + 1 < remaining.Length
 						&& ((remaining[i] == '\r' && remaining[i + 1] == '\n')
 							|| (char.IsHighSurrogate(remaining[i]) && char.IsLowSurrogate(remaining[i + 1])))
 						? 2 : 1;
-					EmitMacTextWithControls(remaining.Substring(i, length), extraInfo);
+					EmitMacTextWithControls(remaining.Slice(i, length), extraInfo);
 					DoKeyDelay();
 					i += length;
 				}
-			});
-
+			}
 			keyIndex = text.Length - 1;
 			return true;
 		}
 
-		protected override void DispatchEventArray(Keysharp.Internals.Input.Hooks.Unix.UnixHookThread lht, InputArrayState state, long extraInfo)
-			=> WithSendScope(lht, () => ReplayMacEventArray(state, extraInfo));
+		protected virtual void DispatchEventArray(UnixHookThread lht, InputArrayState state, long extraInfo)
+		{
+			using var scope = lht.EnterSendScope();
+			ReplayMacEventArray(state, extraInfo);
+		}
 
 		private void ReplayMacEventArray(InputArrayState state, long extraInfo)
 		{
@@ -268,30 +292,29 @@ namespace Keysharp.Internals.Input.MacOS
 		internal override void PerformMouseCommon(Actions actionType, uint vk, int x1, int y1, int x2, int y2,
 			long repeatCount, KeyEventTypes eventType, long speed, bool relative)
 		{
+			using var scope = ((UnixHookThread)script.HookThread).EnterSendScope();
 			RefreshButtonsWithoutHook();
 			base.PerformMouseCommon(actionType, vk, x1, y1, x2, y2, repeatCount, eventType, speed, relative);
 		}
 
 		internal override void MouseEvent(uint eventFlags, uint data, int x = CoordUnspecified, int y = CoordUnspecified)
 		{
-			EnsureInputSendPermission("send mouse input");
 			if (sendMode != SendModes.Event)
 			{
 				PutMouseEventIntoArray(eventFlags, data, x, y);
 				return;
 			}
 
-			var lht = script.HookThread as Keysharp.Internals.Input.Hooks.Unix.UnixHookThread;
+			var lht = script.HookThread as UnixHookThread;
 			if (lht == null)
 				return;
 
-			WithSendScope(lht, () => ReplayMacMouseEvent(eventFlags, data, x, y,
-				KeyIgnoreLevel(ThreadAccessors.A_SendLevel)));
+			using var scope = lht.EnterSendScope();
+			ReplayMacMouseEvent(eventFlags, data, x, y, KeyIgnoreLevel(ThreadAccessors.A_SendLevel));
 		}
 
 		internal override void MouseMove(ref int x, ref int y, ref uint eventFlags, long speed, bool moveOffset)
 		{
-			EnsureInputSendPermission("move mouse");
 			if (x == CoordUnspecified || y == CoordUnspecified)
 				return;
 
@@ -452,9 +475,9 @@ namespace Keysharp.Internals.Input.MacOS
 				mouseStream.Button(button, false, x, y, extraInfo);
 		}
 
-		private void EmitMacTextWithControls(string text, long extraInfo)
+		private void EmitMacTextWithControls(ReadOnlySpan<char> text, long extraInfo)
 		{
-			if (string.IsNullOrEmpty(text))
+			if (text.IsEmpty)
 				return;
 
 			var chunkStart = 0;

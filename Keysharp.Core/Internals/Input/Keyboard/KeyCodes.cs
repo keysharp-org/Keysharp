@@ -48,8 +48,8 @@ namespace Keysharp.Internals.Input.Keyboard
 		{
 			EnsureProvider();
 
-			if (provider != null && provider.TryMapRuneToKeystroke(rune, layout, out vk, out needShift, out needAltGr))
-				return true;
+			if (provider != null)
+				return provider.TryMapRuneToKeystroke(rune, layout, out vk, out needShift, out needAltGr);
 
 			needAltGr = false;
 			return TryMapAsciiToVk(rune, out vk, out needShift);
@@ -201,6 +201,7 @@ namespace Keysharp.Internals.Input.Keyboard
 #if !WINDOWS
 	internal interface IKeyCodeMapperProvider : IDisposable
 	{
+		/// <summary>A loaded layout is authoritative; use the ASCII fallback only when no layout is available.</summary>
 		bool TryMapRuneToKeystroke(Rune rune, nint? layout, out uint vk, out bool needShift, out bool needAltGr);
 
 		/// <summary>
@@ -269,10 +270,8 @@ namespace Keysharp.Internals.Input.Keyboard
 	{
 		public bool TryMapRuneToKeystroke(Rune rune, nint? layout, out uint vk, out bool needShift, out bool needAltGr)
 		{
-			vk = 0;
-			needShift = false;
 			needAltGr = false;
-			return false;
+			return KeyCodes.TryMapAsciiToVk(rune, out vk, out needShift);
 		}
 
 		public void ConfigureLayout(string rules, string model, string layout, string variant, string options)

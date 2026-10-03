@@ -359,15 +359,15 @@ namespace Keysharp.Internals.Input.MacOS
 			return PostAndRelease(ev);
 		}
 
-		internal static void PostUnicodeText(string text, long extraInfo)
+		internal static void PostUnicodeText(ReadOnlySpan<char> text, long extraInfo)
 		{
-			if (string.IsNullOrEmpty(text))
+			if (text.IsEmpty)
 				return;
 
 			for (var offset = 0; offset < text.Length;)
 			{
-				var length = NextUnicodeScalarLength(text.AsSpan(offset));
-				PostUnicodeChunk(text.AsSpan(offset, length), extraInfo);
+				var length = NextUnicodeScalarLength(text[offset..]);
+				PostUnicodeChunk(text.Slice(offset, length), extraInfo);
 				offset += length;
 			}
 		}

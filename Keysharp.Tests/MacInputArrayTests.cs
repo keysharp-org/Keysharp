@@ -12,20 +12,87 @@ namespace Keysharp.Tests
 	[TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
 	public class MacInputArrayTests : TestRunner
 	{
-		private sealed class RecordingSender(Script owner) : MacKeyboardMouseSenderBase(owner)
+		private sealed class RecordingSender(Script owner, MacKeyboardState keyboardState = null)
+			: MacKeyboardMouseSender(owner, keyboardState ?? new(), new())
 		{
 			internal bool ThrowDuringDispatch { get; set; }
 			internal int DispatchCount { get; private set; }
+			internal string DispatchedText { get; private set; }
+			internal bool FailNextModifierQuery { get; set; }
 			internal SendModes CurrentMode => sendMode;
 			internal void SetMode(SendModes mode) => sendMode = mode;
+			internal void StartSend() => OnSendKeysStarting();
+			internal void FinishSend() => OnSendKeysFinished();
+
+			internal override uint GetModifierLRState(bool explicitlyGet = false)
+			{
+				if (FailNextModifierQuery)
+				{
+					FailNextModifierQuery = false;
+					throw new InvalidOperationException("deterministic modifier-query failure");
+				}
+				return 0;
+			}
 
 			protected override void DispatchEventArray(UnixHookThread lht, InputArrayState state, long extraInfo)
 			{
 				DispatchCount++;
+				DispatchedText = new string(state.Events.Where(ev => ev.Type == ArrayEventType.Text).Select(ev => ev.Text).ToArray());
 
 				if (ThrowDuringDispatch)
 					throw new InvalidOperationException("deterministic dispatch failure");
 			}
+		}
+
+		[Test, Category("Input")]
+		public void NestedSendStartFailure()
+		{
+			var state = new MacKeyboardState();
+			var sender = new RecordingSender(s, state);
+			var hook = (UnixHookThread)s.HookThread;
+			sender.StartSend();
+			try
+			{
+				_ = state.ApplyFlagsChanged(VK_LCONTROL, MacNativeInput.kCGEventFlagMaskControl,
+					MacKeyboardState.Origin.PhysicalHid, true, MacNativeInput.InjectedEventKind.None);
+				sender.FailNextModifierQuery = true;
+				Assert.Throws<InvalidOperationException>(sender.StartSend);
+				sender.FinishSend();
+				Assert.IsTrue(hook.SendInProgress, "failed initialization closed the outer send scope");
+				Assert.AreEqual(0u, state.GetModifiers(() => 0), "failed initialization ended the outer keyboard transaction");
+			}
+			finally { sender.FinishSend(); }
+			Assert.IsFalse(hook.SendInProgress);
+			Assert.AreEqual(MOD_LCONTROL, state.GetModifiers(() => 0));
+		}
+
+		[Test, Category("Input")]
+		public void NestedTextFrames()
+		{
+			var sender = new RecordingSender(s);
+			sender.SetMode(SendModes.Input);
+			sender.InitEventArray(4, 0);
+			sender.SendUnicodeChar('\uD83D', 0);
+			sender.SendUnicodeChar('\uDE00', 0);
+			sender.PutKeybdEventIntoArray(0, 0, 'é', (uint)KEYEVENTF_UNICODE, 0);
+			sender.PutKeybdEventIntoArray(0, 0, 'é', (uint)(KEYEVENTF_UNICODE | KEYEVENTF_KEYUP), 0);
+
+			sender.InitEventArray(4, 0);
+			sender.SendUnicodeChar('x', 0);
+			var finalDelay = -1L;
+			sender.SendEventArray(ref finalDelay, 0);
+			Assert.AreEqual("x", sender.DispatchedText);
+			sender.AbortEventArray();
+			sender.SendEventArray(ref finalDelay, 0);
+			Assert.AreEqual("😀é", sender.DispatchedText);
+			sender.CleanupEventArray(-1);
+
+			sender.SetMode(SendModes.Input);
+			sender.InitEventArray(4, 0);
+			sender.SendUnicodeChar('y', 0);
+			sender.SendEventArray(ref finalDelay, 0);
+			Assert.AreEqual("y", sender.DispatchedText, "a reused frame retained text from an earlier send");
+			sender.AbortEventArray();
 		}
 
 		[Test, Category("Input")]

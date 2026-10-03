@@ -81,11 +81,6 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 #endif
 		}
 
-#if OSX
-		protected override KeyboardMouseSender CreateKbdMsSender()
-			=> new MacKeyboardMouseSenderBase(script);
-#endif
-
 		internal SendScope EnterSendScope() => new(this);
 
 		private void SyncModifiersAfterSend()
@@ -768,7 +763,7 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 		{
 			// Delegate to the Unix char mapper used by the sender; add Shift/AltGr if needed. The layout
 			// group is snapshotted once per send in the carrier, so every char reuses it (no per-char query).
-			if (Rune.TryGetRuneAt(ch.ToString(), 0, out var rune)
+			if (Rune.TryCreate(ch, out var rune)
 				&& KeyCodes.TryMapRuneToKeystroke(rune, layout?.Value, out var vk, out var needShift, out var needAltGr))
 			{
 				uint mods = modifiersLr ?? 0;
@@ -776,6 +771,13 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 				if (needAltGr) mods |= MOD_RALT;
 				modifiersLr = mods;
 				return vk;
+			}
+			// The caller enables this only for shortcut notation when sending ordinary text.
+			if (enableAZFallback && (ch is >= 'a' and <= 'z' or >= 'A' and <= 'Z'))
+			{
+				if (ch is >= 'A' and <= 'Z')
+					modifiersLr = (modifiersLr ?? 0) | MOD_LSHIFT;
+				return (uint)char.ToUpperInvariant(ch);
 			}
 			return 0;
 		}

@@ -8,7 +8,7 @@ namespace Keysharp.Internals.Input.Unix
 	internal sealed partial class MacCharMapperProvider : IKeyCodeMapperProvider
 	{
 		private readonly Lock mapperLock = new();
-		private readonly Dictionary<int, (uint vk, bool needShift, bool needAltGr)> cache = new();
+		private Dictionary<int, (uint vk, bool needShift, bool needAltGr)> cache = new();
 		private nint retainedLayoutDataRef;
 		private nint retainedLayoutPtr;
 		private string retainedLayoutName = "";
@@ -84,69 +84,24 @@ namespace Keysharp.Internals.Input.Unix
 
 		public bool TryMapRuneToKeystroke(Rune rune, nint? layout, out uint vk, out bool needShift, out bool needAltGr)
 		{
-			// layout is unused on macOS: the current input source's layout data pointer is
-			// already cached, so there is no per-character OS query to avoid.
 			lock (mapperLock)
 			{
-				var key = rune.Value;
-
-				var layoutPtr = retainedLayoutPtr;
-
-				if (layoutPtr == nint.Zero)
+				if (retainedLayoutPtr == nint.Zero)
 				{
 					needAltGr = false;
 					return KeyCodes.TryMapAsciiToVk(rune, out vk, out needShift);
 				}
-
-				if (cache.TryGetValue(key, out var hit))
+				if (cache.TryGetValue(rune.Value, out var hit))
 				{
 					vk = hit.vk;
 					needShift = hit.needShift;
 					needAltGr = hit.needAltGr;
-					return vk != 0;
+					return true;
 				}
-
-				// Prefer plain keys first (e.g. spacebar), then shifted, then AltGr combos.
-				bool TryFindForModifiers(
-					nint layoutPtr,
-					Rune targetRune,
-					uint modifiers,
-					out uint foundVk)
-				{
-					foundVk = 0;
-
-					foreach (var keyCode in textCandidateKeyCodes)
-					{
-						if (!TryTranslate(layoutPtr, keyCode, modifiers, out var translatedRune))
-							continue;
-
-						if (translatedRune.Value != targetRune.Value)
-							continue;
-
-						if (!TryMapMacKeyCodeToVk(keyCode, out foundVk))
-							continue;
-
-						return true;
-					}
-
-					return false;
-				}
-
-				foreach (var modifiers in textModifierStates)
-				{
-					if (TryFindForModifiers(layoutPtr, rune, modifiers, out vk))
-					{
-						needShift = (modifiers & shiftKeyState) != 0;
-						needAltGr = (modifiers & optionKeyState) != 0;
-						cache[key] = (vk, needShift, needAltGr);
-						return true;
-					}
-				}
-
+				vk = 0;
+				needShift = needAltGr = false;
+				return false;
 			}
-
-			needAltGr = false;
-			return KeyCodes.TryMapAsciiToVk(rune, out vk, out needShift);
 		}
 
 		public bool TryMapKeystrokeToRune(uint vk, bool shift, bool altGr, out Rune rune)
@@ -213,7 +168,8 @@ namespace Keysharp.Internals.Input.Unix
 
 				var hadPendingDeadKey = liveDeadKeyState != 0;
 				uint ds = liveDeadKeyState;
-				var (len, str) = UCKeyTranslateRaw(layoutPtr, (ushort)keyCode, modifiers, ref ds);
+				Span<char> translated = stackalloc char[8];
+				var len = UCKeyTranslateRaw(layoutPtr, (ushort)keyCode, modifiers, ref ds, translated);
 
 				if (len > 0)
 				{
@@ -222,12 +178,13 @@ namespace Keysharp.Internals.Input.Unix
 						// Determine whether the pending dead key actually combined with this key by
 						// comparing against a fresh (no dead key) translation of the same keystroke.
 						uint ds0 = 0;
-						var (len0, str0) = UCKeyTranslateRaw(layoutPtr, (ushort)keyCode, modifiers, ref ds0);
+						Span<char> plain = stackalloc char[8];
+						var len0 = UCKeyTranslateRaw(layoutPtr, (ushort)keyCode, modifiers, ref ds0, plain);
 
-						if (len0 == len && str0 == str) // No combination, e.g. dead-grave followed by 'z'.
+						if (len0 == len && plain[..len0].SequenceEqual(translated[..len]))
 						{
 							var n = WritePendingSpacing(buffer);
-							n += CopyToBuffer(str0, buffer[n..]);
+							n += CopyToBuffer(plain[..len0], buffer[n..]);
 							ResetDeadKeyStateCore();
 							return n;
 						}
@@ -236,7 +193,7 @@ namespace Keysharp.Internals.Input.Unix
 					// A normal character or a successful composition.
 					liveDeadKeyState = ds; // Usually 0 now; preserved in case of chained state.
 					pendingSpacing.Clear();
-					return CopyToBuffer(str, buffer);
+					return CopyToBuffer(translated[..len], buffer);
 				}
 
 				if (ds != 0) // This key is itself a (possibly chained) dead key.
@@ -245,24 +202,15 @@ namespace Keysharp.Internals.Input.Unix
 
 					// Record its spacing form by translating Space against the new dead state (on a copy).
 					uint dsSpace = ds;
-					var (spLen, sp) = UCKeyTranslateRaw(layoutPtr, kVK_Space, 0, ref dsSpace);
+					var spLen = UCKeyTranslateRaw(layoutPtr, kVK_Space, 0, ref dsSpace, translated);
 
 					if (spLen > 0)
-						_ = pendingSpacing.Append(sp);
+						_ = pendingSpacing.Append(translated[..spLen]);
 
 					return -1;
 				}
 
-				// No text and not a dead key. With no pending composition, report "not handled" so the
-				// caller falls back to the built-in US-ASCII map -- mirroring the X11 provider, which
-				// returns TranslateNotHandled when it cannot resolve a keysym. This keeps basic keys
-				// working when the active layout's UCKeyTranslate yields nothing (e.g. no usable Text
-				// Input Source on a headless CI host). A genuine no-text key (arrow/modifier) isn't in
-				// the US-ASCII table either, so the fallback still returns 0 for it.
-				if (liveDeadKeyState == 0 && pendingSpacing.Length == 0)
-					return KeyCodes.TranslateNotHandled;
-
-				// A pending dead-key composition is intact; report no-text without disturbing it.
+				// A loaded layout is authoritative even when the key produces no text.
 				return 0;
 			}
 		}
@@ -286,10 +234,10 @@ namespace Keysharp.Internals.Input.Unix
 			return n;
 		}
 
-		private static int CopyToBuffer(string s, Span<char> buffer)
+		private static int CopyToBuffer(ReadOnlySpan<char> text, Span<char> buffer)
 		{
-			var n = Math.Min(s.Length, buffer.Length);
-			s.AsSpan(0, n).CopyTo(buffer);
+			var n = Math.Min(text.Length, buffer.Length);
+			text[..n].CopyTo(buffer);
 			return n;
 		}
 
@@ -643,53 +591,33 @@ namespace Keysharp.Internals.Input.Unix
 		private static bool TryTranslate(nint layoutPtr, ushort keyCode, uint modifierState, out Rune rune)
 		{
 			uint deadKeyState = 0;
-			var (len, text) = UCKeyTranslateRaw(layoutPtr, keyCode, modifierState, ref deadKeyState);
+			Span<char> text = stackalloc char[8];
+			var len = UCKeyTranslateRaw(layoutPtr, keyCode, modifierState, ref deadKeyState, text);
 			rune = default;
-			return len > 0 && Rune.TryGetRuneAt(text, 0, out rune);
+			return len > 0 && Rune.DecodeFromUtf16(text[..len], out rune, out var consumed) == System.Buffers.OperationStatus.Done
+				&& consumed == len;
 		}
 
 		/// <summary>
 		/// Low-level UCKeyTranslate wrapper that threads a dead-key state cookie. Returns the number
-		/// of UTF-16 chars produced (0 for a dead key or a key with no text) and the produced string.
+		/// of UTF-16 chars produced (0 for a dead key or a key with no text).
 		/// On return, <paramref name="deadKeyState"/> is non-zero if a dead key is now buffered.
 		/// </summary>
-		private static unsafe (int len, string str) UCKeyTranslateRaw(nint layoutPtr, ushort keyCode, uint modifierState, ref uint deadKeyState)
+		private static unsafe int UCKeyTranslateRaw(nint layoutPtr, ushort keyCode, uint modifierState, ref uint deadKeyState, Span<char> buffer)
 		{
-			if (layoutPtr == nint.Zero)
-				return (0, string.Empty);
-
-			const int bufferLen = 8;
-			var chars = stackalloc ushort[bufferLen];
+			if (layoutPtr == nint.Zero || buffer.IsEmpty)
+				return 0;
 			uint ds = deadKeyState;
-
-			var status = UCKeyTranslate(
-				layoutPtr,
-				keyCode,
-				kUCKeyActionDown,
-				modifierState,
-				0,
-				0,
-				&ds,
-				bufferLen,
-				out var actualLength,
-				chars);
-
+			int status;
+			uint actualLength;
+			fixed (char* chars = buffer)
+				status = UCKeyTranslate(layoutPtr, keyCode, kUCKeyActionDown, modifierState, 0, 0,
+					&ds, (uint)buffer.Length, out actualLength, (ushort*)chars);
 			deadKeyState = ds;
-
 			if (status != 0)
-				return (0, string.Empty);
-
-			var len = (int)Math.Min(actualLength, bufferLen);
-
-			if (len <= 0)
-				return (0, string.Empty);
-
-			var translated = new string((char*)chars, 0, len);
-
-			if (translated.Length == 1 && translated[0] == '�')
-				return (0, string.Empty);
-
-			return (len, translated);
+				return 0;
+			var len = (int)Math.Min(actualLength, (uint)buffer.Length);
+			return len == 1 && buffer[0] == '\uFFFD' ? 0 : len;
 		}
 
 		private readonly record struct CapturedLayout(bool HasSource, nint DataRef, nint LayoutPtr, string Name);
@@ -742,6 +670,26 @@ namespace Keysharp.Internals.Input.Unix
 			if (!captured.HasSource)
 				return;
 
+			Dictionary<int, (uint vk, bool needShift, bool needAltGr)> mappings;
+			try
+			{
+				mappings = new();
+				// Prefer plain keys, then Shift, then Option, preserving the primary key-code order.
+				if (captured.LayoutPtr != nint.Zero)
+					foreach (var modifiers in textModifierStates)
+						foreach (var keyCode in textCandidateKeyCodes)
+							if (TryTranslate(captured.LayoutPtr, keyCode, modifiers, out var rune)
+								&& MapMacKeyCodeToVk(keyCode, out var vk))
+								mappings.TryAdd(rune.Value, (vk, (modifiers & shiftKeyState) != 0,
+									(modifiers & optionKeyState) != 0));
+			}
+			catch
+			{
+				if (captured.DataRef != nint.Zero)
+					CFRelease(captured.DataRef);
+				throw;
+			}
+
 			nint dataRefToRelease;
 			lock (mapperLock)
 			{
@@ -757,6 +705,7 @@ namespace Keysharp.Internals.Input.Unix
 					retainedLayoutName = captured.Name;
 					layoutPrepared = true;
 					InvalidateMappingsCore();
+					cache = mappings;
 				}
 			}
 

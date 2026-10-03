@@ -380,9 +380,6 @@ namespace Keysharp.Internals
 	internal sealed class MacKeyboard : IKeyboard
 	{
 		private const ulong AlphaShiftKeyMask = 1UL << 16;
-		private static volatile bool indicatorSnapshotValid;
-		private static bool indicatorSnapshotNum;
-		private static bool indicatorSnapshotScroll;
 
 		public bool TryGetModifierLRStateLogical(out uint mods, byte[] keymapBuffer = null)
 			=> TryQueryModifierLRStateForSource(Keysharp.Internals.Input.MacOS.MacNativeInput.kCGEventSourceStateCombinedSessionState, out mods);
@@ -398,12 +395,6 @@ namespace Keysharp.Internals
 			numOn = false;
 			scrollOn = false;
 
-			if (indicatorSnapshotValid)
-			{
-				numOn = indicatorSnapshotNum;
-				scrollOn = indicatorSnapshotScroll;
-			}
-
 			if (Keysharp.Internals.Input.MacOS.MacCapsLockState.TryGet(out capsOn))
 				return true;
 
@@ -415,13 +406,6 @@ namespace Keysharp.Internals
 
 			capsOn = false;
 			return false;
-		}
-
-		internal static void UpdateIndicatorSnapshotFromMask(Keysharp.Internals.Input.Hooks.EventMask mask)
-		{
-			indicatorSnapshotNum = (mask & Keysharp.Internals.Input.Hooks.EventMask.NumLock) != 0;
-			indicatorSnapshotScroll = (mask & Keysharp.Internals.Input.Hooks.EventMask.ScrollLock) != 0;
-			indicatorSnapshotValid = true;
 		}
 
 		private bool TryQueryMacKeyState(uint vk, uint sourceState, bool useIndicators, out bool isDown)
