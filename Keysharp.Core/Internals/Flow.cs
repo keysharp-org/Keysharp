@@ -160,7 +160,7 @@ namespace Keysharp.Internals
 
 			// Only an exit that is certain closes the dialogs of other threads.
 			Dialogs.CloseDialogs(script);
-			Dialogs.CloseToolTips(script);
+			ToolTips.DestroyAll(script);
 
 			// The exit is certain from here: every callback has had its chance to cancel it and none did. Publishing
 			// the reason and arming the exit code at this one point is what lets Ks.App.ExitReason mean "the script

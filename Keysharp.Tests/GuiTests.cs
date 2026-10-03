@@ -239,8 +239,109 @@ namespace Keysharp.Tests
 			}
 		}
 
-		// Script-visible canvas behaviour: what Canvas is, what it refuses, and that Copy escapes the refusals.
-		[Test, Category("Gui"), Category("Curated")]
+		/// <summary>
+		/// MouseMove events raised while one is still queued collapse into it, and it reports the latest position;
+		/// a move after it ran is queued again.
+		/// </summary>
+		[Test, Category("Gui"), Category("Internal"), Category("Curated")]
+		public void OverlayMouseMoveCoalesces()
+		{
+			var overlay = new Ks.KeysharpOverlay();
+			_ = overlay.__New(1L, 2L, 10L, 10L);
+			var moves = new List<string>();
+			var threads = s.Threads;
+			var allowInterruption = threads.allowInterruption;
+			var handler = new KeysharpFunc((Func<object, object, object, object>)((_, x, y) => { moves.Add($"{x},{y}"); return ""; }));
+
+			void Pump() => Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+
+			try
+			{
+				_ = overlay.OnEvent("MouseMove", handler);
+				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 1, 1));
+				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 2, 2));
+				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 3, 4));
+				Pump();
+				NUnit.Framework.CollectionAssert.AreEqual(new[] { "3,4" }, moves);
+
+				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 5, 6));
+				Pump();
+				NUnit.Framework.CollectionAssert.AreEqual(new[] { "3,4", "5,6" }, moves);
+
+				moves.Clear();
+				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 7, 8));
+				_ = overlay.Destroy();
+				_ = overlay.OnEvent("MouseMove", handler);
+				Pump();
+				Assert.IsEmpty(moves, "Destroy cancels queued moves before new handlers are registered");
+
+				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 9, 10));
+				_ = overlay.Destroy();
+				_ = overlay.OnEvent("MouseMove", handler);
+				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 11, 12));
+				Pump();
+				NUnit.Framework.CollectionAssert.AreEqual(new[] { "11,12" }, moves);
+
+				moves.Clear();
+				_ = overlay.OnEvent("Click", handler);
+				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 13, 14));
+				_ = overlay.OnEvent("MouseMove", handler, 0L);
+				_ = overlay.OnEvent("MouseMove", handler);
+				Pump();
+				Assert.IsEmpty(moves, "Removing the last move handler cancels queued moves");
+
+				threads.allowInterruption = false;
+				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 15, 16));
+				Pump();
+				Assert.IsEmpty(moves);
+				Assert.IsTrue(s.EventScheduler.HasBlockedQueuedWork);
+				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 17, 18));
+				Pump();
+				Assert.IsEmpty(moves);
+				threads.allowInterruption = allowInterruption;
+				Pump();
+				NUnit.Framework.CollectionAssert.AreEqual(new[] { "17,18" }, moves);
+
+				moves.Clear();
+				_ = overlay.OnEvent("MouseMove", handler, 0L);
+				Task.Run(() =>
+				{
+					var context = SynchronizationContext.Current;
+					var scheduler = s.ThreadScheduler;
+
+					try
+					{
+						SynchronizationContext.SetSynchronizationContext(scheduler.DispatchContext);
+						_ = overlay.OnEvent("MouseMove", handler);
+						SynchronizationContext.SetSynchronizationContext(null);
+						overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 19, 20));
+					}
+					finally
+					{
+						scheduler.DisposeWorker();
+						SynchronizationContext.SetSynchronizationContext(context);
+					}
+				}).GetAwaiter().GetResult();
+				_ = overlay.OnEvent("MouseMove", handler);
+				Pump();
+				Assert.IsEmpty(moves, "Owner teardown cancels queued moves while another event remains registered");
+				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 21, 22));
+				Pump();
+				NUnit.Framework.CollectionAssert.AreEqual(new[] { "21,22" }, moves);
+			}
+			finally
+			{
+				threads.allowInterruption = allowInterruption;
+				_ = overlay.Destroy();
+			}
+		}
+
+		// Script-visible canvas behaviour: what Canvas is, what it refuses, and that Copy escapes the refusals; then
+		// the shown surfaces built on it (Overlay, Highlight, ToolTip) across Hide, Show and Destroy.
+		[Test, Category("Gui"), Category("Curated"), NonParallelizable]
+#if WINDOWS
+		[Apartment(ApartmentState.STA)]
+#endif
 		public void OverlayCanvas()
 		{
 			if (Script.IsHeadless)

@@ -255,8 +255,8 @@ namespace Keysharp.Internals
 
 		/// <summary>Allocates a drawing surface of the kind this platform presents most cheaply — on Windows one
 		/// whose pixels the compositor can read directly, so a frame never has to be copied to be shown. The
-		/// caller owns the returned surface and disposes it; it is not tied to an overlay id and outlives any one
-		/// backing instance. Null if <paramref name="pixels"/> is empty or the allocation failed.</summary>
+		/// caller owns the returned surface and disposes it; it is not tied to an overlay id or to a backing.
+		/// Null if <paramref name="pixels"/> is empty or the allocation failed.</summary>
 		OverlaySurface CreateOverlaySurface(PixelSize pixels);
 
 		/// <summary>
@@ -271,27 +271,28 @@ namespace Keysharp.Internals
 									bool clickThrough);
 
 		/// <summary>Registers (or, with null, removes) the receiver for pointer events on one overlay's surface.
-		/// The sink is stored by id — it survives backing recreation across Hide/Show — and is raised on the UI
-		/// thread with surface-local coordinates. Only backings with a client-side input window raise it, and only
-		/// while the overlay is not click-through.</summary>
+		/// The sink is stored by id, so it survives a Destroy and a later Show that creates a new backing. It is
+		/// raised with surface-local coordinates on the UI thread, or on a backing's own delivery thread (the
+		/// Wayland layer-shell client). Only backings with a client-side input window raise it, and only while
+		/// the overlay is not click-through.</summary>
 		void SetImageOverlayPointerSink(uint id, Action<OverlayPointerEvent> sink);
 
 		/// <summary>Move/resize an existing image overlay, reusing its last pixels (repositions in place where the
 		/// backing can, else re-applies the stored image at the new geometry).</summary>
 		bool TryMoveImageOverlay(uint id, ScreenRect bounds);
 
-		/// <summary>Hide and free one image overlay. Idempotent. Confirm-gated: returns false if the withdraw
-		/// could not be confirmed, so the caller keeps the id and retries rather than orphaning the surface.</summary>
+		/// <summary>Hide one image overlay and keep its backing, so the next present shows the same window again.
+		/// Idempotent. Confirm-gated: returns false if the hide could not be confirmed, so the caller still treats
+		/// the overlay as shown and retries.</summary>
 		bool TryHideImageOverlay(uint id);
 
-		/// <summary>Unconditionally dispose and forget one image overlay's backing, WITHOUT the confirm-gating of
-		/// <see cref="TryHideImageOverlay"/>. Used by Destroy to force-reap a backing whose withdraw could not be
-		/// confirmed, so it is never left mapped with no owner left to retry. Idempotent; a no-op for an unknown id.</summary>
+		/// <summary>Tear down and forget one image overlay's backing, without confirm-gating, so Destroy never
+		/// leaves one mapped with no owner left to retry. Idempotent; a no-op for an unknown id.</summary>
 		void DisposeImageOverlay(uint id);
 
-		/// <summary>Hide and free every image overlay owned by <paramref name="owner"/>, or every process overlay
-		/// when no owner is supplied.</summary>
-		bool TryHideAllImageOverlays(Script owner = null);
+		/// <summary>Tear down every image overlay owned by <paramref name="owner"/>, or every process overlay
+		/// when no owner is supplied. True when there was anything to tear down.</summary>
+		bool DisposeAllImageOverlays(Script owner = null);
 
 		/// <summary>Native handle for a toolkit-backed overlay where one exists (Eto/WinForms window or wlr layer
 		/// surface), otherwise zero (a compositor-drawn overlay has no client-side window).</summary>

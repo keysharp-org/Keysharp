@@ -312,6 +312,18 @@ namespace Keysharp.Internals.Os.Windows
 		internal const uint SB_SETPARTS = WM_USER + 4;
 		internal const uint SB_GETPARTS = WM_USER + 6;
 		internal const uint SB_GETTEXTLENGTH = WM_USER + 12;
+		internal const uint ICC_TAB_CLASSES = 0x08;
+		internal const uint TTS_ALWAYSTIP = 0x01;
+		internal const uint TTS_NOPREFIX = 0x02;
+		internal const uint TTF_TRACK = 0x0020;
+		internal const uint TTF_ABSOLUTE = 0x0080;
+		internal const uint TTM_TRACKACTIVATE = WM_USER + 17;
+		internal const uint TTM_TRACKPOSITION = WM_USER + 18;
+		internal const uint TTM_SETMAXTIPWIDTH = WM_USER + 24;
+		internal const uint TTM_ADJUSTRECT = WM_USER + 31;
+		internal const uint TTM_ADDTOOLW = WM_USER + 50;
+		internal const uint TTM_UPDATETIPTEXTW = WM_USER + 57;
+		internal const int CW_USEDEFAULT = unchecked((int)0x80000000);
 
 		internal const int SB_LINEUP = 0;
 		internal const int SB_LINELEFT = 0;
@@ -737,6 +749,7 @@ namespace Keysharp.Internals.Os.Windows
 		public const int LR_CREATEDIBSECTION = 0x0000_2000;
 
 		internal const string dwmapi = "dwmapi.dll",
+							  comctl32 = "comctl32.dll",
 							  kernel32 = "kernel32.dll",
 							  shell32 = "shell32.dll",
 							  user32 = "user32.dll",

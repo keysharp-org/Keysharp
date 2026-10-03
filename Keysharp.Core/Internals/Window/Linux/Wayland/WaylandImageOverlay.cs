@@ -476,26 +476,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					Buffer.MemoryCopy(srcRow, dstRow, (long)region.Width * 4, (long)region.Width * 4);
 				else
 					for (var x = 0; x < region.Width; x++)
-						dstRow[x] = ScalePremultiplied(srcRow[x], opacity);
+						dstRow[x] = ImageHelper.ScalePremultiplied(srcRow[x], opacity);
 			}
-		}
-
-		// Both the source and the shm buffer are premultiplied, so a constant alpha scales all four channels
-		// alike — including alpha itself, which is what keeps the result premultiplied.
-		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		internal static uint ScalePremultiplied(uint argb, byte opacity)
-		{
-			if (opacity == 255)
-				return argb;
-
-			if (opacity == 0)
-				return 0;
-
-			var a = ((argb >> 24) & 0xFF) * opacity / 255;
-			var r = ((argb >> 16) & 0xFF) * opacity / 255;
-			var g = ((argb >> 8) & 0xFF) * opacity / 255;
-			var b = (argb & 0xFF) * opacity / 255;
-			return (a << 24) | (r << 16) | (g << 8) | b;
 		}
 
 		internal static unsafe void CopyImageToBuffer(Bitmap image, Rectangle sourcePixels,
@@ -555,7 +537,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						else
 							argb = (uint)data.TranslateDataToArgb((int)raw);
 
-						dstRow[x] = ScalePremultiplied(Premultiply(argb), opacity);
+						dstRow[x] = ImageHelper.ScalePremultiplied(Premultiply(argb), opacity);
 					}
 				}
 			}
@@ -612,7 +594,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				}
 
 				for (var x = 0; x < width; x++)
-					dstRow[x] = ScalePremultiplied(
+					dstRow[x] = ImageHelper.ScalePremultiplied(
 						srcRow[source.X + (oneToOne ? x : SampleIndex(x, width, source.Width))], opacity);
 			}
 

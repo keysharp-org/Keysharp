@@ -12,6 +12,23 @@ namespace Keysharp.Internals.Images
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		internal static uint Grayscale(uint r, uint g, uint b) => (299 * r + 587 * g + 114 * b + 500) / 1000;
 
+		// Constant opacity scales every premultiplied channel, including alpha.
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		internal static uint ScalePremultiplied(uint argb, byte opacity)
+		{
+			if (opacity == 255)
+				return argb;
+
+			if (opacity == 0)
+				return 0;
+
+			var a = ((argb >> 24) & 0xFF) * opacity / 255;
+			var r = ((argb >> 16) & 0xFF) * opacity / 255;
+			var g = ((argb >> 8) & 0xFF) * opacity / 255;
+			var b = (argb & 0xFF) * opacity / 255;
+			return (a << 24) | (r << 16) | (g << 8) | b;
+		}
+
 		internal static Icon IconFromByteArray(byte[] bytes)
 		{
 #if WINDOWS

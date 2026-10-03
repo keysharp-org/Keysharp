@@ -116,7 +116,7 @@ namespace Keysharp.Tests
 				graphics.FillRectangle(Colors.Blue, 2, 0, 2, 3);
 			}
 
-			using var snapshot = EtoImageOverlay.Snapshot(source);
+			using var snapshot = EtoImageOverlay.Snapshot(source, 255);
 			Assert.AreEqual(0xFFFF0000u, (uint)snapshot.GetPixel(0, 1).ToArgb());
 			Assert.AreEqual(0xFF0000FFu, (uint)snapshot.GetPixel(3, 1).ToArgb());
 		}

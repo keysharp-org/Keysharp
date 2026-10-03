@@ -1270,19 +1270,5 @@ namespace Keysharp.Builtins
 #endif
 		}
 
-		internal static void CloseToolTips(Script script)
-		{
-#if WINDOWS
-			foreach (var tt in script.ToolTipData.persistentTooltips)
-			{
-				if (tt != null)
-					tt.Dispose();
-			}
-#else
-			foreach (var overlay in script.ToolTipData.overlayTooltips)
-				overlay?.Destroy();
-#endif
-		}
-
 	}
 }

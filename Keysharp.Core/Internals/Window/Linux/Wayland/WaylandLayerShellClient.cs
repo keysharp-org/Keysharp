@@ -626,26 +626,21 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				if (pointerQueueStopped || target == null)
 					return;
 
-				if (kind == OverlayPointerKind.MouseMove
-					&& pointerQueue.Last is { } last
-					&& last.Value.Kind == OverlayPointerKind.MouseMove
-					&& ReferenceEquals(last.Value.Target, target))
-				{
-					last.Value = new PointerDelivery(target, kind, x, y);
-					return;
-				}
-
+				// The overlay coalesces moves itself, so this queue only bounds a stalled hand-off. When it is full a
+				// move is the one to lose: an incoming move is dropped, and anything else takes the place of the oldest
+				// queued move, or of the oldest event when no move is queued.
 				if (pointerQueue.Count >= PointerQueueCapacity)
 				{
-					var staleMove = pointerQueue.First;
-
-					while (staleMove != null && staleMove.Value.Kind != OverlayPointerKind.MouseMove)
-						staleMove = staleMove.Next;
-
-					if (staleMove != null)
-						pointerQueue.Remove(staleMove);
-					else if (kind == OverlayPointerKind.MouseMove)
+					if (kind == OverlayPointerKind.MouseMove)
 						return;
+
+					var oldestMove = pointerQueue.First;
+
+					while (oldestMove != null && oldestMove.Value.Kind != OverlayPointerKind.MouseMove)
+						oldestMove = oldestMove.Next;
+
+					if (oldestMove != null)
+						pointerQueue.Remove(oldestMove);
 					else
 						pointerQueue.RemoveFirst();
 				}

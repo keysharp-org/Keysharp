@@ -478,6 +478,29 @@ namespace Keysharp.Internals.Os.Windows
 	}
 
 	[StructLayout(LayoutKind.Sequential)]
+	internal struct INITCOMMONCONTROLSEX
+	{
+		internal uint dwSize;
+		internal uint dwICC;
+	}
+
+	/// <summary>TTTOOLINFOW up to lParam (TTTOOLINFOW_V2_SIZE), without the trailing lpReserved. Common controls 5,
+	/// which tooltips_class32 resolves to outside a visual-styles activation context, fails TTM_ADDTOOL for the full
+	/// size; version 6 accepts both.</summary>
+	[StructLayout(LayoutKind.Sequential)]
+	internal unsafe struct TOOLINFO
+	{
+		internal uint cbSize;
+		internal uint uFlags;
+		internal nint hwnd;
+		internal nuint uId;
+		internal RECT rect;
+		internal nint hinst;
+		internal char* lpszText;
+		internal nint lParam;
+	}
+
+	[StructLayout(LayoutKind.Sequential)]
 	internal struct LASTINPUTINFO
 	{
 		internal static LASTINPUTINFO Default
@@ -764,6 +787,14 @@ namespace Keysharp.Internals.Os.Windows
 											   uint creationDisposition,
 											   uint flagsAndAttributes,
 											   nint templateFile);
+
+		[LibraryImport(comctl32, EntryPoint = "InitCommonControlsEx", SetLastError = true)]
+		[return: MarshalAs(UnmanagedType.Bool)]
+		internal static partial bool InitCommonControlsEx(in INITCOMMONCONTROLSEX icce);
+
+		[LibraryImport(user32, EntryPoint = "CreateWindowExW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+		internal static partial nint CreateWindowEx(int exStyle, string className, string windowName, uint style,
+			int x, int y, int width, int height, nint parent, nint menu, nint instance, nint param);
 
 		[LibraryImport(user32, EntryPoint = "DestroyWindow")]
 		[return: MarshalAs(UnmanagedType.Bool)]

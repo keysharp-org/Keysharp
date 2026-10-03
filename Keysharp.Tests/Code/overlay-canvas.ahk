@@ -1,7 +1,7 @@
 #ErrorStdOut
 #Warn All, StdOut
 #Warn Experimental, Off
-#import KS { Overlay, Font, Image }
+#import KS { Overlay, Font, Image, Highlight, A_OSType }
 #Include <assert>
 
 HasCanvasInk(canvas) {
@@ -153,5 +153,78 @@ named := Overlay(X: 7, Y: 9, Width: 24, Height: 12)
 Assert(named.X == 7 && named.Y == 9 && named.Width == 24 && named.Height == 12, A_LineNumber)
 named.Destroy()
 src.Dispose()
+
+; Toolkit windows survive Hide; Wayland layer-shell rebuilds its surface.
+sessionType := StrLower(EnvGet("XDG_SESSION_TYPE"))
+stableHandle := A_OSType != "LINUX" || !(sessionType = "wayland" || (sessionType = "" && EnvGet("WAYLAND_DISPLAY") != ""))
+DetectHiddenWindows(true)
+shown := Overlay(0, 0, 8, 8)
+shown.Canvas.FillRect(0, 0, 8, 8, "Red")
+shown.Show()
+hwnd := shown.Hwnd
+shown.Hide()
+Assert(!shown.IsVisible, A_LineNumber)
+if stableHandle
+    AssertEq(shown.Hwnd, hwnd, A_LineNumber)
+#if WINDOWS
+Assert(WinExist(hwnd) && !DllCall("IsWindowVisible", "Ptr", hwnd), A_LineNumber)
+#endif
+shown.Show()
+Assert(shown.IsVisible, A_LineNumber)
+if stableHandle
+    AssertEq(shown.Hwnd, hwnd, A_LineNumber)
+shown.Hide()
+shown.Destroy()
+AssertEq(shown.Hwnd, 0, A_LineNumber)
+#if WINDOWS
+Assert(!WinExist(hwnd), A_LineNumber)
+#endif
+
+; Highlight: Thickness 0 hides the border, an invalid color raises and keeps the previous one, and Hide keeps
+; the window as Overlay's does.
+hl := Highlight(0, 0, 10, 10, "Red", 0)
+hl.Show()
+Assert(!hl.IsVisible, A_LineNumber)
+hl.Thickness := 2
+Assert(hl.IsVisible, A_LineNumber)
+Throws(() => hl.Color := "NotAColor", A_LineNumber, ValueError)
+AssertEq(hl.Color, "FF0000", A_LineNumber)
+hl.Color := 0x00FF00
+AssertEq(hl.Color, "00FF00", A_LineNumber)
+Throws(() => Highlight(0, 0, 10, 10, "NotAColor"), A_LineNumber, ValueError)
+hwnd := hl.Hwnd
+hl.Hide()
+hl.Show()
+if stableHandle
+    AssertEq(hl.Hwnd, hwnd, A_LineNumber)
+hl.Thickness := 0
+Assert(!hl.IsVisible, A_LineNumber)
+hl.Hide()
+hl.Destroy()
+AssertEq(hl.Hwnd, 0, A_LineNumber)
+
+; ToolTip shows a native tooltip window per slot, keeps it across updates and destroys it for empty text.
+CoordMode("ToolTip", "Screen")
+tip := ToolTip("overlay test", 0, 0, 20)
+#if WINDOWS
+AssertEq(WinGetClass(tip), "tooltips_class32", A_LineNumber)
+AssertEq(ToolTip("overlay test updated", 10, 10, 20), tip, A_LineNumber)
+#endif
+AssertEq(ToolTip(, , , 20), 0, A_LineNumber)
+#if WINDOWS
+Assert(!WinExist(tip), A_LineNumber)
+
+; A point past the right edge leaves the tooltip inside a monitor's work area.
+tip := ToolTip("x", A_ScreenWidth + 50, 0)
+WinGetPos(&tipX, , &tipW, , tip)
+inside := false
+loop MonitorGetCount() {
+    MonitorGetWorkArea(A_Index, &left, , &right)
+    if (tipX >= left && tipX + tipW <= right)
+        inside := true
+}
+Assert(inside, A_LineNumber)
+ToolTip()
+#endif
 
 FileAppend "pass", "*"

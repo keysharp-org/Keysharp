@@ -122,7 +122,7 @@ namespace Keysharp.Internals
 
 		private bool RetireActor()
 		{
-			if (inner is not CompositorImageBacking actor || !actor.TryHide())
+			if (inner is not CompositorImageBacking actor || !actor.Hide())
 				return false;
 
 			actor.Dispose();
@@ -132,20 +132,8 @@ namespace Keysharp.Internals
 
 		public bool Move(ScreenRect bounds) => inner?.Move(bounds) ?? false;
 
-		public bool TryHide()
-		{
-			var backing = inner;
-
-			if (backing == null)
-				return true;
-
-			// Keep `inner` on an unconfirmed withdraw so a later retry re-attempts it; only forget it once it is gone.
-			if (!backing.TryHide())
-				return false;
-
-			inner = null;
-			return true;
-		}
+		// The selected backing stays for the next Show, which then needs no new selection.
+		public bool Hide() => inner?.Hide() ?? true;
 
 		public void Dispose()
 		{
@@ -440,7 +428,9 @@ namespace Keysharp.Internals
 			return true;
 		}
 
-		public bool TryHide()
+		// A layer surface is unmapped by destroying it, so Hide is the teardown and the next Present builds new
+		// fragments.
+		public bool Hide()
 		{
 			if (!TryRetire(fragments, fragment => fragment.Overlay.Dispose()))
 				return false;
@@ -466,7 +456,7 @@ namespace Keysharp.Internals
 			return success;
 		}
 
-		public void Dispose() => _ = TryHide();
+		public void Dispose() => _ = Hide();
 
 		private static Rectangle SourcePixels(Bitmap image, ScreenRect whole,
 			Wl.WaylandLayerShellClient.OutputSegment segment)
@@ -646,7 +636,9 @@ namespace Keysharp.Internals
 		internal static bool CanMoveWithoutUpload(ScreenRect current, ScreenRect next)
 			=> current.Width == next.Width && current.Height == next.Height;
 
-		public bool TryHide()
+		// The shell keeps no hidden actor, so Hide drops it and releases the shared buffer; the next Present
+		// recreates both.
+		public bool Hide()
 		{
 			// Always ask the shell to drop the actor, even when our Show timed out (shown == false): the shell may
 			// still have created it, and HideImageOverlay is a no-op for an unknown id, so an unconditional hide
@@ -685,7 +677,7 @@ namespace Keysharp.Internals
 
 		public void Dispose()
 		{
-			_ = TryHide();
+			_ = Hide();
 			ReleaseFrameBuffer();
 		}
 	}

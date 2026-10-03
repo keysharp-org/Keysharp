@@ -214,8 +214,9 @@ namespace Keysharp.Internals
 			{
 				using var searcher = new ManagementObjectSearcher(@"root\wmi",
 					"SELECT CurrentBrightness FROM WmiMonitorBrightness");
+				using var results = searcher.Get();
 
-				foreach (var instance in searcher.Get())
+				foreach (var instance in results)
 					using (instance)
 					{
 						percent = Convert.ToInt32(instance["CurrentBrightness"]);
@@ -236,8 +237,9 @@ namespace Keysharp.Internals
 			{
 				using var searcher = new ManagementObjectSearcher(@"root\wmi",
 					"SELECT * FROM WmiMonitorBrightnessMethods");
+				using var results = searcher.Get();
 
-				foreach (var instance in searcher.Get())
+				foreach (var instance in results)
 					using (var method = (ManagementObject)instance)
 					{
 						// WmiSetBrightness(Timeout, Brightness); a zero timeout means "apply and do not revert".

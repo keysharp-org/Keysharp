@@ -34,8 +34,8 @@ namespace Keysharp.Internals
 #if LINUX || OSX
 	// Shared Eto (GTK/Cocoa) overlay window -- the backing for an INTERACTIVE overlay on GNOME/Cinnamon (a shell
 	// actor cannot receive input), the toolkit fallback elsewhere on Linux, and the only backing on macOS. It
-	// borrows `image`: Show snapshots it on the calling thread for isolation and keeps only that private
-	// `displayed` bitmap, which a same-size move just repositions.
+	// borrows the canvas and keeps its own `displayed` bitmap, which a same-size move just repositions. On Linux
+	// that bitmap is retained and updated from the canvas's damaged rows; macOS replaces it with a snapshot.
 	internal sealed class EtoImageOverlay : IImageOverlayBacking
 	{
 		private readonly Script owner;
@@ -58,8 +58,8 @@ namespace Keysharp.Internals
 		private double shownBackingScale = 1;
 #endif
 
-		// Read per event by the handlers wired in EnsureForm, so a sink registered before/after the form
-		// exists (or across TryHide's teardown/recreation) needs no rewiring.
+		// Read per event by the handlers wired in EnsureForm, so a sink registered before or after the form
+		// exists needs no rewiring.
 		public Action<OverlayPointerEvent> PointerSink { get; set; }
 
 		// Mouse events use toolkit units; X11 overlays expose root pixels.
@@ -70,76 +70,109 @@ namespace Keysharp.Internals
 		private OverlayPointerEvent MakePointerEvent(OverlayPointerKind kind, PointF location)
 			=> new(kind, (int)Math.Round(location.X * pointerScaleX), (int)Math.Round(location.Y * pointerScaleY));
 
-		public nint Handle => form?.Handle ?? 0;
+		public nint Handle => form is { IsDisposed: false, Loaded: true } ? form.Handle : 0;
 
 		public bool Present(OverlaySurface canvas, ScreenRect bounds, byte opacity, bool clickThrough, DamageList damage)
 		{
 #if LINUX
-			var reusePixels = displayed != null && shownOpacity == opacity && damage?.Kind == DamageKind.None;
-#else
-			const bool reusePixels = false;
+			// GTK keeps the bitmap; Cocoa resizes each snapshot for the screen's current backing scale.
+			if (form?.IsDisposed == false && form.Loaded && displayed != null
+					&& shownOpacity == opacity && damage?.Kind == DamageKind.None)
+				return Show(null, damage, bounds, clickThrough, opacity);
 #endif
-			return Show(reusePixels ? null : canvas.PrepareForPresent(), bounds, clickThrough, opacity);
+			return Show(canvas.PrepareForPresent(), damage, bounds, clickThrough, opacity);
 		}
 
-		internal static Bitmap Snapshot(Bitmap image)
+		// Internal only for ImageTests.GtkOverlaySnapshotPreservesArgbPixels.
+		internal static Bitmap Snapshot(Bitmap image, byte opacity)
 		{
 			if (image == null)
 				return null;
 
 #if LINUX
-			if (image.Handler is not Eto.GtkSharp.Drawing.BitmapHandler { Surface: not null } sourceHandler)
-				return new Bitmap(image);
-
 			var snapshot = new Bitmap(image.Width, image.Height, PixelFormat.Format32bppRgba);
 
-			if (snapshot.Handler is Eto.GtkSharp.Drawing.BitmapHandler { Surface: not null } targetHandler
-					&& CopySurface(sourceHandler.Surface, targetHandler.Surface, image.Width, image.Height))
+			if (CopyRows(image, snapshot, 0, image.Height, opacity))
 				return snapshot;
 
-			using var graphics = new Graphics(snapshot);
-			graphics.DrawImage(image, 0, 0);
-			return snapshot;
+			using (var graphics = new Graphics(snapshot))
+				graphics.DrawImage(image, 0, 0);
+
+			return ImageHelper.ApplyOpacity(snapshot, opacity);
 #else
-			return new Bitmap(image);
+			return ImageHelper.ApplyOpacity(new Bitmap(image), opacity);
 #endif
 		}
 
 #if LINUX
-		private static unsafe bool CopySurface(Cairo.ImageSurface source, Cairo.ImageSurface target,
-			int width, int height)
+		// Copies rows [top, bottom) between two same-size Cairo ARGB32 surfaces, scaling by the opacity on the way.
+		// Both are premultiplied, so a constant alpha scales all four channels alike. False when either bitmap has
+		// no such surface, and the caller takes the general path.
+		private static unsafe bool CopyRows(Bitmap source, Bitmap target, int top, int bottom, byte opacity)
 		{
-			if (source.Format != Cairo.Format.Argb32 || target.Format != Cairo.Format.Argb32
-					|| source.DataPtr == 0 || target.DataPtr == 0 || width <= 0 || height <= 0)
+			if (source.Handler is not Eto.GtkSharp.Drawing.BitmapHandler { Surface: { } sourceSurface }
+					|| target.Handler is not Eto.GtkSharp.Drawing.BitmapHandler { Surface: { } targetSurface }
+					|| sourceSurface.Format != Cairo.Format.Argb32 || targetSurface.Format != Cairo.Format.Argb32
+					|| sourceSurface.DataPtr == 0 || targetSurface.DataPtr == 0
+					|| source.Width != target.Width || source.Height != target.Height)
 				return false;
 
-			source.Flush();
-			target.Flush();
+			sourceSurface.Flush();
+			targetSurface.Flush();
+			var width = source.Width;
 			var rowBytes = (long)width * 4;
 
-			for (var y = 0; y < height; y++)
-				Buffer.MemoryCopy((byte*)source.DataPtr + (long)y * source.Stride,
-					(byte*)target.DataPtr + (long)y * target.Stride, rowBytes, rowBytes);
+			for (var y = Math.Max(0, top); y < Math.Min(bottom, source.Height); y++)
+			{
+				var src = (uint*)((byte*)sourceSurface.DataPtr + (long)y * sourceSurface.Stride);
+				var dst = (uint*)((byte*)targetSurface.DataPtr + (long)y * targetSurface.Stride);
 
-			target.MarkDirty();
+				if (opacity == 255)
+					Buffer.MemoryCopy(src, dst, rowBytes, rowBytes);
+				else
+					for (var x = 0; x < width; x++)
+						dst[x] = ImageHelper.ScalePremultiplied(src[x], opacity);
+			}
+
+			targetSurface.MarkDirty();
 			return true;
+		}
+
+		// Brings `displayed` up to date with the canvas. It runs on the UI thread, where Paint reads the bitmap, so
+		// one retained bitmap is enough: a same-size update copies only the damaged rows, and only a resize allocates.
+		private void UpdateDisplayed(Bitmap image, DamageList damage, byte opacity)
+		{
+			if (image == null)
+				return;
+
+			if (displayed != null)
+			{
+				var rows = opacity == shownOpacity && damage?.Kind == DamageKind.Region
+						   ? damage.Union() : new PixelRect(0, 0, image.Width, image.Height);
+
+				if (CopyRows(image, displayed, rows.Y, rows.Bottom, opacity))
+					return;
+			}
+
+			var old = displayed;
+			displayed = Snapshot(image, opacity);
+			old?.Dispose();
 		}
 #endif
 
-		private bool Show(Bitmap image, ScreenRect bounds, bool clickThrough, byte opacity)
+		private bool Show(Bitmap image, DamageList damage, ScreenRect bounds, bool clickThrough, byte opacity)
 		{
+#if OSX
 			Bitmap snapshot = null;
 			var adopted = false;
+#endif
 
 			try
 			{
-				if (image != null)
-				{
-					snapshot = Snapshot(image);
-					ImageHelper.ApplyOpacity(snapshot, opacity);
-				}
-
+#if OSX
+				snapshot = Snapshot(image, opacity);
 				var snap = snapshot;
+#endif
 
 				owner.InvokeOnUIThread(() =>
 				{
@@ -154,9 +187,14 @@ namespace Keysharp.Internals
 					// Keep the pointer-coordinate mapping in step with this show's geometry (see the fields).
 					pointerScaleX = windowBounds.Width > 0 ? (double)bounds.Width / windowBounds.Width : 1.0;
 					pointerScaleY = windowBounds.Height > 0 ? (double)bounds.Height / windowBounds.Height : 1.0;
+#if LINUX
+					UpdateDisplayed(image, damage, opacity);
+					PaintOwned(bounds, windowBounds);
+#else
 					// PaintOwned adopts the snapshot before any operation that can throw.
 					adopted = snap != null;
 					PaintOwned(snap, bounds, windowBounds);
+#endif
 					if (geometryChanged)
 						form.Bounds = new Rectangle(windowBounds.X, windowBounds.Y,
 							Math.Max(1, windowBounds.Width), Math.Max(1, windowBounds.Height));
@@ -197,10 +235,12 @@ namespace Keysharp.Internals
 			}
 			catch
 			{
-				// The UI-thread invoke threw before PaintOwned took ownership of the snapshot -- dispose it here so it
-				// does not leak. If ownership had transferred, `displayed` owns it now and TryHide will free it.
+#if OSX
+				// The UI-thread invoke threw before PaintOwned took ownership of the snapshot, so it is still ours.
+				// Once adopted, `displayed` owns it and Dispose frees it.
 				if (!adopted)
 					snapshot?.Dispose();
+#endif
 
 				return false;
 			}
@@ -209,7 +249,7 @@ namespace Keysharp.Internals
 		public bool Move(ScreenRect bounds)
 		{
 			// Same-size: reposition (the ImageView keeps its bitmap). Resize: re-render via Show.
-			if (form == null || bounds.Width != shownW || bounds.Height != shownH)
+			if (form is not { IsDisposed: false, Loaded: true } || bounds.Width != shownW || bounds.Height != shownH)
 				return false;
 
 			var moved = false;
@@ -242,10 +282,25 @@ namespace Keysharp.Internals
 			return moved;
 		}
 
-		// Adopts `snapshot` (an owned, private copy) as the displayed bitmap, resizing it if needed. UI thread.
-		// x/y are the overlay's on-screen position and width/height its on-screen size, in the toolkit's window
-		// coordinate units (physical px on GTK, logical points on Cocoa). x/y are used only on macOS to pick the
-		// screen the overlay actually sits on (for the right backing scale); GTK ignores them here.
+#if LINUX
+		// Sizes the drawable to the window and repaints it from `displayed`. UI thread. GTK/Cairo owns the mapping
+		// from widget units to its backing surface, so Paint draws the renderer-selected raster into the widget's
+		// native rectangle; resizing the bitmap instead would throw away HiDPI pixels on Wayland and would wrongly
+		// apply GTK's scale to X11 root-pixel coordinates.
+		private void PaintOwned(ScreenRect bounds, ScreenRect windowBounds)
+		{
+			var size = new Size(Math.Max(1, windowBounds.Width), Math.Max(1, windowBounds.Height));
+			// Invalidate explicitly because same-size content changes do not raise SizeChanged.
+			paintW = size.Width;
+			paintH = size.Height;
+			imageSurface.Size = size;
+			imageSurface.Invalidate();
+			shownW = bounds.Width;
+			shownH = bounds.Height;
+		}
+#else
+		// Adopts `snapshot` (an owned, private copy) as the displayed bitmap, resized to the device pixels of the
+		// screen the overlay sits on. UI thread. windowBounds is in Cocoa's logical points.
 		private void PaintOwned(Bitmap snapshot, ScreenRect bounds, ScreenRect windowBounds)
 		{
 			var size = new Size(Math.Max(1, windowBounds.Width), Math.Max(1, windowBounds.Height));
@@ -254,7 +309,6 @@ namespace Keysharp.Internals
 
 			try
 			{
-#if OSX
 				// Match Cocoa's point-sized window to the selected screen's device-pixel backing store.
 				var screen = Forms.Screen.FromRectangle(new RectangleF(bounds.X, bounds.Y, size.Width, size.Height)) ?? Forms.Screen.PrimaryScreen;
 				var backing = ScaleFactor.Normalize(screen?.LogicalPixelSize ?? 1f);
@@ -262,7 +316,7 @@ namespace Keysharp.Internals
 				var devW = Math.Max(1, (int)Math.Round(size.Width * backing));
 				var devH = Math.Max(1, (int)Math.Round(size.Height * backing));
 
-				if (next.Width != devW || next.Height != devH)
+				if (next != null && (next.Width != devW || next.Height != devH))
 				{
 					var resized = ImageHelper.ResizeBitmap(next, devW, devH, exactPixels: true);
 
@@ -274,25 +328,14 @@ namespace Keysharp.Internals
 					}
 				}
 
-				displayed = next;
-#else
-				// GTK/Cairo owns the mapping from widget units to its backing surface. Keep the renderer-selected raster
-				// intact and draw it into the widget's native rectangle in the Paint handler; resizing it here would throw
-				// away HiDPI pixels on Wayland and would incorrectly apply GTK's scale to X11 root-pixel coordinates.
 				if (next != null)
+				{
 					displayed = next;
-#endif
+					imageView.Image = next;
+				}
 
-#if LINUX
-				// Invalidate explicitly because same-size content changes do not raise SizeChanged.
-				paintW = size.Width;
-				paintH = size.Height;
-				imageSurface.Size = size;
-				imageSurface.Invalidate();
-#else
-				imageView.Image = next;
 				imageView.Size = size;
-#endif
+
 				// The view must stop referencing the replaced frame before it is disposed.
 				if (next != null)
 					try { old?.Dispose(); } catch { }
@@ -305,15 +348,14 @@ namespace Keysharp.Internals
 				if (next != null)
 				{
 					displayed = old;
-#if OSX
 					try { imageView.Image = old; } catch { }
-#endif
 					try { next.Dispose(); } catch { }
 				}
 
 				throw;
 			}
 		}
+#endif
 
 		private static ScreenRect ToToolkitBounds(ScreenRect bounds)
 		{
@@ -327,7 +369,12 @@ namespace Keysharp.Internals
 		private void EnsureForm()
 		{
 			if (form != null)
-				return;
+			{
+				if (!form.IsDisposed && (!presented || form.Loaded))
+					return;
+
+				Dispose();
+			}
 
 			form = new Keysharp.Builtins.KeysharpForm(owner)
 			{
@@ -411,46 +458,65 @@ namespace Keysharp.Internals
 #endif
 		}
 
-		public bool TryHide()
+		// The form, its handle and the displayed bitmap stay for the next Show, which only maps the window again.
+		public bool Hide()
 		{
-			var closed = true;
+			var hidden = true;
 
-			// InvokeOnUIThread is synchronous, so `closed`/`form` reflect the outcome once it returns.
 			owner.InvokeOnUIThread(() =>
 			{
-				try
-				{
-#if LINUX
-					// Before the handle dies, since the correlation is keyed by it and holds a claimed compositor
-					// id: leaving it would keep that id claimed, so a later overlay - a reshown card gets a new
-					// form - could never claim its own window.
-					if (form != null && Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.IsSupported)
-						Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Forget(form);
+				if (form == null || form.IsDisposed || !form.Loaded)
+					return;
 
-#endif
-					form?.Close();
-					form?.Dispose();
-					form = null;   // only reached when Close/Dispose didn't throw
-#if LINUX
-					imageSurface = null;
-					paintW = paintH = 0;
-#else
-					imageView = null;
-#endif
-					displayed?.Dispose();
-					displayed = null;
-					shownOpacity = 0;
-					shownBounds = default;
-					shownClickThrough = false;
-					presented = false;
-				}
-				catch { closed = false; }   // leave `form` set so a later retry can re-close it
+				form.Visible = false;
+				hidden = !form.Visible;
 			});
 
-			return closed && form == null;
+			return hidden;
 		}
 
-		public void Dispose() => _ = TryHide();
+		public void Dispose()
+		{
+			owner.InvokeOnUIThread(() =>
+			{
+#if LINUX
+				// Before the handle dies, since the correlation is keyed by it and holds a claimed compositor id:
+				// leaving it would keep that id claimed, so a later overlay - a reshown card gets a new form -
+				// could never claim its own window.
+				if (form != null && Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.IsSupported)
+					Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Forget(form);
+
+#endif
+				var closing = form;
+				form = null;
+#if LINUX
+				imageSurface = null;
+				paintW = paintH = 0;
+#else
+				imageView = null;
+#endif
+				shownOpacity = 0;
+				shownBounds = default;
+				shownClickThrough = false;
+				presented = false;
+
+				try
+				{
+					if (closing?.IsDisposed == false)
+					{
+						if (closing.Loaded)
+							closing.Close();
+
+						closing.Dispose();
+					}
+				}
+				finally
+				{
+					displayed?.Dispose();
+					displayed = null;
+				}
+			});
+		}
 	}
 #endif
 }

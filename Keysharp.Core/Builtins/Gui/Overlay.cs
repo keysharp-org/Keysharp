@@ -244,6 +244,8 @@ namespace Keysharp.Builtins
 			/// <summary>Whether the overlay is currently on screen.</summary>
 			public object IsVisible => isMapped;
 
+			/// <summary>The native window handle where the backing has one, otherwise 0. Hide keeps the window, so
+			/// the handle survives Hide and Show; a Wayland layer-shell surface is the exception, as it is rebuilt.</summary>
 			// Return 0 without allocating an overlay id when nothing has been shown yet: a backing only exists once
 			// an id has been allocated (on the first Show), so overlayId == 0 means there is no window/handle. Reading
 			// the OverlayId property here instead would burn an id (Interlocked.Increment) for a handle that is 0.
@@ -268,16 +270,34 @@ namespace Keysharp.Builtins
 				if (!TryResolveOptionalGeometry(x, y, width, height, out var nextX, out var nextY, out var nextW, out var nextH))
 					return this;
 
-				var oldGeometry = CurrentGeometry;
-
 				if (nextW < 0 || nextH < 0)
 					return Errors.ValueErrorOccurred("Overlay Redraw Width and Height cannot be negative.");
 
+				var geometry = CurrentGeometry;
+
+				if ((nextW > 0 ? nextW : geometry.ScreenW) <= 0 || (nextH > 0 ? nextH : geometry.ScreenH) <= 0)
+					return Errors.ValueErrorOccurred("Overlay.Redraw requires a positive final width and height.");
+
+				_ = Redraw(target => Script.InvokeOrNull(f, null, target), nextX, nextY, nextW, nextH);
+				return this;
+			}
+
+			/// <summary>The core of <see cref="Redraw(object, object, object, object, object)"/>, which Highlight and
+			/// the Linux/macOS ToolTip draw through: a fresh target-sized canvas, drawn by <paramref name="draw"/> and
+			/// presented if the overlay is visible. A zero width or height keeps the current one. False when nothing
+			/// was committed.</summary>
+			internal bool Redraw(Action<KeysharpImage> draw, int nextX, int nextY, int nextW, int nextH)
+			{
+				var oldGeometry = CurrentGeometry;
 				var screenW = nextW > 0 ? nextW : oldGeometry.ScreenW;
 				var screenH = nextH > 0 ? nextH : oldGeometry.ScreenH;
 
+				// A positive size can still fail here, when the platform cannot allocate the surface.
 				if (!TryCreateSurface(new ScreenRect(nextX, nextY, screenW, screenH), out var replacement))
-					return Errors.ValueErrorOccurred("Overlay.Redraw requires a positive final width and height.");
+				{
+					_ = Errors.ValueErrorOccurred("Could not create the overlay canvas.");
+					return false;
+				}
 
 				var previousSurface = surface;
 				var previousX = this.x;
@@ -306,11 +326,11 @@ namespace Keysharp.Builtins
 
 				try
 				{
-					_ = Script.InvokeOrNull(f, null, canvas);
+					draw(canvas);
 					var finalBounds = new ScreenRect(this.x, this.y, screenW, screenH);
 
 					if (requestedVisible && !TryPresent(replacement, finalBounds))
-						return this;
+						return false;
 
 					committed = true;
 					previousSurface?.Dispose();
@@ -335,7 +355,7 @@ namespace Keysharp.Builtins
 					}
 				}
 
-				return this;
+				return true;
 			}
 
 			#endregion
@@ -512,7 +532,16 @@ namespace Keysharp.Builtins
 							eventHandlers[name] = registry = new(CallbackStop.NonEmpty, "Gui");
 
 						modified = registry.ModifyEventHandlers(fo, mode);
-						anyLeft = eventHandlers.Values.Any(r => !r.IsEmpty);
+
+						if (registry.IsEmpty)
+						{
+							_ = eventHandlers.Remove(name);
+
+							if (ReferenceEquals(pendingMoveRegistry, registry))
+								pendingMoveRegistry = null;
+						}
+
+						anyLeft = eventHandlers.Count != 0;
 
 						if (anyLeft)
 							TrackHandlerCleanup();
@@ -583,6 +612,7 @@ namespace Keysharp.Builtins
 						registry.Clear();
 
 				eventHandlers = null;
+				pendingMoveRegistry = null;
 				UntrackHandlerCleanup();
 			}
 
@@ -611,10 +641,20 @@ namespace Keysharp.Builtins
 					if (eventHandlers == null)
 						return;
 
-					foreach (var registry in eventHandlers.Values)
+					foreach (var (name, registry) in eventHandlers.ToArray())
+					{
 						_ = registry.RemoveOwned(scheduler);
 
-					if (eventHandlers.Values.Any(r => !r.IsEmpty))
+						if (registry.IsEmpty)
+						{
+							_ = eventHandlers.Remove(name);
+
+							if (ReferenceEquals(pendingMoveRegistry, registry))
+								pendingMoveRegistry = null;
+						}
+					}
+
+					if (eventHandlers.Count != 0)
 						return;
 
 					ClearEventHandlersLocked();
@@ -623,16 +663,22 @@ namespace Keysharp.Builtins
 				DisarmSink();
 			}
 
-			// UI-thread entry (internal so tests can raise an event as a backing does): queues the event's chain as
-			// one item, as a Gui event's is, and each handler runs on its owning scheduler.
+			// Backing entry, raised on the UI thread or a backing's delivery thread (internal so tests can raise an
+			// event as a backing does): queues the event's chain as one item, as a Gui event's is, and each handler
+			// runs on its owning scheduler.
 			internal void HandlePointerEvent(OverlayPointerEvent ev)
 			{
+				if (ev.Kind == OverlayPointerKind.MouseMove)
+				{
+					QueueMouseMove(ev.X, ev.Y);
+					return;
+				}
+
 				var name = ev.Kind switch
 				{
 					OverlayPointerKind.Click => "click",
 					OverlayPointerKind.DoubleClick => "doubleclick",
-					OverlayPointerKind.ContextMenu => "contextmenu",
-					_ => "mousemove",
+					_ => "contextmenu",
 				};
 
 				CallbackRegistry registry;
@@ -644,6 +690,65 @@ namespace Keysharp.Builtins
 				}
 
 				registry.InvokeEventHandlers(this, (long)ev.X, (long)ev.Y);
+			}
+
+			// Keep the latest queued position. Capturing the registry prevents events crossing Destroy/re-registration.
+			private CallbackRegistry pendingMoveRegistry;
+			private int pendingMoveX, pendingMoveY;
+
+			private void QueueMouseMove(int x, int y)
+			{
+				CallbackRegistry registry;
+
+				lock (handlerGate)
+				{
+					if (eventHandlers == null || !eventHandlers.TryGetValue("mousemove", out registry) || registry.IsEmpty)
+						return;
+
+					pendingMoveX = x;
+					pendingMoveY = y;
+
+					if (ReferenceEquals(pendingMoveRegistry, registry))
+						return;
+
+					pendingMoveRegistry = registry;
+				}
+
+				if (Script.TheScript?.EventScheduler is not { } scheduler
+						|| !scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => RaiseMouseMove(registry)))
+					lock (handlerGate)
+						if (ReferenceEquals(pendingMoveRegistry, registry))
+							pendingMoveRegistry = null;
+			}
+
+			// The queued item: reads and clears the pending move, so a move during the handlers queues the next one.
+			private ScriptEventExecutionResult RaiseMouseMove(CallbackRegistry registry)
+			{
+				long x, y;
+
+				lock (handlerGate)
+				{
+					if (!ReferenceEquals(pendingMoveRegistry, registry))
+						return ScriptEventExecutionResult.Executed;
+
+					pendingMoveRegistry = null;
+					x = pendingMoveX;
+					y = pendingMoveY;
+				}
+
+				var status = registry.InvokeQueuedEventHandlers([this, x, y], out _);
+
+				// A blocked item retries with the latest position unless a newer item already owns that delivery.
+				if (status is ScriptEventExecutionResult.GlobalBlocked or ScriptEventExecutionResult.LocalBlocked)
+					lock (handlerGate)
+					{
+						if (pendingMoveRegistry != null || registry.IsEmpty)
+							return ScriptEventExecutionResult.Executed;
+
+						pendingMoveRegistry = registry;
+					}
+
+				return status;
 			}
 
 			#endregion
@@ -659,22 +764,7 @@ namespace Keysharp.Builtins
 				if (nextW < 0 || nextH < 0)
 					return Errors.ValueErrorOccurred("Overlay Show Width and Height cannot be negative.");
 
-				this.x = nextX;
-				this.y = nextY;
-				w = nextW;
-				h = nextH;
-
-				if (width != null && nextW == 0)
-					autoW = (int)(canvas?.Width ?? 0);
-
-				if (height != null && nextH == 0)
-					autoH = (int)(canvas?.Height ?? 0);
-
-				if (!EnsureCanvas())
-					return this;   // sizeless overlay: EnsureCanvas raised the error (throws in throw-mode); keep chaining otherwise
-
-				requestedVisible = true;
-				MaybeRefresh();
+				_ = TryPlace(nextX, nextY, nextW, nextH, true, width != null, height != null);
 				return this;
 			}
 
@@ -687,23 +777,44 @@ namespace Keysharp.Builtins
 				if (nextW < 0 || nextH < 0)
 					return Errors.ValueErrorOccurred("Overlay Move Width and Height cannot be negative.");
 
+				_ = TryPlace(nextX, nextY, nextW, nextH, false, width != null, height != null);
+				return this;
+			}
+
+			// Internal callers need confirmation before caching the displayed geometry or content.
+			internal bool TryPlace(int nextX, int nextY, int nextW, int nextH, bool show,
+				bool resetAutoWidth = false, bool resetAutoHeight = false)
+			{
+				if (redrawing)
+					return false;
+
 				var previous = CurrentGeometry;
 				this.x = nextX;
 				this.y = nextY;
 				w = nextW;
 				h = nextH;
 
-				if (width != null && nextW == 0)
+				if (resetAutoWidth && nextW == 0)
 					autoW = (int)(canvas?.Width ?? 0);
 
-				if (height != null && nextH == 0)
+				if (resetAutoHeight && nextH == 0)
 					autoH = (int)(canvas?.Height ?? 0);
 
+				if (show)
+				{
+					if (!EnsureCanvas())
+						return false;
+
+					requestedVisible = true;
+					return Refresh();
+				}
+
 				var current = CurrentGeometry;
-				MoveLive(current.ScreenW != previous.ScreenW || current.ScreenH != previous.ScreenH);
-				return this;
+				return MoveLive(current.ScreenW != previous.ScreenW || current.ScreenH != previous.ScreenH);
 			}
 
+			/// <summary>Takes the overlay off the screen and keeps its window and canvas, so the next
+			/// <see cref="Show"/> maps the same window again without re-sending unchanged pixels.</summary>
 			public object Hide()
 			{
 				if (RejectRedrawMutation()) return this;
@@ -724,20 +835,16 @@ namespace Keysharp.Builtins
 				return this;
 			}
 
+			/// <summary>Frees the window and the canvas and removes every event handler.</summary>
 			public object Destroy()
 			{
 				if (RejectRedrawMutation()) return DefaultObject;
 				ClearEventHandlers();
 
+				// No confirmation is awaited: Destroy cannot leave a backing behind without an owner to retry it.
 				if (overlayId != 0)
-				{
-					_ = Hide();
-					// Destroy cannot leave an unconfirmed backing without an owner to retry it.
 					Platform.Overlay.DisposeImageOverlay(overlayId);
-				}
 
-				// The surface and its canvas are being torn down regardless of any backing confirmation above, so
-				// Visible must read false.
 				requestedVisible = false;
 				isMapped = false;
 				// One Dispose: the surface frees the image view, the bitmap and the platform memory beneath it,
@@ -846,33 +953,32 @@ namespace Keysharp.Builtins
 					Refresh();
 			}
 
-			private void MoveLive(bool resized)
+			private bool MoveLive(bool resized)
 			{
 				if (!isMapped || redrawing)
-					return;
+					return false;
 
 				if (resized)
-				{
-					Refresh();
-					return;
-				}
+					return Refresh();
 
 				var geometry = CurrentGeometry;
 				var bounds = new ScreenRect(x, y, geometry.ScreenW, geometry.ScreenH);
 
-				if (!Platform.Overlay.TryMoveImageOverlay(OverlayId, bounds))
-					Refresh();
+				return Platform.Overlay.TryMoveImageOverlay(OverlayId, bounds) || Refresh();
 			}
 
-			private void Refresh()
+			private bool Refresh()
 			{
 				if (!requestedVisible || surface == null)
-					return;
+					return false;
 
 				var geometry = CurrentGeometry;
 
-				if (TryPresent(surface, new ScreenRect(x, y, geometry.ScreenW, geometry.ScreenH)))
-					isMapped = true;
+				if (!TryPresent(surface, new ScreenRect(x, y, geometry.ScreenW, geometry.ScreenH)))
+					return false;
+
+				isMapped = true;
+				return true;
 			}
 
 			// SetImage and Redraw can present a candidate before it becomes the live surface.

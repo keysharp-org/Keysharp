@@ -87,6 +87,38 @@ namespace Keysharp.Tests
 			Assert.AreEqual(nint.Zero, service.GetImageOverlayHandle(7));
 		}
 
+		// Hide keeps the backing, so the next present reuses the same window and handle; an unconfirmed hide
+		// reports failure so the caller retries, and only Dispose tears the backing down.
+		[Test, Category("Screen"), Category("Internal"), Category("Curated")]
+		public void OverlayHideKeepsBacking()
+		{
+			using var canvas = TestSurface(1, 1);
+			var created = 0;
+			var backing = new RecordingOverlayBacking();
+			var service = new TestOverlayService(() =>
+			{
+				created++;
+				return backing;
+			});
+			var bounds = new ScreenRect(0, 0, 1, 1);
+
+			Assert.IsTrue(service.TryPresentImageOverlay(4, canvas, bounds, 255, true));
+			backing.HideResult = false;
+			Assert.IsFalse(service.TryHideImageOverlay(4));
+			backing.HideResult = true;
+			Assert.IsTrue(service.TryHideImageOverlay(4));
+			Assert.IsFalse(backing.Disposed);
+			Assert.AreEqual((nint)123, service.GetImageOverlayHandle(4));
+
+			Assert.IsTrue(service.TryPresentImageOverlay(4, canvas, bounds, 255, true));
+			Assert.AreEqual(1, created, "a Show after Hide must reuse the backing");
+
+			Assert.IsTrue(service.TryHideImageOverlay(4));
+			service.DisposeImageOverlay(4);
+			Assert.IsTrue(backing.Disposed);
+			Assert.AreEqual(nint.Zero, service.GetImageOverlayHandle(4));
+		}
+
 		[Test, Category("Screen"), Category("Internal"), Category("Curated")]
 		public void OverlayOwnerTeardownIsIsolated()
 		{
@@ -111,7 +143,7 @@ namespace Keysharp.Tests
 
 				service.SetImageOverlayPointerSink(3, _ => { });
 
-				Assert.IsTrue(service.TryHideAllImageOverlays(s));
+				Assert.IsTrue(service.DisposeAllImageOverlays(s));
 				Assert.IsTrue(firstBacking.Disposed);
 				Assert.IsFalse(secondBacking.Disposed);
 				Assert.AreEqual(nint.Zero, service.GetImageOverlayHandle(1));
@@ -125,7 +157,7 @@ namespace Keysharp.Tests
 			finally
 			{
 				Script.TheScript = s;
-				_ = service.TryHideAllImageOverlays();
+				_ = service.DisposeAllImageOverlays();
 				GC.SuppressFinalize(other);
 			}
 		}
@@ -144,7 +176,7 @@ namespace Keysharp.Tests
 			var hiding = Task.Run(() =>
 			{
 				hideStarted.Set();
-				return service.TryHideAllImageOverlays();
+				return service.DisposeAllImageOverlays();
 			});
 			Assert.IsTrue(hideStarted.Wait(TimeSpan.FromSeconds(2)));
 			Assert.IsTrue(SpinWait.SpinUntil(() => !IsOverlayRegistered(service, 3), TimeSpan.FromSeconds(2)),
@@ -236,6 +268,7 @@ namespace Keysharp.Tests
 		{
 			internal bool Disposed;
 			internal bool Result = true;
+			internal bool HideResult = true;
 			internal DamageList LastDamage;
 			internal OverlaySurface LastSurface;
 
@@ -249,7 +282,7 @@ namespace Keysharp.Tests
 			}
 
 			public bool Move(ScreenRect bounds) => true;
-			public bool TryHide() => true;
+			public bool Hide() => HideResult;
 			public void Dispose() => Disposed = true;
 		}
 
@@ -288,7 +321,7 @@ namespace Keysharp.Tests
 			}
 
 			public bool Move(ScreenRect bounds) => true;
-			public bool TryHide() => true;
+			public bool Hide() => true;
 			public void Dispose() => Disposed = true;
 		}
 

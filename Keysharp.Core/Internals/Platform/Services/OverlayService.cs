@@ -52,23 +52,26 @@ namespace Keysharp.Internals
 		bool Move(ScreenRect bounds);
 
 		/// <summary>Receiver for pointer events on an interactive (non-click-through) surface, or null when the
-		/// overlay has no registered handlers. Raised on the UI thread. Backings without a client-side input
-		/// window (a compositor-owned actor) stores the value but does not raise it.</summary>
+		/// overlay has no registered handlers. Raised on the UI thread or on the backing's own delivery thread.
+		/// A backing without a client-side input window (a compositor-owned actor) stores the value but does not
+		/// raise it.</summary>
 		Action<OverlayPointerEvent> PointerSink { get; set; }
 
 		/// <summary>
-		/// Withdraw the on-screen surface. Returns true iff it is confirmed gone (so the caller may forget the id);
-		/// false means the withdraw could not be confirmed -- e.g. a dropped / timed-out compositor call -- and the
-		/// caller must keep the backing mapped so a later Hide can re-attempt rather than orphaning the surface.
-		/// Must be idempotent: a call after a successful withdraw returns true without doing more work.
+		/// Takes the surface off the screen and keeps it, window and pixels included, so the next
+		/// <see cref="Present"/> shows it again without recreating it. Returns true once it is confirmed hidden;
+		/// false means that could not be confirmed (a dropped or timed-out compositor call), so the caller still
+		/// treats it as shown and a later Hide retries. Idempotent. A backing which cannot hide more cheaply than
+		/// it tears down may do the latter, provided a later Present can rebuild. <see cref="IDisposable.Dispose"/>
+		/// is the teardown: Destroy, the exit sweep and a failed first present use it.
 		/// </summary>
-		bool TryHide();
+		bool Hide();
 
 		nint Handle { get; }
 	}
 
 	/// <summary>
-	/// Platform-neutral overlay service: owns the id-to-backing map, its lock, and the show/move/hide/hide-all
+	/// Platform-neutral overlay service: owns the id-to-backing map, its lock, and the show/move/hide/dispose
 	/// orchestration, all in terms of one abstract per-platform <see cref="IImageOverlayBacking"/>. Highlight,
 	/// ToolTip (Linux/macOS) and the user-facing Overlay builtin all render through this single image primitive,
 	/// so there is no separate highlight/tooltip surface here. The map lock protects membership; each slot has its
@@ -101,8 +104,8 @@ namespace Keysharp.Internals
 		private readonly object sync = new ();
 		private readonly Dictionary<uint, OverlaySlot> overlays = new ();
 
-		// Pointer sinks by overlay id, kept OUTSIDE the slot so a sink registered before the first Show — or
-		// after a Hide disposed the backing — is (re)applied to whatever backing the id gets next.
+		// Pointer sinks by overlay id, kept outside the slot so a sink registered before the first Show, or after a
+		// Destroy disposed the backing, is applied to whatever backing the id gets next.
 		private readonly Dictionary<uint, PointerSinkRegistration> pointerSinks = new ();
 
 		public abstract PixelSize GetCanvasSize(ScreenRect bounds);
@@ -113,8 +116,8 @@ namespace Keysharp.Internals
 		/// <summary>
 		/// Allocates a drawing surface of the kind this platform can present most cheaply. Deliberately not tied
 		/// to an overlay id or a live backing: a canvas is created before the first present (there is no window
-		/// yet) and survives the Hide that disposes the backing instance, so it belongs to the platform, not to
-		/// either of those. The default is a plain bitmap, which every backing can present by copying.
+		/// yet), so it belongs to the platform, not to a backing. The default is a plain bitmap, which every
+		/// backing can present by copying.
 		/// </summary>
 		public virtual OverlaySurface CreateOverlaySurface(PixelSize pixels)
 			=> pixels.HasArea ? OverlaySurface.Plain(pixels) : null;
@@ -246,29 +249,17 @@ namespace Keysharp.Internals
 					return true;   // already absent is a confirmed, idempotent hide
 			}
 
-			// Verify the withdraw BEFORE forgetting the id. If the surface can't be confirmed gone (a dropped or
-			// timed-out compositor hide), keep the backing mapped so a later Hide re-attempts -- dropping the id here
-			// while the surface is still painted is exactly what turned a transient hiccup into a permanent orphan.
+			// The slot and its backing stay for the next Show, which is what keeps Hwnd and the window's pixels.
 			lock (slot.Gate)
-			{
-				if (!IsCurrent(id, slot))
-					return true;
-
-				if (!slot.Backing.TryHide())
-					return false;
-
-				Retire(id, slot);
-				return true;
-			}
+				return !IsCurrent(id, slot) || slot.Backing.Hide();
 		}
 
 		public void DisposeImageOverlay(uint id)
 		{
 			OverlaySlot slot;
 
-			// Unconditional force-reap (no confirm-gating): remove the backing from the map, then dispose it outside
-			// the lock. This is Destroy's escape hatch for a backing whose confirm-gated TryHide never succeeded -- it
-			// must not be left mapped forever with no owner to retry the withdraw.
+			// Unconditional teardown with no confirm-gating, so Destroy never leaves a backing mapped with no owner
+			// left to retry it.
 			lock (sync)
 			{
 				if (!overlays.TryGetValue(id, out slot))
@@ -285,13 +276,13 @@ namespace Keysharp.Internals
 			}
 		}
 
-		public bool TryHideAllImageOverlays(Script owner = null)
+		public bool DisposeAllImageOverlays(Script owner = null)
 		{
 			KeyValuePair<uint, OverlaySlot>[] all;
 			uint[] sinks;
 
-			// Removing the matching slots is HideAll's linearization point. Show and Move recheck membership after
-			// their native call, so an operation already holding a slot gate cannot report success after this point.
+			// Removing the matching slots is the linearization point. Show and Move recheck membership after their
+			// native call, so an operation already holding a slot gate cannot report success after this point.
 			lock (sync)
 			{
 				all = overlays.Where(kv => owner == null || ReferenceEquals(kv.Value.Owner, owner)).ToArray();

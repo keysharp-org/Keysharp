@@ -206,8 +206,8 @@ namespace Keysharp.Builtins
 		{
 			var icce = new INITCOMMONCONTROLSEX
 			{
-				dwSize = Marshal.SizeOf<INITCOMMONCONTROLSEX>(),
-				dwICC  = ICC_LISTVIEW_CLASSES
+				dwSize = (uint)Marshal.SizeOf<INITCOMMONCONTROLSEX>(),
+				dwICC  = (uint)(ICC_LISTVIEW_CLASSES
 				| ICC_TREEVIEW_CLASSES
 				| ICC_BAR_CLASSES
 				| ICC_TAB_CLASSES
@@ -223,10 +223,10 @@ namespace Keysharp.Builtins
 				| ICC_PAGESCROLLER_CLASS
 				| ICC_NATIVEFNTCTL_CLASS
 				| ICC_STANDARD_CLASSES
-				| ICC_LINK_CLASS
+				| ICC_LINK_CLASS)
 			};
 
-			if (!InitCommonControlsEx(ref icce))
+			if (!WindowsAPI.InitCommonControlsEx(in icce))
 				throw new Win32Exception(Marshal.GetLastWin32Error());
 		}
 
@@ -273,17 +273,6 @@ namespace Keysharp.Builtins
 			_ = WindowsAPI.SendMessage(Handle, (uint)WindowsAPI.WM_SETFONT, hFont, (nint)1);
 		}
 
-		[LibraryImport("comctl32.dll", EntryPoint = "InitCommonControlsEx", SetLastError = true)]
-		[return: MarshalAs(UnmanagedType.Bool)]
-		private static partial bool InitCommonControlsEx(ref INITCOMMONCONTROLSEX icce);
-
-		// comboex
-		[StructLayout(LayoutKind.Sequential)]
-		private struct INITCOMMONCONTROLSEX
-		{
-			public int dwSize;
-			public int dwICC;
-		}
 	}
 
 	public class KeysharpTextBox : TextBox

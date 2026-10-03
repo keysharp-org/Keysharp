@@ -12,11 +12,12 @@ namespace Keysharp.Builtins
 		/// torn down on garbage collection via <c>__Delete</c>), frees it.
 		///
 		/// <para>Internally it is a single <see cref="KeysharpOverlay"/> — the one cross-platform, click-through,
-		/// always-on-top overlay primitive — whose canvas is painted with a d-thick frame (a transparent centre so
-		/// it frames, rather than covers, the target). The overlay is created lazily on the first <c>Show</c> and
-		/// then REUSED: moves reposition it in place; only a size/thickness/colour change repaints the frame.</para>
+		/// always-on-top overlay primitive — whose canvas holds a d-thick frame (a transparent centre so it frames,
+		/// rather than covers, the target). The overlay is created on the first <c>Show</c> and then reused: a move
+		/// repositions it, a recolour redraws the frame in place, and only a change of size, thickness or display
+		/// density builds a new canvas.</para>
 		///
-		/// <para>Coordinates are absolute screen pixels and the border is drawn just OUTSIDE the rectangle, matching
+		/// <para>Coordinates are absolute screen pixels and the border is drawn just outside the rectangle, matching
 		/// the screen-pixel coordinates that callers such as OCR/Ax/AtSpi produce.</para>
 		///
 		/// <code>
@@ -35,16 +36,14 @@ namespace Keysharp.Builtins
 			// The single reusable overlay (null until the first Show, and after Destroy).
 			private KeysharpOverlay overlay;
 
-			// The requested target rectangle (screen pixels) and border style. `color` is stored normalized to a
-			// 6-hex-digit string (like Gui.BackColor): a name/number set on it reads back as e.g. "FF0000".
+			// The requested target rectangle (screen pixels) and border style; `color` is 0xRRGGBB.
 			private int rx, ry, rw, rh, thickness = 2;
-			private string color = "FF0000";
+			private int color = 0xFF0000;
 
-			// Signature of the frame currently painted onto the overlay, so Refresh can tell a pure move (just
-			// reposition) from a resize/recolor (repaint the frame first) without rebuilding when nothing changed.
-			private int builtW = int.MinValue, builtH = int.MinValue, builtD = int.MinValue;
-			private int builtPixelW = int.MinValue, builtPixelH = int.MinValue;
-			private string builtColor = "";
+			// The frame on the overlay's canvas, so Refresh can tell a pure move (reposition), a recolour (redraw
+			// the edges in place) and a change of size, thickness or canvas density (a new canvas) apart.
+			private int builtW = int.MinValue, builtH = int.MinValue, builtD = int.MinValue, builtColor = -1;
+			private PixelSize builtPixels;
 
 			// visible = caller intent (Show issued, no intervening Hide/Destroy); shown = overlay actually mapped.
 			private bool visible, shown;
@@ -55,14 +54,13 @@ namespace Keysharp.Builtins
 			/// overlay is created until the first Show.</summary>
 			// `new`, not `override`: construction dispatches by name, so the real signature is declared here and
 			// arity/defaults/named binding follow from it (see Buffer.__New and Any's constructor). The parameters
-			// are PascalCase on purpose: these names ARE script-facing API (`Highlight(Color: "Blue")`).
+			// are PascalCase on purpose: these names are script-facing API (`Highlight(Color: "Blue")`).
 			public object __New(object x = null, object y = null, object width = null, object height = null,
 									object color = null, object thickness = null)
 			{
-				if (!SetRect(x, y, width, height))
+				if (!SetRect(x, y, width, height) || color != null && !TrySetColor(color))
 					return DefaultObject;
 
-				if (color != null) this.color = NormalizeColor(color);
 				if (thickness.CoerceInt(out var t, this.thickness)) this.thickness = Math.Max(0, t);
 
 				return DefaultObject;
@@ -82,9 +80,10 @@ namespace Keysharp.Builtins
 			/// <summary>Height of the outlined rectangle, in pixels. Updates live while shown.</summary>
 			public object Height { get => (long)rh; set { if (value.CoerceInt(out rh, rh)) Refresh(); } }
 
-			/// <summary>Border color: set with a color name ("Red"), a 0xRRGGBB integer, or a hex string; it is
-			/// normalized to and read back as a 6-hex-digit string (e.g. "FF0000"). Updates live while shown.</summary>
-			public object Color { get => color; set { color = NormalizeColor(value); Refresh(); } }
+			/// <summary>Border color: set with a color name ("Red"), a 0xRRGGBB integer, or a hex string; it reads back
+			/// as a 6-hex-digit string (e.g. "FF0000"). An invalid color raises a ValueError and keeps the previous
+			/// one. Updates live while shown.</summary>
+			public object Color { get => color.ToString("X6"); set { if (TrySetColor(value)) Refresh(); } }
 
 			/// <summary>Border thickness in pixels (0 hides the border). Updates live while shown.</summary>
 			public object Thickness { get => (long)thickness; set { if (value.CoerceInt(out var t, thickness)) { thickness = Math.Max(0, t); Refresh(); } } }
@@ -93,7 +92,8 @@ namespace Keysharp.Builtins
 			public object IsVisible => shown;
 
 			/// <summary>Native handle of the overlay window where the backing has one (Eto/WinForms/layer surface),
-			/// otherwise 0 (a compositor-drawn overlay has no client-side window).</summary>
+			/// otherwise 0 (a compositor-drawn overlay has no client-side window). The handle survives Hide and Show
+			/// except on Wayland layer-shell, which rebuilds its surface.</summary>
 			public object Hwnd => overlay?.Hwnd ?? (object)0L;
 
 			#endregion
@@ -126,7 +126,7 @@ namespace Keysharp.Builtins
 				return this;
 			}
 
-			/// <summary>Hides the overlay but keeps it alive for the next Show.</summary>
+			/// <summary>Takes the border off the screen and keeps its window and frame for the next Show.</summary>
 			public object Hide()
 			{
 				visible = false;
@@ -144,8 +144,8 @@ namespace Keysharp.Builtins
 				_ = overlay?.Destroy();
 				overlay = null;
 				builtW = builtH = builtD = int.MinValue;
-				builtPixelW = builtPixelH = int.MinValue;
-				builtColor = "";
+				builtPixels = default;
+				builtColor = -1;
 				return DefaultObject;
 			}
 
@@ -160,14 +160,36 @@ namespace Keysharp.Builtins
 			private bool SetRect(object x, object y, object width, object height) =>
 				x.CoerceInt(out rx, rx) && y.CoerceInt(out ry, ry) && width.CoerceInt(out rw, rw) && height.CoerceInt(out rh, rh);
 
-			// Applies the current rectangle/style. Repaints the frame only on a size/thickness/colour change;
-			// otherwise a pure move just repositions the overlay. A no-op when hidden; hides when the rect is empty.
+			// A color name, a hex string or a 0xRRGGBB number. Anything else is an error, and the color stays.
+			private bool TrySetColor(object value)
+			{
+				if (value is long or int or double)
+				{
+					_ = value.TryCoerceLong(out var rgb);
+					color = (int)(rgb & 0xFFFFFF);
+					return true;
+				}
+
+				if (!value.CoerceString(out var s))
+					return false;
+
+				if (!Conversions.TryParseColor(s, out var parsed))
+				{
+					_ = Errors.ValueErrorOccurred("Invalid value.", s);
+					return false;
+				}
+
+				color = parsed.ToArgb() & 0xFFFFFF;
+				return true;
+			}
+
+			// Applies the current rectangle and style. A no-op when hidden; hides when there is nothing to draw.
 			private void Refresh()
 			{
 				if (!visible)
 					return;
 
-				if (rw < 1 || rh < 1)
+				if (rw < 1 || rh < 1 || thickness == 0)
 				{
 					shown = false;
 					_ = overlay?.Hide();
@@ -176,81 +198,54 @@ namespace Keysharp.Builtins
 
 				var target = new ScreenRect(rx, ry, rw, rh);
 				_ = DisplayTopology.TryFind(Platform.Screen.GetDisplays(), target, out var display);
-				var scale = ScaleFactor.Normalize(display.SizeScale);
-				var d = Math.Max(1, (int)Math.Round(thickness * scale));
+				var d = Math.Max(1, (int)Math.Round(thickness * ScaleFactor.Normalize(display.SizeScale)));
 				int bw = rw + 2 * d, bh = rh + 2 * d, bx = rx - d, by = ry - d;
+				// A same-size frame moved to a display of another density needs a raster of its own too.
 				var pixels = Platform.Overlay.GetCanvasSize(new ScreenRect(bx, by, bw, bh));
 
 				overlay ??= new KeysharpOverlay();
 
-				if (bw != builtW || bh != builtH || d != builtD
-						|| pixels.Width != builtPixelW || pixels.Height != builtPixelH || color != builtColor)
+				if (bw != builtW || bh != builtH || d != builtD || pixels != builtPixels)
 				{
-					using var frame = BuildFrame(bw, bh, d, color, pixels);
-
-					if (frame == null)
+					// A fresh canvas is already transparent, so the frame is just its four edges.
+					if (!overlay.Redraw(canvas => DrawFrame(canvas, bw, bh, d), bx, by, bw, bh))
 						return;
-
-					_ = overlay.SetImage(frame, bx, by, bw, bh);
 
 					builtW = bw;
 					builtH = bh;
 					builtD = d;
-					builtPixelW = pixels.Width;
-					builtPixelH = pixels.Height;
+					builtPixels = pixels;
 					builtColor = color;
 
 					if (overlay.IsVisible is not true)
 						_ = overlay.Show();
 				}
-				else if (!shown)
+				else if (color != builtColor)
+				{
+					var canvas = overlay.Canvas;
+					_ = canvas.Clear();
+					DrawFrame(canvas, bw, bh, d);
+					builtColor = color;
+					_ = overlay.Show(bx, by, bw, bh);
+				}
+				else if (overlay.IsVisible is not true)
 					_ = overlay.Show(bx, by, bw, bh);
 				else
-					_ = overlay.Move(bx, by, bw, bh);   // pure move: reposition without repainting
+					_ = overlay.Move(bx, by, bw, bh);
 
-				shown = true;
+				shown = overlay.IsVisible is true;
 			}
 
-			// Paints a d-thick frame of `colorHex` around a (bw x bh) transparent canvas as four filled edges,
-			// leaving the centre transparent so the highlight frames the target instead of covering it.
-			private static KeysharpImage BuildFrame(int bw, int bh, int d, string colorHex, PixelSize pixels)
+			// Paints a d-thick frame around a (bw x bh) canvas as four filled edges, leaving the centre transparent so
+			// the highlight frames the target instead of covering it.
+			private void DrawFrame(KeysharpImage canvas, int bw, int bh, int d)
 			{
-				if (!pixels.HasArea || KeysharpImage.Create(null, (long)pixels.Width, (long)pixels.Height) is not KeysharpImage img)
-					return null;
-
-				var sx = bw > 0 ? (double)pixels.Width / bw : 1.0;
-				var sy = bh > 0 ? (double)pixels.Height / bh : 1.0;
-				img.drawScaleX = ScaleFactor.Normalize(sx);
-				img.drawScaleY = ScaleFactor.Normalize(sy);
-
-				if (d > 0)
-				{
-					long c;
-
-					try { c = Convert.ToInt64(colorHex, 16); }
-					catch { c = 0xFF0000; }
-
-					var inner = Math.Max(0, bh - 2 * d);
-					_ = img.FillRect(0L, 0L, (long)bw, (long)d, c);
-					_ = img.FillRect(0L, (long)(bh - d), (long)bw, (long)d, c);
-					_ = img.FillRect(0L, (long)d, (long)d, (long)inner, c);
-					_ = img.FillRect((long)(bw - d), (long)d, (long)d, (long)inner, c);
-				}
-
-				return img;
-			}
-
-			// Normalizes a color (a name like "Red", a 0xRRGGBB integer, or a "#RRGGBB"/"0xRRGGBB"/bare-hex string)
-			// to the canonical 6-hex-digit string, matching how Gui.BackColor reports colors. Unparseable -> red.
-			private static string NormalizeColor(object color)
-			{
-				if (color is string s && Conversions.TryParseColor(s, out var c))
-					return (c.ToArgb() & 0xFFFFFF).ToString("X6");
-
-				if (color is long or int or double && color.TryCoerceLong(out var l))
-					return (l & 0xFFFFFF).ToString("X6");
-
-				return "FF0000";
+				long c = color;
+				var inner = Math.Max(0, bh - 2 * d);
+				_ = canvas.FillRect(0L, 0L, (long)bw, (long)d, c);
+				_ = canvas.FillRect(0L, (long)(bh - d), (long)bw, (long)d, c);
+				_ = canvas.FillRect(0L, (long)d, (long)d, (long)inner, c);
+				_ = canvas.FillRect((long)(bw - d), (long)d, (long)d, (long)inner, c);
 			}
 		}
 	}

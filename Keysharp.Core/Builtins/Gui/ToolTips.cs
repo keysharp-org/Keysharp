@@ -10,26 +10,29 @@ namespace Keysharp.Builtins
 		internal const int MaxToolTips = 20;
 #if WINDOWS
 		/// <summary>
-		/// An array of all tooltips (Windows only; Linux/macOS render tooltips via overlayTooltips).
+		/// Each slot's tooltip window (AHK's g_hWndToolTip) and the text it shows; a zero handle is an empty slot.
+		/// Written only on the UI thread, which owns the windows.
 		/// </summary>
-		internal readonly ToolTip[] persistentTooltips = new ToolTip[MaxToolTips];
-		/// <summary>
-		/// An array of all tooltip positions used to avoid position flickering.
-		/// </summary>
-		internal readonly Point?[] persistentTooltipsPositions = new Point?[MaxToolTips];
+		internal readonly (nint Hwnd, string Text)[] windows = new (nint, string)[MaxToolTips];
 #else
 		/// <summary>
-		/// Per-slot click-through Overlay used to draw tooltips on Linux/macOS (Windows uses the WinForms ToolTip).
+		/// Per-slot click-through Overlay used to draw tooltips on Linux/macOS.
 		/// </summary>
 		internal readonly Ks.KeysharpOverlay[] overlayTooltips = new Ks.KeysharpOverlay[MaxToolTips];
 		/// <summary>
-		/// Per-slot last shown text, position, display scale and target pixel size: unchanged calls return early and
-		/// position-only changes on an equivalent target move the live overlay instead of re-rendering.
+		/// What each visible slot last showed, so an identical call returns at once and a same-text call reuses
+		/// the measured text size.
 		/// </summary>
-		internal readonly (string text, int x, int y, double displayScale, int pixelW, int pixelH)?[] overlayTooltipStates
-			= new (string, int, int, double, int, int)?[MaxToolTips];
+		internal readonly OverlayTooltipState?[] overlayTooltipStates = new OverlayTooltipState?[MaxToolTips];
 #endif
 	}
+
+#if !WINDOWS
+	/// <summary>A Linux/macOS tooltip as last shown: its text and screen position, the measured text size, and the
+	/// display scale and canvas pixel size it was drawn for.</summary>
+	internal readonly record struct OverlayTooltipState(string Text, int X, int Y, double TextWidth, double TextHeight,
+		double DisplayScale, PixelSize Pixels);
+#endif
 
 	/// <summary>
 	/// Public interface for tooltip-related functions.
@@ -67,258 +70,278 @@ namespace Keysharp.Builtins
 
 			id--;
 
-#if !WINDOWS
+			if (t.Length == 0)
+			{
+#if WINDOWS
+				var windows = script.ToolTipData.windows;
+
+				if (windows[id].Hwnd != 0)
+					script.InvokeOnUIThread(() => DestroyToolTipWindow(windows, id));
+#else
+				DestroyOverlayTooltip(script.ToolTipData, id);
+#endif
+				return 0L;
+			}
+
+			var nearCursor = ResolveTooltipPos(_x, _y, out var px, out var py, out var cursor);
+#if WINDOWS
+			var error = 0;
+			var hwnd = script.InvokeOnUIThread(() =>
+			{
+				var shown = ShowToolTipWindow(script, id, t, px, py, nearCursor, cursor);
+
+				if (shown == 0)
+					error = Marshal.GetLastPInvokeError();
+
+				return shown;
+			});
+			return hwnd != 0 ? (long)hwnd : Errors.OSErrorOccurred(error);
+#else
 			// Linux/macOS draw the tooltip with the cross-platform, click-through Overlay. (Native WinForms/Eto
 			// tooltips on Wayland become xdg-popups the compositor dismisses on focus loss; an Overlay surface
 			// stays put and can be re-shown from a backgrounded app.)
-			return ShowOverlayTooltip(script, id, t, _x, _y);
-#else
-			var persistentTooltips = script.ToolTipData.persistentTooltips;
-			var persistentTooltipsPositions = script.ToolTipData.persistentTooltipsPositions;
-
-			if (t == "") // Clear tooltip and return
-			{
-				if (persistentTooltips[id] != null)
-				{
-					persistentTooltips[id].Active = false;
-					persistentTooltips[id].Dispose();
-					persistentTooltips[id] = null;
-					persistentTooltipsPositions[id] = null;
-				}
-
-				return 0L;
-			}
-
-			var tooltipInvokerForm = GuiHelper.DialogOwner ?? Form.ActiveForm;
-			var one_or_both_coords_specified = _x != int.MinValue || _y != int.MinValue;
-
-			if (tooltipInvokerForm == null)
-			{
-					tooltipInvokerForm = Application.OpenForms.OfType<Form>().LastOrDefault(f => f != script.mainWindow);//Get the last created one, which is not necessarily the last focused one, even though that's really what we want.
-
-				if (tooltipInvokerForm == null)
-					tooltipInvokerForm = script.mainWindow;
-			}
-
-			if (tooltipInvokerForm == null)
-				return DefaultObject;
-
-			var handle = 0L;
-			ToolTip tt = null;
-			Point? ttp = persistentTooltipsPositions[id];
-			tooltipInvokerForm.CheckedInvoke(() =>
-			{
-				if (persistentTooltips[id] == null)
-					persistentTooltips[id] = new ToolTip
-				{
-					Active = false,
-#if WINDOWS
-					AutomaticDelay = 0,//Delay of 0 throws an exception on linux.
-#endif
-					InitialDelay = 0,
-					ReshowDelay = 0,
-					ShowAlways = true,
-					UseFading = false,
-					UseAnimation = false
-				};
-
-				tt = persistentTooltips[id];
-
-#if WINDOWS
-				var h = tt.GetType().GetProperty("Handle", BindingFlags.Instance | BindingFlags.NonPublic);
-
-				handle = ((nint)h.GetValue(tt)).ToInt64();
-
-#else
-				handle = tt.Handle;
-#endif
-			}, false);
-			// CheckedBeginInvoke might run in a different thread with a different CoordMode
-			var coordModeToolTip = ThreadAccessors.A_CoordModeToolTip;
-			tooltipInvokerForm.CheckedBeginInvoke(() =>
-			{
-#if WINDOWS
-				//We use SetTool() via reflection in this function because it bypasses ToolTip.Show()'s check for whether or not the window
-				//is active.
-				var mSetTrackPosition = tt.GetType().GetMethod("SetTrackPosition", BindingFlags.Instance | BindingFlags.NonPublic);
-				var mSetTool = tt.GetType().GetMethod("SetTool", BindingFlags.Instance | BindingFlags.NonPublic);
-				if (!tt.Active) // If this is the first run then invoke the ToolTip once before displaying it, otherwise it shows at the mouse position
-					_ = mSetTool.Invoke(tt, [tooltipInvokerForm, t, 2, new Point(0, 0)]);
-#endif
-
-				tt.Active = true;
-				var tempx = _x;
-				var tempy = _y;
-				POINT temppt;
-
-				if (one_or_both_coords_specified && coordModeToolTip != CoordModeType.Screen)
-				{
-					//This is the hard case. They've specified coordinates relative to a window, however if that window
-					//is minimized, then its coordinates are impossible to get. Attempt to use the RestoreBounds property, but that is usually
-					//wrong.
-					//if (tooltipInvokerForm.WindowState == FormWindowState.Minimized)
-					//{
-					//  var actualbounds = tooltipInvokerForm.RestoreBounds;
-					//  tempx += actualbounds.X;
-					//  tempy += actualbounds.Y;
-					//  var m = tt.GetType().GetMethod("SetTool", BindingFlags.Instance | BindingFlags.NonPublic);
-					//  _ = m.Invoke(tt, new object[] { tooltipInvokerForm, text, 2, new Point(tempx, tempy) });
-					//}
-					CoordToScreen(ref tempx, ref tempy, CoordMode.Tooltip);
-				}
-
-				if (_x == int.MinValue || _y == int.MinValue) //At least one coordinate was missing, so default it to the mouse position
-				{
-					coordModeToolTip = CoordModeType.Screen;
-					_ = GetCursorPos(out temppt);
-
-					if (_x == int.MinValue)
-						tempx = temppt.X + 10;
-
-					if (_y == int.MinValue)
-						tempy = temppt.Y + 10;
-				}
-
-				if (ttp != null && ttp?.X == tempx && ttp?.Y == tempy && tt.GetToolTip(tooltipInvokerForm) == t)
-					return;
-
-				persistentTooltipsPositions[id] = new Point(tempx, tempy);
-#if WINDOWS
-				_ = mSetTrackPosition.Invoke(tt, [tempx, tempy]);
-				_ = mSetTool.Invoke(tt, [tooltipInvokerForm, t, 2, persistentTooltipsPositions[id]]);
-#else
-				var formPos = tooltipInvokerForm.Location;
-				tt.Show(t, tooltipInvokerForm, tempx, tempy);
-#endif
-				//Diagnostics.Debug.WriteLine("invoked tooltip");
-				//AHK did a large amount of work to make sure the tooltip didn't go off screen
-				//and also to ensure it was not behind the mouse cursor. This seems like overkill
-				//for two reasons.
-				//1: That code is likely legacy. The Winforms ToolTip class already moves the tooltip
-				//to be entirely on the screen if any portion of it would have been off the screen.
-				//2: If the user needs to move the mouse out of the way, they can just do it.
-			}, false, false);
-			return handle;
+			return ShowOverlayTooltip(script, id, t, px, py, nearCursor, cursor);
 #endif
 		}
 
-#if !WINDOWS
-		// Shows/updates/clears a Linux/macOS tooltip slot as a click-through Overlay. Empty text clears the
-		// slot; otherwise the text is rendered to a small labelled bitmap and shown at the resolved position.
-		private static object ShowOverlayTooltip(Script script, int id, string text, int xArg, int yArg)
+		/// <summary>Destroys every tooltip of <paramref name="script"/>. Their windows have no owner whose
+		/// destruction would take them along, which is also why AHK destroys them itself at exit.</summary>
+		internal static void DestroyAll(Script script)
 		{
+#if WINDOWS
+			var windows = script.ToolTipData.windows;
+
+			if (System.Array.Exists(windows, slot => slot.Hwnd != 0))
+				script.InvokeOnUIThread(() =>
+				{
+					for (var id = 0; id < windows.Length; id++)
+						DestroyToolTipWindow(windows, id);
+				});
+#else
+			for (var id = 0; id < ToolTipData.MaxToolTips; id++)
+				DestroyOverlayTooltip(script.ToolTipData, id);
+#endif
+		}
+
+		// Resolves ToolTip's X and Y to screen coordinates as AutoHotkey does: a given coordinate is relative to the
+		// A_CoordModeToolTip origin, and a missing one is 16 past the cursor, which clears even a large cursor.
+		// True when the tooltip goes by the cursor, which PlaceTooltip then keeps uncovered. An origin
+		// failure (e.g. Window/Client mode on Wayland) propagates so the script sees the unsupported-operation error.
+		private static bool ResolveTooltipPos(int xArg, int yArg, out int x, out int y, out POINT cursor)
+		{
+			var nearCursor = xArg == int.MinValue || yArg == int.MinValue;
+			cursor = default;
+			x = y = 0;
+
+			if (nearCursor)
+			{
+				_ = GetCursorPos(out cursor);
+				x = cursor.X + 16;
+				y = cursor.Y + 16;
+			}
+
+			if (xArg != int.MinValue || yArg != int.MinValue)
+			{
+				int originX = 0, originY = 0;
+				CoordToScreen(ref originX, ref originY, CoordMode.Tooltip);
+
+				if (xArg != int.MinValue)
+					x = xArg + originX;
+
+				if (yArg != int.MinValue)
+					y = yArg + originY;
+			}
+
+			return nearCursor;
+		}
+
+		// AHK's placement: a tooltip which would cross the work area's right or bottom edge is pulled back inside
+		// it, and one which goes by the cursor but would then cover it moves above and left of it. The left and
+		// top edges are not enforced, so explicit negative coordinates can still put it there.
+		private static void PlaceTooltip(ref int x, ref int y, int width, int height, ScreenRect workArea,
+			bool nearCursor, POINT cursor)
+		{
+			if (workArea.HasArea && (long)x + width >= workArea.Right)
+				x = (int)(workArea.Right - width - 1);
+
+			if (workArea.HasArea && (long)y + height >= workArea.Bottom)
+				y = (int)(workArea.Bottom - height - 1);
+
+			if (nearCursor && cursor.X >= x && cursor.X <= x + width && cursor.Y >= y && cursor.Y <= y + height)
+			{
+				x = cursor.X - width - 3;
+				y = cursor.Y - height - 3;
+			}
+		}
+
+#if WINDOWS
+		/// <summary>
+		/// Shows one tooltip slot as AutoHotkey's BIF_ToolTip does: an unowned tracking TOOLTIPS_CLASS window per
+		/// slot, placed by <see cref="PlaceTooltip"/> in the work area of the monitor nearest the point. Runs on the
+		/// UI thread, which owns the windows. Zero when the window could not be created.
+		/// </summary>
+		private static unsafe nint ShowToolTipWindow(Script script, int id, string text, int x, int y, bool nearCursor,
+			POINT cursor)
+		{
+			var windows = script.ToolTipData.windows;
+			var hwnd = windows[id].Hwnd;
+			var workArea = Forms.Screen.FromPoint(new Point(x, y)).WorkingArea;
+
+			fixed (char* chars = text)
+			{
+				var ti = new TOOLINFO
+				{
+					cbSize = (uint)sizeof(TOOLINFO),
+					uFlags = WindowsAPI.TTF_TRACK | WindowsAPI.TTF_ABSOLUTE,
+					// Notifications go to the main window, as AHK sends them to its own, so a script can handle them.
+					hwnd = script.mainWindow is { IsHandleCreated: true } main ? main.Handle : 0,
+					lpszText = chars,
+				};
+				// A window destroyed by other means, such as WinClose, is created again.
+				var created = hwnd == 0 || !WindowsAPI.IsWindow(hwnd);
+
+				if (created)
+				{
+					// Script code normally runs inside WinForms' message loop, whose visual-styles activation context
+					// redirects the class to common controls 6. Outside that loop the plain class needs the library
+					// loaded and the class registered first, which this does for whichever version is in effect.
+					var classes = new INITCOMMONCONTROLSEX
+					{
+						dwSize = (uint)sizeof(INITCOMMONCONTROLSEX),
+						dwICC = WindowsAPI.ICC_TAB_CLASSES,
+					};
+					_ = WindowsAPI.InitCommonControlsEx(in classes);
+					hwnd = WindowsAPI.CreateWindowEx(WindowsAPI.WS_EX_TOPMOST, "tooltips_class32", null,
+						WindowsAPI.TTS_NOPREFIX | WindowsAPI.TTS_ALWAYSTIP, WindowsAPI.CW_USEDEFAULT, WindowsAPI.CW_USEDEFAULT,
+						WindowsAPI.CW_USEDEFAULT, WindowsAPI.CW_USEDEFAULT, 0, 0, 0, 0);
+
+					if (hwnd == 0)
+					{
+						windows[id] = default;
+						return 0;
+					}
+
+					_ = WindowsAPI.SendMessage(hwnd, WindowsAPI.TTM_ADDTOOLW, 0, (nint)(&ti));
+				}
+
+				// TTM_SETMAXTIPWIDTH takes a text width, which TTM_ADJUSTRECT derives from the work area, and the control
+				// scales it by the system DPI, which dividing by A_ScreenDPI undoes. Redone each time, since the tooltip
+				// may have moved to a monitor of another size.
+				var textRect = new RECT { Left = workArea.Left, Top = workArea.Top, Right = workArea.Right, Bottom = workArea.Bottom };
+				_ = WindowsAPI.SendMessage(hwnd, WindowsAPI.TTM_ADJUSTRECT, 0, (nint)(&textRect));
+				_ = WindowsAPI.SendMessage(hwnd, WindowsAPI.TTM_SETMAXTIPWIDTH, 0,
+					(nint)((textRect.Right - textRect.Left) * 96 / A_ScreenDPI));
+
+				if (created)
+				{
+					// Tracked once before it is measured, or GetWindowRect reports a taller window than it ends up.
+					_ = WindowsAPI.SendMessage(hwnd, WindowsAPI.TTM_TRACKPOSITION, 0, PackPoint(x, y));
+					_ = WindowsAPI.SendMessage(hwnd, WindowsAPI.TTM_TRACKACTIVATE, 1, (nint)(&ti));
+				}
+				else if (windows[id].Text != text)   // An unchanged text is not sent again, which avoids a flicker.
+					_ = WindowsAPI.SendMessage(hwnd, WindowsAPI.TTM_UPDATETIPTEXTW, 0, (nint)(&ti));
+
+				windows[id] = (hwnd, text);
+				_ = WindowsAPI.GetWindowRect(hwnd, out var rect);
+				PlaceTooltip(ref x, ref y, rect.Right - rect.Left, rect.Bottom - rect.Top,
+					ScreenRect.FromRectangle(workArea), nearCursor, cursor);
+				// TTM_TRACKPOSITION every time, or the next TTM_UPDATETIPTEXT moves the tip back to the last tracked
+				// position; TTM_TRACKACTIVATE every time shows a tip again that was hidden while its window lived.
+				_ = WindowsAPI.SendMessage(hwnd, WindowsAPI.TTM_TRACKPOSITION, 0, PackPoint(x, y));
+				_ = WindowsAPI.SendMessage(hwnd, WindowsAPI.TTM_TRACKACTIVATE, 1, (nint)(&ti));
+			}
+
+			return hwnd;
+		}
+
+		// MAKELPARAM of two signed screen coordinates.
+		private static nint PackPoint(int x, int y) => (nint)(int)((ushort)x | ((uint)(ushort)y << 16));
+
+		// UI thread.
+		private static void DestroyToolTipWindow((nint Hwnd, string Text)[] windows, int id)
+		{
+			var hwnd = windows[id].Hwnd;
+
+			if (hwnd != 0 && WindowsAPI.IsWindow(hwnd))
+				_ = WindowsAPI.DestroyWindow(hwnd);
+
+			windows[id] = default;
+		}
+#endif
+
+#if !WINDOWS
+		// Shows a Linux/macOS tooltip slot as a click-through Overlay: the text on the classic light-yellow
+		// background with a 1px black border, laid out in authored units and scaled for the display it lands on.
+		private static object ShowOverlayTooltip(Script script, int id, string text, int x, int y, bool nearCursor,
+			POINT cursor)
+		{
+			const int pad = 6;
 			var data = script.ToolTipData;
-			var overlays = data.overlayTooltips;
+			var overlay = data.overlayTooltips[id];
+			var last = overlay?.IsVisible is true ? data.overlayTooltipStates[id] : null;
 
-			if (text.Length == 0) // Clear the slot
+			// The default spec measures with the same cached font DrawText draws with. A Font created and disposed
+			// here would free a native handler that cached font shares on Eto.Mac.
+			var (textW, textH) = last is { } previous && previous.Text == text
+				? (previous.TextWidth, previous.TextHeight) : Ks.KeysharpImage.MeasureTextCore(text, "", "");
+			var drawW = Math.Max(1, (int)Math.Ceiling(textW) + pad * 2);
+			var drawH = Math.Max(1, (int)Math.Ceiling(textH) + pad * 2);
+			_ = DisplayTopology.TryFind(Platform.Screen.GetDisplays(), new ScreenRect(x, y, 0, 0), out var display);
+			var scale = ScaleFactor.Normalize(display.SizeScale);
+			var screenW = Math.Max(1, (int)Math.Round(drawW * scale));
+			var screenH = Math.Max(1, (int)Math.Round(drawH * scale));
+			int sx = x, sy = y;
+			PlaceTooltip(ref sx, ref sy, screenW, screenH, display.WorkArea, nearCursor, cursor);
+			var pixels = Platform.Overlay.GetCanvasSize(new ScreenRect(sx, sy, screenW, screenH));
+			var next = new OverlayTooltipState(text, sx, sy, textW, textH, scale, pixels);
+
+			if (last == next)
+				return overlay.Hwnd;
+
+			overlay = data.overlayTooltips[id] ??= new Ks.KeysharpOverlay();
+
+			// Laid out in authored units: the transform maps them onto the canvas's screen units, which the draw
+			// scale the Overlay set maps onto its pixels. The background covers the whole canvas, so drawing over
+			// the previous text needs no clear first.
+			void Draw(Ks.KeysharpImage canvas)
 			{
-				_ = overlays[id]?.Destroy();
-				overlays[id] = null;
+				var units = new KeysharpObject();
+				units.DefinePropInternal("ScaleX", new OwnPropsDesc(canvas.Width / canvas.drawScaleX / drawW));
+				units.DefinePropInternal("ScaleY", new OwnPropsDesc(canvas.Height / canvas.drawScaleY / drawH));
+				canvas.Transform = units;
+				_ = canvas.FillRect(0L, 0L, (long)drawW, (long)drawH, 0xFFFFE1L);
+				_ = canvas.DrawRect(0L, 0L, (long)drawW, (long)drawH, 0x000000L, 1L);
+				_ = canvas.DrawText(text, (long)pad, (long)pad, 0x000000L);
+			}
+
+			if (last is not { } shown || shown.Pixels != pixels)
+			{
+				if (!overlay.Redraw(Draw, sx, sy, screenW, screenH))
+					return overlay.Hwnd;
+
+				if (overlay.IsVisible is not true && !overlay.TryPlace(sx, sy, screenW, screenH, true))
+					return overlay.Hwnd;
+			}
+			else if (shown.Text != text || Math.Abs(shown.DisplayScale - scale) >= 0.001)
+			{
 				data.overlayTooltipStates[id] = null;
-				return 0L;
+				Draw(overlay.Canvas);
+
+				if (!overlay.TryPlace(sx, sy, screenW, screenH, true))
+					return overlay.Hwnd;
 			}
+			else if (!overlay.TryPlace(sx, sy, screenW, screenH, false))
+				return overlay.Hwnd;
 
-			ResolveTooltipPos(xArg, yArg, out var sx, out var sy);
-			_ = DisplayTopology.TryFind(Platform.Screen.GetDisplays(), new ScreenRect(sx, sy, 0, 0), out var display);
-			var displayScale = ScaleFactor.Normalize(display.SizeScale);
-			var geometry = GetTooltipGeometry(text, sx, sy, displayScale);
-
-			// Dedupe (matches the Windows branch): identical call = no-op; same text at a new position
-			// on a display with the same scale and canvas density = byte-free Move instead of re-render + re-upload.
-			if (data.overlayTooltipStates[id] is { } last && overlays[id] is { } live
-				&& live.IsVisible is true && last.text == text
-					&& Math.Abs(last.displayScale - displayScale) < 0.001
-					&& last.pixelW == geometry.Pixels.Width && last.pixelH == geometry.Pixels.Height)
-			{
-				if (last.x == sx && last.y == sy)
-					return live.Hwnd;
-
-				_ = live.Move(sx, sy);
-				data.overlayTooltipStates[id] = (text, sx, sy, displayScale, geometry.Pixels.Width, geometry.Pixels.Height);
-				return live.Hwnd;
-			}
-
-			// Scale the authored tooltip size for the target display; placement remains in native screen units.
-			using var img = BuildTooltipImage(text, geometry);
-
-			if (img == null)
-				return 0L;
-
-			var overlay = overlays[id] ??= new Ks.KeysharpOverlay();
-			_ = overlay.SetImage(img, sx, sy, geometry.ScreenW, geometry.ScreenH);
-
-			if (overlay.IsVisible is not true)
-				_ = overlay.Show();
-
-			data.overlayTooltipStates[id] = overlay.IsVisible is true
-				? (text, sx, sy, displayScale, geometry.Pixels.Width, geometry.Pixels.Height)
-				: null;
+			data.overlayTooltipStates[id] = next;
 			return overlay.Hwnd;
 		}
 
-		// Renders tooltip text to a bitmap: black text on the classic light-yellow background with a 1px black
-		// border, sized to the text plus padding. Returned as an Image the Overlay copies onto its canvas.
-		private readonly record struct TooltipGeometry(int DrawW, int DrawH, int ScreenW, int ScreenH, PixelSize Pixels);
-
-		private static TooltipGeometry GetTooltipGeometry(string text, int x, int y, double displayScale)
+		private static void DestroyOverlayTooltip(ToolTipData data, int id)
 		{
-			const int pad = 6;
-
-			// Measure with the same cached, never-disposed font DrawText uses for the default spec
-			// (null -> "Sans 10"). Creating a local Font here and disposing it — as this used to — freed a
-			// native handler shared with that cached font on Eto.Mac, so the queued DrawText below later
-			// drew with a disposed Font ("Cannot access a disposed object: Font"). See KeysharpImage.CreateFont.
-			var (tw, th) = Ks.KeysharpImage.MeasureTextCore(text ?? "", "", "");
-			var w = Math.Max(1, (int)Math.Ceiling(tw) + pad * 2);
-			var h = Math.Max(1, (int)Math.Ceiling(th) + pad * 2);
-			var screenW = Math.Max(1, (int)Math.Round(w * displayScale));
-			var screenH = Math.Max(1, (int)Math.Round(h * displayScale));
-			var pixels = Platform.Overlay.GetCanvasSize(new ScreenRect(x, y, screenW, screenH));
-			return new TooltipGeometry(w, h, screenW, screenH, pixels);
-		}
-
-		private static Ks.KeysharpImage BuildTooltipImage(string text, TooltipGeometry geometry)
-		{
-			const int pad = 6;
-
-			// Create at the target pixel scale: a full-resolution bitmap drawn through matching axis transforms, so the
-			// draw coordinates below stay crisp instead of being upscaled from a 1x bitmap.
-			if (!geometry.Pixels.HasArea || Ks.KeysharpImage.Create(null,
-					(long)geometry.Pixels.Width, (long)geometry.Pixels.Height) is not Ks.KeysharpImage img)
-				return null;
-
-			var sx = (double)geometry.Pixels.Width / geometry.DrawW;
-			var sy = (double)geometry.Pixels.Height / geometry.DrawH;
-			img.drawScaleX = ScaleFactor.Normalize(sx);
-			img.drawScaleY = ScaleFactor.Normalize(sy);
-
-			_ = img.FillRect(0L, 0L, (long)geometry.DrawW, (long)geometry.DrawH, 0xFFFFE1L);
-			_ = img.DrawRect(0L, 0L, (long)geometry.DrawW, (long)geometry.DrawH, 0x000000L, 1L);
-			_ = img.DrawText(text, (long)pad, (long)pad, 0x000000L);     // black text
-			return img;
-		}
-
-		// Resolves ToolTip's (x,y) args to absolute screen coordinates, honoring A_CoordModeToolTip and
-		// defaulting a missing axis to just past the cursor (matches AutoHotkey). Propagates a CoordToScreen
-		// failure (e.g. Window/Client mode on Wayland) so the script sees the unsupported-operation error.
-		private static void ResolveTooltipPos(int xArg, int yArg, out int sx, out int sy)
-		{
-			sx = xArg;
-			sy = yArg;
-
-			if ((xArg != int.MinValue || yArg != int.MinValue) && ThreadAccessors.A_CoordModeToolTip != CoordModeType.Screen)
-				CoordToScreen(ref sx, ref sy, CoordMode.Tooltip);
-
-			if (xArg == int.MinValue || yArg == int.MinValue)
-			{
-				_ = GetCursorPos(out var pt);
-
-				if (xArg == int.MinValue)
-					sx = pt.X + 10;
-
-				if (yArg == int.MinValue)
-					sy = pt.Y + 10;
-			}
+			_ = data.overlayTooltips[id]?.Destroy();
+			data.overlayTooltips[id] = null;
+			data.overlayTooltipStates[id] = null;
 		}
 #endif
 

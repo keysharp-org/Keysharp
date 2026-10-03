@@ -117,8 +117,7 @@ namespace Keysharp.Internals
 					return null;
 
 				bmp = new Bitmap(w, h, w * 4, PixelFormat.Format32bppPArgb, bits);
-				// Same reason as ImageHelper.NewArgbCanvas: a point-size font is scaled by the Graphics' DPI, and
-				// a canvas that inherited the screen's 192 would render text at twice the size of everything else.
+				// As ImageHelper.NewArgbCanvas does, so what scales by the bitmap's DPI does not depend on the display.
 				bmp.SetResolution(96f, 96f);
 				gdi = new DibSectionHandle(dib, dc, old);
 				dib = dc = old = 0;
@@ -181,16 +180,19 @@ namespace Keysharp.Internals
 	{
 		private readonly Script owner;
 		private LayeredOverlayForm form;
+		// What the layered window holds from its last UpdateLayeredWindow. A hidden layered window keeps those
+		// bits, so these stay valid across Hide and let the next Show skip the transfer.
 		private int shownW, shownH, shownX, shownY;
 		private byte shownOpacity = 255;
 		private bool shownClickThrough = true;
-		private bool mapped;
+		private bool hasContent;
+		private bool visible;
 		// Only allocated when the canvas size and the window size disagree (a stretched tile, a live resize);
 		// dropped again the moment they line up, and on hide, so a full-screen overlay does not keep a second
 		// screen-sized buffer alive for a size it no longer has.
 		private DibOverlaySurface presentation;
 		// The form reads this through the GetPointerSink provider delegate wired at creation, so setting it
-		// before or after the form exists (and across TryHide's form teardown/recreation) needs no rewiring.
+		// before or after the form exists needs no rewiring.
 		private Action<OverlayPointerEvent> pointerSink;
 
 		internal WindowsImageOverlay(Script owner) => this.owner = owner;
@@ -215,11 +217,26 @@ namespace Keysharp.Internals
 				// documented; if it bakes it in, a partial transfer would leave the dirty rect at the new alpha
 				// and the rest of the window at the old one. Transferring everything is correct under either
 				// reading, and an opacity change is rare enough that the full copy costs nothing worth having.
-				var geometryChanged = width != shownW || height != shownH || bounds.X != shownX || bounds.Y != shownY
-									  || !mapped || opacity != shownOpacity;
+				var geometryChanged = !hasContent || width != shownW || height != shownH || bounds.X != shownX
+									  || bounds.Y != shownY || opacity != shownOpacity;
 
-				if (!geometryChanged && damage?.Kind == DamageKind.None && clickThrough == shownClickThrough)
+				if (!geometryChanged && damage?.Kind == DamageKind.None)
+				{
+					if (visible && clickThrough == shownClickThrough)
+						return true;
+
+					// The window already holds these pixels, hidden or not; only its input mode or visibility changes.
+					owner.InvokeOnUIThread(() =>
+					{
+						form.SetClickThrough(clickThrough);
+
+						if (!visible)
+							form.Map();
+					});
+					shownClickThrough = clickThrough;
+					visible = true;
 					return true;
+				}
 
 				var direct = canvas is DibOverlaySurface
 					&& canvas.Size.Width == width && canvas.Size.Height == height;
@@ -248,7 +265,7 @@ namespace Keysharp.Internals
 						// Apply the input mode before showing so the exstyle is right from the first CreateParams
 						// evaluation (a live toggle later goes through SetWindowLong instead).
 						form.SetClickThrough(clickThrough);
-						updated = form.ShowLayered(source, bounds.X, bounds.Y, width, height, opacity, dirty, !mapped);
+						updated = form.ShowLayered(source, bounds.X, bounds.Y, width, height, opacity, dirty, !visible);
 					});
 				}
 				finally
@@ -265,7 +282,8 @@ namespace Keysharp.Internals
 				shownY = bounds.Y;
 				shownOpacity = opacity;
 				shownClickThrough = clickThrough;
-				mapped = true;
+				hasContent = true;
+				visible = true;
 				return true;
 			}
 			catch
@@ -335,7 +353,7 @@ namespace Keysharp.Internals
 
 		public bool Move(ScreenRect bounds)
 		{
-			if (form == null)
+			if (form?.IsHandleCreated != true || !hasContent)
 				return false;
 
 			// A layered window retains its last UpdateLayeredWindow content across a move, so a same-size move
@@ -362,30 +380,52 @@ namespace Keysharp.Internals
 			return false;
 		}
 
-		private void EnsureForm() => form ??= new LayeredOverlayForm { GetPointerSink = () => pointerSink };
-
-		public bool TryHide()
+		private void EnsureForm()
 		{
-			DropPresentation();
-			mapped = false;
-			var closed = true;
-
-			// InvokeOnUIThread is synchronous, so `closed`/`form` reflect the outcome once it returns.
-			owner.InvokeOnUIThread(() =>
+			if (form == null || form.IsDisposed)
 			{
-				try
-				{
-					form?.Close();
-					form?.Dispose();
-					form = null;   // only reached when Close/Dispose didn't throw
-				}
-				catch { closed = false; }   // leave `form` set so a later retry can re-close it
-			});
-
-			return closed && form == null;
+				form = new LayeredOverlayForm { GetPointerSink = () => pointerSink };
+				form.HandleDestroyed += (_, _) => hasContent = visible = false;
+			}
 		}
 
-		public void Dispose() => _ = TryHide();
+		// SW_HIDE keeps the window, its handle and its layered bits for the next Show.
+		public bool Hide()
+		{
+			DropPresentation();
+
+			if (!visible)
+				return true;
+
+			var hidden = false;
+			owner.InvokeOnUIThread(() =>
+			{
+				if (form?.IsHandleCreated == true)
+					_ = WindowsAPI.ShowWindow(form.Handle, WindowsAPI.SW_HIDE);
+
+				hidden = form?.IsHandleCreated != true || !WindowsAPI.IsWindowVisible(form.Handle);
+			});
+
+			if (hidden)
+				visible = false;
+
+			return hidden;
+		}
+
+		public void Dispose()
+		{
+			DropPresentation();
+			hasContent = visible = false;
+			var closing = form;
+			form = null;
+
+			if (closing != null)
+				owner.InvokeOnUIThread(() =>
+				{
+					closing.Close();
+					closing.Dispose();
+				});
+		}
 	}
 
 	internal sealed class LayeredOverlayForm : Form
@@ -529,17 +569,21 @@ namespace Keysharp.Internals
 			if (!WindowsAPI.UpdateLayeredWindowIndirect(Handle, &info))
 				return false;
 
-			// Z-order upkeep only on the frame that maps the window. Doing it every frame costs two window
-			// messages per frame for a topmost state that has not changed, and SWP_NOMOVE|SWP_NOSIZE keeps it
-			// from reintroducing the half-step described above.
 			if (mapping)
-			{
-				_ = WindowsAPI.SetWindowPos(Handle, new nint(WindowsAPI.HWND_TOPMOST), 0, 0, 0, 0,
-											WindowsAPI.SWP_NOACTIVATE | WindowsAPI.SWP_NOMOVE | WindowsAPI.SWP_NOSIZE);
-				_ = WindowsAPI.ShowWindow(Handle, WindowsAPI.SW_SHOWNOACTIVATE);
-			}
+				Map();
 
 			return true;
+		}
+
+		/// <summary>Shows the window with whatever layered content it already holds, without activating it.</summary>
+		/// <remarks>Z-order upkeep happens only here, on the frame that maps the window. Doing it every frame costs
+		/// two window messages per frame for a topmost state that has not changed, and SWP_NOMOVE|SWP_NOSIZE keeps
+		/// it from reintroducing the half-step described on <see cref="ShowLayered"/>.</remarks>
+		internal void Map()
+		{
+			_ = WindowsAPI.SetWindowPos(Handle, new nint(WindowsAPI.HWND_TOPMOST), 0, 0, 0, 0,
+										WindowsAPI.SWP_NOACTIVATE | WindowsAPI.SWP_NOMOVE | WindowsAPI.SWP_NOSIZE);
+			_ = WindowsAPI.ShowWindow(Handle, WindowsAPI.SW_SHOWNOACTIVATE);
 		}
 
 		protected override void WndProc(ref Message m)

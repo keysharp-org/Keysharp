@@ -1639,7 +1639,7 @@ namespace Keysharp.Runtime
 			// Also done by ExitAppInternal, but a Script can be disposed directly (tests, embedding) and the
 			// dialog registries are process-static -- an abandoned entry there would outlive this engine.
 			Teardown(() => Dialogs.CloseDialogs(this));
-			Teardown(() => Dialogs.CloseToolTips(this));
+			Teardown(() => ToolTips.DestroyAll(this));
 #if !WINDOWS
 			Teardown(() => sigtermRegistration?.Dispose());
 #endif
@@ -1671,7 +1671,7 @@ namespace Keysharp.Runtime
 
 			// Frees every overlay this script still owns (Highlight/ToolTip/Overlay builtins all register as
 			// image overlays) without disturbing surfaces belonging to another script in the same process.
-			Teardown(() => _ = Platform.Overlay.TryHideAllImageOverlays(this));
+			Teardown(() => _ = Platform.Overlay.DisposeAllImageOverlays(this));
 
 			// Stops anything SoundPlay left playing. On Windows an MCI item left open can hang the process on
 			// exit (AHK closes it from its destructor for the same reason); elsewhere this reaps the player.
