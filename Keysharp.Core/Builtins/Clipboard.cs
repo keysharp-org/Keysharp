@@ -46,7 +46,9 @@ namespace Keysharp.Builtins
 
 			public static object staticset_Text(object @this, object value)
 			{
-				Platform.Clipboard.SetText(value?.ToString() ?? "");
+				if (value.CoerceString(out var text))
+					Platform.Clipboard.SetText(text);
+
 				return DefaultObject;
 			}
 
@@ -69,13 +71,13 @@ namespace Keysharp.Builtins
 					return DefaultObject;
 				}
 
-				var (bmp, _, _) = KeysharpImage.LoadFromSource(value);
+				var bmp = ImageBitmapOrNull(value, out var owned);
 
 				if (bmp == null)
 					return Errors.ValueErrorOccurred($"Could not create an image from {value}.");
 
-				using (bmp)
-					Platform.Clipboard.SetImage(bmp);
+				using var ownedBitmap = owned ? bmp : null;
+				Platform.Clipboard.SetImage(bmp);
 
 				return DefaultObject;
 			}
@@ -200,36 +202,46 @@ namespace Keysharp.Builtins
 			[Static] public static object Set(object @this, object bag)
 			{
 				var entries = new List<ClipboardEntry>();
+				List<Bitmap> ownedImages = null;
 
-				switch (bag)
+				try
 				{
-					case Map map:
-						foreach (var (key, value) in map)
-							if (!TryAddEntry(entries, key?.ToString(), value, out var mapError))
-								return mapError;
+					switch (bag)
+					{
+						case Map map:
+							foreach (var (key, value) in map)
+								if (!TryAddEntry(entries, key?.ToString(), value, ref ownedImages, out var mapError))
+									return mapError;
 
-						break;
+							break;
 
-					case KeysharpObject kso when kso.op != null:
-						// Own VALUE properties only, in declaration order: a dynamic property would have to be
-						// invoked to produce a value, and a clipboard write must not run script side effects.
-						foreach (var (name, desc) in kso.op)
-						{
-							if (desc.Value == null)
-								continue;
+						case KeysharpObject kso when kso.op != null:
+							// Own value properties only, in declaration order: a dynamic property would have to be
+							// invoked to produce a value, and a clipboard write must not run script side effects.
+							foreach (var (name, desc) in kso.op)
+							{
+								if (desc.Value == null)
+									continue;
 
-							if (!TryAddEntry(entries, name, desc.Value, out var objError))
-								return objError;
-						}
+								if (!TryAddEntry(entries, name, desc.Value, ref ownedImages, out var objError))
+									return objError;
+							}
 
-						break;
+							break;
 
-					default:
-						return Errors.TypeErrorOccurred(bag, typeof(KeysharpObject), DefaultObject);
+						default:
+							return Errors.TypeErrorOccurred(bag, typeof(KeysharpObject), DefaultObject);
+					}
+
+					Platform.Clipboard.SetAll(entries);
+					return DefaultObject;
 				}
-
-				Platform.Clipboard.SetAll(entries);
-				return DefaultObject;
+				finally
+				{
+					if (ownedImages != null)
+						foreach (var image in ownedImages)
+							image.Dispose();
+				}
 			}
 
 			#endregion
@@ -333,9 +345,10 @@ namespace Keysharp.Builtins
 			/// <summary>
 			/// Turns one <c>Set</c> key/value pair into a clipboard entry. A kind name is encoded by the backend; any
 			/// other name is a native format whose value must be bytes (a Buffer or a String, which is written as
-			/// UTF-8 — the only encoding a script can mean without naming one).
+			/// UTF-8 — the only encoding a script can mean without naming one). An image bitmap made for the entry is
+			/// added to <paramref name="ownedImages"/> for the caller to dispose.
 			/// </summary>
-			private static bool TryAddEntry(List<ClipboardEntry> entries, string name, object value, out object error)
+			private static bool TryAddEntry(List<ClipboardEntry> entries, string name, object value, ref List<Bitmap> ownedImages, out object error)
 			{
 				error = DefaultObject;
 
@@ -356,7 +369,16 @@ namespace Keysharp.Builtins
 							break;
 
 						case ClipboardKind.Image:
-							payload = ImageBitmapOrNull(value);
+							if (ImageBitmapOrNull(value, out var owned) is not { } image)
+							{
+								error = Errors.ValueErrorOccurred($"Could not create an image from {value}.");
+								return false;
+							}
+
+							if (owned)
+								(ownedImages ??= []).Add(image);
+
+							payload = image;
 							break;
 
 						default:
@@ -365,12 +387,6 @@ namespace Keysharp.Builtins
 
 							payload = text;
 							break;
-					}
-
-					if (kind == ClipboardKind.Image && payload == null)
-					{
-						error = Errors.ValueErrorOccurred($"Could not create an image from {value}.");
-						return false;
 					}
 
 					entries.Add(ClipboardEntry.Of(kind, payload));
@@ -384,10 +400,15 @@ namespace Keysharp.Builtins
 				return true;
 			}
 
-			private static Bitmap ImageBitmapOrNull(object value)
+			/// <summary>
+			/// The bitmap to publish for an image source. An Image's own bitmap is borrowed, as DrawImage borrows it,
+			/// because every backend copies or encodes the bitmap before returning; any other source gives a new bitmap
+			/// that <paramref name="owned"/> marks for the caller to dispose.
+			/// </summary>
+			private static Bitmap ImageBitmapOrNull(object value, out bool owned)
 			{
-				var (bmp, _, _) = KeysharpImage.LoadFromSource(value);
-				return bmp;
+				owned = value is not KeysharpImage;
+				return owned ? KeysharpImage.LoadFromSource(value).bmp : ((KeysharpImage)value).PrepareForRead();
 			}
 
 			private static bool TryGetBytes(object value, out byte[] bytes)

@@ -156,8 +156,8 @@ namespace Keysharp.Builtins
 			{
 				if (value is ClipboardAll arr)
 					Platform.Clipboard.RestoreAll(arr);
-				else
-					Platform.Clipboard.SetText(value?.ToString() ?? "");
+				else if (value.CoerceString(out var text))
+					Platform.Clipboard.SetText(text);
 			}
 		}
 

@@ -17,29 +17,28 @@ namespace Keysharp.Internals
 		public void Dispose() => Interlocked.Exchange(ref onDispose, null)?.Invoke();
 	}
 
+	/// <summary>A backend failure reported as a script Error on the calling thread.</summary>
+	internal sealed class ClipboardOperationException(string message) : Exception(message);
+
 	/// <summary>
-	/// The one place clipboard access is marshalled to the UI thread. <see cref="PlatformHost.CreateClipboard"/> wraps
-	/// the resolved backend for one Script, so every present and future call site is correct by construction rather than by
-	/// remembering — see the rationale there. Backends may therefore assume the UI thread and must not marshal again.
-	/// <para>The <see cref="Subscribe"/> attach is marshalled too, but the returned unsubscribe token is handed back
-	/// as-is: each backend that needs one already marshals its own detach (<see cref="EtoClipboard.Subscribe"/>), and
-	/// wrapping it here would double-post a teardown that can legitimately run during shutdown.</para>
+	/// Marshals clipboard access through the Script's UI dispatcher and reports backend failures on the caller.
+	/// Subscription tokens handle their own detach, including during shutdown.
 	/// </summary>
 	internal sealed class UiThreadClipboard(Script owner, IClipboard inner) : IClipboard
 	{
-		public string GetText() => owner.InvokeOnUIThread(inner.GetText);
+		public string GetText() => Run(inner.GetText, "");
 
-		public void SetText(string text) => owner.InvokeOnUIThread(() => inner.SetText(text));
+		public void SetText(string text) => Run(() => inner.SetText(text));
 
 		public bool IsEmpty => owner.InvokeOnUIThread(() => inner.IsEmpty);
 
 		public int ChangeType() => owner.InvokeOnUIThread(inner.ChangeType);
 
-		public Bitmap GetImage() => owner.InvokeOnUIThread(inner.GetImage);
+		public Bitmap GetImage() => Run(inner.GetImage, null);
 
-		public void SetImage(Bitmap image) => owner.InvokeOnUIThread(() => inner.SetImage(image));
+		public void SetImage(Bitmap image) => Run(() => inner.SetImage(image));
 
-		public string[] GetFormats() => owner.InvokeOnUIThread(inner.GetFormats);
+		public string[] GetFormats() => Run(inner.GetFormats, []);
 
 		public bool Has(string format) => owner.InvokeOnUIThread(() => inner.Has(format));
 
@@ -48,19 +47,34 @@ namespace Keysharp.Internals
 
 		public bool HasKind(ClipboardKind kind) => owner.InvokeOnUIThread(() => inner.HasKind(kind));
 
-		public byte[] GetData(string format) => owner.InvokeOnUIThread(() => inner.GetData(format));
+		public byte[] GetData(string format) => Run(() => inner.GetData(format), null);
 
-		public string GetKindText(ClipboardKind kind) => owner.InvokeOnUIThread(() => inner.GetKindText(kind));
+		public string GetKindText(ClipboardKind kind) => Run(() => inner.GetKindText(kind), "");
 
-		public string[] GetFiles() => owner.InvokeOnUIThread(inner.GetFiles);
+		public string[] GetFiles() => Run(inner.GetFiles, []);
 
-		public void SetAll(IReadOnlyList<ClipboardEntry> entries) => owner.InvokeOnUIThread(() => inner.SetAll(entries));
+		public void SetAll(IReadOnlyList<ClipboardEntry> entries) => Run(() => inner.SetAll(entries));
 
-		public byte[] CaptureAll() => owner.InvokeOnUIThread(inner.CaptureAll);
+		public byte[] CaptureAll() => Run(inner.CaptureAll, []);
 
-		public void RestoreAll(Keysharp.Builtins.ClipboardAll clip) => owner.InvokeOnUIThread(() => inner.RestoreAll(clip));
+		public void RestoreAll(Keysharp.Builtins.ClipboardAll clip) => Run(() => inner.RestoreAll(clip));
 
 		public IDisposable Subscribe(Action onChanged) => owner.InvokeOnUIThread(() => inner.Subscribe(onChanged));
+
+		private T Run<T>(Func<T> operation, T failed)
+		{
+			try
+			{
+				return owner.InvokeOnUIThread(operation);
+			}
+			catch (ClipboardOperationException ex)
+			{
+				_ = Keysharp.Builtins.Errors.ErrorOccurred(ex.Message);
+				return failed;
+			}
+		}
+
+		private void Run(Action operation) => Run(() => { operation(); return true; }, false);
 	}
 
 	/// <summary>
@@ -135,12 +149,10 @@ namespace Keysharp.Internals
 	}
 
 	/// <summary>
-	/// The parts of <see cref="IClipboard"/> that are the same on every platform, derived from one authority:
-	/// <see cref="IClipboard.GetFormats"/>. Emptiness and the OnClipboardChange type used to be answered three
-	/// different ways (a reflected format-name list on Windows, Eto's typed <c>Contains*</c> flags elsewhere, a
-	/// cached mimetype array on the Wayland extension) and disagreed with each other and with AHK; deriving them
-	/// from the format list makes all three identical and matches AHK's own
-	/// <c>CF_NATIVETEXT || CF_HDROP</c> test for "text".
+	/// The parts of <see cref="IClipboard"/> that the backends share, derived from one snapshot of
+	/// <see cref="IClipboard.GetFormats"/> per operation, so emptiness, the kinds and the OnClipboardChange type agree
+	/// with each other and with AHK's <c>CF_NATIVETEXT || CF_HDROP</c> test for "text". Windows overrides them with
+	/// presence checks that leave the clipboard closed.
 	/// </summary>
 	internal abstract class ClipboardBase : IClipboard
 	{
@@ -165,15 +177,20 @@ namespace Keysharp.Internals
 
 		public virtual string[] GetFiles() => ParseUriList(Decode(FirstPresentData(ClipboardKind.Files), Encoding.UTF8));
 
-		/// <summary>The bytes of the first of a kind's formats that is actually present, or null.</summary>
+		/// <summary>The bytes of the first of a kind's formats that one snapshot of the format list shows, or null.</summary>
 		protected byte[] FirstPresentData(ClipboardKind kind)
 		{
+			var formats = GetFormats();
+
 			foreach (var format in KindFormats(kind))
-				if (Has(format) && GetData(format) is byte[] bytes)
+				if (ContainsFormat(formats, format) && GetData(format) is byte[] bytes)
 					return bytes;
 
 			return null;
 		}
+
+		protected static bool ContainsFormat(string[] formats, string format)
+			=> formats.Contains(format, StringComparer.OrdinalIgnoreCase);
 
 		/// <summary>Clipboard payloads are routinely null-terminated (every Windows text format is), and a trailing
 		/// NUL in a script string is a bug that surfaces far from here.</summary>
@@ -203,17 +220,7 @@ namespace Keysharp.Internals
 			return [.. paths];
 		}
 
-		public virtual bool Has(string format)
-		{
-			if (string.IsNullOrEmpty(format))
-				return false;
-
-			foreach (var f in GetFormats())
-				if (string.Equals(f, format, StringComparison.OrdinalIgnoreCase))
-					return true;
-
-			return false;
-		}
+		public virtual bool Has(string format) => !string.IsNullOrEmpty(format) && ContainsFormat(GetFormats(), format);
 
 		public virtual int ChangeType()
 		{
@@ -222,8 +229,7 @@ namespace Keysharp.Internals
 			if (formats.Length == 0)
 				return 0;
 
-			// AHK reports 1 for text OR files, 2 for anything else present. Deriving it here rather than per
-			// backend is what fixed a file copy reporting 2 on Linux while reporting 1 on Windows.
+			// AHK reports 1 for text or files, 2 for anything else present.
 			return HasKind(formats, ClipboardKind.Text) || HasKind(formats, ClipboardKind.Files) ? 1 : 2;
 		}
 
@@ -233,9 +239,8 @@ namespace Keysharp.Internals
 		protected bool HasKind(string[] formats, ClipboardKind kind)
 		{
 			foreach (var candidate in KindFormats(kind))
-				foreach (var present in formats)
-					if (string.Equals(present, candidate, StringComparison.OrdinalIgnoreCase))
-						return true;
+				if (ContainsFormat(formats, candidate))
+					return true;
 
 			return false;
 		}
@@ -288,8 +293,8 @@ namespace Keysharp.Internals
 
 		/// <summary>
 		/// The toolkit's advertised target list, plus a canonical MIME name for any typed content Eto reports but
-		/// does not list. Both halves are needed: GTK can hand back an empty <c>Types</c> while <c>ContainsText</c>
-		/// is true, and the typed flags alone cannot see a private format.
+		/// does not list. Both halves are needed: GTK can hand back an empty <c>Types</c> while it holds text, and the
+		/// typed flags alone cannot see a private format.
 		/// </summary>
 		public override string[] GetFormats()
 		{
@@ -298,27 +303,29 @@ namespace Keysharp.Internals
 			if (clip == null)
 				return System.Array.Empty<string>();
 
+			// GTK's TARGETS/TIMESTAMP protocol machinery is not user data.
 			var formats = new List<string>((clip.Types ?? System.Array.Empty<string>()).Where(type => !IsClipboardProtocolType(type)));
-			var text = clip.ContainsText ? clip.Text : null;
 
 			// GTK must keep ownership with an empty text offer after a clear; otherwise an X11 clipboard manager can
-			// restore the previous content. Hide that implementation detail so scripts still see a genuinely empty
-			// clipboard, and do not count GTK's TARGETS/TIMESTAMP protocol machinery as user data.
-			if (string.IsNullOrEmpty(text))
-				formats.RemoveAll(IsTextType);
-
-			void AddIfMissing(bool present, string canonical, string[] equivalents)
+			// restore the previous content. Only an offer of text alone can be that one, so only then is the text
+			// transferred, to tell it apart and show a genuinely empty clipboard.
+			if (formats.TrueForAll(IsTextType))
 			{
-				if (!present || formats.Any(f => equivalents.Contains(f, StringComparer.OrdinalIgnoreCase)))
-					return;
-
-				formats.Add(canonical);
+				if (string.IsNullOrEmpty(clip.Text))
+					formats.Clear();
+				else if (formats.Count == 0)
+					formats.Add("text/plain");
 			}
 
-			AddIfMissing(!string.IsNullOrEmpty(text), "text/plain", TextMimes);
-			AddIfMissing(clip.ContainsHtml, "text/html", HtmlMimes);
-			AddIfMissing(clip.ContainsImage, "image/png", ImageMimes);
-			AddIfMissing(clip.ContainsUris, "text/uri-list", FileMimes);
+			if (!formats.Exists(f => HtmlMimes.Contains(f, StringComparer.OrdinalIgnoreCase)) && clip.ContainsHtml)
+				formats.Add("text/html");
+
+			if (!formats.Exists(f => ImageMimes.Contains(f, StringComparer.OrdinalIgnoreCase)) && clip.ContainsImage)
+				formats.Add("image/png");
+
+			if (!formats.Exists(f => FileMimes.Contains(f, StringComparer.OrdinalIgnoreCase)) && clip.ContainsUris)
+				formats.Add("text/uri-list");
+
 			return [.. formats];
 		}
 
@@ -327,10 +334,16 @@ namespace Keysharp.Internals
 			if (string.IsNullOrEmpty(format) || IsClipboardProtocolType(format))
 				return false;
 
-			if (IsTextType(format) && string.IsNullOrEmpty(GetText()))
-				return false;
+			var clip = Clipboard.Instance as Eto.Forms.Clipboard;
 
-			return Clipboard.Instance is Eto.Forms.Clipboard clip && (clip.Contains(format) || base.Has(format));
+			// A text type needs the snapshot, which hides the empty text offer; any other is one Contains probe first.
+			if (IsTextType(format))
+			{
+				var formats = GetFormats();
+				return HasKind(formats, ClipboardKind.Text) && (ContainsFormat(formats, format) || clip?.Contains(format) == true);
+			}
+
+			return clip?.Contains(format) == true || ContainsFormat(GetFormats(), format);
 		}
 
 		public override byte[] GetData(string format)
@@ -427,10 +440,6 @@ namespace Keysharp.Internals
 			clip.Clear();
 			clip.Text = text ?? "";
 		}
-
-		// IsEmpty and ChangeType are derived from GetFormats in ClipboardBase — the same derivation every backend
-		// now uses. The typed Contains* flags this used to consult are folded into GetFormats instead, so a file
-		// copy is reported as type 1 here exactly as it is on Windows (it used to report 2).
 
 		/// <summary>Prefer Eto's typed HTML accessor, which knows each toolkit's own HTML target name; fall back to
 		/// the generic per-format read.</summary>
@@ -906,9 +915,8 @@ namespace Keysharp.Internals
 		private string[] CurrentMimetypes => monitoring ? cachedMimetypes : Backend?.GetClipboardMimetypes();
 
 		/// <summary>
-		/// The extension's mimetype list. IsEmpty, ChangeType, Has and every kind lookup are derived from this one
-		/// override in <see cref="ClipboardBase"/>, replacing the three hand-written variants that used to sit here
-		/// and disagree with the other backends.
+		/// The extension's mimetype list, from which <see cref="ClipboardBase"/> derives IsEmpty, ChangeType, Has and
+		/// every kind lookup.
 		/// </summary>
 		public override string[] GetFormats()
 		{
@@ -934,17 +942,7 @@ namespace Keysharp.Internals
 		}
 
 		// Eto's Contains() asks a clipboard this backend is not using; go by the extension's own list instead.
-		public override bool Has(string format)
-		{
-			if (string.IsNullOrEmpty(format))
-				return false;
-
-			foreach (var mime in GetFormats())
-				if (string.Equals(mime, format, StringComparison.OrdinalIgnoreCase))
-					return true;
-
-			return false;
-		}
+		public override bool Has(string format) => !string.IsNullOrEmpty(format) && ContainsFormat(GetFormats(), format);
 
 		public override byte[] GetData(string format)
 		{
@@ -1228,222 +1226,113 @@ namespace Keysharp.Internals
 
 #if WINDOWS
 	/// <summary>
-	/// The Windows clipboard: raw Win32 (OpenClipboard/SetClipboardData) so A_ClipboardTimeout is honored under the
-	/// single-owner lock and a text write fires WM_CLIPBOARDUPDATE exactly once (matching AutoHotkey), plus the
-	/// typed WinForms Clipboard API for reads and images.
+	/// The Windows clipboard. Text, files, formats and ClipboardAll go through raw Win32 as AutoHotkey's do: each open
+	/// honors A_ClipboardTimeout, a write fires WM_CLIPBOARDUPDATE once, and the presence checks leave the clipboard
+	/// closed. Images go through the typed WinForms Clipboard API.
 	/// </summary>
 	internal sealed class WindowsClipboard : ClipboardBase
 	{
+		// CLIPBRD_E_CANT_OPEN, which the WinForms clipboard raises once its own retries run out.
+		private const int ClipboardCantOpen = unchecked((int)0x800401D0);
+
+		// Native format ids for each canonical kind, most preferred first.
+		private static readonly uint[] textFormats = [WindowsAPI.CF_UNICODETEXT, WindowsAPI.CF_TEXT, WindowsAPI.CF_OEMTEXT];
+		private static readonly uint[] imageFormats = [WindowsAPI.CF_BITMAP, WindowsAPI.CF_DIB, WindowsAPI.CF_DIBV5, FormatId("PNG")];
+		private static readonly uint[] fileFormats = [WindowsAPI.CF_HDROP];
+		private static readonly uint[] htmlFormats = [FormatId(DataFormats.Html)];
+		private static readonly uint[] rtfFormats = [FormatId(DataFormats.Rtf), FormatId("Rich Text Format Without Objects")];
+
 		private readonly Script owner;
 
 		internal WindowsClipboard(Script owner)
 			=> this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
 
-		// Windows format names for each canonical kind, most preferred first. These are the names
-		// DataFormats/GetClipboardFormatName report, NOT the CF_* constant spellings.
-		private static readonly string[] textFormats = [DataFormats.UnicodeText, DataFormats.Text, DataFormats.OemText];
-		private static readonly string[] imageFormats = [DataFormats.Bitmap, DataFormats.Dib, "Format17", "PNG"];
-		private static readonly string[] fileFormats = [DataFormats.FileDrop];
-		private static readonly string[] htmlFormats = [DataFormats.Html];
-		private static readonly string[] rtfFormats = [DataFormats.Rtf, "Rich Text Format Without Objects"];
+		public override bool IsEmpty => WindowsAPI.CountClipboardFormats() == 0;
 
-		public override string GetText()
-		{
-			// OpenClipboard/CloseClipboard honors A_ClipboardTimeout under the Win32 single-owner lock.
-			if (WindowsAPI.OpenClipboard(owner.AccessorData.clipboardTimeout))
-			{
-				// Whether plain text is present, captured while we still hold the clipboard open (stable — no other
-				// process can be mid-update). Scopes the retry below so empty/non-text clipboards are never delayed.
-				var hasText = WindowsAPI.IsClipboardFormatAvailable(WindowsAPI.CF_UNICODETEXT)
-					|| WindowsAPI.IsClipboardFormatAvailable(WindowsAPI.CF_TEXT);
-				_ = WindowsAPI.CloseClipboard();//Need to close it for it to work
+		/// <summary>The OnClipboardChange type, by AutoHotkey's formula.</summary>
+		public override int ChangeType()
+			=> WindowsAPI.CountClipboardFormats() == 0 ? 0
+			   : WindowsAPI.IsClipboardFormatAvailable(WindowsAPI.CF_UNICODETEXT) || WindowsAPI.IsClipboardFormatAvailable(WindowsAPI.CF_HDROP) ? 1 : 2;
 
-				// Clipboard.TryGetData<string> (the .NET 9 typed API) intermittently reports a present text format as
-				// empty for a couple of ticks right after an OLE-flushed SetDataObject when another process (e.g. a
-				// clipboard-history service) touches the clipboard between our CloseClipboard and the read. The value
-				// materializes on a re-read, so since we know text is present, retry the text read until it does.
-				for (var attempt = 0; hasText; attempt++)
-				{
-					// The OS stores clipboard text with CRLF line endings; normalize to `n on the way out so
-					// script-visible text uses the same line ending as everywhere else in Keysharp.
-					if (Clipboard.TryGetData<string>(DataFormats.UnicodeText, out var uni) && !string.IsNullOrEmpty(uni))
-						return Conversions.ReplaceLineEndings(uni);
+		public override bool HasKind(ClipboardKind kind) => FirstAvailable(KindIds(kind)) != 0;
 
-					if (Clipboard.TryGetData<string>(DataFormats.Text, out var text) && !string.IsNullOrEmpty(text))
-						return Conversions.ReplaceLineEndings(text);
+		public override bool Has(string format) => FormatId(format) is var id and not 0 && WindowsAPI.IsClipboardFormatAvailable(id);
 
-					if (attempt >= 3)
-						break;
-
-					Flow.SleepWithoutInterruption(1);
-				}
-
-				if (Clipboard.TryGetData<string>(DataFormats.Html, out var html))
-					return html;
-
-				if (Clipboard.TryGetData<string>(DataFormats.Rtf, out var rtf))
-					return rtf;
-
-				if (Clipboard.TryGetData<string>(DataFormats.SymbolicLink, out var sym))
-					return sym;
-
-				if (Clipboard.TryGetData<string>(DataFormats.OemText, out var oem))
-					return Conversions.ReplaceLineEndings(oem);
-
-				if (Clipboard.TryGetData<string>(DataFormats.CommaSeparatedValue, out var csv))
-					return csv;
-
-				if (Clipboard.TryGetData<string[]>(DataFormats.FileDrop, out var files))
-					return string.Join(DefaultNewLine, files);
-			}
-
-			return "";
-		}
-
-		public override void SetText(string text)
-		{
-			if (WindowsAPI.OpenClipboard(owner.AccessorData.clipboardTimeout))
-			{
-				// A single raw Win32 transaction (EmptyClipboard + SetClipboardData) fires WM_CLIPBOARDUPDATE exactly
-				// once, matching AutoHotkey. Clipboard.SetDataObject(copy:true) would instead do OleSetClipboard then
-				// OleFlushClipboard, firing the clipboard-change notification twice per assignment.
-				_ = WindowsAPI.EmptyClipboard();
-
-				if (!string.IsNullOrEmpty(text))
-				{
-					// Store with native CRLF line endings (like Gui control text is written) so the text pastes
-					// correctly into other Windows apps. GetText normalizes back to `n on read.
-					var hglobal = Marshal.StringToHGlobalUni(Conversions.ReplaceLineEndings(text, Environment.NewLine));
-
-					if (WindowsAPI.SetClipboardData(WindowsAPI.CF_UNICODETEXT, hglobal) == 0)
-						Marshal.FreeHGlobal(hglobal);//SetClipboardData failed, so ownership stays with us.
-					//On success the system takes ownership of hglobal and frees it; do not free it here.
-				}
-
-				_ = WindowsAPI.CloseClipboard();
-			}
-		}
+		public override string[] KindFormats(ClipboardKind kind) => System.Array.ConvertAll(KindIds(kind), FormatName);
 
 		/// <summary>
-		/// Every advertised format, from <c>EnumClipboardFormats</c> — the exact answer, private and registered
-		/// formats included. The previous implementation probed <c>Clipboard.ContainsData</c> with the *field names*
-		/// of <see cref="DataFormats"/> ("Html", "Rtf", "Dib") rather than their values ("HTML Format",
-		/// "Rich Text Format", "DeviceIndependentBitmap"), so it asked for formats that do not exist and reported a
-		/// clipboard holding only HTML/RTF/CSV/DIB or any custom format as EMPTY — which in turn made
-		/// OnClipboardChange announce "clipboard is now empty" and hung <c>ClipWait(, 1)</c>.
+		/// The text, or the copied files one path per line, as AutoHotkey's Clipboard::Get reads them. The clipboard is
+		/// opened only when one of the two is present, and nothing else is converted to text.
 		/// </summary>
+		public override string GetText()
+		{
+			if (!WindowsAPI.IsClipboardFormatAvailable(WindowsAPI.CF_UNICODETEXT))
+				return string.Join(DefaultNewLine, GetFiles());
+
+			using var clipboard = Open(forWriting: false);
+			// A source can set a null handle and then fail to render it, which reads as no text. The OS stores text
+			// with CRLF line endings; script-visible text uses `n, as everywhere else in Keysharp.
+			var handle = WindowsAPI.GetClipboardData(WindowsAPI.CF_UNICODETEXT);
+			return handle == 0 ? "" : Conversions.ReplaceLineEndings(ReadText(handle));
+		}
+
+		// An empty text empties the clipboard rather than publishing an empty string, as AutoHotkey's does.
+		public override void SetText(string text)
+			=> SetAll(string.IsNullOrEmpty(text) ? [] : [ClipboardEntry.Of(ClipboardKind.Text, text)]);
+
+		/// <summary>Every advertised format, private and registered ones included.</summary>
 		public override string[] GetFormats()
 		{
-			if (!WindowsAPI.OpenClipboard(owner.AccessorData.clipboardTimeout))
-				return System.Array.Empty<string>();
+			using var clipboard = Open(forWriting: false);
+			var names = new List<string>();
 
-			try
-			{
-				var names = new List<string>();
+			for (var id = WindowsAPI.EnumClipboardFormats(0); id != 0; id = WindowsAPI.EnumClipboardFormats(id))
+				names.Add(FormatName(id));
 
-				for (var id = WindowsAPI.EnumClipboardFormats(0); id != 0; id = WindowsAPI.EnumClipboardFormats(id))
-				{
-					// GetFormat resolves both the standard ids and registered ones, and caches; an id whose name
-					// cannot be resolved is reported numerically rather than dropped, so nothing goes missing.
-					var name = DataFormats.GetFormat((int)id)?.Name;
-					names.Add(string.IsNullOrEmpty(name) ? id.ToString(CultureInfo.InvariantCulture) : name);
-				}
-
-				return [.. names];
-			}
-			finally
-			{
-				_ = WindowsAPI.CloseClipboard();
-			}
+			return [.. names];
 		}
 
-		// A single probe needs no enumeration and no clipboard lock at all.
-		public override bool Has(string format)
-			=> !string.IsNullOrEmpty(format)
-			   && ClipFormatStringToInt(format) is var id and not 0
-			   && WindowsAPI.IsClipboardFormatAvailable((uint)id);
-
-		public override string[] KindFormats(ClipboardKind kind) => kind switch
-		{
-			ClipboardKind.Text => textFormats,
-			ClipboardKind.Image => imageFormats,
-			ClipboardKind.Files => fileFormats,
-			ClipboardKind.Html => htmlFormats,
-			_ => rtfFormats,
-		};
-
-		public override byte[] GetData(string format)
-		{
-			var id = ClipFormatStringToInt(format);
-
-			if (id == 0 || !WindowsAPI.IsClipboardFormatAvailable((uint)id))
-				return null;
-
-			var nulldata = false;
-			return GetClipboardData(id, ref nulldata) ?? (nulldata ? System.Array.Empty<byte>() : null);
-		}
+		public override byte[] GetData(string format) => ReadFormat(FormatId(format));
 
 		public override string GetKindText(ClipboardKind kind) => kind switch
 		{
 			ClipboardKind.Text => GetText(),
-			ClipboardKind.Html => ClipboardHtml.Unwrap(FirstPresentData(ClipboardKind.Html)),
+			ClipboardKind.Html => ClipboardHtml.Unwrap(ReadFormat(FirstAvailable(htmlFormats))),
 			// RTF is 7-bit ASCII by definition (non-ASCII travels as \uNNNN escapes inside it).
-			ClipboardKind.Rtf => Decode(FirstPresentData(ClipboardKind.Rtf), Encoding.ASCII),
+			ClipboardKind.Rtf => Decode(ReadFormat(FirstAvailable(rtfFormats)), Encoding.ASCII),
 			_ => "",
 		};
 
-		// The typed accessor decodes the DROPFILES blob for us, and is the same API GetText already reads through.
 		public override string[] GetFiles()
-			=> Clipboard.TryGetData<string[]>(DataFormats.FileDrop, out var files) && files != null
-			   ? files
-			   : System.Array.Empty<string>();
+		{
+			if (!WindowsAPI.IsClipboardFormatAvailable(WindowsAPI.CF_HDROP))
+				return [];
+
+			using var clipboard = Open(forWriting: false);
+			var handle = WindowsAPI.GetClipboardData(WindowsAPI.CF_HDROP);
+			return handle == 0 ? [] : ReadDropFiles(handle);
+		}
 
 		/// <summary>
 		/// One raw Win32 transaction — EmptyClipboard plus one SetClipboardData per format — so every format lands
 		/// together and WM_CLIPBOARDUPDATE fires exactly once. The OLE route (<c>Clipboard.SetDataObject</c>) would
-		/// have been shorter but notifies twice, the same reason <see cref="SetText"/> is hand-written.
+		/// have been shorter but notifies twice.
 		/// </summary>
 		public override void SetAll(IReadOnlyList<ClipboardEntry> entries)
 		{
-			if (!WindowsAPI.OpenClipboard(owner.AccessorData.clipboardTimeout))
+			using var clipboard = Open(forWriting: true);
+
+			if (entries == null)
 				return;
 
-			try
-			{
-				_ = WindowsAPI.EmptyClipboard();
-
-				if (entries == null)
-					return;
-
-				foreach (var entry in entries)
-				{
-					foreach (var (format, bytes) in EncodeEntry(entry))
-					{
-						var id = ClipFormatStringToInt(format);
-
-						if (id == 0 || bytes == null)
-							continue;
-
-						var handle = WindowsAPI.GlobalCopy(bytes);
-
-						if (handle == 0)
-							continue;
-
-						// On success the system owns the handle; on failure we must free it ourselves.
-						if (WindowsAPI.SetClipboardData((uint)id, handle) == 0)
-							_ = WindowsAPI.GlobalFree(handle);
-					}
-				}
-			}
-			finally
-			{
-				_ = WindowsAPI.CloseClipboard();
-			}
+			foreach (var entry in entries)
+				foreach (var (format, bytes) in EncodeEntry(entry))
+					if (FormatId(format) is var id and not 0 && bytes != null)
+						SetData(id, bytes);
 		}
 
-		/// <summary>The native representation(s) of one entry. A canonical kind can expand to several formats — text
-		/// is published as both CF_UNICODETEXT and CF_TEXT, and an image as both DIB flavors — because that is what
-		/// applications actually look for.</summary>
+		/// <summary>The native representation(s) of one entry. A canonical kind can expand to several formats — an
+		/// image is published as both CF_DIB and PNG — because that is what applications actually look for.</summary>
 		private static IEnumerable<(string Format, byte[] Bytes)> EncodeEntry(ClipboardEntry entry)
 		{
 			if (entry.Format != null)
@@ -1457,7 +1346,7 @@ namespace Keysharp.Internals
 			{
 				case ClipboardKind.Text:
 				{
-					// CRLF on the way out, like SetText: this is what other Windows apps expect to paste.
+					// CRLF on the way out: this is what other Windows apps expect to paste.
 					var text = Conversions.ReplaceLineEndings(entry.Value as string ?? "", Environment.NewLine);
 					yield return (DataFormats.UnicodeText, Encoding.Unicode.GetBytes(text + "\0"));
 
@@ -1528,7 +1417,7 @@ namespace Keysharp.Internals
 				if (!string.IsNullOrEmpty(p))
 					_ = sb.Append(p).Append('\0');
 
-			_ = sb.Append('\0');   // the list's own terminator
+			_ = sb.Append(sb.Length == 0 ? "\0\0" : "\0");
 			var listBytes = Encoding.Unicode.GetBytes(sb.ToString());
 			var buffer = new byte[20 + listBytes.Length];
 			BitConverter.TryWriteBytes(buffer.AsSpan(0), 20);    // DROPFILES.pFiles — offset of the list
@@ -1540,139 +1429,93 @@ namespace Keysharp.Internals
 
 		public override Bitmap GetImage()
 		{
-			if (System.Windows.Forms.Clipboard.GetImage() is not System.Drawing.Image img)
-				return null;
-
-			var bmp = new Bitmap(img);   // detach a private copy from the clipboard object
-			img.Dispose();
-			return bmp;
-		}
-
-		// Deliberately NOT routed through SetAll: the toolkit publishes a richer format set for a lone image
-		// (CF_BITMAP and both DIB flavors, which some older apps require) than the raw DIB+PNG pair SetAll can
-		// build. SetAll's raw path exists for atomicity across formats, which a single image does not need.
-		public override void SetImage(Bitmap image) => System.Windows.Forms.Clipboard.SetImage(image);
-
-		public override byte[] CaptureAll()
-		{
-			using (var ms = new MemoryStream())
-			{
-				var dibToOmit = 0;
-				var bw = new BinaryWriter(ms);
-				var dataObject = Clipboard.GetDataObject();
-
-				if (dataObject != null)
-				{
-					foreach (var format in dataObject.GetFormats())
-					{
-						var fi = ClipFormatStringToInt(format);
-
-						switch (fi)
-						{
-							case WindowsAPI.CF_BITMAP:
-							case WindowsAPI.CF_ENHMETAFILE:
-							case WindowsAPI.CF_DSPENHMETAFILE:
-								continue;//These formats appear to be specific handle types, not always safe to call GlobalSize() for.
-						}
-
-						if (fi == WindowsAPI.CF_TEXT || fi == WindowsAPI.CF_OEMTEXT || fi == dibToOmit)
-							continue;
-
-						if (dibToOmit == 0)
-						{
-							if (fi == WindowsAPI.CF_DIB)
-								dibToOmit = WindowsAPI.CF_DIBV5;
-							else if (fi == WindowsAPI.CF_DIBV5)
-								dibToOmit = WindowsAPI.CF_DIB;
-						}
-					}
-
-					foreach (var format in dataObject.GetFormats())
-					{
-						var fi = ClipFormatStringToInt(format);
-						var nulldata = false;
-
-						switch (fi)
-						{
-							case WindowsAPI.CF_BITMAP:
-							case WindowsAPI.CF_ENHMETAFILE:
-							case WindowsAPI.CF_DSPENHMETAFILE:
-								// These formats appear to be specific handle types, not always safe to call GlobalSize() for.
-								continue;
-						}
-
-						if (fi == WindowsAPI.CF_TEXT || fi == WindowsAPI.CF_OEMTEXT || fi == dibToOmit)
-							continue;
-
-						var buf = GetClipboardData(fi, ref nulldata);
-
-						if (buf != null)
-						{
-						}
-						else if (nulldata)
-							buf = [];//This format usually has null data.
-						else
-							continue;//GetClipboardData() failed: skip this format.
-
-						bw.Write(fi);
-						bw.Write(buf.Length);
-						bw.Write(buf);
-					}
-
-					if (ms.Position > 0)
-					{
-						bw.Write(0);
-						return ms.ToArray();
-					}
-				}
-			}
-
-			return System.Array.Empty<byte>();
-		}
-
-		public override unsafe void RestoreAll(Keysharp.Builtins.ClipboardAll clip)
-		{
-			var wasOpened = false;
-
 			try
 			{
-				if (WindowsAPI.OpenClipboard(owner.AccessorData.clipboardTimeout))//Need to leave it open for it to work when using the Windows API.
-				{
-					wasOpened = true;
-					_ = WindowsAPI.EmptyClipboard();
-					var ptr = (nint)clip.Ptr;
-					var length = (long)clip.Size;
-
-					for (var index = 0; index < length;)
-					{
-						var cliptype = Unsafe.Read<uint>((void*)nint.Add(ptr, index));
-
-						if (cliptype == 0)
-							break;
-
-						index += 4;
-						var size = Unsafe.Read<int>((void*)nint.Add(ptr, index));
-						index += 4;
-
-						if (size > 0 && index + size <= length)
-						{
-							// GMEM_MOVEABLE, as SetClipboardData documents; the system owns the handle on success
-							// and we free it only when the call fails. (Same helper as SetAll, so the two
-							// multi-format writers allocate identically.)
-							var hglobal = WindowsAPI.GlobalCopy(new ReadOnlySpan<byte>((void*)nint.Add(ptr, index), size));
-
-							if (hglobal != 0 && WindowsAPI.SetClipboardData(cliptype, hglobal) == 0)
-								_ = WindowsAPI.GlobalFree(hglobal);
-
-							index += size;
-						}
-					}
-				}
+				// A private copy, detached from the clipboard's object.
+				using var image = System.Windows.Forms.Clipboard.GetImage();
+				return image == null ? null : new Bitmap(image);
 			}
-			finally
+			catch (ExternalException ex) when (ex.HResult == ClipboardCantOpen)
 			{
-				if (wasOpened)
-					_ = WindowsAPI.CloseClipboard();
+				throw new ClipboardOperationException("Can't open clipboard for reading.");
+			}
+		}
+
+		// Not routed through SetAll: the toolkit publishes a richer format set for a lone image (CF_BITMAP and both
+		// DIB flavors, which some older apps require) than the raw DIB+PNG pair SetAll can build. SetAll's raw path
+		// exists for atomicity across formats, which a single image does not need.
+		public override void SetImage(Bitmap image)
+		{
+			try
+			{
+				System.Windows.Forms.Clipboard.SetImage(image);
+			}
+			catch (ExternalException ex) when (ex.HResult == ClipboardCantOpen)
+			{
+				throw new ClipboardOperationException("Can't open clipboard for writing.");
+			}
+		}
+
+		/// <summary>
+		/// Every format, in one open of the clipboard, as AutoHotkey's Var::GetClipboardAll captures them: the GDI
+		/// handle formats, the text flavors Windows synthesizes from CF_UNICODETEXT and the second DIB flavor are left
+		/// out, and so is a format that gives no data.
+		/// </summary>
+		public override byte[] CaptureAll()
+		{
+			using var clipboard = Open(forWriting: false);
+			using var ms = new MemoryStream();
+			using var bw = new BinaryWriter(ms);
+			var dibToOmit = 0u;
+
+			for (var format = WindowsAPI.EnumClipboardFormats(0); format != 0; format = WindowsAPI.EnumClipboardFormats(format))
+			{
+				switch (format)
+				{
+					case WindowsAPI.CF_BITMAP:
+					case WindowsAPI.CF_ENHMETAFILE:
+					case WindowsAPI.CF_DSPENHMETAFILE:
+					case WindowsAPI.CF_TEXT:
+					case WindowsAPI.CF_OEMTEXT:
+						continue;
+				}
+
+				if (format == dibToOmit || CopyFromOpenClipboard(format) is not byte[] data)
+					continue;
+
+				if (dibToOmit == 0)
+					dibToOmit = format == WindowsAPI.CF_DIB ? WindowsAPI.CF_DIBV5 : format == WindowsAPI.CF_DIBV5 ? WindowsAPI.CF_DIB : 0u;
+
+				bw.Write(format);
+				bw.Write(data.Length);
+				bw.Write(data);
+			}
+
+			if (ms.Length == 0)
+				return [];
+
+			bw.Write(0);
+			bw.Flush();
+			return ms.ToArray();
+		}
+
+		/// <summary>Restores a <c>ClipboardAll</c> blob as AutoHotkey's Var::SetClipboardAll does, stopping at an entry
+		/// that runs past the end of a truncated blob.</summary>
+		public override void RestoreAll(Keysharp.Builtins.ClipboardAll clip)
+		{
+			using var clipboard = Open(forWriting: true);
+			ReadOnlySpan<byte> blob = clip.AsSpan();
+
+			while (blob.Length >= 8)
+			{
+				var format = MemoryMarshal.Read<uint>(blob);
+				var size = MemoryMarshal.Read<uint>(blob[4..]);
+
+				if (format == 0 || size > blob.Length - 8)
+					break;
+
+				SetData(format, blob.Slice(8, (int)size));
+				blob = blob[(8 + (int)size)..];
 			}
 		}
 
@@ -1680,46 +1523,154 @@ namespace Keysharp.Internals
 		// a subscription — so nothing calls this on Windows.
 		public override IDisposable Subscribe(Action onChanged) => null;
 
-		// GetFormat(string) resolves a known name and REGISTERS an unknown one, which is what a script naming a
-		// private format needs. The numeric branch closes the round trip for a format whose id GetFormats could not
-		// name: without it, feeding that decimal string back would register a new format literally called "49234".
-		private static int ClipFormatStringToInt(string fmt)
-			=> string.IsNullOrEmpty(fmt) ? 0
-			   : uint.TryParse(fmt, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? (int)id
-			   : GetFormat(fmt) is Format d ? d.Id : 0;
-
-		// Get the clipboard data in the given integer format. Gotten from:
-		// http://pinvoke.net/default.aspx/user32/GetClipboardData.html
-		private byte[] GetClipboardData(int format, ref bool nullData)
+		private readonly struct ClipboardScope : IDisposable
 		{
-			if (format != 0)
+			public void Dispose() => _ = WindowsAPI.CloseClipboard();
+		}
+
+		// A raw write starts by emptying the clipboard; the returned scope keeps it open through all formats.
+		private ClipboardScope Open(bool forWriting)
+		{
+			// EmptyClipboard assigns this window as owner, which SetClipboardData requires for a write.
+			if (!WindowsAPI.OpenClipboard(owner.AccessorData.clipboardTimeout, forWriting ? owner.MainWindowHandle : 0))
+				throw new ClipboardOperationException(forWriting ? "Can't open clipboard for writing." : "Can't open clipboard for reading.");
+
+			if (forWriting && !WindowsAPI.EmptyClipboard())
 			{
-				if (WindowsAPI.OpenClipboard(owner.AccessorData.clipboardTimeout))
-				{
-					byte[] buf;
-					nint gLock = 0;
-
-					try
-					{
-						var clipdata = WindowsAPI.GetClipboardData(format, ref nullData);//Get pointer to clipboard data in the selected format.
-						var length = (int)WindowsAPI.GlobalSize(clipdata);
-						gLock = WindowsAPI.GlobalLock(clipdata);
-						buf = new byte[length];
-
-						if (length != 0)
-							Marshal.Copy(gLock, buf, 0, length);
-					}
-					finally
-					{
-						_ = WindowsAPI.GlobalUnlock(gLock);
-						_ = WindowsAPI.CloseClipboard();
-					}
-
-					return buf;
-				}
+				_ = WindowsAPI.CloseClipboard();
+				throw new ClipboardOperationException("Can't empty clipboard.");
 			}
 
-			return null;
+			return default;
+		}
+
+		private static uint[] KindIds(ClipboardKind kind) => kind switch
+		{
+			ClipboardKind.Text => textFormats,
+			ClipboardKind.Image => imageFormats,
+			ClipboardKind.Files => fileFormats,
+			ClipboardKind.Html => htmlFormats,
+			_ => rtfFormats,
+		};
+
+		/// <summary>The first of <paramref name="formats"/> the clipboard offers, or 0.</summary>
+		private static uint FirstAvailable(uint[] formats)
+		{
+			foreach (var format in formats)
+				if (WindowsAPI.IsClipboardFormatAvailable(format))
+					return format;
+
+			return 0;
+		}
+
+		// GetFormat(string) resolves a known name and registers an unknown one, which is what a script naming a
+		// private format needs. The numeric branch closes the round trip for a format FormatName could not name:
+		// without it, feeding that decimal string back would register a new format literally called "49234".
+		private static uint FormatId(string name)
+			=> string.IsNullOrEmpty(name) ? 0
+			   : uint.TryParse(name, NumberStyles.None, CultureInfo.InvariantCulture, out var id) ? id
+			   : GetFormat(name) is Format format ? (uint)format.Id : 0;
+
+		// GetFormat resolves both the standard ids and registered ones, and caches.
+		private static string FormatName(uint id)
+			=> GetFormat((int)id)?.Name is { Length: > 0 } name ? name : id.ToString(CultureInfo.InvariantCulture);
+
+		/// <summary>A copy of one format's data, read inside one open of the clipboard, or null when it is absent.</summary>
+		private byte[] ReadFormat(uint format)
+		{
+			if (format == 0 || !WindowsAPI.IsClipboardFormatAvailable(format))
+				return null;
+
+			using var clipboard = Open(forWriting: false);
+			return CopyFromOpenClipboard(format);
+		}
+
+		/// <summary>
+		/// A copy of one format's data from the open clipboard, or null when it gives none. A format whose presence
+		/// alone carries its meaning gives an empty array, and so does a zero-size block, which cannot be locked.
+		/// </summary>
+		private static unsafe byte[] CopyFromOpenClipboard(uint format)
+		{
+			var handle = WindowsAPI.GetClipboardData(format, out var nullIsOkay);
+
+			if (handle == 0)
+				return nullIsOkay ? [] : null;
+
+			var size = (int)WindowsAPI.GlobalSize(handle);
+
+			if (size == 0)
+				return [];
+
+			var locked = WindowsAPI.GlobalLock(handle);
+
+			if (locked == 0)
+				return null;
+
+			try
+			{
+				return new ReadOnlySpan<byte>((void*)locked, size).ToArray();
+			}
+			finally
+			{
+				_ = WindowsAPI.GlobalUnlock(handle);
+			}
+		}
+
+		/// <summary>The text of a CF_UNICODETEXT block, up to its terminator but never past the end of the block.</summary>
+		private static unsafe string ReadText(nint handle)
+		{
+			var locked = WindowsAPI.GlobalLock(handle);
+
+			if (locked == 0)
+				return "";
+
+			try
+			{
+				var text = new ReadOnlySpan<char>((void*)locked, (int)(WindowsAPI.GlobalSize(handle) / sizeof(char)));
+				var end = text.IndexOf('\0');
+				return new string(end < 0 ? text : text[..end]);
+			}
+			finally
+			{
+				_ = WindowsAPI.GlobalUnlock(handle);
+			}
+		}
+
+		/// <summary>The paths of a CF_HDROP block.</summary>
+		private static unsafe string[] ReadDropFiles(nint hdrop)
+		{
+			var count = WindowsAPI.DragQueryFile(hdrop, uint.MaxValue, null, 0);
+			var paths = new string[count];
+			Span<char> pathBuffer = stackalloc char[260];
+
+			for (var i = 0u; i < count; i++)
+			{
+				var length = (int)WindowsAPI.DragQueryFile(hdrop, i, null, 0);
+				var buffer = length < pathBuffer.Length ? pathBuffer : new char[length + 1];
+
+				fixed (char* p = buffer)
+					length = (int)WindowsAPI.DragQueryFile(hdrop, i, p, (uint)buffer.Length);
+
+				paths[i] = new string(buffer[..length]);
+			}
+
+			return paths;
+		}
+
+		/// <summary>Hands one format's bytes to the open clipboard, which owns them once SetClipboardData succeeds. An
+		/// empty format gets one zeroed byte, as in AutoHotkey's SetClipboardAll, since a zero-length block is refused.</summary>
+		private static void SetData(uint format, ReadOnlySpan<byte> bytes)
+		{
+			var handle = WindowsAPI.GlobalCopy(bytes.IsEmpty ? [0] : bytes);
+
+			if (handle == 0)
+				throw new ClipboardOperationException("Could not allocate clipboard data.");
+
+			if (WindowsAPI.SetClipboardData(format, handle) == 0)
+			{
+				_ = WindowsAPI.GlobalFree(handle);
+				throw new ClipboardOperationException($"Can't write clipboard format {format}.");
+			}
 		}
 	}
 #endif

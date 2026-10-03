@@ -1,5 +1,11 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
+#Warn Experimental, Off
 #import KS { Clipboard, Image, EventHook }
+#if WINDOWS
+#import KS { RealThread, Await }
+#endif
 #Include <assert>
 
 ; The Clipboard class through real dynamic dispatch — which the C# tests bypass, so this is what proves the
@@ -38,6 +44,28 @@ AssertEq(Clipboard.Text, "fallback", A_LineNumber)
 ; can only advertise one representation keeps the text, which the previous check already covered.
 Assert(Clipboard.Html == "<b>rich</b>" || !Clipboard.Has("Html"), A_LineNumber)
 
+#if WINDOWS
+; An invalid native format raises a script error instead of silently losing the write.
+Throws(() => Clipboard.Set(Map("4294967295", "invalid")), A_LineNumber, Error)
+worker := RealThread(CheckWorkerClipboardError)
+if worker.Task.Wait(5000)
+	Assert(Await(worker.Task), A_LineNumber)
+else
+	Assert(false, A_LineNumber)
+
+CheckWorkerClipboardError()
+{
+	try Clipboard.Set(Map("4294967295", "invalid"))
+	catch Error
+		return true
+	return false
+}
+
+; A_Clipboard reads only text or copied files, as AutoHotkey's does, so HTML alone reads as "".
+Clipboard.Html := "<b>only html</b>"
+Assert(!Clipboard.IsEmpty && Clipboard.Has("Html") && !Clipboard.Has("Text") && A_Clipboard == "", A_LineNumber)
+#endif
+
 ; A Map key can name a format an object literal cannot spell.
 Clipboard.Set(Map("KeysharpScriptFormat", "raw bytes"))
 Assert(Clipboard.Has("KeysharpScriptFormat"), A_LineNumber)
@@ -54,6 +82,12 @@ img := Image.Create(20, 10, "Red")
 Clipboard.Image := img
 back := Clipboard.Image
 Assert(!Clipboard.Has("Image") || (back is Image && back.Width == 20 && back.Height == 10), A_LineNumber)
+AssertEq(img.Width, 20, A_LineNumber)
+
+#if WINDOWS
+; The kinds are answered by presence checks that see every DIB flavor.
+Assert(Clipboard.Has("Image") && !Clipboard.Has("Text") && !Clipboard.Has("Files") && !Clipboard.IsEmpty, A_LineNumber)
+#endif
 
 ; Image.FromClipboard is an alias of the same getter.
 alias := Image.FromClipboard()

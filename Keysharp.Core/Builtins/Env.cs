@@ -57,49 +57,41 @@ namespace Keysharp.Builtins
 		/// what <c>Clipboard.Wait</c> exposes; the numeric forms are unchanged.
 		/// </param>
 		/// <returns>True if it did not time out, else false.</returns>
+		/// <exception cref="ValueError">Thrown if timeout is negative or non-finite, or waitFor is invalid.</exception>
 		public static bool ClipWait(object timeout = null, object waitFor = null)
 		{
 			ClipboardPermission.EnsureMonitoring("ClipWait");
+			var timeoutMs = -1;
 
-			if (!timeout.CoerceDouble(out var to, double.MinValue))
-				return false;
-
-			var condition = ParseWaitCondition(waitFor);
-			var checktime = to != double.MinValue;
-			long frequency = 100;
-			var timeoutMs = checktime ? (long)(Math.Abs(to) * 1000) : long.MaxValue;
-			var deadline = checktime ? Environment.TickCount64 + timeoutMs : long.MaxValue;
-
-			while (true)
+			if (timeout != null)
 			{
-				if (condition())
-					return true;
+				if (!timeout.CoerceDouble(out var seconds))
+					return false;
 
-				if (checktime)
+				if (!double.IsFinite(seconds) || seconds < 0)
 				{
-					var remaining = deadline - Environment.TickCount64;
-
-					if (remaining <= 0)
-						return false;
-
-					_ = Flow.Sleep(Math.Min(frequency, remaining));
+					_ = Errors.InvalidParameterErrorOccurred(1, "ClipWait", timeout);
+					return false;
 				}
-				else
-					_ = Flow.Sleep(frequency);
+
+				timeoutMs = (int)Math.Min(seconds * 1000, int.MaxValue);
 			}
+
+			// Polled every 10 ms as AutoHotkey's Wait does, through presence checks that leave the clipboard closed.
+			return ParseWaitCondition(waitFor) is { } condition
+				   && Keysharp.Internals.Flow.WaitUntil(condition, timeoutMs, Script.SLEEP_INTERVAL);
 		}
 
 		/// <summary>
-		/// Resolves <c>waitFor</c> ONCE, into the predicate the poll loop re-tests. The per-platform tests this
-		/// replaced disagreed with each other — the Windows one asked for text-or-files, the Eto one for
-		/// text-or-html-or-uris — where AHK's own rule is a single <c>CF_NATIVETEXT || CF_HDROP</c> check, which is
-		/// exactly what <c>ChangeType() == 1</c> now means on every backend.
+		/// Resolves <c>waitFor</c> once, into the predicate the poll loop tests, or null after raising the error for
+		/// an invalid one. 0 is AutoHotkey's <c>CF_NATIVETEXT || CF_HDROP</c> check, which is what
+		/// <c>ChangeType() == 1</c> means on every backend.
 		/// </summary>
 		private static Func<bool> ParseWaitCondition(object waitFor)
 		{
 			var clip = Platform.Clipboard;
 
-			if (waitFor is string s && s.Length != 0 && !double.TryParse(s, out _))
+			if (waitFor is string s && s.Length != 0 && !s.TryParseDouble(out _))
 			{
 				if (string.Equals(s, "Any", StringComparison.OrdinalIgnoreCase))
 					return () => !clip.IsEmpty;
@@ -108,9 +100,22 @@ namespace Keysharp.Builtins
 					return () => clip.HasKind(kind);
 
 				_ = Errors.ValueErrorOccurred($"Invalid clipboard wait kind: {s}. Expected Text, Any, Image, Files, Html, Rtf, or a numeric flag.");
+				return null;
 			}
 
-			return waitFor.Ab() ? () => !clip.IsEmpty : () => clip.ChangeType() == 1;
+			if (!waitFor.CoerceLong(out var mode))
+				return null;
+
+			switch (mode)
+			{
+				case 0: return () => clip.ChangeType() == 1;
+
+				case 1: return () => !clip.IsEmpty;
+
+				default:
+					_ = Errors.InvalidParameterErrorOccurred(2, "ClipWait", waitFor);
+					return null;
+			}
 		}
 
 		/// <summary>

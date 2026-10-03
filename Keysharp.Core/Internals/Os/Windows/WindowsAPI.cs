@@ -605,62 +605,60 @@ namespace Keysharp.Internals.Os.Windows
 		[return: MarshalAs(UnmanagedType.Bool)]
 		internal static partial bool IsClipboardFormatAvailable(uint format);
 
-		internal static bool OpenClipboard(long ms)
+		[LibraryImport(user32, EntryPoint = "CountClipboardFormats")]
+		internal static partial int CountClipboardFormats();
+
+		[LibraryImport(shell32, EntryPoint = "DragQueryFileW")]
+		internal static unsafe partial uint DragQueryFile(nint hDrop, uint file, char* buffer, uint bufferLength);
+
+		/// <summary>Opens the clipboard as AutoHotkey's Clipboard::Open does: one attempt when <paramref name="timeoutMs"/>
+		/// is 0, until it opens when it is -1, and otherwise until at most half a sleep interval of it is left.</summary>
+		internal static bool OpenClipboard(long timeoutMs, nint ownerWindow = 0)
 		{
-			bool open;
-			var dtStart = DateTime.UtcNow;
-
-			while (!(open = OpenClipboard(0)))
+			for (var start = Environment.TickCount64; ;)
 			{
-				if (ms == -1)
-					break;
+				if (OpenClipboard(ownerWindow))
+					return true;
 
-				if (ms == 0)
-					break;
+				if (timeoutMs != -1 && timeoutMs - (Environment.TickCount64 - start) <= Script.SLEEP_INTERVAL_HALF)
+					return false;
 
-				if ((DateTime.UtcNow - dtStart).TotalMilliseconds > ms)
-					break;
-
-				// Pump messages (so the clipboard's current owner can respond) but stay uninterruptible while waiting:
-				// a hotkey or timer launched here might itself touch the clipboard and corrupt this operation. Matches
-				// AutoHotkey's SLEEP_WITHOUT_INTERRUPTION in Clipboard::Open().
-				Keysharp.Internals.Flow.SleepWithoutInterruption(100);
+				// Pump messages, so the clipboard's current owner can respond, but launch no thread that might itself
+				// use the clipboard.
+				Keysharp.Internals.Flow.SleepWithoutInterruption(Script.SLEEP_INTERVAL);
 			}
-
-			return open;
 		}
 
-		internal static nint GetClipboardData(int format, ref bool nullIsOkay)
+		/// <summary>
+		/// The data handle of one format of the open clipboard, as AutoHotkey's Clipboard::GetClipboardDataTimeout
+		/// gives it: 0 for the OLE link formats, whose retrieval disturbs Word and Outlook, and 0 with
+		/// <paramref name="nullIsOkay"/> set for the formats whose presence alone carries their meaning.
+		/// </summary>
+		internal static nint GetClipboardData(uint format, out bool nullIsOkay)
 		{
 			nullIsOkay = false;
-			var formatName = "";
 
-			if (format < 0xC000 || format > 0xFFFF) // It's a registered format (you're supposed to verify in-range before calling GetClipboardFormatName()).  Also helps performance.
+			// Only a registered format has a name to check.
+			if (format is >= 0xC000 and <= 0xFFFF)
 			{
-			}
-			else
-			{
-				var fmt = DataFormats.GetFormat(format);
+				var name = DataFormats.GetFormat((int)format)?.Name ?? "";
 
-				if (fmt != null)
-					formatName = fmt.Name;
-
-				if (formatName.StartsWith("Link Source", StringComparison.OrdinalIgnoreCase)
-						|| formatName.StartsWith("ObjectLink", StringComparison.OrdinalIgnoreCase)
-						|| formatName.StartsWith("OwnerLink", StringComparison.OrdinalIgnoreCase)
-						|| formatName.StartsWith("Native", StringComparison.OrdinalIgnoreCase)
-						|| formatName.StartsWith("Embed Source", StringComparison.OrdinalIgnoreCase))
+				if (name.StartsWith("Link Source", StringComparison.OrdinalIgnoreCase)
+						|| name.Equals("ObjectLink", StringComparison.OrdinalIgnoreCase)
+						|| name.Equals("OwnerLink", StringComparison.OrdinalIgnoreCase)
+						|| name.Equals("Native", StringComparison.OrdinalIgnoreCase)
+						|| name.Equals("Embed Source", StringComparison.OrdinalIgnoreCase))
 					return 0;
 
-				if (formatName.StartsWith("MSDEVColumnSelect", StringComparison.OrdinalIgnoreCase)
-						|| formatName.StartsWith("MSDEVLineSelect", StringComparison.OrdinalIgnoreCase))
+				if (name.Equals("MSDEVColumnSelect", StringComparison.OrdinalIgnoreCase)
+						|| name.Equals("MSDEVLineSelect", StringComparison.OrdinalIgnoreCase))
 				{
 					nullIsOkay = true;
 					return 0;
 				}
 			}
 
-			return GetClipboardData((uint)format);
+			return GetClipboardData(format);
 		}
 
 		[LibraryImport(kernel32, EntryPoint = "GlobalSize")]

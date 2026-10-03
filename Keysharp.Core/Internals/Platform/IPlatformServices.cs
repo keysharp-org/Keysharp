@@ -351,7 +351,8 @@ namespace Keysharp.Internals
 	/// again themselves.</para></summary>
 	internal interface IClipboard
 	{
-		/// <summary>The clipboard's text (line endings normalized to <c>\n</c>), or "" when there is none.</summary>
+		/// <summary>The clipboard's text (line endings normalized to <c>\n</c>), or "" when there is none. Windows
+		/// gives a copied file list one path per line, as AutoHotkey does.</summary>
 		string GetText();
 
 		/// <summary>Set the clipboard to plain text; "" or <c>null</c> clears the clipboard.</summary>
@@ -373,7 +374,7 @@ namespace Keysharp.Internals
 
 		/// <summary>Every format the clipboard currently advertises, under the names the platform itself uses
 		/// ("HTML Format", "FileDrop" on Windows; "text/html", "text/uri-list" elsewhere). Empty when the clipboard
-		/// is empty — this is the authority <see cref="IsEmpty"/> and <see cref="ChangeType"/> are derived from.</summary>
+		/// is empty.</summary>
 		string[] GetFormats();
 
 		/// <summary>Whether one platform-native format is present. Separate from <see cref="GetFormats"/> because
@@ -384,8 +385,7 @@ namespace Keysharp.Internals
 		/// first. Never empty; the names need not currently be present on the clipboard.</summary>
 		string[] KindFormats(ClipboardKind kind);
 
-		/// <summary>Whether the clipboard currently holds a canonical kind — one format enumeration, not one probe
-		/// per candidate name.</summary>
+		/// <summary>Whether the clipboard currently holds a canonical kind.</summary>
 		bool HasKind(ClipboardKind kind);
 
 		/// <summary>One format's raw bytes exactly as the platform stores them, or <c>null</c> when absent.</summary>
