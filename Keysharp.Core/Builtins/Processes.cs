@@ -422,13 +422,37 @@ namespace Keysharp.Builtins
 				return 0L;
 
 			var timeoutMs = timeout == null ? -1 : (int)Math.Clamp(seconds * 1000, 0, int.MaxValue);
-			var pid = 0L;
-			_ = Keysharp.Internals.Flow.WaitUntil(() =>
+			var start = Environment.TickCount64;
+
+			while (true)
 			{
-				pid = FindProcessId(name);
-				return waitClose ? pid == 0 : pid != 0;
-			}, timeoutMs, ProcessPollInterval);
-			return pid;
+				using var process = FindProcess(name);
+				var pid = process?.Id ?? 0L;
+				var remaining = timeoutMs < 0 ? -1 : (int)Math.Max(0, timeoutMs - (Environment.TickCount64 - start));
+
+				if ((waitClose ? pid == 0 : pid != 0) || remaining == 0)
+					return pid;
+
+				if (waitClose)
+				{
+					try
+					{
+						var exited = process.WaitForExitAsync();
+
+						if (!Keysharp.Internals.Flow.WaitForCompletion(exited, remaining))
+							return pid;
+
+						exited.GetAwaiter().GetResult();
+						continue;
+					}
+					catch (Win32Exception)
+					{
+						// Process discovery may succeed even when synchronization fails.
+					}
+				}
+
+				Keysharp.Internals.Flow.Sleep(remaining < 0 ? ProcessPollInterval : Math.Min(remaining, ProcessPollInterval));
+			}
 		}
 
 #if WINDOWS
@@ -527,24 +551,17 @@ namespace Keysharp.Builtins
 			try
 			{
 				var script = Script.TheScript;
-				string shellVerb = null, shellAction = target, shellParams = null;
+				string shellVerb = null, shellAction = target;
 				args = args.Trim();
 
 				if (!string.IsNullOrEmpty(args))//Args were passed separately.
 				{
-					if (shellAction.StartsWith('*'))
+					if (shellAction.StartsWith('*') || verbs.Contains(shellAction))
 					{
-						shellAction = shellAction.TrimStart('*');
-						shellVerb = shellAction;
+						shellVerb = shellAction.TrimStart('*');
 						shellAction = args;
+						args = "";
 					}
-					else if (verbs.Contains(target))
-					{
-						shellVerb = shellAction;
-						shellAction = args;
-					}
-					else
-						shellParams = args;
 				}
 				else//Try to parse args out of target.
 				{
@@ -560,127 +577,66 @@ namespace Keysharp.Builtins
 							shellVerb = phrase;
 
 						if (!string.IsNullOrEmpty(shellVerb))
-							shellAction = shellAction.Substring(firstSpace + 1);
+							shellAction = shellAction.AsSpan(firstSpace + 1).TrimStart().ToString();
 					}
 				}
 
-				if (useRunAs && !string.IsNullOrEmpty(shellVerb))
+				var hasVerb = !string.IsNullOrEmpty(shellVerb);
+
+				if (useRunAs && hasVerb)
 					return (long)Errors.ErrorOccurred("System verbs unsupported with RunAs.", DefaultErrorLong);
 
 				var parsedArgs = "";
+				var executable = hasVerb ? shellAction : target;
 
-				if (string.IsNullOrEmpty(shellVerb))
+				if (executable.StartsWith('"'))
 				{
-					if (target.StartsWith('"'))
-					{
-						//Quoting the program is how a path with spaces can still carry arguments. The quotes
-						//delimit the name within the command line and are not part of it, so they come off
-						//here: FileName is a path. ShellExecute tolerates them, exec looks the name up verbatim.
-						var nextQuote = target.IndexOf('"', 1);
+					// Quotes delimit the executable path; they are not part of ProcessStartInfo.FileName.
+					var nextQuote = executable.IndexOf('"', 1);
 
-						if (nextQuote > 0)
-						{
-							parsedArgs = target.Substring(nextQuote + 1).Trim();
-							target = target.Substring(1, nextQuote - 1).Trim();
-						}
-						else
-							target = target.Substring(1);//The closing quote was missing, which is very unlikely.
+					if (nextQuote > 0)
+					{
+						parsedArgs = executable.AsSpan(nextQuote + 1).Trim().ToString();
+						executable = executable.AsSpan(1, nextQuote - 1).Trim().ToString();
 					}
 					else
+						executable = executable.Substring(1);
+				}
+				else
+				{
+					var nextSpace = executable.IndexOfAny(SpaceTab, 1);
+
+					if (nextSpace > 0)
 					{
-						var nextSpace = target.IndexOfAny(SpaceTab, 1);
+						var program = executable.AsSpan(0, nextSpace).Trim().ToString();
 
-						if (nextSpace > 0)
+						// Split PATH-resolved commands, but keep an existing unquoted path containing spaces intact.
+						if (System.IO.File.Exists(System.IO.Path.Combine(workingDir, program))
+							|| !System.IO.Path.Exists(System.IO.Path.Combine(workingDir, executable)))
 						{
-							object oldDir = "";
-							var temp = target.Substring(0, nextSpace).Trim();
-							var setWorkingDir = !string.IsNullOrEmpty(workingDir) && System.IO.Path.Exists(workingDir);
-
-							if (setWorkingDir)
-							{
-								oldDir = A_WorkingDir;
-								A_WorkingDir = workingDir;
-							}
-
-							//Per AHK, parameters follow the program/document name, so split at the first space.
-							//Skip the split only when the whole unquoted target is itself an existing path that
-							//contains spaces (such paths should be quoted, but support them anyway); otherwise
-							//split so PATH-resolved commands like "xclock -foo" pass their args correctly.
-							if (System.IO.Path.Exists(temp) || !System.IO.Path.Exists(target))
-							{
-								parsedArgs = target.Substring(nextSpace + 1).Trim();
-								target = temp;
-							}
-
-							if (setWorkingDir)
-								A_WorkingDir = oldDir;
+							parsedArgs = executable.AsSpan(nextSpace + 1).Trim().ToString();
+							executable = program;
 						}
 					}
+				}
 
-					prc.StartInfo.FileName = target;
+				prc.StartInfo.FileName = executable;
+
+				if (hasVerb)
+					prc.StartInfo.Verb = shellVerb;
+				else
+				{
 					prc.StartInfo.UserName = string.IsNullOrEmpty(script.ProcessesData.runUser) ? null : script.ProcessesData.runUser;
 #if WINDOWS
 					prc.StartInfo.Domain = string.IsNullOrEmpty(script.ProcessesData.runDomain) ? null : script.ProcessesData.runDomain;
 					prc.StartInfo.Password = (script.ProcessesData.runPassword == null || script.ProcessesData.runPassword.Length == 0) ? null : script.ProcessesData.runPassword;
 #endif
 				}
-				else
-				{
-					if (string.IsNullOrEmpty(shellParams))//Attempt to parse out args.
-					{
-						if (shellAction.StartsWith('"'))
-						{
-							//See the matching note above: the quotes delimit the name and are not part of it.
-							var nextQuote = shellAction.IndexOf('"', 1);
-
-							if (nextQuote > 0)
-							{
-								shellParams = shellAction.Substring(nextQuote + 1).Trim();
-								shellAction = shellAction.Substring(1, nextQuote - 1).Trim();
-								parsedArgs = shellParams;
-							}
-							else
-								shellAction = shellAction.Substring(1);//The closing quote was missing, which is very unlikely.
-						}
-						else
-						{
-							var nextSpace = shellAction.IndexOfAny(SpaceTab, 1);
-
-							if (nextSpace > 0)
-							{
-								object oldDir = "";
-								var temp = shellAction.Substring(0, nextSpace).Trim();
-								var setWorkingDir = !string.IsNullOrEmpty(workingDir) && System.IO.Path.Exists(workingDir);
-
-								if (setWorkingDir)
-								{
-									oldDir = A_WorkingDir;
-									A_WorkingDir = workingDir;
-								}
-
-								//See the matching note above: split program from params at the first space unless the
-								//whole unquoted action is itself an existing path containing spaces.
-								if (System.IO.Path.Exists(temp) || !System.IO.Path.Exists(shellAction))
-								{
-									shellParams = shellAction.Substring(nextSpace + 1).Trim();
-									shellAction = temp;
-									parsedArgs = shellParams;
-								}
-
-								if (setWorkingDir)
-									A_WorkingDir = oldDir;
-							}
-						}
-					}
-
-					prc.StartInfo.FileName = shellAction;
-					prc.StartInfo.Verb = shellVerb;
-				}
 
 				prc.StartInfo.Arguments = !string.IsNullOrEmpty(args) ? args : parsedArgs;
 
 #if !WINDOWS
-				if (!string.IsNullOrEmpty(shellVerb))
+				if (hasVerb)
 					return (long)Errors.TargetErrorOccurred($"Run verbs ('*{shellVerb}') are not supported on this platform.", DefaultErrorLong);
 
 				// On Linux/macOS, UseShellExecute=true delegates to xdg-open/open, which does not
@@ -796,10 +752,10 @@ namespace Keysharp.Builtins
 			exitCallback = callback;
 			callbackScheduler = scheduler;
 
-			if ((callbackRegistration = scheduler?.RegisterPendingCallback(InvalidateCallback)) != null)
+			if ((callbackRegistration = scheduler?.RegisterPendingCallback(CancelCallback)) != null)
 				return true;
 
-			InvalidateCallback();
+			CancelCallback();
 			return false;
 		}
 
@@ -809,9 +765,9 @@ namespace Keysharp.Builtins
 		/// </summary>
 		internal void CaptureAndWait()
 		{
-			var stdout = capturedStdOut = process.StandardOutput.ReadToEndAsync();
-			var stderr = capturedStdErr = process.StandardError.ReadToEndAsync();
-			_ = Keysharp.Internals.Flow.WaitForCompletion(Task.WhenAll(process.WaitForExitAsync(), stdout, stderr), -1);
+			capturedStdOut = process.StandardOutput.ReadToEndAsync();
+			capturedStdErr = process.StandardError.ReadToEndAsync();
+			_ = Keysharp.Internals.Flow.WaitForCompletion(Task.WhenAll(process.WaitForExitAsync(), capturedStdOut, capturedStdErr), -1);
 		}
 
 		internal void StartFailed()
@@ -881,13 +837,6 @@ namespace Keysharp.Builtins
 				CancelCallback();
 
 			return result;
-		}
-
-		private void InvalidateCallback()
-		{
-			_ = Interlocked.Exchange(ref exitCallback, null);
-			_ = Interlocked.Exchange(ref callbackScheduler, null);
-			_ = Interlocked.Exchange(ref callbackRegistration, null);
 		}
 
 		private void CancelCallback()

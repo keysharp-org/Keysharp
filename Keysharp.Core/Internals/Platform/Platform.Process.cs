@@ -19,9 +19,9 @@ namespace Keysharp.Internals
 			}
 
 			/// <summary>
-			/// Runs an executable directly, without a command shell, and captures both output streams. A helper still
-			/// running after <paramref name="timeoutMs"/> is killed with its child processes and reported as failed;
-			/// the default, -1, waits indefinitely.
+			/// Runs an executable directly, without a command shell, and captures both output streams. The timeout
+			/// covers the exit and both reads; a helper still running then is killed with its child processes and
+			/// reported as failed. The default, -1, waits indefinitely.
 			/// </summary>
 			internal static CommandResult RunCommand(string fileName, string[] arguments, int timeoutMs = -1)
 			{
@@ -50,25 +50,46 @@ namespace Keysharp.Internals
 					return new(-1, string.Empty, ex.Message, false);
 				}
 
+				using var cancellation = new CancellationTokenSource();
+				Task completion = null;
+
 				try
 				{
 					// Both streams are drained concurrently before waiting, or a child that fills one pipe's
 					// buffer would block forever while we wait for it to exit.
-					var outputTask = process.StandardOutput.ReadToEndAsync();
-					var errorTask = process.StandardError.ReadToEndAsync();
+					var outputTask = process.StandardOutput.ReadToEndAsync(cancellation.Token);
+					var errorTask = process.StandardError.ReadToEndAsync(cancellation.Token);
+					completion = Task.WhenAll(process.WaitForExitAsync(cancellation.Token), outputTask, errorTask);
 
-					if (!Flow.WaitForCompletion(Task.WhenAll(process.WaitForExitAsync(), outputTask, errorTask), timeoutMs))
+					if (!Flow.WaitForCompletion(completion, timeoutMs))
 					{
-						if (!process.HasExited)
-							process.Kill(entireProcessTree: true);
+						try
+						{
+							if (!process.HasExited)
+								process.Kill(entireProcessTree: true);
+						}
+						catch (Exception ex) when (ex is InvalidOperationException or Win32Exception) { }
+
 						return new(-1, string.Empty, $"{fileName} did not finish within {timeoutMs / 1000.0} s.");
 					}
 
+					completion.GetAwaiter().GetResult();
 					return new(process.ExitCode, outputTask.GetAwaiter().GetResult(), errorTask.GetAwaiter().GetResult());
 				}
 				catch (Exception ex) when (!Flow.TryGetException<Keysharp.Builtins.Flow.UserRequestedExitException>(ex, out _))
 				{
 					return new(-1, string.Empty, ex.Message);
+				}
+				finally
+				{
+					cancellation.Cancel();
+					process.StandardOutput.Dispose();
+					process.StandardError.Dispose();
+					// A descendant may keep an inherited pipe open after its parent exits. Close our reads and observe
+					// any late failures without waiting for that descendant to exit.
+					if (completion != null)
+						_ = completion.ContinueWith(static task => _ = task.Exception, CancellationToken.None,
+							TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 				}
 			}
 

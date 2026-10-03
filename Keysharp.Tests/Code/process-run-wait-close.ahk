@@ -29,6 +29,8 @@ AssertEq(pid, "", A_LineNumber)
 	; The exit code comes back, whether the arguments are split from the target or passed separately.
 	AssertEq(RunWait('"' A_ComSpec '" /c exit 7', "", "Hide"), 7, A_LineNumber)
 	AssertEq(RunWait(A_ComSpec, "", "Hide", , "/c exit 7"), 7, A_LineNumber)
+	AssertEq(RunWait("open", "", "Hide", , '"' A_ComSpec '" /c exit 7'), 7, A_LineNumber)
+	AssertEq(RunWait('*open   "' A_ComSpec '" /c exit 7', "", "Hide"), 7, A_LineNumber)
 
 	; A shell command line with a redirection.
 	outFile := A_Temp "\keysharp-run-" ProcessExist() ".txt"
@@ -79,7 +81,7 @@ AssertEq(pid, "", A_LineNumber)
 #if WINDOWS
 	sleeper := A_WinDir "\System32\PING.EXE", sleeperArgs := "-n 2 127.0.0.1"
 #else
-	sleeper := "sleep", sleeperArgs := "1"
+	sleeper := "/bin/sleep", sleeperArgs := "1"
 #endif
 
 ; RunWait lets a timer run while it waits, and assigns the PID before waiting so the timer can read it.
@@ -95,6 +97,63 @@ RunWait(sleeper, "", "Hide", &runWaitPid, sleeperArgs)
 SetTimer(RecordPidDuringWait, 0)
 Assert(runWaitPid > 0, A_LineNumber)
 AssertEq(pidDuringWait, runWaitPid, A_LineNumber)
+
+; A name-based close wait serves timers and waits for every matching process.
+waitDir := A_Temp "/keysharp-process-wait-" ProcessExist()
+DirCreate(waitDir "/process")
+#if WINDOWS
+	waitProgram := waitDir "/process wait-" ProcessExist() ".exe"
+	waitArgs := "-n 60 127.0.0.1"
+#else
+	waitProgram := waitDir "/process wait-" ProcessExist()
+	waitArgs := "60"
+#endif
+
+SplitPath(waitProgram, &waitName)
+firstWaitPid := 0, secondWaitPid := 0
+StartFirstProcess()
+{
+	global waitProgram, waitArgs, firstWaitPid
+	Run(waitProgram, "", "Hide", &firstWaitPid, waitArgs)
+}
+closeFirst := () => ProcessClose(firstWaitPid)
+closeSecond := () => ProcessClose(secondWaitPid)
+
+try
+{
+	FileCopy(sleeper, waitProgram, true)
+	dirBefore := A_WorkingDir
+	AssertEq(RunWait(waitProgram, waitDir, "Hide", , sleeperArgs), 0, A_LineNumber)
+	AssertEq(A_WorkingDir, dirBefore, A_LineNumber)
+	AssertEq(ProcessWait(waitName, 0), 0, A_LineNumber)
+	AssertEq(ProcessWait(waitName, 0.02), 0, A_LineNumber)
+	SetTimer(StartFirstProcess, -40)
+	AssertEq(ProcessWait(waitName, 5), firstWaitPid, A_LineNumber)
+	Run(waitProgram, "", "Hide", &secondWaitPid, waitArgs)
+	Assert(firstWaitPid > 0 && secondWaitPid > 0 && firstWaitPid != secondWaitPid, A_LineNumber)
+	timedOutPid := ProcessWaitClose(waitName, 0.02)
+	Assert(timedOutPid == firstWaitPid || timedOutPid == secondWaitPid, A_LineNumber)
+	SetTimer(closeFirst, -40)
+	SetTimer(closeSecond, -140)
+	AssertEq(ProcessWaitClose(waitName, 5), 0, A_LineNumber)
+	AssertEq(ProcessExist(firstWaitPid), 0, A_LineNumber)
+	AssertEq(ProcessExist(secondWaitPid), 0, A_LineNumber)
+}
+finally
+{
+	SetTimer(StartFirstProcess, 0)
+	SetTimer(closeFirst, 0)
+	SetTimer(closeSecond, 0)
+
+	for waitPid in [firstWaitPid, secondWaitPid]
+		if (waitPid && ProcessExist(waitPid))
+		{
+			ProcessClose(waitPid)
+			ProcessWaitClose(waitPid, 5)
+		}
+
+	DirDelete(waitDir, true)
+}
 
 Throws(() => ProcessGetName("no such process.exe"), A_LineNumber, TargetError)
 
