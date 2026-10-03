@@ -10,6 +10,9 @@ using System.Reflection.PortableExecutable;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
+#if WINDOWS
+using System.Security.Principal;
+#endif
 using Keysharp.Components.Scripting;
 using Keysharp.Internals.Scripting;
 using Keysharp.Runtime;
@@ -107,8 +110,8 @@ namespace Keysharp.Main
 	/// </summary>
 	internal static class DaemonCoordinator
 	{
-		private static readonly string LockFile = Path.Combine(CompileServer.RuntimeDirectory, $"keysharp-compile-server-{Environment.UserName}.lock");
-		private static readonly string MutexName = $@"Local\keysharp-compile-coord-{Environment.UserName}";
+		private static readonly string LockFile = Path.Combine(CompileServer.RuntimeDirectory, $"keysharp-compile-server-{CompileServer.UserKey}.lock");
+		private static readonly string MutexName = $@"Local\keysharp-compile-coord-{CompileServer.UserKey}";
 
 		/// <summary>
 		/// Acquires the coordination mutex, or reports that it could not be had. The result of WaitOne must
@@ -166,12 +169,12 @@ namespace Keysharp.Main
 					TryKill(owner.Pid); // Any different build: replace it so only one runs.
 				}
 
-				// A lock file we cannot write is not fatal: this daemon still serves its pipe, and a second one
-				// that reaches the same conclusion simply fails to create the single-instance pipe and exits.
-				// Crashing here instead would take the daemon down at startup - with its stderr going nowhere,
-				// since it was spawned detached - and silently cost every later run the full client timeout.
+				// Clients authenticate the pipe server against this ownership record.
 				if (!Write(pipeName))
-					CompileServer.Log("could not record daemon ownership; continuing without it.");
+				{
+					CompileServer.Log("could not record daemon ownership; exiting.");
+					return false;
+				}
 
 				return true;
 			}
@@ -288,8 +291,9 @@ namespace Keysharp.Main
 		/// Whether the lock file names a live daemon serving <paramref name="pipeName"/>. Read without the coordination
 		/// mutex, since it only decides whether a client waits for that daemon's pipe or first spawns a daemon.
 		/// </summary>
-		internal static bool HasLiveOwner(string pipeName) =>
-			Read() is { } owner && string.Equals(owner.Pipe, pipeName, StringComparison.Ordinal) && IsLiveDaemon(owner);
+		internal static bool HasLiveOwner(string pipeName, int? expectedPid = null) =>
+			Read() is { } owner && (!expectedPid.HasValue || owner.Pid == expectedPid)
+			&& string.Equals(owner.Pipe, pipeName, StringComparison.Ordinal) && IsLiveDaemon(owner);
 
 		// A recorded PID counts as a live daemon only if it is running AND is the same process instance that
 		// wrote the record.
@@ -360,6 +364,24 @@ namespace Keysharp.Main
 	/// </summary>
 	internal static class CompileServer
 	{
+		internal static readonly string UserKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(
+#if WINDOWS
+			CompileDaemonSecurity.AccountId
+#else
+			Environment.UserName
+#endif
+		))).Substring(0, 8);
+
+		internal static bool IsPrivileged =>
+#if WINDOWS
+			CompileDaemonSecurity.IsElevated;
+#else
+			GetEffectiveUserId() == 0;
+
+		[System.Runtime.InteropServices.DllImport("libc", EntryPoint = "geteuid")]
+		private static extern uint GetEffectiveUserId();
+#endif
+
 		// The environment variables a compile reads: those behind the A_ variables #Include and #Import paths use, and
 		// the #Import search path. Package settings are not among them: NuGet caches those on first use.
 		internal static readonly string[] CompileEnvironment =
@@ -404,14 +426,21 @@ namespace Keysharp.Main
 			if (KeysharpFingerprint.Value is not { } fingerprint)
 				return null;
 
-			var userHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Environment.UserName))).Substring(0, 8);
-			var name = $"ksc-{fingerprint}-{userHash}";
+			var name = $"ksc-{fingerprint}-{UserKey}";
 			// Off Windows a pipe is a socket file, which .NET creates in the temp folder unless its name is a full path.
 			return OperatingSystem.IsWindows() ? name : Path.Combine(RuntimeDirectory, name);
 		}
 
 		internal static int Run()
 		{
+			if (IsPrivileged)
+			{
+				if (CompileClient.TrySpawnServer())
+					return 0;
+				Log("a normal compile daemon could not be started; scripts will compile in the requesting process.");
+				return 1;
+			}
+
 			if (PipeName == null)
 			{
 				Log("the compiler component is missing or could not be read; exiting.");
@@ -852,19 +881,31 @@ namespace Keysharp.Main
 			if (CompileServer.PipeName == null)
 				return DaemonReply.Unavailable;
 
+#if WINDOWS
+			// A shared dotnet host does not identify which managed application the server runs.
+			if (CompileServer.IsPrivileged && Path.GetFileNameWithoutExtension(Environment.ProcessPath).Equals("dotnet", StringComparison.OrdinalIgnoreCase))
+				return DaemonReply.Unavailable;
+			using var client = new NamedPipeClientStream(".", CompileServer.PipeName, PipeDirection.InOut,
+				PipeOptions.Asynchronous, TokenImpersonationLevel.Identification);
+#else
 			using var client = new NamedPipeClientStream(".", CompileServer.PipeName, PipeDirection.InOut,
 				PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+#endif
 
 			try
 			{
 				client.Connect(connectTimeoutMs);
+#if WINDOWS
+				if (!CompileDaemonSecurity.IsExpectedServer(client))
+					return DaemonReply.Unavailable;
+#endif
 			}
 			catch (Exception ex) when (ex is TimeoutException or IOException)
 			{
 				return null;
 			}
-			// A pipe another user owns, or a daemon at another integrity level, gets no request: the caller compiles at once.
-			catch (UnauthorizedAccessException)
+			// An unauthenticated pipe gets no request: the caller compiles at once.
+			catch (Exception ex) when (ex is UnauthorizedAccessException or System.ComponentModel.Win32Exception or ArgumentException or InvalidOperationException or EntryPointNotFoundException or DllNotFoundException)
 			{
 				return DaemonReply.Unavailable;
 			}
@@ -966,7 +1007,7 @@ namespace Keysharp.Main
 #endif
 
 		// A daemon which cannot be spawned only means compiling in-process, so the reason is not reported.
-		private static bool TrySpawnServer()
+		internal static bool TrySpawnServer()
 		{
 			try
 			{
@@ -999,6 +1040,14 @@ namespace Keysharp.Main
 				psi.Environment.TryAdd("DOTNET_TieredPGO", "0");
 				psi.Environment.TryAdd("DOTNET_gcServer", "1");
 				psi.Environment.TryAdd("DOTNET_gcConcurrent", "0");
+
+#if WINDOWS
+				if (CompileServer.IsPrivileged)
+					return CompileDaemonSecurity.TryStartUnelevated(psi);
+#else
+				if (CompileServer.IsPrivileged)
+					return false;
+#endif
 
 				// The daemon must not inherit this process's standard handles. It outlives us by up to four
 				// hours, so a handle it keeps open is a pipe that never reaches end-of-stream: piping a

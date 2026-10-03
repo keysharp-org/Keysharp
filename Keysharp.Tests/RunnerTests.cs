@@ -1,3 +1,8 @@
+#if WINDOWS
+using System.IO.Pipes;
+using System.Security.Principal;
+using Keysharp.Main;
+#endif
 using Keysharp.Internals.Scripting;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
@@ -94,5 +99,44 @@ namespace Keysharp.Tests
 				File.Delete(scriptPath);
 			}
 		}
+
+#if WINDOWS
+		[Test, Category("Internal")]
+		public void CompileDaemonRejectsUnregisteredServer()
+		{
+			var name = "keysharp-daemon-test-" + Guid.NewGuid().ToString("N");
+			using var server = new NamedPipeServerStream(name, PipeDirection.InOut, 1, PipeTransmissionMode.Byte,
+				PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+			using var client = new NamedPipeClientStream(".", name, PipeDirection.InOut, PipeOptions.Asynchronous,
+				TokenImpersonationLevel.Identification);
+			var waiting = server.WaitForConnectionAsync();
+			client.Connect(2000);
+			Assert.IsTrue(waiting.Wait(2000));
+			Assert.IsFalse(CompileDaemonSecurity.IsExpectedServer(client));
+		}
+
+		[Category("Internal")]
+		[TestCase("host --daemon", true)]
+		[TestCase("host --Daemon", true)]
+		[TestCase("\"C:\\Program Files\\Keysharp.exe\" --daemon", true)]
+		[TestCase("host script.ahk", false)]
+		[TestCase("host script.ahk --daemon", false)]
+		[TestCase("host --daemon stop", false)]
+		[TestCase("host --daemonx", false)]
+		public void CompileDaemonArguments(string commandLine, bool expected) =>
+			Assert.AreEqual(expected, CompileDaemonSecurity.HasDaemonArguments(commandLine, "Keysharp.exe", null));
+
+		[Test, Category("Internal")]
+		public void CompileDaemonCommandLine()
+		{
+			using var process = System.Diagnostics.Process.GetCurrentProcess();
+			Assert.AreEqual(Marshal.PtrToStringUni(GetCommandLineW()), CompileDaemonSecurity.ReadCommandLine(process));
+			Assert.IsTrue(CompileDaemonSecurity.HasDaemonArguments("dotnet \"C:\\Keysharp.dll\" --daemon", "dotnet.exe", "C:\\Keysharp.dll"));
+			Assert.IsFalse(CompileDaemonSecurity.HasDaemonArguments("dotnet \"C:\\Other.dll\" --daemon", "dotnet.exe", "C:\\Keysharp.dll"));
+		}
+
+		[DllImport("kernel32.dll")]
+		private static extern nint GetCommandLineW();
+#endif
 	}
 }

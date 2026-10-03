@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Diagnostics;
@@ -20,6 +21,8 @@ using System.Windows.Forms;
 using Eto.Forms;
 using System.Threading;
 #endif
+
+[assembly: InternalsVisibleTo("Keysharp.Tests")]
 
 namespace Keysharp.Main
 {
@@ -117,11 +120,10 @@ namespace Keysharp.Main
 						else
 							return RunCompiledBytes(reply.AssemblyBytes, command.ScriptArgs);
 
-					// The daemon's error is the one a compile here would report, and it carries the script's #ErrorStdOut.
-					// Unrestored packages are reported only under --validate, as without a daemon; a run compiles here, which
-					// may restore them.
-					case CompileDaemonStatus.CompileFailed:
-					case CompileDaemonStatus.PackageRestoreNeeded when command.Validate:
+					// Privileged callers retry locally because source and package lookup can hide access denial.
+					// Ordinary runs with unrestored packages also retry, allowing restoration.
+					case CompileDaemonStatus.CompileFailed when !CompileServer.IsPrivileged:
+					case CompileDaemonStatus.PackageRestoreNeeded when command.Validate && !CompileServer.IsPrivileged:
 						return Runner.ReportCompileFailure(command, reply.ErrorText, reply.ErrorStdOut);
 
 					// Anything else, a run with unrestored packages or no daemon to answer, compiles in-process below.
