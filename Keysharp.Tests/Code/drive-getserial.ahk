@@ -1,3 +1,5 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
 
@@ -5,6 +7,8 @@
 	val := DriveGetSerial("C:\")
 
 	Assert(val > 1, A_LineNumber)
+	AssertEq(DriveGetSerial("C:"), val, A_LineNumber)
+	Throws(() => DriveGetSerial(A_Temp "\keysharp-missing-volume-" A_TickCount), A_LineNumber, OSError)
 #elif OSX
 	val := DriveGetSerial("/")
 
