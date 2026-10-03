@@ -13,6 +13,7 @@ namespace Keysharp.Builtins
 	public static class Files
 	{
 		private static readonly SearchValues<char> wildcardsSv = SearchValues.Create("*?");
+		private static readonly SearchValues<char> fileOptionSeparators = SearchValues.Create(" \t\n");
 #if OSX
 		private static readonly char[] dirSeparators = [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar];
 #endif
@@ -57,14 +58,10 @@ namespace Keysharp.Builtins
 			if (!filename.CoerceString(out var file))
 				return DefaultObject;
 
-			EnsureFilePermission(file, FilePermissionAccess.Append, "FileAppend");
 			ThreadAccessors.A_LastError = 0;
 
 			if (text == null)
 				return Errors.ValueErrorOccurred("Missing a required parameter: Text");
-
-			//if (text.ToString() != "pass")
-			//  Console.WriteLine(text);
 
 			if (!options.CoerceString(out var opts))
 				return DefaultObject;
@@ -80,124 +77,56 @@ namespace Keysharp.Builtins
 				t = converted;
 			}
 
+			var info = filename == null ? Loops.Peek(LoopType.File) : null;
+			// Null means RAW; a Buffer gets a BOM only when an encoding is specified.
+			var encoding = t is string ? ThreadAccessors.A_FileEncodingRaw : null;
+
+			if (info?.outputStream == null && !TryParseFileOptions(opts, false, ref encoding, out _))
+				return DefaultObject;
+
+			var crlf = opts.Contains('\n');
+			var target = info?.filename ?? file;
+			var console = target switch { "*" => Console.Out, "**" => Console.Error, _ => null };
+
+			if (console != null && t is not string)
+				return Errors.TypeErrorOccurred(t, typeof(string));
+
+			if (target.Length == 0)
+				return Errors.ValueErrorOccurred("FileAppend requires a file name, or a Loop Read with an output file when it is omitted.");
+
+			EnsureFilePermission(target, FilePermissionAccess.Append, "FileAppend");
+
 			try
 			{
-				var encoding = ThreadAccessors.A_FileEncodingRaw;
-				var raw = false;
-				var crlf = false;
-				TextWriter tw = null;
-
-				if (opts.Length > 0)
+				if (console != null)
 				{
-					foreach (Range r in opts.AsSpan().SplitAny(SpaceTabSv))
-					{
-						var split = opts.AsSpan(r).Trim(SpaceTab);//Need to supply chars to trim else \n would get automatically trimmed.
-
-						if (split.Length > 0)
-						{
-							switch (split)
-							{
-								case var b when split.Equals("ascii", StringComparison.OrdinalIgnoreCase):
-								case var b2 when split.Equals("us-ascii", StringComparison.OrdinalIgnoreCase):
-									encoding = Encoding.ASCII;
-									break;
-
-								case var b when split.Equals("utf-8", StringComparison.OrdinalIgnoreCase):
-									encoding = Encoding.UTF8;
-									break;
-
-								case var b when split.Equals("utf-8-raw", StringComparison.OrdinalIgnoreCase):
-									encoding = new UTF8Encoding(false);//Not byte order mark.
-									break;
-
-								case var b when split.Equals("utf-16", StringComparison.OrdinalIgnoreCase):
-								case var b2 when split.Equals("unicode", StringComparison.OrdinalIgnoreCase):
-									encoding = Encoding.Unicode;
-									break;
-
-								case var b when split.Equals("utf-16-raw", StringComparison.OrdinalIgnoreCase):
-									encoding = new UnicodeEncoding(false, false);//Little endian, no byte order mark.
-									break;
-
-								case var b when split.Equals("raw", StringComparison.OrdinalIgnoreCase):
-									raw = true;
-									break;
-
-								case var b when split.Equals("`n", StringComparison.OrdinalIgnoreCase):
-								case var b2 when split.Equals("\n", StringComparison.OrdinalIgnoreCase):
-									crlf = true;
-									break;
-							}
-						}
-					}
-				}
-
-				if (string.IsNullOrEmpty(file))
-				{
-					var info = Loops.Peek(LoopType.File);
-
-					// The loop owns, and closes when it ends, only an output file it opened, never a standard stream.
-					if (info != null)
-					{
-						if (info.filename == "*")
-							tw = Console.Out;
-						else if (info.filename == "**")
-							tw = Console.Error;
-						else if (info.filename != string.Empty)
-							tw = info.sw ??= new StreamWriter(info.filename, true, encoding);
-					}
-				}
-				else if (file == "*")
-					tw = Console.Out;
-				else if (file == "**")
-					tw = Console.Error;
-				else
-					tw = new StreamWriter(file, true, encoding);
-
-				if (tw != null)
-				{
-					if (t is string s)
-					{
+					var s = (string)t;
 #if DEBUG
 
-						if (s == "fail")
-							_ = Diagnostics.Debug.WriteLine(s);
+					if (s == "fail")
+						_ = Diagnostics.Debug.WriteLine(s);
 
 #endif
+					console.Write(crlf && encoding != null ? TextStream.InsertCarriageReturns(s, '\0') : s);
+				}
+				// The loop owns, and closes when it ends, only an output file it opened, never a standard stream.
+				else if (info != null)
+				{
+					var raw = info.outputStream == null ? encoding == null : info.outputRaw;
 
-						if (raw)
-							//sw.Write(Encoding.Unicode.GetBytes(s));
-							tw.Write(s.AsSpan());
-						else if (crlf)
-							tw.Write(s.ReplaceLineEndings("\r\n"));
-						else
-							tw.Write(s);
-					}
-					else if (tw is StreamWriter sw && t is Buffer or byte[])
+					if (info.outputStream == null)
 					{
-						if (t is Buffer buf)
-						{
-							var len = (int)(long)buf.Size;
-							unsafe
-							{
-								var bytes = new byte[len];
-								Marshal.Copy((nint)buf.Ptr, bytes, 0, len);
-								sw.BaseStream.Write(bytes);
-							}
-						}
-						else if (t is byte[] ib)
-							sw.BaseStream.Write(ib);
-					}
-					else if (t != null)//A Buffer or byte[] for a standard stream, which takes only text, so a TypeError.
-					{
-						if (!t.CoerceString(out var str))
-							return DefaultObject;
-
-						tw.Write(crlf ? str.ReplaceLineEndings("\r\n") : str);
+						info.outputStream = OpenForAppend(target, encoding, crlf);
+						// AHK applies a detected BOM to subsequent writes, while the first uses the requested RAW mode.
+						info.outputRaw = raw && !info.outputStream.DetectedByteOrderMark;
 					}
 
-					if (!string.IsNullOrEmpty(file) && !file.StartsWith("*"))
-						tw.Close();
+					Append(info.outputStream, t, raw);
+				}
+				else
+				{
+					using var stream = OpenForAppend(target, encoding, crlf);
+					Append(stream, t, encoding == null);
 				}
 
 				return DefaultObject;
@@ -205,7 +134,7 @@ namespace Keysharp.Builtins
 			catch (Exception ex)
 			{
 				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
-				return Errors.OSErrorOccurred(ex, $"Error appending text to file {file}");
+				return Errors.OSErrorOccurred(ex, $"Error appending text to file {target}");
 			}
 		}
 
@@ -1043,129 +972,42 @@ namespace Keysharp.Builtins
 		{
 			ThreadAccessors.A_LastError = 0;
 
-			if (!filename.CoerceString(out var file) || !flags.CoerceString(out var f) || !TryGetEncoding(encoding, ThreadAccessors.A_FileEncodingRaw, out var enc))
+			if (!filename.CoerceString(out var file) || !TryGetEncoding(encoding, ThreadAccessors.A_FileEncodingRaw, out var enc))
 				return DefaultObject;
 
-			var mode = FileMode.Open;
-			var access = FileAccess.ReadWrite;
-			var share = FileShare.ReadWrite | FileShare.Delete;
-			var shareset = false;
-			var eolconv = 0;
-
-			foreach (Range r in f.AsSpan().SplitAny(Spaces))
+			// A number is AutoHotkey's flag values summed.
+			if (!flags.TryCoerceLong(out var bits))
 			{
-				var i = 0;
-				var flag = f.AsSpan(r).Trim();
+				if (!flags.CoerceString(out var f))
+					return DefaultObject;
 
-				if (flag.Length > 0)
-				{
-					if (flag.Equals("r", StringComparison.OrdinalIgnoreCase))
-					{
-						mode = FileMode.Open;
-						access = FileAccess.Read;
-					}
-					else if (flag.Equals("w", StringComparison.OrdinalIgnoreCase) || (int.TryParse(flag, out i) && i == 1))
-					{
-						mode = FileMode.Create;
-						access = FileAccess.ReadWrite;
-					}
-					else if (flag.Equals("a", StringComparison.OrdinalIgnoreCase) || (int.TryParse(flag, out i) && i == 2))
-					{
-						mode = FileMode.Append;
-						access = FileAccess.Write;
-					}
-					else if (flag.Equals("rw", StringComparison.OrdinalIgnoreCase) || (int.TryParse(flag, out i) && i == 3))
-					{
-						mode = FileMode.OpenOrCreate;
-						access = FileAccess.ReadWrite;
-					}
-					else if (flag.Equals("h", StringComparison.OrdinalIgnoreCase))
-					{
-						file = "h*" + file;
-					}
-					else if (flag.Equals("\n", StringComparison.OrdinalIgnoreCase) || (int.TryParse(flag, out i) && i == 4))
-					{
-						eolconv = 4;
-					}
-					else if (flag.Equals("\r", StringComparison.OrdinalIgnoreCase) || (int.TryParse(flag, out i) && i == 8))
-					{
-						eolconv = 8;
-					}
-					else if (flag.Equals("-", StringComparison.OrdinalIgnoreCase))
-					{
-						share = FileShare.None;
-						shareset = true;
-					}
-					else if (flag.StartsWith('-'))
-					{
-						if (flag.Contains("r", StringComparison.OrdinalIgnoreCase))
-						{
-							share &= ~FileShare.Read;
-							shareset = true;
-						}
-
-						if (flag.Contains("w", StringComparison.OrdinalIgnoreCase))
-						{
-							share &= ~FileShare.Write;
-							shareset = true;
-						}
-
-						if (flag.Contains("d", StringComparison.OrdinalIgnoreCase))
-						{
-							share &= ~FileShare.Delete;
-							shareset = true;
-						}
-					}
-					else
-					{
-						var b = int.TryParse(flag, out i);
-						share = FileShare.None;
-
-						if (!b)
-						{
-							shareset = true;
-						}
-						else
-						{
-							// Numeric flags default to no sharing unless explicit share bits are present.
-							shareset = true;
-
-							if ((i & 0x100) == 0x100)
-							{
-								share |= FileShare.Read;
-							}
-
-							if ((i & 0x200) == 0x200)
-							{
-								share |= FileShare.Write;
-							}
-
-							if ((i & 0x400) == 0x400)
-							{
-								share |= FileShare.Delete;
-							}
-						}
-					}
-				}
+				if (!TryParseOpenFlags(f, out bits))
+					return Errors.ValueErrorOccurred("Invalid flags.", f);
 			}
 
-			if (!shareset)
-				share = FileShare.ReadWrite | FileShare.Delete;
+			var mode = (TextStreamMode)(bits & 3);
+			var eol = bits & (TextStream.EolCrlf | TextStream.EolOrphanCr);
 
-			if (file != "*" && file != "**" && !file.StartsWith("h*", StringComparison.Ordinal))
-			{
-				var requestedAccess = access switch
+			if (file is "*" or "**")
+				return new KeysharpFile(mode is TextStreamMode.Read or TextStreamMode.Update ? Console.In : null,
+										mode == TextStreamMode.Read ? null : file == "*" ? Console.Out : Console.Error, eol);
+
+			var useHandle = (bits & TextStream.UseHandle) != 0;
+
+			if (!useHandle)
+				EnsureFilePermission(file, mode switch
 				{
-					FileAccess.Read => FilePermissionAccess.Read,
-					FileAccess.Write => FilePermissionAccess.Write,
+					TextStreamMode.Read => FilePermissionAccess.Read,
+					TextStreamMode.Write => FilePermissionAccess.Write,
 					_ => FilePermissionAccess.ReadWrite
-				};
-				EnsureFilePermission(file, requestedAccess, "FileOpen");
-			}
+				}, "FileOpen");
 
 			try
 			{
-				return new KeysharpFile(file, mode, access, share, enc, eolconv);
+				// A handle stays the caller's to close and is taken as it stands, with no byte order mark handling.
+				return new KeysharpFile(useHandle
+										? new TextStream(new FileStream(new Microsoft.Win32.SafeHandles.SafeFileHandle((nint)(file.ParseLong() ?? 0), false), FileAccess.ReadWrite), enc, eol)
+										: TextStream.Open(file, mode, (FileShare)(int)((bits >> 8) & 7), enc, eol, true));
 			}
 			catch (Exception ex)
 			{
@@ -1199,8 +1041,6 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown on failure.</exception>
 		public static object FileRead(object filename, object options = null)
 		{
-			object output = null;
-
 			if (!filename.CoerceString(out var file))
 				return DefaultObject;
 
@@ -1209,88 +1049,88 @@ namespace Keysharp.Builtins
 			if (!options.CoerceString(out var opts))
 				return DefaultObject;
 
-			var enc = ThreadAccessors.A_FileEncodingRaw;
 			ThreadAccessors.A_LastError = 0;
 
 			if (string.IsNullOrEmpty(file))
 				return Errors.ValueErrorOccurred("FileRead requires a file name.");
 
-			var max = -1;
-			bool binary = false, nocrlf = false;
+			// Null means RAW.
+			var encoding = ThreadAccessors.A_FileEncodingRaw;
 
-			foreach (Range r in opts.AsSpan().SplitAny(SpaceTabSv))
-			{
-				var split = opts.AsSpan(r).Trim(SpaceTab);//Need to supply chars to trim else \n would get automatically trimmed.
-
-				if (split.Length > 0)
-				{
-					if (Options.TryParse(split, "m", ref max))
-					{
-					}
-					else
-					{
-						if (split.Equals("raw", StringComparison.OrdinalIgnoreCase))
-							binary = true;
-						else if (split[0] == '\n')
-							nocrlf = true;
-						else if (!TryGetEncoding(split.ToString(), out enc))
-							return DefaultObject;
-					}
-				}
-			}
-
-			if (max == 0)
+			if (!TryParseFileOptions(opts, true, ref encoding, out var max))
 				return DefaultObject;
 
-			if (binary)
+			try
 			{
-				try
+				// Shared for writing and deletion, so that a log another process holds open can be read.
+				using var stream = new FileStream(file, new FileStreamOptions
 				{
-					var temparr = max == -1 ? File.ReadAllBytes(file) : new BinaryReader(File.OpenRead(file)).ReadBytes(max);
-					output = new Buffer(temparr);
-				}
-				catch (Exception ex)
-				{
-					ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
-					return Errors.OSErrorOccurred(ex, $"Error reading file {file}");
-				}
-			}
-			else
-			{
+					Mode = FileMode.Open,
+					Access = FileAccess.Read,
+					Share = FileShare.ReadWrite | FileShare.Delete,
+					Options = FileOptions.SequentialScan,
+					BufferSize = 0
+				});
+				// As AutoHotkey reads it, mN is a count of bytes, and a negative one is no limit.
+				var limit = max < 0 ? long.MaxValue : max;
 				string text;
 
-				try
+				// A pipe, or a file such as those in /proc which reports no length, is read until it ends.
+				if (!stream.CanSeek || stream.Length == 0)
 				{
-					if (max != -1)
+					using var memory = new MemoryStream();
+					Span<byte> chunk = stackalloc byte[4096];
+
+					for (int read; memory.Length < limit && (read = stream.Read(chunk[..(int)Math.Min(chunk.Length, limit - memory.Length)])) > 0;)
+						memory.Write(chunk[..read]);
+
+					var content = memory.GetBuffer().AsSpan(0, (int)memory.Length);
+
+					if (encoding == null)
+						return new Buffer(content.ToArray());
+
+					text = DecodeFileText(content, encoding);
+				}
+				else
+				{
+					var length = Math.Min(stream.Length, limit);
+
+					if (length > System.Array.MaxLength)
+						return Errors.ErrorOccurred(new MemoryError("Out of memory."), DefaultObject);
+
+					if (encoding == null)
 					{
-						using (var fs = new FileStream(file, FileMode.Open))
-						{
-							using (var br = new BinaryReader(fs))
-							{
-								var buf = br.ReadBytes(max);
-								text = enc.GetString(buf);
-							}
-						}
+						var buffer = new Buffer(length);
+						var read = stream.ReadAtLeast(buffer.AsSpan(), (int)length, false);
+
+						if (read < length)
+							buffer.Size = (long)read;
+
+						return buffer;
 					}
-					else
-						text = File.ReadAllText(file);
+
+					// The shared pool keeps the arrays it lends, so only a small file borrows one.
+					var rented = length <= 1 << 20 ? ArrayPool<byte>.Shared.Rent((int)length) : null;
+					var bytes = rented ?? new byte[length];
+
+					try
+					{
+						text = DecodeFileText(bytes.AsSpan(0, stream.ReadAtLeast(bytes.AsSpan(0, (int)length), (int)length, false)), encoding);
+					}
+					finally
+					{
+						if (rented != null)
+							ArrayPool<byte>.Shared.Return(rented);
+					}
 				}
-				catch (Exception ex)
-				{
-					ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
-					return Errors.OSErrorOccurred(ex, $"Error reading file {file}");
-				}
 
-				if (max != -1)
-					text = text.Substring(0, max);
-
-				if (nocrlf)
-					text = text.Replace("\r\n", "\n");
-
-				output = text;
+				return opts.Contains('\n') ? text.Replace("\r\n", "\n") : text;
 			}
-
-			return output;
+			catch (Exception ex) when (ex is not KeysharpException)
+			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
+				return Errors.OSErrorOccurred(ex, $"Error reading file {file}");
+			}
 		}
 
 		/// <summary>
@@ -1606,6 +1446,113 @@ namespace Keysharp.Builtins
 			}
 
 			return DefaultObject;
+		}
+
+		private static void Append(TextStream stream, object value, bool raw) => _ = value switch
+		{
+			string s when !raw => stream.WriteText(s),
+			string s => stream.WriteBytes(MemoryMarshal.AsBytes(s.AsSpan())),
+			Buffer buffer => stream.WriteBytes(buffer.AsSpan()),
+			byte[] bytes => stream.WriteBytes(bytes),
+			_ => 0L
+		};
+
+		// AHK takes UTF-16 as code units, preserving unpaired surrogates.
+		private static string DecodeFileText(ReadOnlySpan<byte> bytes, Encoding encoding)
+		{
+			var mark = TextStream.DetectByteOrderMark(bytes, out var length);
+
+			if (mark?.CodePage == 1200 || encoding.CodePage == 1200)
+				return new string(MemoryMarshal.Cast<byte, char>(bytes[(mark?.CodePage == 1200 ? length : 0)..]));
+
+			return (mark ?? encoding).GetString(bytes[length..]);
+		}
+
+		private static TextStream OpenForAppend(string path, Encoding encoding, bool crlf) =>
+			TextStream.Open(path, TextStreamMode.Append, FileShare.Read, encoding ?? ThreadAccessors.A_FileEncodingRaw, crlf ? TextStream.EolCrlf : 0, encoding != null);
+
+		// `n can appear without a separating space. Null encoding means RAW.
+		private static bool TryParseFileOptions(string options, bool takesMax, ref Encoding encoding, out long maxBytes)
+		{
+			maxBytes = long.MaxValue;
+
+			foreach (Range r in options.AsSpan().SplitAny(fileOptionSeparators))
+			{
+				var option = options.AsSpan(r);
+
+				if (option.IsEmpty || takesMax && Options.TryParse(option, "m", ref maxBytes))
+					continue;
+
+				if (option.Equals("raw", StringComparison.OrdinalIgnoreCase))
+					encoding = null;
+				else if (char.IsAsciiDigit(option[0]))
+				{
+					_ = Errors.ValueErrorOccurred("Invalid option.", option.ToString());
+					return false;
+				}
+				else if (!TryGetEncoding(option.ToString(), out encoding))
+					return false;
+			}
+
+			return true;
+		}
+
+		private static bool TryParseOpenFlags(string flags, out long bits)
+		{
+			var s = flags.AsSpan().TrimStart(SpaceTab);
+			bits = 0;
+
+			if (s.IsEmpty)
+				return false;
+
+			bits = char.ToLowerInvariant(s[0]) switch
+			{
+				'r' when s.StartsWith("rw", StringComparison.OrdinalIgnoreCase) => (long)TextStreamMode.Update,
+				'r' => (long)TextStreamMode.Read,
+				'w' => (long)TextStreamMode.Write,
+				'a' => (long)TextStreamMode.Append,
+				'h' => TextStream.UseHandle,
+				_ => -1
+			};
+
+			if (bits < 0)
+				return false;
+
+			var start = bits == (long)TextStreamMode.Update ? 2 : 1;
+
+			bits |= TextStream.ShareAll;
+
+			for (var i = start; i < s.Length; i++)
+			{
+				switch (char.ToLowerInvariant(s[i]))
+				{
+					case '\n': bits |= TextStream.EolCrlf; break;
+
+					case '\r': bits |= TextStream.EolOrphanCr; break;
+
+					case ' ' or '\t': break;
+
+					case '-':
+						var dash = i;
+
+						while (i + 1 < s.Length && char.ToLowerInvariant(s[i + 1]) is 'r' or 'w' or 'd')
+							bits &= ~(char.ToLowerInvariant(s[++i]) switch
+							{
+								'r' => TextStream.ShareRead,
+								'w' => TextStream.ShareWrite,
+								_ => TextStream.ShareDelete
+							});
+
+						if (i == dash)
+							bits &= ~TextStream.ShareAll;
+
+						break;
+
+					default: return false;
+				}
+			}
+
+			return true;
 		}
 
 		/// <summary>

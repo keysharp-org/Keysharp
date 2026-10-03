@@ -653,9 +653,8 @@ namespace Keysharp.Builtins
 					return raw == null ? "" : HexDigest(raw, alg);
 				}
 
-				// Tested before flushing: a closed File still holds its closed stream, and flushing that throws an
-				// ObjectDisposedException, which is not an Error a script can catch.
-				var stream = file.BaseStream;
+				var textStream = file.Stream;
+				var stream = textStream?.BaseStream;
 
 				if (stream == null || !stream.CanRead)
 					return Errors.ValueErrorOccurred("The File passed to hash is not open for reading.", null, "");
@@ -669,7 +668,15 @@ namespace Keysharp.Builtins
 					// Hashing a file means its whole content, so a seekable stream is rewound; one that cannot
 					// seek can only be hashed from where it stands.
 					if (!stream.CanSeek)
-						return HexDigest(stream, alg);
+					{
+						var bytes = new byte[4096];
+
+						for (int read; (read = textStream.ReadBytes(bytes)) > 0;)
+							_ = alg.TransformBlock(bytes, 0, read, null, 0);
+
+						_ = alg.TransformFinalBlock([], 0, 0);
+						return Convert.ToHexString(alg.Hash);
+					}
 
 					var pos = stream.Position;
 					stream.Position = 0;

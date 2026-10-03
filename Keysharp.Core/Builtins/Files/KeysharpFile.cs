@@ -8,120 +8,109 @@ namespace Keysharp.Builtins
 	[UserDeclaredName("File")]
 	public class KeysharpFile : KeysharpObject, IDisposable
 	{
-		private Encoding enc;
-
-		private int eolconv = 0;
-
-		private BinaryReader br;
-
-		private BinaryWriter bw;
-
 		private bool disposed = false;
 
-		// Any stream, not just a FileStream: a File can also be opened over memory a script already holds.
-		private Stream fs;
+		// A file on disk, a handle or memory, kept once closed, when it reads and writes nothing; null for the standard
+		// streams and a process's pipes.
+		private TextStream stream;
 
-		// Keeps a FileStream reachable until Dispose, as its own finalizer would otherwise close the file in the same
-		// collection as this File, before a __Delete which may still write to it.
+		// The standard streams and a process's pipes, which carry text only, with FileOpen's `n and `r flags for the
+		// standard streams and the encoding they were opened with, which a File cannot change.
+		private TextReader reader;
+
+		private TextWriter writer;
+
+		private readonly long eolFlags;
+
+		private readonly System.Text.Encoding textEncoding;
+
+		// Keeps a file's stream reachable until Dispose, as its own finalizer would otherwise close the file in the
+		// same collection as this File, before a __Delete which may still write to it.
 		private GCHandle streamRoot;
 
 		// The object whose memory a memory-backed file is reading and writing. Held so that it cannot be
 		// collected while this File still points into it; null for a path-backed file.
 		private object memorySource;
 
-		private TextReader tr;
+		public object AtEOF => stream != null ? (stream.AtEof ? 1L : 0L) : reader != null && reader.Peek() == -1 ? 1L : 0L;
 
-		private TextWriter tw;
-
-		public object AtEOF
-		{
-			get
-			{
-				// Compare the position with the length rather than decoding a character: the content may be
-				// binary and therefore not valid text in the current encoding, and the documented meaning of
-				// AtEOF is that the file pointer has reached the end. A non-seekable stream has no meaningful
-				// end, which the documentation already calls out, so it reports 0.
-				if (br != null)
-					return br.BaseStream.CanSeek && br.BaseStream.Position >= br.BaseStream.Length ? 1L : 0L;
-				else if (tr != null)
-					return tr.Peek() == -1 ? 1L : 0L;
-				else
-					return 0L;
-			}
-		}
+		internal TextStream Stream => stream;
 
 		/// <summary>
-		/// The stream the file reads and writes, so a hash can stream the content instead of loading all of
-		/// it into memory. Null until the file is opened.
+		/// The encoding of the text methods, named as AutoHotkey names it: UTF-8, UTF-16 or CPnnn, never with -RAW,
+		/// which only decides whether a new file gets a byte order mark.
 		/// </summary>
-		internal Stream BaseStream => fs;
-
 		public object Encoding
 		{
-			get => enc.BodyName;
+			get => (stream?.Encoding ?? textEncoding ?? System.Text.Encoding.Default).CodePage switch
+			{
+				65001 => "UTF-8",
+				1200 => "UTF-16",
+				var codePage => $"CP{codePage}"
+			};
+
 			set
 			{
-				if (Files.TryGetEncoding(value, out var e))
-					enc = e;
+				if (Files.TryGetEncoding(value, out var encoding) && stream != null)
+					stream.Encoding = encoding;
 			}
 		}
 
 		// Only a file on disk has an OS handle; a memory-backed file reports 0, as an unopened one does.
-		public object Handle => fs is FileStream ffs ? ffs.SafeFileHandle.DangerousGetHandle().ToInt64() : 0L;
+		public object Handle => (long)(stream?.Handle ?? 0);
 
 		public object Length
 		{
-			get => fs != null ? fs.Length : 0L;
+			get => stream?.Length ?? 0L;
+
 			set
 			{
-				if (!value.CoerceLong(out var len)) return;
-				fs?.SetLength(len);
+				if (value.CoerceLong(out var length) && stream != null)
+					stream.Length = length;
 			}
 		}
 
 		public object Pos
 		{
-			get
-			{
-				if (br != null)
-					return br.BaseStream.Position;
-				else if (bw != null)
-					return bw.BaseStream.Position;
-				else
-					return 0L;
-			}
-
+			get => stream?.Position ?? 0L;
 			set => Seek(value);
 		}
+
 		public KeysharpFile(params object[] args) : base(args) { }
 
-		public KeysharpFile(StreamWriter sw) : base(null)
+		public KeysharpFile(StreamWriter sw) : this(null, sw) { }
+
+		public KeysharpFile(StreamReader sr) : this(sr, null) { }
+
+		internal KeysharpFile(StringReader reader) : this(reader, null) { }
+
+		internal KeysharpFile(TextReader reader, TextWriter writer, long eolFlags = 0) : base(null)
 		{
-			tw = sw;
-			enc = sw.Encoding;
+			this.reader = reader;
+			this.writer = writer;
+			this.eolFlags = eolFlags;
+			// Text captured from a process is held as the UTF-16 it was decoded to.
+			textEncoding = writer?.Encoding ?? (reader as StreamReader)?.CurrentEncoding
+						   ?? (reader == Console.In ? Console.InputEncoding : System.Text.Encoding.Unicode);
+
+			if (writer != null)
+				FlushAtExit();
+		}
+
+		internal KeysharpFile(TextStream stream) : base(null)
+		{
+			this.stream = stream;
+			streamRoot = GCHandle.Alloc(stream);
 			FlushAtExit();
 		}
 
-		public KeysharpFile(StreamReader sr) : base(null)
-		{
-			tr = sr;
-			enc = sr.CurrentEncoding;
-		}
-
-		internal KeysharpFile(StringReader reader) : base(null)
-		{
-			tr = reader;
-			enc = System.Text.Encoding.UTF8;
-		}
-
 		/// <summary>
-		/// Initializes a File over memory the script already holds.
+		/// Initializes a File over memory the script already holds. <see cref="Files.FileOpen"/> opens a path.
 		/// </summary>
 		/// <param name="args">
 		/// The source object, which must expose both <c>Ptr</c> and <c>Size</c> - a <see cref="Buffer"/> or a
 		/// <see cref="Struct"/>, or any later type providing the pair - optionally followed by an encoding name
-		/// for the text methods. <see cref="Files.FileOpen"/> supplies a fully resolved parameter set instead,
-		/// which is what opens a path.
+		/// for the text methods.
 		/// </param>
 		/// <returns>An empty value; the constructed object is the instance being initialized.</returns>
 		/// <exception cref="ValueError">Thrown when no source is given.</exception>
@@ -131,108 +120,6 @@ namespace Keysharp.Builtins
 			if (args == null || args.Length == 0)
 				return Errors.ValueErrorOccurred("File requires a source. Use FileOpen to open a path, or pass a Buffer to read and write its memory.");
 
-			// FileOpen routes through here with the open parameters already resolved; anything else is a script
-			// calling File() directly, which means a memory source.
-			if (args.Length < 6 || args[1] is not FileMode)
-				return NewOverMemory(args);
-
-			if (!args[0].CoerceString(out var filename))
-				return DefaultObject;
-
-			var m = (FileMode)args[1];
-			var a = (FileAccess)args[2];
-			var s = (FileShare)args[3];
-			enc = (Encoding)args[4];
-			_ = args[5].TryCoerceLong(out var eol);
-			eolconv = (int)eol;
-
-			if (filename == "*")
-			{
-				if ((a & FileAccess.Read) == FileAccess.Read)
-					tr = Console.In;
-
-				if ((a & FileAccess.Write) == FileAccess.Write)
-					tw = Console.Out;
-			}
-			else if (filename == "**")
-			{
-				if ((a & FileAccess.Read) == FileAccess.Read)
-					tr = Console.In;
-
-				if ((a & FileAccess.Write) == FileAccess.Write)
-					tw = Console.Error;
-			}
-			else
-			{
-				var exists = false;
-
-				if (filename.StartsWith("h*", StringComparison.OrdinalIgnoreCase))
-				{
-					var handleString = filename.Substring(2);
-					var handle = handleString.ParseLong();
-
-					if (handle.HasValue)
-					{
-						exists = true;
-						fs = new FileStream(new Microsoft.Win32.SafeHandles.SafeFileHandle(new nint(handle.Value), false), a, 4096);
-					}
-				}
-				else
-				{
-					if (System.IO.File.Exists(filename))
-						exists = true;
-
-					fs = new FileStream(filename, m, a, s);
-				}
-
-				streamRoot = GCHandle.Alloc(fs);
-				FlushAtExit();
-
-				if ((a & FileAccess.Read) == FileAccess.Read)
-					br = new BinaryReader(fs, enc);
-
-				if ((a & FileAccess.Write) == FileAccess.Write)
-					bw = new BinaryWriter(fs, enc);
-
-				if (!exists && bw != null)
-				{
-					if (enc is UTF8Encoding u8)
-					{
-						if (u8.Preamble.Length > 0)
-							bw.Write(u8.Preamble);
-					}
-					else if (enc is UnicodeEncoding u16)
-					{
-						if (u16.Preamble.Length > 0)
-							bw.Write(u16.Preamble);
-					}
-				}
-				else if (exists && br != null)
-				{
-					if (enc is UTF8Encoding u8)
-					{
-						if (u8.Preamble.Length > 0)
-							_ = br.BaseStream.Seek(u8.Preamble.Length, SeekOrigin.Begin);
-					}
-					else if (enc is UnicodeEncoding u16)
-					{
-						if (u16.Preamble.Length > 0)
-							_ = br.BaseStream.Seek(u16.Preamble.Length, SeekOrigin.Begin);
-					}
-				}
-			}
-
-			return DefaultObject;
-		}
-
-		/// <summary>
-		/// Opens this File over the memory of an object exposing Ptr and Size, so that the read, write, seek
-		/// and position members operate on that memory instead of a file on disk.
-		/// </summary>
-		/// <param name="args">The source object, optionally followed by an encoding name.</param>
-		/// <returns>An empty value.</returns>
-		private object NewOverMemory(params object[] args)
-		{
 			var source = args[0];
 
 			// The same Ptr/Size duck typing RawRead and RawWrite already accept, so a Buffer, StringBuffer,
@@ -248,7 +135,6 @@ namespace Keysharp.Builtins
 			if (args.Length > 1 && args[1] != null && !Files.TryGetEncoding(args[1], out encoding))
 				return DefaultObject;
 
-			enc = encoding;
 			// Hold the source so its memory cannot be reclaimed while this File still points into it.
 			memorySource = source;
 
@@ -256,11 +142,9 @@ namespace Keysharp.Builtins
 			{
 				// Fixed capacity: the memory belongs to the source object and cannot be grown, so a write past
 				// the end is refused rather than silently reallocating.
-				fs = new BorrowedMemoryStream((byte*)ptr, size);
+				stream = new TextStream(new BorrowedMemoryStream((byte*)ptr, size), encoding, 0, keepReadAhead: false);
 			}
 
-			br = new BinaryReader(fs, enc);
-			bw = new BinaryWriter(fs, enc);
 			return DefaultObject;
 		}
 
@@ -300,8 +184,6 @@ namespace Keysharp.Builtins
 			}
 		}
 
-		internal KeysharpFile(string filename, FileMode mode, FileAccess access, FileShare share, Encoding encoding, long eol) : base(filename, mode, access, share, encoding, eol) { }
-
 		public object Close()
 		{
 			Dispose(false);
@@ -313,9 +195,8 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public object Flush()
 		{
-			bw?.Flush();
-			tw?.Flush();
-			fs?.Flush();
+			stream?.Flush();
+			writer?.Flush();
 			return DefaultObject;
 		}
 
@@ -342,91 +223,73 @@ namespace Keysharp.Builtins
 		{
 			if (!disposed)
 			{
-				br?.Close();
-				bw?.Close();
-				tr?.Close();
-				tw?.Close();
-				fs?.Close();
+				stream?.Dispose();
+				reader?.Close();
+				writer?.Close();
 
 				if (streamRoot.IsAllocated)
 					streamRoot.Free();
 
+				// A closed File reads and writes nothing, as in AutoHotkey, rather than raising the reader's or
+				// writer's ObjectDisposedException, which a script cannot catch. A closed stream already does.
+				reader = null;
+				writer = null;
 				disposed = true;
 			}
 		}
 
+		/// <summary>
+		/// Reads raw bytes into memory and advances the file pointer.
+		/// </summary>
+		/// <param name="buffer">A Buffer-like object, or an address, which then needs <paramref name="bytes"/>.</param>
+		/// <param name="bytes">How many bytes to read; omit to fill the buffer.</param>
+		/// <returns>The number of bytes read.</returns>
 		public object RawRead(object buffer, object bytes = null)
 		{
-			var buf = buffer;
-			var count = long.MinValue;
+			if (buffer is string)
+				return Errors.TypeErrorOccurred(buffer, typeof(Buffer));
 
-			if (bytes is not null && !bytes.CoerceLong(out count))
+			if (!TryGetMemory(buffer, bytes, out var ptr, out var count))
 				return DefaultObject;
 
-			int len = 0;
-
-			if (br != null)
+			unsafe
 			{
-				byte[] val;
-
-				if (Reflections.TryGetPtrProperty(buf, out var ptr))
-				{
-					int buflen = Reflections.TryGetSizeProperty(buf, out var sz) ? (int)sz : int.MinValue;
-					len = count == long.MinValue ? buflen : (buflen != int.MinValue ? Math.Min((int)count, buflen) : (int)count);
-					if (len < 0) return Errors.ErrorOccurred("Invalid byte count");
-
-					val = br.ReadBytes(len);
-					len = Math.Min(val.Length, len);
-					unsafe
-					{
-						var byteArr = (byte*)(nint)ptr;
-
-						for (var i = 0; i < len; i++)
-							byteArr[i] = val[i];
-					}
-				}
-				else
-					return Errors.ErrorOccurred("Invalid buffer");
+				return (long)(stream?.ReadBytes(new Span<byte>((void*)ptr, count)) ?? 0);
 			}
-			return (long)len;
 		}
 
+		/// <summary>
+		/// Writes raw bytes and advances the file pointer.
+		/// </summary>
+		/// <param name="data">A Buffer-like object; a string, whose UTF-16 is written as it stands; or an address,
+		/// which then needs <paramref name="bytes"/>.</param>
+		/// <param name="bytes">How many bytes to write; omit to write all of <paramref name="data"/>. A string allows
+		/// two more bytes than it holds, for its terminating null character.</param>
+		/// <returns>The number of bytes written.</returns>
 		public long RawWrite(object data, object bytes = null)
 		{
-			var buf = data;
-			var count = long.MinValue;
-
-			if (bytes is not null && !bytes.CoerceLong(out count))
-				return 0L;
-
-			var len = 0;
-
-			if (bw != null)
+			if (data is string s)
 			{
-				if (buf is string s)
-				{
-					var byteBuf = enc.GetBytes(s);
-					len = count != long.MinValue ? Math.Min(byteBuf.Length, (int)count) : byteBuf.Length;
-					bw.Write(byteBuf, 0, len);
-				}
-				else if (Reflections.TryGetPtrProperty(buf, out var ptr))
-				{
-					int buflen = Reflections.TryGetSizeProperty(buf, out var sz) ? (int)sz : int.MinValue;
-					len = count == long.MinValue ? buflen : (buflen != int.MinValue ? Math.Min((int)count, buflen) : (int)count);
-					if (len < 0) return (long)Errors.ErrorOccurred("Invalid byte count", 0L);
+				var text = MemoryMarshal.AsBytes(s.AsSpan());
 
-					unsafe
-					{
-						var byteBuf = new byte[len];
-						Marshal.Copy((nint)ptr, byteBuf, 0, len);
-						bw.Write(byteBuf);
-					}
-				}
-				else
-					return (long)Errors.ErrorOccurred("Invalid buffer", 0L);
+				if (!TryGetByteCount(bytes, text.Length, text.Length + sizeof(char), out var length))
+					return 0L;
+
+				if (stream == null)
+					return 0L;
+
+				var written = (long)stream.WriteBytes(text[..Math.Min(length, text.Length)]);
+				ReadOnlySpan<byte> terminator = [0, 0];
+				return length > text.Length ? written + stream.WriteBytes(terminator[..(length - text.Length)]) : written;
 			}
 
-			return len;
+			if (!TryGetMemory(data, bytes, out var ptr, out var count))
+				return 0L;
+
+			unsafe
+			{
+				return stream?.WriteBytes(new ReadOnlySpan<byte>((void*)ptr, count)) ?? 0L;
+			}
 		}
 
 		/// <summary>
@@ -436,293 +299,109 @@ namespace Keysharp.Builtins
 		/// <returns>The characters read, or an empty string once the end has been reached.</returns>
 		public string Read(object characters = null)
 		{
-			var s = "";
-			var readAll = characters is null;
-
-			if (!characters.CoerceLong(out var count))
+			if (!characters.CoerceLong(out var count, long.MaxValue))
 				return "";
 
 			if (count < 0)
 				return (string)Errors.ValueErrorOccurred("Invalid character count", count, DefaultObject);
 
-			char[] buf = null;
-			var read = 0;
+			var max = (int)Math.Min(count, int.MaxValue);
 
-			if (count > 0)
-				buf = new char[count];
+			if (stream != null)
+				return stream.Read(max);
 
-			if (br != null)
+			if (reader == null || max == 0)
+				return "";
+
+			string text;
+
+			if (characters is null)
+				text = reader.ReadToEnd();
+			else
 			{
-				if (readAll)
-				{
-					// Deliberately not BinaryReader.ReadString(): that expects the 7-bit-encoded length prefix
-					// BinaryWriter emits, which an ordinary file does not carry. Decoding through the reader's
-					// own encoding also keeps a multi-byte character split across two chunks intact.
-					var sb = new StringBuilder();
-					var chunk = new char[4096];
-					int n;
-
-					while ((n = br.Read(chunk, 0, chunk.Length)) > 0)
-						_ = sb.Append(chunk, 0, n);
-
-					s = sb.ToString();
-				}
-				else if (count > 0)
-					read = br.Read(buf, 0, (int)count);
-			}
-			else if (tr != null)
-			{
-				if (readAll)
-					s = tr.ReadToEnd();
-				else if (count > 0)
-					read = tr.Read(buf, 0, (int)count);
+				var chars = new char[max];
+				text = new string(chars, 0, reader.Read(chars, 0, max));
 			}
 
-			if (read > 0)
-				s = new string(buf, 0, read);
-
-			s = HandleReadEol(s);
-			return s ?? DefaultObject;
+			return TextStream.TranslateLineEndings(text, eolFlags);
 		}
 
-		public object ReadChar() => br != null ? (long)br.ReadByte() : DefaultObject;
+		public object ReadChar() => TryRead(out sbyte value) ? (long)value : DefaultObject;
 
-		public object ReadDouble() => br != null ? br.ReadDouble() : DefaultObject;
+		public object ReadDouble() => TryRead(out double value) ? value : DefaultObject;
 
-		public object ReadFloat() => br != null ? (double)br.ReadSingle() : DefaultObject;
+		public object ReadFloat() => TryRead(out float value) ? (double)value : DefaultObject;
 
-		public object ReadInt() => br != null ? (long)br.ReadInt32() : DefaultObject;
+		public object ReadInt() => TryRead(out int value) ? (long)value : DefaultObject;
 
-		public object ReadInt64() => br != null ? br.ReadInt64() : DefaultObject;
+		public object ReadInt64() => TryRead(out long value) ? value : DefaultObject;
 
-		public string ReadLine()
-		{
-			var s = "";
+		/// <summary>
+		/// Reads a line of text, without its line ending, and advances the file pointer.
+		/// </summary>
+		/// <returns>The line, or an empty string at the end of the file.</returns>
+		public string ReadLine() => stream?.ReadLine() ?? reader?.ReadLine() ?? "";
 
-			if (br != null)
-				s = br.ReadLine();
-			else if (tr != null)
-				s = tr.ReadLine();
+		public object ReadShort() => TryRead(out short value) ? (long)value : DefaultObject;
 
-			return s;
-		}
+		public object ReadUChar() => TryRead(out byte value) ? (long)value : DefaultObject;
 
-		public object ReadShort() => br != null ? (long)br.ReadInt16() : DefaultObject;
+		public object ReadUInt() => TryRead(out uint value) ? (long)value : DefaultObject;
 
-		//Char in this case is meant to be 1 byte, according to the AHK DllCall() documentation.
-		public object ReadUChar() => br != null ? (long)br.ReadByte() : DefaultObject;
+		public object ReadUShort() => TryRead(out ushort value) ? (long)value : DefaultObject;
 
-		public object ReadUInt() => br != null ? (long)br.ReadUInt32() : DefaultObject;
-
-		public object ReadUShort() => br != null ? (long)br.ReadUInt16() : DefaultObject;
-
+		/// <summary>
+		/// Moves the file pointer.
+		/// </summary>
+		/// <param name="distance">The distance to move, in bytes.</param>
+		/// <param name="origin">0 for the start, 1 for the current position or 2 for the end; omitted, 2 when
+		/// <paramref name="distance"/> is negative and 0 otherwise.</param>
+		/// <returns>1 if the pointer moved, otherwise 0.</returns>
 		public object Seek(object distance, object origin = null)
 		{
 			if (!distance.CoerceLong(out var distanceVal))
 				return DefaultObject;
 
-			var originVal = long.MinValue;
-
-			if (origin is not null && !origin.CoerceLong(out originVal))
+			if (!origin.CoerceLong(out var originVal, distanceVal < 0 ? 2L : 0L))
 				return DefaultObject;
 
-			SeekOrigin so;
-
-			if (originVal == 0)
-				so = SeekOrigin.Begin;
-			else if (originVal == 1)
-				so = SeekOrigin.Current;
-			else if (originVal == 2)
-				so = SeekOrigin.End;
-			else if (distanceVal < 0)
-				so = SeekOrigin.End;
-			else
-				so = SeekOrigin.Begin;
-
-			if (br != null)
-				_ = br.BaseStream.Seek(distanceVal, so);
-			else if (bw != null)//Only need to do 1, because they both have the same underlying stream.
-				_ = bw.Seek((int)distanceVal, so);
-
-			return DefaultObject;
+			return originVal is >= 0 and <= 2 && stream != null && stream.Seek(distanceVal, (SeekOrigin)originVal) ? 1L : 0L;
 		}
 
-		public long Write(object @string)
+		public long Write(object @string) => @string.CoerceString(out var s) ? WriteText(s) : 0L;
+
+		public long WriteChar(object num) => num.CoerceLong(out var n) ? WriteNumber((sbyte)n) : 0L;
+
+		public long WriteDouble(object num) => num.CoerceDouble(out var d) ? WriteNumber(d) : 0L;
+
+		public long WriteFloat(object num) => num.CoerceDouble(out var d) ? WriteNumber((float)d) : 0L;
+
+		public long WriteInt(object num) => num.CoerceInt(out var n) ? WriteNumber(n) : 0L;
+
+		public long WriteInt64(object num) => num.CoerceLong(out var n) ? WriteNumber(n) : 0L;
+
+		/// <summary>
+		/// Writes text followed by a line feed, which the `n flag of FileOpen turns into \r\n.
+		/// </summary>
+		/// <returns>The number of bytes written.</returns>
+		public long WriteLine(object @string = null)
 		{
 			if (!@string.CoerceString(out var s))
 				return 0L;
 
-			var len = 0L;
+			var written = WriteText(s);
 
-			if (bw != null)
-			{
-				s = HandleWriteEol(s);
-				var bytes = enc.GetBytes(s);
-				bw.Write(bytes);
-				len = bytes.Length;
-			}
-			else if (tw != null)
-			{
-				tw.Write(s);
-				len = enc.GetByteCount(s);
-			}
-
-			return len;
+			// As in AutoHotkey, the line ending follows only text that was written.
+			return written == 0 && s.Length != 0 ? 0L : written + WriteText("\n");
 		}
 
-		public long WriteChar(object num)
-		{
-			if (!num.CoerceLong(out var n))
-				return 0L;
+		public long WriteShort(object num) => num.CoerceLong(out var n) ? WriteNumber((short)n) : 0L;
 
-			if (bw != null)
-			{
-				bw.Write((byte)n);//Char in this case is meant to be 1 byte, according to the AHK DllCall() documentation.
-				return 1L;
-			}
-			else
-				return 0L;
-		}
+		public long WriteUChar(object num) => num.CoerceLong(out var n) ? WriteNumber((byte)n) : 0L;
 
-		public long WriteDouble(object num)
-		{
-			if (!num.CoerceDouble(out var d))
-				return 0L;
+		public long WriteUInt(object num) => num.CoerceLong(out var n) ? WriteNumber((uint)n) : 0L;
 
-			if (bw != null)
-			{
-				bw.Write(d);
-				return 8L;
-			}
-			else
-				return 0L;
-		}
-
-		public long WriteFloat(object num)
-		{
-			if (!num.CoerceDouble(out var d))
-				return 0L;
-
-			if (bw != null)
-			{
-				bw.Write((float)d);
-				return 4L;
-			}
-			else
-				return 0L;
-		}
-
-		public long WriteInt(object num)
-		{
-			if (!num.CoerceInt(out var n))
-				return 0L;
-
-			if (bw != null)
-			{
-				bw.Write(n);
-				return 4L;
-			}
-			else
-				return 0L;
-		}
-
-		public long WriteInt64(object num)
-		{
-			if (!num.CoerceLong(out var n))
-				return 0L;
-
-			if (bw != null)
-			{
-				bw.Write(n);
-				return 8L;
-			}
-			else
-				return 0L;
-		}
-
-		public long WriteLine(object @string)
-		{
-			if (!@string.CoerceString(out var s))
-				return 0L;
-
-			byte[] bytes;
-			var len = 0L;
-
-			if (s != "")
-				len = Write(s);
-
-			s = eolconv == 4 ? "\r\n" : "\n";
-
-			if (bw != null)
-			{
-				bytes = enc.GetBytes(s);
-				bw.Write(bytes);
-				len += bytes.Length;
-			}
-			else if (tw != null)
-			{
-				tw.Write(s);
-				len += enc.GetByteCount(s);
-			}
-
-			return len;
-		}
-
-		public long WriteShort(object num)
-		{
-			if (!num.CoerceLong(out var n))
-				return 0L;
-
-			if (bw != null)
-			{
-				bw.Write((short)n);
-				return 2L;
-			}
-			else
-				return 0L;
-		}
-
-		public long WriteUChar(object num)
-		{
-			if (!num.CoerceLong(out var n))
-				return 0L;
-
-			if (bw != null)
-			{
-				bw.Write((byte)n);
-				return 1L;
-			}
-			else
-				return 0L;
-		}
-
-		public long WriteUInt(object num)
-		{
-			if (!num.CoerceLong(out var n))
-				return 0L;
-
-			if (bw != null)
-			{
-				bw.Write((uint)n);
-				return 4L;
-			}
-			else
-				return 0L;
-		}
-
-		public long WriteUShort(object num)
-		{
-			if (!num.CoerceLong(out var n))
-				return 0L;
-
-			if (bw != null)
-			{
-				bw.Write((ushort)n);
-				return 2L;
-			}
-			else
-				return 0L;
-		}
+		public long WriteUShort(object num) => num.CoerceLong(out var n) ? WriteNumber((ushort)n) : 0L;
 
 		void IDisposable.Dispose()
 		{
@@ -730,22 +409,71 @@ namespace Keysharp.Builtins
 			HasFinalizer = false;
 		}
 
-		private string HandleReadEol(string s)
+		// RawRead's and RawWrite's byte count: at most max, and the whole of whole when omitted.
+		private static bool TryGetByteCount(object bytes, long whole, long max, out int count)
 		{
-			if (eolconv == 4)
-				s = s.Replace("\r\n", "\n");
-			else if (eolconv == 8)
-				s = s.Replace("\r", "\n");
+			count = 0;
 
-			return s;
+			if (!bytes.CoerceLong(out var requested, whole))
+				return false;
+
+			if (requested < 0 || requested > max || requested > int.MaxValue)
+			{
+				_ = Errors.ValueErrorOccurred("Invalid byte count.", requested);
+				return false;
+			}
+
+			count = (int)requested;
+			return true;
 		}
 
-		private string HandleWriteEol(string s)
+		// AutoHotkey's RawX: the memory of a Buffer-like object, or an address, which needs an explicit byte count.
+		private static bool TryGetMemory(object target, object bytes, out long ptr, out int count)
 		{
-			if (eolconv == 4)
-				s = s.Replace("\n", "\r\n");
+			count = 0;
 
-			return s;
+			// AutoHotkey's sanity check: no valid address lies in the lowest 64 KB.
+			if (!Reflections.TryGetPtrProperty(target, out ptr) || (ulong)ptr < 65536)
+			{
+				_ = Errors.ValueErrorOccurred("Invalid buffer.");
+				return false;
+			}
+
+			if (Reflections.TryGetSizeProperty(target, out var size))
+				return TryGetByteCount(bytes, size, size, out count);
+
+			if (bytes is null)
+			{
+				_ = Errors.ValueErrorOccurred("A byte count is required with an address.");
+				return false;
+			}
+
+			return TryGetByteCount(bytes, 0, int.MaxValue, out count);
+		}
+
+		// As in AutoHotkey, a number cut short by the end of the file keeps zeros in its missing bytes, and nothing
+		// read at all gives an empty value.
+		private bool TryRead<T>(out T value) where T : unmanaged
+		{
+			value = default;
+			return stream != null && stream.ReadBytes(MemoryMarshal.AsBytes(new Span<T>(ref value))) > 0;
+		}
+
+		private long WriteNumber<T>(T value) where T : unmanaged => stream?.WriteBytes(MemoryMarshal.AsBytes(new ReadOnlySpan<T>(in value))) ?? 0L;
+
+		private long WriteText(string s)
+		{
+			if (stream != null)
+				return stream.WriteText(s);
+
+			if (writer == null)
+				return 0L;
+
+			if ((eolFlags & TextStream.EolCrlf) != 0)
+				s = TextStream.InsertCarriageReturns(s, '\0');
+
+			writer.Write(s);
+			return writer.Encoding.GetByteCount(s);
 		}
 	}
 }

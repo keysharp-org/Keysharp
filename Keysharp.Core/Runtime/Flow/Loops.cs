@@ -567,8 +567,8 @@ namespace Keysharp.Runtime
 		{
 			var s = LoopStack;
 
-			if (s.TryPop(out var info) && info != null && info.type == LoopType.File && info.sw != null)
-				info.sw.Close();
+			if (s.TryPop(out var info) && info != null && info.type == LoopType.File)
+				info.outputStream?.Dispose();
 
 			return info;
 		}
@@ -826,7 +826,8 @@ namespace Keysharp.Runtime
 		public string regType;
 		public object regVal;
 		public object result;
-		public TextWriter sw;
+		internal TextStream outputStream;    // the output file FileAppend opened for this loop, kept open until it ends
+		internal bool outputRaw;
 		public LoopType type = LoopType.Normal;
 	}
 
