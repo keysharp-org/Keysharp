@@ -1,4 +1,4 @@
-using Keysharp.Builtins;
+﻿using Keysharp.Builtins;
 #if WINDOWS
 /// <summary>
 /// This code was taken from a project named NAudio which is located at https://github.com/naudio/NAudio
@@ -32,15 +32,6 @@ namespace Keysharp.Internals.Os.Windows
 	//You can never use the code rearranger on this file because many of the types
 	//in it are for COM, and the order of declarations must match exactly.
 
-	internal struct AudioVolumeNotificationDataStruct
-	{
-		public AudioVolumeNotificationDataStruct() { }
-		internal Guid guidEventContext = default;//Need these to suppress warnings about initial values.
-		internal bool bMuted = default;
-		internal float fMasterVolume = default;
-		internal uint nChannels = default;
-		internal float ChannelVolume = default;
-	}
 
 	/// <summary>
 	/// Representation of binary large object container.
@@ -253,11 +244,6 @@ namespace Keysharp.Internals.Os.Windows
 		*/
 
 		/// <summary>
-		/// Creates a new PropVariant containing a long value
-		/// </summary>
-		internal static PropVariant FromLong(long value) => new () { vt = (short)VarEnum.VT_I8, hVal = value };
-
-		/// <summary>
 		/// Helper method to gets blob data
 		/// </summary>
 		private byte[] GetBlob()
@@ -265,33 +251,6 @@ namespace Keysharp.Internals.Os.Windows
 			var blob = new byte[blobVal.Length];
 			Marshal.Copy(blobVal.Data, blob, 0, blob.Length);
 			return blob;
-		}
-
-		/// <summary>
-		/// Interprets a blob as an array of structs
-		/// </summary>
-		internal T[] GetBlobAsArrayOf<T>()
-		{
-			var blobByteLength = blobVal.Length;
-			var singleInstance = (T)Activator.CreateInstance(typeof(T));
-			var structSize = Marshal.SizeOf(singleInstance);
-
-			if (blobByteLength % structSize != 0)
-			{
-				_ = Errors.ErrorOccurred($"Blob size {blobByteLength} not a multiple of struct size {structSize}.");
-				return default;
-			}
-
-			var items = blobByteLength / structSize;
-			var array = new T[items];
-
-			for (var n = 0; n < items; n++)
-			{
-				array[n] = (T)Activator.CreateInstance(typeof(T));
-				Marshal.PtrToStructure(new nint((long)blobVal.Data + n * structSize), array[n]);
-			}
-
-			return array;
 		}
 
 		/// <summary>
@@ -336,13 +295,6 @@ namespace Keysharp.Internals.Os.Windows
 		/// <summary>
 		/// allows freeing up memory, might turn this into a Dispose method?
 		/// </summary>
-		[Obsolete("Call with pointer instead")]
-		internal void Clear() => PropVariantNative.PropVariantClear(ref this);
-
-		/// <summary>
-		/// Clears with a known pointer
-		/// </summary>
-		internal static void Clear(nint ptr) => PropVariantNative.PropVariantClear(ptr);
 	}
 
 	/// <summary>
@@ -350,761 +302,88 @@ namespace Keysharp.Internals.Os.Windows
 	/// </summary>
 	internal static class PropertyKeys
 	{
-		/// <summary>
-		/// PKEY_AudioEndpoint_Association
-		/// </summary>
-		internal static readonly PropertyKey PKEY_AudioEndpoint_Association = new (new Guid(0x1da5d803, unchecked((short)0xd492), 0x4edd, 0x8c, 0x23, 0xe0, 0xc0, 0xff, 0xee, 0x7f, 0x0e), 2);
-
-		/// <summary>
-		/// PKEY_AudioEndpoint_ControlPanelPageProvider
-		/// </summary>
-		internal static readonly PropertyKey PKEY_AudioEndpoint_ControlPanelPageProvider = new (new Guid(0x1da5d803, unchecked((short)0xd492), 0x4edd, 0x8c, 0x23, 0xe0, 0xc0, 0xff, 0xee, 0x7f, 0x0e), 1);
-
-		/// <summary>
-		/// PKEY_AudioEndpoint_Disable_SysFx
-		/// </summary>
-		internal static readonly PropertyKey PKEY_AudioEndpoint_Disable_SysFx = new (new Guid(0x1da5d803, unchecked((short)0xd492), 0x4edd, 0x8c, 0x23, 0xe0, 0xc0, 0xff, 0xee, 0x7f, 0x0e), 5);
-
-		/// <summary>
-		/// PKEY_AudioEndpoint_FormFactor
-		/// </summary>
-		internal static readonly PropertyKey PKEY_AudioEndpoint_FormFactor = new (new Guid(0x1da5d803, unchecked((short)0xd492), 0x4edd, 0x8c, 0x23, 0xe0, 0xc0, 0xff, 0xee, 0x7f, 0x0e), 0);
-
-		/// <summary>
-		/// PKEY_AudioEndpoint_FullRangeSpeakers
-		/// </summary>
-		internal static readonly PropertyKey PKEY_AudioEndpoint_FullRangeSpeakers = new (new Guid(0x1da5d803, unchecked((short)0xd492), 0x4edd, 0x8c, 0x23, 0xe0, 0xc0, 0xff, 0xee, 0x7f, 0x0e), 6);
-
-		/// <summary>
-		/// PKEY_AudioEndpoint_GUID
-		/// </summary>
-		internal static readonly PropertyKey PKEY_AudioEndpoint_GUID = new (new Guid(0x1da5d803, unchecked((short)0xd492), 0x4edd, 0x8c, 0x23, 0xe0, 0xc0, 0xff, 0xee, 0x7f, 0x0e), 4);
-
-		/// <summary>
-		/// PKEY_AudioEndpoint_JackSubType
-		/// </summary>
-		internal static readonly PropertyKey PKEY_AudioEndpoint_JackSubType = new (new Guid(0x1da5d803, unchecked((short)0xd492), 0x4edd, 0x8c, 0x23, 0xe0, 0xc0, 0xff, 0xee, 0x7f, 0x0e), 8);
-
-		/// <summary>
-		/// PKEY_AudioEndpoint_PhysicalSpeakers
-		/// </summary>
-		internal static readonly PropertyKey PKEY_AudioEndpoint_PhysicalSpeakers = new (new Guid(0x1da5d803, unchecked((short)0xd492), 0x4edd, 0x8c, 0x23, 0xe0, 0xc0, 0xff, 0xee, 0x7f, 0x0e), 3);
-
-		/// <summary>
-		/// PKEY_AudioEndpoint_Supports_EventDriven_Mode
-		/// </summary>
-		internal static readonly PropertyKey PKEY_AudioEndpoint_Supports_EventDriven_Mode = new (new Guid(0x1da5d803, unchecked((short)0xd492), 0x4edd, 0x8c, 0x23, 0xe0, 0xc0, 0xff, 0xee, 0x7f, 0x0e), 7);
-
-		/// <summary>
-		/// PKEY_AudioEngine_DeviceFormat
-		/// </summary>
-		internal static readonly PropertyKey PKEY_AudioEngine_DeviceFormat = new (new Guid(unchecked((int)0xf19f064d), 0x82c, 0x4e27, 0xbc, 0x73, 0x68, 0x82, 0xa1, 0xbb, 0x8e, 0x4c), 0);
-
-		/// <summary>
-		/// PKEY_AudioEngine_OEMFormat
-		/// </summary>
-		internal static readonly PropertyKey PKEY_AudioEngine_OEMFormat = new (new Guid(unchecked((int)0xe4870e26), 0x3cc5, 0x4cd2, 0xba, 0x46, 0xca, 0xa, 0x9a, 0x70, 0xed, 0x4), 3);
-
-		/// <summary>
-		/// Id of controller device for endpoint device property.
-		/// </summary>
-		internal static readonly PropertyKey PKEY_Device_ControllerDeviceId = new (new Guid(unchecked((int)0xb3f8fa53), unchecked(0x0004), 0x438e, 0x90, 0x03, 0x51, 0xa4, 0x6e, 0x13, 0x9b, 0xfc), 2);
-
-		/// <summary>
-		/// Device description property.
-		/// </summary>
 		internal static readonly PropertyKey PKEY_Device_DeviceDesc = new (new Guid(unchecked((int)0xa45c254e), unchecked((short)0xdf1c), 0x4efd, 0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0), 2);
-
-		/// <summary>
-		/// PKEY _Devie_FriendlyName
-		/// </summary>
 		internal static readonly PropertyKey PKEY_Device_FriendlyName = new (new Guid(unchecked((int)0xa45c254e), unchecked((short)0xdf1c), 0x4efd, 0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0), 14);
-
-		/// <summary>
-		/// PKEY _Device_IconPath
-		/// </summary>
-		internal static readonly PropertyKey PKEY_Device_IconPath = new (new Guid(unchecked(0x259abffc), unchecked(0x50a7), 0x47ce, 0xaf, 0x8, 0x68, 0xc9, 0xa7, 0xd7, 0x33, 0x66), 12);
-
-		/// <summary>
-		/// System-supplied device instance identification string, assigned by PnP manager, persistent across system restarts.
-		/// </summary>
-		internal static readonly PropertyKey PKEY_Device_InstanceId = new (new Guid(0x78c34fc8, 0x104a, 0x4aca, 0x9e, 0xa4, 0x52, 0x4d, 0x52, 0x99, 0x6e, 0x57), 256);
-
-		/// <summary>
-		/// Device interface key property.
-		/// </summary>
-		internal static readonly PropertyKey PKEY_Device_InterfaceKey = new (new Guid(unchecked(0x233164c8), unchecked(0x1b2c), 0x4c7d, 0xbc, 0x68, 0xb6, 0x71, 0x68, 0x7a, 0x25, 0x67), 1);
-
-		/// <summary>
-		/// PKEY_DeviceInterface_FriendlyName
-		/// </summary>
 		internal static readonly PropertyKey PKEY_DeviceInterface_FriendlyName = new (new Guid(0x026e516e, unchecked((short)0xb814), 0x414b, 0x83, 0xcd, 0x85, 0x6d, 0x6f, 0xef, 0x48, 0x22), 2);
 	}
 
-	/// <summary>
-	/// Audio Endpoint Volume
-	/// </summary>
-	internal class AudioEndpointVolume : IDisposable
+	/// <summary>One endpoint and the interfaces acquired from it.</summary>
+
+	internal sealed class MMDevice : IDisposable
 	{
-		private readonly IAudioEndpointVolume audioEndPointVolume;
-		private AudioEndpointVolumeCallback callBack;
-
-		private Guid notificationGuid = Guid.Empty;
-
-		/// <summary>
-		/// Channels
-		/// </summary>
-		internal AudioEndpointVolumeChannels Channels { get; }
-
-		/// <summary>
-		/// Hardware Support
-		/// </summary>
-		internal EEndpointHardwareSupport HardwareSupport { get; }
-
-		/// <summary>
-		/// Master Volume Level
-		/// </summary>
-		internal float MasterVolumeLevel
-		{
-			get
-			{
-				Marshal.ThrowExceptionForHR(audioEndPointVolume.GetMasterVolumeLevel(out var result));
-				return result;
-			}
-
-			set => Marshal.ThrowExceptionForHR(audioEndPointVolume.SetMasterVolumeLevel(value, ref notificationGuid));
-		}
-
-		/// <summary>
-		/// Master Volume Level Scalar
-		/// </summary>
-		internal float MasterVolumeLevelScalar
-		{
-			get
-			{
-				Marshal.ThrowExceptionForHR(audioEndPointVolume.GetMasterVolumeLevelScalar(out var result));
-				return result;
-			}
-
-			set => Marshal.ThrowExceptionForHR(audioEndPointVolume.SetMasterVolumeLevelScalar(value, ref notificationGuid));
-		}
-
-		/// <summary>
-		/// Mute
-		/// </summary>
-		internal bool Mute
-		{
-			get
-			{
-				Marshal.ThrowExceptionForHR(audioEndPointVolume.GetMute(out var result));
-				return result;
-			}
-
-			set => Marshal.ThrowExceptionForHR(audioEndPointVolume.SetMute(value, ref notificationGuid));
-		}
-
-		/// <summary>
-		/// GUID to pass to AudioEndpointVolumeCallback
-		/// </summary>
-		internal Guid NotificationGuid
-		{
-			get => notificationGuid;
-			set => notificationGuid = value;
-		}
-
-		/// <summary>
-		/// Step Information
-		/// </summary>
-		internal AudioEndpointVolumeStepInformation StepInformation { get; }
-
-		/// <summary>
-		/// Volume Range
-		/// </summary>
-		internal AudioEndpointVolumeVolumeRange VolumeRange { get; }
-
-		/// <summary>
-		/// Creates a new Audio endpoint volume
-		/// </summary>
-		/// <param name="realEndpointVolume">IAudioEndpointVolume COM interface</param>
-		internal AudioEndpointVolume(IAudioEndpointVolume realEndpointVolume)
-		{
-			audioEndPointVolume = realEndpointVolume;
-			Channels = new AudioEndpointVolumeChannels(audioEndPointVolume);
-			StepInformation = new AudioEndpointVolumeStepInformation(audioEndPointVolume);
-			Marshal.ThrowExceptionForHR(audioEndPointVolume.QueryHardwareSupport(out var hardwareSupp));
-			HardwareSupport = (EEndpointHardwareSupport)hardwareSupp;
-			VolumeRange = new AudioEndpointVolumeVolumeRange(audioEndPointVolume);
-			callBack = new AudioEndpointVolumeCallback(this);
-			Marshal.ThrowExceptionForHR(audioEndPointVolume.RegisterControlChangeNotify(callBack));
-		}
-
-		/// <summary>
-		/// Finalizer
-		/// </summary>
-		~AudioEndpointVolume()
-		{
-			Dispose();
-		}
-
-		/// <summary>
-		/// Dispose
-		/// </summary>
-		public void Dispose()
-		{
-			if (callBack != null)
-			{
-				Marshal.ThrowExceptionForHR(audioEndPointVolume.UnregisterControlChangeNotify(callBack));
-				callBack = null;
-			}
-
-			_ = Marshal.ReleaseComObject(audioEndPointVolume);
-			GC.SuppressFinalize(this);
-		}
-
-		internal void FireNotification(AudioVolumeNotificationData notificationData) => OnVolumeNotification?.Invoke(notificationData);
-
-		/// <summary>
-		/// Volume Step Down
-		/// </summary>
-		internal void VolumeStepDown() => Marshal.ThrowExceptionForHR(audioEndPointVolume.VolumeStepDown(ref notificationGuid));
-
-		/// <summary>
-		/// Volume Step Up
-		/// </summary>
-		internal void VolumeStepUp() => Marshal.ThrowExceptionForHR(audioEndPointVolume.VolumeStepUp(ref notificationGuid));
-
-		/// <summary>
-		/// On Volume Notification
-		/// </summary>
-		internal event AudioEndpointVolumeNotificationDelegate OnVolumeNotification;
-	}
-
-	// This class implements the IAudioEndpointVolumeCallback interface,
-	// it is implemented in this class because implementing it on AudioEndpointVolume
-	// (where the functionality is really wanted, would cause the OnNotify function
-	// to show up in the internal API.
-	internal class AudioEndpointVolumeCallback : IAudioEndpointVolumeCallback
-	{
-		private readonly AudioEndpointVolume parent;
-
-		internal AudioEndpointVolumeCallback(AudioEndpointVolume parent) => this.parent = parent;
-
-		public void OnNotify(nint notifyData)
-		{
-			//Since AUDIO_VOLUME_NOTIFICATION_DATA is dynamic in length based on the
-			//number of audio channels available we cannot just call PtrToStructure
-			//to get all data, thats why it is split up into two steps, first the static
-			//data is marshalled into the data structure, then with some nint math the
-			//remaining floats are read from memory.
-			//
-			var data = Marshal.PtrToStructure<AudioVolumeNotificationDataStruct>(notifyData);
-			//Determine offset in structure of the first float
-			var offset = Marshal.OffsetOf<AudioVolumeNotificationDataStruct>("ChannelVolume");
-			//Determine offset in memory of the first float
-			var firstFloatPtr = (nint)(notifyData + (long)offset);
-			var voldata = new float[data.nChannels];
-
-			//Read all floats from memory.
-			for (var i = 0; i < data.nChannels; i++)
-			{
-				voldata[i] = Marshal.PtrToStructure<float>(firstFloatPtr);
-			}
-
-			//Create combined structure and Fire Event in parent class.
-			var notificationData = new AudioVolumeNotificationData(data.guidEventContext, data.bMuted, data.fMasterVolume, voldata, data.guidEventContext);
-			parent.FireNotification(notificationData);
-		}
-	}
-
-	/// <summary>
-	/// Audio Endpoint Volume Channel
-	/// </summary>
-	internal class AudioEndpointVolumeChannel
-	{
-		private readonly uint channel;
-		private readonly IAudioEndpointVolume audioEndpointVolume;
-
-		private Guid notificationGuid = Guid.Empty;
-
-		/// <summary>
-		/// GUID to pass to AudioEndpointVolumeCallback
-		/// </summary>
-		internal Guid NotificationGuid
-		{
-			get => notificationGuid;
-			set => notificationGuid = value;
-		}
-
-		internal AudioEndpointVolumeChannel(IAudioEndpointVolume parent, int channel)
-		{
-			this.channel = (uint)channel;
-			audioEndpointVolume = parent;
-		}
-
-		/// <summary>
-		/// Volume Level
-		/// </summary>
-		internal float VolumeLevel
-		{
-			get
-			{
-				Marshal.ThrowExceptionForHR(audioEndpointVolume.GetChannelVolumeLevel(channel, out var result));
-				return result;
-			}
-			set
-			{
-				Marshal.ThrowExceptionForHR(audioEndpointVolume.SetChannelVolumeLevel(channel, value, ref notificationGuid));
-			}
-		}
-
-		/// <summary>
-		/// Volume Level Scalar
-		/// </summary>
-		internal float VolumeLevelScalar
-		{
-			get
-			{
-				Marshal.ThrowExceptionForHR(audioEndpointVolume.GetChannelVolumeLevelScalar(channel, out var result));
-				return result;
-			}
-			set
-			{
-				Marshal.ThrowExceptionForHR(audioEndpointVolume.SetChannelVolumeLevelScalar(channel, value, ref notificationGuid));
-			}
-		}
-
-	}
-
-	/// <summary>
-	/// Audio Endpoint Volume Channels
-	/// </summary>
-	internal class AudioEndpointVolumeChannels
-	{
-		readonly IAudioEndpointVolume audioEndPointVolume;
-		readonly AudioEndpointVolumeChannel[] channels;
-
-		/// <summary>
-		/// Channel Count
-		/// </summary>
-		internal int Count
-		{
-			get
-			{
-				Marshal.ThrowExceptionForHR(audioEndPointVolume.GetChannelCount(out var result));
-				return result;
-			}
-		}
-
-		/// <summary>
-		/// Indexer - get a specific channel
-		/// </summary>
-		internal AudioEndpointVolumeChannel this[int index] => channels[index];
-
-		internal AudioEndpointVolumeChannels(IAudioEndpointVolume parent)
-		{
-			audioEndPointVolume = parent;
-			var channelCount = Count;
-			channels = new AudioEndpointVolumeChannel[channelCount];
-
-			for (int i = 0; i < channelCount; i++)
-			{
-				channels[i] = new AudioEndpointVolumeChannel(audioEndPointVolume, i);
-			}
-		}
-	}
-
-	/// <summary>
-	/// Audio Endpoint Volume Step Information
-	/// </summary>
-	internal class AudioEndpointVolumeStepInformation
-	{
-		private readonly uint step;
-		private readonly uint stepCount;
-
-		internal AudioEndpointVolumeStepInformation(IAudioEndpointVolume parent)
-		{
-			Marshal.ThrowExceptionForHR(parent.GetVolumeStepInfo(out step, out stepCount));
-		}
-
-		/// <summary>
-		/// Step
-		/// </summary>
-		internal uint Step => step;
-
-		/// <summary>
-		/// StepCount
-		/// </summary>
-		internal uint StepCount => stepCount;
-	}
-
-	/// <summary>
-	/// Audio Endpoint Volume Volume Range
-	/// </summary>
-	internal class AudioEndpointVolumeVolumeRange
-	{
-		readonly float volumeMinDecibels;
-		readonly float volumeMaxDecibels;
-		readonly float volumeIncrementDecibels;
-
-		internal AudioEndpointVolumeVolumeRange(IAudioEndpointVolume parent)
-		{
-			Marshal.ThrowExceptionForHR(parent.GetVolumeRange(out volumeMinDecibels, out volumeMaxDecibels, out volumeIncrementDecibels));
-		}
-
-		/// <summary>
-		/// Minimum Decibels
-		/// </summary>
-		internal float MinDecibels => volumeMinDecibels;
-
-		/// <summary>
-		/// Maximum Decibels
-		/// </summary>
-		internal float MaxDecibels => volumeMaxDecibels;
-
-		/// <summary>
-		/// Increment Decibels
-		/// </summary>
-		internal float IncrementDecibels => volumeIncrementDecibels;
-	}
-
-	/// <summary>
-	/// Audio Volume Notification Data
-	/// </summary>
-	internal class AudioVolumeNotificationData
-	{
-		/// <summary>
-		/// Event Context
-		/// </summary>
-		internal Guid EventContext { get; }
-
-		/// <summary>
-		/// Muted
-		/// </summary>
-		internal bool Muted { get; }
-
-		/// <summary>
-		/// Guid that raised the event
-		/// </summary>
-		internal Guid Guid { get; }
-
-		/// <summary>
-		/// Master Volume
-		/// </summary>
-		internal float MasterVolume { get; }
-
-		/// <summary>
-		/// Channels
-		/// </summary>
-		internal int Channels { get; }
-
-		/// <summary>
-		/// Channel Volume
-		/// </summary>
-		internal float[] ChannelVolume { get; }
-
-		/// <summary>
-		/// Audio Volume Notification Data
-		/// </summary>
-		/// <param name="eventContext"></param>
-		/// <param name="muted"></param>
-		/// <param name="masterVolume"></param>
-		/// <param name="channelVolume"></param>
-		/// <param name="guid"></param>
-		internal AudioVolumeNotificationData(Guid eventContext, bool muted, float masterVolume, float[] channelVolume, Guid guid)
-		{
-			EventContext = eventContext;
-			Muted = muted;
-			MasterVolume = masterVolume;
-			Channels = channelVolume.Length;
-			ChannelVolume = channelVolume;
-			Guid = guid;
-		}
-	}
-
-	/// <summary>
-	/// MM Device
-	/// </summary>
-	internal class MMDevice : IDisposable
-	{
-		#region Variables
 		internal readonly IMMDevice deviceInterface;
 		private PropertyStore propertyStore;
-		private IAudioMeterInformation audioMeterInformation;
-		private AudioEndpointVolume audioEndpointVolume;
-		private IAudioSessionManager audioSessionManager;
 		private IDeviceTopology deviceTopology;
-		#endregion
+		private int disposed;
 
-		#region Guids
-		internal static Guid IID_IAudioMeterInformation = new ("C02216F6-8C67-4B5B-9D00-D008E73E0064");
-		internal static Guid IID_IAudioEndpointVolume = new ("5CDF2C82-841E-4546-9722-0CF74078229A");
-		internal static Guid IID_IAudioClient = new ("1CB9AD4C-DBFA-4c32-B178-C2F568A703B2");
-		internal static Guid IDD_IAudioSessionManager = new ("BFA971F1-4D5E-40BB-935E-967039BFBEE4");
-		internal static Guid IDD_IDeviceTopology = new ("2A07407E-6497-4A18-9787-32F79BD0D98F");
+		internal static Guid IID_IAudioMeterInformation = new("C02216F6-8C67-4B5B-9D00-D008E73E0064");
+		internal static Guid IID_IAudioEndpointVolume = new("5CDF2C82-841E-4546-9722-0CF74078229A");
+		internal static Guid IID_IAudioClient = new("1CB9AD4C-DBFA-4c32-B178-C2F568A703B2");
+		private static Guid IID_IDeviceTopology = new("2A07407E-6497-4A18-9787-32F79BD0D98F");
 
-		#endregion
+		internal MMDevice(IMMDevice device) => deviceInterface = device;
 
-		#region Init
-		/// <summary>
-		/// Initializes the device's property store.
-		/// </summary>
-		/// <param name="stgmAccess">The storage-access mode to open store for.</param>
-		/// <remarks>Administrative client is required for Write and ReadWrite modes.</remarks>
-		internal void GetPropertyInformation(StorageAccessMode stgmAccess = StorageAccessMode.Read)
-		{
-			Marshal.ThrowExceptionForHR(deviceInterface.OpenPropertyStore(stgmAccess, out var propstore));
-			propertyStore = new PropertyStore(propstore);
-		}
-
-		//internal IAudioClient GetAudioClient()
-		//{
-		//  Marshal.ThrowExceptionForHR(deviceInterface.Activate(ref IID_IAudioClient, ClsCtx.ALL, 0, out var result));
-		//  //return new AudioClient(result as IAudioClient);
-		//  return result as IAudioClient;
-		//}
-
-		private void GetAudioMeterInformation()
-		{
-			Marshal.ThrowExceptionForHR(deviceInterface.Activate(ref IID_IAudioMeterInformation, ClsCtx.ALL, 0, out var result));
-			//audioMeterInformation = new AudioMeterInformation(result as IAudioMeterInformation);
-			audioMeterInformation = result as IAudioMeterInformation;
-		}
-
-		private void GetAudioEndpointVolume()
-		{
-			Marshal.ThrowExceptionForHR(deviceInterface.Activate(ref IID_IAudioEndpointVolume, ClsCtx.ALL, 0, out var result));
-			audioEndpointVolume = new AudioEndpointVolume(result as IAudioEndpointVolume);
-		}
-
-		private void GetAudioSessionManager()
-		{
-			Marshal.ThrowExceptionForHR(deviceInterface.Activate(ref IDD_IAudioSessionManager, ClsCtx.ALL, 0, out var result));
-			audioSessionManager = result as IAudioSessionManager;
-		}
-
-		private void GetDeviceTopology()
-		{
-			Marshal.ThrowExceptionForHR(deviceInterface.Activate(ref IDD_IDeviceTopology, ClsCtx.ALL, 0, out var result));
-			//deviceTopology = new DeviceTopology(result as IDeviceTopology);
-			deviceTopology = result as IDeviceTopology;
-		}
-
-		#endregion
-
-		#region Properties
-
-		/// <summary>
-		/// Audio Client
-		/// Makes a new one each call to allow caller to manage when to dispose
-		/// n.b. should probably not be a property anymore
-		/// </summary>
-		//internal AudioClient AudioClient => GetAudioClient();
-
-		/// <summary>
-		/// Audio Meter Information
-		/// </summary>
-		internal IAudioMeterInformation AudioMeterInformation
-		{
-			get
-			{
-				if (audioMeterInformation == null)
-					GetAudioMeterInformation();
-
-				return audioMeterInformation;
-			}
-		}
-
-		/// <summary>
-		/// Audio Endpoint Volume
-		/// </summary>
-		internal AudioEndpointVolume AudioEndpointVolume
-		{
-			get
-			{
-				if (audioEndpointVolume == null)
-					GetAudioEndpointVolume();
-
-				return audioEndpointVolume;
-			}
-		}
-
-		/// <summary>
-		/// AudioSessionManager instance
-		/// </summary>
-		internal IAudioSessionManager AudioSessionManager
-		{
-			get
-			{
-				if (audioSessionManager == null)
-					GetAudioSessionManager();
-
-				return audioSessionManager;
-			}
-		}
-
-		/// <summary>
-		/// DeviceTopology instance
-		/// </summary>
 		internal IDeviceTopology DeviceTopology
 		{
 			get
 			{
 				if (deviceTopology == null)
-					GetDeviceTopology();
-
+				{
+					Marshal.ThrowExceptionForHR(deviceInterface.Activate(ref IID_IDeviceTopology, ClsCtx.ALL, 0, out var result));
+					deviceTopology = (IDeviceTopology)result;
+				}
 				return deviceTopology;
 			}
 		}
 
-		/// <summary>
-		/// Properties
-		/// </summary>
-		internal PropertyStore Properties
-		{
-			get
-			{
-				if (propertyStore == null)
-					GetPropertyInformation();
-
-				return propertyStore;
-			}
-		}
-
-		/// <summary>
-		/// Friendly name for the endpoint
-		/// </summary>
 		internal string FriendlyName
 		{
 			get
 			{
 				if (propertyStore == null)
-					GetPropertyInformation();
-
-				return propertyStore[PropertyKeys.PKEY_Device_FriendlyName]?.Value as string ?? "Unknown";
+				{
+					Marshal.ThrowExceptionForHR(deviceInterface.OpenPropertyStore(StorageAccessMode.Read, out var store));
+					propertyStore = new PropertyStore(store);
+				}
+				return propertyStore[PropertyKeys.PKEY_Device_FriendlyName] as string ?? "Unknown";
 			}
 		}
 
-		/// <summary>
-		/// Friendly name of device
-		/// </summary>
-		internal string DeviceFriendlyName
-		{
-			get
-			{
-				if (propertyStore == null)
-					GetPropertyInformation();
-
-				return propertyStore[PropertyKeys.PKEY_DeviceInterface_FriendlyName]?.Value as string ?? "Unknown";
-			}
-		}
-
-		/// <summary>
-		/// Icon path of device
-		/// </summary>
-		internal string IconPath
-		{
-			get
-			{
-				if (propertyStore == null)
-					GetPropertyInformation();
-
-				return propertyStore[PropertyKeys.PKEY_Device_IconPath]?.Value as string ?? "Unknown";
-			}
-		}
-
-		/// <summary>
-		/// Device Instance Id of Device
-		/// </summary>
-		internal string InstanceId
-		{
-			get
-			{
-				if (propertyStore == null)
-					GetPropertyInformation();
-
-				return propertyStore[PropertyKeys.PKEY_Device_InstanceId]?.Value as string ?? "Unknown";
-			}
-		}
-
-		/// <summary>
-		/// Device ID
-		/// </summary>
 		internal string ID
 		{
-			get
-			{
-				Marshal.ThrowExceptionForHR(deviceInterface.GetId(out var result));
-				return result;
-			}
+			get { Marshal.ThrowExceptionForHR(deviceInterface.GetId(out var id)); return id; }
 		}
 
-		/// <summary>
-		/// Data Flow
-		/// </summary>
 		internal DataFlow DataFlow
 		{
-			get
-			{
-				var ep = deviceInterface as IMMEndpoint;
-				_ = ep.GetDataFlow(out var result);
-				return result;
-			}
+			get { Marshal.ThrowExceptionForHR(((IMMEndpoint)deviceInterface).GetDataFlow(out var flow)); return flow; }
 		}
 
-		/// <summary>
-		/// Device State
-		/// </summary>
 		internal DeviceState State
 		{
-			get
-			{
-				Marshal.ThrowExceptionForHR(deviceInterface.GetState(out var result));
-				return result;
-			}
+			get { Marshal.ThrowExceptionForHR(deviceInterface.GetState(out var state)); return state; }
 		}
 
-		#endregion
-
-		#region Constructor
-		internal MMDevice(IMMDevice realDevice)
-		{
-			deviceInterface = realDevice;
-		}
-		#endregion
-
-		/// <summary>
-		/// To string
-		/// </summary>
-		public override string ToString()
-		{
-			return FriendlyName;
-		}
-
-		/// <summary>
-		/// Dispose
-		/// </summary>
 		public void Dispose()
 		{
-			this.audioEndpointVolume?.Dispose();
-			//this.audioSessionManager?.Dispose();
-			GC.SuppressFinalize(this);
-		}
+			if (Interlocked.Exchange(ref disposed, 1) != 0)
+				return;
 
-		/// <summary>
-		/// Finalizer
-		/// </summary>
-		~MMDevice()
-		{
-			Dispose();
+			try { propertyStore?.Dispose(); }
+			finally
+			{
+				try { if (deviceTopology != null) Marshal.ReleaseComObject(deviceTopology); }
+				finally { Marshal.ReleaseComObject(deviceInterface); }
+			}
 		}
 	}
 
 	/// <summary>
 	/// Multimedia Device Collection
 	/// </summary>
-	internal class MMDeviceCollection : IEnumerable<MMDevice>
+	internal class MMDeviceCollection : IEnumerable<MMDevice>, IDisposable
 	{
-		private readonly IMMDeviceCollection mmDeviceCollection;
+		private IMMDeviceCollection mmDeviceCollection;
 
 		/// <summary>
 		/// Device count
@@ -1137,6 +416,12 @@ namespace Keysharp.Internals.Os.Windows
 		internal MMDeviceCollection(IMMDeviceCollection parent)
 		{
 			mmDeviceCollection = parent;
+		}
+
+		public void Dispose()
+		{
+			var old = Interlocked.Exchange(ref mmDeviceCollection, null);
+			if (old != null) Marshal.ReleaseComObject(old);
 		}
 
 		#region IEnumerable<MMDevice> Members
@@ -1177,11 +462,6 @@ namespace Keysharp.Internals.Os.Windows
 		/// </summary>
 		internal MMDeviceEnumerator()
 		{
-			if (Environment.OSVersion.Version.Major < 6)
-			{
-				_ = Errors.ErrorOccurred("This functionality is only supported on Windows Vista or newer.");
-				return;
-			}
 
 			realEnumerator = new MMDeviceEnumeratorComObject() as IMMDeviceEnumerator;
 		}
@@ -1210,30 +490,22 @@ namespace Keysharp.Internals.Os.Windows
 			return new MMDevice(device);
 		}
 
-		/// <summary>
-		/// Check to see if a default audio end point exists without needing an exception.
-		/// </summary>
-		/// <param name="dataFlow">Data Flow</param>
-		/// <param name="role">Role</param>
-		/// <returns>True if one exists, and false if one does not exist.</returns>
-		internal bool HasDefaultAudioEndpoint(DataFlow dataFlow, Role role)
+		internal bool TryGetDefaultAudioEndpoint(DataFlow flow, Role role, out MMDevice result)
 		{
-			const int E_NOTFOUND = unchecked((int)0x80070490);
-			int hresult = realEnumerator.GetDefaultAudioEndpoint(dataFlow, role, out var device);
+			result = null;
+			var hr = realEnumerator.GetDefaultAudioEndpoint(flow, role, out var device);
+			if (hr == unchecked((int)0x80070490)) return false;
+			if (hr < 0) throw new COMException(null, hr);
+			if (device == null) return false;
+			result = new MMDevice(device);
+			return true;
+		}
 
-			if (hresult == 0x0)
-			{
-				_ = Marshal.ReleaseComObject(device);
-				return true;
-			}
-
-			if (hresult == E_NOTFOUND)
-			{
-				return false;
-			}
-
-			Marshal.ThrowExceptionForHR(hresult);
-			return false;
+		internal bool HasDefaultAudioEndpoint(DataFlow flow, Role role)
+		{
+			if (!TryGetDefaultAudioEndpoint(flow, role, out var device)) return false;
+			device.Dispose();
+			return true;
 		}
 
 		internal bool TryGetDevice(string id, out MMDevice result)
@@ -1306,128 +578,24 @@ namespace Keysharp.Internals.Os.Windows
 	/// <summary>
 	/// Property Store class, only supports reading properties at the moment.
 	/// </summary>
-	internal class PropertyStore
+	internal sealed class PropertyStore(IPropertyStore store) : IDisposable
 	{
-		private readonly IPropertyStore storeInterface;
+		private IPropertyStore storeInterface = store;
 
-		/// <summary>
-		/// Property Count
-		/// </summary>
-		internal int Count
+		internal object this[PropertyKey key]
 		{
 			get
 			{
-				Marshal.ThrowExceptionForHR(storeInterface.GetCount(out var result));
-				return result;
+				var hr = storeInterface.GetValue(ref key, out var result);
+				try { return hr < 0 || result.vt == 0 ? null : result.Value; }
+				finally { PropVariantNative.PropVariantClear(ref result); }
 			}
 		}
 
-		/// <summary>
-		/// Creates a new property store
-		/// </summary>
-		/// <param name="store">IPropertyStore COM interface</param>
-		internal PropertyStore(IPropertyStore store) => storeInterface = store;
-
-		/// <summary>
-		/// Saves a property change.
-		/// </summary>
-		internal void Commit() => Marshal.ThrowExceptionForHR(storeInterface.Commit());
-
-		/// <summary>
-		/// Contains property guid
-		/// </summary>
-		/// <param name="key">Looks for a specific key</param>
-		/// <returns>True if found</returns>
-		internal bool Contains(PropertyKey key) => this[key] != null;
-
-		/// <summary>
-		/// Gets property key at sepecified index
-		/// </summary>
-		/// <param name="index">Index</param>
-		/// <returns>Property key</returns>
-		internal PropertyKey Get(int index)
+		public void Dispose()
 		{
-			Marshal.ThrowExceptionForHR(storeInterface.GetAt(index, out var key));
-			return key;
-		}
-
-		/// <summary>
-		/// Gets property value at specified index
-		/// </summary>
-		/// <param name="index">Index</param>
-		/// <returns>Property value</returns>
-		internal PropVariant GetValue(int index)
-		{
-			var key = Get(index);
-			Marshal.ThrowExceptionForHR(storeInterface.GetValue(ref key, out var result));
-			return result;
-		}
-
-		/// <summary>
-		/// Sets property value at specified key.
-		/// </summary>
-		/// <param name="key">Key of property to set.</param>
-		/// <param name="value">Value to write.</param>
-		internal void SetValue(PropertyKey key, PropVariant value) => Marshal.ThrowExceptionForHR(storeInterface.SetValue(ref key, ref value));
-
-		/// <summary>
-		/// Gets property by index
-		/// </summary>
-		/// <param name="index">Property index</param>
-		/// <returns>The property</returns>
-		internal PropertyStoreProperty this[int index]
-		{
-			get
-			{
-				var key = Get(index);
-				Marshal.ThrowExceptionForHR(storeInterface.GetValue(ref key, out var result));
-				return new PropertyStoreProperty(key, result);
-			}
-		}
-
-		/// <summary>
-		/// Indexer by guid
-		/// </summary>
-		/// <param name="key">Property Key</param>
-		/// <returns>Property or null if not found</returns>
-		internal PropertyStoreProperty this[PropertyKey key]
-		{
-			get
-			{
-				// The store looks a key up itself and reports an absent one as VT_EMPTY. Scanning every key instead costs
-				// hundreds of milliseconds on an endpoint with many properties.
-				if (storeInterface.GetValue(ref key, out var result) < 0 || result.vt == 0)
-					return null;
-
-				return new PropertyStoreProperty(key, result);
-			}
-		}
-	}
-
-	/// <summary>
-	/// is defined in propsys.h
-	/// </summary>
-	/// <summary>
-	/// Property Store Property
-	/// </summary>
-	internal class PropertyStoreProperty
-	{
-		private PropVariant propertyValue;
-
-		/// <summary>
-		/// Property Key
-		/// </summary>
-		internal PropertyKey Key { get; }
-
-		/// <summary>
-		/// Property Value
-		/// </summary>
-		internal object Value => propertyValue.Value;
-
-		internal PropertyStoreProperty(PropertyKey key, PropVariant value)
-		{
-			Key = key;
-			propertyValue = value;
+			var old = Interlocked.Exchange(ref storeInterface, null);
+			if (old != null) Marshal.ReleaseComObject(old);
 		}
 	}
 
@@ -1531,28 +699,6 @@ namespace Keysharp.Internals.Os.Windows
 		/// DEVICE_STATEMASK_ALL
 		/// </summary>
 		All = 0x0000000F
-	}
-
-	/// <summary>
-	/// Endpoint Hardware Support
-	/// </summary>
-	[Flags]
-	internal enum EEndpointHardwareSupport
-	{
-		/// <summary>
-		/// Volume
-		/// </summary>
-		Volume = 0x00000001,
-
-		/// <summary>
-		/// Mute
-		/// </summary>
-		Mute = 0x00000002,
-
-		/// <summary>
-		/// Meter
-		/// </summary>
-		Meter = 0x00000004
 	}
 
 	/// <summary>
@@ -1707,6 +853,5 @@ namespace Keysharp.Internals.Os.Windows
 	/// Audio Endpoint Volume Notifiaction Delegate
 	/// </summary>
 	/// <param name="data">Audio Volume Notification Data</param>
-	internal delegate void AudioEndpointVolumeNotificationDelegate(AudioVolumeNotificationData data);
 }
 #endif

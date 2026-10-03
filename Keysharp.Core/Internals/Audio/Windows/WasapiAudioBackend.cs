@@ -452,8 +452,6 @@ namespace Keysharp.Internals.Audio
 				return false;
 
 			//Every admitted capability rests on the same MMDevice service, so one successful probe answers all of
-			//them. Whether one particular endpoint exposes volume is a per-device fact a Try* call reports.
-			//Every admitted capability rests on the same MMDevice service, so one successful probe answers all of
 			//them; the two that do not are the OS-version-gated loopback and decoding, which has its own probe.
 			return capability switch
 			{
@@ -481,131 +479,54 @@ namespace Keysharp.Internals.Audio
 		public AudioDeviceDescriptor[] EnumerateAllDevices() => EnumerateDevicesCore(DataFlow.All, DeviceState.Active | DeviceState.Unplugged);
 
 		private AudioDeviceDescriptor[] EnumerateDevicesCore(DataFlow flow, DeviceState states = DeviceState.Active)
-		{
-			if (!EnsureProbed(out _))
-				return [];
-
-			MMDeviceEnumerator enumerator = null;
-
-			try
+			=> WithEnumerator(enumerator =>
 			{
-				enumerator = new MMDeviceEnumerator();
 				var outputDefault = DefaultIdOrEmpty(enumerator, DataFlow.Render);
 				var inputDefault = DefaultIdOrEmpty(enumerator, DataFlow.Capture);
-				var collection = enumerator.EnumerateAudioEndPoints(flow, states);
-				var count = collection.Count;
-				var result = new List<AudioDeviceDescriptor>(count);
+				using var collection = enumerator.EnumerateAudioEndPoints(flow, states);
+				var result = new List<AudioDeviceDescriptor>(collection.Count);
 
-				for (var i = 0; i < count; i++)
+				foreach (var endpoint in collection)
 				{
-					MMDevice device = null;
-
+					using var device = endpoint;
 					try
 					{
-						device = collection[i];
 						var kind = KindOf(device.DataFlow);
 						var id = device.ID;
-						result.Add(new AudioDeviceDescriptor(id, NameOf(device), kind, id == (kind == AudioDeviceKind.Output ? outputDefault : inputDefault)));
+						result.Add(new(id, NameOf(device), kind, id == (kind == AudioDeviceKind.Output ? outputDefault : inputDefault)));
 					}
-					catch (Exception)
-					{
-						//An endpoint that fails mid-enumeration is one that just went away, which is smaller than
-						//the whole list failing.
-					}
-					finally
-					{
-						device?.Dispose();
-					}
+					catch (COMException ex) when (ex.HResult == unchecked((int)0x80070490)) { }
 				}
-
-				return [.. result];
-			}
-			catch (Exception)
-			{
-				return [];
-			}
-			finally
-			{
-				enumerator?.Dispose();
-			}
-		}
+				return result.ToArray();
+			}, []);
 
 		public bool TryGetDefaultDevice(AudioDeviceKind kind, out AudioDeviceDescriptor device)
 		{
-			device = default;
-
-			if (!EnsureProbed(out _))
-				return false;
-
-			MMDeviceEnumerator enumerator = null;
-			MMDevice mmDevice = null;
-
-			try
+			AudioDeviceDescriptor found = default;
+			var success = WithDevice(kind, "", endpoint =>
 			{
-				enumerator = new MMDeviceEnumerator();
-				var flow = FlowOf(kind);
-
-				if (!enumerator.HasDefaultAudioEndpoint(flow, Role.Console))
-					return false;
-
-				mmDevice = enumerator.GetDefaultAudioEndpoint(flow, Role.Console);
-				device = new AudioDeviceDescriptor(mmDevice.ID, NameOf(mmDevice), kind, true);
+				found = new(endpoint.ID, NameOf(endpoint), kind, true);
 				return true;
-			}
-			catch (Exception)
-			{
-				return false;
-			}
-			finally
-			{
-				mmDevice?.Dispose();
-				enumerator?.Dispose();
-			}
+			});
+			device = found;
+			return success;
 		}
 
 		public bool TryGetDevice(string id, out AudioDeviceDescriptor device)
 		{
-			device = default;
-
-			if (string.IsNullOrEmpty(id) || !EnsureProbed(out _))
-				return false;
-
-			MMDeviceEnumerator enumerator = null;
-			MMDevice mmDevice = null;
-
-			try
+			AudioDeviceDescriptor found = default;
+			var success = !string.IsNullOrEmpty(id) && WithEnumerator(enumerator =>
 			{
-				enumerator = new MMDeviceEnumerator();
-				mmDevice = enumerator.GetDevice(id);
-
-				if (mmDevice == null || mmDevice.State != DeviceState.Active)
-					return false;
-
-				var flow = mmDevice.DataFlow;
-
-				if (flow != DataFlow.Render && flow != DataFlow.Capture)
-					return false;
-
-				//The id is the durable selector, so only the spelling the endpoint itself reports resolves;
-				//GetDevice is looser than that.
-				var actual = mmDevice.ID;
-
-				if (!string.Equals(actual, id, StringComparison.Ordinal))
-					return false;
-
-				var kind = KindOf(flow);
-				device = new AudioDeviceDescriptor(actual, NameOf(mmDevice), kind, actual == DefaultIdOrEmpty(enumerator, flow));
-				return true;
-			}
-			catch (Exception)
-			{
-				return false;
-			}
-			finally
-			{
-				mmDevice?.Dispose();
-				enumerator?.Dispose();
-			}
+				if (!TryResolveExact(enumerator, id, out var endpoint, out var kind)) return false;
+				using (endpoint)
+				{
+					if (endpoint.State != DeviceState.Active) return false;
+					found = new(endpoint.ID, NameOf(endpoint), kind, endpoint.ID == DefaultIdOrEmpty(enumerator, FlowOf(kind)));
+					return true;
+				}
+			}, false);
+			device = found;
+			return success;
 		}
 
 		public bool TryGetVolume(AudioDeviceKind kind, string id, out double volume)
@@ -616,8 +537,7 @@ namespace Keysharp.Internals.Audio
 				var got = 0.0;
 				var ok = WithEndpointVolume(d, e =>
 				{
-					if (e.GetMasterVolumeLevelScalar(out var level) < 0)
-						return false;
+					CheckControlResult(e.GetMasterVolumeLevelScalar(out var level));
 
 					got = Math.Clamp((double)level, 0.0, 1.0);
 					return true;
@@ -639,7 +559,7 @@ namespace Keysharp.Internals.Audio
 				return WithEndpointVolume(d, e =>
 				{
 					var context = Guid.Empty;
-					return e.SetMasterVolumeLevelScalar((float)Math.Clamp(volume, 0.0, 1.0), ref context) >= 0;
+					return CheckControlResult(e.SetMasterVolumeLevelScalar((float)Math.Clamp(volume, 0.0, 1.0), ref context));
 				});
 			});
 		}
@@ -652,8 +572,7 @@ namespace Keysharp.Internals.Audio
 				var got = false;
 				var ok = WithEndpointVolume(d, e =>
 				{
-					if (e.GetMute(out var muted) < 0)
-						return false;
+					CheckControlResult(e.GetMute(out var muted));
 
 					got = muted;
 					return true;
@@ -671,7 +590,7 @@ namespace Keysharp.Internals.Audio
 				return WithEndpointVolume(d, e =>
 				{
 					var context = Guid.Empty;
-					return e.SetMute(mute, ref context) >= 0;
+					return CheckControlResult(e.SetMute(mute, ref context));
 				});
 			});
 
@@ -734,11 +653,11 @@ namespace Keysharp.Internals.Audio
 		public object GetNativeDeviceObject(AudioDeviceKind kind, string id)
 		{
 			object native = null;
-			//The IMMDevice runtime callable wrapper outlives this method: disposing the MMDevice wrapper only
-			//releases the endpoint-volume object it may have cached, never the device pointer itself.
 			_ = WithDevice(kind, id, d =>
 			{
-				native = d.deviceInterface;
+				var pointer = Marshal.GetIUnknownForObject(d.deviceInterface);
+				try { native = Marshal.GetObjectForIUnknown(pointer); }
+				finally { Marshal.Release(pointer); }
 				return true;
 			});
 			return native;
@@ -822,7 +741,7 @@ namespace Keysharp.Internals.Audio
 				return false;
 			}
 
-			var candidate = new WasapiOutputStream(request.DeviceId ?? "", request.RequestedLatencyMilliseconds, source);
+			var candidate = new WasapiOutputStream(this, request.DeviceId ?? "", request.RequestedLatencyMilliseconds, source);
 
 			if (!candidate.WaitForOpen(out error))
 			{
@@ -831,6 +750,14 @@ namespace Keysharp.Internals.Audio
 			}
 
 			_ = streams.TryAdd(candidate, 0);
+
+			if (Volatile.Read(ref disposed) != 0)
+			{
+				candidate.Dispose();
+				error = "The audio backend is shutting down.";
+				return false;
+			}
+
 			stream = candidate;
 			return true;
 		}
@@ -858,7 +785,7 @@ namespace Keysharp.Internals.Audio
 				return false;
 			}
 
-			var candidate = new WasapiInputStream(request.DeviceId ?? "", request.Source, request.SampleRate,
+			var candidate = new WasapiInputStream(this, request.DeviceId ?? "", request.Source, request.SampleRate,
 												  request.Channels, request.ChunkMilliseconds, sink);
 
 			if (!candidate.WaitForOpen(out error))
@@ -868,24 +795,36 @@ namespace Keysharp.Internals.Audio
 			}
 
 			_ = streams.TryAdd(candidate, 0);
+
+			if (Volatile.Read(ref disposed) != 0)
+			{
+				candidate.Dispose();
+				error = "The audio backend is shutting down.";
+				return false;
+			}
+
 			stream = candidate;
 			return true;
 		}
 
 		public AudioSessionDescriptor[] EnumerateSessions(string deviceId)
+			=> WithEnumerator(enumerator => EnumerateSessionsCore(enumerator, deviceId), []);
+
+		private AudioSessionDescriptor[] EnumerateSessionsCore(MMDeviceEnumerator enumerator, string deviceId)
 		{
 			if (!EnsureProbed(out _))
 				return [];
 
-			MMDeviceEnumerator enumerator = null;
+
 
 			try
 			{
-				enumerator = new MMDeviceEnumerator();
+
 				var result = new List<AudioSessionDescriptor>();
 				//One instance identifier can be reached through more than one endpoint view, and a caller that saw
 				//the same application twice could not tell which entry its control calls would reach.
 				var seen = new HashSet<string>(StringComparer.Ordinal);
+				var names = new Dictionary<uint, string>();
 
 				if (!string.IsNullOrEmpty(deviceId))
 				{
@@ -893,7 +832,7 @@ namespace Keysharp.Internals.Audio
 					{
 						try
 						{
-							CollectSessions(single, singleKind, result, seen);
+							CollectSessions(single, singleKind, result, seen, names);
 						}
 						finally
 						{
@@ -912,11 +851,12 @@ namespace Keysharp.Internals.Audio
 					{
 						collection = enumerator.EnumerateAudioEndPoints(FlowOf(kind), DeviceState.Active);
 					}
-					catch (Exception)
+					catch (Exception ex) when (ex is not COMException and not InvalidComObjectException)
 					{
 						continue;
 					}
 
+					using var ownedCollection = collection;
 					var count = collection.Count;
 
 					for (var i = 0; i < count; i++)
@@ -926,11 +866,11 @@ namespace Keysharp.Internals.Audio
 						try
 						{
 							device = collection[i];
-							CollectSessions(device, kind, result, seen);
+							CollectSessions(device, kind, result, seen, names);
 						}
-						catch (Exception)
+						catch (Exception ex) when (ex is not COMException and not InvalidComObjectException)
 						{
-							//An endpoint that went away mid-scan contributes no sessions; the rest of the scan stands.
+							//A failed endpoint contributes no sessions; native service failures reach the retry boundary.
 						}
 						finally
 						{
@@ -941,13 +881,9 @@ namespace Keysharp.Internals.Audio
 
 				return [.. result];
 			}
-			catch (Exception)
+			catch (Exception ex) when (ex is not COMException and not InvalidComObjectException)
 			{
 				return [];
-			}
-			finally
-			{
-				enumerator?.Dispose();
 			}
 		}
 
@@ -1411,13 +1347,13 @@ namespace Keysharp.Internals.Audio
 		/// end rather than grown into: a doubling array would copy the whole clip repeatedly on the way to the
 		/// half-gigabyte ceiling.
 		/// </summary>
-		private static bool TryReadAllSamples(IMFSourceReader reader, int channels, out float[] samples, out string error)
+		private static unsafe bool TryReadAllSamples(IMFSourceReader reader, int channels, out float[] samples, out string error)
 		{
 			samples = null;
 			error = "";
-			var chunks = new List<float[]>();
+			float[] result = [];
 			var frameBytes = (uint)(channels * MfFloatSampleBytes);
-			long total = 0;
+			int total = 0;
 
 			while (true)
 			{
@@ -1486,10 +1422,17 @@ namespace Keysharp.Internals.Audio
 						return false;
 					}
 
-					var chunk = new float[count];
-					Marshal.Copy(data, chunk, 0, count);
-					chunks.Add(chunk);
-					total += count;
+					var required = total + count;
+
+					if (result.Length < required)
+						Array.Resize(ref result, (int)Math.Min(AudioFormats.MaxClipBytes / 4, Math.Max(required, Math.Max(4096L, result.LongLength * 2))));
+
+					var decoded = new ReadOnlySpan<float>((void*)data, count);
+
+					for (var i = 0; i < count; i++)
+						result[total + i] = float.IsFinite(decoded[i]) ? Math.Clamp(decoded[i], -1f, 1f) : 0f;
+
+					total = required;
 				}
 				finally
 				{
@@ -1507,22 +1450,7 @@ namespace Keysharp.Internals.Audio
 				return false;
 			}
 
-			var result = new float[total];
-			var written = 0;
-
-			foreach (var chunk in chunks)
-			{
-				chunk.CopyTo(result, written);
-				written += chunk.Length;
-			}
-
-			//A lossy decoder legitimately reconstructs a sample a fraction of a decibel past full scale, so the
-			//overshoot is clamped into the range every consumer is promised instead of refusing a good file.
-			for (var i = 0; i < result.Length; i++)
-			{
-				var v = result[i];
-				result[i] = !float.IsFinite(v) ? 0f : v < -1f ? -1f : v > 1f ? 1f : v;
-			}
+			Array.Resize(ref result, total);
 
 			samples = result;
 			return true;
@@ -1652,13 +1580,25 @@ namespace Keysharp.Internals.Audio
 		/// <summary>Activates the endpoint's own meter, which observes the endpoint ahead of its volume control.</summary>
 		private bool TryOpenDeviceMeter(string deviceId, out IAudioNativeMeter meter, out string error)
 		{
+			var found = WithEnumerator(enumerator =>
+			{
+				var success = TryOpenDeviceMeterCore(enumerator, deviceId, out var result, out var detail);
+				return (success, result, detail);
+			}, (false, (IAudioNativeMeter)null, "The audio device could not be queried."));
+			meter = found.Item2;
+			error = found.Item3;
+			return found.Item1;
+		}
+
+		private bool TryOpenDeviceMeterCore(MMDeviceEnumerator enumerator, string deviceId, out IAudioNativeMeter meter, out string error)
+		{
 			meter = null;
-			MMDeviceEnumerator enumerator = null;
+
 			MMDevice device = null;
 
 			try
 			{
-				enumerator = new MMDeviceEnumerator();
+
 
 				if (!TryResolveExact(enumerator, deviceId, out device, out _))
 				{
@@ -1679,7 +1619,7 @@ namespace Keysharp.Internals.Audio
 				error = "";
 				return true;
 			}
-			catch (Exception ex)
+			catch (Exception ex) when (ex is not COMException and not InvalidComObjectException)
 			{
 				error = $"Audio device \"{deviceId}\" exposes no level meter. ({ex.Message})";
 				return false;
@@ -1687,7 +1627,7 @@ namespace Keysharp.Internals.Audio
 			finally
 			{
 				device?.Dispose();
-				enumerator?.Dispose();
+
 			}
 		}
 
@@ -1725,7 +1665,7 @@ namespace Keysharp.Internals.Audio
 
 		/// <summary>Adds every describable session on one endpoint to the running result.</summary>
 		private static void CollectSessions(MMDevice device, AudioDeviceKind kind, List<AudioSessionDescriptor> result,
-											HashSet<string> seen)
+											HashSet<string> seen, Dictionary<uint, string> names)
 		{
 			IAudioSessionManager2 manager = null;
 			IAudioSessionEnumerator sessions = null;
@@ -1753,7 +1693,7 @@ namespace Keysharp.Internals.Audio
 						if (sessions.GetSession(i, out control) < 0 || control == null)
 							continue;
 
-						if (TryDescribe(control, endpointId, kind, out var descriptor) && seen.Add(descriptor.Id))
+						if (TryDescribe(control, endpointId, kind, out var descriptor, names) && seen.Add(descriptor.Id))
 							result.Add(descriptor);
 					}
 					catch (Exception)
@@ -1782,7 +1722,7 @@ namespace Keysharp.Internals.Audio
 		/// without it there is no id that survives a process id or list position being reused.
 		/// </summary>
 		private static bool TryDescribe(IAudioSessionControl control, string endpointId, AudioDeviceKind kind,
-										out AudioSessionDescriptor descriptor)
+										out AudioSessionDescriptor descriptor, Dictionary<uint, string> names = null)
 		{
 			descriptor = default;
 
@@ -1810,7 +1750,11 @@ namespace Keysharp.Internals.Audio
 			if (hr >= 0 && hr != AudclntSNoSingleProcess && nativeProcessId != 0)
 			{
 				processId = nativeProcessId;
-				processName = ProcessNameOrEmpty(nativeProcessId);
+				if (names == null || !names.TryGetValue(nativeProcessId, out processName))
+				{
+					processName = ProcessNameOrEmpty(nativeProcessId);
+					if (names != null) names[nativeProcessId] = processName;
+				}
 			}
 
 			var displayName = "";
@@ -1826,26 +1770,27 @@ namespace Keysharp.Internals.Audio
 		}
 
 		private static string ProcessNameOrEmpty(uint processId)
-		{
-			try
-			{
-				using var process = Process.GetProcessById((int)processId);
-				return process.ProcessName;
-			}
-			catch (Exception)
-			{
-				//The owning process may already have exited, or be one this token cannot open; a session whose
-				//name cannot be read is still a session that can be listed and controlled.
-				return "";
-			}
-		}
+			=> Path.GetFileNameWithoutExtension(Keysharp.Builtins.Processes.GetProcessImage(processId, true));
 
 		/// <summary>
 		/// Resolves a session id back to its live control, which the caller owns and must release. The id is exact:
 		/// a session that ended, or one whose instance identifier changed, resolves to nothing rather than to its
 		/// successor on the same endpoint.
 		/// </summary>
-		private bool TryFindSession(string sessionId, out IAudioSessionControl control, out AudioDeviceKind kind,
+		private bool TryFindSession(string sessionId, out IAudioSessionControl control, out AudioDeviceKind kind, out string endpointId)
+		{
+			var found = WithEnumerator(enumerator =>
+			{
+				var success = TryFindSessionCore(enumerator, sessionId, out var result, out var deviceKind, out var endpoint);
+				return (success, result, deviceKind, endpoint);
+			}, (false, (IAudioSessionControl)null, AudioDeviceKind.Output, ""));
+			control = found.Item2;
+			kind = found.Item3;
+			endpointId = found.Item4;
+			return found.Item1;
+		}
+
+		private bool TryFindSessionCore(MMDeviceEnumerator enumerator, string sessionId, out IAudioSessionControl control, out AudioDeviceKind kind,
 									out string endpointId)
 		{
 			control = null;
@@ -1863,14 +1808,14 @@ namespace Keysharp.Internals.Audio
 				return false;
 
 			endpointId = sessionId[..split];
-			MMDeviceEnumerator enumerator = null;
+
 			MMDevice device = null;
 			IAudioSessionManager2 manager = null;
 			IAudioSessionEnumerator sessions = null;
 
 			try
 			{
-				enumerator = new MMDeviceEnumerator();
+
 
 				if (!TryResolveExact(enumerator, endpointId, out device, out kind))
 					return false;
@@ -1897,7 +1842,7 @@ namespace Keysharp.Internals.Audio
 
 						if (candidate is IAudioSessionControl2 candidate2
 								&& candidate2.GetSessionInstanceIdentifier(out var instance) >= 0
-								&& string.Equals($"{endpointId}|{instance}", sessionId, StringComparison.Ordinal))
+								&& sessionId.AsSpan(split + 1).Equals(instance.AsSpan(), StringComparison.Ordinal))
 						{
 							control = candidate;
 							candidate = null;
@@ -1912,7 +1857,7 @@ namespace Keysharp.Internals.Audio
 
 				return false;
 			}
-			catch (Exception)
+			catch (Exception ex) when (ex is not COMException and not InvalidComObjectException)
 			{
 				ReleaseCom(control);
 				control = null;
@@ -1923,7 +1868,7 @@ namespace Keysharp.Internals.Audio
 				ReleaseCom(sessions);
 				ReleaseCom(manager);
 				device?.Dispose();
-				enumerator?.Dispose();
+
 			}
 		}
 
@@ -2001,10 +1946,7 @@ namespace Keysharp.Internals.Audio
 
 			try
 			{
-				if (!enumerator.HasDefaultAudioEndpoint(flow, Role.Console))
-					return "";
-
-				device = enumerator.GetDefaultAudioEndpoint(flow, Role.Console);
+				if (!enumerator.TryGetDefaultAudioEndpoint(flow, Role.Console, out device)) return "";
 				return device.ID;
 			}
 			catch (Exception)
@@ -2017,7 +1959,6 @@ namespace Keysharp.Internals.Audio
 			}
 		}
 
-		/// <summary>Resolves a blank id to the current default endpoint of that kind, and any other id exactly.</summary>
 		/// <summary>
 		/// One enumerator reused across calls. Creating it is a CoCreateInstance, which a script polling volume
 		/// or activity would otherwise pay on every property read. The MMDevice API objects are registered
@@ -2026,20 +1967,33 @@ namespace Keysharp.Internals.Audio
 		/// is the per-call creation this replaces.
 		/// </summary>
 		private MMDeviceEnumerator shared;
+		private readonly Lock queryGate = new();
+		[ThreadStatic] private static int lastError;
+		public int LastError => lastError;
 
-		private MMDeviceEnumerator RentEnumerator()
+		private MMDeviceEnumerator RentEnumerator() => shared ??= new MMDeviceEnumerator();
+
+		private T WithEnumerator<T>(Func<MMDeviceEnumerator, T> action, T fallback)
 		{
-			var existing = Volatile.Read(ref shared);
-
-			if (existing != null)
-				return existing;
-
-			var created = new MMDeviceEnumerator();
-			return Interlocked.CompareExchange(ref shared, created, null) ?? created;
+			lastError = 0;
+			if (!EnsureProbed(out _)) return fallback;
+			lock (queryGate)
+			{
+				if (Volatile.Read(ref disposed) != 0) return fallback;
+				for (var attempt = 0; attempt < 2; attempt++)
+				{
+					try { lastError = 0; return action(RentEnumerator()); }
+					catch (COMException ex) { lastError = ex.HResult; InvalidateEnumerator(); }
+					catch (InvalidComObjectException ex) { lastError = ex.HResult; InvalidateEnumerator(); }
+				}
+				return fallback;
+			}
 		}
 
 		private void InvalidateEnumerator()
 		{
+			lock (queryGate)
+			{
 			var stale = Interlocked.Exchange(ref shared, null);
 
 			try
@@ -2050,80 +2004,38 @@ namespace Keysharp.Internals.Audio
 			{
 				//A dead enumerator cannot be released cleanly, and nothing downstream depends on it having been.
 			}
+			}
 		}
 
-		/// <summary>
-		/// Activates the endpoint's raw volume interface. The vendored <c>AudioEndpointVolume</c> wrapper is
-		/// bypassed on purpose: its constructor enumerates channels, reads step information, hardware support and
-		/// the volume range, and registers a change-notification callback, which is roughly a dozen extra COM
-		/// calls plus a CCW registration for what is a single scalar read on this path.
-		/// </summary>
-		/// <summary>
-		/// Runs one operation against the endpoint's raw volume interface and releases it again. The vendored
-		/// <c>AudioEndpointVolume</c> wrapper is bypassed on purpose: its constructor enumerates channels, reads
-		/// step information, hardware support and the volume range, and registers a change-notification callback,
-		/// which is roughly a dozen extra COM calls plus a CCW registration for what is one scalar here.
-		/// </summary>
+		/// <summary>Activates and releases the raw endpoint volume interface without registering a notification.</summary>
+
+		private static bool CheckControlResult(int hr)
+		{
+			if (hr < 0) throw new COMException(null, hr);
+			return true;
+		}
+
 		private static bool WithEndpointVolume(MMDevice device, Func<IAudioEndpointVolume, bool> action)
 		{
 			var iid = MMDevice.IID_IAudioEndpointVolume;
-
-			if (device.deviceInterface.Activate(ref iid, ClsCtx.ALL, 0, out var activated) < 0)
-				return false;
-
-			if (activated is not IAudioEndpointVolume endpoint)
-				return false;
-
+			var hr = device.deviceInterface.Activate(ref iid, ClsCtx.ALL, 0, out var activated);
 			try
 			{
+				CheckControlResult(hr);
+				if (activated is not IAudioEndpointVolume endpoint)
+					throw new COMException(null, ENoInterface);
 				return action(endpoint);
 			}
-			finally
-			{
-				//Activate handed over a reference this method owns; without this every property read abandons an
-				//RCW to the finalizer queue.
-				ReleaseCom(endpoint);
-			}
+			finally { ReleaseCom(activated); }
 		}
 
-		/// <summary>
-		/// Runs one bounded operation against a resolved endpoint. Every endpoint member has the same shape —
-		/// make an enumerator, resolve the exact id, act, release both whatever happened — and an MMDevice must
-		/// not outlive the enumerator that produced it, so the ownership lives here once rather than per member.
-		/// </summary>
+		/// <summary>Resolves and releases one endpoint through the shared query enumerator.</summary>
 		private bool WithDevice(AudioDeviceKind kind, string id, Func<MMDevice, bool> action)
-		{
-			if (!EnsureProbed(out _))
-				return false;
-
-			if (TryWithDevice(kind, id, action, out var result))
-				return result;
-
-			//The shared enumerator failed. It is discarded and the call retried once on a fresh one, which is what
-			//keeps a stale or apartment-hostile instance from turning into a permanent failure.
-			InvalidateEnumerator();
-			return TryWithDevice(kind, id, action, out result) && result;
-		}
-
-		private bool TryWithDevice(AudioDeviceKind kind, string id, Func<MMDevice, bool> action, out bool result)
-		{
-			result = false;
-			MMDevice device = null;
-
-			try
+			=> WithEnumerator(enumerator =>
 			{
-				result = TryResolveDevice(RentEnumerator(), kind, id, out device) && action(device);
-				return true;
-			}
-			catch (Exception)
-			{
-				return false;
-			}
-			finally
-			{
-				device?.Dispose();
-			}
-		}
+				if (!TryResolveDevice(enumerator, kind, id, out var device)) return false;
+				using (device) return action(device);
+			}, false);
 
 		private static bool TryResolveDevice(MMDeviceEnumerator enumerator, AudioDeviceKind kind, string id, out MMDevice device)
 		{
@@ -2134,21 +2046,20 @@ namespace Keysharp.Internals.Audio
 			{
 				if (string.IsNullOrEmpty(id))
 				{
-					if (!enumerator.HasDefaultAudioEndpoint(flow, Role.Console))
-						return false;
-
-					device = enumerator.GetDefaultAudioEndpoint(flow, Role.Console);
+					if (!enumerator.TryGetDefaultAudioEndpoint(flow, Role.Console, out device)) return false;
 					return true;
 				}
 
-				var resolved = enumerator.GetDevice(id);
+				var exists = enumerator.TryGetDevice(id, out device);
+				var resolved = device;
 
-				if (resolved == null)
+				if (!exists)
 					return false;
 
 				if (resolved.DataFlow != flow || !string.Equals(resolved.ID, id, StringComparison.Ordinal))
 				{
 					resolved.Dispose();
+					device = null;
 					return false;
 				}
 
@@ -2159,7 +2070,7 @@ namespace Keysharp.Internals.Audio
 			{
 				device?.Dispose();
 				device = null;
-				return false;
+				throw;
 			}
 		}
 
@@ -2174,9 +2085,10 @@ namespace Keysharp.Internals.Audio
 
 			try
 			{
-				var resolved = enumerator.GetDevice(id);
+				var exists = enumerator.TryGetDevice(id, out device);
+				var resolved = device;
 
-				if (resolved == null)
+				if (!exists)
 					return false;
 
 				var flow = resolved.DataFlow;
@@ -2185,6 +2097,7 @@ namespace Keysharp.Internals.Audio
 						|| !string.Equals(resolved.ID, id, StringComparison.Ordinal))
 				{
 					resolved.Dispose();
+					device = null;
 					return false;
 				}
 
@@ -2196,7 +2109,7 @@ namespace Keysharp.Internals.Audio
 			{
 				device?.Dispose();
 				device = null;
-				return false;
+				throw;
 			}
 		}
 
@@ -2328,9 +2241,16 @@ namespace Keysharp.Internals.Audio
 
 			public void OnDeviceRemoved(string deviceId) => Notify();
 
-			public void OnDefaultDeviceChanged(DataFlow flow, Role role, string defaultDeviceId) => Notify();
+			public void OnDefaultDeviceChanged(DataFlow flow, Role role, string defaultDeviceId)
+			{
+				if (role == Role.Console) Notify();
+			}
 
-			public void OnPropertyValueChanged(string pwstrDeviceId, PropertyKey key) => Notify();
+			public void OnPropertyValueChanged(string pwstrDeviceId, PropertyKey key)
+			{
+				if (key.Equals(PropertyKeys.PKEY_Device_FriendlyName) || key.Equals(PropertyKeys.PKEY_Device_DeviceDesc)
+					|| key.Equals(PropertyKeys.PKEY_DeviceInterface_FriendlyName)) Notify();
+			}
 
 			private void Notify()
 			{
@@ -2384,12 +2304,120 @@ namespace Keysharp.Internals.Audio
 			}
 		}
 
+		private abstract class WasapiStream(WasapiAudioBackend owner, string direction) : IDisposable
+		{
+			protected readonly ManualResetEventSlim openCompleted = new(false);
+			protected readonly nint audioEvent = WasapiNative.CreateEvent(0, false, false, 0);
+			protected readonly nint cancelEvent = WasapiNative.CreateEvent(0, true, false, 0);
+			protected readonly nint controlEvent = WasapiNative.CreateEvent(0, false, false, 0);
+			protected AudioStreamFormat negotiated;
+			protected string openError = "";
+			protected bool openSucceeded;
+			protected int desiredRunning = 1;
+			private int deviceLost;
+			private int disposed;
+			private int references = 2; // The owner and worker each keep the wait handles alive.
+			private Thread worker;
+
+			public AudioStreamFormat Format => negotiated;
+			public bool IsDeviceLost => Volatile.Read(ref deviceLost) != 0;
+			public void Start() => RequestRunning(true);
+			public void Stop() => RequestRunning(false);
+			protected void MarkLost() => Volatile.Write(ref deviceLost, 1);
+
+			protected void StartWorker(Action run, string name)
+			{
+				worker = new Thread(() =>
+				{
+					try { run(); }
+					finally
+					{
+						openCompleted.Set();
+						ReleaseReference();
+					}
+				}) { IsBackground = true, Name = name };
+				try
+				{
+					worker.SetApartmentState(ApartmentState.MTA);
+					worker.Start();
+				}
+				catch
+				{
+					ReleaseReference();
+					ReleaseReference();
+					throw;
+				}
+			}
+
+			internal bool WaitForOpen(out string error)
+			{
+				error = "The audio stream has been disposed.";
+				if (!TryAddReference()) return false;
+				try
+				{
+					if (!openCompleted.Wait(OpenTimeoutMs))
+					{
+						error = $"Timed out waiting for the WASAPI {direction} stream to open.";
+						return false;
+					}
+					error = openSucceeded ? "" : openError;
+					return openSucceeded;
+				}
+				finally { ReleaseReference(); }
+			}
+
+			private bool TryAddReference()
+			{
+				var count = Volatile.Read(ref references);
+				while (count != 0)
+				{
+					var previous = Interlocked.CompareExchange(ref references, count + 1, count);
+					if (previous == count) return true;
+					count = previous;
+				}
+				return false;
+			}
+
+			private void RequestRunning(bool running)
+			{
+				if (!TryAddReference()) return;
+				try
+				{
+					if (Volatile.Read(ref disposed) != 0) return;
+					Volatile.Write(ref desiredRunning, running ? 1 : 0);
+					if (controlEvent != 0) WasapiNative.SetEvent(controlEvent);
+				}
+				finally { ReleaseReference(); }
+			}
+
+			public void Dispose()
+			{
+				if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+				owner.streams.TryRemove(this, out _);
+				try
+				{
+					if (cancelEvent != 0) WasapiNative.SetEvent(cancelEvent);
+					if (worker != Thread.CurrentThread && worker.IsAlive) worker.Join(JoinTimeoutMs);
+				}
+				finally { ReleaseReference(); }
+			}
+
+			private void ReleaseReference()
+			{
+				if (Interlocked.Decrement(ref references) != 0) return;
+				if (audioEvent != 0) WindowsAPI.CloseHandle(audioEvent);
+				if (cancelEvent != 0) WindowsAPI.CloseHandle(cancelEvent);
+				if (controlEvent != 0) WindowsAPI.CloseHandle(controlEvent);
+				openCompleted.Dispose();
+			}
+		}
+
 		/// <summary>
 		/// One shared-mode, event-driven WASAPI render stream. Every COM object it uses is created, called and
 		/// released on its own MTA worker, so no interface pointer ever crosses an apartment, and the worker is
 		/// the only thread that touches the device.
 		/// </summary>
-		private sealed class WasapiOutputStream : IAudioOutputStream
+		private sealed class WasapiOutputStream : WasapiStream, IAudioOutputStream
 		{
 			private const double MinLatencyMs = 3.0;
 			private const double MaxLatencyMs = 2000.0;
@@ -2399,12 +2427,7 @@ namespace Keysharp.Internals.Audio
 			private readonly string requestedDeviceId;
 			private readonly double requestedLatencyMs;
 			private readonly IAudioRenderSource source;
-			private readonly Thread worker;
-			private readonly ManualResetEventSlim openCompleted = new (false);
 
-			private nint audioEvent;
-			private nint cancelEvent;
-			private nint controlEvent;
 
 			private float[] renderBuffer;
 			private short[] pcmBuffer;
@@ -2413,107 +2436,19 @@ namespace Keysharp.Internals.Audio
 			private int sampleRate;
 			private bool renderPcm16;
 
-			private AudioStreamFormat negotiated;
-			private string openError = "";
-			private bool openSucceeded;
 
 			private long latencyBits;
-			private int desiredRunning = 1;   // an opened stream is a running stream; Start/Stop toggle it after that
-			private int deviceLost;
-			private int disposed;
 
-			internal WasapiOutputStream(string deviceId, double latencyMilliseconds, IAudioRenderSource source)
+			internal WasapiOutputStream(WasapiAudioBackend owner, string deviceId, double latencyMilliseconds, IAudioRenderSource source)
+				: base(owner, "output")
 			{
 				requestedDeviceId = deviceId;
 				requestedLatencyMs = latencyMilliseconds;
 				this.source = source;
-				audioEvent = WasapiNative.CreateEvent(0, false, false, 0);
-				cancelEvent = WasapiNative.CreateEvent(0, true, false, 0);
-				controlEvent = WasapiNative.CreateEvent(0, false, false, 0);
-				worker = new Thread(Run)
-				{
-					IsBackground = true,
-					Name = "Keysharp WASAPI render",
-				};
-				worker.SetApartmentState(ApartmentState.MTA);
-				worker.Start();
+				StartWorker(Run, "Keysharp WASAPI render");
 			}
 
-			/// <inheritdoc/>
-			public AudioStreamFormat Format => negotiated;
-
-			/// <inheritdoc/>
 			public double LatencyMilliseconds => BitConverter.Int64BitsToDouble(Interlocked.Read(ref latencyBits));
-
-			/// <inheritdoc/>
-			public bool IsDeviceLost => Volatile.Read(ref deviceLost) != 0;
-
-			/// <inheritdoc/>
-			public void Start() => RequestRunning(true);
-
-			/// <inheritdoc/>
-			public void Stop() => RequestRunning(false);
-
-			/// <summary>Blocks the opening caller until the worker has either a live stream or a reason it has none.</summary>
-			internal bool WaitForOpen(out string error)
-			{
-				if (!openCompleted.Wait(OpenTimeoutMs))
-				{
-					error = "Timed out waiting for the WASAPI output stream to open.";
-					return false;
-				}
-
-				error = openSucceeded ? "" : openError;
-				return openSucceeded;
-			}
-
-			public void Dispose()
-			{
-				if (Interlocked.Exchange(ref disposed, 1) != 0)
-					return;
-
-				var cancel = Volatile.Read(ref cancelEvent);
-
-				if (cancel != 0)
-					_ = WasapiNative.SetEvent(cancel);
-
-				//A worker that will not quiesce still owns these handles, so leaving them open is the only safe
-				//outcome; closing them would free memory the render loop can still be waiting on.
-				if (worker.IsAlive && !worker.Join(JoinTimeoutMs))
-					return;
-
-				CloseHandles();
-			}
-
-			private void RequestRunning(bool running)
-			{
-				if (Volatile.Read(ref disposed) != 0)
-					return;
-
-				Volatile.Write(ref desiredRunning, running ? 1 : 0);
-				var handle = Volatile.Read(ref controlEvent);
-
-				if (handle != 0)
-					_ = WasapiNative.SetEvent(handle);
-			}
-
-			private void CloseHandles()
-			{
-				var a = Interlocked.Exchange(ref audioEvent, 0);
-				var c = Interlocked.Exchange(ref cancelEvent, 0);
-				var k = Interlocked.Exchange(ref controlEvent, 0);
-
-				if (a != 0)
-					_ = WindowsAPI.CloseHandle(a);
-
-				if (c != 0)
-					_ = WindowsAPI.CloseHandle(c);
-
-				if (k != 0)
-					_ = WindowsAPI.CloseHandle(k);
-
-				openCompleted.Dispose();
-			}
 
 			/// <summary>The worker body: one apartment, one device, one stream, from first Activate to last release.</summary>
 			private void Run()
@@ -2815,7 +2750,6 @@ namespace Keysharp.Internals.Audio
 			/// Any HRESULT that ends the render loop leaves the stream permanently silent, so the owner is told to
 			/// transition whether the cause was the documented device-invalidated code or something rarer.
 			/// </summary>
-			private void MarkLost() => Volatile.Write(ref deviceLost, 1);
 
 			/// <summary>
 			/// Negotiates the stream format: float32 first, then 16-bit PCM, then the engine mix format verbatim.
@@ -2956,7 +2890,7 @@ namespace Keysharp.Internals.Audio
 		/// object is created, called and released on this stream's own MTA worker, exactly as the render stream
 		/// does, so no interface pointer crosses an apartment.
 		/// </summary>
-		private sealed class WasapiInputStream : IAudioInputStream
+		private sealed class WasapiInputStream : WasapiStream, IAudioInputStream
 		{
 			private readonly string requestedDeviceId;
 			private readonly AudioCaptureSource captureSource;
@@ -2964,12 +2898,7 @@ namespace Keysharp.Internals.Audio
 			private readonly int requestedChannels;
 			private readonly long requestedBufferDuration;
 			private readonly IAudioCaptureSink sink;
-			private readonly Thread worker;
-			private readonly ManualResetEventSlim openCompleted = new (false);
 
-			private nint audioEvent;
-			private nint cancelEvent;
-			private nint controlEvent;
 
 			private float[] captureBuffer;
 			private byte[] packetBuffer;
@@ -2979,16 +2908,11 @@ namespace Keysharp.Internals.Audio
 			private int sampleRate;
 			private bool captureFloat;
 
-			private AudioStreamFormat negotiated;
-			private string openError = "";
-			private bool openSucceeded;
 
-			private int desiredRunning = 1;   // an opened stream is a running stream; Start/Stop toggle it after that
-			private int deviceLost;
-			private int disposed;
 
-			internal WasapiInputStream(string deviceId, AudioCaptureSource source, int rate, int channelCount,
+			internal WasapiInputStream(WasapiAudioBackend owner, string deviceId, AudioCaptureSource source, int rate, int channelCount,
 									   double chunkMilliseconds, IAudioCaptureSink sink)
+				: base(owner, "input")
 			{
 				requestedDeviceId = deviceId;
 				//A shared-mode capture client delivers on the device period, so this only guarantees the endpoint
@@ -2998,89 +2922,7 @@ namespace Keysharp.Internals.Audio
 				requestedSampleRate = rate;
 				requestedChannels = channelCount;
 				this.sink = sink;
-				audioEvent = WasapiNative.CreateEvent(0, false, false, 0);
-				cancelEvent = WasapiNative.CreateEvent(0, true, false, 0);
-				controlEvent = WasapiNative.CreateEvent(0, false, false, 0);
-				worker = new Thread(Run)
-				{
-					IsBackground = true,
-					Name = "Keysharp WASAPI capture",
-				};
-				worker.SetApartmentState(ApartmentState.MTA);
-				worker.Start();
-			}
-
-			/// <inheritdoc/>
-			public AudioStreamFormat Format => negotiated;
-
-			/// <inheritdoc/>
-			public bool IsDeviceLost => Volatile.Read(ref deviceLost) != 0;
-
-			/// <inheritdoc/>
-			public void Start() => RequestRunning(true);
-
-			/// <inheritdoc/>
-			public void Stop() => RequestRunning(false);
-
-			/// <summary>Blocks the opening caller until the worker has either a live stream or a reason it has none.</summary>
-			internal bool WaitForOpen(out string error)
-			{
-				if (!openCompleted.Wait(OpenTimeoutMs))
-				{
-					error = "Timed out waiting for the WASAPI input stream to open.";
-					return false;
-				}
-
-				error = openSucceeded ? "" : openError;
-				return openSucceeded;
-			}
-
-			public void Dispose()
-			{
-				if (Interlocked.Exchange(ref disposed, 1) != 0)
-					return;
-
-				var cancel = Volatile.Read(ref cancelEvent);
-
-				if (cancel != 0)
-					_ = WasapiNative.SetEvent(cancel);
-
-				//A worker that will not quiesce still owns these handles, so leaving them open is the only safe
-				//outcome; closing them would free memory the capture loop can still be waiting on.
-				if (worker.IsAlive && !worker.Join(JoinTimeoutMs))
-					return;
-
-				CloseHandles();
-			}
-
-			private void RequestRunning(bool running)
-			{
-				if (Volatile.Read(ref disposed) != 0)
-					return;
-
-				Volatile.Write(ref desiredRunning, running ? 1 : 0);
-				var handle = Volatile.Read(ref controlEvent);
-
-				if (handle != 0)
-					_ = WasapiNative.SetEvent(handle);
-			}
-
-			private void CloseHandles()
-			{
-				var a = Interlocked.Exchange(ref audioEvent, 0);
-				var c = Interlocked.Exchange(ref cancelEvent, 0);
-				var k = Interlocked.Exchange(ref controlEvent, 0);
-
-				if (a != 0)
-					_ = WindowsAPI.CloseHandle(a);
-
-				if (c != 0)
-					_ = WindowsAPI.CloseHandle(c);
-
-				if (k != 0)
-					_ = WindowsAPI.CloseHandle(k);
-
-				openCompleted.Dispose();
+				StartWorker(Run, "Keysharp WASAPI capture");
 			}
 
 			/// <summary>The worker body: one apartment, one device, one stream, from first Activate to last release.</summary>
@@ -3463,7 +3305,6 @@ namespace Keysharp.Internals.Audio
 			/// Any HRESULT that ends the capture loop leaves the stream permanently silent, so the owner is told to
 			/// transition whether the cause was the documented device-invalidated code or something rarer.
 			/// </summary>
-			private void MarkLost() => Volatile.Write(ref deviceLost, 1);
 
 			/// <summary>
 			/// Names the engine mix layout in the vocabulary <see cref="AudioFormats"/> converts from. A 24-bit
