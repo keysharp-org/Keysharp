@@ -2111,7 +2111,7 @@ namespace Keysharp.Builtins
 							finalHeight = Math.Max(finalHeight, ctrl.PreferredSize.Height);
 #endif
 #if OSX
-							if (ctrl is KeysharpTextBox { Multiline: false } || ctrl is KeysharpPasswordBox || ctrl is HotkeyBox)
+							if (ctrl is KeysharpTextBox || ctrl is KeysharpPasswordBox || ctrl is HotkeyBox)
 								finalHeight = Math.Max(finalHeight, (int)Math.Ceiling(fontpixels + (8 * dpiscale)));
 #endif
 						}
