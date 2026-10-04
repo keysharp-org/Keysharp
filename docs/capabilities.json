@@ -6735,7 +6735,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Captures, loads, creates, edits and searches images. Search methods return match objects. Grayscale() and GetPixelData(1) share 0.299R + 0.587G + 0.114B luminance rounded half up. A color string that is neither a name nor a number, and an invalid DrawText font option, raise ValueError when the method is called. FromWindow Mode and search Direction use string names instead of numeric codes. Supports saving and CLR bitmap access. Image.FromWindow raises UnsupportedError on Wayland when neither window capture nor global frame geometry is available. Full on Windows, partial on Linux (X11); Wayland and macOS are unverified.",
+                     "notes":  "Captures, loads, creates, edits and searches images. Search methods return match objects. Grayscale() and GetPixelData(1) share 0.299R + 0.587G + 0.114B luminance rounded half up. A color string that is neither a name nor a number, and an invalid DrawText font option, raise ValueError when the method is called. FromWindow Mode and search Direction use string names instead of numeric codes. Supports saving and CLR bitmap access. Linux capture requires keysharp-desktop, ScreenCapture and backend support for the requested capture. Cinnamon Wayland supports area capture through its stage capture API and window capture through the window actor. Image.FromWindow raises UnsupportedError on Wayland when neither window capture nor global frame geometry is available. macOS is unverified.",
                      "tested-by":  "Gui/guitest.ks; image.ahk"
                  },
                  {
@@ -6768,7 +6768,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Searches a screen region for an image, writing the position to ByRef outputs and returning true/false. Only 32-bit color is supported; .ani, .emf, .exif and .wmf files are unsupported. The Keysharp *Dir option takes Image.Search's direction names, such as *DirBottomRight. For searches within an Image, use its Search/SearchAll/SearchPixel methods.",
+                     "notes":  "Searches a screen region for an image, writing the position to ByRef outputs and returning true/false. Only 32-bit color is supported; .ani, .emf, .exif and .wmf files are unsupported. The Keysharp *Dir option takes Image.Search's direction names, such as *DirBottomRight. Linux requires keysharp-desktop, ScreenCapture and a backend which can capture the requested screen area, including the Cinnamon stage capture API. For searches within an Image, use its Search/SearchAll/SearchPixel methods.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -9228,7 +9228,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Returns the pixel value at the specified coordinate as a hexadecimal string like 0x010203. Differs because the mode parameter is not supported because it is not needed.",
+                     "notes":  "Returns the pixel value at the specified coordinate as a hexadecimal string like 0x010203. The mode parameter is not supported because it is not needed. Linux requires keysharp-desktop, ScreenCapture and a backend which can capture the requested screen area, including the Cinnamon stage capture API.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -9239,7 +9239,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Searches a region of the screen for a pixel of the specified color. On no match it returns false and sets both output variables to blank.",
+                     "notes":  "Searches a region of the screen for a pixel of the specified color. On no match it returns false and sets both output variables to blank. Linux requires keysharp-desktop, ScreenCapture and a backend which can capture the requested screen area, including the Cinnamon stage capture API.",
                      "tested-by":  "screen-pixelsearch.ahk"
                  },
                  {

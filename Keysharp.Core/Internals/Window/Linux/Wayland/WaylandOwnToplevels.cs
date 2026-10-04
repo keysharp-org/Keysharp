@@ -66,7 +66,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			internal bool SurfaceKnown;               // false = the compositor could not say
 			internal bool Mapped;                     // GTK has the window mapped, the only time the compositor has one
 			internal int MapGeneration;               // counts maps, so a correlation is only ever for the current one
-			internal bool CorrelationFailed;          // no compositor window was found for the current map
+			internal bool CorrelationFailed;          // no compositor window was found on the last attempt
+			internal long RetryCorrelationAt;         // a late compositor publication can recover on the same map
 			internal bool Retired;
 			internal readonly object Applying = new(); // held while telling the compositor, by the background pass or a caller
 
@@ -98,6 +99,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		// Mapping and compositor publication are asynchronous; wait for their state updates within one budget.
 		private const int CorrelateTimeoutMs = 1000;
+		private const int CorrelateRetryMs = 20;
+		private const int CorrelateMissRetryMs = 250;
+		private const int ReservedGeometryRetryMs = 4;
 		// How long a reservation is given to be consumed before the app_id/metadata search starts alongside it.
 		private const int ReservationGraceMs = 250;
 		//A reservation only has to outlive the Show that follows it; anything longer is a stale entry waiting
@@ -433,7 +437,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			return TryGetOwnWindow(form, out var info) && TryGetSurfaceOrigin(form, info, out origin);
 		}
 
-		/// <summary>Queries a mapped form's compositor window, correlating it once per map.
+		/// <summary>Queries a mapped form's compositor window, correlating it until bound for the current map.
 		/// False when its global geometry cannot be queried.</summary>
 		internal static bool TryGetOwnWindow(Eto.Forms.Form form, out WaylandWindowInfo info)
 		{
@@ -470,7 +474,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				Unbind(state, generation, handle);
 			}
 
-			info = Correlate(backend, state);
+			info = CorrelateCore(backend, state, retryNow: true);
 			lock (sync)
 				return info != null && IsBoundLocked(state, generation, info.Handle);
 		}
@@ -734,6 +738,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				state.Mapped = true;
 				state.MapGeneration++;
 				state.CorrelationFailed = false;
+				state.RetryCorrelationAt = 0;
 
 				// Whatever the compositor was told went with the window the last unmap destroyed.
 				if (state.Wanted != Traits.None || state.PendingWindowState.HasValue || state.ReleaseFixedSize != null)
@@ -1043,10 +1048,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			return true;
 		}
 
-		// Locate our window in the compositor's list and claim it, returning what the compositor reported for it.
-		// Only a mapped form has a window to find. One the compositor's list did not contain stays unfound until it
-		// is mapped again; an attempt that could not read the list says nothing, so the next request tries again.
+		// Locate our mapped window in the compositor's list. A miss can be late publication, so background
+		// attempts back off briefly while explicit queries may retry at once.
 		private static WaylandWindowInfo Correlate(IWaylandBackend backend, FormState state)
+			=> CorrelateCore(backend, state, retryNow: false);
+
+		private static WaylandWindowInfo CorrelateCore(IWaylandBackend backend, FormState state, bool retryNow)
 		{
 			TaskCompletionSource<WaylandWindowInfo> completion;
 			int mapGeneration;
@@ -1054,9 +1061,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			lock (sync)
 			{
-				if (!IsCurrentLocked(state) || !state.Mapped || state.CorrelationFailed)
+				if (!IsCurrentLocked(state) || !state.Mapped
+					|| (!retryNow && state.CorrelationFailed && Environment.TickCount64 < state.RetryCorrelationAt))
 					return null;
 
+				state.CorrelationFailed = false;
 				mapGeneration = state.MapGeneration;
 				completion = state.CorrelationCompletion;
 
@@ -1074,8 +1083,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			{
 				// The owner can need the UI thread to stamp the temporary app id. Pumping here lets a
 				// synchronous UI caller join the attempt without deadlocking that dispatch.
-				return completion.Task.WaitWithoutInterruption(CorrelateTimeoutMs + 1000)
-					? completion.Task.GetAwaiter().GetResult() : null;
+				var deadline = Environment.TickCount64 + CorrelateTimeoutMs + 1000;
+				while (!completion.Task.IsCompleted && Environment.TickCount64 < deadline)
+					WaitForWindowChange(completion.Task, deadline, CorrelateRetryMs);
+				return completion.Task.IsCompleted ? completion.Task.GetAwaiter().GetResult() : null;
 			}
 
 			WaylandWindowInfo result = null;
@@ -1096,7 +1107,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						state.CorrelationCompletion = null;
 
 					if (result == null && listed && IsBindableLocked(state, mapGeneration))
+					{
 						state.CorrelationFailed = true;
+						state.RetryCorrelationAt = Environment.TickCount64 + CorrelateMissRetryMs;
+					}
 				}
 			}
 		}
@@ -1154,7 +1168,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					// Give the reservation a grace period before stamping an app_id and matching metadata.
 					if (Environment.TickCount64 < graceUntil)
 					{
-						_ = change.WaitWithoutInterruption((int)Math.Max(1, graceUntil - Environment.TickCount64));
+						WaitForWindowChange(change, graceUntil, CorrelateRetryMs);
 						continue;
 					}
 
@@ -1186,7 +1200,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						return null;
 					}
 
-					_ = change.WaitWithoutInterruption((int)Math.Max(1, deadline - Environment.TickCount64));
+					WaitForWindowChange(change, deadline, CorrelateRetryMs);
 				}
 			}
 			finally
@@ -1234,9 +1248,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			while (Environment.TickCount64 < deadline)
 			{
 				var change = DesktopClient.WindowChangeSignal;
-				if (readable = backend.TryGetWindow(reserved, out info) && info != null
+				if (readable = backend.TryGetWindow(reserved, out info) && info?.HasKnownField(WaylandWindowFields.Frame) == true
 					&& info.FrameGeometry.Width > 0 && info.FrameGeometry.Height > 0) break;
-				_ = change.WaitWithoutInterruption((int)Math.Max(1, deadline - Environment.TickCount64));
+				WaitForWindowChange(change, deadline, ReservedGeometryRetryMs);
 			}
 
 			//A window that never became readable is gone (destroyed before committing) or unreadable to this
@@ -1263,8 +1277,29 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 				if (info.FrameGeometry.Width != width || info.FrameGeometry.Height != height)
 					return;
-				_ = change.WaitWithoutInterruption((int)Math.Max(1, deadline - Environment.TickCount64));
+				WaitForWindowChange(change, deadline, CorrelateRetryMs);
 			}
+		}
+
+		private static void WaitForWindowChange(Task change, long deadline, int retryMs)
+		{
+			// A freshly mapped surface can appear before its state notification reaches the lease.
+			var waitMs = (int)Math.Min(retryMs, Math.Max(1, deadline - Environment.TickCount64));
+			var app = Eto.Forms.Application.Instance;
+
+			if (Script.TheScript?.CanPumpTaskWait != true && app?.IsUIThread == true)
+			{
+				// GTK can need to commit the surface before a script scheduler exists on this thread.
+				var until = Environment.TickCount64 + waitMs;
+				while (!change.IsCompleted && Environment.TickCount64 < until)
+				{
+					app.RunIteration();
+					_ = change.Wait(1);
+				}
+				return;
+			}
+
+			_ = change.WaitWithoutInterruption(waitMs);
 		}
 
 		private static WaylandWindowInfo Claim(FormState state, int mapGeneration, WaylandWindowInfo pick)

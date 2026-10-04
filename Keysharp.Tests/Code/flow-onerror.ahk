@@ -254,6 +254,23 @@ OnError(RecordingHandler)
 FileGetSize("C3D38B48-no-such-file.bin")
 AssertEq(raised, "OSError Return;", A_LineNumber)
 
+; Continuing a missing method reports it once, including when the call's result is used.
+raised := ""
+missingString := "".Save()
+missingObject := {}.Missing()
+notCallable := {}
+missingCall := notCallable()
+AssertEq(raised, "MethodError Return;MethodError Return;MethodError Return;", A_LineNumber)
+AssertEq(missingString, "", A_LineNumber)
+AssertEq(missingObject, "", A_LineNumber)
+AssertEq(missingCall, "", A_LineNumber)
+
+raised := ""
+badCallable := { Method: 42 }
+invalidMethod := badCallable.Method()
+AssertEq(raised, "MemberError Return;", A_LineNumber)
+AssertEq(invalidMethod, "", A_LineNumber)
+
 ; Stack metadata belongs to the failing call and is complete before the first callback reads it.
 location := ""
 

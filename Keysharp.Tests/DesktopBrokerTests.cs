@@ -327,6 +327,40 @@ namespace Keysharp.Tests
 			Assert.That(backend.TryGetNativeWindowId(handle, out _), Is.False);
 		}
 
+		[Test]
+		public void ReservedWindowHandlesSurviveSnapshotsUntilPublication()
+		{
+			var backend = new DesktopBackend("reservation-test", "test");
+			var empty = Encoding.UTF8.GetBytes("{\"ok\":true,\"windows\":[]}");
+			backend.RememberReservation(1, 60_000);
+			Assert.That(backend.TryReadReservedWindow(1, "24", out var reserved), Is.True);
+			Assert.That(backend.TryParseWindowList(empty, out _), Is.True);
+			Assert.That(backend.TryParseWindowList(empty, out _), Is.True);
+			Assert.That(backend.IsKnown(reserved), Is.True);
+			Assert.That(backend.TryGetNativeWindowId(reserved, out var id), Is.True);
+			Assert.That(id, Is.EqualTo("24"));
+
+			var published = Encoding.UTF8.GetBytes("{\"ok\":true,\"windows\":[{\"id\":\"24\",\"validFields\":[\"id\"]}]}");
+			Assert.That(backend.TryParseWindowList(published, out var windows), Is.True);
+			Assert.That(windows[0].Handle, Is.EqualTo(reserved));
+			Assert.That(backend.TryParseWindowList(empty, out _), Is.True);
+			Assert.That(backend.IsKnown(reserved), Is.False);
+
+			Assert.That(backend.TryReadReservedWindow(1, "24", out _), Is.True);
+			Assert.That(backend.TryParseWindowList(empty, out _), Is.True);
+			Assert.That(backend.IsKnown(reserved), Is.False, "reading a consumed reservation must not renew its pin");
+		}
+
+		[Test]
+		public void ExpiredReservationsDoNotPinWindowHandles()
+		{
+			var backend = new DesktopBackend("reservation-expiry-test", "test");
+			backend.RememberReservation(1, 0);
+			Assert.That(backend.TryReadReservedWindow(1, "24", out var reserved), Is.True);
+			Assert.That(backend.TryParseWindowList(Encoding.UTF8.GetBytes("{\"ok\":true,\"windows\":[]}"), out _), Is.True);
+			Assert.That(backend.IsKnown(reserved), Is.False);
+		}
+
 		[TestCase(false)]
 		[TestCase(true)]
 		public void TypedWindowRecordsRespectValidFields(bool known)

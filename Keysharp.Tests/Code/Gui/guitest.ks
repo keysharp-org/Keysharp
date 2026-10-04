@@ -6,9 +6,6 @@
 ; OCR library (cross-platform). Relative path from Code/Gui to Keysharp/Scripts.
 #include ../../../Keysharp/Scripts/OCR.ks
 
-If (FileExist(A_Desktop . "/MyScreenClip.png"))
-	FileDelete(A_Desktop . "/MyScreenClip.png")
-
 GuiBGColor := "FF9A9A"
 ;BGColor2 := "0xFFFFAA"
 
@@ -727,7 +724,7 @@ MyGui.UseGroup()
 	CpText := MyGui.Add("Text", "xc+16 yc+24 w310", "Image copy — Paste Pic / Paste from file share this edit:")
 	CpText.SetFont("s8")
 	MyRE := MyGui.Add("RichEdit", "xc+16 y+8 w310 h120")
-	MySecondPic := LoadPicture(A_WorkingDir . A_DirSeparator . "Robin.png")
+	MySecondPic := LoadPicture(A_ScriptDir . A_DirSeparator . "Robin.png")
 	Clipboard.Image := "HBITMAP:" MySecondPic
 	ShowBtn := MyGui.Add("Button", "xc+16 y+8 w110", "Paste Pic")
 	ShowBtn.OnEvent("Click", PastePic)
@@ -1109,9 +1106,9 @@ candygui.BackColor := "FFCC00"
 CandyProgressBar := candygui.Add("Progress", "xc+15 yc+30 w436 h36 Smooth BackgroundSilver")
 
 ; These currently don't work on linux.
-Icon1 := candygui.Add("Picture", "xc+15  yc+30 w18  h36 BackgroundTrans", "Icon1.png")
-Icon2 := candygui.Add("Picture", "xc+33  yc+30 w400 h36 BackgroundTrans", "Icon2.png")
-Icon3 := candygui.Add("Picture", "xc+433 yc+30 w18  h36 BackgroundTrans", "Icon3.png")
+Icon1 := candygui.Add("Picture", "xc+15  yc+30 w18  h36 BackgroundTrans", A_ScriptDir . A_DirSeparator . "Icon1.png")
+Icon2 := candygui.Add("Picture", "xc+33  yc+30 w400 h36 BackgroundTrans", A_ScriptDir . A_DirSeparator . "Icon2.png")
+Icon3 := candygui.Add("Picture", "xc+433 yc+30 w18  h36 BackgroundTrans", A_ScriptDir . A_DirSeparator . "Icon3.png")
 
 CandyText := candygui.Add("Text" ,"xc+15 yc+30 w436 h40 Center Middle BackgroundTrans")
 CandyText.SetFont("cFFFFFF")
@@ -1741,26 +1738,37 @@ Click_CB_Hide_Dropdown(*)
 }
 
 LoadSC(*) {
-	Tab.UseTab("Image")
-	path := A_Desktop . A_DirSeparator . "MyScreenClip.png"
-	If (!FileExist(path)) {
-		Image.FromRect(100, 100, 200, 200).Save(path)
-		Sleep(100)
+	static clipPicture := "", running := false
+	if running
+		return
+	running := true
+	clip := ""
+	try {
+		clip := Image.FromRect(100, 100, 200, 200)
+		bitmap := clip.ToBitmap()
+		if !bitmap
+			throw Error("The captured image could not be converted to a bitmap.")
+
+		Tab.UseTab("Image")
+		; Omit width and height so the captured pixels display at native size.
+		if clipPicture = ""
+			clipPicture := MyGui.Add("Picture", "xc+90 yc+158 border", "HBITMAP:" bitmap)
+		else
+			clipPicture.Value := "HBITMAP:" bitmap
+		SetStatus("image_main", "Image status: PASS - screen clip captured and displayed")
+		Sleep(2000)
+	} catch as e {
+		verdict := IsUnsupportedDesktopError(e) ? "SKIP" : "FAIL"
+		SetStatus("image_main", "Image status: " verdict " - Screen Clip error: " e.Message)
+		AppendLog("Screen Clip failed: " e.Message)
+	} finally {
+		if clipPicture != ""
+			clipPicture.Value := ""
+		if clip != ""
+			clip.Dispose()
+		Tab.UseTab()
+		running := false
 	}
-	loadedBitmap := LoadPicture(path)
-
-	; Show the clip at its native captured size. Passing "w160 h160" would scale the 200x200 capture down to
-	; 160x160 (AHK sizes a Picture to its explicit width/height); omit them so the clip displays 1:1.
-	MyLoadedPic := MyGui.Add("Picture", "xc+90 yc+158 border", "HBITMAP:" loadedBitmap)
-	Sleep(2000)
-
-#if WINDOWS
-	DllCall("DestroyWindow", "Ptr", MyLoadedPic.Hwnd)
-#endif
-	; Tab.UseTab()
-	FileDelete(path)
-	loadedBitmap := ""
-	MyLoadedPic := ""
 }
 
 ; ┌───────────────────────┐
@@ -2207,7 +2215,7 @@ GetLineCount(*)
 MyFirstPic := ""
 MySecondPic := ""
 MyThirdPic := ""
-Monkey := A_WorkingDir . A_DirSeparator . "monkey.ico"
+Monkey := A_ScriptDir . A_DirSeparator . "monkey.ico"
 
 #if WINDOWS
 hSecondPic := GetIcon("W")
@@ -2250,7 +2258,7 @@ Icon2 := "HICON:*" . hSecondPic ; The * is important so it can be reused.
 ; register and the call faults. DllCall/ComCall cannot express struct-by-value, so there is nothing
 ; to pass here that would be right on both.
 #if X64
-Icon3 := "HBITMAP:*" svgToHBITMAP(A_WorkingDir . A_DirSeparator . "check-mark.svg", 100, 100)
+Icon3 := "HBITMAP:*" svgToHBITMAP(A_ScriptDir . A_DirSeparator . "check-mark.svg", 100, 100)
 #endif
 #endif
 
@@ -3543,7 +3551,7 @@ imgScreenClipBtn.OnEvent("Click", LoadSC)
 imgOverlayBtn := MyGui.AddButton("xc+16 y+10 w230 h28", "Overlay Test (corner shapes + text)")
 imgOverlayBtn.OnEvent("Click", (*) => RunOverlayTest())
 MyGui.AddText("xc+16 y+12 w468", "Picture control render test (killbill.png, native size). NOTE: a rendered image file is not searchable — macOS/Wayland rescale it and macOS converts its colours — so Image Search uses the colour swatch instead:")
-SrchPic := MyGui.Add("Picture", "xc+16 y+6 w-1 h-1", A_WorkingDir . A_DirSeparator . "killbill.png")
+SrchPic := MyGui.Add("Picture", "xc+16 y+6 w-1 h-1", A_ScriptDir . A_DirSeparator . "killbill.png")
 imgSearchStatus := MyGui.AddText("xc+16 yc+330 w468 h40", "Image status: Not run")
 gStatus["image_main"] := imgSearchStatus
 MyGui.UseGroup()

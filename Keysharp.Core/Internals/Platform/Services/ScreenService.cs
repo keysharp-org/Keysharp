@@ -177,8 +177,7 @@ namespace Keysharp.Internals
 
 	}
 
-	/// <summary>Shared Wayland-compositor base: work area comes from the compositor (a client can't compute it),
-	/// and region capture falls back to the Eto grab when the compositor path returns nothing.</summary>
+	/// <summary>Wayland screen geometry and pixels are supplied by the compositor through keysharp-desktop.</summary>
 	internal sealed class WaylandScreen : EtoScreen
 	{
 		private static Wl.IWaylandBackend Backend => Wl.WaylandBackend.Current;
@@ -262,11 +261,6 @@ namespace Keysharp.Internals
 
 		public override bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
 		{
-			var backend = Backend;
-
-			if (backend == null)
-				return base.TryCaptureRegion(bounds, out bmp);
-
 			var direct = Wl.DesktopClient.CaptureWithStatus(bounds.X, bounds.Y,
 				bounds.Width, bounds.Height, out bmp);
 
@@ -276,18 +270,8 @@ namespace Keysharp.Internals
 			if (!Wl.DesktopClient.AllowsCaptureFallback(direct))
 				return false;
 
-			if (backend.BackendKey == "generic")
-			{
-				var desktop = Wl.BrokerDesktopCapture.Capture(bounds, GetDisplays(), out bmp);
-
-				if (desktop == Wl.DesktopCaptureStatus.Captured)
-					return true;
-
-				if (!Wl.DesktopClient.AllowsCaptureFallback(desktop))
-					return false;
-			}
-
-			return base.TryCaptureRegion(bounds, out bmp);
+			return Wl.BrokerDesktopCapture.Capture(bounds, GetDisplays(), out bmp)
+				== Wl.DesktopCaptureStatus.Captured;
 		}
 
 		public override bool TryCaptureWindow(nint handle, bool includeDecoration, out Bitmap bmp,

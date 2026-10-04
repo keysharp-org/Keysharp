@@ -167,7 +167,8 @@ namespace Keysharp.Runtime
 					if (opm.Get != null) return (item, Invoke(opm.Get, null, item)); // getter call, no params
 					if (opm.Value != null) return (item, opm.Value);
 
-					_ = Errors.MissingMethodErrorOccurred(item, key);
+					if (throwIfMissing)
+						_ = Errors.MissingMethodErrorOccurred(item, key);
 					return (null, null);
 				}
 
@@ -479,11 +480,11 @@ namespace Keysharp.Runtime
 			bool isSuper = obj is ITuple superT && superT.Length > 1 && superT[0] is Any;
 			object actualThis = isSuper ? ((ITuple)obj)[1] : obj;
 
-			var mitup = GetMethodOrProperty(obj, methName, -1, checkBase: true, throwIfMissing: !nameless && !optional, invokeMeta: true);
+			var mitup = GetMethodOrProperty(obj, methName, -1, checkBase: true, throwIfMissing: false, invokeMeta: true);
 
-			// An object called which cannot be: AHK's MethodError, as a callback site reports it.
-			if (mitup.Item2 == null && (nameless || optional))
-				return optional ? NoMember : Errors.MissingMethodErrorOccurred(actualThis, "Call");
+			// Dispatch reports a missing method once and returns its continued-error result to the caller.
+			if (mitup.Item2 == null)
+				return optional ? NoMember : Errors.MissingMethodErrorOccurred(actualThis, methName);
 
 			switch (mitup.Item2)
 			{
@@ -526,7 +527,7 @@ namespace Keysharp.Runtime
 					return mph.CallFunc(mitup.Item1, parameters);
 			}
 
-			return Errors.ErrorOccurred(new MemberError($"Attempting to invoke method or property {meth} failed."), (object)null);
+			return Errors.ErrorOccurred(new MemberError($"Attempting to invoke method or property {meth} failed."), DefaultObject);
 		}
 
 		/// <summary>

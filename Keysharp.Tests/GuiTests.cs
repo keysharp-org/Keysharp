@@ -448,7 +448,7 @@ namespace Keysharp.Tests
 			});
 		}
 
-		// Failure to read a list leaves correlation retryable; a confirmed miss lasts until the next map.
+		// An explicit query can retry a listed miss before the background retry delay ends.
 		[Test, Category("Gui")]
 		public void WaylandCorrelationFailsOnlyOnAListWithoutTheWindow()
 		{
@@ -457,6 +457,7 @@ namespace Keysharp.Tests
 			{
 				var form = new Eto.Forms.Form { Content = new PixelLayout(), ClientSize = new Size(200, 100) };
 				var correlate = typeof(WaylandOwnToplevels).GetMethod("Correlate", BindingFlags.NonPublic | BindingFlags.Static);
+				var correlateNow = typeof(WaylandOwnToplevels).GetMethod("CorrelateCore", BindingFlags.NonPublic | BindingFlags.Static);
 
 				try
 				{
@@ -467,6 +468,15 @@ namespace Keysharp.Tests
 					Assert.IsFalse(OwnToplevelField<bool>(state, "CorrelationFailed"));
 					Assert.IsNull(correlate.Invoke(null, [new ListingBackend(true), state]));
 					Assert.IsTrue(OwnToplevelField<bool>(state, "CorrelationFailed"));
+					SetOwnToplevelField(state, "RetryCorrelationAt", Environment.TickCount64 + 60_000);
+					var published = new WaylandWindowInfo(42, "correlation-recovered", "own toplevel",
+						pid: Environment.ProcessId, frameGeometry: new Rectangle(10, 20, 200, 100));
+					var recovered = new ListingBackend(true) { Windows = [published] };
+					Assert.IsNull(correlate.Invoke(null, [recovered, state]));
+					Assert.AreEqual(0, recovered.ListCalls);
+					Assert.AreSame(published, correlateNow.Invoke(null, [recovered, state, true]));
+					Assert.IsFalse(OwnToplevelField<bool>(state, "CorrelationFailed"));
+					Assert.AreEqual((nint)42, OwnToplevelField<nint>(state, "CompositorHandle"));
 				}
 				finally
 				{
@@ -493,6 +503,8 @@ namespace Keysharp.Tests
 		{
 			public string BackendKey => "test";
 			public string Name => "test";
+			internal IReadOnlyList<WaylandWindowInfo> Windows { get; init; } = [];
+			internal int ListCalls { get; private set; }
 
 			public bool TryGetCursorPos(out int x, out int y)
 			{
@@ -502,7 +514,8 @@ namespace Keysharp.Tests
 
 			public bool TryListWindows(bool includeHidden, out IReadOnlyList<WaylandWindowInfo> windows)
 			{
-				windows = [];
+				ListCalls++;
+				windows = Windows;
 				return lists;
 			}
 		}

@@ -13,8 +13,16 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private readonly object windowListSync = new();
 		private readonly SyntheticWindowHandleMap<string> handles = new();
 		private readonly Dictionary<nint, string> captureIds = [];
+		private readonly Dictionary<ulong, WindowReservation> reservations = [];
 		private readonly bool nativeHandles;
 		private readonly bool usePushWindowEvents;
+
+		private sealed class WindowReservation(long expires)
+		{
+			internal readonly long Expires = expires;
+			internal nint Handle;
+			internal bool Published;
+		}
 
 		internal DesktopBackend(string backendKey, string name, bool nativeHandles = false,
 			bool usePushWindowEvents = true)
@@ -116,11 +124,17 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (!TryGetServiceHandle(handle, out var id))
 				return false;
 
-			if (DesktopClient.TryReadWindows(out var state))
+			// An explicit query needs current geometry, including a window published ahead of the lease's mirror.
+			var json = DesktopClient.QueryWindow(id, out var status);
+			if (TryReadWindow(handle, json, status, out window, out notFound) || notFound)
+				return window != null;
+
+			if (status == NativeClientStatus.Unsupported
+				? DesktopClient.TryReadWindows(out var state)
+				: DesktopClient.TryReadCachedWindows(out state))
 			{
 				lock (windowListSync)
 				{
-					if (!DesktopClient.TryReadCachedWindows(out state)) return false;
 					var serviceWindow = state.FirstOrDefault(candidate => candidate.ServiceHandle == id);
 					if (serviceWindow != null)
 					{
@@ -128,19 +142,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						RememberWindows([window], false);
 						return true;
 					}
-					if (!nativeHandles || DesktopClient.IsMirroredWindow(id)) { notFound = true; return false; }
 				}
-				// X11 child and frame XIDs are outside the authoritative toplevel snapshot.
+				// Only a mirror that has observed this identity can establish its removal.
+				notFound = status == NativeClientStatus.Unsupported && DesktopClient.IsMirroredWindow(id);
+				return false;
 			}
-			else if (SupportsPushWindowEvents) return false;
 
-			var json = DesktopClient.QueryWindow(id, out var status);
-
-			// The list answers the same question only where the provider has no per-window query.
-			if (status != NativeClientStatus.Unsupported)
-				return TryReadWindow(handle, json, status, out window, out notFound);
-
-			if (!TryListWindows(true, out var windows))
+			if (status != NativeClientStatus.Unsupported || !TryListWindows(true, out var windows))
 				return false;
 
 			window = windows.FirstOrDefault(candidate => candidate.Handle == handle);
@@ -257,14 +265,38 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			=> TryGetServiceHandle(handle, out var id) && DesktopClient.FocusWindow(id);
 
 		public bool TryReserveWindow(ulong cookie, int x, int y, int ttlMs)
-			=> DesktopClient.ReserveWindow(cookie, x, y, ttlMs);
+		{
+			if (!DesktopClient.ReserveWindow(cookie, x, y, ttlMs))
+				return false;
+			RememberReservation(cookie, ttlMs);
+			return true;
+		}
+
+		internal void RememberReservation(ulong cookie, int ttlMs)
+		{
+			lock (windowListSync)
+				if (!nativeHandles)
+				{
+					RemoveExpiredReservations();
+					reservations[cookie] = new(Environment.TickCount64 + ttlMs);
+				}
+		}
 
 		public bool TryGetReservedWindow(ulong cookie, out nint handle, out string compositorId)
 		{
 			compositorId = DesktopClient.GetReservedWindow(cookie);
+			return TryReadReservedWindow(cookie, compositorId, out handle);
+		}
+
+		internal bool TryReadReservedWindow(ulong cookie, string compositorId, out nint handle)
+		{
 			lock (windowListSync)
-				handle = compositorId.Length > 0 ? Resolve(compositorId) : 0;
-			return handle != 0;
+			{
+				handle = !string.IsNullOrEmpty(compositorId) ? Resolve(compositorId) : 0;
+				if (handle != 0 && reservations.TryGetValue(cookie, out var reservation))
+					reservation.Handle = handle;
+				return handle != 0;
+			}
 		}
 
 		public bool TryMoveResizeWindow(nint handle, Rectangle bounds, bool setPosition, bool setSize)
@@ -409,8 +441,19 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		private void RememberWindows(IReadOnlyList<WaylandWindowInfo> windows, bool complete)
 		{
+			if (complete && !nativeHandles)
+			{
+				RemoveExpiredReservations();
+				foreach (var reservation in reservations.Values)
+					if (windows.Any(window => window.Handle == reservation.Handle))
+						reservation.Published = true;
+			}
+
+			// A consumed reservation can name a window before the leased snapshot publishes it.
 			var removed = complete && !nativeHandles
-				? handles.Retain(windows.Select(window => window.Handle)) : [];
+				? handles.Retain(windows.Select(window => window.Handle).Concat(
+					reservations.Values.Where(reservation => !reservation.Published && reservation.Handle != 0)
+					.Select(reservation => reservation.Handle))) : [];
 			foreach (var handle in removed)
 				_ = captureIds.Remove(handle);
 
@@ -419,6 +462,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					_ = captureIds.Remove(window.Handle);
 				else
 					captureIds[window.Handle] = window.CaptureId;
+		}
+
+		private void RemoveExpiredReservations()
+		{
+			var now = Environment.TickCount64;
+			foreach (var cookie in reservations.Where(pair => pair.Value.Expires <= now).Select(pair => pair.Key).ToArray())
+				_ = reservations.Remove(cookie);
 		}
 
 		private WaylandWindowInfo ResolveWindow(WaylandWindowInfo value)
