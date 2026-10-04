@@ -74,7 +74,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private NameOwnerWatcher watcher;
 		private string owner;
 		private TProxy proxy;
-		private bool watching, disposed;
+		private Task<bool> installation;   // the watch being installed for `session`
+		private int installerThread;
+		private bool disposed;
 
 		/// <param name="factory">Builds the generated proxy; passed in so no reflection is needed to construct one.</param>
 		internal WatchedDbusService(RecoverableService<DbusSession> sessions, string name, ObjectPath path, int timeoutMs,
@@ -241,30 +243,68 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				Notify();
 		}
 
+		/// <summary>Installs the name watch for <paramref name="candidate"/>, or waits, bounded by the timeout, for
+		/// the installation another caller already started for it.</summary>
 		private bool EnsureWatch(DbusSession candidate)
 		{
-			NameOwnerWatcher old;
+			NameOwnerWatcher old = null;
+			TaskCompletionSource<bool> started = null;
+			Task<bool> pending = null;
 
 			lock (sync)
 			{
 				if (disposed)
 					return false;
 
-				if (ReferenceEquals(session, candidate) && watcher != null)
-					return true;
+				if (ReferenceEquals(session, candidate))
+				{
+					if (watcher != null)
+						return true;
 
-				if (watching)
-					return false;
+					// A call reached through the installer's own pumping wait cannot wait for that installation.
+					if (installation != null && installerThread == Environment.CurrentManagedThreadId)
+						return false;
 
-				watching = true;
-				old = watcher;
-				watcher = null;
-				session = candidate;
-				owner = null;
-				proxy = null;
+					pending = installation;
+				}
+
+				// A different session supersedes an installation still in flight for the one it replaces.
+				if (pending == null)
+				{
+					started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+					installation = started.Task;
+					installerThread = Environment.CurrentManagedThreadId;
+					old = watcher;
+					watcher = null;
+					session = candidate;
+					owner = null;
+					proxy = null;
+				}
 			}
 
+			if (pending != null)
+				return pending.WaitWithoutInterruption(timeoutMs) && pending.Result;
+
 			SafeDispose(old);
+			var result = false;
+
+			try
+			{
+				result = InstallWatch(candidate);
+				return result;
+			}
+			finally
+			{
+				lock (sync)
+					if (ReferenceEquals(installation, started.Task))
+						installation = null;
+
+				started.SetResult(result);
+			}
+		}
+
+		private bool InstallWatch(DbusSession candidate)
+		{
 			NameOwnerWatcher installed = null;
 			Exception failure = null;
 
@@ -301,9 +341,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			finally
 			{
 				SafeDispose(installed);
-
-				lock (sync)
-					watching = false;
 
 				if (failure != null)
 					sessions.Invalidate(candidate, failure);

@@ -85,12 +85,17 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		internal uint LayerShellVersion { get; private set; }
 
 		private readonly Dictionary<uint, WaylandOutput> outputs = [];
+		// The outputs as displays, rebuilt when they change rather than on every query.
+		private DisplayInfo[] displays = [];
+		private ScreenRect virtualBounds;
 		private readonly HashSet<WaylandImageOverlay> children = [];
+		private readonly HashSet<WaylandShmBuffer> buffers = [];
 		private nint registry;
 		private nint xdgOutputManager;
 		private readonly GCHandle selfHandle;
 		private CancellationTokenSource dispatcherCancel;
 		private Thread dispatcherThread;
+		private int wakeFd = -1;   // an eventfd that interrupts the dispatcher's poll
 		private volatile bool disposed;
 		private volatile bool connectionLost;
 
@@ -155,17 +160,36 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				_ = children.Remove(child);
 		}
 
+		// Buffers remain owned after their overlay retires them; callers hold Sync.
+		internal void Register(WaylandShmBuffer buffer) => buffers.Add(buffer);
+		internal void Unregister(WaylandShmBuffer buffer) => buffers.Remove(buffer);
+
 		internal IReadOnlyList<DisplayInfo> GetDisplays()
 		{
 			lock (sync)
+				return displays;
+		}
+
+		internal ScreenRect VirtualBounds
+		{
+			get
 			{
-				return outputs.Values
-					.Where(o => o.Proxy != 0 && o.Bounds.HasArea)
-					.OrderBy(o => o.RegistryName)
-					.Select(o => new DisplayInfo(o.StableName, o.Bounds, o.Bounds, 1.0,
-						o.Bounds.X == 0 && o.Bounds.Y == 0, o.RegistryName))
-					.ToArray();
+				lock (sync)
+					return virtualBounds;
 			}
+		}
+
+		// Output events arrive on the dispatcher under Sync, or during creation before the client is shared.
+		private void OnOutputCommitted()
+		{
+			displays = outputs.Values
+				.Where(o => o.Proxy != 0 && o.Bounds.HasArea)
+				.OrderBy(o => o.RegistryName)
+				.Select(o => new DisplayInfo(o.StableName, o.Bounds, o.Bounds, 1.0,
+					o.Bounds.X == 0 && o.Bounds.Y == 0, o.RegistryName))
+				.ToArray();
+			virtualBounds = DisplayTopology.Union(displays.Select(display => display.Bounds));
+			LinuxDisplayChanges.Raise();
 		}
 
 		/// <summary>
@@ -202,12 +226,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		{
 			lock (sync)
 			{
-				var displays = outputs.Values
-					.Where(o => o.Proxy != 0 && o.Bounds.HasArea)
-					.Select(o => new DisplayInfo(o.StableName, o.Bounds, o.Bounds, 1.0,
-						o.Bounds.X == 0 && o.Bounds.Y == 0, o.RegistryName))
-					.ToArray();
-
 				if (DisplayTopology.TryFind(displays, bounds, out var selected)
 					&& outputs.TryGetValue((uint)selected.NativeId, out var output))
 				{
@@ -359,6 +377,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		private void StartDispatcher()
 		{
+			wakeFd = WaylandNative.EventFd(0, WaylandNative.EFD_CLOEXEC | WaylandNative.EFD_NONBLOCK);
+
+			if (wakeFd < 0)
+				throw new IOException($"eventfd failed: errno={Marshal.GetLastPInvokeError()}");
+
 			dispatcherCancel = new CancellationTokenSource();
 			var token = dispatcherCancel.Token;
 			dispatcherThread = new Thread(() => DispatchLoop(token))
@@ -373,7 +396,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		{
 			try
 			{
-				var pollFds = new WaylandNative.PollFd[1];
+				var pollFds = new WaylandNative.PollFd[2];
+				pollFds[1] = new WaylandNative.PollFd { FileDescriptor = wakeFd, Events = WaylandNative.POLLIN };
 
 				while (!token.IsCancellationRequested)
 				{
@@ -384,7 +408,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 						lock (sync)
 						{
-							if (disposed || Display == 0)
+							if (disposed || connectionLost || Display == 0)
 								return;
 
 							while (WaylandNative.DisplayPrepareRead(Display) != 0)
@@ -392,27 +416,45 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 									return;
 
 							readPrepared = true;
-							_ = WaylandNative.DisplayFlush(Display);
+							// A flush that would block leaves requests queued, so the socket becoming writable is then a
+							// reason to wake as well.
+							var flushed = WaylandNative.DisplayFlush(Display);
+							var flushBlocked = flushed < 0 && Marshal.GetLastPInvokeError() == WaylandNative.EAGAIN;
+
+							if (flushed < 0 && !flushBlocked)
+								return;
+
 							fd = WaylandNative.DisplayGetFd(Display);
 							pollFds[0] = new WaylandNative.PollFd
 							{
 								FileDescriptor = fd,
-								Events = WaylandNative.POLLIN
+								Events = (short)(WaylandNative.POLLIN | (flushBlocked ? WaylandNative.POLLOUT : 0))
 							};
 						}
 
 						// Requests may be marshalled and flushed while a read is prepared; this dispatcher remains
-						// the sole event reader. Polling outside Sync removes animation latency and idle busy-waiting.
-						var ready = fd >= 0 ? WaylandNative.Poll(pollFds, 1, 100) : -1;
+						// the sole event reader. Polling outside Sync removes animation latency and idle busy-waiting;
+						// Dispose and a flush that would block wake it through wakeFd.
+						var ready = fd >= 0 ? WaylandNative.Poll(pollFds, 2, -1) : -1;
+
+						if (ready < 0)
+						{
+							if (fd >= 0 && Marshal.GetLastPInvokeError() == WaylandNative.EINTR)
+								continue;
+							return;
+						}
+
+						const short pollErrors = WaylandNative.POLLERR | WaylandNative.POLLHUP | WaylandNative.POLLNVAL;
+						if (((pollFds[0].ReturnedEvents | pollFds[1].ReturnedEvents) & pollErrors) != 0)
+							return;
+
+						if (ready > 0 && (pollFds[1].ReturnedEvents & WaylandNative.POLLIN) != 0)
+							_ = WaylandNative.EventFdRead(wakeFd, out _, sizeof(ulong));
 
 						lock (sync)
 						{
 							if (disposed || Display == 0)
-							{
-								if (readPrepared && Display != 0)
-									WaylandNative.DisplayCancelRead(Display);
 								return;
-							}
 
 							if (ready > 0 && (pollFds[0].ReturnedEvents & WaylandNative.POLLIN) != 0)
 							{
@@ -432,17 +474,17 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 								return;
 						}
 					}
-					catch
+					finally
 					{
 						if (readPrepared)
-							try
-							{
-								lock (sync)
-									if (Display != 0) WaylandNative.DisplayCancelRead(Display);
-							}
-							catch { }
+							lock (sync)
+								if (Display != 0) WaylandNative.DisplayCancelRead(Display);
 					}
 				}
+			}
+			catch (Exception ex)
+			{
+				Diagnostics.Debug.WriteLine($"Wayland overlay dispatch failed: {ex.Message}");
 			}
 			finally
 			{
@@ -461,11 +503,25 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			// EAGAIN means the request is queued in libwayland and the dispatcher will flush it when the socket is
 			// writable; it is not a lost transaction. Every other error is terminal for this connection.
-			if (Marshal.GetLastPInvokeError() == 11)
+			if (Marshal.GetLastPInvokeError() == WaylandNative.EAGAIN)
+			{
+				Wake();
 				return true;
+			}
 
 			connectionLost = true;
+			Wake();
 			return false;
+		}
+
+		// Callers hold Sync, under which Dispose closes the descriptor.
+		private void Wake()
+		{
+			if (wakeFd < 0)
+				return;
+
+			ulong one = 1;
+			_ = WaylandNative.EventFdWrite(wakeFd, ref one, sizeof(ulong));
 		}
 
 		private void OnGlobal(uint name, string interfaceName, uint version)
@@ -702,7 +758,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			var output = WaylandOutputBinding.Bind(registry, name, version, xdgOutputManager);
 
 			if (output != null)
+			{
+				// GDK reads its outputs on its own connection, so this one reports its own changes.
+				output.Committed = OnOutputCommitted;
 				outputs.Add(name, output);
+			}
 		}
 
 		private void OnGlobalRemove(uint name)
@@ -716,15 +776,17 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return;
 			}
 
-			RemoveOutput(name);
+			if (RemoveOutput(name))
+				OnOutputCommitted();
 		}
 
-		private void RemoveOutput(uint name)
+		private bool RemoveOutput(uint name)
 		{
 			if (!outputs.Remove(name, out var output))
-				return;
+				return false;
 
 			WaylandOutputBinding.Release(output);
+			return true;
 		}
 
 		private static WaylandLayerShellClient Self(nint data)
@@ -829,16 +891,28 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			StopPointerQueue();
 			try { dispatcherCancel?.Cancel(); } catch { }
+
+			lock (sync)
+				Wake();
+
 			var dispatcherStopped = true;
 			try { dispatcherStopped = dispatcherThread?.Join(1000) ?? true; } catch { dispatcherStopped = false; }
 
-			// Never free proxies/listener handles while the dispatch thread could still be inside libwayland. Its bounded
-			// poll wakes for cancellation, so this is only a defensive connection leak on a genuinely wedged native call.
+			// Never free proxies/listener handles while the dispatch thread could still be inside libwayland. The wake
+			// above ends its poll, so this is only a defensive connection leak on a genuinely wedged native call.
 			if (!dispatcherStopped)
 				return;
 			dispatcherCancel?.Dispose();
 			dispatcherCancel = null;
 			dispatcherThread = null;
+
+			lock (sync)
+			{
+				if (wakeFd >= 0)
+					_ = WaylandNative.Close(wakeFd);
+
+				wakeFd = -1;
+			}
 
 			// Children retain raw wl_proxy pointers. Invalidate every child before display_disconnect so a later
 			// Overlay.Dispose cannot marshal through freed memory. On connection loss the child abandons protocol
@@ -849,7 +923,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			lock (sync)
 			{
+				foreach (var buffer in buffers.ToArray())
+					buffer.Abandon();
+
 				children.Clear();
+				displays = [];
+				virtualBounds = default;
 
 				if (connectionLost)
 				{
@@ -857,7 +936,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						WaylandOutputBinding.Abandon(output);
 
 					outputs.Clear();
-					// Protocol objects on a dead connection are abandoned locally, never released via requests.
+					// Destroy local proxies without sending requests on the failed connection.
+					foreach (var proxy in new[] { pointerDevice, seat, Viewporter, xdgOutputManager,
+						LayerShell, Shm, Compositor, registry })
+						if (proxy != 0) WaylandNative.ProxyDestroy(proxy);
 					pointerDevice = seat = 0;
 					pointerFocus = lastClickTarget = null;
 					Viewporter = xdgOutputManager = LayerShell = Shm = Compositor = registry = 0;

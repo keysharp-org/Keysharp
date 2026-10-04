@@ -76,7 +76,7 @@ namespace Keysharp.Internals
 #if WINDOWS
 				return new Keysharp.Internals.Window.Windows.MonitorEventBackend();//Owner unused: this backend hangs off the static SystemEvents, and Script.Dispose detaches it.
 #elif LINUX
-				return new Keysharp.Internals.Window.Linux.MonitorEventBackend(owner);
+				return new Keysharp.Internals.Window.Linux.MonitorEventBackend();//Owner unused: the process-wide LinuxDisplayChanges signal delivers on the UI thread.
 #elif OSX
 				return new Keysharp.Internals.Window.MacOS.MonitorEventBackend(owner);
 #else

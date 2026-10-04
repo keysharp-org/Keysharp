@@ -15,68 +15,98 @@ namespace Keysharp.Internals.Window.Linux.X11
 
 		private sealed class Snapshot
 		{
+			internal readonly long Generation;
 			internal readonly DisplayInfo[] Displays;
 			internal readonly ScreenRect[] NativeBounds;
 			internal readonly ScreenRect[] ToolkitBounds;
+			internal readonly ScreenRect VirtualBounds;
+			// False when keysharp-desktop did not answer: names, NativeIds and root pixels are then guessed.
+			internal readonly bool NativeRead;
 
-			internal Snapshot(Mapping[] mappings)
+			internal Snapshot(long generation, Mapping[] mappings, bool nativeRead)
 			{
+				Generation = generation;
+				NativeRead = nativeRead;
 				Displays = mappings.Select(m => m.Display).ToArray();
 				NativeBounds = mappings.Select(m => m.Display.Bounds).ToArray();
 				ToolkitBounds = mappings.Select(m => m.ToolkitBounds).ToArray();
+				VirtualBounds = DisplayTopology.Union(NativeBounds);
 			}
 		}
 
-		private static readonly object snapshotLock = new();
-		private static Snapshot cachedSnapshot;
-		private static long cachedAtMs;
-		private const int ConversionCacheLifetimeMs = 500;
+		private static readonly Lock snapshotLock = new();
+		private static Snapshot current;
 
-		/// <summary>Returns a fresh native topology snapshot. Monitor enumeration must not inherit the short-lived
-		/// cache used by the toolkit conversion hot path.</summary>
-		internal static IReadOnlyList<DisplayInfo> GetDisplays() => BuildSnapshot().Displays;
+		/// <summary>The native topology as of the last display change. It is read again after
+		/// <see cref="LinuxDisplayChanges"/> reports one, on every call while nothing can report one, and while
+		/// keysharp-desktop has not answered.</summary>
+		private static Snapshot Current
+		{
+			get
+			{
+				lock (snapshotLock)
+				{
+					if (current == null || !current.NativeRead || !LinuxDisplayChanges.IsCurrent(current.Generation))
+						// Read before the sources, so a change during the build leaves the snapshot already stale.
+						current = BuildSnapshot(LinuxDisplayChanges.Generation);
+
+					return current;
+				}
+			}
+		}
+
+		internal static IReadOnlyList<DisplayInfo> GetDisplays() => Current.Displays;
 
 		/// <summary>Converts a public X11 root-pixel rectangle for GTK/Eto. Each rectangle endpoint is mapped by
 		/// the display containing it so a rectangle spanning differently scaled displays preserves their seam.</summary>
 		internal static ScreenRect ToToolkitBounds(ScreenRect bounds)
 		{
-			var snapshot = CachedSnapshot;
+			var snapshot = Current;
 			return MapAcrossDisplays(bounds, snapshot.NativeBounds, snapshot.ToolkitBounds);
 		}
 
 		/// <summary>Converts GTK/Eto screen geometry back to public X11 root pixels.</summary>
 		internal static ScreenRect FromToolkitBounds(ScreenRect bounds)
 		{
-			var snapshot = CachedSnapshot;
+			var snapshot = Current;
 			return MapAcrossDisplays(bounds, snapshot.ToolkitBounds, snapshot.NativeBounds);
 		}
 
-		/// <summary>The union of the native display bounds, from the conversion cache because searches and pointer
-		/// mapping ask on every call.</summary>
-		internal static ScreenRect VirtualBounds => DisplayTopology.Union(CachedSnapshot.NativeBounds);
+		/// <summary>The union of the native display bounds.</summary>
+		internal static ScreenRect VirtualBounds => Current.VirtualBounds;
 
-		private static Snapshot CachedSnapshot
+		/// <summary>One display's work area, read at each call since panels and docks change without a display
+		/// change.</summary>
+		internal static ScreenRect GetWorkArea(DisplayInfo display)
 		{
-			get
-			{
-				var now = Environment.TickCount64;
-				lock (snapshotLock)
-				{
-					if (cachedSnapshot == null || now - cachedAtMs >= ConversionCacheLifetimeMs)
-					{
-						cachedSnapshot = BuildSnapshot();
-						cachedAtMs = now;
-					}
+			var snapshot = Current;
+			var index = Array.IndexOf(snapshot.NativeBounds, display.Bounds);
 
-					return cachedSnapshot;
-				}
-			}
+			if (index < 0)
+				return display.WorkArea;
+
+			var toolkitBounds = snapshot.ToolkitBounds[index];
+
+			foreach (var screen in Forms.Screen.Screens ?? [])
+				if (screen != null && ScreenRect.FromRectangle(screen.Bounds) == toolkitBounds)
+					return WorkArea(screen, toolkitBounds, display.Bounds);
+
+			return display.WorkArea;
 		}
 
-		private static Snapshot BuildSnapshot()
+		// GDK reads the work area from the root window's _NET_WORKAREA, in toolkit coordinates.
+		private static ScreenRect WorkArea(Forms.Screen screen, ScreenRect toolkitBounds, ScreenRect nativeBounds)
+		{
+			ScreenRect toolkitWorkArea;
+			try { toolkitWorkArea = ScreenRect.FromRectangle(screen.WorkingArea); }
+			catch { toolkitWorkArea = toolkitBounds; }
+			return MapRectangle(toolkitWorkArea, toolkitBounds, nativeBounds);
+		}
+
+		private static Snapshot BuildSnapshot(long generation)
 		{
 			var toolkit = Forms.Screen.Screens?.Where(s => s != null).ToArray() ?? [];
-			var native = QueryNativeScreens();
+			var native = QueryNativeScreens(out var nativeRead);
 			var matchedNative = MatchNativeScreens(toolkit, native);
 			var mappings = new List<Mapping>();
 			var anyPrimary = toolkit.Any(s => s.IsPrimary);
@@ -91,16 +121,12 @@ namespace Keysharp.Internals.Window.Linux.X11
 				if (!toolkitBounds.HasArea)
 					continue;
 
-				ScreenRect toolkitWorkArea;
-				try { toolkitWorkArea = ScreenRect.FromRectangle(screen.WorkingArea); }
-				catch { toolkitWorkArea = toolkitBounds; }
-
 				var nativeBounds = matchedNative[i]?.Bounds ?? (toolkitUnion.HasArea && nativeUnion.HasArea
 					? MapRectangle(toolkitBounds, toolkitUnion, nativeUnion) : toolkitBounds);
 				// Content scale is a toolkit property, independent of the mapping between GTK coordinates and the
 				// X11 root. Geometry ratios are not a reliable scale source in mixed-monitor layouts.
 				var contentScale = ScaleFactor.Normalize(screen.LogicalPixelSize);
-				var workArea = MapRectangle(toolkitWorkArea, toolkitBounds, nativeBounds);
+				var workArea = WorkArea(screen, toolkitBounds, nativeBounds);
 				var primary = screen.IsPrimary || !anyPrimary && nativeBounds.X == 0 && nativeBounds.Y == 0;
 				// Prefer the RandR output name ("DP-1", "eDP-1"): it is the name the OS and every Linux tool uses
 				// for this monitor, and it is what the DRM connector lookup keys off. Eto's Screen.ID is left as
@@ -127,7 +153,7 @@ namespace Keysharp.Internals.Window.Linux.X11
 				mappings.Add(new Mapping(new DisplayInfo("X11-root", new ScreenRect(0, 0, 1, 1),
 					new ScreenRect(0, 0, 1, 1), 1, true), new ScreenRect(0, 0, 1, 1)));
 
-			return new Snapshot(mappings.ToArray());
+			return new Snapshot(generation, mappings.ToArray(), nativeRead);
 		}
 
 		private static NativeMonitor?[] MatchNativeScreens(Forms.Screen[] toolkit, List<NativeMonitor> native)
@@ -183,9 +209,10 @@ namespace Keysharp.Internals.Window.Linux.X11
 			return result;
 		}
 
-		private static List<NativeMonitor> QueryNativeScreens()
+		private static List<NativeMonitor> QueryNativeScreens(out bool answered)
 		{
 			var result = new List<NativeMonitor>();
+			answered = false;
 			var json = Wayland.DesktopClient.QueryDisplays();
 			if (json == null || json.Length == 0) return result;
 			try
@@ -214,13 +241,15 @@ namespace Keysharp.Internals.Window.Linux.X11
 				}
 			}
 			catch (System.Text.Json.JsonException) { }
+			answered = result.Count > 0;
 			return result;
 		}
 
 		internal static (double RefreshRate, int Orientation) GetOutputMode(nuint output)
 		{
 			if (output == 0) return (0, 0);
-			var monitor = QueryNativeScreens().Find(m => m.Output == output);
+			// GDK's topology signals do not report refresh-rate or same-size rotation changes.
+			var monitor = QueryNativeScreens(out _).Find(m => m.Output == output);
 			return (monitor.RefreshRate, monitor.Orientation);
 		}
 

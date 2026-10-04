@@ -164,6 +164,19 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		[DllImport("libc", EntryPoint = "close", SetLastError = true)]
 		internal static extern int Close(int fd);
 
+		internal const int EFD_NONBLOCK = 0x800;
+		internal const int EFD_CLOEXEC = 0x80000;
+
+		[DllImport("libc", EntryPoint = "eventfd", SetLastError = true)]
+		internal static extern int EventFd(uint initialValue, int flags);
+
+		// An eventfd is written and read as one 8-byte counter.
+		[DllImport("libc", EntryPoint = "write", SetLastError = true)]
+		internal static extern nint EventFdWrite(int fd, ref ulong value, nuint count);
+
+		[DllImport("libc", EntryPoint = "read", SetLastError = true)]
+		internal static extern nint EventFdRead(int fd, out ulong value, nuint count);
+
 		internal const short POLLIN = 0x0001;
 		internal const short POLLOUT = 0x0004;
 		internal const short POLLERR = 0x0008;

@@ -159,10 +159,17 @@ namespace Keysharp.Internals
 	internal interface IScreen
 	{
 		/// <summary>
-		/// A fresh snapshot of every display in native screen space. Callers must not cache it across monitor
-		/// hotplug, topology, primary-display, or scale changes.
+		/// A snapshot of every display in native screen space, current as of the last display change; a backend may
+		/// keep one until a change notification invalidates it. Callers must not cache it across monitor hotplug,
+		/// topology, primary-display, or scale changes.
 		/// </summary>
 		IReadOnlyList<DisplayInfo> GetDisplays();
+
+		/// <summary>
+		/// One display's work area at the time of the call. A <see cref="GetDisplays"/> snapshot can hold work areas from the
+		/// last display change, while a panel or dock can change without one.
+		/// </summary>
+		ScreenRect GetWorkArea(DisplayInfo display) => display.WorkArea;
 
 		/// <summary>
 		/// The primary display's size in native pixels, when the platform can answer without a <see cref="GetDisplays"/>

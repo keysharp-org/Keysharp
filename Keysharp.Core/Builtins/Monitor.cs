@@ -5,8 +5,8 @@ namespace Keysharp.Builtins
 	/// <summary>Public interface for monitor-related functions.</summary>
 	public static class Monitor
 	{
-		// Platform.Screen is the only monitor-topology source. It returns a fresh snapshot because monitor
-		// identity, bounds, work areas and scale can all change while a script is running.
+		// Platform.Screen is the only monitor-topology source. Its snapshot is current as of the last display change;
+		// a work area is read through GetWorkArea, since a panel or dock can change without one.
 		internal static DisplayInfo[] AllDisplays => Platform.Screen.GetDisplays().ToArray();
 
 		/// <summary>The 1-based monitor number of one display within a snapshot it came from, or 1 when it somehow
@@ -118,7 +118,7 @@ namespace Keysharp.Builtins
 		internal static Rectangle GetPrimaryWorkArea()
 		{
 			var (display, _) = ResolveDisplay(null);
-			return display.WorkArea.ToRectangle();
+			return Platform.Screen.GetWorkArea(display).ToRectangle();
 		}
 
 		/// <summary>Gets one monitor's native screen-coordinate bounds.</summary>
@@ -157,7 +157,7 @@ namespace Keysharp.Builtins
 			[ByRef] object right = null, [ByRef] object bottom = null)
 		{
 			var (display, monitorIndex) = ResolveDisplay(n);
-			var workArea = display.WorkArea;
+			var workArea = Platform.Screen.GetWorkArea(display);
 
 			if (left != null) Refs.SetValue(left, (long)workArea.X);
 			if (top != null) Refs.SetValue(top, (long)workArea.Y);

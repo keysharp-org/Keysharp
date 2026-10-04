@@ -46,7 +46,7 @@ namespace Keysharp.Builtins
 			public object __New(object n = null)
 			{
 				var (info, monitorIndex) = Monitor.ResolveDisplay(n, Monitor.AllDisplays);
-				display = info;
+				display = Snapshot(info);
 				index = monitorIndex;
 				return DefaultObject;
 			}
@@ -144,7 +144,7 @@ namespace Keysharp.Builtins
 					var details = Platform.Screen.GetDisplayDetails(displays[i]);
 
 					if (details != null && string.Equals(details.StableId, wanted, StringComparison.OrdinalIgnoreCase))
-						return new KeysharpMonitor { display = displays[i], index = i + 1L, details = details };
+						return new KeysharpMonitor { display = Snapshot(displays[i]), index = i + 1L, details = details };
 				}
 
 				return "";
@@ -310,7 +310,7 @@ namespace Keysharp.Builtins
 				if (matched == 0)
 					return "";
 
-				display = displays[(int)matched - 1];
+				display = Snapshot(displays[(int)matched - 1]);
 				index = matched;
 				details = null;                                   // re-resolved on the next property that needs it
 				return this;
@@ -437,10 +437,12 @@ namespace Keysharp.Builtins
 				return monitor;
 			}
 
-			/// <summary>Builds a Monitor around an already-taken snapshot entry, so callers that enumerated once do
-			/// not enumerate again per monitor.</summary>
+			/// <summary>Captures the selected display and its current work area.</summary>
 			private static KeysharpMonitor From((DisplayInfo Display, long MonitorIndex) resolved)
-				=> new () { display = resolved.Display, index = resolved.MonitorIndex };
+				=> new () { display = Snapshot(resolved.Display), index = resolved.MonitorIndex };
+
+			private static DisplayInfo Snapshot(DisplayInfo info)
+				=> info with { WorkArea = Platform.Screen.GetWorkArea(info) };
 
 			private static object Text(string value) => string.IsNullOrEmpty(value) ? "" : value;
 

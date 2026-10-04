@@ -77,6 +77,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private Snapshot xdgPending;
 		internal Snapshot OutputPending => outputPending ??= new(this);
 		internal Snapshot XdgPending => xdgPending ??= new(this);
+		/// <summary>Called on the owning connection's dispatcher after each atomic update of this output.</summary>
+		internal Action Committed;
 
 		internal void CommitOutput(bool includesXdg)
 		{
@@ -85,16 +87,23 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				outputPending.ApplyOutput(this, Version >= 4);
 				outputPending = null;
 			}
-			if (includesXdg) CommitXdg();
+			if (includesXdg) ApplyXdg();
 			Done = true;
+			Committed?.Invoke();
 		}
 
 		internal void CommitXdg()
 		{
 			if (Version < 2) Done = true;
-			if (xdgPending == null) return;
+			if (ApplyXdg()) Committed?.Invoke();
+		}
+
+		private bool ApplyXdg()
+		{
+			if (xdgPending == null) return false;
 			xdgPending.ApplyXdg(this, Version < 4);
 			xdgPending = null;
+			return true;
 		}
 
 		internal void CommitLegacyOutput()
@@ -215,6 +224,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (output == null)
 				return;
 
+			if (output.XdgProxy != 0) WaylandNative.ProxyDestroy(output.XdgProxy);
+			if (output.Proxy != 0) WaylandNative.ProxyDestroy(output.Proxy);
 			output.Proxy = output.XdgProxy = 0;
 
 			if (output.Handle.IsAllocated)

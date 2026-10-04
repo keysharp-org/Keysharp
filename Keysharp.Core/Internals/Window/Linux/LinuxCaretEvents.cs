@@ -25,6 +25,12 @@ namespace Keysharp.Internals.Window.Linux
 		[LibraryImport("libatspi.so.0", StringMarshalling = StringMarshalling.Utf8)]
 		private static partial int atspi_event_listener_deregister(nint listener, string eventType, ref nint error);
 
+		[LibraryImport("libatspi.so.0")]
+		private static partial nuint atspi_event_get_type();
+
+		[LibraryImport("libgobject-2.0.so.0")]
+		private static partial void g_boxed_free(nuint type, nint value);
+
 		/// <summary>
 		/// Subscribes to AT-SPI's <c>object:text-caret-moved</c> signal and turns each notification into a
 		/// <see cref="WindowEventType.CaretMove"/> event. Unlike the X11/Wayland window-event backends this is
@@ -100,7 +106,10 @@ namespace Keysharp.Internals.Window.Linux
 					wanted = false;
 				}
 
-				owner.PostToUIThread(DetachOnUI);
+				// Synchronous: Script.Dispose tears the UI thread down right after this, so a posted detach would never
+				// run and AT-SPI would keep calling a collected delegate.
+				owner.InvokeOnUIThread(DetachOnUI);
+				sink = null;
 			}
 
 			// ---- UI-thread attach/detach --------------------------------------------------------
@@ -195,19 +204,21 @@ namespace Keysharp.Internals.Window.Linux
 					if (currentSink == null || atspiEvent == 0)
 						return;
 
-					// AtspiEvent is { gchar *type; AtspiAccessible *source; gint detail1; gint detail2; GValue any_data;
-					// AtspiAccessible *sender; }. Only source is needed, so it is read straight from its offset rather
-					// than marshalling a struct whose tail (a GValue) would have to be described as well. The event and
-					// everything in it belong to the AT-SPI marshaller, which frees them after this returns — so source
-					// is used but never unreffed. The caret offset (detail1) is deliberately ignored in favour of
-					// re-reading it inside TryGetCaretRect, which is what CaretGetPos does and also handles the
-					// caret-past-the-last-character case.
+					// AtspiEvent starts with type, source and detail1 (the caret offset). The source is borrowed
+					// from the event, which the callback owns and releases below.
 					var source = Marshal.ReadIntPtr(atspiEvent, nint.Size);
 
-					if (source == 0 || !TryGetCaretRect(source, out var caret) || !TryResolveWindow(source, ref caret, out var handle))
+					// The window is resolved before the caret is read: every caret event from every application arrives
+					// here, and reading a caret is a blocking call into the application that sent it.
+					if (source == 0 || !TryResolveWindow(source, out var active))
 						return;
 
-					currentSink(new WindowEventRaw(WindowEventType.CaretMove, handle, Environment.TickCount64)
+					var offset = Marshal.ReadInt32(atspiEvent, nint.Size * 2);
+
+					if (!TryGetCaretRect(source, offset, out var caret) || !TryNormalizeCoordinates(0, active, ref caret))
+						return;
+
+					currentSink(new WindowEventRaw(WindowEventType.CaretMove, active.Handle, Environment.TickCount64)
 					{
 						Bounds = new Rectangle(caret.X, caret.Y, caret.Width, caret.Height)
 					});
@@ -216,30 +227,26 @@ namespace Keysharp.Internals.Window.Linux
 				{
 					Diagnostics.Debug.WriteLine($"WinEvent.OnCaretMove: AT-SPI caret event failed: {ex.Message}");
 				}
+				finally
+				{
+					if (atspiEvent != 0)
+						g_boxed_free(atspi_event_get_type(), atspiEvent);
+				}
 			}
 
-			/// <summary>Attributes a caret event to a window handle and converts its rectangle to screen coordinates.
-			/// The caret lives in whatever has keyboard focus, so the active window owns it; the process id confirms
-			/// that when both sides know it, so a background application still posting caret events is never
-			/// attributed to the window a subscription is actually watching.</summary>
-			private bool TryResolveWindow(nint source, ref AtspiRect caret, out nint handle)
+			/// <summary>Attributes a caret event to the active window. The caret lives in whatever has keyboard focus,
+			/// so the active window owns it; the process id, a bus query rather than a call into the source
+			/// application, confirms that when both sides know it, so a background application still posting caret
+			/// events is never attributed to the window a subscription is actually watching.</summary>
+			private bool TryResolveWindow(nint source, out ActiveWindowSnapshot active)
 			{
-				handle = 0;
-				var active = GetActiveWindow();
+				active = GetActiveWindow();
 
 				if (active.Handle == 0)
 					return false;
 
 				var pid = GetProcessId(source);
-
-				if (pid > 0 && active.Pid > 0 && pid != active.Pid)
-					return false;
-
-				if (!TryNormalizeCoordinates(0, active, ref caret))
-					return false;
-
-				handle = active.Handle;
-				return true;
+				return pid <= 0 || active.Pid <= 0 || pid == active.Pid;
 			}
 
 			/// <summary>Returns the short-lived active-window snapshot used to attribute this event.</summary>

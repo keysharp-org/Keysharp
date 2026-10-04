@@ -22,7 +22,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private readonly Thread thread;
 		private readonly int intervalMs;
 		private readonly WaylandWindowSnapshotTracker tracker = new();
-		private volatile bool stopped;
+		// Never disposed: it allocates no wait handle unless one is asked for, and the poll thread may outlive Dispose's join.
+		private readonly ManualResetEventSlim stopped = new();
 
 		internal WaylandPollingEventSource(IWaylandBackend backend, Action<WaylandWindowEvent> sink)
 		{
@@ -45,7 +46,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		public void Dispose()
 		{
-			stopped = true;
+			stopped.Set();
 
 			try { thread?.Join(1000); }
 			catch { }
@@ -53,7 +54,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		private void Loop()
 		{
-			while (!stopped)
+			while (!stopped.IsSet)
 			{
 				try
 				{
@@ -64,9 +65,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					Diagnostics.Debug.WriteLine($"WinEvent Wayland poll error ({backend?.Name}): {ex.Message}");
 				}
 
-				// Sleep in small slices so Dispose() is responsive even with a long interval.
-				for (var slept = 0; slept < intervalMs && !stopped; slept += 50)
-					Thread.Sleep(Math.Min(50, intervalMs - slept));
+				_ = stopped.Wait(intervalMs);
 			}
 		}
 
@@ -83,7 +82,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		private void Emit(WaylandWindowEvent windowEvent)
 		{
-			if (stopped)
+			if (stopped.IsSet)
 				return;
 
 			try { sink(windowEvent); }

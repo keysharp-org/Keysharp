@@ -24,6 +24,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private bool ackPending;
 		private bool disposed;
 
+		// The state last sent, starting from the protocol defaults: no size, zero margins, an infinite input region
+		// (null) and a buffer scale of 1.
+		private int sentWidth, sentHeight, sentMarginTop, sentMarginLeft;
+		private nint sentInputRegion;
+		private int sentBufferScale = 1;
+
 		internal bool IsConfigured { get; private set; }
 		internal bool IsClosed { get; private set; }
 		internal nint Surface => surface;
@@ -72,35 +78,46 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		/// <summary>
-		/// Maps a raster buffer to the requested logical surface size. Viewporter handles arbitrary fractional
-		/// density; without it, an exact integer output scale uses wl_surface.set_buffer_scale, and fractional
+		/// Sets the logical size, the output-local position, the input region and the buffer mapping, sending only
+		/// what differs from what was last sent: pending state stays pending until a commit applies it, so the last
+		/// value sent is the one the surface will have. Viewporter maps a raster of any fractional density to the
+		/// logical size; without it, an exact integer output scale uses wl_surface.set_buffer_scale, and fractional
 		/// displays fall back to a 1x logical buffer so geometry remains correct.
 		/// </summary>
-		internal bool ConfigureBufferMapping(int logicalWidth, int logicalHeight, int integerScale)
+		internal void ApplyGeometry(int width, int height, int marginTop, int marginLeft, nint inputRegion,
+			int integerScale)
 		{
 			lock (WaylandLayerShellClient.Sync)
 			{
-				if (surface == 0)
-					return false;
+				if (surface == 0 || layerSurface == 0)
+					return;
 
-				if (viewport != 0)
+				if (width != sentWidth || height != sentHeight)
 				{
-					WaylandNative.SurfaceSetBufferScale(surface, 1);
-					WaylandNative.ViewportSetDestination(viewport, logicalWidth, logicalHeight);
-					return true;
+					WaylandNative.LayerSurfaceSetSize(layerSurface, (uint)width, (uint)height);
+
+					if (viewport != 0)
+						WaylandNative.ViewportSetDestination(viewport, width, height);
+
+					sentWidth = width;
+					sentHeight = height;
 				}
 
-				WaylandNative.SurfaceSetBufferScale(surface, Math.Max(1, integerScale));
-				return false;
-			}
-		}
+				SendMargin(marginTop, marginLeft);
 
-		internal void SetSize(uint width, uint height)
-		{
-			lock (WaylandLayerShellClient.Sync)
-			{
-				if (layerSurface != 0)
-					WaylandNative.LayerSurfaceSetSize(layerSurface, width, height);
+				if (inputRegion != sentInputRegion)
+				{
+					WaylandNative.SurfaceSetInputRegion(surface, inputRegion);
+					sentInputRegion = inputRegion;
+				}
+
+				var bufferScale = viewport != 0 ? 1 : Math.Max(1, integerScale);
+
+				if (bufferScale != sentBufferScale)
+				{
+					WaylandNative.SurfaceSetBufferScale(surface, bufferScale);
+					sentBufferScale = bufferScale;
+				}
 			}
 		}
 
@@ -113,22 +130,15 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
-		internal void SetMargin(int top, int right, int bottom, int left)
+		/// <summary>Moves the surface on its output; the caller holds <see cref="WaylandLayerShellClient.Sync"/>.</summary>
+		internal void SendMargin(int top, int left)
 		{
-			lock (WaylandLayerShellClient.Sync)
-			{
-				if (layerSurface != 0)
-					WaylandNative.LayerSurfaceSetMargin(layerSurface, top, right, bottom, left);
-			}
-		}
+			if (layerSurface == 0 || top == sentMarginTop && left == sentMarginLeft)
+				return;
 
-		internal void SetInputRegion(nint region)
-		{
-			lock (WaylandLayerShellClient.Sync)
-			{
-				if (surface != 0)
-					WaylandNative.SurfaceSetInputRegion(surface, region);
-			}
+			WaylandNative.LayerSurfaceSetMargin(layerSurface, top, 0, 0, left);
+			sentMarginTop = top;
+			sentMarginLeft = left;
 		}
 
 		internal void SetExclusiveZone(int zone)
@@ -149,7 +159,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
-		internal bool AttachBuffer(WaylandShmBuffer buffer, WaylandFrameDamage damage)
+		/// <summary>Attaches <paramref name="buffer"/>, damages its changed region and commits, together with the
+		/// pending geometry.</summary>
+		internal bool CommitBuffer(WaylandShmBuffer buffer, WaylandFrameDamage damage)
 		{
 			if (buffer == null)
 				return false;
@@ -169,7 +181,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						damage.Bounds.Width, damage.Bounds.Height);
 
 				buffer.MarkInFlight();
-				return true;
+				return Commit();
 			}
 		}
 
@@ -188,13 +200,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				}
 
 				WaylandNative.SurfaceCommit(surface);
-
-				if (!client.TryFlush())
-				{
-					return false;
-				}
-
-				return true;
+				return client.TryFlush();
 			}
 		}
 
@@ -252,8 +258,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					surface = 0;
 				}
 
-				if (client.Display != 0)
-					_ = WaylandNative.DisplayFlush(client.Display);
+				_ = client.TryFlush();
 			}
 
 			if (selfHandle.IsAllocated)
@@ -263,14 +268,16 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			disposed = true;
 		}
 
-		/// <summary>Drops managed ownership without issuing requests through a failed connection. The owning
-		/// wl_display will free the protocol objects during disconnect; no callbacks can run after its dispatcher stops.</summary>
+		/// <summary>Destroys local proxies after the dispatcher stops, without requests on a failed connection.</summary>
 		internal void Abandon()
 		{
 			if (disposed)
 				return;
 
 			configuredEvent.Set();
+			if (viewport != 0) WaylandNative.ProxyDestroy(viewport);
+			if (layerSurface != 0) WaylandNative.ProxyDestroy(layerSurface);
+			if (surface != 0) WaylandNative.ProxyDestroy(surface);
 			viewport = layerSurface = surface = 0;
 
 			if (selfHandle.IsAllocated)

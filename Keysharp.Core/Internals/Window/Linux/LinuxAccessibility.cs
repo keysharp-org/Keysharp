@@ -1,19 +1,20 @@
 #if LINUX
 namespace Keysharp.Internals.Window.Linux
 {
-	/// <summary>
-	/// Small native AT-SPI bridge for runtime features which need accessibility information without
-	/// requiring a script to import AtSpi.ks. Keep this deliberately narrow; the full automation API
-	/// remains in that library.
-	/// </summary>
+	/// <summary>Native AT-SPI caret queries and movement events.</summary>
 	internal static partial class LinuxAccessibility
 	{
 		private const int AtspiCoordTypeScreen = 0;
+		private const int AtspiStateActive = 1;
 		private const int AtspiStateFocused = 12;
+		private const int AtspiStateShowing = 25;
+		private const int AtspiCollectionMatchAll = 1;
+		private const int AtspiCollectionSortOrderCanonical = 1;
 		private const int MaxVisitedNodes = 20000;
 		private const int GeometryTolerance = 8;
 		private static readonly Lock initializationGate = new();
 		private static int initializationState;
+		private static nint focusedRule;
 
 		[StructLayout(LayoutKind.Sequential)]
 		private struct AtspiRect
@@ -74,6 +75,26 @@ namespace Keysharp.Internals.Window.Linux
 		[LibraryImport("libatspi.so.0")]
 		private static partial nint atspi_component_get_extents(nint component, int coordinateType, ref nint error);
 
+		[LibraryImport("libatspi.so.0")]
+		private static partial nint atspi_accessible_get_collection_iface(nint accessible);
+
+		[LibraryImport("libatspi.so.0")]
+		private static partial nint atspi_collection_get_matches(nint collection, nint rule, int sortBy, int count,
+			int traverse, ref nint error);
+
+		[LibraryImport("libatspi.so.0")]
+		private static partial nint atspi_state_set_new(nint states);
+
+		[LibraryImport("libatspi.so.0")]
+		private static partial void atspi_state_set_add(nint stateSet, int state);
+
+		[LibraryImport("libatspi.so.0")]
+		private static partial nint atspi_match_rule_new(nint states, int stateMatchType, nint attributes,
+			int attributeMatchType, nint roles, int roleMatchType, nint interfaces, int interfaceMatchType, int invert);
+
+		[LibraryImport("libglib-2.0.so.0")]
+		private static partial nint g_array_free(nint array, int freeSegment);
+
 		[LibraryImport("libglib-2.0.so.0")]
 		private static partial void g_error_free(nint error);
 
@@ -93,74 +114,60 @@ namespace Keysharp.Internals.Window.Linux
 			if (app == null)
 				return false;
 
+			var pending = new Stack<Control>();
+
 			foreach (var window in app.Windows)
+				pending.Push(window);
+
+			// The control tree has no cycles: a GTK widget has one parent.
+			while (pending.TryPop(out var control))
 			{
-				foreach (var control in EnumerateVisualControls(window))
+				foreach (var child in control.VisualControls)
+					pending.Push(child);
+
+				if (!control.HasFocus)
+					continue;
+
+				if (control.ControlObject is Gtk.Entry entry)
 				{
-					if (!control.HasFocus)
-						continue;
+					var text = entry.Text ?? string.Empty;
+					var targetOffset = Math.Max(0, entry.Position);
+					var utf16Index = 0;
+					var consumed = 0;
 
-					if (control.ControlObject is Gtk.Entry entry)
+					foreach (var rune in text.EnumerateRunes())
 					{
-						var text = entry.Text ?? string.Empty;
-						var targetOffset = Math.Max(0, entry.Position);
-						var utf16Index = 0;
-						var consumed = 0;
+						if (consumed++ >= targetOffset)
+							break;
 
-						foreach (var rune in text.EnumerateRunes())
-						{
-							if (consumed++ >= targetOffset)
-								break;
-
-							utf16Index += rune.Utf16SequenceLength;
-						}
-
-						var layoutIndex = Encoding.UTF8.GetByteCount(text.AsSpan(0, utf16Index));
-						var caretRect = entry.Layout.IndexToPos(layoutIndex);
-						entry.GetLayoutOffsets(out var layoutX, out var layoutY);
-						var point = control.PointToScreen(new PointF(
-							layoutX + caretRect.X / (float)Pango.Scale.PangoScale,
-							layoutY + caretRect.Y / (float)Pango.Scale.PangoScale));
-						x = (int)Math.Round(point.X);
-						y = (int)Math.Round(point.Y);
-						return true;
+						utf16Index += rune.Utf16SequenceLength;
 					}
 
-					if (control.ControlObject is Gtk.TextView textView)
-					{
-						var insert = textView.Buffer.GetIterAtMark(textView.Buffer.InsertMark);
-						var caretRect = textView.GetIterLocation(insert);
-						textView.BufferToWindowCoords(Gtk.TextWindowType.Widget, caretRect.X, caretRect.Y,
-							out var widgetX, out var widgetY);
-						var point = control.PointToScreen(new PointF(widgetX, widgetY));
-						x = (int)Math.Round(point.X);
-						y = (int)Math.Round(point.Y);
-						return true;
-					}
+					var layoutIndex = Encoding.UTF8.GetByteCount(text.AsSpan(0, utf16Index));
+					var caretRect = entry.Layout.IndexToPos(layoutIndex);
+					entry.GetLayoutOffsets(out var layoutX, out var layoutY);
+					var point = control.PointToScreen(new PointF(
+						layoutX + caretRect.X / (float)Pango.Scale.PangoScale,
+						layoutY + caretRect.Y / (float)Pango.Scale.PangoScale));
+					x = (int)Math.Round(point.X);
+					y = (int)Math.Round(point.Y);
+					return true;
+				}
+
+				if (control.ControlObject is Gtk.TextView textView)
+				{
+					var insert = textView.Buffer.GetIterAtMark(textView.Buffer.InsertMark);
+					var caretRect = textView.GetIterLocation(insert);
+					textView.BufferToWindowCoords(Gtk.TextWindowType.Widget, caretRect.X, caretRect.Y,
+						out var widgetX, out var widgetY);
+					var point = control.PointToScreen(new PointF(widgetX, widgetY));
+					x = (int)Math.Round(point.X);
+					y = (int)Math.Round(point.Y);
+					return true;
 				}
 			}
 
 			return false;
-		}
-
-		private static IEnumerable<Control> EnumerateVisualControls(Control root)
-		{
-			var pending = new Stack<Control>();
-			var seen = new HashSet<Control>();
-			pending.Push(root);
-
-			while (pending.Count > 0)
-			{
-				var current = pending.Pop();
-
-				if (!seen.Add(current))
-					continue;
-
-				yield return current;
-
-				foreach (var child in current.VisualControls)
-					pending.Push(child);
-			}
 		}
 
 		internal static bool TryGetCaretScreenPosition(out int x, out int y)
@@ -176,6 +183,7 @@ namespace Keysharp.Internals.Window.Linux
 				var activeWindow = CaptureActiveWindow();
 				var activePid = activeWindow.Pid;
 				var desktopCount = atspi_get_desktop_count();
+				var budget = MaxVisitedNodes;
 
 				for (var desktopIndex = 0; desktopIndex < desktopCount; desktopIndex++)
 				{
@@ -186,13 +194,14 @@ namespace Keysharp.Internals.Window.Linux
 
 					try
 					{
-						if (TryFindCaretInDesktop(desktop, activeWindow, requiredPid: activePid, excludedPid: 0, out x, out y))
+						if (TryFindCaretInDesktop(desktop, activeWindow, activePid, 0, ref budget, out var pidMatched,
+								out x, out y))
 							return true;
 
 						// Some compositors cannot associate their active-window token with an AT-SPI application PID.
-						// The focused state is authoritative, so fall back to the complete desktop in that case.
-						if (activePid > 0 && TryFindCaretInDesktop(desktop, activeWindow, requiredPid: 0,
-								excludedPid: activePid, out x, out y))
+						// Only then is every other application searched; the focused state is authoritative.
+						if (activePid > 0 && !pidMatched && TryFindCaretInDesktop(desktop, activeWindow, 0, activePid,
+								ref budget, out _, out x, out y))
 							return true;
 					}
 					finally
@@ -243,10 +252,11 @@ namespace Keysharp.Internals.Window.Linux
 		}
 
 		private static bool TryFindCaretInDesktop(nint desktop, ActiveWindowSnapshot activeWindow, long requiredPid,
-			long excludedPid, out int x, out int y)
+			long excludedPid, ref int budget, out bool pidMatched, out int x, out int y)
 		{
 			x = 0;
 			y = 0;
+			pidMatched = false;
 			var appCount = GetChildCount(desktop);
 
 			for (var appIndex = 0; appIndex < appCount; appIndex++)
@@ -263,27 +273,14 @@ namespace Keysharp.Internals.Window.Linux
 					if ((requiredPid > 0 && pid != requiredPid) || (excludedPid > 0 && pid == excludedPid))
 						continue;
 
-					var windowCount = GetChildCount(app);
+					pidMatched |= requiredPid > 0;
 
-					for (var windowIndex = 0; windowIndex < windowCount; windowIndex++)
-					{
-						var window = GetChild(app, windowIndex);
+					// Search all top levels only when none reports the active state.
+					if (TryFindCaretInTopLevels(app, true, activeWindow, ref budget, out var anyActive, out x, out y))
+						return true;
 
-						if (window == 0)
-							continue;
-
-						try
-						{
-							var visited = 0;
-
-							if (TryFindFocusedCaret(window, window, activeWindow, ref visited, out x, out y))
-								return true;
-						}
-						finally
-						{
-							Unref(window);
-						}
-					}
+					if (!anyActive && TryFindCaretInTopLevels(app, false, activeWindow, ref budget, out _, out x, out y))
+						return true;
 				}
 				finally
 				{
@@ -294,26 +291,143 @@ namespace Keysharp.Internals.Window.Linux
 			return false;
 		}
 
-		private static bool TryFindFocusedCaret(nint accessible, nint topLevel, ActiveWindowSnapshot activeWindow,
-			ref int visited, out int x, out int y)
+		private static bool TryFindCaretInTopLevels(nint app, bool activeOnly, ActiveWindowSnapshot activeWindow,
+			ref int budget, out bool anyActive, out int x, out int y)
+		{
+			x = 0;
+			y = 0;
+			anyActive = false;
+			var windowCount = GetChildCount(app);
+
+			for (var windowIndex = 0; windowIndex < windowCount; windowIndex++)
+			{
+				var window = GetChild(app, windowIndex);
+
+				if (window == 0)
+					continue;
+
+				try
+				{
+					if (activeOnly)
+					{
+						if (!HasState(window, AtspiStateActive))
+							continue;
+
+						anyActive = true;
+					}
+
+					if (TryFindCaretInWindow(window, activeWindow, ref budget, out x, out y))
+						return true;
+				}
+				finally
+				{
+					Unref(window);
+				}
+			}
+
+			return false;
+		}
+
+		private static bool TryFindCaretInWindow(nint window, ActiveWindowSnapshot activeWindow, ref int budget,
+			out int x, out int y)
 		{
 			x = 0;
 			y = 0;
 
-			if (++visited > MaxVisitedNodes)
+			if (!TryFindFocusedCaret(window, ref budget, out var rect)
+				|| !TryNormalizeCoordinates(window, activeWindow, ref rect))
 				return false;
 
-			if (IsFocused(accessible) && TryGetCaretRect(accessible, out var rect)
-					&& TryNormalizeCoordinates(topLevel, activeWindow, ref rect))
+			x = rect.X;
+			y = rect.Y;
+			return true;
+		}
+
+		/// <summary>Collection avoids a walk over D-Bus. A focused container can precede the focused text widget,
+		/// so try candidates until one exposes a caret; the fallback walks showing subtrees within the budget.</summary>
+		private static bool TryFindFocusedCaret(nint topLevel, ref int budget, out AtspiRect rect)
+		{
+			rect = default;
+
+			if (budget <= 0)
+				return false;
+
+			var collection = atspi_accessible_get_collection_iface(topLevel);
+
+			if (collection == 0)
+				return WalkToFocusedCaret(topLevel, ref budget, out rect);
+
+			nint matches = 0, data = 0;
+			var count = 0;
+			var error = (nint)0;
+
+			try
 			{
-				x = rect.X;
-				y = rect.Y;
-				return true;
+				matches = atspi_collection_get_matches(collection, FocusedRule, AtspiCollectionSortOrderCanonical,
+					budget, 1, ref error);
+
+				if (matches != 0)
+				{
+					// A GArray is { gchar *data; guint len; }, with one owned reference per accessible.
+					data = Marshal.ReadIntPtr(matches);
+					count = Marshal.ReadInt32(matches, nint.Size);
+				}
+
+				if (ConsumeError(ref error) || matches == 0)
+					return WalkToFocusedCaret(topLevel, ref budget, out rect);
+
+				for (var i = 0; i < count && budget-- > 0; i++)
+					if (TryGetCaretRect(Marshal.ReadIntPtr(data, i * nint.Size), -1, out rect))
+						return true;
+
+				return false;
 			}
+			finally
+			{
+				Unref(collection);
+
+				for (var i = 0; i < count; i++)
+					Unref(Marshal.ReadIntPtr(data, i * nint.Size));
+
+				if (matches != 0)
+					_ = g_array_free(matches, 1);
+			}
+		}
+
+		// Keep the immutable focus rule for the process.
+		private static nint FocusedRule
+		{
+			get
+			{
+				if (Volatile.Read(ref focusedRule) != 0)
+					return focusedRule;
+
+				lock (initializationGate)
+				{
+					if (focusedRule == 0)
+					{
+						var states = atspi_state_set_new(0);
+						atspi_state_set_add(states, AtspiStateFocused);
+						focusedRule = atspi_match_rule_new(states, AtspiCollectionMatchAll, 0, AtspiCollectionMatchAll,
+							0, AtspiCollectionMatchAll, 0, AtspiCollectionMatchAll, 0);
+						Unref(states);
+					}
+
+					return focusedRule;
+				}
+			}
+		}
+
+		private static bool WalkToFocusedCaret(nint accessible, ref int budget, out AtspiRect rect)
+		{
+			rect = default;
+
+			if (budget <= 0)
+				return false;
 
 			var childCount = GetChildCount(accessible);
 
-			for (var childIndex = 0; childIndex < childCount; childIndex++)
+			for (var childIndex = 0; childIndex < childCount && budget-- > 0; childIndex++)
 			{
 				var child = GetChild(accessible, childIndex);
 
@@ -322,7 +436,18 @@ namespace Keysharp.Internals.Window.Linux
 
 				try
 				{
-					if (TryFindFocusedCaret(child, topLevel, activeWindow, ref visited, out x, out y))
+					var stateSet = atspi_accessible_get_state_set(child);
+					bool showing = false, focused = false;
+
+					if (stateSet != 0)
+					{
+						showing = atspi_state_set_contains(stateSet, AtspiStateShowing) != 0;
+						focused = atspi_state_set_contains(stateSet, AtspiStateFocused) != 0;
+						Unref(stateSet);
+					}
+
+					if (showing && (focused && TryGetCaretRect(child, -1, out rect)
+						|| WalkToFocusedCaret(child, ref budget, out rect)))
 						return true;
 				}
 				finally
@@ -334,7 +459,7 @@ namespace Keysharp.Internals.Window.Linux
 			return false;
 		}
 
-		private static bool IsFocused(nint accessible)
+		private static bool HasState(nint accessible, int state)
 		{
 			var stateSet = atspi_accessible_get_state_set(accessible);
 
@@ -343,7 +468,7 @@ namespace Keysharp.Internals.Window.Linux
 
 			try
 			{
-				return atspi_state_set_contains(stateSet, AtspiStateFocused) != 0;
+				return atspi_state_set_contains(stateSet, state) != 0;
 			}
 			finally
 			{
@@ -351,7 +476,8 @@ namespace Keysharp.Internals.Window.Linux
 			}
 		}
 
-		private static bool TryGetCaretRect(nint accessible, out AtspiRect rect)
+		/// <param name="caretOffset">The caret offset when the caller already has it, or -1 to read it.</param>
+		private static bool TryGetCaretRect(nint accessible, int caretOffset, out AtspiRect rect)
 		{
 			rect = default;
 			var text = atspi_accessible_get_text_iface(accessible);
@@ -362,37 +488,48 @@ namespace Keysharp.Internals.Window.Linux
 			try
 			{
 				var error = (nint)0;
-				var caret = atspi_text_get_caret_offset(text, ref error);
+				var caret = caretOffset;
 
-				if (ConsumeError(ref error) || caret < 0)
-					return false;
+				if (caret < 0)
+				{
+					caret = atspi_text_get_caret_offset(text, ref error);
+
+					if (ConsumeError(ref error) || caret < 0)
+						return false;
+				}
+
+				// Only the end-of-text fallback needs the character count.
+				if (TryGetCharacterRect(text, caret, out rect) && (rect.Width > 0 || rect.Height > 0))
+					return true;
 
 				var count = atspi_text_get_character_count(text, ref error);
 
-				if (ConsumeError(ref error) || count < 0)
+				if (ConsumeError(ref error) || count <= 0 || caret < count
+						|| !TryGetCharacterRect(text, count - 1, out rect))
 					return false;
 
-				var offset = Math.Min(caret, Math.Max(0, count - 1));
-				var rectPointer = atspi_text_get_character_extents(text, offset, AtspiCoordTypeScreen, ref error);
-
-				if (ConsumeError(ref error))
-				{
-					Free(rectPointer);
-					return false;
-				}
-
-				if (!TryReadRect(rectPointer, out rect))
-					return false;
-
-				if (caret >= count)
-					rect.X += rect.Width;
-
+				rect.X += rect.Width;
 				return true;
 			}
 			finally
 			{
 				Unref(text);
 			}
+		}
+
+		private static bool TryGetCharacterRect(nint text, int offset, out AtspiRect rect)
+		{
+			var error = (nint)0;
+			var pointer = atspi_text_get_character_extents(text, offset, AtspiCoordTypeScreen, ref error);
+
+			if (ConsumeError(ref error))
+			{
+				Free(pointer);
+				rect = default;
+				return false;
+			}
+
+			return TryReadRect(pointer, out rect);
 		}
 
 		private static ActiveWindowSnapshot CaptureActiveWindow()

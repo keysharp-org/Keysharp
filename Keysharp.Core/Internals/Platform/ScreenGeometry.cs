@@ -155,6 +155,7 @@ namespace Keysharp.Internals
 	/// <summary>
 	/// One display in native screen coordinates. <paramref name="SizeScale"/> maps deliberately authored sizes into
 	/// native units; it never changes positions. <paramref name="NativeId"/> is valid only for this topology snapshot.
+	/// <paramref name="WorkArea"/> can predate panel or dock changes; <see cref="IScreen.GetWorkArea"/> reads it fresh.
 	/// </summary>
 	internal readonly record struct DisplayInfo(string Name, ScreenRect Bounds, ScreenRect WorkArea,
 		double SizeScale, bool IsPrimary, ulong NativeId = 0);

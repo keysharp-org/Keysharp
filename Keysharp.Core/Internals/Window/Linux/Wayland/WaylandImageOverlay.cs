@@ -77,13 +77,16 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		// compositor-defined type which matches this passive, non-activating overlay surface.
 		private const string LayerNamespace = "on-screen-display";
 		private const int ConfigureTimeoutMs = 1000;
+		private const int BufferPoolCapacity = 3;
+		private const int BufferReleaseWaitMs = 33;
 
 		private readonly WaylandLayerShellClient client;
 		private readonly object stateSync = new();
 		private WaylandLayerSurface surface;
-		// Bounded triple buffering: in-flight buffers remain untouched until wl_buffer.release. If all three
-		// are busy, the new frame is dropped and the last complete frame remains mapped.
+		// Bounded triple buffering: in-flight buffers remain untouched until wl_buffer.release.
 		private readonly List<WaylandShmBuffer> bufferPool = new();
+		// Retired buffers can still signal after overlay disposal; no WaitHandle is created.
+		private readonly ManualResetEventSlim bufferReleased = new();
 		private nint emptyRegion;
 		private int marginLeft;
 		private int marginTop;
@@ -92,7 +95,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		#region Partial updates
 
-		private readonly WaylandDamageHistory damageHistory = new(WaylandBufferPoolPolicy.Capacity + 1);
+		private readonly WaylandDamageHistory damageHistory = new(BufferPoolCapacity + 1);
 		private WaylandBufferInterpretation? historyInterpretation;
 		private WaylandFrameDamage preparedSemanticDamage;
 		private WaylandFrameDamage preparedWriteDamage;
@@ -143,19 +146,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				throw new IOException("The Wayland layer-shell connection is unavailable.");
 		}
 
-		// Returns true iff the overlay is now shown. False on a genuine layer-shell failure (surface could not be
-		// created, or never configured within the timeout) so the caller can fall back to a visible Eto window
-		// instead of recording a phantom "shown" overlay with nothing on screen.
-		internal bool Show(Bitmap image, Rectangle sourcePixels, ScreenRect bounds,
-			WaylandLayerShellClient.OutputTarget output, bool clickThrough,
-			byte opacity = 255, DamageKind sourceDamageKind = DamageKind.All, PixelRect sourceDamage = default)
-		{
-			lock (stateSync)
-				return PrepareCore(image, sourcePixels, bounds, output, clickThrough, opacity,
-						sourceDamageKind, sourceDamage)
-					   && CommitPreparedCore();
-		}
-
+		// Returns false on a genuine layer-shell failure (surface could not be created, or never configured within
+		// the timeout) so the caller can fall back to a visible Eto window instead of recording a phantom "shown"
+		// overlay with nothing on screen.
 		internal bool Prepare(Bitmap image, Rectangle sourcePixels, ScreenRect bounds,
 			WaylandLayerShellClient.OutputTarget output, bool clickThrough,
 			byte opacity = 255, DamageKind sourceDamageKind = DamageKind.All, PixelRect sourceDamage = default)
@@ -243,10 +236,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			preparedSemanticDamage = semanticDamage;
 			preparedWriteDamage = writeDamage;
 			var initiallyConfigured = surface.IsConfigured;
-			surface.SetSize((uint)w, (uint)h);
-			surface.SetMargin(localY, 0, 0, localX);
-			surface.SetInputRegion(ResolveInputRegion(clickThrough, emptyRegion));
-			_ = surface.ConfigureBufferMapping(w, h, bufferScale);
+			surface.ApplyGeometry(w, h, localY, localX, ResolveInputRegion(clickThrough, emptyRegion), bufferScale);
 
 			if (!initiallyConfigured)
 			{
@@ -287,7 +277,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			preparedSemanticDamage = default;
 			preparedWriteDamage = default;
 
-			if (!surface.AttachBuffer(target, writeDamage) || !surface.Commit())
+			if (!surface.CommitBuffer(target, writeDamage))
 				return false;
 
 			target.LastPresentedFrame = damageHistory.Commit(semanticDamage);
@@ -328,42 +318,54 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			return true;
 		}
 
-		// Reuse released buffers, reap stale sizes, and drop a frame once the bounded pool is full.
+		// A full pool waits briefly for release; returning false preserves the caller's pending damage.
 		private WaylandShmBuffer AcquireBuffer(int w, int h)
 		{
-			lock (WaylandLayerShellClient.Sync)
+			var deadline = Environment.TickCount64 + BufferReleaseWaitMs;
+
+			while (true)
 			{
-				for (var i = bufferPool.Count - 1; i >= 0; i--)
+				lock (WaylandLayerShellClient.Sync)
 				{
-					var b = bufferPool[i];
+					// Releases are dispatched under Sync, so none can slip between this reset and the scan below.
+					bufferReleased.Reset();
+					WaylandShmBuffer reusable = null;
 
-					if ((b.Width != w || b.Height != h) && b.Released)
+					for (var i = bufferPool.Count - 1; i >= 0; i--)
 					{
-						// A released buffer of the wrong size can never satisfy this frame.
-						b.Dispose();
-						bufferPool.RemoveAt(i);
+						var b = bufferPool[i];
+
+						if (!b.Released)
+							continue;
+
+						if (b.Width == w && b.Height == h)
+							reusable = b;
+						else
+						{
+							// A released buffer of the wrong size can never satisfy this frame.
+							b.Dispose();
+							bufferPool.RemoveAt(i);
+						}
 					}
+
+					if (reusable != null)
+						return reusable;
+
+					if (bufferPool.Count < BufferPoolCapacity)
+					{
+						var chosen = WaylandShmBuffer.Create(client, w, h, bufferReleased);
+						bufferPool.Add(chosen);
+						return chosen;
+					}
+
+					if (!client.IsAvailable)
+						return null;
 				}
 
-				Span<WaylandBufferState> states = stackalloc WaylandBufferState[bufferPool.Count];
+				var remaining = deadline - Environment.TickCount64;
 
-				for (var i = 0; i < bufferPool.Count; i++)
-					states[i] = new WaylandBufferState(bufferPool[i].Width, bufferPool[i].Height,
-						bufferPool[i].Released);
-
-				var reusable = WaylandBufferPoolPolicy.FindReusable(states, w, h);
-
-				if (reusable >= 0)
-					return bufferPool[reusable];
-
-				if (WaylandBufferPoolPolicy.CanAllocate(bufferPool.Count))
-				{
-					var chosen = WaylandShmBuffer.Create(client.Shm, w, h);
-					bufferPool.Add(chosen);
-					return chosen;
-				}
-
-				return null;
+				if (remaining <= 0 || !bufferReleased.Wait((int)remaining))
+					return null;
 			}
 		}
 
@@ -393,7 +395,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				if (x == marginLeft && y == marginTop)
 					return true;
 
-				surface.SetMargin(y, 0, 0, x);
+				surface.SendMargin(y, x);
 
 				if (!surface.Commit() || !client.IsAvailable)
 					return false;
@@ -404,10 +406,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
-		private void HideCore()
-		{
-			TeardownSurface(connectionInvalidated);
-		}
+		private void HideCore() => TeardownSurface(connectionInvalidated);
 
 		private void EnsureSurface(WaylandLayerShellClient.OutputTarget output)
 		{
@@ -429,12 +428,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				surface.SetKeyboardInteractivity(WaylandNative.KeyboardInteractivityNone);
 
 				lock (WaylandLayerShellClient.Sync)
-				{
 					emptyRegion = WaylandNative.CompositorCreateRegion(client.Compositor);
-
-					if (emptyRegion != 0 && surface.Surface != 0)
-						WaylandNative.SurfaceSetInputRegion(surface.Surface, emptyRegion);
-				}
 			}
 			catch
 			{
@@ -659,9 +653,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 				bufferPool.Clear();
 
-				if (emptyRegion != 0 && !abandon)
+				if (emptyRegion != 0)
 				{
-					WaylandNative.RegionDestroy(emptyRegion);
+					if (abandon) WaylandNative.ProxyDestroy(emptyRegion);
+					else WaylandNative.RegionDestroy(emptyRegion);
 				}
 
 				emptyRegion = 0;
@@ -677,8 +672,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				if (disposed)
 					return;
 
-				TeardownSurface(connectionInvalidated || !client.IsAvailable);
 				disposed = true;
+
+				// A lost connection's dispatcher may still deliver events to these proxies and buffers, so their
+				// release is left to InvalidateConnection, which the client runs once that dispatcher has stopped.
+				if (connectionInvalidated || !client.IsAvailable)
+					return;
+
+				TeardownSurface();
 			}
 
 			client.Unregister(this);

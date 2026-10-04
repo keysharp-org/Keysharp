@@ -69,26 +69,10 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
-		public void ShmBufferLimit()
-		{
-			WaylandBufferState[] buffers =
-			[
-				new(100, 100, false),
-				new(100, 100, true),
-				new(200, 100, true)
-			];
-
-			Assert.That(WaylandBufferPoolPolicy.FindReusable(buffers, 100, 100), Is.EqualTo(1));
-			Assert.That(WaylandBufferPoolPolicy.FindReusable(buffers, 300, 100), Is.EqualTo(-1));
-			Assert.That(WaylandBufferPoolPolicy.CanAllocate(2), Is.True);
-			Assert.That(WaylandBufferPoolPolicy.CanAllocate(WaylandBufferPoolPolicy.Capacity), Is.False,
-				"three in-flight, wrong-sized buffers must drop the new frame instead of growing the pool");
-		}
-
-		[Test]
 		public void WaylandOutputChangesCommitAtomically()
 		{
-			var output = new WaylandOutput { Version = 4 };
+			var commits = 0;
+			var output = new WaylandOutput { Version = 4, Committed = () => commits++ };
 			output.OutputPending.GeometryX = -1920;
 			output.OutputPending.ModeWidth = 1920;
 			output.OutputPending.ModeHeight = 1080;
@@ -96,6 +80,7 @@ namespace Keysharp.Tests
 			output.XdgPending.LogicalX = 40;
 			output.XdgPending.HasLogicalPosition = true;
 			output.XdgPending.Name = "stale-xdg-name";
+			Assert.That(commits, Is.Zero);
 			output.CommitOutput(false);
 			Assert.That(output.Bounds, Is.EqualTo(new ScreenRect(-1920, 0, 1920, 1080)));
 			Assert.That(output.LogicalX, Is.Zero);
@@ -107,23 +92,15 @@ namespace Keysharp.Tests
 			output.CommitOutput(false);
 			Assert.That(output.GeometryX, Is.Zero);
 			Assert.That(output.Bounds.X, Is.EqualTo(40));
+			Assert.That(commits, Is.EqualTo(3));
+			output.CommitXdg();
+			Assert.That(commits, Is.EqualTo(3), "no notification without an XDG update");
 
 			var legacy = new WaylandOutput { Version = 1 };
 			legacy.OutputPending.ModeWidth = 640;
 			legacy.OutputPending.ModeHeight = 480;
 			legacy.CommitLegacyOutput();
 			Assert.That(legacy.Bounds, Is.EqualTo(new ScreenRect(0, 0, 640, 480)));
-		}
-
-		[Test]
-		public void DisplayPumpHonorsItsDeadline()
-		{
-			long tick = 100;
-			var dispatches = 0;
-			var completed = WaylandDisplayPump.WaitUntil(() => false, 25,
-				remaining => { dispatches++; tick += remaining; return true; }, () => tick);
-			Assert.That(completed, Is.False);
-			Assert.That(dispatches, Is.EqualTo(1));
 		}
 
 		[Test]

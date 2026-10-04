@@ -61,13 +61,25 @@ namespace Keysharp.Tests
 				new ScreenRect(30, 40, 101, 50)), Is.False);
 		}
 
-		[TestCase(1, 1, true)]
-		[TestCase(2, 2, true)]
-		[TestCase(3, 3, true)]
-		[TestCase(0, 0, false)]
-		[TestCase(2, 1, false)]
-		public void StableOutputCountCanReuseEveryFragment(int segmentCount, int fragmentCount, bool expected)
-			=> Assert.That(LayerImageBacking.CanReuseFragmentCount(segmentCount, fragmentCount), Is.EqualTo(expected));
+		[Test]
+		public void FragmentReuseRequiresTheSameOutputs()
+		{
+			var left = new WaylandLayerShellClient.OutputTarget(4, new nint(9), new ScreenRect(0, 0, 100, 100), 1, 1);
+			var right = new WaylandLayerShellClient.OutputTarget(5, new nint(10), new ScreenRect(100, 0, 100, 100), 1, 1);
+			WaylandLayerShellClient.OutputSegment[] resized =
+			[
+				new(left, new ScreenRect(70, 10, 30, 40), 0, 0),
+				new(right, new ScreenRect(100, 10, 30, 40), 30, 0),
+			];
+
+			Assert.Multiple(() =>
+			{
+				Assert.That(LayerImageBacking.CoversSameOutputs(resized, new uint[] { 5, 4 }), Is.True);
+				Assert.That(LayerImageBacking.CoversSameOutputs(resized, new uint[] { 4, 6 }), Is.False);
+				Assert.That(LayerImageBacking.CoversSameOutputs(resized, new uint[] { 4 }), Is.False);
+				Assert.That(LayerImageBacking.CoversSameOutputs([], System.Array.Empty<uint>()), Is.False);
+			});
+		}
 
 		[Test]
 		public void LayerTeardownRetriesOnlyFailedFragments()

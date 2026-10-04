@@ -220,21 +220,34 @@ namespace Keysharp.Internals
 			}
 		}
 
-		private bool Matches(IReadOnlyList<Wl.WaylandLayerShellClient.OutputSegment> segments)
+		/// <summary>Whether fragments on <paramref name="outputs"/> cover the same outputs as
+		/// <paramref name="segments"/>. A layer surface stays on its output for life, but within it Prepare resizes
+		/// and moves the live surface, so only an output appearing or going needs new fragments.</summary>
+		internal static bool CoversSameOutputs(IReadOnlyList<Wl.WaylandLayerShellClient.OutputSegment> segments,
+			ICollection<uint> outputs)
 		{
-			if (!CanReuseFragmentCount(segments.Count, fragments.Count))
+			if (segments.Count == 0 || segments.Count != outputs.Count)
 				return false;
 
 			foreach (var segment in segments)
-				if (!fragments.TryGetValue(segment.Output.RegistryName, out var fragment)
-						|| fragment.Segment != segment)
+				if (!outputs.Contains(segment.Output.RegistryName))
 					return false;
 
 			return true;
 		}
 
-		internal static bool CanReuseFragmentCount(int segmentCount, int fragmentCount)
-			=> segmentCount > 0 && segmentCount == fragmentCount;
+		// Whether every fragment already shows exactly its segment, so a frame without damage has nothing to send.
+		private bool ShowsSegments(IReadOnlyList<Wl.WaylandLayerShellClient.OutputSegment> segments)
+		{
+			if (!CoversSameOutputs(segments, fragments.Keys))
+				return false;
+
+			foreach (var segment in segments)
+				if (fragments[segment.Output.RegistryName].Segment != segment)
+					return false;
+
+			return true;
+		}
 
 		public nint Handle
 		{
@@ -284,15 +297,16 @@ namespace Keysharp.Internals
 					return false;
 
 				if (canvasDamageKind == DamageKind.None && shownOpacity == opacity
-						&& shownClickThrough == clickThrough && Matches(segments))
+						&& shownClickThrough == clickThrough
+						&& ShowsSegments(segments))
 					return true;
 
 				var image = canvas.PrepareForPresent();
 
 				// Prepare every existing fragment before committing any of them. A virtual-desktop animation therefore
-				// reuses its layer surfaces and bounded buffer pools just like a single-output animation; only an actual
-				// topology or segment-geometry change needs the replacement path below.
-				if (Matches(segments))
+				// reuses its layer surfaces and bounded buffer pools just like a single-output animation, and a move or
+				// resize changes them in place; only a change in the outputs covered needs the replacement path below.
+				if (CoversSameOutputs(segments, fragments.Keys))
 				{
 					foreach (var segment in segments)
 					{

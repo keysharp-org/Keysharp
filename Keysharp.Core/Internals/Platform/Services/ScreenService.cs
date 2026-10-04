@@ -82,8 +82,8 @@ namespace Keysharp.Internals
 	}
 
 	/// <summary>Base Linux screen: Eto root-window grab for regions, no true window capture (caller
-	/// rectangle-grabs), and no work-area override (caller uses Eto's per-screen WorkingArea).</summary>
-	internal class EtoScreen : IScreen
+	/// rectangle-grabs). Each session type reads its own work areas.</summary>
+	internal abstract class EtoScreen : IScreen
 	{
 		public virtual IReadOnlyList<DisplayInfo> GetDisplays()
 		{
@@ -116,6 +116,8 @@ namespace Keysharp.Internals
 
 		public virtual ScreenRect GetVirtualScreenBounds() => DisplayTopology.ToolkitUnion();
 
+		public abstract ScreenRect GetWorkArea(DisplayInfo display);
+
 		// The DRM connector (EDID, model, serial, physical size, connection kind) is readable from sysfs under
 		// every Linux session type, so the shared base answers it. Refresh rate and rotation are session-specific
 		// and stay 0/unknown here; X11Screen and WaylandScreen override to supply them.
@@ -146,6 +148,8 @@ namespace Keysharp.Internals
 
 		// Toolkit bounds are scaled by GDK, so the union comes from the native root-pixel topology.
 		public override ScreenRect GetVirtualScreenBounds() => X11DisplayTopology.VirtualBounds;
+
+		public override ScreenRect GetWorkArea(DisplayInfo display) => X11DisplayTopology.GetWorkArea(display);
 
 		// NativeId carries the RandR output XID for this display, which owns the current mode and rotation.
 		public override DisplayDetails GetDisplayDetails(DisplayInfo display)
@@ -179,15 +183,35 @@ namespace Keysharp.Internals
 	{
 		private static Wl.IWaylandBackend Backend => Wl.WaylandBackend.Current;
 
+		// Panels and docks can change without a display notification.
+		public override ScreenRect GetWorkArea(DisplayInfo display)
+		{
+			var displays = GetDisplays();
+			var workArea = display.WorkArea;
+
+			foreach (var current in displays)
+				if (current.Bounds == display.Bounds)
+				{
+					workArea = current.WorkArea;
+					break;
+				}
+
+			if (Backend is { } backend && backend.TryGetWorkArea(out var wa)
+				&& wa.Width > 0 && wa.Height > 0
+				&& DisplayTopology.TryFind(displays, ScreenRect.FromRectangle(wa), out var owner)
+				&& owner.Bounds == display.Bounds)
+				return ScreenRect.FromRectangle(wa);
+
+			return workArea;
+		}
+
 		public override IReadOnlyList<DisplayInfo> GetDisplays()
 		{
 			var native = Wl.WaylandLayerShellClient.Current?.GetDisplays();
 			var toolkit = base.GetDisplays().ToArray();
 			var displays = native is { Count: > 0 } ? native.ToArray() : toolkit;
 
-			// xdg-output supplies exact global geometry but not reserved panels/docks. Merge every GDK monitor's
-			// per-output working area into the native snapshot before applying a compositor-specific override. This
-			// preserves multi-monitor work areas instead of updating only whichever monitor owned one global rectangle.
+			// xdg-output has global geometry; GDK supplies per-monitor panel/dock reservations.
 			if (native is { Count: > 0 })
 				for (var i = 0; i < displays.Length; i++)
 					if (DisplayTopology.TryFind(toolkit, displays[i].Bounds, out var match))
@@ -202,27 +226,13 @@ namespace Keysharp.Internals
 							};
 					}
 
-			if (Backend is { } backend && backend.TryGetWorkArea(out var wa)
-				&& wa.Width > 0 && wa.Height > 0)
-			{
-				var workArea = ScreenRect.FromRectangle(wa);
-
-				if (DisplayTopology.TryFind(displays, workArea, out var owner))
-					for (var i = 0; i < displays.Length; i++)
-						if (displays[i].Equals(owner))
-						{
-							displays[i] = displays[i] with { WorkArea = workArea };
-							break;
-						}
-			}
-
 			return displays;
 		}
 
-		// The compositor's outputs are held in memory; the work areas GetDisplays merges in cost an IPC round trip.
+		// The compositor's outputs are held in memory, so this needs neither the toolkit nor a round trip.
 		public override ScreenRect GetVirtualScreenBounds()
-			=> Wl.WaylandLayerShellClient.Current?.GetDisplays() is { Count: > 0 } native
-				? DisplayTopology.Union(native.Select(display => display.Bounds)) : base.GetVirtualScreenBounds();
+			=> Wl.WaylandLayerShellClient.Current?.VirtualBounds is { HasArea: true } bounds
+				? bounds : base.GetVirtualScreenBounds();
 
 		/// <summary>
 		/// Wayland already delivered this output's physical size, make/model, mode refresh and transform in its
