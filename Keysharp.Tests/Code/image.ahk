@@ -227,15 +227,19 @@ try {
 }
 
 bitmapSource := Image.Create(16, 12, "Blue")
+bitmapSource.FillRect(0, 0, 16, 4, "Red")
 bitmapCopy := Image.FromBitmap(bitmapSource.ToBitmap())
 Assert(bitmapCopy.Width == 16 && bitmapCopy.Height == 12, A_LineNumber)
+AssertEq(bitmapCopy.GetPixel(0, 0), 0xFFFF0000, A_LineNumber)
+AssertEq(bitmapCopy.GetPixel(0, 11), 0xFF0000FF, A_LineNumber)
 
 ; A bitmap handle keeps its alpha, from Image.ToBitmap as from LoadPicture.
-alphaSource := Image.Create(2, 1)
+alphaSource := Image.Create(2, 2, "Blue")
 alphaSource.SetPixel(0, 0, "0xFFFF0000").SetPixel(1, 0, "0x80FF0000")
 alphaCopy := Image.FromBitmap(alphaSource.ToBitmap())
 AssertEq(alphaCopy.GetPixel(0, 0), 0xFFFF0000, A_LineNumber)
 AssertEq(alphaCopy.GetPixel(1, 0) >> 24, 0x80, A_LineNumber)
+AssertEq(alphaCopy.GetPixel(0, 1), 0xFF0000FF, A_LineNumber)
 
 ; IL_Create takes AutoHotkey's counts. With Resize false, IL_Add divides a picture across its width into
 ; list-sized images and returns the index of the first; a picture narrower than one image adds none.
@@ -243,7 +247,10 @@ alphaPath := A_Temp A_DirSeparator "keysharp-image-alpha-" A_TickCount ".png"
 stripPath := A_Temp A_DirSeparator "keysharp-image-strip-" A_TickCount ".png"
 try {
     alphaSource.Save(alphaPath)
-    AssertEq(Image.FromBitmap(LoadPicture(alphaPath)).GetPixel(1, 0) >> 24, 0x80, A_LineNumber)
+    loadedAlpha := Image.FromBitmap(LoadPicture(alphaPath))
+    AssertEq(loadedAlpha.GetPixel(0, 0), 0xFFFF0000, A_LineNumber)
+    AssertEq(loadedAlpha.GetPixel(1, 0) >> 24, 0x80, A_LineNumber)
+    AssertEq(loadedAlpha.GetPixel(0, 1), 0xFF0000FF, A_LineNumber)
 
     Image.Create(256, 1, "Red").Save(stripPath)
     small := IL_Create(10)

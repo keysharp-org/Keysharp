@@ -440,7 +440,7 @@ namespace Keysharp.Internals.Os.Windows
 	}
 
 	/// <summary>What GetObject reports for a DIB section: its BITMAP, whose bits are directly addressable, then
-	/// the header that says whether the rows run top-down.</summary>
+	/// its format header. Both reported heights are positive regardless of row order.</summary>
 	[StructLayout(LayoutKind.Sequential)]
 	internal struct DIBSECTION
 	{
@@ -1754,6 +1754,10 @@ namespace Keysharp.Internals.Os.Windows
 		[DllImport(gdi32, SetLastError = true)]
 		internal static extern nint CreateDIBSection(nint hdc, ref BITMAPINFOHEADER pbmi, uint usage,
 													out nint ppvBits, nint hSection, uint offset);
+
+		[DllImport(gdi32, SetLastError = true)]
+		internal static extern int GetDIBits(nint hdc, nint hBitmap, uint start, uint lines, nint bits,
+			ref BITMAPINFOHEADER info, uint usage);
 
 		[DllImport(gdi32, SetLastError = true)]
 		internal static extern nint SelectObject(nint hdc, nint h);

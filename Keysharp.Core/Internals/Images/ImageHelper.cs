@@ -1106,14 +1106,35 @@ namespace Keysharp.Internals.Images
 
 			if (WindowsAPI.GetObject(nativeHBitmap, size, out var dib) == size && dib.bmBitsPixel == 32 && dib.bmBits != 0)
 			{
-				int w = dib.bmWidth, h = dib.bmHeight, stride = dib.bmWidthBytes;
-				// A positive header height stores the rows bottom-up, which a negative stride walks from the top row.
-				var topDown = dib.dsBmih.biHeight < 0;
+				int w = dib.bmWidth, h = dib.bmHeight;
 				_ = WindowsAPI.GdiFlush();//GDI drawing into the section may still be batched.
 				var format = HasAlpha(dib.bmBits, w * h) ? PixelFormat.Format32bppPArgb : PixelFormat.Format32bppRgb;
-				using var view = new Bitmap(w, h, topDown ? stride : -stride, format,
-											topDown ? dib.bmBits : dib.bmBits + (nint)(h - 1) * stride);
-				return view.Clone(new Rectangle(0, 0, w, h), PixelFormat.Format32bppArgb);
+				using var pixels = new Bitmap(w, h, format);
+				var rect = new Rectangle(0, 0, w, h);
+				var dc = WindowsAPI.CreateCompatibleDC(0);
+
+				if (dc == 0)
+					throw new Win32Exception();
+
+				try
+				{
+					// GetObject loses the height sign; ask GDI to copy the rows in top-down order.
+					var header = new BITMAPINFOHEADER
+					{
+						biSize = Marshal.SizeOf<BITMAPINFOHEADER>(), biWidth = w, biHeight = -h, biPlanes = 1, biBitCount = 32
+					};
+					var data = pixels.LockBits(rect, ImageLockMode.WriteOnly, format);
+
+					try
+					{
+						if (WindowsAPI.GetDIBits(dc, nativeHBitmap, 0, (uint)h, data.Scan0, ref header, 0 /* DIB_RGB_COLORS */) != h)
+							throw new Win32Exception();
+					}
+					finally { pixels.UnlockBits(data); }
+
+					return pixels.Clone(rect, PixelFormat.Format32bppArgb);
+				}
+				finally { _ = WindowsAPI.DeleteDC(dc); }
 			}
 
 			using var nativeBitmap = Bitmap.FromHbitmap(nativeHBitmap);

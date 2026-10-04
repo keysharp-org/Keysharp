@@ -68,6 +68,55 @@ namespace Keysharp.Tests
 		}
 
 #if WINDOWS
+		[TestCase(true, true), TestCase(true, false), TestCase(false, true), TestCase(false, false)]
+		[Category("Image"), Category("Internal"), Category("Curated")]
+		public void BitmapHandleOrientation(bool topDown, bool hasAlpha)
+		{
+			const int width = 2, height = 3;
+			var colors = new uint[] { 0xFFFF0000u, 0xFF00FF00u, 0xFF0000FFu, 0xFFFFFF00u, 0xFFFF00FFu, 0xFF00FFFFu };
+			var pixels = new int[colors.Length];
+
+			for (var y = 0; y < height; y++)
+				for (var x = 0; x < width; x++)
+				{
+					var color = colors[y * width + x];
+					var pixel = hasAlpha ? 0x80000000u | (color & 0x00808080u) : color & 0x00FFFFFFu;
+					pixels[(topDown ? y : height - 1 - y) * width + x] = unchecked((int)pixel);
+				}
+
+			var header = new BITMAPINFOHEADER
+			{
+				biSize = Marshal.SizeOf<BITMAPINFOHEADER>(),
+				biWidth = width,
+				biHeight = topDown ? -height : height,
+				biPlanes = 1,
+				biBitCount = 32,
+			};
+			var handle = WindowsAPI.CreateDIBSection(0, ref header, 0, out var bits, 0, 0);
+			Assert.AreNotEqual((nint)0, handle);
+
+			try
+			{
+				Marshal.Copy(pixels, 0, bits, pixels.Length);
+				using var bitmap = ImageHelper.GetBitmapFromHBitmap(handle);
+
+				for (var y = 0; y < height; y++)
+					for (var x = 0; x < width; x++)
+					{
+						var expected = colors[y * width + x];
+
+						if (hasAlpha)
+							expected = 0x80000000u | (expected & 0x00FFFFFFu);
+
+						Assert.AreEqual(expected, (uint)bitmap.GetPixel(x, y).ToArgb(), $"pixel ({x}, {y})");
+					}
+			}
+			finally
+			{
+				_ = WindowsAPI.DeleteObject(handle);
+			}
+		}
+
 		[TestCase(1), TestCase(-1), Category("Image"), Category("Internal")]
 		public void RegionalClearStride(int direction)
 		{
