@@ -1,4 +1,6 @@
 #if LINUX
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Keysharp.Internals.Input.Linux;
 using Keysharp.Internals.Linux;
@@ -85,6 +87,154 @@ namespace Keysharp.Tests
 
 			NativeLibrary.Free(handle);
 		}
+	}
+}
+namespace Keysharp.Tests
+{
+	[TestFixture, Category("Internal"), Category("Curated")]
+	public unsafe class LinuxConnectionOwnerTests
+	{
+		[Test]
+		public void BufferedMessagesDrainBeforeWaiting()
+		{
+			using var stream = new FakeStream();
+			using var received = new CountdownEvent(2);
+			stream.Queue(() => received.Signal());
+			stream.Queue(() => received.Signal());
+			using var owner = stream.CreateOwner("buffered readiness");
+			owner.Start();
+			Assert.That(received.Wait(1_000), Is.True, "The first read clears fd readiness, but the buffered second record must still drain.");
+		}
+
+		[TestCase(false), TestCase(true)]
+		public void IdleShutdownWakesOwnerAndCleansUpOnIt(bool start)
+		{
+			using var stream = new FakeStream();
+			using var owner = stream.CreateOwner("idle shutdown");
+			if (start) owner.Start();
+			var thread = start ? owner.Invoke(() => Environment.CurrentManagedThreadId, 1_000) : 0;
+			var elapsed = Stopwatch.StartNew();
+			owner.Dispose();
+			Assert.That(elapsed.ElapsedMilliseconds, Is.LessThan(500));
+			Assert.That(stream.CleanupThread, Is.Not.Zero);
+			if (start) Assert.That(stream.CleanupThread, Is.EqualTo(thread));
+			Assert.Throws<ObjectDisposedException>(owner.Start);
+			Assert.That(owner.IsRunning, Is.False);
+			Assert.Throws<ObjectDisposedException>(() => owner.Invoke(() => 1, 100));
+		}
+
+		[Test]
+		public void ShutdownDoesNotWaitForABlockedRpc()
+		{
+			using var stream = new FakeStream();
+			using var owner = stream.CreateOwner("blocked shutdown");
+			using var entered = new ManualResetEventSlim();
+			using var release = new ManualResetEventSlim();
+			owner.Start();
+			var request = Task.Run(() => owner.Invoke(() =>
+			{
+				entered.Set();
+				var completed = release.Wait(2_000);
+				Assert.Throws<ObjectDisposedException>(() => owner.Invoke(() => 1, 100));
+				Assert.Throws<ObjectDisposedException>(() => owner.Post(() => { }));
+				return completed;
+			}, 3_000));
+			var posted = 0;
+			try
+			{
+				Assert.That(entered.Wait(1_000), Is.True);
+				var elapsed = Stopwatch.StartNew();
+				Assert.Throws<TimeoutException>(() => owner.Invoke(() => Interlocked.Increment(ref posted), 20));
+				owner.Post(() => Interlocked.Increment(ref posted));
+				owner.Dispose();
+				Assert.That(elapsed.ElapsedMilliseconds, Is.LessThan(500));
+				Assert.That(owner.IsRunning, Is.False);
+				Assert.Throws<ObjectDisposedException>(() => owner.Invoke(() => 1, 100));
+			}
+			finally { release.Set(); }
+			Assert.That(request.Wait(1_000), Is.True);
+			Assert.That(posted, Is.Zero, "Queued native work must be cancelled when its owner stops.");
+		}
+
+		[Test]
+		public void SubscriptionChangesKeepOneOwner()
+		{
+			using var stream = new FakeStream();
+			using var owner = stream.CreateOwner("subscription changes");
+			owner.Start();
+			var kinds = 1;
+			var ownerThread = owner.Invoke(() => Environment.CurrentManagedThreadId, 1_000);
+			using var observed = new ManualResetEventSlim();
+			owner.Invoke(() => { kinds |= 2; return true; }, 1_000);
+			stream.Queue(() =>
+			{
+				Assert.That(kinds, Is.EqualTo(3));
+				Assert.That(Environment.CurrentManagedThreadId, Is.EqualTo(ownerThread));
+				observed.Set();
+			});
+			Assert.That(observed.Wait(1_000), Is.True);
+			owner.Invoke(() => { kinds &= ~1; return true; }, 1_000);
+			Assert.That(kinds, Is.EqualTo(2));
+		}
+
+		[Test]
+		public void SlowRpcDoesNotDelayFastLane()
+		{
+			using var fastStream = new FakeStream();
+			using var slowStream = new FakeStream();
+			using var fast = fastStream.CreateOwner("fast lane");
+			using var slow = slowStream.CreateOwner("slow lane");
+			using var entered = new ManualResetEventSlim();
+			using var release = new ManualResetEventSlim();
+			fast.Start();
+			slow.Start();
+			var request = Task.Run(() => slow.Invoke(() => { entered.Set(); return release.Wait(2_000); }, 3_000));
+			try
+			{
+				Assert.That(entered.Wait(1_000), Is.True);
+				Assert.That(fast.Invoke(() => 42, 500), Is.EqualTo(42));
+				Assert.That(request.IsCompleted, Is.False);
+			}
+			finally { release.Set(); }
+			Assert.That(request.Wait(1_000), Is.True);
+		}
+
+		private sealed class FakeStream : IDisposable
+		{
+			private readonly ConcurrentQueue<Action> buffered = new();
+			private int fd = eventfd(0, 0x800 | 0x80000);
+			internal int CleanupThread;
+
+			internal LinuxConnectionOwner CreateOwner(string name)
+				=> new(name, () => fd, Drain, () => CleanupThread = Environment.CurrentManagedThreadId);
+
+			internal void Queue(Action message)
+			{
+				buffered.Enqueue(message);
+				ulong value = 1;
+				Assert.That(write(fd, &value, 8), Is.EqualTo((nint)8));
+			}
+
+			private bool Drain()
+			{
+				ulong value;
+				read(fd, &value, 8);
+				if (!buffered.TryDequeue(out var message)) return false;
+				message();
+				return true;
+			}
+
+			public void Dispose()
+			{
+				var closed = Interlocked.Exchange(ref fd, -1);
+				if (closed >= 0) close(closed);
+			}
+		}
+
+		[DllImport("libc")] private static extern int eventfd(uint initial, int flags);
+		[DllImport("libc")] private static extern nint read(int fd, void* buffer, nuint count);
+		[DllImport("libc")] private static extern nint write(int fd, void* buffer, nuint count);
+		[DllImport("libc")] private static extern int close(int fd);
 	}
 }
 #endif
