@@ -50,41 +50,62 @@ namespace Keysharp.Tests
 			Assert.AreEqual((uint)'Z', vk);
 		}
 
-		[Test, Category("Internal")]
-		public void DesktopKeyboardSnapshotRetainsRevisionAcrossUnavailableReply()
+		[Test]
+		public void DesktopKeyboardStatePublishesRevisionDeltas()
 		{
-			long now = 0;
-			int calls = 0;
-			var revisions = new List<string>();
-			var replies = new[]
+			Action<byte[]> publish = null;
+			var calls = 0;
+			var state = new DesktopKeyboardState((handler, _) =>
 			{
-				"{\"ok\":true,\"mapRevision\":\"one\",\"keymap\":\"map text\",\"group\":1}",
-				null,
-				"{\"ok\":true,\"mapRevision\":\"one\",\"group\":2}",
-				"{\"ok\":true,\"mapRevision\":\"two\",\"validFields\":[\"mapRevision\"],\"group\":0}"
-			};
-			var state = new DesktopKeyboardState(revision =>
-			{
-				revisions.Add(revision);
-				return replies[calls++] is string reply ? Encoding.UTF8.GetBytes(reply) : null;
-			}, () => now, action => action());
+				publish = handler;
+				calls++;
+				return new CallbackDisposable(() => { });
+			});
+			Assert.IsNull(state.Get());
+			publish(Encoding.UTF8.GetBytes("{\"ok\":true,\"mapRevision\":\"one\",\"keymap\":\"map text\",\"group\":1}"));
 			Assert.AreEqual("map text", state.Get().Keymap);
+			publish(Encoding.UTF8.GetBytes("{\"ok\":true,\"mapRevision\":\"one\",\"group\":2}"));
+			Assert.AreEqual("map text", state.Get().Keymap);
+			Assert.AreEqual(2u, state.Get().Group);
+			Assert.AreEqual(1, calls, "Current reads consume the pushed mirror without querying.");
+			publish(Encoding.UTF8.GetBytes("{\"ok\":true,\"mapRevision\":\"two\",\"validFields\":[\"mapRevision\"]}"));
+			Assert.IsNull(state.Get().Keymap);
+			Assert.IsFalse(state.Get().GroupKnown);
+			state.Reset();
+		}
+
+		[Test]
+		public void DesktopKeyboardStateDropsRetiredCallbacks()
+		{
+			Action<byte[]> publish = null;
+			Action<Exception> fail = null;
+			var retired = 0;
+			var state = new DesktopKeyboardState((handler, onError) =>
+			{
+				publish = handler;
+				fail = onError;
+				return new CallbackDisposable(() => retired++);
+			});
+			state.Get();
+			var oldPublish = publish;
+			publish(Encoding.UTF8.GetBytes("{\"ok\":true,\"group\":1}"));
 			Assert.AreEqual(1u, state.Get().Group);
-			Assert.AreEqual(1, calls);
-			now = 16;
-			Assert.AreEqual("map text", state.Get().Keymap);
-			now = 266;
-			var restored = state.Get();
-			Assert.AreEqual("map text", restored.Keymap);
-			Assert.AreEqual(2u, restored.Group);
-			Assert.IsTrue(restored.GroupKnown);
-			now = 282;
-			var changed = state.Get();
-			Assert.IsNull(changed.Keymap);
-			Assert.IsFalse(changed.GroupKnown);
-			Assert.IsFalse(changed.ModifiersKnown);
-			Assert.IsFalse(changed.IndicatorsKnown);
-			Assert.That(revisions, Is.EqualTo(new string[] { null, "one", "one", "one" }));
+			fail(new IOException("service restarted"));
+			Assert.IsNull(state.Get());
+			oldPublish(Encoding.UTF8.GetBytes("{\"ok\":true,\"group\":8}"));
+			Assert.IsNull(state.Get());
+			publish(Encoding.UTF8.GetBytes("{\"ok\":true,\"group\":2}"));
+			Assert.AreEqual(2u, state.Get().Group);
+			state.Reset();
+			publish(Encoding.UTF8.GetBytes("{\"ok\":true,\"group\":9}"));
+			Assert.IsNull(state.Get());
+			Assert.AreEqual(2, retired);
+			state.Reset();
+		}
+
+		[Test]
+		public void DesktopKeyboardStateRejectsMalformedFields()
+		{
 			var malformed = DesktopKeyboardState.Parse("{\"ok\":true,\"group\":-1,\"modifiers\":\"0\",\"capsLock\":0,\"numLock\":false,\"scrollLock\":false,\"pointerMapping\":[\"3\",2,1]}");
 			Assert.IsFalse(malformed.GroupKnown);
 			Assert.IsFalse(malformed.ModifiersKnown);
@@ -92,138 +113,9 @@ namespace Keysharp.Tests
 			Assert.IsEmpty(malformed.PointerMapping);
 		}
 
-		[Test, Category("Internal")]
-		public void DesktopKeyboardStateOwnsTheRevisionSentToTheBroker()
+		private sealed class CallbackDisposable(Action dispose) : IDisposable
 		{
-			long now = 0;
-			var calls = 0;
-			var revisions = new List<string>();
-			var replies = new[]
-			{
-				null,
-				"{\"ok\":true,\"mapRevision\":\"one\",\"keymap\":\"map text\"}",
-				"{\"ok\":true,\"mapRevision\":\"one\",\"group\":2}"
-			};
-			var state = new DesktopKeyboardState(revision =>
-			{
-				revisions.Add(revision);
-				return replies[calls++] is string reply ? Encoding.UTF8.GetBytes(reply) : null;
-			}, () => now, action => action());
-
-			Assert.IsNull(state.Get());
-			now = 250;
-			Assert.AreEqual("map text", state.Get().Keymap);
-			now = 266;
-			Assert.AreEqual("map text", state.Get().Keymap);
-			Assert.That(revisions, Is.EqualTo(new string[] { null, null, "one" }));
-		}
-
-		[Test, Category("Internal")]
-		public void DesktopKeyboardStateRefreshesInlineOnlyForCurrentReadsOffTheHook()
-		{
-			long now = 0;
-			var calls = 0;
-			Action pending = null;
-			var state = new DesktopKeyboardState(_ =>
-			{
-				calls++;
-				return Encoding.UTF8.GetBytes(
-					"{\"ok\":true,\"mapRevision\":\"one\",\"keymap\":\"map text\",\"group\":" + calls + "}");
-			}, () => now, action => pending = action);
-
-			// Until a refresh has succeeded, even a current read never waits on the query.
-			Assert.That(state.GetCurrent(), Is.Null);
-			Assert.That(calls, Is.Zero);
-			Assert.That(pending, Is.Not.Null);
-			pending();
-			Assert.That(state.GetCurrent()?.Group, Is.EqualTo(1u));
-
-			// A plain read of a stale snapshot refreshes it in the background.
-			pending = null;
-			now = 100;
-			Assert.That(state.Get()?.Group, Is.EqualTo(1u));
-			Assert.That(calls, Is.EqualTo(1));
-			Assert.That(pending, Is.Not.Null);
-			pending();
-			Assert.That(state.Get()?.Group, Is.EqualTo(2u));
-
-			pending = null;
-			now = 200;
-			Assert.That(state.GetCurrent()?.Group, Is.EqualTo(3u));
-			Assert.That(pending, Is.Null);
-
-			now = 300;
-			using (Keysharp.Internals.Input.Hooks.HookThread.BeginHookCallback(100))
-				Assert.That(state.GetCurrent()?.Group, Is.EqualTo(3u));
-
-			Assert.That(calls, Is.EqualTo(3));
-			Assert.That(pending, Is.Not.Null);
-			pending();
-			Assert.That(state.Get()?.Group, Is.EqualTo(4u));
-		}
-
-		[Test, Category("Internal")]
-		public void DesktopRefreshIsSingleFlight()
-		{
-			var timeout = TimeSpan.FromSeconds(5);
-			using var querying = new ManualResetEventSlim();
-			using var release = new ManualResetEventSlim();
-			using var reading = new ManualResetEventSlim();
-			long now = 0;
-			var calls = 0;
-			var currentReader = 0;
-			Action pending = null;
-			var state = new DesktopKeyboardState(_ =>
-			{
-				var call = Interlocked.Increment(ref calls);
-
-				if (call > 1)
-				{
-					querying.Set();
-					if (!release.Wait(timeout))
-						throw new TimeoutException("The blocked desktop query was not released.");
-				}
-
-				return Encoding.UTF8.GetBytes("{\"ok\":true,\"group\":" + call + "}");
-			}, () =>
-			{
-				if (Environment.CurrentManagedThreadId == Volatile.Read(ref currentReader))
-					reading.Set();
-				return Volatile.Read(ref now);
-			}, action => pending = action);
-
-			Assert.That(state.Get(), Is.Null);
-			pending();
-			Volatile.Write(ref now, 100);
-			Assert.That(state.Get()?.Group, Is.EqualTo(1u));
-			var background = Task.Run(pending);
-			Task<DesktopKeyboardSnapshot> current = null, cached = null;
-
-			try
-			{
-				Assert.That(querying.Wait(timeout), Is.True);
-				current = Task.Run(() =>
-				{
-					Volatile.Write(ref currentReader, Environment.CurrentManagedThreadId);
-					return state.GetCurrent();
-				});
-				Assert.That(reading.Wait(timeout), Is.True);
-				cached = Task.Run(state.Get);
-				Assert.That(cached.Wait(timeout), Is.True, "A cached read must stay available while the query waits.");
-				Assert.That(cached.Result?.Group, Is.EqualTo(1u));
-				Assert.That(current.Wait(TimeSpan.FromMilliseconds(100)), Is.False);
-				release.Set();
-				Assert.That(Task.WaitAll([background, current], timeout), Is.True);
-				Assert.That(current.Result?.Group, Is.EqualTo(2u));
-				Assert.That(calls, Is.EqualTo(2), "Concurrent refreshes must share one query.");
-			}
-			finally
-			{
-				release.Set();
-				background.Wait(timeout);
-				current?.Wait(timeout);
-				cached?.Wait(timeout);
-			}
+			public void Dispose() => dispose();
 		}
 
 		[Test, Category("Internal")]

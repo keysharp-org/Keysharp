@@ -204,7 +204,8 @@ namespace Keysharp.Internals
 				return false;
 
 			var shiftDown = (mods & (MOD_LSHIFT | MOD_RSHIFT)) != 0;
-			return TryGetVkFromEvdevBitmap(vk, physical ? physicalKeys : logicalKeys, numLock, shiftDown, out isDown);
+			ref var keys = ref physical ? ref physicalKeys : ref logicalKeys;
+			return TryGetVkFromEvdevBitmap(vk, keys, numLock, shiftDown, out isDown);
 		}
 
 		public bool TryGetIndicatorStatesLogical(out bool capsOn, out bool numOn, out bool scrollOn)
@@ -330,7 +331,7 @@ namespace Keysharp.Internals
 	{
 		public bool TryGetModifierLRStateLogical(out uint mods, byte[] keymapBuffer = null)
 		{
-			var snapshot = Keysharp.Internals.Input.Linux.DesktopKeyboardState.Current.GetCurrent();
+			var snapshot = Keysharp.Internals.Input.Linux.DesktopKeyboardState.Current.Get();
 			mods = snapshot?.Modifiers ?? 0;
 			return snapshot?.ModifiersKnown ?? false;
 		}
@@ -366,7 +367,7 @@ namespace Keysharp.Internals
 
 		public bool TryGetIndicatorStatesLogical(out bool capsOn, out bool numOn, out bool scrollOn)
 		{
-			var snapshot = Keysharp.Internals.Input.Linux.DesktopKeyboardState.Current.GetCurrent();
+			var snapshot = Keysharp.Internals.Input.Linux.DesktopKeyboardState.Current.Get();
 			capsOn = snapshot?.CapsLock ?? false;
 			numOn = snapshot?.NumLock ?? false;
 			scrollOn = snapshot?.ScrollLock ?? false;

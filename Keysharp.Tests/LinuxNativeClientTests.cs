@@ -1,6 +1,7 @@
 #if LINUX
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using Keysharp.Internals.Input.Linux;
 using Keysharp.Internals.Linux;
@@ -14,7 +15,7 @@ namespace Keysharp.Tests
 		[Test]
 		public void InputClientConnectsToInstalledService()
 		{
-			RequireLibrary("libkeysharp-input.so.0", typeof(KeysharpInputClient).Assembly);
+			RequireLibrary("libkeysharp-input.so.1", typeof(KeysharpInputClient).Assembly);
 			using var client = KeysharpInputClient.Connect();
 			Assert.That(client.IsConnected, Is.True);
 		}
@@ -22,7 +23,7 @@ namespace Keysharp.Tests
 		[Test]
 		public void DesktopClientConnectsToInstalledService()
 		{
-			RequireLibrary("libkeysharp-desktop.so.0", typeof(DesktopClient).Assembly);
+			RequireLibrary("libkeysharp-desktop.so.1", typeof(DesktopClient).Assembly);
 			Assert.That(DesktopClient.ProbeProvider(), Is.True);
 		}
 
@@ -31,7 +32,7 @@ namespace Keysharp.Tests
 		[Test]
 		public void GamepadsAreReadableWithoutAGrant()
 		{
-			RequireLibrary("libkeysharp-input.so.0", typeof(KeysharpInputClient).Assembly);
+			RequireLibrary("libkeysharp-input.so.1", typeof(KeysharpInputClient).Assembly);
 			using var client = KeysharpInputClient.Connect();
 			Assert.That(client.GrantedScopes, Is.EqualTo(LinuxPermissionScope.None));
 			var gamepads = client.ListGamepads(out var generation);
@@ -53,7 +54,7 @@ namespace Keysharp.Tests
 		[Test]
 		public void NativeStructMirrorsMatchTheInstalledLibrary()
 		{
-			RequireLibrary("libkeysharp-input.so.0", typeof(KeysharpInputClient).Assembly);
+			RequireLibrary("libkeysharp-input.so.1", typeof(KeysharpInputClient).Assembly);
 			AssertStructSize("NativeDeviceInfo", ksi_device_info_init);
 			AssertStructSize("NativeDeviceAxisInfo", ksi_device_axis_info_init);
 			AssertStructSize("NativeGamepadState", ksi_gamepad_state_init);
@@ -71,13 +72,13 @@ namespace Keysharp.Tests
 				$"{name} does not match the installed library.");
 		}
 
-		[DllImport("libkeysharp-input.so.0", CallingConvention = CallingConvention.Cdecl)]
+		[DllImport("libkeysharp-input.so.1", CallingConvention = CallingConvention.Cdecl)]
 		private static extern void ksi_device_info_init(byte[] device);
-		[DllImport("libkeysharp-input.so.0", CallingConvention = CallingConvention.Cdecl)]
+		[DllImport("libkeysharp-input.so.1", CallingConvention = CallingConvention.Cdecl)]
 		private static extern void ksi_device_axis_info_init(byte[] axis);
-		[DllImport("libkeysharp-input.so.0", CallingConvention = CallingConvention.Cdecl)]
+		[DllImport("libkeysharp-input.so.1", CallingConvention = CallingConvention.Cdecl)]
 		private static extern void ksi_gamepad_state_init(byte[] state);
-		[DllImport("libkeysharp-input.so.0", CallingConvention = CallingConvention.Cdecl)]
+		[DllImport("libkeysharp-input.so.1", CallingConvention = CallingConvention.Cdecl)]
 		private static extern void ksi_gamepad_axis_state_init(byte[] axis);
 
 		private static void RequireLibrary(string name, System.Reflection.Assembly assembly)
@@ -235,6 +236,54 @@ namespace Keysharp.Tests
 		[DllImport("libc")] private static extern nint read(int fd, void* buffer, nuint count);
 		[DllImport("libc")] private static extern nint write(int fd, void* buffer, nuint count);
 		[DllImport("libc")] private static extern int close(int fd);
+	}
+}
+
+namespace Keysharp.Tests
+{
+	[TestFixture, Category("Internal"), Category("Curated")]
+	public class LinuxServiceAbiTests
+	{
+		[TestCase("input", "NativeConnectOptions", "ksi_connect_options_init")]
+		[TestCase("input", "NativeServiceInfo", "ksi_service_info_init")]
+		[TestCase("input", "NativeLeaseMessage", "ksi_lease_message_init")]
+		[TestCase("input", "NativeKeyState", "ksi_key_state_init")]
+		[TestCase("input", "NativeHookMessage", "ksi_hook_message_init")]
+		[TestCase("desktop", "NativeConnectOptions", "ksd_connect_options_init")]
+		[TestCase("desktop", "NativeServiceInfo", "ksd_service_info_init")]
+		[TestCase("desktop", "NativeWindowRecord", "ksd_window_record_init")]
+		[TestCase("desktop", "NativeStateEvent", "ksd_state_event_init")]
+		[TestCase("desktop", "NativeString", "ksd_string_init")]
+		public void ManagedRecordsMatchNativeInitializers(string service, string record, string initializer)
+		{
+			var owner = service == "input" ? typeof(KeysharpInputClient) : typeof(DesktopClient);
+			var library = $"libkeysharp-{service}.so.1";
+			if (!NativeLibrary.TryLoad(library, owner.Assembly, null, out var handle))
+				Assert.Ignore($"{library} is unavailable; the ABI test does not connect to a service.");
+
+			var buffer = Marshal.AllocHGlobal(4_096);
+			try
+			{
+				var prefix = service == "input" ? "ksi" : "ksd";
+				var major = Marshal.GetDelegateForFunctionPointer<AbiMajor>(NativeLibrary.GetExport(handle, $"{prefix}_client_abi_major"));
+				Assert.That(major(), Is.EqualTo(1u), $"{library} must provide client ABI 1.0 / protocol 3.");
+				var initialize = Marshal.GetDelegateForFunctionPointer<Initialize>(NativeLibrary.GetExport(handle, initializer));
+				initialize(buffer);
+				var nativeSize = Marshal.ReadInt32(buffer);
+				var mirror = owner.GetNestedType(record, BindingFlags.NonPublic);
+				Assert.That(mirror, Is.Not.Null, $"{record} is missing.");
+				Assert.That(Marshal.SizeOf(mirror), Is.EqualTo(nativeSize),
+					$"{record} does not match {library} ({RuntimeInformation.ProcessArchitecture}).");
+			}
+			finally
+			{
+				Marshal.FreeHGlobal(buffer);
+				NativeLibrary.Free(handle);
+			}
+		}
+
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void Initialize(nint record);
+		[UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate uint AbiMajor();
 	}
 }
 #endif

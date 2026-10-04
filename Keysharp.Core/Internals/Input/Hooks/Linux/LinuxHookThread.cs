@@ -24,8 +24,6 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 		private static CallbackContext callbackContext;
 
 		private KeysharpInputClient inputServiceHookClient;
-		private CancellationTokenSource inputServiceHookCancel;
-		private Task inputServiceHookTask;
 		private Task foregroundTrackingTask = Task.CompletedTask;
 		private volatile HookType inputServiceCommittedKinds;
 		private readonly object recoveryLock = new();
@@ -34,9 +32,6 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 		private HookType inputServiceSubscribedKinds;
 		private bool usingInputServiceHooks;
 		private bool modifiersStale;
-		// The reader applies subscription changes between hook decisions.
-		private HookKindChange pendingKindChange;
-		private const int KindChangeTimeoutMs = HotIfCallbackBudgetMilliseconds + KeysharpInputClient.HookPollTimeoutMs + 250;
 		internal static KeysharpInputClient CurrentHookClient
 			=> callbackContext.Client;
 		internal static ulong CurrentHookEventId
@@ -71,7 +66,7 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 				var modMask = ModifierLRMaskFromVK(vk);
 
 				if (modMask != 0)
-					return (kbdMsSender.modifiersLRLogical & modMask) != 0;
+					return (GetModifierLRStateLogical() & modMask) != 0;
 			}
 
 			return base.IsKeyDownLogical(vk);
@@ -79,9 +74,8 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 
 		// One keysharp-input query answers all modifiers, where IsKeyDownLogical would make one per key.
 		internal override uint GetModifierLRStateLogical()
-			=> TracksModifiers
-				? kbdMsSender.modifiersLRLogical
-				: Keysharp.Internals.Platform.Keyboard.TryGetModifierLRStateLogical(out var mods) ? mods : 0u;
+			=> KeysharpInputManager.TryGetModifierState(out var logical, out _, out _, out _, out _)
+				? logical : kbdMsSender.modifiersLRLogical;
 
 		protected override void StopPlatformHookCore(bool dispose)
 		{
@@ -229,7 +223,8 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 			{
 				inputServiceHookClient = KeysharpInputClient.Connect(
 					required,
-					role: KeysharpInputClient.ConnectionRole.CallbackStream);
+					role: KeysharpInputClient.ConnectionRole.CallbackStream,
+					lease: KeysharpInputManager.AuthorizationLease);
 				inputServiceHookClient.SetHookQuarantineHandler(HandleHookQuarantined);
 				inputServiceHookClient.SetNestedHookEventHandler(ProcessNestedHookEvent);
 
@@ -239,7 +234,6 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 				if (wantKeyboard)
 					_ = inputServiceHookClient.SubscribeHook(KeysharpInputClient.HookType.KeyboardLowLevel);
 
-				inputServiceHookCancel = new CancellationTokenSource();
 				inputServiceSubscribedKinds = wantedHooks;
 				return true;
 			}
@@ -252,76 +246,31 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 		}
 
 		private bool InputServiceReaderRunning
-			=> inputServiceHookClient is { IsConnected: true } && inputServiceHookTask is { IsCompleted: false };
+			=> inputServiceHookClient is { IsConnected: true, ReaderRunning: true };
 
-		// Keep unchanged hook kinds subscribed while the reader changes the others.
 		private bool TryChangeSubscribedKinds(HookType wanted)
 		{
-			if (wanted == HookType.None || !InputServiceReaderRunning)
-				return false;
-
-			if (wanted == inputServiceSubscribedKinds)
-				return true;
-
-			var change = new HookKindChange(inputServiceHookClient, inputServiceSubscribedKinds, wanted);
-			Volatile.Write(ref pendingKindChange, change);
-
-			if (!change.Completion.Task.WaitWithoutInterruption(KindChangeTimeoutMs))
-			{
-				// Withdraw it unless the reader has already taken it.
-				_ = Interlocked.CompareExchange(ref pendingKindChange, null, change);
-				return false;
-			}
-
-			if (!change.Completion.Task.Result)
-				return false;
-
-			inputServiceSubscribedKinds = wanted;
-			return true;
-		}
-
-		// Reader thread only, before each read.
-		private void ApplyPendingKindChange(KeysharpInputClient client)
-		{
-			var change = Volatile.Read(ref pendingKindChange);
-
-			if (change == null || !ReferenceEquals(change.Client, client)
-				|| Interlocked.CompareExchange(ref pendingKindChange, null, change) != change)
-				return;
-
-			var added = change.Wanted & ~change.Current;
-			var removed = change.Current & ~change.Wanted;
-
+			if (wanted == HookType.None || !InputServiceReaderRunning) return false;
 			try
 			{
-				// New kinds first, so the stream never has none while it changes.
+				var added = wanted & ~inputServiceSubscribedKinds;
+				var removed = inputServiceSubscribedKinds & ~wanted;
 				if ((added & HookType.Mouse) != 0)
-					_ = client.SubscribeHook(KeysharpInputClient.HookType.MouseLowLevel);
-
+					inputServiceHookClient.SubscribeHook(KeysharpInputClient.HookType.MouseLowLevel);
 				if ((added & HookType.Keyboard) != 0)
-					_ = client.SubscribeHook(KeysharpInputClient.HookType.KeyboardLowLevel);
-
+					inputServiceHookClient.SubscribeHook(KeysharpInputClient.HookType.KeyboardLowLevel);
 				if ((removed & HookType.Mouse) != 0)
-					_ = client.UnsubscribeHook(KeysharpInputClient.HookType.MouseLowLevel);
-
+					inputServiceHookClient.UnsubscribeHook(KeysharpInputClient.HookType.MouseLowLevel);
 				if ((removed & HookType.Keyboard) != 0)
-					_ = client.UnsubscribeHook(KeysharpInputClient.HookType.KeyboardLowLevel);
-
-				change.Completion.TrySetResult(true);
+					inputServiceHookClient.UnsubscribeHook(KeysharpInputClient.HookType.KeyboardLowLevel);
+				inputServiceSubscribedKinds = wanted;
+				return true;
 			}
-			catch (Exception ex)
+			catch (Exception error)
 			{
-				Diagnostics.Debug.WriteLine($"keysharp-input hook change failed: {ex.Message}");
-				change.Completion.TrySetResult(false);
+				Diagnostics.Debug.WriteLine($"keysharp-input hook change failed: {error.Message}");
+				return false;
 			}
-		}
-
-		private sealed class HookKindChange(KeysharpInputClient client, HookType current, HookType wanted)
-		{
-			internal readonly KeysharpInputClient Client = client;
-			internal readonly HookType Current = current;
-			internal readonly HookType Wanted = wanted;
-			internal readonly TaskCompletionSource<bool> Completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		}
 
 		private void HandleHookQuarantined(KeysharpInputClient.HookQuarantine quarantine)
@@ -361,20 +310,12 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 
 		private void StopInputServiceHookCore()
 		{
-			Interlocked.Exchange(ref pendingKindChange, null)?.Completion.TrySetResult(false);
-			var cancellation = inputServiceHookCancel;
-			inputServiceHookCancel = null;
 			usingInputServiceHooks = false;
 			inputServiceCommittedKinds = HookType.None;
 			inputServiceSubscribedKinds = HookType.None;
-			try { cancellation?.Cancel(); } catch { }
-			inputServiceHookClient?.SetLeaseLivenessProbe(static () => false);
-			try { if (inputServiceHookTask != null && !inputServiceHookTask.IsCompleted) inputServiceHookTask.Wait(750); } catch { }
-			try { inputServiceHookClient?.Dispose(); } catch { }
-			cancellation?.Dispose();
+			var client = inputServiceHookClient;
 			inputServiceHookClient = null;
-			inputServiceHookTask = null;
-			modifiersStale = false;
+			try { client?.Dispose(); } catch { }
 		}
 
 		protected override void OnPlatformHookStateCommitted(HookType activeHooks)
@@ -392,117 +333,11 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 				return;
 			}
 
-			if (inputServiceHookTask != null && !inputServiceHookTask.IsCompleted)
-			{
-				inputServiceCommittedKinds = activeHooks;
-				usingInputServiceHooks = true;
-				return;
-			}
-
-			var hookClient = inputServiceHookClient;
-			var hookToken = inputServiceHookCancel.Token;
-			usingInputServiceHooks = true;
 			inputServiceCommittedKinds = activeHooks;
-			// The reader blocks for the hook's lifetime, so it needs its own thread.
-			inputServiceHookTask = Task.Factory.StartNew(() => InputServiceHookLoop(hookClient, hookToken),
-				CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-		}
-
-		private sealed class HookReaderLiveness
-		{
-			private const long StallGraceMs = 10_000;
-			private long lastProgressTicks = Environment.TickCount64;
-			private volatile bool waitingForEvent = true;
-
-			internal void MarkWaiting()
-			{
-				Volatile.Write(ref lastProgressTicks, Environment.TickCount64);
-				waitingForEvent = true;
-			}
-
-			internal void MarkProgress()
-			{
-				waitingForEvent = false;
-				Volatile.Write(ref lastProgressTicks, Environment.TickCount64);
-			}
-
-			internal bool IsAlive()
-				=> waitingForEvent
-					|| Environment.TickCount64 - Volatile.Read(ref lastProgressTicks) < StallGraceMs;
-		}
-
-		private void InputServiceHookLoop(KeysharpInputClient client, CancellationToken token)
-		{
-			var liveness = new HookReaderLiveness();
-			client.SetLeaseLivenessProbe(liveness.IsAlive);
-
-			try
-			{
-				InputServiceHookLoopCore(client, token, liveness);
-			}
-			finally
-			{
-				client.SetLeaseLivenessProbe(static () => false);
-			}
-		}
-
-		private void InputServiceHookLoopCore(
-			KeysharpInputClient client,
-			CancellationToken token,
-			HookReaderLiveness liveness)
-		{
-			while (!token.IsCancellationRequested)
-			{
-				KeysharpInputClient.HookEvent hookEvent;
-				bool received;
-				ApplyPendingKindChange(client);
-				liveness.MarkWaiting();
-
-				try
-				{
-					received = client.TryReadHookEvent(out hookEvent);
-				}
-				catch (ObjectDisposedException)
-				{
-					return;
-				}
-				catch (Exception ex)
-				{
-					if (!token.IsCancellationRequested)
-					{
-						Diagnostics.Debug.WriteLine($"keysharp-input hook reader stopped: {ex.Message}");
-						HandleInputServiceHookReaderLoss(ex.Message);
-					}
-
-					return;
-				}
-
-				if (token.IsCancellationRequested)
-					return;
-
-				if (!received)
-					continue;
-
-				liveness.MarkProgress();
-
-				try
-				{
-					ProcessAndDecideHookEvent(
-						client,
-						hookEvent,
-						inputServiceCommittedKinds);
-				}
-				catch (Exception ex)
-				{
-					if (!token.IsCancellationRequested)
-					{
-						Diagnostics.Debug.WriteLine($"keysharp-input hook decision failed: {ex.Message}");
-						HandleInputServiceHookReaderLoss(ex.Message);
-					}
-
-					return;
-				}
-			}
+			usingInputServiceHooks = true;
+			inputServiceHookClient?.SetHookEventHandler(
+				(client, hook) => ProcessAndDecideHookEvent(client, hook, inputServiceCommittedKinds),
+				error => HandleInputServiceHookReaderLoss(error.Message));
 		}
 
 		private void ProcessNestedHookEvent(

@@ -9,8 +9,24 @@ namespace Keysharp.Tests
 	public class DesktopBrokerTests
 	{
 		[Test]
-		public void X11UsesSnapshotWindowEvents()
-			=> Assert.That(DesktopBackend.X11.SupportsPushWindowEvents, Is.False);
+		public void X11UsesPushWindowEventsWhenOffered()
+		{
+			const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Static;
+			var capabilities = typeof(DesktopClient).GetNestedType("Capabilities", BindingFlags.NonPublic);
+			var operation = typeof(DesktopClient).GetNestedType("Operation", BindingFlags.NonPublic);
+			FieldInfo Field(string name) => capabilities.GetField(name, flags);
+			string[] names = ["current", "probeAt", "recheckMs"];
+			var saved = names.Select(name => Field(name).GetValue(null)).ToArray();
+			try
+			{
+				capabilities.GetMethod("Learn", flags).Invoke(null, [DesktopClient.Backend.X11, Enum.Parse(operation, "WindowWatch")]);
+				Assert.That(DesktopBackend.X11.SupportsPushWindowEvents, Is.True);
+			}
+			finally
+			{
+				for (var i = 0; i < names.Length; i++) Field(names[i]).SetValue(null, saved[i]);
+			}
+		}
 
 		/// <summary>A broker left running by a previous X11 login reports that session, not this one. The
 		/// selection only runs on a Wayland session, so an X11 report is a contradiction rather than an
@@ -52,15 +68,15 @@ namespace Keysharp.Tests
 			});
 		}
 
-		[TestCase((int)NativeClientStatus.Ok, 0, false, false, true)]
-		[TestCase((int)NativeClientStatus.Unavailable, 0, true, false, false)]
-		[TestCase((int)NativeClientStatus.Timeout, 110, true, false, false)]
-		[TestCase((int)NativeClientStatus.Timeout, 0, false, true, true)]
-		[TestCase((int)NativeClientStatus.Denied, 13, false, false, false)]
-		[TestCase((int)NativeClientStatus.Revoked, 0, false, false, false)]
+		[TestCase((int)NativeClientStatus.Ok, 0, false, false)]
+		[TestCase((int)NativeClientStatus.Unavailable, 0, true, false)]
+		[TestCase((int)NativeClientStatus.Timeout, 110, true, false)]
+		[TestCase((int)NativeClientStatus.Timeout, 0, true, true)]
+		[TestCase((int)NativeClientStatus.Denied, 13, false, false)]
+		[TestCase((int)NativeClientStatus.Revoked, 0, false, false)]
 		public void NativeResultDistinguishesConnectionFailuresFromPollTimeouts(
 			int statusCode, int systemError, bool shouldReconnect,
-			bool isExpectedPollTimeout, bool shouldContinueEventPolling)
+			bool isExpectedPollTimeout)
 		{
 			var result = new DesktopClient.CallResult((NativeClientStatus)statusCode, 0, systemError,
 				string.Empty, "test operation");
@@ -69,8 +85,6 @@ namespace Keysharp.Tests
 			{
 				Assert.That(result.ShouldReconnect, Is.EqualTo(shouldReconnect));
 				Assert.That(result.IsExpectedPollTimeout, Is.EqualTo(isExpectedPollTimeout));
-				Assert.That(result.ShouldContinueEventPolling,
-					Is.EqualTo(shouldContinueEventPolling));
 			});
 		}
 
@@ -262,7 +276,8 @@ namespace Keysharp.Tests
 				"validFields":["id","title","active","frame"]}
 				""";
 
-			Assert.That(DesktopWindowParser.TryWindowEvent(Encoding.UTF8.GetBytes(json),
+			using var document = System.Text.Json.JsonDocument.Parse(json);
+			Assert.That(DesktopWindowParser.TryParse(document.RootElement,
 				id => new nint(long.Parse(id, CultureInfo.InvariantCulture)), out var window), Is.True);
 			Assert.Multiple(() =>
 			{
@@ -310,6 +325,221 @@ namespace Keysharp.Tests
 			Assert.That(windows[0].CompositorId, Is.EqualTo("24"));
 			Assert.That(backend.TryParseWindowList(Encoding.UTF8.GetBytes("{\"ok\":true,\"windows\":[]}"), out _), Is.True);
 			Assert.That(backend.TryGetNativeWindowId(handle, out _), Is.False);
+		}
+
+		[TestCase(false)]
+		[TestCase(true)]
+		public void TypedWindowRecordsRespectValidFields(bool known)
+		{
+			const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+			var type = typeof(DesktopClient).GetNestedType("NativeWindowRecord", BindingFlags.NonPublic);
+			var record = Activator.CreateInstance(type);
+			void Set(string name, object value) => type.GetField(name, flags).SetValue(record, value);
+			Set("Handle", 42UL);
+			Set("ValidFields", known ? 0x9ffffUL : 131072UL); //A pixel buffer alone supplies no surface origin.
+			Set("Flags", 30u);
+			Set("Pid", 123u);
+			Set("Transparency", 127u);
+			Set("FrameWidth", known ? 300u : uint.MaxValue);
+			Set("FrameHeight", 200u);
+			Set("SurfaceWidth", known ? 300u : uint.MaxValue);
+			Set("SurfaceHeight", 200u);
+			Set("Parent", 7UL);
+			Set("StackingOrder", 9UL);
+			var window = (WaylandWindowInfo)typeof(DesktopClient).GetMethod("ReadWindow",
+				BindingFlags.Static | BindingFlags.NonPublic).Invoke(null, [record]);
+			Assert.Multiple(() =>
+			{
+				Assert.That(window.PID, Is.EqualTo(known ? 123L : 0L));
+				Assert.That(window.Active, Is.EqualTo(known));
+				Assert.That(window.Minimized, Is.EqualTo(known));
+				Assert.That(window.Maximized, Is.EqualTo(known));
+				Assert.That(window.AlwaysOnTop, Is.EqualTo(known));
+				Assert.That(window.Visible, Is.EqualTo(!known));
+				Assert.That(window.Decorated, Is.EqualTo(!known));
+				Assert.That(window.OnCurrentWorkspace, Is.EqualTo(!known));
+				Assert.That(window.Transparency, Is.EqualTo(known ? 127L : -1L));
+				Assert.That(window.Bounds, Is.EqualTo(known ? new Rectangle(0, 0, 300, 200) : Rectangle.Empty));
+				Assert.That(window.SurfaceGeometry, Is.EqualTo(known ? new Rectangle(0, 0, 300, 200) : Rectangle.Empty));
+				Assert.That(window.ServiceParentHandle, Is.EqualTo(known ? 7UL : 0UL));
+				Assert.That(window.StackingOrder, Is.EqualTo(known ? 9UL : 0UL));
+			});
+		}
+
+		[Test]
+		public void FullWindowDeltaPreservesCombinedEvents()
+		{
+			var mirror = Snapshot();
+			var minimized = new WaylandWindowInfo(42, title: "first", visible: false, minimized: true);
+			var events = new List<WaylandWindowEventKind>();
+			void Dispatch(uint kind, WaylandWindowInfo current, WaylandWindowInfo previous)
+			{
+				events.Clear();
+				DesktopClient.DispatchWindowEvents(kind, current, previous, (change, _) => events.Add(change));
+			}
+			Assert.That(mirror.Apply(7, 1, 11, minimized, out var before), Is.True);
+			Dispatch(7, minimized, before);
+			Assert.That(events, Is.EqualTo(new[] { WaylandWindowEventKind.Hidden, WaylandWindowEventKind.Minimized }));
+			var restored = Window();
+			Assert.That(mirror.Apply(6, 1, 12, restored, out before), Is.True);
+			Assert.That(before, Is.SameAs(minimized));
+			Dispatch(6, restored, before);
+			Assert.That(events, Is.EqualTo(new[] { WaylandWindowEventKind.Shown, WaylandWindowEventKind.Restored }));
+			Dispatch(11, minimized, restored);
+			Assert.That(events, Is.EqualTo(new[] { WaylandWindowEventKind.Hidden, WaylandWindowEventKind.Minimized }));
+			var moved = new WaylandWindowInfo(42, title: "edited", visible: true, active: true,
+				frameGeometry: new Rectangle(1, 2, 3, 4));
+			Dispatch(8, moved, restored);
+			Assert.That(events, Is.EqualTo(new[] { WaylandWindowEventKind.MoveResized,
+				WaylandWindowEventKind.Activated, WaylandWindowEventKind.TitleChanged }));
+			Dispatch(5, restored, minimized);
+			Assert.That(events, Is.EqualTo(new[] { WaylandWindowEventKind.Closed }));
+			Dispatch(11, minimized, new WaylandWindowInfo(42, knownFields: WaylandWindowFields.None));
+			Assert.That(events, Is.Empty, "unknown flags cannot invent a transition");
+		}
+
+		[Test]
+		public void RpcRetirementPreservesANewerLease()
+		{
+			const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+			var type = typeof(DesktopClient).GetNestedType("DesktopRpcSession", BindingFlags.NonPublic);
+			var session = Activator.CreateInstance(type, true);
+			var lease = type.GetField("leaseId", flags);
+			lease.SetValue(session, 99UL);
+			var stop = type.GetMethod("Dispose", flags);
+			stop.Invoke(session, [42UL]);
+			Assert.That(lease.GetValue(session), Is.EqualTo(99UL));
+			Assert.That(type.GetField("generation", flags).GetValue(session), Is.EqualTo(0));
+			stop.Invoke(session, [99UL]);
+			Assert.That(lease.GetValue(session), Is.EqualTo(0UL));
+		}
+
+		[Test]
+		public void RpcSessionShutdownBypassesABlockedRequest()
+		{
+			var type = typeof(DesktopClient).GetNestedType("DesktopRpcSession", BindingFlags.NonPublic);
+			var session = Activator.CreateInstance(type, true);
+			var requestLock = type.GetField("sync", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(session);
+			using var entered = new ManualResetEventSlim();
+			using var release = new ManualResetEventSlim();
+			var request = Task.Run(() => { lock (requestLock) { entered.Set(); return release.Wait(2_000); } });
+			try
+			{
+				Assert.That(entered.Wait(1_000), Is.True);
+				var stop = Task.Run(() => type.GetMethod("Dispose", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(session, [0UL]));
+				Assert.That(stop.Wait(500), Is.True, "Shutdown must retire the channel while its native RPC is pending.");
+			}
+			finally { release.Set(); }
+			Assert.That(request.Wait(1_000), Is.True);
+		}
+
+		[Test]
+		public void GrantSequenceRejectsGapsAndUnannouncedRestarts()
+		{
+			var cursor = new DesktopClient.GrantCursor();
+			Assert.That(cursor.Apply(12, 1, 1), Is.False);
+			Assert.That(cursor.Apply(1, 1, 10), Is.True);
+			Assert.That(cursor.Apply(2, 1, 10), Is.True);
+			Assert.That(cursor.Apply(3, 1, 10), Is.True);
+			Assert.That(cursor.Apply(12, 1, 11), Is.True);
+			Assert.That(cursor.Apply(12, 1, 13), Is.False);
+			Assert.That(cursor.Apply(12, 2, 12), Is.False);
+			Assert.That(cursor.Apply(12, 0, 0), Is.False);
+			Assert.That(cursor.Apply(1, 2, 20), Is.True);
+			Assert.That(cursor.Apply(3, 2, 20), Is.True);
+			Assert.That(cursor.Apply(12, 2, 21), Is.True);
+		}
+
+		private static WaylandWindowInfo Window(bool visible = true, string title = "first")
+			=> new(42, title: title, visible: visible);
+
+		private static DesktopWindowMirror Snapshot(ulong epoch = 1, ulong sequence = 10)
+		{
+			var mirror = new DesktopWindowMirror();
+			Assert.That(mirror.Apply(1, epoch, sequence, null, out _), Is.True);
+			Assert.That(mirror.Apply(2, epoch, sequence, Window(), out _), Is.True);
+			Assert.That(mirror.TryRead(out _), Is.False, "a partial snapshot cannot answer a query");
+			Assert.That(mirror.Apply(3, epoch, sequence, null, out _), Is.True);
+			return mirror;
+		}
+
+		[Test]
+		public void SnapshotThenDeltas()
+		{
+			var mirror = Snapshot();
+			Assert.That(mirror.TryRead(out var windows), Is.True);
+			Assert.That(windows.Single().Title, Is.EqualTo("first"));
+			Assert.That(mirror.Apply(9, 1, 11, Window(title: "second"), out _), Is.True);
+			Assert.That(mirror.TryRead(out windows), Is.True);
+			Assert.That(windows.Single().Title, Is.EqualTo("second"));
+		}
+
+		[Test]
+		public void HideKeepsWindowUntilDestroy()
+		{
+			var mirror = Snapshot();
+			Assert.That(mirror.Apply(7, 1, 11, Window(false), out _), Is.True);
+			Assert.That(mirror.TryRead(out var windows), Is.True);
+			Assert.That(windows.Single().Visible, Is.False);
+			Assert.That(mirror.Apply(6, 1, 12, Window(), out _), Is.True);
+			Assert.That(mirror.TryRead(out windows), Is.True);
+			Assert.That(windows.Single().Visible, Is.True);
+			Assert.That(mirror.Apply(5, 1, 13, Window(), out _), Is.True);
+			Assert.That(mirror.TryRead(out windows), Is.True);
+			Assert.That(windows, Is.Empty);
+			Assert.That(mirror.KnowsWindow(42), Is.True, "a destroyed toplevel must not fall back to an X11 child query");
+			Assert.That(mirror.KnowsWindow(43), Is.False, "an X11 child can be queried without belonging to the toplevel snapshot");
+		}
+
+		[TestCase(1UL, 12UL)]
+		[TestCase(2UL, 11UL)]
+		public void GapOrRestartRequiresSnapshot(ulong epoch, ulong sequence)
+		{
+			var mirror = Snapshot();
+			Assert.That(mirror.Apply(9, epoch, sequence, Window(title: "untrusted"), out _), Is.False);
+			Assert.That(mirror.TryRead(out _), Is.False);
+			Assert.That(mirror.Apply(1, 2, 20, null, out _), Is.True);
+			Assert.That(mirror.Apply(2, 2, 20, Window(title: "recovered"), out _), Is.True);
+			Assert.That(mirror.Apply(3, 2, 20, null, out _), Is.True);
+			Assert.That(mirror.TryRead(out var windows), Is.True);
+			Assert.That(windows.Single().Title, Is.EqualTo("recovered"));
+		}
+
+		[Test]
+		public void ReadAfterWriteWaitsForAcknowledgedSequence()
+		{
+			var mirror = Snapshot();
+			using var started = new ManualResetEventSlim();
+			var wait = Task.Run(() => { started.Set(); return mirror.WaitUntil(1, 11, 1_000); });
+			Assert.That(started.Wait(1_000), Is.True);
+			Assert.That(wait.IsCompleted, Is.False);
+			Assert.That(mirror.Apply(9, 1, 11, Window(title: "written"), out _), Is.True);
+			Assert.That(wait.Wait(1_000), Is.True);
+			Assert.That(wait.Result, Is.True);
+			Assert.That(mirror.WaitUntil(1, 12, 20), Is.False, "a missing delta has a bounded wait");
+			mirror.Invalidate();
+			Assert.That(mirror.WaitUntil(1, 11, 1_000), Is.False, "old epoch acknowledgements cannot satisfy a new connection");
+		}
+
+		[Test]
+		public void SnapshotOrderRejectsMismatchedSequence()
+		{
+			var mirror = Snapshot();
+			Assert.That(mirror.Apply(1, 1, 12, null, out _), Is.True);
+			Assert.That(mirror.Apply(2, 1, 13, Window(), out _), Is.False);
+			Assert.That(mirror.TryRead(out _), Is.False);
+		}
+
+		[Test]
+		public void ServiceIdentifiersKeepTheirFullWidthAndStackingOrder()
+		{
+			var mirror = new DesktopWindowMirror();
+			mirror.Apply(1, 1, 0, null, out _);
+			mirror.Apply(2, 1, 0, new WaylandWindowInfo(0, serviceHandle: 0x10000002A, stackingOrder: 2), out _);
+			mirror.Apply(2, 1, 0, new WaylandWindowInfo(0, serviceHandle: 42, stackingOrder: 1), out _);
+			mirror.Apply(3, 1, 0, null, out _);
+			Assert.That(mirror.TryRead(out var windows), Is.True);
+			Assert.That(windows.Select(window => window.ServiceHandle), Is.EqualTo(new[] { 42UL, 0x10000002AUL }));
 		}
 	}
 }

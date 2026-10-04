@@ -173,27 +173,7 @@ namespace Keysharp.Internals.Input.Linux
 				eventQueue.Clear();
 			}
 
-			ReconcileLogicalModifiersFromOs();
-		}
 
-		/// <summary>Reconciles logical modifiers after bypass-hook SendInput.</summary>
-		private void ReconcileLogicalModifiersFromOs()
-		{
-			var sender = script.HookThread.kbdMsSender;
-
-			if (sender == null)
-				return;
-
-			if (KeysharpInputManager.TryGetModifierState(out var logicalMods, out _, out _, out _, out _))
-			{
-				sender.modifiersLRLogical = logicalMods;
-				sender.modifiersLRLogicalNonIgnored = logicalMods;
-			}
-			else
-			{
-				var modsCurrent = sender.GetModifierLRState(true);
-				sender.modifiersLRLogical = sender.modifiersLRLogicalNonIgnored = modsCurrent;
-			}
 		}
 
 		/// <summary>Uses the input service-backed live toggle state after sending a lock key.</summary>
@@ -213,7 +193,7 @@ namespace Keysharp.Internals.Input.Linux
 
 			SendKeyEvent(KeyEventTypes.KeyDownAndUp, vk);
 
-			System.Threading.Thread.Sleep(5);
+			_ = KeysharpInputManager.WaitForSynthesisState();
 
 			if (vk == VK_CAPITAL && toggleValue == ToggleValueType.Off && script.HookThread.IsKeyToggledOn(vk))
 			{
@@ -362,7 +342,7 @@ namespace Keysharp.Internals.Input.Linux
 			return true;
 		}
 
-		private static void FlushRawTextEvents(List<KeysharpInputClient.Input> events)
+		private void FlushRawTextEvents(List<KeysharpInputClient.Input> events)
 		{
 			if (events == null || events.Count == 0)
 				return;
@@ -901,14 +881,20 @@ namespace Keysharp.Internals.Input.Linux
 				QueueInput(input);
 		}
 
-		private static void SendInputBatches(IReadOnlyList<KeysharpInputClient.Input> inputs, KeysharpInputClient.SynthFlags flags = KeysharpInputClient.SynthFlags.None)
+		private void ApplySynthesisModifiers(uint logicalModifiers)
+		{
+			if (LinuxHookThread.CurrentHookClient != null)
+				modifiersLRLogical = modifiersLRLogicalNonIgnored = logicalModifiers;
+		}
+
+		private void SendInputBatches(IReadOnlyList<KeysharpInputClient.Input> inputs, KeysharpInputClient.SynthFlags flags = KeysharpInputClient.SynthFlags.None)
 		{
 			if (inputs.Count == 0)
 				return;
 
 			if (inputs.Count <= MaxInputBatchSize)
 			{
-				KeysharpInputManager.SendInputViaSynthesisChannel(inputs, flags);
+				ApplySynthesisModifiers(KeysharpInputManager.SendInputViaSynthesisChannel(inputs, flags));
 				return;
 			}
 
@@ -930,7 +916,7 @@ namespace Keysharp.Internals.Input.Linux
 				for (var i = 0; i < count; i++)
 					batch[i] = inputs[offset + i];
 
-				KeysharpInputManager.SendInputViaSynthesisChannel(batch, flags);
+				ApplySynthesisModifiers(KeysharpInputManager.SendInputViaSynthesisChannel(batch, flags));
 				offset += count;
 			}
 		}

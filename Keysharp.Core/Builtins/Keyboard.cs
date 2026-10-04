@@ -207,9 +207,6 @@ namespace Keysharp.Builtins
 					if (!mode.TryParseLong(out var parsedDeviceID) || parsedDeviceID <= 0 || parsedDeviceID > uint.MaxValue)
 						return Errors.ValueErrorOccurred($"Unknown key state mode \"{Errors.Describe(mode)}\". Expected L, P, T or a device ID from 1 to 4294967295.", mode);
 
-					if (Keysharp.Internals.Input.Linux.KeysharpInputClient.LibraryAbiMinor < 4)
-						return Errors.ValueErrorOccurred("Reading one device's key state requires keysharp-input client ABI 0.4 or newer.", mode);
-
 					deviceID = (uint)parsedDeviceID;
 					keystatetype = KeyStateTypes.Physical;
 					break;

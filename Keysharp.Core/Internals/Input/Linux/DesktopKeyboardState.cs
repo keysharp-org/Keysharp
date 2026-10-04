@@ -21,126 +21,75 @@ namespace Keysharp.Internals.Input.Linux
 
 	internal sealed class DesktopKeyboardState
 	{
-		internal static readonly DesktopKeyboardState Current = new(
-			revision => DesktopClient.QueryKeyboardState(revision));
-		private const int SnapshotLifetimeMs = 16;
-		private const int FailureBackoffMs = 250;
+		internal static readonly DesktopKeyboardState Current = new(DesktopClient.SubscribeKeyboardState);
 		private readonly object gate = new();
-		private readonly object refreshGate = new();
-		private readonly Func<string, byte[]> query;
-		private readonly Func<long> clock;
-		private readonly Action<Action> scheduleRefresh;
+		private readonly Func<Action<byte[]>, Action<Exception>, IDisposable> subscribe;
+		private IDisposable subscription;
+		private bool starting;
+		private long generation;
 		private DesktopKeyboardSnapshot snapshot;
-		private DesktopKeyboardSnapshot previousKeymap;
-		private long refreshAt;
-		private bool refreshRunning;
-		private bool lastRefreshSucceeded;
 
-		internal DesktopKeyboardState(Func<string, byte[]> query, Func<long> clock = null,
-			Action<Action> scheduleRefresh = null)
-		{
-			this.query = query;
-			this.clock = clock ?? (() => Environment.TickCount64);
-			this.scheduleRefresh = scheduleRefresh ?? (action => Task.Run(action));
-		}
+		internal DesktopKeyboardState(Func<Action<byte[]>, Action<Exception>, IDisposable> subscribe)
+			=> this.subscribe = subscribe;
 
-		/// <summary>Returns the snapshot as it is, refreshing a stale one in the background, so it never waits on IPC.</summary>
 		internal DesktopKeyboardSnapshot Get()
 		{
+			long currentGeneration;
 			lock (gate)
 			{
-				if (clock() >= refreshAt)
-					RefreshInBackgroundLocked();
-
-				return snapshot;
+				if (subscription != null || starting) return snapshot;
+				starting = true;
+				currentGeneration = ++generation;
 			}
-		}
-
-		/// <summary>
-		/// Returns the current state: off the hook thread a stale snapshot is refreshed first, as AutoHotkey reads the
-		/// layout once per Send and key state at each GetKeyState. The hook thread must not wait on IPC, and no reader
-		/// waits on a service whose last refresh failed, so those read as <see cref="Get"/> does.
-		/// </summary>
-		internal DesktopKeyboardSnapshot GetCurrent()
-		{
-			lock (gate)
-			{
-				if (clock() < refreshAt)
-					return snapshot;
-
-				if (!lastRefreshSucceeded || Keysharp.Internals.Input.Hooks.HookThread.InHookCallback)
-				{
-					RefreshInBackgroundLocked();
-					return snapshot;
-				}
-			}
-
-			Refresh();
-
-			lock (gate)
-				return snapshot;
-		}
-
-		private void RefreshInBackgroundLocked()
-		{
-			if (refreshRunning)
-				return;
-
-			refreshRunning = true;
-			scheduleRefresh(RefreshInBackground);
-		}
-
-		private void RefreshInBackground()
-		{
+			IDisposable opened = null;
 			try
 			{
-				Refresh();
-			}
-			finally
-			{
+				opened = subscribe(bytes => Publish(bytes, currentGeneration),
+					_ => Failed(currentGeneration));
 				lock (gate)
-					refreshRunning = false;
+				{
+					if (currentGeneration == generation)
+					{
+						subscription = opened;
+						opened = null;
+						starting = false;
+					}
+				}
+			}
+			catch { Failed(currentGeneration); }
+			finally { opened?.Dispose(); }
+			lock (gate) return snapshot;
+		}
+
+		private void Publish(byte[] bytes, long currentGeneration)
+		{
+			lock (gate)
+			{
+				if (currentGeneration != generation) return;
+				snapshot = Parse(bytes, snapshot);
 			}
 		}
 
-		private void Refresh()
+		private void Failed(long currentGeneration)
 		{
-			lock (refreshGate)
+			IDisposable retired;
+			lock (gate)
 			{
-				DesktopKeyboardSnapshot previous;
-
-				lock (gate)
-				{
-					if (clock() < refreshAt)
-						return;
-
-					previous = previousKeymap;
-				}
-
-				DesktopKeyboardSnapshot refreshed = null;
-
-				try
-				{
-					refreshed = Parse(query(previous?.MapRevision), previous);
-				}
-				catch
-				{
-				}
-
-				lock (gate)
-				{
-					if (refreshed != null)
-					{
-						snapshot = refreshed;
-
-						if (refreshed.Keymap != null)
-							previousKeymap = refreshed;
-					}
-
-					lastRefreshSucceeded = refreshed != null;
-					refreshAt = clock() + (refreshed == null ? FailureBackoffMs : SnapshotLifetimeMs);
-				}
+				if (currentGeneration != generation) return;
+				generation++;
+				retired = subscription;
+				subscription = null;
+				snapshot = null;
+				starting = false;
 			}
+			try { retired?.Dispose(); } catch { }
+		}
+
+		internal void Reset()
+		{
+			long currentGeneration;
+			lock (gate) currentGeneration = generation;
+			Failed(currentGeneration);
 		}
 
 		internal static DesktopKeyboardSnapshot Parse(string json, DesktopKeyboardSnapshot previous = null)

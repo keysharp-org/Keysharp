@@ -90,18 +90,16 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		//The app_id a form is being correlated under, while that is in flight. See CurrentAppId.
 		private static readonly Dictionary<nint, string> correlationAppIds = new();
 		//Forms with a reservation the compositor accepted and Correlate has not yet resolved, with the tick it
-		//expires compositor-side. Correlation only pays the reservation polling (and its grace) for these -
+		//expires compositor-side. Correlation waits for the reservation (and its grace) for these -
 		//and only while the record can still answer; a plain Show whose form is never correlated must not tax
 		//a much later window op. Every other window keeps the plain search.
 		private static readonly Dictionary<nint, long> pendingReservations = new();
 		private static int prewarmed;
 
-		// A freshly-shown window may not be in the compositor's list instantly; poll briefly.
+		// Mapping and compositor publication are asynchronous; wait for their state updates within one budget.
 		private const int CorrelateTimeoutMs = 1000;
-		private const int CorrelatePollMs = 20;
 		// How long a reservation is given to be consumed before the app_id/metadata search starts alongside it.
 		private const int ReservationGraceMs = 250;
-		private const int ReservedGeometryPollMs = 4;
 		//A reservation only has to outlive the Show that follows it; anything longer is a stale entry waiting
 		//to capture an unrelated window of ours.
 		private const int ReservationTtlMs = 2000;
@@ -232,7 +230,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (!Platform.Desktop.IsWaylandSession || Interlocked.Exchange(ref prewarmed, 1) != 0)
 				return;
 
-			_ = Task.Run(() =>
+			new Thread(() =>
 			{
 				try
 				{
@@ -244,7 +242,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				catch
 				{
 				}
-			});
+			}) { IsBackground = true, Name = "Keysharp desktop prewarm" }.Start();
 		}
 
 		/// <summary>
@@ -673,7 +671,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return;
 
 			state.Busy = true;
-			_ = Task.Run(() => Worker(state));
+			new Thread(() => Worker(state)) { IsBackground = true, Name = "Keysharp own window" }.Start();
 		}
 
 		// Refresh correlation metadata and watch newly tracked forms.
@@ -992,12 +990,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			var rect = new Rectangle(tx, ty, WindowInfoBase.Unchanged, WindowInfoBase.Unchanged);
 			var moved = backend.TryMoveResizeWindow(handle, rect, true, false);
 
-			// Verify at most ONCE per window, and only the first placement. The override this defends against is a
-			// map-time race (the compositor's initial placement landing after our move); once any placement has been
-			// resolved, later moves stick on their own, so a drag or a live reposition stays a single round-trip
-			// instead of paying the poll delay on every frame. A move the backend flatly refused (a compositor that
-			// cannot place windows at all) is not worth polling either -- and is left unsettled so a transient
-			// failure doesn't permanently skip verification.
+			// Initial compositor placement can override the first move. Verify it within one bounded budget;
+			// later drag frames need only the mutation acknowledgement.
 			if (settled || !moved)
 				return moved;
 
@@ -1012,7 +1006,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						return false;
 				}
 
-				Thread.Sleep(PositionVerifyDelayMs);
+				_ = DesktopClient.WindowChangeSignal.WaitWithoutInterruption(PositionVerifyDelayMs);
 
 				if (!TryAtTarget(backend, state, generation, handle, tx, ty, out var atTarget) || atTarget)
 					break;
@@ -1066,7 +1060,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				mapGeneration = state.MapGeneration;
 				completion = state.CorrelationCompletion;
 
-				// An attempt for an earlier map is looking for a window that is gone, and ends at its next poll.
+				// An attempt for an earlier map ends when it next observes the form state.
 				if (completion == null || state.CorrelationGeneration != mapGeneration)
 				{
 					completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1148,27 +1142,23 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			{
 				while (true)
 				{
+					var change = DesktopClient.WindowChangeSignal;
 					lock (sync)
 						if (!IsBindableLocked(state, mapGeneration))
 							return null;
 
-					// Exact, and one cheap query, so it goes first. Retried every poll rather than once up front:
-					// the compositor only records the reservation when it CREATES the window, which is after the
-					// first polls have already gone out.
+					// The compositor publishes the consumed reservation when it creates the window.
 					if (reserved && TryClaimReserved(backend, state, mapGeneration, deadline) is { } claimed)
 						return claimed;
 
-					// Give that a moment before falling back to stamping an app_id and matching metadata. Doing
-					// both from the start triples the traffic - and puts a UI-thread Wayland call in every poll -
-					// to race an answer that is about to arrive anyway.
+					// Give the reservation a grace period before stamping an app_id and matching metadata.
 					if (Environment.TickCount64 < graceUntil)
 					{
-						PollWait();
+						_ = change.WaitWithoutInterruption((int)Math.Max(1, graceUntil - Environment.TickCount64));
 						continue;
 					}
 
-					// Retry the stamp only until it takes; once stamped, don't re-invoke the UI-thread setter every
-					// 20ms poll.
+					// Retry the stamp only until the UI thread accepts it.
 					if (!stamped)
 						stamped = TrySetAppIdOnUiThread(form, token);
 
@@ -1184,7 +1174,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					if (Environment.TickCount64 >= deadline)
 					{
 						// If the client accepted the temporary app_id but this backend doesn't expose it, allow one
-						// final conservative metadata match before giving up. During the normal polling window, an
+						// final conservative metadata match before giving up. During correlation, an
 						// accepted app_id disables fallback so we don't race app_id propagation and pick the wrong
 						// same-title/same-size window.
 						if (stamped && backend.TryListWindows(true, out windows) && windows != null
@@ -1196,7 +1186,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						return null;
 					}
 
-					PollWait();
+					_ = change.WaitWithoutInterruption((int)Math.Max(1, deadline - Environment.TickCount64));
 				}
 			}
 			finally
@@ -1241,10 +1231,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			var readable = false;
 			WaylandWindowInfo info = null;
 
-			while (!(readable = backend.TryGetWindow(reserved, out info) && info != null
-					 && info.FrameGeometry.Width > 0 && info.FrameGeometry.Height > 0)
-					&& Environment.TickCount64 < deadline)
-				PollWait(ReservedGeometryPollMs);
+			while (Environment.TickCount64 < deadline)
+			{
+				var change = DesktopClient.WindowChangeSignal;
+				if (readable = backend.TryGetWindow(reserved, out info) && info != null
+					&& info.FrameGeometry.Width > 0 && info.FrameGeometry.Height > 0) break;
+				_ = change.WaitWithoutInterruption((int)Math.Max(1, deadline - Environment.TickCount64));
+			}
 
 			//A window that never became readable is gone (destroyed before committing) or unreadable to this
 			//backend; claiming it would hand the caller a handle that answers nothing.
@@ -1258,7 +1251,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			while (Environment.TickCount64 < deadline)
 			{
-				PollWait();
+				var change = DesktopClient.WindowChangeSignal;
 
 				if (!backend.TryGetWindow(compositorHandle, out var info, out var notFound))
 				{
@@ -1270,19 +1263,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 				if (info.FrameGeometry.Width != width || info.FrameGeometry.Height != height)
 					return;
+				_ = change.WaitWithoutInterruption((int)Math.Max(1, deadline - Environment.TickCount64));
 			}
-		}
-
-		// One poll interval. On the UI thread this must PUMP rather than sleep: that thread IS the GTK main
-		// loop, and a freshly shown window only gets its compositor toplevel - and its first buffer - once the
-		// loop runs. Sleeping here keeps the very thing being waited for from ever happening. No script thread
-		// starts meanwhile, as none does during a move or show in AutoHotkey. Off the UI thread a plain sleep is right.
-		private static void PollWait(int ms = CorrelatePollMs)
-		{
-			if (Script.TheScript?.IsOnMainThread == true)
-				Keysharp.Internals.Flow.SleepWithoutInterruption(ms);
-			else
-				Thread.Sleep(ms);
 		}
 
 		private static WaylandWindowInfo Claim(FormState state, int mapGeneration, WaylandWindowInfo pick)

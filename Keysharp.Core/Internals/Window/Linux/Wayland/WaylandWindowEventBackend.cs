@@ -203,7 +203,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				sink(new WindowEventRaw(type, windowEvent.Handle, now)
 				{
 					Bounds = windowEvent.Bounds,
-					DestroyConfirmed = type == WindowEventType.Close
+					DestroyConfirmed = windowEvent.Kind == WaylandWindowEventKind.Closed
 				});
 		}
 
@@ -211,6 +211,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			=> kind switch
 			{
 				WaylandWindowEventKind.Closed       => (WindowEventType.Close, WindowEventMask.Close),
+				WaylandWindowEventKind.Shown        => (WindowEventType.Show, WindowEventMask.Show),
+				WaylandWindowEventKind.Hidden       => (WindowEventType.Close, WindowEventMask.Close),
 				WaylandWindowEventKind.Activated    => (WindowEventType.Active, WindowEventMask.Active),
 				WaylandWindowEventKind.TitleChanged => (WindowEventType.TitleChange, WindowEventMask.TitleChange),
 				WaylandWindowEventKind.Minimized    => (WindowEventType.Minimize, WindowEventMask.Minimize),

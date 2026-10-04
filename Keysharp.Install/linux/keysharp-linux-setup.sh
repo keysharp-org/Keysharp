@@ -15,10 +15,10 @@ DESKTOP_REPOSITORY=keysharp-org/keysharp-desktop
 
 # A component needs this ABI major and at least this additive minor.
 # Product versions select artifacts; the client ABI decides compatibility.
-INPUT_CLIENT_ABI_MAJOR=0
-INPUT_CLIENT_ABI_MINOR=4
-DESKTOP_CLIENT_ABI_MAJOR=0
-DESKTOP_CLIENT_ABI_MINOR=9
+INPUT_CLIENT_ABI_MAJOR=1
+INPUT_CLIENT_ABI_MINOR=0
+DESKTOP_CLIENT_ABI_MAJOR=1
+DESKTOP_CLIENT_ABI_MINOR=0
 
 channel=auto
 keysharp_version=latest

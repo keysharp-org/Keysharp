@@ -681,6 +681,7 @@ namespace Keysharp.Runtime
 			Application.AddMessageFilter(msgFilter);
 #elif LINUX
 			Keysharp.Internals.Input.Linux.KeysharpInputManager.RegisterOwner(this);
+			Keysharp.Internals.Window.Linux.Wayland.DesktopClient.RegisterOwner(this);
 #endif
 		}
 
@@ -1656,6 +1657,7 @@ namespace Keysharp.Runtime
 #endif
 #if LINUX
 			Teardown(() => Keysharp.Internals.Input.Linux.KeysharpInputManager.DisconnectClients(this));
+			Teardown(() => Keysharp.Internals.Window.Linux.Wayland.DesktopClient.DisconnectClients(this));
 #endif
 			Teardown(() => flowData?.Dispose());
 

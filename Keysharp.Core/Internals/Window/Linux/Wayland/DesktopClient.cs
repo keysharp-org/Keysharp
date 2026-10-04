@@ -18,22 +18,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		Captured
 	}
 
-	/// <summary>Typed client for <c>libkeysharp-desktop.so.0</c>.</summary>
+	/// <summary>Typed client for <c>libkeysharp-desktop.so.1</c>.</summary>
 	internal static unsafe partial class DesktopClient
 	{
 		private const int RequestTimeoutMs = 30_000;
 		private const int AuthorizationTimeoutMs = 125_000;
-		private const int AuthorizationCheckTimeoutMs = 2_000;
 		private const int ProbeTimeoutMs = 2_000;
 		private const int CapabilityCacheMs = 1_000;
 		private const int CapabilityRecheckMaximumMs = 60_000;
-		// How long a session answers a refused scope itself before asking the service again.
-		private const int DenialCacheMs = 1_000;
-		// The service enforces a revocation on every request, so the lease only has to be read often enough for
-		// TrySettleAuthorization to stop answering from scopes the service has revoked.
-		private const int LeaseRefreshIntervalMs = 100;
-		// The reader can only notice a Dispose between polls, so the poll length is how long it lingers after one.
-		private const int EventPollTimeoutMs = 100;
 		private const uint NativeErrorStructSize = 304;
 		private const string AuthorizationPendingMessage =
 			"Desktop authorization is currently being requested.";
@@ -50,7 +42,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private enum ConnectionRole : uint
 		{
 			Rpc = 0,
-			EventStream = 1,
 			AuthorizationLease = 3,
 		}
 
@@ -148,22 +139,19 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				LinuxPermissionScope.None),
 		];
 
-		private static readonly Dictionary<LinuxPermissionScope, DesktopRpcSession> sessions = new()
-		{
-			[LinuxPermissionScope.None] = new(LinuxPermissionScope.None),
-			[LinuxPermissionScope.ScreenCapture] = new(LinuxPermissionScope.ScreenCapture),
-			[LinuxPermissionScope.WindowMonitoring] = new(LinuxPermissionScope.WindowMonitoring),
-			[LinuxPermissionScope.WindowControl] = new(LinuxPermissionScope.WindowControl),
-			[LinuxPermissionScope.ClipboardMonitoring] = new(LinuxPermissionScope.ClipboardMonitoring),
-			[LinuxPermissionScope.InputControl] = new(LinuxPermissionScope.InputControl),
-		};
+		private static readonly DesktopRpcSession fastSession = new();
+		private static readonly DesktopRpcSession slowSession = new();
+
+		private static DesktopRpcSession SessionFor(Operation operation)
+			=> (operation & (Operation.CaptureArea | Operation.CaptureWindow | Operation.CaptureDesktop)) != 0
+				? slowSession : fastSession;
 
 		private static bool Call(Operation operation, Func<DesktopConnection, CallResult> request)
-			=> sessions[ScopeFor(operation)].TryUse(operation, request, out _);
+			=> SessionFor(operation).TryUse(operation, request, out _);
 
 		private static bool Call(Operation operation, Func<DesktopConnection, CallResult> request,
 			out NativeClientStatus status, NativeClientStatus? suppressedFailure = null)
-			=> sessions[ScopeFor(operation)].TryUse(operation, request, out status, suppressedFailure);
+			=> SessionFor(operation).TryUse(operation, request, out status, suppressedFailure);
 
 		private static LinuxPermissionScope ScopeFor(Operation operation)
 		{
@@ -255,7 +243,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		/// <summary>Connects and authorizes the session for <paramref name="scope"/> ahead of its first request.</summary>
 		internal static bool OpenSession(LinuxPermissionScope scope)
-			=> sessions[scope].TryOpen();
+			=> RequestAuthorization(scope, false).Status == PermissionStatus.Granted
+				&& (scope == LinuxPermissionScope.ScreenCapture ? slowSession : fastSession).TryOpen();
 
 		internal static bool ProviderSupportsAbsolutePointer()
 			=> ProviderSupports(Operation.MouseMoveAbsolute);
@@ -324,27 +313,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			byte[] value = null;
 			return Call(Operation.WindowList,
 				connection => connection.WindowList(includeHidden, out value)) ? value : null;
-		}
-
-		/// <summary>
-		/// Every window's handle and nothing else. Runs on the QUERY session, which
-		/// carries no permission scope, so it raises no prompt: a handle says a window
-		/// exists, which is not something a consent dialog can meaningfully ask about.
-		/// Reading a window's title, class, owner or geometry is QueryWindowList, and
-		/// that does need a grant.
-		/// </summary>
-		internal static byte[] QueryWindowHandles()
-		{
-			byte[] value = null;
-			return Call(Operation.WindowHandles,
-				connection => connection.WindowHandles(out value)) ? value : null;
-		}
-
-		internal static byte[] QueryActiveWindow()
-		{
-			byte[] value = null;
-			return Call(Operation.WindowActive,
-				connection => connection.ActiveWindow(out value)) ? value : null;
 		}
 
 		internal static bool FocusWindow(ulong handle)
@@ -460,215 +428,167 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			=> Call(Operation.MouseScroll,
 				connection => connection.MouseScroll(delta, vertical));
 
-		internal static IDisposable WatchWindowEvents(
-			Action<WaylandWindowEventKind, byte[]> handler, Action<Exception> onError = null)
-			=> handler == null ? null : DesktopSubscription.StartWindow(
-				handler, onError);
+		internal static IDisposable WatchWindowEvents(Action<WaylandWindowEventKind, WaylandWindowInfo> handler,
+			Action<Exception> onError = null)
+			=> SubscribeState(1, message => DispatchWindowEvents(message.Kind, message.Window, message.PreviousWindow, handler), onError);
 
-		internal static IDisposable WatchClipboardChanges(
-			Action<string, string[]> handler, Action<Exception> onError = null)
-			=> handler == null ? null : DesktopSubscription.StartClipboard(
-				handler, onError);
+		internal static void DispatchWindowEvents(uint kind, WaylandWindowInfo window, WaylandWindowInfo previous,
+			Action<WaylandWindowEventKind, WaylandWindowInfo> handler)
+		{
+			if (window == null || kind < 4 || kind > 11) return;
+			WaylandWindowEventKind? primary = kind switch
+			{
+				4 => WaylandWindowEventKind.Created, 5 => WaylandWindowEventKind.Closed,
+				6 => WaylandWindowEventKind.Shown, 7 => WaylandWindowEventKind.Hidden,
+				8 => WaylandWindowEventKind.MoveResized, 9 => WaylandWindowEventKind.TitleChanged,
+				10 => window.Active ? WaylandWindowEventKind.Activated : WaylandWindowEventKind.ActiveStateChanged,
+				_ => null
+			};
+			if (primary.HasValue) handler(primary.Value, window);
+			if (previous == null || kind is 4 or 5) return;
+			bool Known(WaylandWindowFields field) => previous.HasKnownField(field) && window.HasKnownField(field);
+			// A full delta can carry several changes even though its wire kind names one.
+			if (kind is not (6 or 7) && Known(WaylandWindowFields.Visible) && previous.Visible != window.Visible)
+				handler(window.Visible ? WaylandWindowEventKind.Shown : WaylandWindowEventKind.Hidden, window);
+			if (kind != 10 && Known(WaylandWindowFields.Active) && previous.Active != window.Active)
+				handler(window.Active ? WaylandWindowEventKind.Activated : WaylandWindowEventKind.ActiveStateChanged, window);
+			if (kind != 9 && Known(WaylandWindowFields.Title) && previous.Title != window.Title)
+				handler(WaylandWindowEventKind.TitleChanged, window);
+			if (kind != 8 && Known(WaylandWindowFields.Frame) && previous.Bounds != window.Bounds)
+				handler(WaylandWindowEventKind.MoveResized, window);
+			if (Known(WaylandWindowFields.Minimized) && previous.Minimized != window.Minimized)
+				handler(window.Minimized ? WaylandWindowEventKind.Minimized : WaylandWindowEventKind.Restored, window);
+		}
+
+		internal static IDisposable WatchClipboardChanges(Action<string, string[]> handler,
+			Action<Exception> onError = null)
+			=> SubscribeState(8, message =>
+			{
+				if (message.Data.Length == 0) return;
+				using var document = System.Text.Json.JsonDocument.Parse(message.Data);
+				var root = document.RootElement;
+				handler(DesktopWindowParser.Text(root, "text"), root.TryGetProperty("mimetypes", out var types)
+					? types.EnumerateArray().Select(item => item.GetString() ?? "").ToArray() : []);
+			}, onError);
+
+		internal static IDisposable SubscribeKeyboardState(Action<byte[]> handler, Action<Exception> onError = null)
+			=> SubscribeState(2, message => handler(message.Data), onError);
 
 		private static readonly object authorizationSync = new();
-		private static readonly object promptSync = new();
+		private static object leaseCreation = new();
+		private static int authorizationGeneration;
 		private static AuthorizationLease authorizationLease;
-		private static long leaseRefreshDue;
 		private static LinuxPermissionScope declinedScopes;
+		private static Script scriptOwner;
+		private static bool clientsStopped;
 
-		internal static PermissionResult RequestAuthorization(
-			LinuxPermissionScope requestedScopes, bool prompt, bool forcePrompt = false)
+		internal static void RegisterOwner(Script script)
 		{
-			if (requestedScopes == LinuxPermissionScope.None
-				|| (requestedScopes & ~DesktopAuthorizationScopes) != 0)
-				return new PermissionResult(PermissionStatus.Unsupported,
-					"Invalid keysharp-desktop permission scope.");
+			lock (authorizationSync) { scriptOwner = script; clientsStopped = false; }
+		}
 
-			if (TrySettleAuthorization(requestedScopes, prompt, forcePrompt, out var settled))
-				return settled;
-
-			if (!prompt && !Monitor.TryEnter(promptSync))
-				return new PermissionResult(PermissionStatus.Unsupported,
-					AuthorizationPendingMessage);
-
-			if (!prompt)
+		internal static void DisconnectClients(Script script)
+		{
+			AuthorizationLease retired;
+			ulong fastLease, slowLease;
+			lock (authorizationSync)
 			{
+				if (!ReferenceEquals(scriptOwner, script)) return;
+				clientsStopped = true;
+				authorizationGeneration++;
+				leaseCreation = new();
+				scriptOwner = null;
+				retired = authorizationLease;
+				authorizationLease = null;
+				declinedScopes = LinuxPermissionScope.None;
+				fastLease = fastSession.LeaseId;
+				slowLease = slowSession.LeaseId;
+				Keysharp.Internals.Input.Linux.DesktopKeyboardState.Current.Reset();
+				Capabilities.Forget();
+			}
+			retired?.Dispose();
+			fastSession.Dispose(fastLease);
+			slowSession.Dispose(slowLease);
+		}
+
+		private static AuthorizationLease GetLease()
+		{
+			object creating;
+			int version;
+			lock (authorizationSync)
+			{
+				if (clientsStopped) throw new ObjectDisposedException("keysharp-desktop session");
+				if (authorizationLease?.IsOpen == true) return authorizationLease;
+				creating = leaseCreation;
+				version = authorizationGeneration;
+			}
+			lock (creating)
+			{
+				AuthorizationLease retired;
+				lock (authorizationSync)
+				{
+					if (clientsStopped || version != authorizationGeneration)
+						throw new ObjectDisposedException("keysharp-desktop session");
+					if (authorizationLease?.IsOpen == true) return authorizationLease;
+					retired = authorizationLease;
+					authorizationLease = null;
+				}
+				retired?.Dispose();
+				var created = new AuthorizationLease();
+				lock (authorizationSync)
+				{
+					if (!clientsStopped && version == authorizationGeneration)
+					{
+						authorizationLease = created;
+						created.PublishCapabilities();
+						return created;
+					}
+				}
+				created.Dispose();
+				throw new ObjectDisposedException("keysharp-desktop session");
+			}
+		}
+
+		internal static PermissionResult RequestAuthorization(LinuxPermissionScope requestedScopes,
+			bool prompt, bool forcePrompt = false)
+		{
+			if (requestedScopes == LinuxPermissionScope.None)
+				return new PermissionResult(PermissionStatus.Granted);
+			if ((requestedScopes & ~DesktopAuthorizationScopes) != 0)
+				return new PermissionResult(PermissionStatus.Unsupported, "Invalid keysharp-desktop permission scope.");
+
+			try
+			{
+				var lease = GetLease();
+				if ((lease.Scopes & requestedScopes) == requestedScopes)
+					return new PermissionResult(PermissionStatus.Granted);
+				lock (authorizationSync)
+				{
+					if (forcePrompt) declinedScopes &= ~requestedScopes;
+					else if (prompt && (declinedScopes & requestedScopes) != 0)
+						return new PermissionResult(PermissionStatus.Denied, "Desktop permission denied.");
+				}
+				if (!prompt && !Monitor.TryEnter(lease.PromptSync))
+					return new PermissionResult(PermissionStatus.Unsupported, AuthorizationPendingMessage);
+				if (prompt) Monitor.Enter(lease.PromptSync);
 				try
 				{
-					return TrySettleAuthorization(requestedScopes, false, forcePrompt,
-						out settled) ? settled : CheckAuthorization(requestedScopes);
-				}
-				finally
-				{
-					Monitor.Exit(promptSync);
-				}
-			}
-
-			// The prompt gate serializes polkit dialogs without holding the lease-state lock.
-			lock (promptSync)
-			{
-				if (TrySettleAuthorization(requestedScopes, prompt, forcePrompt, out settled))
-					return settled;
-
-				return AcquireAuthorization(requestedScopes);
-			}
-		}
-
-		private static PermissionResult CheckAuthorization(
-			LinuxPermissionScope requestedScopes)
-		{
-			try
-			{
-				// Status queries do not need a lease and should not queue behind a prompt in flight on it.
-				using var connection = DesktopConnection.Connect(ConnectionRole.Rpc,
-					AuthorizationCheckTimeoutMs);
-				var result = connection.Authorize(requestedScopes,
-					AuthorizationMode.Check, out _);
-				return result.IsSuccess
-					? new PermissionResult(PermissionStatus.Granted)
-					: PermissionFailure(result);
-			}
-			catch (Exception exception)
-			{
-				DebugLine($"keysharp-desktop authorization check failed: {exception.Message}");
-				return AuthorizationUnavailable(exception);
-			}
-		}
-
-		// Answers from current state alone. Returns false when a native check is needed.
-		private static bool TrySettleAuthorization(LinuxPermissionScope requestedScopes,
-			bool prompt, bool forcePrompt, out PermissionResult result)
-		{
-			lock (authorizationSync)
-			{
-				PruneAuthorizationLeaseLocked();
-				var missing = requestedScopes & ~GrantedScopesLocked();
-
-				if (missing == LinuxPermissionScope.None)
-				{
-					result = new PermissionResult(PermissionStatus.Granted);
-					return true;
-				}
-
-				if (forcePrompt)
-				{
-					declinedScopes &= ~missing;
-				}
-				else if (prompt && (declinedScopes & missing) != 0)
-				{
-					result = new PermissionResult(PermissionStatus.Denied,
-						"Desktop permission denied.");
-					return true;
-				}
-			}
-
-			result = default;
-			return false;
-		}
-
-		private static PermissionResult AcquireAuthorization(
-			LinuxPermissionScope requestedScopes)
-		{
-			LinuxPermissionScope missing;
-
-			lock (authorizationSync)
-				missing = requestedScopes & ~GrantedScopesLocked();
-
-			if (missing == LinuxPermissionScope.None)
-				return new PermissionResult(PermissionStatus.Granted);
-
-			AuthorizationLease lease = null;
-			var created = false;
-
-			try
-			{
-				lock (authorizationSync)
-				{
-					PruneAuthorizationLeaseLocked();
-					lease = authorizationLease;
-				}
-
-				if (lease == null)
-				{
-					lease = new AuthorizationLease(DesktopConnection.Connect(
-						ConnectionRole.AuthorizationLease, AuthorizationTimeoutMs));
-					created = true;
-				}
-
-				var result = lease.Authorize(missing, AuthorizationMode.Request,
-					out var granted);
-
-				if (!result.IsSuccess)
-				{
-					if (created || result.ShouldReconnect
-						|| result.Status == NativeClientStatus.Revoked)
-					{
-						lease.Dispose();
-
-						lock (authorizationSync)
-							if (ReferenceEquals(authorizationLease, lease))
-								authorizationLease = null;
-					}
-
-					if (result.Status == NativeClientStatus.Denied)
-					{
-						lock (authorizationSync)
-							declinedScopes |= missing;
-					}
-
-					return PermissionFailure(result);
-				}
-
-				if (created)
-				{
+					var result = lease.Authorize(requestedScopes, prompt ? AuthorizationMode.Request : AuthorizationMode.Check);
 					lock (authorizationSync)
-						authorizationLease = lease;
+					{
+						if (!ReferenceEquals(authorizationLease, lease) || !lease.IsOpen)
+							return new PermissionResult(PermissionStatus.Unsupported, "The desktop lease has stopped.");
+						if (result.Status == NativeClientStatus.Denied && prompt) declinedScopes |= requestedScopes;
+						else if (result.IsSuccess) declinedScopes &= ~requestedScopes;
+					}
+					return result.IsSuccess ? new PermissionResult(PermissionStatus.Granted) : PermissionFailure(result);
 				}
-
-				lock (authorizationSync)
-					declinedScopes &= ~granted;
-
-				return new PermissionResult(PermissionStatus.Granted);
+				finally { Monitor.Exit(lease.PromptSync); }
 			}
 			catch (Exception exception)
 			{
-				if (created)
-					lease?.Dispose();
-
-				DebugLine($"keysharp-desktop authorization failed: {exception.Message}");
-				return AuthorizationUnavailable(exception);
-			}
-		}
-
-		private static PermissionResult AuthorizationUnavailable(Exception exception)
-		{
-			// A missing library reports through the loader's own multi-line probe list, which says nothing a
-			// user can act on; name the component and how to install it instead.
-			return new PermissionResult(PermissionStatus.Unsupported,
-				exception is DllNotFoundException
-				? "keysharp-desktop is not installed. Install it with keysharp-linux-setup.sh to use window, capture and clipboard operations."
-				: $"keysharp-desktop is unavailable. {exception.Message}");
-		}
-
-		private static LinuxPermissionScope GrantedScopesLocked()
-			=> authorizationLease?.Scopes ?? LinuxPermissionScope.None;
-
-		private static void PruneAuthorizationLeaseLocked()
-		{
-			if (authorizationLease is not { } lease)
-				return;
-
-			var now = Environment.TickCount64;
-
-			if (now < leaseRefreshDue)
-				return;
-
-			leaseRefreshDue = now + LeaseRefreshIntervalMs;
-
-			if (!lease.Refresh())
-			{
-				lease.Dispose();
-				authorizationLease = null;
+				return new PermissionResult(PermissionStatus.Unsupported,
+					$"keysharp-desktop is unavailable; Keysharp requires libkeysharp-desktop client ABI 1.0 (SONAME 1), protocol 3. {exception.Message}");
 			}
 		}
 
@@ -678,23 +598,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				or NativeClientStatus.Cancelled or NativeClientStatus.Revoked
 				? PermissionStatus.Denied : PermissionStatus.Unsupported;
 			return new PermissionResult(status, result.Message);
-		}
-
-		private static bool IsExpectedAuthorizationFailure(in CallResult result)
-			=> IsExpectedAuthorizationFailure(result.Status);
-
-		private static bool IsExpectedAuthorizationFailure(NativeClientStatus status)
-			=> status is NativeClientStatus.Denied or NativeClientStatus.Cancelled;
-
-		// A prompt in flight holds promptSync. Checking a scope against the store meanwhile would only learn that it is
-		// not granted yet, so a session reports the prompt as pending rather than remembering a denial.
-		private static bool AuthorizationPending()
-		{
-			if (!Monitor.TryEnter(promptSync))
-				return true;
-
-			Monitor.Exit(promptSync);
-			return false;
 		}
 
 		private static string Invariant(ulong value)
@@ -712,11 +615,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			string Operation)
 		{
 			internal bool IsSuccess => Status == NativeClientStatus.Ok;
-			internal bool ShouldReconnect => Status == NativeClientStatus.Unavailable
-				|| (Status == NativeClientStatus.Timeout && SystemError != 0);
+			internal bool ShouldReconnect => Status is NativeClientStatus.Unavailable or NativeClientStatus.Timeout;
 			internal bool IsExpectedPollTimeout
 				=> Status == NativeClientStatus.Timeout && SystemError == 0;
-			internal bool ShouldContinueEventPolling => IsSuccess || IsExpectedPollTimeout;
 			internal string Message => NativeClientException.BuildMessage("keysharp-desktop",
 				Operation, Status, Detail, SystemError, Diagnostic);
 			internal Exception Exception => new NativeClientException("keysharp-desktop",
@@ -807,410 +708,173 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
-		// Each scope keeps an authorized connection and briefly caches refusals.
-		private sealed class DesktopRpcSession(LinuxPermissionScope requiredScope)
+		private sealed class DesktopRpcSession
 		{
 			private readonly object sync = new();
+			private readonly object lifecycle = new();
 			private DesktopConnection connection;
-			private long deniedUntil;
+			private int generation;
+			private ulong leaseId;
+			internal ulong LeaseId { get { lock (lifecycle) return leaseId; } }
 
-			internal bool TryUse(Operation operation,
-				Func<DesktopConnection, CallResult> request,
-				out NativeClientStatus status,
-				NativeClientStatus? suppressedFailure = null)
+			internal bool TryUse(Operation operation, Func<DesktopConnection, CallResult> request,
+				out NativeClientStatus status, NativeClientStatus? suppressedFailure = null)
 			{
-				lock (sync)
+				status = NativeClientStatus.Unavailable;
+				DesktopConnection current = null;
+				try
 				{
-					if (!ConnectLocked(out status))
-						return false;
-
-					// The connection stays open: what the service offers is relearned without it.
-					if ((connection.AvailableOperations & operation) != operation && !Capabilities.Offers(operation))
-					{
-						status = NativeClientStatus.Unsupported;
-						return false;
-					}
-
-					return InvokeLocked(request, out status, suppressedFailure);
-				}
-			}
-
-			internal bool TryOpen()
-			{
-				lock (sync)
-					return ConnectLocked(out _);
-			}
-
-			private bool ConnectLocked(out NativeClientStatus status)
-			{
-				status = NativeClientStatus.Ok;
-
-				if (connection?.IsOpen == true)
-					return true;
-
-				ResetLocked();
-
-				// A scope the lease holds is granted in the store, whatever this session was refused before.
-				if (requiredScope != LinuxPermissionScope.None
-					&& !TrySettleAuthorization(requiredScope, false, false, out _))
-				{
-					if (Environment.TickCount64 < deniedUntil)
+					var scope = ScopeFor(operation);
+					if (scope != LinuxPermissionScope.None && RequestAuthorization(scope, false).Status != PermissionStatus.Granted)
 					{
 						status = NativeClientStatus.Denied;
 						return false;
 					}
-
-					if (AuthorizationPending())
+					var lease = GetLease();
+					if (scope == LinuxPermissionScope.WindowControl && lease.HasWindowState && !lease.Windows.WaitReady())
 					{
-						status = NativeClientStatus.Unsupported;
+						status = NativeClientStatus.Timeout;
 						return false;
 					}
-				}
-
-				try
-				{
-					connection = DesktopConnection.Connect(ConnectionRole.Rpc, RequestTimeoutMs, requiredScope);
-					deniedUntil = 0;
-					return true;
-				}
-				catch (NativeClientException exception)
-				{
-					status = exception.Status;
-
-					if (IsExpectedAuthorizationFailure(status))
-						deniedUntil = Environment.TickCount64 + DenialCacheMs;
-					else
+					var expectedEpoch = lease.Windows.Epoch;
+					ulong sequence;
+					CallResult result;
+					lock (sync)
 					{
-						Capabilities.Forget();
-						DebugLine($"keysharp-desktop connection failed: {exception.Message}");
+						int version;
+						lock (lifecycle)
+						{
+							if (!ReferenceEquals(Volatile.Read(ref authorizationLease), lease) || !lease.IsOpen)
+								throw new ObjectDisposedException("keysharp-desktop session");
+							if (leaseId != lease.Id) { generation++; leaseId = lease.Id; }
+							current = connection;
+							version = generation;
+						}
+						if (current?.IsOpen != true || current.LeaseId != lease.Id)
+						{
+							Retire(current);
+							current = DesktopConnection.Connect(ConnectionRole.Rpc, RequestTimeoutMs, leaseId: lease.Id);
+							lock (lifecycle)
+							{
+								if (version != generation || !lease.IsOpen)
+									throw new ObjectDisposedException("keysharp-desktop session");
+								connection = current;
+								Capabilities.Learn(current.Backend, current.AvailableOperations);
+							}
+						}
+						if ((current.AvailableOperations & operation) != operation && !Capabilities.Offers(operation))
+						{
+							status = NativeClientStatus.Unsupported;
+							return false;
+						}
+						(result, sequence) = current.Owner.Invoke(() => (request(current), current.Sequence));
+						if (result.ShouldReconnect || result.Status == NativeClientStatus.Revoked)
+						{
+							Retire(current);
+							if (result.ShouldReconnect) Capabilities.Forget();
+						}
 					}
-
-					return false;
-				}
-				catch (Exception exception)
-				{
-					status = NativeClientStatus.Internal;
-					Capabilities.Forget();
-					DebugLine($"keysharp-desktop connection failed: {exception.Message}");
-					return false;
-				}
-			}
-
-			private bool InvokeLocked(Func<DesktopConnection, CallResult> request,
-				out NativeClientStatus status, NativeClientStatus? suppressedFailure)
-			{
-				try
-				{
-					var result = request(connection);
 					status = result.Status;
-
-					if (result.IsSuccess)
-						return true;
-
-					if (result.Status != suppressedFailure)
-						DebugLine($"keysharp-desktop {result.Operation} failed ({result.Status}): {result.Message}");
-
-					// A lost reply can follow a completed mutation. Reconnect on the next call without replaying it.
-					if (result.Status == NativeClientStatus.Revoked || result.ShouldReconnect)
-					{
-						ResetLocked();
-						if (result.ShouldReconnect)
-							Capabilities.Forget();
-					}
-
-					return false;
-				}
-				catch (Exception exception)
-				{
-					DebugLine($"keysharp-desktop operation failed: {exception.Message}");
-					status = NativeClientStatus.Internal;
-					ResetLocked();
-					Capabilities.Forget();
-					return false;
-				}
-			}
-
-			private void ResetLocked()
-			{
-				connection?.Dispose();
-				connection = null;
-			}
-		}
-
-		// Holds this process's desktop grants and reads revocations without waiting on a busy connection.
-		private sealed class AuthorizationLease : IDisposable
-		{
-			private readonly DesktopConnection connection;
-			private uint scopes;
-			private int disposed;
-
-			internal AuthorizationLease(DesktopConnection connection)
-				=> this.connection = connection;
-
-			internal LinuxPermissionScope Scopes
-				=> (LinuxPermissionScope)Volatile.Read(ref scopes);
-
-			/// <summary>
-			/// Applies the revocations the service has sent and reports whether the lease still holds anything.
-			/// Never waits: while a request is in flight on the lease, that request applies them itself, so the
-			/// scopes already known stand.
-			/// </summary>
-			internal bool Refresh()
-			{
-				if (Volatile.Read(ref disposed) != 0)
-					return false;
-
-				if (connection.TryLeaseRefresh(out var result, out var granted))
-				{
+					if (!lease.IsOpen) { status = NativeClientStatus.Revoked; return false; }
 					if (!result.IsSuccess)
 					{
-						DebugLine($"keysharp-desktop authorization lease ended: {result.Message}");
+						if (status != suppressedFailure) DebugLine(result.Message);
 						return false;
 					}
-
-					Volatile.Write(ref scopes, (uint)granted);
-				}
-
-				return Scopes != LinuxPermissionScope.None;
-			}
-
-			internal CallResult Authorize(LinuxPermissionScope requestedScopes,
-				AuthorizationMode mode, out LinuxPermissionScope granted)
-			{
-				if (Volatile.Read(ref disposed) != 0)
-					throw new ObjectDisposedException(nameof(AuthorizationLease));
-
-				var result = connection.Authorize(requestedScopes, mode, out granted);
-
-				if (result.IsSuccess)
-					Volatile.Write(ref scopes, (uint)granted);
-
-				return result;
-			}
-
-			public void Dispose()
-			{
-				if (Interlocked.Exchange(ref disposed, 1) != 0)
-					return;
-
-				Volatile.Write(ref scopes, 0);
-				connection.Dispose();
-			}
-		}
-
-		private sealed class DesktopSubscription : IDisposable
-		{
-			private readonly DesktopConnection connection;
-			private readonly Action<WaylandWindowEventKind, byte[]> windowHandler;
-			private readonly Action<string, string[]> clipboardHandler;
-			private readonly Action<Exception> onError;
-			private int disposed;
-
-			private DesktopSubscription(DesktopConnection connection,
-				Action<WaylandWindowEventKind, byte[]> windowHandler,
-				Action<string, string[]> clipboardHandler,
-				Action<Exception> onError)
-			{
-				this.connection = connection;
-				this.windowHandler = windowHandler;
-				this.clipboardHandler = clipboardHandler;
-				this.onError = onError;
-			}
-
-			internal static IDisposable StartWindow(Action<WaylandWindowEventKind, byte[]> handler,
-				Action<Exception> onError)
-				=> Start(Operation.WindowWatch, handler, null, onError);
-
-			internal static IDisposable StartClipboard(Action<string, string[]> handler,
-				Action<Exception> onError)
-				=> Start(Operation.ClipboardWatch, null, handler, onError);
-
-			private static IDisposable Start(Operation operation,
-				Action<WaylandWindowEventKind, byte[]> windowHandler,
-				Action<string, string[]> clipboardHandler,
-				Action<Exception> onError)
-			{
-				DesktopConnection connection = null;
-
-				try
-				{
-					connection = DesktopConnection.Connect(ConnectionRole.EventStream,
-						RequestTimeoutMs);
-
-					var authorization = connection.Authorize(ScopeFor(operation),
-						AuthorizationMode.Check, out _);
-
-					if (!authorization.IsSuccess)
+					if (scope == LinuxPermissionScope.WindowControl && sequence != 0 && lease.HasWindowState
+						&& !lease.Windows.WaitUntil(expectedEpoch, sequence))
 					{
-						if (IsExpectedAuthorizationFailure(authorization))
-						{
-							connection.Dispose();
-							return null;
-						}
-
-						throw authorization.Exception;
+						lease.Resynchronize(1);
+						status = NativeClientStatus.Timeout;
+						return false;
 					}
-
-					if ((connection.AvailableOperations & operation) == 0)
-						throw new NotSupportedException(
-							"The desktop event operation is unavailable.");
-
-					var subscribe = operation == Operation.WindowWatch
-						? connection.SubscribeWindowWatch()
-						: connection.SubscribeClipboardWatch();
-
-					if (!subscribe.IsSuccess)
-						throw subscribe.Exception;
-
-					var subscription = new DesktopSubscription(connection,
-						windowHandler, clipboardHandler, onError);
-					// The reader waits in the service for the life of the subscription, so it does not hold a pool thread.
-					new Thread(subscription.ReadEvents)
-					{
-						IsBackground = true,
-						Name = "keysharp-desktop events"
-					}.Start();
-					connection = null;
-					return subscription;
+					return true;
 				}
 				catch (Exception exception)
 				{
-					connection?.Dispose();
-					DebugLine($"keysharp-desktop event setup failed: {exception.Message}");
-					try { onError?.Invoke(exception); } catch { }
-					return null;
+					DebugLine($"keysharp-desktop requires client ABI 1.0 / protocol 3: {exception.Message}");
+					Retire(current);
+					Capabilities.Forget();
+					return false;
 				}
 			}
 
-			private void ReadEvents()
+			internal bool TryOpen() => TryUse(Operation.None, _ => new CallResult(NativeClientStatus.Ok, 0, 0, "", "open"), out _);
+
+			internal void Dispose(ulong retiredLease)
 			{
-				try
+				DesktopConnection retired;
+				lock (lifecycle)
 				{
-					while (Volatile.Read(ref disposed) == 0)
-					{
-						CallResult result;
-
-						if (windowHandler != null)
-						{
-							result = connection.NextWindowEvent(EventPollTimeoutMs,
-								out var kind, out var json);
-
-							if (result.IsSuccess && WindowEventKind(kind) is { } eventKind)
-							{
-								if (Volatile.Read(ref disposed) != 0)
-									break;
-
-								try { windowHandler(eventKind, json); }
-								catch (Exception exception)
-								{
-									DebugLine($"keysharp-desktop window event handler failed: {exception.Message}");
-								}
-							}
-						}
-						else
-						{
-							result = connection.NextClipboardEvent(EventPollTimeoutMs,
-								out var text, out var mimetypes);
-
-							if (result.IsSuccess)
-							{
-								if (Volatile.Read(ref disposed) != 0)
-									break;
-
-								try { clipboardHandler(text, mimetypes); }
-								catch (Exception exception)
-								{
-									DebugLine($"keysharp-desktop clipboard event handler failed: {exception.Message}");
-								}
-							}
-						}
-
-						if (result.ShouldContinueEventPolling)
-							continue;
-
-						throw result.Exception;
-					}
+					if (leaseId != retiredLease) return;
+					generation++;
+					retired = connection;
+					connection = null;
+					leaseId = 0;
 				}
-				catch (Exception exception) when (Volatile.Read(ref disposed) == 0)
-				{
-					DebugLine($"keysharp-desktop event stream failed: {exception.Message}");
-					try { onError?.Invoke(exception); } catch { }
-				}
-				finally
-				{
-					Interlocked.Exchange(ref disposed, 1);
-					connection.Dispose();
-				}
+				retired?.Dispose();
 			}
 
-			// The reader releases its connection after the current poll or callback finishes.
-			public void Dispose() => Interlocked.Exchange(ref disposed, 1);
+			private void Retire(DesktopConnection retired)
+			{
+				lock (lifecycle)
+					if (ReferenceEquals(connection, retired)) connection = null;
+				retired?.Dispose();
+			}
 		}
 
 		private sealed partial class DesktopConnection : IDisposable
 		{
-			private readonly object gate = new();
 			private IntPtr handle;
+			internal readonly LinuxConnectionOwner Owner;
+			internal Action<StateMessage> StateReceived;
+			internal Action<Exception> StreamFailed;
+			internal Backend Backend { get; private set; }
+			internal Operation AvailableOperations { get; private set; }
+			internal ulong LeaseId { get; private set; }
+			internal ulong Sequence => Native.ksd_connection_sequence(handle);
+			internal bool IsOpen => handle != IntPtr.Zero && Owner.IsRunning;
 
-			private DesktopConnection(IntPtr handle, Backend backend,
-				Operation availableOperations)
+			private DesktopConnection()
 			{
-				this.handle = handle;
-				Backend = backend;
-				AvailableOperations = availableOperations;
+				Owner = new LinuxConnectionOwner("keysharp-desktop connection",
+					() => handle == IntPtr.Zero ? -1 : Native.ksd_connection_fd(handle), DrainState,
+					() =>
+					{
+						if (handle != IntPtr.Zero) Native.ksd_disconnect(handle);
+						handle = IntPtr.Zero;
+						StreamFailed?.Invoke(new IOException("keysharp-desktop connection ended."));
+					});
+				Owner.Start();
 			}
 
-			internal Backend Backend { get; }
-			internal Operation AvailableOperations { get; }
-
-			internal bool IsOpen
+			internal static DesktopConnection Connect(ConnectionRole role, int timeoutMs, ulong leaseId = 0)
 			{
-				get { lock (gate) return handle != IntPtr.Zero; }
-			}
-
-			/// <summary>Connects, and with <paramref name="requestedScopes"/> also checks them: the service refuses
-			/// the connection unless every one is granted.</summary>
-			internal static DesktopConnection Connect(ConnectionRole role, int timeoutMs,
-				LinuxPermissionScope requestedScopes = LinuxPermissionScope.None)
-			{
-				Native.ksd_connect_options_init(out var options);
-				Native.ksd_service_info_init(out var info);
-				var error = new NativeError { StructSize = NativeErrorStructSize };
-				IntPtr nativeHandle = IntPtr.Zero;
-
+				var connection = new DesktopConnection();
 				try
 				{
-					options.Role = (uint)role;
-					options.AuthorizationMode = (uint)AuthorizationMode.Check;
-					options.RequestedScopes = (uint)requestedScopes;
-					options.TimeoutMs = checked((uint)timeoutMs);
-					var status = (NativeClientStatus)Native.ksd_connect(ref options,
-						ref nativeHandle, ref info, ref error);
-					var result = Result(status, in error, "connect");
-
-					if (!result.IsSuccess)
-						throw result.Exception;
-
-					var reportedBackend = (Backend)info.Backend;
-					var backend = Enum.IsDefined(reportedBackend)
-						? reportedBackend : Backend.Generic;
-					var operations = (Operation)info.AvailableOperations;
-
-					if (info.ClientAbiMajor != 0 || info.ClientAbiMinor < 9)
-						throw new InvalidDataException(
-							$"libkeysharp-desktop client ABI {info.ClientAbiMajor}.{info.ClientAbiMinor} "
-							+ "is incompatible; Keysharp requires ABI 0.9 or later.");
-
-					var connection = new DesktopConnection(nativeHandle, backend, operations);
-					nativeHandle = IntPtr.Zero;
-					Capabilities.Learn(backend, operations);
+					connection.Owner.Invoke(() =>
+					{
+						Native.ksd_connect_options_init(out var options);
+						Native.ksd_service_info_init(out var info);
+						var error = new NativeError { StructSize = NativeErrorStructSize };
+						options.Role = (uint)role;
+						options.AuthorizationMode = (uint)AuthorizationMode.Check;
+						options.TimeoutMs = checked((uint)timeoutMs);
+						options.LeaseId = leaseId;
+						var result = Result((NativeClientStatus)Native.ksd_connect(ref options,
+							ref connection.handle, ref info, ref error), in error, "connect");
+						if (!result.IsSuccess) throw result.Exception;
+						if (info.ClientAbiMajor != 1)
+							throw new InvalidDataException($"libkeysharp-desktop ABI {info.ClientAbiMajor}.{info.ClientAbiMinor} is incompatible; Keysharp requires client ABI 1.0 / protocol 3.");
+						connection.Backend = Enum.IsDefined((Backend)info.Backend) ? (Backend)info.Backend : Backend.Generic;
+						connection.AvailableOperations = (Operation)info.AvailableOperations;
+						connection.LeaseId = info.LeaseId;
+						return true;
+					});
 					return connection;
 				}
-				finally
-				{
-					if (nativeHandle != IntPtr.Zero)
-						Native.ksd_disconnect(nativeHandle);
-				}
+				catch { connection.Dispose(); throw; }
 			}
 
 			internal CallResult Authorize(LinuxPermissionScope scopes,
@@ -1222,36 +886,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						out nativeGranted, ref error));
 				granted = (LinuxPermissionScope)nativeGranted;
 				return result;
-			}
-
-			/// <summary>
-			/// Refreshes an authorization lease without waiting. Returns false, and leaves the caller with the scopes
-			/// it already knows, while another call holds the connection, since a request in flight applies any
-			/// revocation itself, and once the lease has been disposed on another thread, which clears them.
-			/// </summary>
-			internal bool TryLeaseRefresh(out CallResult result, out LinuxPermissionScope granted)
-			{
-				result = default;
-				granted = LinuxPermissionScope.None;
-
-				if (!Monitor.TryEnter(gate))
-					return false;
-
-				try
-				{
-					if (handle == IntPtr.Zero)
-						return false;
-
-					var error = new NativeError { StructSize = NativeErrorStructSize };
-					var status = (NativeClientStatus)Native.ksd_lease_refresh(handle, out var nativeGranted, ref error);
-					result = Result(status, in error, "refresh authorization lease");
-					granted = (LinuxPermissionScope)nativeGranted;
-					return true;
-				}
-				finally
-				{
-					Monitor.Exit(gate);
-				}
 			}
 
 			internal CallResult CaptureArea(int x, int y, uint width, uint height,
@@ -1329,18 +963,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					(IntPtr connection, ref NativeString result, ref NativeError error)
 						=> Native.ksd_window_list_json(connection,
 							includeHidden ? 1u : 0u, ref result, ref error), out value);
-
-			internal CallResult WindowHandles(out byte[] value)
-				=> ReadUtf8("list window handles",
-					(IntPtr connection, ref NativeString result, ref NativeError error)
-						=> Native.ksd_window_handles_json(connection, ref result, ref error),
-					out value);
-
-			internal CallResult ActiveWindow(out byte[] value)
-				=> ReadUtf8("query active window",
-					(IntPtr connection, ref NativeString result, ref NativeError error)
-						=> Native.ksd_window_active_json(connection, ref result, ref error),
-					out value);
 
 			internal CallResult CursorPosition(out Point point)
 			{
@@ -1514,72 +1136,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						=> Native.ksd_mouse_scroll(connection, delta,
 							vertical ? 1u : 0u, ref error));
 
-			internal CallResult SubscribeWindowWatch()
-				=> Invoke("subscribe to window events",
-					(IntPtr connection, ref NativeError error)
-						=> Native.ksd_window_watch_subscribe(connection, ref error));
-
-			internal CallResult SubscribeClipboardWatch()
-				=> Invoke("subscribe to clipboard events",
-					(IntPtr connection, ref NativeError error)
-						=> Native.ksd_clipboard_watch_subscribe(connection, ref error));
-
-			internal CallResult NextWindowEvent(int timeoutMs, out ushort kind,
-				out byte[] json)
-			{
-				Native.ksd_window_event_init(out var nativeEvent);
-				kind = 0;
-				json = null;
-
-				try
-				{
-					var result = Invoke("wait for window event",
-						(IntPtr connection, ref NativeError error)
-							=> Native.ksd_window_watch_next(connection,
-								checked((uint)timeoutMs), ref nativeEvent, ref error));
-
-					if (result.IsSuccess)
-					{
-						kind = nativeEvent.Kind;
-						json = CopyUtf8(in nativeEvent.WindowJson);
-					}
-
-					return result;
-				}
-				finally
-				{
-					Native.ksd_window_event_clear(ref nativeEvent);
-				}
-			}
-
-			internal CallResult NextClipboardEvent(int timeoutMs, out string text,
-				out string[] mimetypes)
-			{
-				Native.ksd_clipboard_event_init(out var nativeEvent);
-				text = null;
-				mimetypes = null;
-
-				try
-				{
-					var result = Invoke("wait for clipboard event",
-						(IntPtr connection, ref NativeError error)
-							=> Native.ksd_clipboard_watch_next(connection,
-								checked((uint)timeoutMs), ref nativeEvent, ref error));
-
-					if (result.IsSuccess)
-					{
-						text = CopyString(in nativeEvent.Text);
-						mimetypes = CopyStringList(in nativeEvent.Mimetypes);
-					}
-
-					return result;
-				}
-				finally
-				{
-					Native.ksd_clipboard_event_clear(ref nativeEvent);
-				}
-			}
-
 			private CallResult ReadString(string operation, NativeStringCall call,
 				out string value)
 			{
@@ -1628,32 +1184,27 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			private CallResult Invoke(string operation, NativeCall call)
 			{
-				lock (gate)
+				try
 				{
-					ThrowIfClosed();
-					var error = new NativeError { StructSize = NativeErrorStructSize };
-					var status = (NativeClientStatus)call(handle, ref error);
-					return Result(status, in error, operation);
+					return Owner.Invoke(() =>
+					{
+						ThrowIfClosed();
+						var error = new NativeError { StructSize = NativeErrorStructSize };
+						var result = Result((NativeClientStatus)call(handle, ref error), in error, operation);
+						if (result.ShouldReconnect) Dispose();
+						return result;
+					});
 				}
+				catch (TimeoutException) { Dispose(); throw; }
 			}
 
 			private void ThrowIfClosed()
 			{
-				if (handle == IntPtr.Zero)
+				if (!IsOpen)
 					throw new ObjectDisposedException(nameof(DesktopConnection));
 			}
 
-			public void Dispose()
-			{
-				lock (gate)
-				{
-					if (handle == IntPtr.Zero)
-						return;
-
-					Native.ksd_disconnect(handle);
-					handle = IntPtr.Zero;
-				}
-			}
+			public void Dispose() => Owner.Dispose();
 		}
 
 		private delegate uint NativeCall(IntPtr connection, ref NativeError error);
@@ -1664,20 +1215,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			in NativeError error, string operation)
 			=> new(status, error.Detail, error.SystemError,
 				error.GetMessage(), operation);
-
-		private static WaylandWindowEventKind? WindowEventKind(ushort kind)
-			=> kind switch
-			{
-				1 => WaylandWindowEventKind.Created,
-				2 => WaylandWindowEventKind.Closed,
-				3 => WaylandWindowEventKind.Activated,
-				4 => WaylandWindowEventKind.TitleChanged,
-				5 => WaylandWindowEventKind.Minimized,
-				6 => WaylandWindowEventKind.Restored,
-				7 => WaylandWindowEventKind.MoveResized,
-				8 => WaylandWindowEventKind.ActiveStateChanged,
-				_ => null,
-			};
 
 		private static byte[] CopyBytes(in NativeBytes bytes)
 		{
@@ -1853,7 +1390,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			internal IntPtr SocketPath;
 			internal uint TimeoutMs;
 			internal uint Flags;
-			private fixed ulong reserved[4];
+			internal ulong LeaseId;
+			private fixed ulong reserved[3];
 		}
 
 		[StructLayout(LayoutKind.Sequential)]
@@ -1866,7 +1404,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			internal ulong AvailableOperations;
 			internal uint Backend;
 			private uint reserved0;
-			private fixed ulong reserved[4];
+			internal ulong LeaseId;
+			private fixed ulong reserved[3];
 		}
 
 		[StructLayout(LayoutKind.Sequential)]
@@ -1934,29 +1473,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			private fixed uint reserved[8];
 		}
 
-		[StructLayout(LayoutKind.Sequential)]
-		private struct NativeWindowEvent
-		{
-			internal uint StructSize;
-			internal ushort Kind;
-			private ushort reserved0;
-			internal NativeString WindowJson;
-			private fixed uint reserved[8];
-		}
-
-		[StructLayout(LayoutKind.Sequential)]
-		private struct NativeClipboardEvent
-		{
-			internal uint StructSize;
-			private uint reserved0;
-			internal NativeString Text;
-			internal NativeStringList Mimetypes;
-			private fixed uint reserved[8];
-		}
-
 		private static partial class Native
 		{
-			private const string Library = "libkeysharp-desktop.so.0";
+			private const string Library = "libkeysharp-desktop.so.1";
 
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern void ksd_connect_options_init(out NativeConnectOptions options);
@@ -1982,11 +1501,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern void ksd_capture_init(out NativeCapture capture);
 
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern void ksd_window_event_init(out NativeWindowEvent value);
 
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern void ksd_clipboard_event_init(out NativeClipboardEvent value);
 
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern void ksd_bytes_clear(ref NativeBytes value);
@@ -2000,11 +1515,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern void ksd_capture_clear(ref NativeCapture capture);
 
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern void ksd_window_event_clear(ref NativeWindowEvent value);
 
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern void ksd_clipboard_event_clear(ref NativeClipboardEvent value);
 
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksd_connect(ref NativeConnectOptions options,
@@ -2017,9 +1528,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			internal static extern uint ksd_authorize(IntPtr connection, uint mode,
 				uint requestedScopes, out uint grantedScopes, ref NativeError error);
 
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern uint ksd_lease_refresh(IntPtr connection,
-				out uint grantedScopes, ref NativeError error);
 
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksd_capture_area(IntPtr connection,
@@ -2038,14 +1546,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksd_window_list_json(IntPtr connection,
 				uint includeHidden, ref NativeString value, ref NativeError error);
-
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern uint ksd_window_handles_json(IntPtr connection,
-				ref NativeString value, ref NativeError error);
-
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern uint ksd_window_active_json(IntPtr connection,
-				ref NativeString value, ref NativeError error);
 
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksd_cursor_position(IntPtr connection,
@@ -2145,21 +1645,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			internal static extern uint ksd_mouse_scroll(IntPtr connection,
 				int delta, uint vertical, ref NativeError error);
 
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern uint ksd_window_watch_subscribe(IntPtr connection,
-				ref NativeError error);
 
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern uint ksd_window_watch_next(IntPtr connection,
-				uint timeoutMs, ref NativeWindowEvent value, ref NativeError error);
 
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern uint ksd_clipboard_watch_subscribe(IntPtr connection,
-				ref NativeError error);
 
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern uint ksd_clipboard_watch_next(IntPtr connection,
-				uint timeoutMs, ref NativeClipboardEvent value, ref NativeError error);
 		}
 	}
 }

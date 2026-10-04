@@ -71,10 +71,7 @@ namespace Keysharp.Internals.Input.Keyboard
 					// The HKL, dereferenced by VkKeyScanEx / LayoutHasAltGr.
 					value = hasFixedThread ? Platform.Keys.GetKeyboardLayout(fixedThread) : Platform.Keys.GetKeyboardLayout();
 #elif LINUX
-					// The active xkb layout group — the only per-send-varying value the mapper needs
-					// (the keymap itself is provider-cached), so it is what we snapshot here. The desktop state is
-					// brought current first, once per Send, and the characters that follow read that snapshot.
-					_ = Keysharp.Internals.Input.Linux.DesktopKeyboardState.Current.GetCurrent();
+					// Snapshot the active xkb group once per Send; the mapper applies the pushed desktop state.
 					value = (nint)KeyCodes.GetActiveLayoutGroup();
 #else
 					// macOS: the current keyboard-layout data pointer (provided for symmetry; the mapper

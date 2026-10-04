@@ -54,6 +54,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		internal nint ParentHandle { get; }
 		internal nint TopLevelHandle { get; }
 		internal WaylandWindowFields KnownFields { get; }
+		internal ulong ServiceHandle { get; }
+		internal ulong ServiceParentHandle { get; }
+		internal ulong StackingOrder { get; }
 		private WindowInfoBase nonChildParentWindow;
 		private WindowInfoBase parentWindow;
 
@@ -64,8 +67,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 								   bool visible = false, bool alwaysOnTop = false, bool decorated = true,
 								   object transparency = null, bool onCurrentWorkspace = true,
 								   nint parentHandle = 0, nint topLevelHandle = 0, string captureId = "",
-								   WaylandWindowFields knownFields = WaylandWindowFields.All) : base(handle)
+								   WaylandWindowFields knownFields = WaylandWindowFields.All,
+								   ulong serviceHandle = 0, ulong serviceParentHandle = 0, ulong stackingOrder = 0) : base(handle)
 		{
+			ServiceHandle = serviceHandle == 0 ? (ulong)handle : serviceHandle;
+			ServiceParentHandle = serviceParentHandle;
+			StackingOrder = stackingOrder;
 			CompositorId = compositorId ?? string.Empty;
 			CaptureId = captureId ?? string.Empty;
 			winTitle = title ?? string.Empty;

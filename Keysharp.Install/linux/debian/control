@@ -28,8 +28,8 @@ Depends: ${misc:Depends},
          libatspi2.0-0t64 | libatspi2.0-0,
          at-spi2-core,
          pulseaudio-utils
-Recommends: keysharp-input-client-abi-0 (>= 0.4),
-            keysharp-desktop-client-abi-0 (>= 0.9),
+Recommends: keysharp-input-client-abi-1 (>= 1.0),
+            keysharp-desktop-client-abi-1 (>= 1.0),
             libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37
 Description: Cross-platform C# port and enhancement of AutoHotkey
  Keysharp runs AutoHotkey v2 scripts. It works on its own, but its

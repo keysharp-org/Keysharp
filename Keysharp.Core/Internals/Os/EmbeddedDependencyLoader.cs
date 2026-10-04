@@ -52,7 +52,7 @@ namespace Keysharp.Internals.Os
 			if (rs == null)
 			{
 #if LINUX
-				if (libName is "libkeysharp-input.so.0" or "libkeysharp-desktop.so.0")
+				if (libName is "libkeysharp-input.so.1" or "libkeysharp-desktop.so.1")
 				{
 					//The loader's own search goes first so that LD_LIBRARY_PATH, or a copy beside the executable,
 					//still wins; NixOS keeps its system libraries where that search never looks.

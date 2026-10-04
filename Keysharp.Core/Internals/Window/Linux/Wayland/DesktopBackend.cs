@@ -8,7 +8,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 	{
 		internal const string X11BackendKey = "x11";
 		internal static readonly DesktopBackend X11 = new(X11BackendKey,
-			"X11 (keysharp-desktop)", nativeHandles: true, usePushWindowEvents: false);
+			"X11 (keysharp-desktop)", nativeHandles: true);
 
 		private readonly object windowListSync = new();
 		private readonly SyntheticWindowHandleMap<string> handles = new();
@@ -48,10 +48,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (sink == null || !SupportsWindowEvents)
 				return null;
 
-			void OnEvent(WaylandWindowEventKind kind, byte[] json)
+			void OnEvent(WaylandWindowEventKind kind, WaylandWindowInfo serviceWindow)
 			{
-				if (TryParseWindowEvent(json, out var window))
+				lock (windowListSync)
 				{
+					var window = ResolveWindow(serviceWindow);
+					RememberWindows([window], false);
 					var bounds = window.FrameGeometry.Width > 0 && window.FrameGeometry.Height > 0
 						? window.FrameGeometry : (Rectangle?)null;
 					sink(new WaylandWindowEvent(kind, window.Handle) { Bounds = bounds });
@@ -67,6 +69,19 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		public bool TryListWindows(bool includeHidden, out IReadOnlyList<WaylandWindowInfo> windows)
 		{
+			if (DesktopClient.TryReadWindows(out var state))
+			{
+				lock (windowListSync)
+				{
+					if (!DesktopClient.TryReadCachedWindows(out state)) { windows = []; return false; }
+					var all = state.Select(ResolveWindow).ToArray();
+					RememberWindows(all, true);
+					windows = includeHidden ? all : all.Where(window => window.Visible).ToArray();
+					return true;
+				}
+			}
+			if (SupportsPushWindowEvents) { windows = []; return false; }
+			// Providers without a watch cannot maintain an authoritative mirror.
 			lock (windowListSync)
 				return TryParseWindowList(DesktopClient.QueryWindowList(includeHidden),
 					includeHidden, out windows);
@@ -101,6 +116,24 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (!TryGetServiceHandle(handle, out var id))
 				return false;
 
+			if (DesktopClient.TryReadWindows(out var state))
+			{
+				lock (windowListSync)
+				{
+					if (!DesktopClient.TryReadCachedWindows(out state)) return false;
+					var serviceWindow = state.FirstOrDefault(candidate => candidate.ServiceHandle == id);
+					if (serviceWindow != null)
+					{
+						window = ResolveWindow(serviceWindow);
+						RememberWindows([window], false);
+						return true;
+					}
+					if (!nativeHandles || DesktopClient.IsMirroredWindow(id)) { notFound = true; return false; }
+				}
+				// X11 child and frame XIDs are outside the authoritative toplevel snapshot.
+			}
+			else if (SupportsPushWindowEvents) return false;
+
 			var json = DesktopClient.QueryWindow(id, out var status);
 
 			// The list answers the same question only where the provider has no per-window query.
@@ -129,7 +162,15 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		public bool TryGetActiveWindow(out WaylandWindowInfo window)
-			=> TryParseWindow(DesktopClient.QueryActiveWindow(), out window);
+		{
+			if (TryListWindows(true, out var windows))
+			{
+				window = windows.LastOrDefault(candidate => candidate.Active);
+				return window != null;
+			}
+			window = null;
+			return false;
+		}
 
 		public bool TryGetWindowAt(int x, int y, out WaylandWindowInfo window)
 			=> TryGetWindowAt(x, y, false, out window);
@@ -380,24 +421,23 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					captureIds[window.Handle] = window.CaptureId;
 		}
 
+		private WaylandWindowInfo ResolveWindow(WaylandWindowInfo value)
+		{
+			var handle = Resolve(value.ServiceHandle.ToString(CultureInfo.InvariantCulture));
+			return new(handle, value.CompositorId,
+				value.Title, value.AppId, value.PID, value.FrameGeometry, value.ClientGeometry, value.SurfaceGeometry,
+				value.Active, value.Minimized, value.Maximized, value.Visible, value.AlwaysOnTop, value.Decorated,
+				value.Transparency, value.OnCurrentWorkspace,
+				value.ServiceParentHandle == 0 ? value.ParentHandle : Resolve(value.ServiceParentHandle.ToString(CultureInfo.InvariantCulture)),
+				value.ServiceParentHandle == 0 ? handle : value.TopLevelHandle,
+				value.CaptureId, value.KnownFields, value.ServiceHandle, value.ServiceParentHandle, value.StackingOrder);
+		}
+
 		private bool TryParseWindow(ReadOnlyMemory<byte> json, out WaylandWindowInfo window)
 		{
 			lock (windowListSync)
 			{
 				var parsed = DesktopWindowParser.TrySingle(json, Resolve, out window);
-
-				if (parsed)
-					RememberWindows([window], false);
-
-				return parsed;
-			}
-		}
-
-		private bool TryParseWindowEvent(ReadOnlyMemory<byte> json, out WaylandWindowInfo window)
-		{
-			lock (windowListSync)
-			{
-				var parsed = DesktopWindowParser.TryWindowEvent(json, Resolve, out window);
 
 				if (parsed)
 					RememberWindows([window], false);

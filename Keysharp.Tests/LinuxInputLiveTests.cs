@@ -747,8 +747,7 @@ namespace Keysharp.Tests
 
 		private sealed class LiveHookFixture : IDisposable
 		{
-			private readonly CancellationTokenSource cancellation = new();
-			private Task reader;
+			private readonly KeysharpInputClient lease;
 			private Exception readerFailure;
 
 			internal KeysharpInputClient Hook { get; }
@@ -763,8 +762,11 @@ namespace Keysharp.Tests
 				if (subscribeMouse)
 					capabilities |= KeysharpInputClient.Operations.HookMouse |
 						KeysharpInputClient.Operations.SynthesizeMouse;
-				Hook = KeysharpInputClient.Connect(capabilities, role: KeysharpInputClient.ConnectionRole.CallbackStream);
-				Sender = KeysharpInputClient.Connect(capabilities);
+				lease = KeysharpInputClient.Connect(capabilities);
+				Hook = KeysharpInputClient.Connect(capabilities,
+					role: KeysharpInputClient.ConnectionRole.CallbackStream, lease: lease);
+				Sender = KeysharpInputClient.Connect(capabilities,
+					role: KeysharpInputClient.ConnectionRole.Rpc, lease: lease);
 				Hook.SubscribeHook(KeysharpInputClient.HookType.KeyboardLowLevel);
 
 				if (subscribeMouse)
@@ -772,25 +774,8 @@ namespace Keysharp.Tests
 			}
 
 			internal void StartReader(Action<KeysharpInputClient.HookEvent> handler)
-			{
-				reader = Task.Run(() =>
-				{
-					try
-					{
-						while (!cancellation.IsCancellationRequested)
-							if (Hook.TryReadHookEvent(out var hookEvent))
-								handler(hookEvent);
-					}
-					catch (Exception ex) when (cancellation.IsCancellationRequested)
-					{
-						_ = ex;
-					}
-					catch (Exception ex)
-					{
-						readerFailure = ex;
-					}
-				});
-			}
+				=> Hook.SetHookEventHandler((_, hookEvent) => handler(hookEvent),
+					error => readerFailure = error);
 
 			internal void ThrowReaderFailure()
 			{
@@ -800,10 +785,9 @@ namespace Keysharp.Tests
 
 			public void Dispose()
 			{
-				cancellation.Cancel();
 				Hook.Dispose();
 				Sender.Dispose();
-				try { reader?.Wait(TestTimeout); } catch { }
+				lease.Dispose();
 			}
 		}
 #endif

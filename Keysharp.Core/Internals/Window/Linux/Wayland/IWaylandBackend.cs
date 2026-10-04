@@ -34,7 +34,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		Minimized,
 		Restored,
 		MoveResized,
-		ActiveStateChanged
+		ActiveStateChanged,
+		Shown,
+		Hidden
 	}
 
 	/// <summary>A normalized window event produced by an <see cref="IWaylandBackend"/> event source, carrying the

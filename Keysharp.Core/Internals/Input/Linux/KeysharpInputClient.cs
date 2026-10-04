@@ -7,7 +7,7 @@ using Keysharp.Internals.Linux;
 
 namespace Keysharp.Internals.Input.Linux
 {
-	/// <summary>Typed client for <c>libkeysharp-input.so.0</c>.</summary>
+	/// <summary>Typed client for <c>libkeysharp-input.so.1</c>.</summary>
 	internal sealed unsafe class KeysharpInputClient : IDisposable
 	{
 		internal const string SocketEnvironmentVariable = "KEYSHARP_INPUT_SOCKET";
@@ -19,7 +19,6 @@ namespace Keysharp.Internals.Input.Linux
 		internal const int DeviceButtonCapacity = 128;
 		internal const int DefaultRequestTimeoutMs = 5000;
 		internal const int AuthorizationTimeoutMs = 125_000;
-		internal const int HookPollTimeoutMs = 500;
 		private const int NestedHookLimit = 16;
 		private const LinuxPermissionScope ManagedScopes =
 			LinuxPermissionScope.InputMonitoring | LinuxPermissionScope.InputControl;
@@ -28,21 +27,11 @@ namespace Keysharp.Internals.Input.Linux
 		private static readonly Native.DeviceVisitor GamepadVisitorThunk = CollectGamepad;
 		private static readonly uint NativeServiceInfoStructSize =
 			checked((uint)sizeof(NativeServiceInfo));
-		private static readonly Lazy<uint> libraryAbiMinor = new(() =>
-		{
-			try
-			{
-				return Native.ksi_client_abi_minor();
-			}
-			catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException or BadImageFormatException)
-			{
-				return 0u;
-			}
-		});
 
 		internal enum ConnectionRole : uint
 		{
 			Rpc = 0,
+			Lease = 1,
 			CallbackStream = 2,
 		}
 
@@ -190,10 +179,14 @@ namespace Keysharp.Internals.Input.Linux
 			ulong EventId, uint Generation, uint StrikeCount, uint RetryAfterMs);
 		internal readonly record struct PointerPosition(int X, int Y, int XMin,
 			int XMax, int YMin, int YMax);
+		[System.Runtime.CompilerServices.InlineArray(KeyStateBitmapBytes)]
+		internal struct KeyStateBitmap
+		{
+			private byte element;
+		}
+
 		internal readonly record struct KeyStateSnapshot(uint ModifiersLR, bool CapsLock,
-			bool NumLock, bool ScrollLock, byte[] LogicalKeys, byte[] PhysicalKeys);
-		internal readonly record struct ModifierStateSnapshot(uint LogicalModifiersLR,
-			uint PhysicalModifiersLR, bool CapsLock, bool NumLock, bool ScrollLock);
+			bool NumLock, bool ScrollLock, KeyStateBitmap LogicalKeys, KeyStateBitmap PhysicalKeys);
 		internal readonly record struct PointerButtons(uint LogicalButtons, uint PhysicalButtons);
 		internal readonly record struct GamepadAxis(uint Code, int Minimum, int Maximum);
 		internal readonly record struct GamepadInfo(uint DeviceId, string Name,
@@ -203,7 +196,83 @@ namespace Keysharp.Internals.Input.Linux
 		internal readonly record struct GamepadState(uint DeviceId, ulong Generation,
 			int ButtonCount, uint Buttons, int[] AxisValues);
 
-		private readonly Lock nativeLock = new();
+		internal sealed class KeyboardMirror
+		{
+			private readonly object gate = new();
+			private KeyStateSnapshot? snapshot;
+			private ulong sequence, acknowledgedSequence;
+			private uint physicalModifiers, acknowledgedModifiers;
+			private bool awaitingSnapshot = true;
+
+			internal bool Publish(ulong next, KeyStateSnapshot state, uint physical, bool initial)
+			{
+				lock (gate)
+				{
+					if (!initial && awaitingSnapshot) return true;
+					if (!initial && next != sequence + 1)
+					{
+						snapshot = null;
+						awaitingSnapshot = true;
+						Monitor.PulseAll(gate);
+						return false;
+					}
+					snapshot = state;
+					sequence = next;
+					physicalModifiers = physical;
+					awaitingSnapshot = false;
+					Monitor.PulseAll(gate);
+					return true;
+				}
+			}
+
+			internal void Acknowledge(ulong atSequence, uint logical)
+			{
+				lock (gate)
+					if (atSequence > acknowledgedSequence)
+					{
+						acknowledgedSequence = atSequence;
+						acknowledgedModifiers = logical;
+					}
+			}
+
+			internal bool TryRead(out KeyStateSnapshot state, out uint physical)
+			{
+				lock (gate)
+				{
+					state = snapshot.GetValueOrDefault();
+					if (acknowledgedSequence > sequence)
+						state = state with { ModifiersLR = acknowledgedModifiers };
+					physical = physicalModifiers;
+					return snapshot.HasValue;
+				}
+			}
+
+			internal void Invalidate()
+			{
+				lock (gate) { snapshot = null; awaitingSnapshot = true; Monitor.PulseAll(gate); }
+			}
+
+			internal bool WaitForAcknowledgement(int timeoutMs)
+			{
+				var deadline = Environment.TickCount64 + timeoutMs;
+				lock (gate)
+				{
+					while (snapshot.HasValue && sequence < acknowledgedSequence)
+					{
+						var remaining = deadline - Environment.TickCount64;
+						if (remaining <= 0 || !Monitor.Wait(gate, (int)remaining)) return false;
+					}
+					return snapshot.HasValue;
+				}
+			}
+		}
+
+		private readonly LinuxConnectionOwner owner;
+		private readonly KeysharpInputClient lease;
+		private readonly KeyboardMirror keyboardState = new();
+		private Action<KeysharpInputClient, HookEvent> hookEventHandler;
+		private Action<Exception> streamErrorHandler;
+		private Action<KeysharpInputClient> leaseStateHandler;
 		private readonly ConnectionRole connectionRole;
 		private readonly nint[] nestedReplies = new nint[NestedHookLimit];
 		private readonly ulong[] nestedEventIds = new ulong[NestedHookLimit];
@@ -217,12 +286,15 @@ namespace Keysharp.Internals.Input.Linux
 		private GCHandle callbackHandle;
 		private Action<KeysharpInputClient, HookEvent> nestedHookEventHandler;
 		private Action<HookQuarantine> hookQuarantineHandler;
-		private volatile Func<bool> leaseLivenessProbe;
 
 		private KeysharpInputClient(nint connection, ConnectionRole role,
-			LinuxPermissionScope grantedScopes, Operations availableOperations)
+			LinuxPermissionScope grantedScopes, Operations availableOperations,
+			LinuxConnectionOwner owner, KeysharpInputClient lease, ulong leaseId)
 		{
 			this.connection = connection;
+			this.owner = owner;
+			this.lease = lease;
+			LeaseId = leaseId;
 			connectionRole = role;
 			GrantedScopes = grantedScopes;
 			AvailableOperations = availableOperations;
@@ -230,15 +302,15 @@ namespace Keysharp.Internals.Input.Linux
 
 		internal LinuxPermissionScope GrantedScopes
 		{
-			get => (LinuxPermissionScope)(uint)Volatile.Read(ref grantedScopes);
+			get => disposePending ? LinuxPermissionScope.None
+				: lease?.GrantedScopes ?? (LinuxPermissionScope)(uint)Volatile.Read(ref grantedScopes);
 			private set => Volatile.Write(ref grantedScopes, unchecked((int)(uint)value));
 		}
 		internal Operations AvailableOperations { get; }
-		internal bool IsConnected => !disposePending && Volatile.Read(ref connection) != 0;
-
-		/// <summary>The loaded library's client ABI minor version, or 0 when the library cannot be loaded.
-		/// Newer entry points are gated on it because a missing export only fails when first called.</summary>
-		internal static uint LibraryAbiMinor => libraryAbiMinor.Value;
+		internal ulong LeaseId { get; }
+		internal bool ReaderRunning => owner.IsRunning;
+		internal bool IsConnected => !disposePending && owner.IsRunning && Volatile.Read(ref connection) != 0
+			&& (lease == null || lease.IsConnected);
 
 		internal static string DefaultSocketPath
 		{
@@ -251,7 +323,29 @@ namespace Keysharp.Internals.Input.Linux
 
 		internal static KeysharpInputClient Connect(Operations requested = Operations.None,
 			string socketPath = null, int requestTimeoutMs = DefaultRequestTimeoutMs,
-			ConnectionRole role = ConnectionRole.Rpc)
+			ConnectionRole role = ConnectionRole.Lease, KeysharpInputClient lease = null)
+		{
+			KeysharpInputClient client = null;
+			var owner = new LinuxConnectionOwner($"keysharp-input {role}",
+				() => client == null || client.connection == 0
+					|| role == ConnectionRole.CallbackStream && client.hookEventHandler == null
+					? -1 : Native.ksi_connection_fd(client.connection),
+				() => client?.Drain() ?? false, () => client?.Cleanup());
+			owner.Start();
+			try
+			{
+				return owner.Invoke(() =>
+				{
+					client = ConnectCore(owner, requested, socketPath, requestTimeoutMs, role, lease);
+					if (role == ConnectionRole.Lease) client.SubscribeKeyState();
+					return client;
+				});
+			}
+			catch { owner.Dispose(); throw; }
+		}
+
+		private static KeysharpInputClient ConnectCore(LinuxConnectionOwner owner, Operations requested,
+			string socketPath, int requestTimeoutMs, ConnectionRole role, KeysharpInputClient lease)
 		{
 			if ((requested & ~Operations.All) != 0)
 				throw new ArgumentOutOfRangeException(nameof(requested));
@@ -263,6 +357,7 @@ namespace Keysharp.Internals.Input.Linux
 			options.AuthorizationMode = (uint)AuthorizationMode.Check;
 			options.RequestedScopes = (uint)RequiredScopes(requested);
 			options.TimeoutMs = checked((uint)requestTimeoutMs);
+			options.LeaseId = lease?.LeaseId ?? 0;
 			var socketPathMemory = socketPath == null ? 0 : Marshal.StringToCoTaskMemUTF8(socketPath);
 			options.SocketPath = socketPathMemory;
 
@@ -275,27 +370,27 @@ namespace Keysharp.Internals.Input.Linux
 				try
 				{
 					if (info.StructSize != NativeServiceInfoStructSize
-						|| info.ClientAbiMajor != 0 || info.ClientAbiMinor < 2)
+						|| info.ClientAbiMajor != 1)
 						throw new InvalidDataException(
-							$"Unsupported keysharp-input client ABI {info.ClientAbiMajor}.{info.ClientAbiMinor}.");
+							$"Keysharp requires keysharp-input client ABI 1.0 (libkeysharp-input.so.1); found {info.ClientAbiMajor}.{info.ClientAbiMinor}.");
 					if ((info.GrantedScopes & ~(uint)ManagedScopes) != 0)
 						throw new InvalidDataException("keysharp-input returned unknown capability bits.");
 
 					var client = new KeysharpInputClient(connection, role,
 						(LinuxPermissionScope)info.GrantedScopes,
-						(Operations)info.AvailableOperations & Operations.All);
+						(Operations)info.AvailableOperations & Operations.All, owner, lease, info.LeaseId);
 					connection = 0;
 
 					if ((client.AvailableOperations & requested) != requested)
 					{
-						client.Dispose();
+						client.Cleanup();
 						throw new NativeClientException("keysharp-input", "connect",
 							NativeClientStatus.Unsupported, 0, 0,
 							"keysharp-input does not provide the requested operations.");
 					}
 					if (!client.HasOperations(requested))
 					{
-						client.Dispose();
+						client.Cleanup();
 						throw new NativeClientException("keysharp-input", "connect",
 							NativeClientStatus.Denied, 0, 0,
 							"keysharp-input has not granted the requested permission.");
@@ -318,48 +413,47 @@ namespace Keysharp.Internals.Input.Linux
 
 		internal void SetNestedHookEventHandler(Action<KeysharpInputClient, HookEvent> handler)
 		{
-			lock (nativeLock)
+			if (!owner.IsOwnerThread) { owner.Invoke(() => { SetNestedHookEventHandler(handler); return true; }); return; }
+			ThrowIfDisposed();
+			nestedHookEventHandler = handler;
+			var allocated = false;
+			if (handler != null && !callbackHandle.IsAllocated)
 			{
-				ThrowIfDisposed();
-				nestedHookEventHandler = handler;
-				var allocated = false;
-				if (handler != null && !callbackHandle.IsAllocated)
-				{
-					callbackHandle = GCHandle.Alloc(this);
-					allocated = true;
-				}
-
-				try
-				{
-					Native.ksi_error_init(out var error);
-					var status = (NativeClientStatus)Native.ksi_set_nested_hook_handler(
-						connection, handler == null ? null : NestedHookThunk,
-						handler == null ? 0 : GCHandle.ToIntPtr(callbackHandle), ref error);
-					ThrowIfFailed(status, "configure nested hook callback", error);
-				}
-				catch
-				{
-					if (allocated)
-						callbackHandle.Free();
-					throw;
-				}
-
-				if (handler == null && callbackHandle.IsAllocated)
-					callbackHandle.Free();
+				callbackHandle = GCHandle.Alloc(this);
+				allocated = true;
 			}
+
+			try
+			{
+				Native.ksi_error_init(out var error);
+				var status = (NativeClientStatus)Native.ksi_set_nested_hook_handler(
+					connection, handler == null ? null : NestedHookThunk,
+					handler == null ? 0 : GCHandle.ToIntPtr(callbackHandle), ref error);
+				ThrowIfFailed(status, "configure nested hook callback", error);
+			}
+			catch
+			{
+				if (allocated)
+					callbackHandle.Free();
+				throw;
+			}
+
+			if (handler == null && callbackHandle.IsAllocated)
+				callbackHandle.Free();
 		}
 
 		internal void SetHookQuarantineHandler(Action<HookQuarantine> handler)
 			=> hookQuarantineHandler = handler;
-		internal void SetLeaseLivenessProbe(Func<bool> probe) => leaseLivenessProbe = probe;
-		internal void InvalidateScopes(LinuxPermissionScope scopes)
-			=> Interlocked.And(ref grantedScopes,
-				unchecked((int)~(uint)(scopes & ManagedScopes)));
+		internal void RefreshLeaseState()
+		{
+			if (lease != null) { lease.RefreshLeaseState(); return; }
+			owner.Invoke(() => { while (Drain()) { } return true; });
+		}
 
 		internal bool HasOperations(Operations operations)
 		{
 			var requiredScopes = RequiredScopes(operations);
-			return (AvailableOperations & operations) == operations
+			return IsConnected && (AvailableOperations & operations) == operations
 				&& (GrantedScopes & requiredScopes) == requiredScopes;
 		}
 
@@ -378,35 +472,23 @@ namespace Keysharp.Internals.Input.Linux
 
 		internal BlockInputMask SetBlockInput(BlockInputMask mask)
 		{
+			if (!owner.IsOwnerThread) return owner.Invoke(() => SetBlockInput(mask));
 			if ((mask & ~(BlockInputMask.Keyboard | BlockInputMask.Mouse)) != 0)
 				throw new ArgumentOutOfRangeException(nameof(mask));
 			if (mask != BlockInputMask.None)
 				RequireOperations(Operations.BlockInput);
 
-			lock (nativeLock)
-			{
-				ThrowIfDisposed();
-				Native.ksi_error_init(out var error);
-				var status = (NativeClientStatus)Native.ksi_set_block_input(connection,
-					(uint)mask, out var effective, ref error);
-				ThrowIfFailed(status, "set block input", error);
-				return (BlockInputMask)effective;
-			}
-		}
-
-		internal void Ping()
-		{
-			lock (nativeLock)
-			{
-				ThrowIfDisposed();
-				Native.ksi_error_init(out var error);
-				ThrowIfFailed((NativeClientStatus)Native.ksi_ping(connection, ref error),
-					"ping", error);
-			}
+			ThrowIfDisposed();
+			Native.ksi_error_init(out var error);
+			var status = (NativeClientStatus)Native.ksi_set_block_input(connection,
+				(uint)mask, out var effective, ref error);
+			ThrowIfFailed(status, "set block input", error);
+			return (BlockInputMask)effective;
 		}
 
 		internal Operations SubscribeHook(HookType hookType)
 		{
+			if (!owner.IsOwnerThread) return owner.Invoke(() => SubscribeHook(hookType));
 			var operation = hookType switch
 			{
 				HookType.KeyboardLowLevel => Operations.HookKeyboard,
@@ -415,36 +497,32 @@ namespace Keysharp.Internals.Input.Linux
 			};
 			RequireOperations(operation);
 
-			lock (nativeLock)
-			{
-				ThrowIfDisposed();
-				Native.ksi_error_init(out var error);
-				var status = (NativeClientStatus)Native.ksi_hook_subscribe(connection,
-					(uint)hookType, out var activeOperations, ref error);
-				ThrowIfFailed(status, "subscribe hook", error);
-				return (Operations)activeOperations;
-			}
+			ThrowIfDisposed();
+			Native.ksi_error_init(out var error);
+			var status = (NativeClientStatus)Native.ksi_hook_subscribe(connection,
+				(uint)hookType, out var activeOperations, ref error);
+			ThrowIfFailed(status, "subscribe hook", error);
+			return (Operations)activeOperations;
 		}
 
 		internal Operations UnsubscribeHook(HookType hookType)
 		{
+			if (!owner.IsOwnerThread) return owner.Invoke(() => UnsubscribeHook(hookType));
 			if (hookType is not (HookType.KeyboardLowLevel or HookType.MouseLowLevel))
 				throw new ArgumentOutOfRangeException(nameof(hookType));
 
-			lock (nativeLock)
-			{
-				ThrowIfDisposed();
-				Native.ksi_error_init(out var error);
-				var status = (NativeClientStatus)Native.ksi_hook_unsubscribe(connection,
-					(uint)hookType, out var activeOperations, ref error);
-				ThrowIfFailed(status, "unsubscribe hook", error);
-				return (Operations)activeOperations;
-			}
+			ThrowIfDisposed();
+			Native.ksi_error_init(out var error);
+			var status = (NativeClientStatus)Native.ksi_hook_unsubscribe(connection,
+				(uint)hookType, out var activeOperations, ref error);
+			ThrowIfFailed(status, "unsubscribe hook", error);
+			return (Operations)activeOperations;
 		}
 
-		internal void SendInput(IReadOnlyList<Input> inputs,
+		internal uint SendInput(IReadOnlyList<Input> inputs,
 			SynthFlags flags = SynthFlags.None, ulong parentHookEventId = 0)
 		{
+			if (!owner.IsOwnerThread) return owner.Invoke(() => SendInput(inputs, flags, parentHookEventId));
 			ArgumentNullException.ThrowIfNull(inputs);
 			if (inputs.Count > MaxInputsPerRequest)
 				throw new ArgumentOutOfRangeException(nameof(inputs));
@@ -458,7 +536,7 @@ namespace Keysharp.Internals.Input.Linux
 				&& (nestedDepth == 0 || parentHookEventId != nestedEventIds[nestedDepth - 1]))
 				throw new InvalidOperationException("Synthesis does not match the current hook event.");
 			if (inputs.Count == 0)
-				return;
+				return 0;
 
 			var required = RequiredSynthesisOperations(inputs);
 			NativeInput[] rented = null;
@@ -475,13 +553,14 @@ namespace Keysharp.Internals.Input.Linux
 				RequireOperations(required);
 
 				fixed (NativeInput* pointer = nativeInputs)
-				lock (nativeLock)
 				{
 					ThrowIfDisposed();
 					Native.ksi_error_init(out var error);
 					var status = (NativeClientStatus)Native.ksi_synthesize(connection,
-						pointer, (uint)inputs.Count, (uint)flags, ref error);
+						pointer, (uint)inputs.Count, (uint)flags, out var modifiers, ref error);
 					ThrowIfFailed(status, "synthesize input", error);
+					(lease ?? this).keyboardState.Acknowledge(Native.ksi_connection_sequence(connection), modifiers);
+					return modifiers;
 				}
 			}
 			finally
@@ -509,121 +588,116 @@ namespace Keysharp.Internals.Input.Linux
 
 		internal bool TryQueryKeyState(uint deviceID, out KeyStateSnapshot state)
 		{
+			if (!owner.IsOwnerThread)
+			{
+				var result = owner.Invoke(() => { var success = TryQueryKeyState(deviceID, out var value); return (success, value); });
+				state = result.value;
+				return result.success;
+			}
 			RequireOperations(Operations.QueryKeyState);
+			if (deviceID == 0)
+				return TryGetKeyStateSnapshot(out state, out _);
 			state = default;
 
-			lock (nativeLock)
-			{
-				ThrowIfDisposed();
-				Native.ksi_key_state_init(out var native);
-				Native.ksi_error_init(out var error);
-				var status = deviceID == 0
-					? Native.ksi_get_key_state(connection, ref native, ref error)
-					: Native.ksi_get_device_key_state(connection, deviceID, ref native, ref error);
+			ThrowIfDisposed();
+			Native.ksi_key_state_init(out var native);
+			Native.ksi_error_init(out var error);
+			var status = Native.ksi_get_device_key_state(connection, deviceID, ref native, ref error);
 
-				if ((NativeClientStatus)status == NativeClientStatus.NotFound)
-					return false;
+			if ((NativeClientStatus)status == NativeClientStatus.NotFound)
+				return false;
 
-				// A service older than ABI 0.4 rejects the device ID as a malformed request.
-				if (deviceID != 0 && (NativeClientStatus)status == NativeClientStatus.InvalidRequest)
-					throw new DeviceKeyStateUnsupportedException();
-
-				ThrowIfFailed((NativeClientStatus)status, "query key state", error);
-				var logical = new byte[KeyStateBitmapBytes];
-				var physical = new byte[KeyStateBitmapBytes];
-				new ReadOnlySpan<byte>(native.LogicalKeys, KeyStateBitmapBytes).CopyTo(logical);
-				new ReadOnlySpan<byte>(native.PhysicalKeys, KeyStateBitmapBytes).CopyTo(physical);
-				state = new(native.ModifiersLR, native.CapsLock != 0, native.NumLock != 0,
-					native.ScrollLock != 0, logical, physical);
-				return true;
-			}
-		}
-
-		internal ModifierStateSnapshot QueryModifierState()
-		{
-			RequireOperations(Operations.QueryModifiers);
-			lock (nativeLock)
-			{
-				ThrowIfDisposed();
-				Native.ksi_modifier_state_init(out var state);
-				Native.ksi_error_init(out var error);
-				ThrowIfFailed((NativeClientStatus)Native.ksi_get_modifier_state(
-					connection, ref state, ref error), "query modifiers", error);
-				return new(state.LogicalModifiersLR, state.PhysicalModifiersLR,
-					state.CapsLock != 0, state.NumLock != 0, state.ScrollLock != 0);
-			}
+			ThrowIfFailed((NativeClientStatus)status, "query key state", error);
+			KeyStateBitmap logical = default, physical = default;
+			new ReadOnlySpan<byte>(native.LogicalKeys, KeyStateBitmapBytes).CopyTo(logical);
+			new ReadOnlySpan<byte>(native.PhysicalKeys, KeyStateBitmapBytes).CopyTo(physical);
+			state = new(native.ModifiersLR, native.CapsLock != 0, native.NumLock != 0,
+				native.ScrollLock != 0, logical, physical);
+			return true;
 		}
 
 		internal bool TryGetPointerPosition(out PointerPosition position)
 		{
-			RequireOperations(Operations.QueryPointerPosition);
-			lock (nativeLock)
+			if (!owner.IsOwnerThread)
 			{
-				ThrowIfDisposed();
-				Native.ksi_pointer_position_init(out var native);
-				Native.ksi_error_init(out var error);
-				ThrowIfFailed((NativeClientStatus)Native.ksi_get_pointer_position(
-					connection, ref native, ref error), "query pointer position", error);
-				position = new(native.X, native.Y, native.XMin, native.XMax,
-					native.YMin, native.YMax);
-				return native.Valid != 0;
+				var result = owner.Invoke(() => { var success = TryGetPointerPosition(out var value); return (success, value); });
+				position = result.value;
+				return result.success;
 			}
+			RequireOperations(Operations.QueryPointerPosition);
+			ThrowIfDisposed();
+			Native.ksi_pointer_position_init(out var native);
+			Native.ksi_error_init(out var error);
+			ThrowIfFailed((NativeClientStatus)Native.ksi_get_pointer_position(
+				connection, ref native, ref error), "query pointer position", error);
+			position = new(native.X, native.Y, native.XMin, native.XMax,
+				native.YMin, native.YMax);
+			return native.Valid != 0;
 		}
 
 		internal bool TryGetPointerButtons(out PointerButtons buttons)
 		{
-			RequireOperations(Operations.QueryPointerButtons);
-			lock (nativeLock)
+			if (!owner.IsOwnerThread)
 			{
-				ThrowIfDisposed();
-				Native.ksi_pointer_buttons_init(out var native);
-				Native.ksi_error_init(out var error);
-				ThrowIfFailed((NativeClientStatus)Native.ksi_get_pointer_buttons(
-					connection, ref native, ref error), "query pointer buttons", error);
-				buttons = new(native.LogicalButtons, native.PhysicalButtons);
-				return native.Valid != 0;
+				var result = owner.Invoke(() => { var success = TryGetPointerButtons(out var value); return (success, value); });
+				buttons = result.value;
+				return result.success;
 			}
+			RequireOperations(Operations.QueryPointerButtons);
+			ThrowIfDisposed();
+			Native.ksi_pointer_buttons_init(out var native);
+			Native.ksi_error_init(out var error);
+			ThrowIfFailed((NativeClientStatus)Native.ksi_get_pointer_buttons(
+				connection, ref native, ref error), "query pointer buttons", error);
+			buttons = new(native.LogicalButtons, native.PhysicalButtons);
+			return native.Valid != 0;
 		}
 
 		internal bool TryGetIdleTime(out ulong milliseconds)
 		{
-			RequireOperations(Operations.QueryIdleTime);
-			lock (nativeLock)
+			if (!owner.IsOwnerThread)
 			{
-				ThrowIfDisposed();
-				Native.ksi_idle_time_init(out var native);
-				Native.ksi_error_init(out var error);
-				ThrowIfFailed((NativeClientStatus)Native.ksi_get_idle_time(
-					connection, ref native, ref error), "query idle time", error);
-				milliseconds = native.IdleTimeMs;
-				return native.Valid != 0;
+				var result = owner.Invoke(() => { var success = TryGetIdleTime(out var value); return (success, value); });
+				milliseconds = result.value;
+				return result.success;
 			}
+			RequireOperations(Operations.QueryIdleTime);
+			ThrowIfDisposed();
+			Native.ksi_idle_time_init(out var native);
+			Native.ksi_error_init(out var error);
+			ThrowIfFailed((NativeClientStatus)Native.ksi_get_idle_time(
+				connection, ref native, ref error), "query idle time", error);
+			milliseconds = native.IdleTimeMs;
+			return native.Valid != 0;
 		}
 
 		/// <summary>Enumerates connected gamepads, ordered so that a device's position is stable
 		/// across restarts. Needs no grant, as with pointer position and idle time.</summary>
 		internal List<GamepadInfo> ListGamepads(out ulong generation)
 		{
+			if (!owner.IsOwnerThread)
+			{
+				var result = owner.Invoke(() => { var values = ListGamepads(out var value); return (values, value); });
+				generation = result.value;
+				return result.values;
+			}
 			RequireOperations(Operations.QueryGamepads);
 			var gamepads = new List<GamepadInfo>();
 			generation = 0;
 
-			lock (nativeLock)
-			{
-				ThrowIfDisposed();
-				Native.ksi_error_init(out var error);
-				var handle = GCHandle.Alloc(gamepads);
+			ThrowIfDisposed();
+			Native.ksi_error_init(out var error);
+			var handle = GCHandle.Alloc(gamepads);
 
-				try
-				{
-					ThrowIfFailed((NativeClientStatus)Native.ksi_gamepads_list(connection,
-						GamepadVisitorThunk, GCHandle.ToIntPtr(handle), out generation, ref error),
-						"list gamepads", error);
-				}
-				finally
-				{
-					handle.Free();
-				}
+			try
+			{
+				ThrowIfFailed((NativeClientStatus)Native.ksi_gamepads_list(connection,
+					GamepadVisitorThunk, GCHandle.ToIntPtr(handle), out generation, ref error),
+					"list gamepads", error);
+			}
+			finally
+			{
+				handle.Free();
 			}
 
 			return gamepads;
@@ -633,37 +707,40 @@ namespace Keysharp.Internals.Input.Linux
 		/// the device set changed since <paramref name="generation"/> was taken.</summary>
 		internal bool TryGetGamepadState(uint deviceId, ulong generation, out GamepadState state)
 		{
+			if (!owner.IsOwnerThread)
+			{
+				var result = owner.Invoke(() => { var success = TryGetGamepadState(deviceId, generation, out var value); return (success, value); });
+				state = result.value;
+				return result.success;
+			}
 			RequireOperations(Operations.QueryGamepads);
 			state = default;
 
-			lock (nativeLock)
-			{
-				ThrowIfDisposed();
-				Native.ksi_gamepad_state_init(out var native);
-				Native.ksi_error_init(out var error);
-				var status = (NativeClientStatus)Native.ksi_get_gamepad_state(connection,
-					deviceId, generation, ref native, ref error);
+			ThrowIfDisposed();
+			Native.ksi_gamepad_state_init(out var native);
+			Native.ksi_error_init(out var error);
+			var status = (NativeClientStatus)Native.ksi_get_gamepad_state(connection,
+				deviceId, generation, ref native, ref error);
 
-				if (status is NativeClientStatus.NotFound or NativeClientStatus.Busy)
-					return false;
+			if (status is NativeClientStatus.NotFound or NativeClientStatus.Busy)
+				return false;
 
-				ThrowIfFailed(status, "query gamepad state", error);
-				var axisCount = (int)Math.Min(native.AxisCount, DeviceAxisCapacity);
-				var values = axisCount != 0 ? new int[axisCount] : [];
-				var axes = (NativeGamepadAxisState*)native.Axes;
+			ThrowIfFailed(status, "query gamepad state", error);
+			var axisCount = (int)Math.Min(native.AxisCount, DeviceAxisCapacity);
+			var values = axisCount != 0 ? new int[axisCount] : [];
+			var axes = (NativeGamepadAxisState*)native.Axes;
 
-				for (var i = 0; i < axisCount; i++)
-					values[i] = axes[i].Value;
+			for (var i = 0; i < axisCount; i++)
+				values[i] = axes[i].Value;
 
-				uint buttons = 0;
+			uint buttons = 0;
 
-				for (var i = 0; i < 4; i++)
-					buttons |= (uint)native.Buttons[i] << (i * 8);
+			for (var i = 0; i < 4; i++)
+				buttons |= (uint)native.Buttons[i] << (i * 8);
 
-				state = new(native.DeviceId, native.DeviceGeneration,
-					(int)Math.Min(native.ButtonCount, DeviceButtonCapacity), buttons, values);
-				return true;
-			}
+			state = new(native.DeviceId, native.DeviceGeneration,
+				(int)Math.Min(native.ButtonCount, DeviceButtonCapacity), buttons, values);
+			return true;
 		}
 
 		private static bool CollectGamepad(NativeDeviceInfo* device, nint context)
@@ -683,9 +760,82 @@ namespace Keysharp.Internals.Input.Linux
 			return true;
 		}
 
-		/// <summary>Reads the next hook event. Returns false when a poll ends with none, so the reader can act
-		/// between messages.</summary>
-		internal bool TryReadHookEvent(out HookEvent hookEvent)
+		internal void SetHookEventHandler(Action<KeysharpInputClient, HookEvent> handler,
+			Action<Exception> onError = null)
+			=> owner.Invoke(() => { hookEventHandler = handler; streamErrorHandler = onError; return true; });
+
+		internal void SetLeaseStateHandler(Action<KeysharpInputClient> handler)
+			=> owner.Invoke(() => { leaseStateHandler = handler; handler?.Invoke(this); return true; });
+
+		internal void SubscribeKeyState()
+			=> owner.Invoke(() =>
+			{
+				keyboardState.Invalidate();
+				Native.ksi_error_init(out var error);
+				ThrowIfFailed((NativeClientStatus)Native.ksi_key_state_subscribe(connection, ref error),
+					"subscribe keyboard state", error);
+				while (Drain()) { }
+				return true;
+			});
+
+		internal bool TryGetKeyStateSnapshot(out KeyStateSnapshot state, out uint physicalModifiers)
+		{
+			if (lease != null) return lease.TryGetKeyStateSnapshot(out state, out physicalModifiers);
+			return keyboardState.TryRead(out state, out physicalModifiers) && IsConnected;
+		}
+
+		internal bool WaitForSynthesisState(int timeoutMs = 250)
+			=> lease != null ? lease.WaitForSynthesisState(timeoutMs)
+				: IsConnected && keyboardState.WaitForAcknowledgement(timeoutMs);
+
+		private bool Drain()
+		{
+			if (disposePending || connection == 0) return false;
+			try
+			{
+				if (connectionRole == ConnectionRole.CallbackStream)
+				{
+					if (hookEventHandler == null || !TryReadHookEvent(out var hook)) return false;
+					hookEventHandler(this, hook);
+					return true;
+				}
+				var message = new NativeLeaseMessage { StructSize = (uint)sizeof(NativeLeaseMessage) };
+				Native.ksi_error_init(out var error);
+				var status = (NativeClientStatus)Native.ksi_lease_next(connection, 0, ref message, ref error);
+				if (status == NativeClientStatus.Timeout) return false;
+				ThrowIfFailed(status, "read lease state", error);
+				if (connectionRole != ConnectionRole.Lease) return true;
+				if (message.Kind is 1 or 2)
+				{
+					GrantedScopes = (LinuxPermissionScope)message.GrantedScopes & ManagedScopes;
+					leaseStateHandler?.Invoke(this);
+				}
+				else if (message.Kind is 3 or 4)
+				{
+					if (!keyboardState.Publish(message.Sequence, ToManaged(message.State),
+						message.PhysicalModifiersLR, message.Kind == 3))
+						SubscribeKeyState();
+				}
+				else throw new InvalidDataException("keysharp-input returned an unknown lease message.");
+				return true;
+			}
+			catch (Exception error)
+			{
+				if (!disposePending) streamErrorHandler?.Invoke(error);
+				throw;
+			}
+		}
+
+		private static KeyStateSnapshot ToManaged(NativeKeyState native)
+		{
+			KeyStateBitmap logical = default, physical = default;
+			new ReadOnlySpan<byte>(native.LogicalKeys, KeyStateBitmapBytes).CopyTo(logical);
+			new ReadOnlySpan<byte>(native.PhysicalKeys, KeyStateBitmapBytes).CopyTo(physical);
+			return new(native.ModifiersLR, native.CapsLock != 0, native.NumLock != 0,
+				native.ScrollLock != 0, logical, physical);
+		}
+
+		private bool TryReadHookEvent(out HookEvent hookEvent)
 		{
 			if (connectionRole != ConnectionRole.CallbackStream)
 				throw new InvalidOperationException("Hook events require a callback-stream connection.");
@@ -695,22 +845,17 @@ namespace Keysharp.Internals.Input.Linux
 				NativeHookMessage message;
 				NativeError error;
 				NativeClientStatus status;
-				lock (nativeLock)
-				{
-					ThrowIfDisposed();
-					Native.ksi_hook_message_init(out message);
-					Native.ksi_error_init(out error);
-					status = (NativeClientStatus)Native.ksi_hook_next(connection,
-						HookPollTimeoutMs, ref message, ref error);
+				ThrowIfDisposed();
+				Native.ksi_hook_message_init(out message);
+				Native.ksi_error_init(out error);
+				status = (NativeClientStatus)Native.ksi_hook_next(connection,
+					0, ref message, ref error);
 
-					if (status != NativeClientStatus.Timeout)
-						ThrowIfFailed(status, "read hook event", error);
-				}
+				if (status != NativeClientStatus.Timeout)
+					ThrowIfFailed(status, "read hook event", error);
 
 				if (status == NativeClientStatus.Timeout)
 				{
-					if (leaseLivenessProbe?.Invoke() == false)
-						throw new IOException("keysharp-input hook consumer stopped responding.");
 					hookEvent = default;
 					return false;
 				}
@@ -728,8 +873,8 @@ namespace Keysharp.Internals.Input.Linux
 							quarantine.StrikeCount, quarantine.RetryAfterMs));
 						break;
 					case 3:
-						InvalidateScopes((LinuxPermissionScope)message.Data.RevokedScopes);
-						break;
+						throw new NativeClientException("keysharp-input", "read hook event", NativeClientStatus.Revoked,
+							message.Data.RevokedScopes, 0, "The input hook permission was revoked.");
 					default:
 						throw new InvalidDataException("keysharp-input returned an unknown hook message.");
 				}
@@ -739,6 +884,7 @@ namespace Keysharp.Internals.Input.Linux
 		internal void SendHookDecision(ulong eventId, HookDecision decision,
 			IReadOnlyList<Input> replacementInputs = null)
 		{
+			if (!owner.IsOwnerThread) { owner.Invoke(() => { SendHookDecision(eventId, decision, replacementInputs); return true; }); return; }
 			if (connectionRole != ConnectionRole.CallbackStream || eventId == 0)
 				throw new InvalidOperationException("Hook decisions require an active hook event.");
 			var count = replacementInputs?.Count ?? 0;
@@ -768,18 +914,15 @@ namespace Keysharp.Internals.Input.Linux
 						nativeInputs[index] = ToNative(replacementInputs[index]);
 				}
 				var reply = NewReply(decision, nativeInputs, count);
-				lock (nativeLock)
+				ThrowIfDisposed();
+				Native.ksi_error_init(out var error);
+				fixed (NativeHookEvent* hookEvent = &currentHookEvent)
 				{
-					ThrowIfDisposed();
-					Native.ksi_error_init(out var error);
-					fixed (NativeHookEvent* hookEvent = &currentHookEvent)
-					{
-						var status = (NativeClientStatus)Native.ksi_hook_reply_event(
-							connection, hookEvent, ref reply, ref error);
-						ThrowIfFailed(status, "reply to hook event", error);
-					}
-					currentHookEventId = 0;
+					var status = (NativeClientStatus)Native.ksi_hook_reply_event(
+						connection, hookEvent, ref reply, ref error);
+					ThrowIfFailed(status, "reply to hook event", error);
 				}
+				currentHookEventId = 0;
 			}
 			finally
 			{
@@ -815,31 +958,36 @@ namespace Keysharp.Internals.Input.Linux
 		internal bool TryRequestScopes(LinuxPermissionScope requestedScopes,
 			out int status, bool checkOnly = false)
 		{
+			if (lease != null) return lease.TryRequestScopes(requestedScopes, out status, checkOnly);
+			if (!owner.IsOwnerThread)
+			{
+				var result = owner.Invoke(() => { var success = TryRequestScopes(requestedScopes, out var value, checkOnly); return (success, value); });
+				status = result.value;
+				return result.success;
+			}
 			if (requestedScopes == LinuxPermissionScope.None
 				|| (requestedScopes & ~ManagedScopes) != 0)
 				throw new ArgumentOutOfRangeException(nameof(requestedScopes));
 
-			lock (nativeLock)
+			ThrowIfDisposed();
+			Native.ksi_error_init(out var error);
+			var nativeStatus = (NativeClientStatus)Native.ksi_authorize(connection,
+				(uint)(checkOnly ? AuthorizationMode.Check : AuthorizationMode.Request),
+				(uint)requestedScopes, out var granted, ref error);
+			status = (int)nativeStatus;
+			if (nativeStatus is NativeClientStatus.Timeout or NativeClientStatus.Unavailable) ThrowIfFailed(nativeStatus, "authorize", error);
+			if (disposePending) { status = (int)NativeClientStatus.Revoked; return false; }
+			if (nativeStatus == NativeClientStatus.Ok) GrantedScopes = (LinuxPermissionScope)granted & ManagedScopes;
+			while (Drain()) { }
+			if (nativeStatus == NativeClientStatus.Ok)
 			{
-				ThrowIfDisposed();
-				Native.ksi_error_init(out var error);
-				var nativeStatus = (NativeClientStatus)Native.ksi_authorize(connection,
-					(uint)(checkOnly ? AuthorizationMode.Check : AuthorizationMode.Request),
-					(uint)requestedScopes, out var granted, ref error);
-				status = (int)nativeStatus;
-				GrantedScopes = (LinuxPermissionScope)(Native.ksi_connection_granted_scopes(connection)
-					& (uint)ManagedScopes);
-				if (nativeStatus == NativeClientStatus.Ok)
-				{
-					GrantedScopes |= (LinuxPermissionScope)granted & ManagedScopes;
-					return (GrantedScopes & requestedScopes) == requestedScopes;
-				}
-				if (nativeStatus is NativeClientStatus.Denied or NativeClientStatus.Unsupported
-					or NativeClientStatus.Cancelled or NativeClientStatus.Revoked)
-					return false;
-				ThrowIfFailed(nativeStatus, "authorize", error);
-				return false;
+				return (GrantedScopes & requestedScopes) == requestedScopes;
 			}
+			if (nativeStatus is NativeClientStatus.Denied or NativeClientStatus.Unsupported
+				or NativeClientStatus.Cancelled or NativeClientStatus.Revoked)
+				return false;
+			ThrowIfFailed(nativeStatus, "authorize", error);
+			return false;
 		}
 
 		private static uint DispatchNestedHook(nint connection,
@@ -985,9 +1133,7 @@ namespace Keysharp.Internals.Input.Linux
 			if (status == NativeClientStatus.Ok)
 				return;
 
-			if (connection != 0)
-				GrantedScopes = (LinuxPermissionScope)(
-					Native.ksi_connection_granted_scopes(connection) & (uint)ManagedScopes);
+			if (status == NativeClientStatus.Timeout) Dispose();
 
 			throw new NativeClientException("keysharp-input", operation, status,
 				error.Detail, error.SystemError, error.GetMessage());
@@ -1009,30 +1155,26 @@ namespace Keysharp.Internals.Input.Linux
 
 		public void Dispose()
 		{
-			lock (nativeLock)
+			disposePending = true;
+			GrantedScopes = LinuxPermissionScope.None;
+			keyboardState.Invalidate();
+			owner.Dispose();
+		}
+
+		private void Cleanup()
+		{
+			disposePending = true;
+			GrantedScopes = LinuxPermissionScope.None;
+			keyboardState.Invalidate();
+			var handle = Interlocked.Exchange(ref connection, 0);
+			if (handle != 0) Native.ksi_disconnect(handle);
+			for (var depth = 0; depth < nestedReplacementBuffers.Length; depth++)
 			{
-				if (nestedDepth != 0)
-				{
-					// A callback still has native stack frames using this connection and its reply buffers.
-					if (!disposePending)
-					{
-						disposePending = true;
-						ThreadPool.QueueUserWorkItem(static client => client.Dispose(), this, preferLocal: false);
-					}
-					return;
-				}
-				var handle = Interlocked.Exchange(ref connection, 0);
-				if (handle == 0)
-					return;
-				Native.ksi_disconnect(handle);
-				for (var depth = 0; depth < nestedReplacementBuffers.Length; depth++)
-				{
-					NativeMemory.Free((void*)nestedReplacementBuffers[depth]);
-					nestedReplacementBuffers[depth] = 0;
-				}
-				if (callbackHandle.IsAllocated)
-					callbackHandle.Free();
+				NativeMemory.Free((void*)nestedReplacementBuffers[depth]);
+				nestedReplacementBuffers[depth] = 0;
 			}
+			if (callbackHandle.IsAllocated) callbackHandle.Free();
+			leaseStateHandler?.Invoke(this);
 		}
 
 		[StructLayout(LayoutKind.Sequential)]
@@ -1068,6 +1210,7 @@ namespace Keysharp.Internals.Input.Linux
 			internal nint SocketPath;
 			internal uint TimeoutMs;
 			internal uint Flags;
+			internal ulong LeaseId;
 			private fixed ulong reserved[4];
 		}
 
@@ -1079,6 +1222,7 @@ namespace Keysharp.Internals.Input.Linux
 			internal uint ClientAbiMinor;
 			internal uint GrantedScopes;
 			internal ulong AvailableOperations;
+			internal ulong LeaseId;
 			private fixed ulong reserved[4];
 		}
 
@@ -1227,6 +1371,18 @@ namespace Keysharp.Internals.Input.Linux
 		}
 
 		[StructLayout(LayoutKind.Sequential)]
+		private struct NativeLeaseMessage
+		{
+			internal uint StructSize, Kind;
+			internal ulong Sequence;
+			internal uint GrantedScopes, RevokedScopes;
+			internal uint PhysicalModifiersLR;
+			private uint reserved0;
+			internal NativeKeyState State;
+			private fixed ulong reserved[4];
+		}
+
+		[StructLayout(LayoutKind.Sequential)]
 		private struct NativeKeyState
 		{
 			internal uint StructSize;
@@ -1334,22 +1490,9 @@ namespace Keysharp.Internals.Input.Linux
 			private fixed ulong reserved[4];
 		}
 
-		[StructLayout(LayoutKind.Sequential)]
-		private struct NativeModifierState
-		{
-			internal uint StructSize;
-			internal uint LogicalModifiersLR;
-			internal uint PhysicalModifiersLR;
-			internal byte CapsLock;
-			internal byte NumLock;
-			internal byte ScrollLock;
-			private byte reserved0;
-			private fixed ulong reserved[2];
-		}
-
 		private static class Native
 		{
-			private const string Library = "libkeysharp-input.so.0";
+			private const string Library = "libkeysharp-input.so.1";
 
 			[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 			[return: MarshalAs(UnmanagedType.U1)]
@@ -1361,7 +1504,14 @@ namespace Keysharp.Internals.Input.Linux
 				NativeError* error);
 
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern uint ksi_client_abi_minor();
+			internal static extern int ksi_connection_fd(nint connection);
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+			internal static extern ulong ksi_connection_sequence(nint connection);
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+			internal static extern uint ksi_lease_next(nint connection, uint timeoutMs,
+				ref NativeLeaseMessage message, ref NativeError error);
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+			internal static extern uint ksi_key_state_subscribe(nint connection, ref NativeError error);
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern void ksi_connect_options_init(out NativeConnectOptions options);
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
@@ -1379,8 +1529,6 @@ namespace Keysharp.Internals.Input.Linux
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern void ksi_idle_time_init(out NativeIdleTime idleTime);
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern void ksi_modifier_state_init(out NativeModifierState state);
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern void ksi_gamepad_state_init(out NativeGamepadState state);
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksi_gamepads_list(nint connection, DeviceVisitor visitor,
@@ -1396,10 +1544,6 @@ namespace Keysharp.Internals.Input.Linux
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksi_authorize(nint connection, uint mode,
 				uint scopes, out uint grantedScopes, ref NativeError error);
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern uint ksi_ping(nint connection, ref NativeError error);
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern uint ksi_connection_granted_scopes(nint connection);
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksi_set_nested_hook_handler(nint connection,
 				NestedHookHandler handler, nint context, ref NativeError error);
@@ -1417,16 +1561,13 @@ namespace Keysharp.Internals.Input.Linux
 				NativeHookEvent* hookEvent, ref NativeHookReply reply, ref NativeError error);
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksi_synthesize(nint connection,
-				NativeInput* inputs, uint count, uint flags, ref NativeError error);
+				NativeInput* inputs, uint count, uint flags, out uint logicalModifiersLR, ref NativeError error);
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksi_set_block_input(nint connection, uint mask,
 				out uint effectiveMask, ref NativeError error);
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksi_get_pointer_position(nint connection,
 				ref NativePointerPosition position, ref NativeError error);
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern uint ksi_get_key_state(nint connection,
-				ref NativeKeyState state, ref NativeError error);
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksi_get_device_key_state(nint connection, uint deviceID,
 				ref NativeKeyState state, ref NativeError error);
@@ -1436,9 +1577,6 @@ namespace Keysharp.Internals.Input.Linux
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksi_get_idle_time(nint connection,
 				ref NativeIdleTime idleTime, ref NativeError error);
-			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
-			internal static extern uint ksi_get_modifier_state(nint connection,
-				ref NativeModifierState state, ref NativeError error);
 		}
 	}
 }
