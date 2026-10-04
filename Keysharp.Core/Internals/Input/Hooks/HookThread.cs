@@ -337,7 +337,7 @@ namespace Keysharp.Internals.Input.Hooks
 		internal HookThread(Script script, string mutexName)
 		{
 			this.script = script ?? throw new ArgumentNullException(nameof(script));
-			mutexName = string.IsNullOrEmpty(mutexName) ? "Keysharp" : mutexName;
+			mutexName = string.IsNullOrEmpty(mutexName) ? "AHK" : mutexName;
 			KeybdMutexName = $"{mutexName} Keybd";
 			MouseMutexName = $"{mutexName} Mouse";
 			hotCriterionExecutor = new(script, MaxHotCriterionWorkers);
