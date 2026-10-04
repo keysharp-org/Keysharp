@@ -14,6 +14,8 @@ namespace Keysharp.Tests
 			return monitor;
 		}
 
+#if WINDOWS
+		// Only the Windows pre-filter buffers: a monitor off Windows runs inline, so it can claim the message.
 		[Test, Category("Threading")]
 		public void OnMessageBuffered()
 		{
@@ -51,6 +53,7 @@ namespace Keysharp.Tests
 
 			Assert.AreEqual(1, calls);
 		}
+#endif
 
 		[Test, Category("Threading")]
 		public void OnMessageEmergency()
@@ -149,6 +152,7 @@ namespace Keysharp.Tests
 			}
 		}
 
+#if WINDOWS
 		/// <summary>
 		/// A callback at its MaxThreads skips the message, and with every callback there the message is left unmonitored
 		/// rather than replayed, as AHK's MsgMonitor does.
@@ -237,6 +241,7 @@ namespace Keysharp.Tests
 
 			Assert.AreEqual(0, calls);
 		}
+#endif
 
 		[Test, Category("Threading")]
 		public void RegistrationLimit()
@@ -509,8 +514,6 @@ namespace Keysharp.Tests
 			LParam = 0,
 			Result = 0
 		};
-
-		private static bool CallBuffered(MessageFilter filter, ref Message message) => filter.CallEventHandlers(ref message, true);
 
 		private static nint GetResult(Message message) => message.Result;
 #endif

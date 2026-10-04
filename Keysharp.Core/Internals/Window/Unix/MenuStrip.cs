@@ -26,18 +26,10 @@ namespace Keysharp.Internals.Window.Unix
 
 		internal void SyncEtoMenuBar()
 		{
-			EtoMenuBar.Items.Clear();
-			foreach (var item in Items)
-			{
-				item.ResetEtoItemRecursive();
-				EtoMenuBar.Items.Add(item.BuildEtoItem());
-			}
+			toolStrip.SyncNativeItems(EtoMenuBar.Items);
 
-			// The Items.Clear() above also drops the standard App/Edit/Window menus Eto merged in on first
-			// load, which would silently remove the platform editing shortcuts (Cmd+C/A/... on macOS) every
-			// time the script changes its menu. Re-merge them. CreateSystemMenu honors
-			// MenuBar.IncludeSystemItems, so setting that to None opts out. Skipped before the first load,
-			// where MenuBar.OnPreLoad performs the initial merge (calling it here too would double entries).
+			// The sync drops the system menus Eto merged in (the macOS editing shortcuts), so they are merged again;
+			// before the first load MenuBar.OnPreLoad merges them, and merging here too would double them.
 			if (systemMenuLoaded && EtoMenuBar.Handler is Eto.Forms.MenuBar.IHandler handler)
 				handler.CreateSystemMenu();
 		}

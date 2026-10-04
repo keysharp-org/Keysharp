@@ -443,7 +443,9 @@ namespace Keysharp.Builtins
 										 object excludeText = null)
 		{
 			EnsureControlPermission("ControlSend");
+#if WINDOWS
 			EnsureControlInputPermission("ControlSend");
+#endif
 
 			if (!keys.CoerceString(out var keysText))
 				return DefaultObject;
@@ -466,7 +468,9 @@ namespace Keysharp.Builtins
 											 object excludeText = null)
 		{
 			EnsureControlPermission("ControlSendText");
+#if WINDOWS
 			EnsureControlInputPermission("ControlSendText");
+#endif
 
 			if (!keys.CoerceString(out var keysText))
 				return DefaultObject;

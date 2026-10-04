@@ -11,117 +11,113 @@ namespace Keysharp.Internals.Os.Unix
 	/// </summary>
 	internal class ControlManager : ControlManagerBase
 	{
-		private static int FindDataStoreIndex(IEnumerable dataStore, string value)
+		/// <summary>Finds the script's own control, raising TargetError for a foreign control.</summary>
+		private static Control OwnControl(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (dataStore == null || string.IsNullOrEmpty(value))
-				return -1;
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is not WindowInfoBase item)
+				return null;
 
-			var index = 0;
-			foreach (var item in dataStore)
+			if (Control.FromHandle(item.Handle) is Control control)
+				return control;
+
+			_ = Errors.TargetErrorOccurred($"{item.ClassName} belongs to another program, and only the script's own controls can be reached here", title, text, excludeTitle, excludeText);
+			return null;
+		}
+
+		private static object WrongClass(Control control, string classes, object ret = null)
+			=> Errors.TargetErrorOccurred($"Class name {Platform.Window.GetClassName(control.Handle)} did not contain {classes}", ret);
+
+		/// <summary>The items of a ListBox, DDL or ComboBox; null for any other control.</summary>
+		private static ListControlItems ListItems(Control control) => control switch
+		{
+			KeysharpListBox lb => lb.Items,
+			KeysharpComboBox cb => cb.Items,
+			_ => null
+		};
+
+		//AHK notifies the parent even when the selection stays the same or is cleared.
+		private static void Choose(Control control, int index)
+		{
+			var list = (Gui.List)control.GetGuiControl();
+			_ = list.ChooseItem(index + 1L, true);
+
+			if (control is KeysharpListBox)
 			{
-				if (string.Equals(item?.ToString(), value, StringComparison.OrdinalIgnoreCase))
-					return index;
-				index++;
+				list.Lb_SelectedIndexChanged(control, EventArgs.Empty);
+				list._control_DoubleClick(control, EventArgs.Empty);
 			}
+			else
+				list.Cmb_SelectedIndexChanged(control, EventArgs.Empty);
 
-			return -1;
+			WindowInfoBase.DoControlDelay();
 		}
 
 		internal override long ControlAddItem(string str, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
-			{
-				var res = 0L;
-				var ctrl2 = item.Control;
-				if (ctrl2 is KeysharpComboBox cb)
-				{
-					res = cb.Items.Count;
-					cb.Items.Add(str);
-				}
-				else if (ctrl2 is KeysharpListBox lb)
-				{
-					res = lb.Items.Count;
-					lb.Items.Add(str);
-				}
-				else
-				{
-					//How to do the equivalent of what the Windows derivation does, but on linux?
-				}
+			if (OwnControl(ctrl, title, text, excludeTitle, excludeText) is not Control control)
+				return 0L;
 
-				return res + 1L;
-			}
+			if (ListItems(control) is not ListControlItems items || control.GetGuiControl() is not Gui.List list)
+				return (long)WrongClass(control, "Combo or List", DefaultErrorLong);
 
-			return 0L;
+			//As CB_ADDSTRING and LB_ADDSTRING, the position the item took, which a Sort list chooses.
+			var index = items.IndexFor(str);
+			_ = list.Add(str);
+			WindowInfoBase.DoControlDelay();
+			return index + 1L;
 		}
 
 		internal override void ControlChooseIndex(int n, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
+			if (n < 0)
 			{
-				var ctrl2 = item.Control;
-				n--;
-
-				if (ctrl2 is ComboBox cb)
-				{
-					if (n >= 0)
-						cb.SelectedIndex = n;
-					else
-						cb.SelectedIndex = -1;
-				}
-				else if (ctrl2 is ListBox lb)
-				{
-					if (n >= 0)
-					{
-						lb.SelectedIndex = n;
-
-						if (lb.GetGuiControl() is Gui.Control gc)
-							gc._control_DoubleClick(lb, new EventArgs());
-					}
-					else
-						lb.SelectedIndex = -1;
-				}
-				else if (ctrl2 is TabControl tc)
-				{
-					tc.SelectedIndex = n;
-				}
-				else
-				{
-					//How to do the equivalent of what the Windows derivation does, but on linux?
-				}
+				_ = Errors.InvalidParameterErrorOccurred(1, "ControlChooseIndex", n);
+				return;
 			}
+
+			if (OwnControl(ctrl, title, text, excludeTitle, excludeText) is not Control control)
+				return;
+
+			n--;
+
+			if (control is TabControl tc)
+			{
+				if (n < 0 || n >= tc.Pages.Count)
+				{
+					_ = Errors.InvalidParameterErrorOccurred(1, "ControlChooseIndex", n + 1);
+					return;
+				}
+
+				tc.SelectedIndex = n;
+				WindowInfoBase.DoControlDelay();
+			}
+			else if (ListItems(control) is ListControlItems items)
+			{
+				//0 clears the selection, as CB_SETCURSEL and LB_SETCURSEL do for -1.
+				if (n < -1 || n >= items.Count)
+					_ = Errors.ErrorOccurred("Failed");
+				else
+					Choose(control, n);
+			}
+			else
+				_ = WrongClass(control, "Combo, List or Tab");
 		}
 
 		internal override long ControlChooseString(string str, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			var index = 0L;
+			if (OwnControl(ctrl, title, text, excludeTitle, excludeText) is not Control control)
+				return 0L;
 
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
-			{
-				var ctrl2 = item.Control;
+			if (ListItems(control) == null)
+				return (long)WrongClass(control, "Combo or List", DefaultErrorLong);
 
-				if (ctrl2 is ComboBox cb)
-				{
-					index = cb.FindString(str);
-					cb.SelectedIndex = (int)index;
-				}
-				else if (ctrl2 is ListBox lb)
-				{
-					index = lb.FindString(str);
-					lb.SelectedIndex = (int)index;
+			var index = ((ListControl)control).FindString(str);
 
-					if (index >= 0)
-					{
-						if (lb.GetGuiControl() is Gui.Control gc)
-							gc._control_DoubleClick(lb, new EventArgs());
-					}
-				}
-				else
-				{
-					//How to do the equivalent of what the Windows derivation does, but on linux?
-				}
-			}
+			if (index < 0)
+				return (long)Errors.TargetErrorOccurred($"No item starts with \"{str}\"", title, text, excludeTitle, excludeText, DefaultErrorLong);
 
-			return index;
+			Choose(control, index);
+			return index + 1L;
 		}
 
 		internal override void ControlClick(object ctrlorpos, object title, object text, string whichButton, int clickCount, string options, object excludeTitle, object excludeText)
@@ -308,100 +304,85 @@ namespace Keysharp.Internals.Os.Unix
 
 		internal override void ControlDeleteItem(int n, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
-			{
-				var ctrl2 = item.Control;
-				n--;
+			if (OwnControl(ctrl, title, text, excludeTitle, excludeText) is not Control control)
+				return;
 
-				if (ctrl2 is KeysharpComboBox cb)
-				{
-					cb.Items.RemoveAt(n);
-					cb.SelectedIndex = -1;//On linux, if the selected item is deleted, it will throw an exception the next time the dropdown is clicked if SelectedIndex is not set to -1.
-				}
-				else if (ctrl2 is KeysharpListBox lb)
-				{
-					lb.Items.RemoveAt(n);
-				}
-				else
-				{
-					//How to do the equivalent of what the Windows derivation does, but on linux?
-				}
+			if (ListItems(control) is not ListControlItems items || control.GetGuiControl() is not Gui.List list)
+			{
+				_ = WrongClass(control, "Combo or List");
+				return;
 			}
+
+			if (n < 1 || n > items.Count)
+			{
+				_ = Errors.TargetErrorOccurred($"Item {n} does not exist in a list of {items.Count}", title, text, excludeTitle, excludeText);
+				return;
+			}
+
+			_ = list.Delete((long)n);
+			WindowInfoBase.DoControlDelay();
 		}
 
 		internal override long ControlFindItem(string str, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
-			{
-				var ctrl2 = item.Control;
+			if (OwnControl(ctrl, title, text, excludeTitle, excludeText) is not Control control)
+				return 0L;
 
-				if (ctrl2 is ComboBox cb)
-					return FindDataStoreIndex(cb.DataStore, str) + 1L;
-				else if (ctrl2 is ListBox lb)
-					return FindDataStoreIndex(lb.DataStore, str) + 1L;
-				else
-				{
-					//How to do the equivalent of what the Windows derivation does, but on linux?
-				}
-			}
+			if (ListItems(control) == null)
+				return (long)WrongClass(control, "Combo or List", DefaultErrorLong);
 
-			return 0L;
+			var index = ((ListControl)control).FindStringExact(str);
+			return index >= 0 ? index + 1L : (long)Errors.TargetErrorOccurred($"Could not search for combo or list box item string {str}", title, text, excludeTitle, excludeText, DefaultErrorLong);
 		}
 
 		internal override void ControlFocus(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
-			{
-				if (item.Control is Control ctrl2)
-					ctrl2.Focus();
-				else
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is not WindowInfoBase item)
+				return;
+
+			if (Control.FromHandle(item.Handle) is Control control)
+				control.Focus();
 #if LINUX
-					_ = Keysharp.Internals.Window.Linux.Wayland.DesktopBackend.X11
-						.TryFocusChildWindow(item.Handle);
+			else if (!Keysharp.Internals.Window.Linux.Wayland.DesktopBackend.X11.TryFocusChildWindow(item.Handle))
 #else
-					item.Focus();
+			else
 #endif
+			{
+				_ = WindowHelper.WindowOperationUnsupported("ControlFocus");
+				return;
 			}
+
+			WindowInfoBase.DoControlDelay();
 		}
 
 		internal override long ControlGetChecked(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
+			//As BM_GETCHECK, only a checked state counts; another control is unchecked.
+			return OwnControl(ctrl, title, text, excludeTitle, excludeText) switch
 			{
-				var ctrl2 = item.Control;
-
-				if (ctrl2 is CheckBox cb)
-#if WINDOWS
-					return cb.Checked ? 1L : 0L;
-#else
-					return cb.Checked == null ? -1L : cb.Checked.Value ? 1L : 0L;
-#endif
-				else
-				{
-					//How to do the equivalent of what the Windows derivation does, but on linux?
-				}
-			}
-
-			return 0L;
+				CheckBox cb => cb.Checked == true ? 1L : 0L,
+				RadioButton rb => rb.Checked ? 1L : 0L,
+				_ => 0L
+			};
 		}
 
 		internal override string ControlGetChoice(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
-			{
-				var ctrl2 = item.Control;
-				if (ctrl2 is ListControl lc)
-					return lc.SelectedValue?.ToString() ?? "";
-				else
-				{
-					//How to do the equivalent of what the Windows derivation does, but on linux?
-				}
-			}
+			if (OwnControl(ctrl, title, text, excludeTitle, excludeText) is not Control control)
+				return DefaultObject;
 
-			return DefaultObject;
+			if (ListItems(control) is not ListControlItems items)
+				return (string)WrongClass(control, "Combo or List", DefaultErrorString);
+
+			var index = ((ListControl)control).SelectedIndex;
+
+			if (index < 0 || index >= items.Count)
+				return (string)Errors.ErrorOccurred($"Could not get selected item string for combo or list box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}", DefaultErrorString);
+
+			return items[index]?.ToString() ?? "";
 		}
 
-		internal override long ControlGetExStyle(object ctrl, object title, object text, object excludeTitle, object excludeText) => 1;
+		internal override long ControlGetExStyle(object ctrl, object title, object text, object excludeTitle, object excludeText) => WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowInfoBase item ? item.ExStyle : 0L;
 
 		internal override long ControlGetFocus(object title, object text, object excludeTitle, object excludeText)
 		{
@@ -419,44 +400,29 @@ namespace Keysharp.Internals.Os.Unix
 
 		internal override long ControlGetIndex(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			long index = -1;
-
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
+			return OwnControl(ctrl, title, text, excludeTitle, excludeText) switch
 			{
-				var ctrl2 = item.Control;
-
-				if (ctrl2 is ComboBox cb)
-					index = cb.SelectedIndex;
-				else if (ctrl2 is ListBox lb)
-					index = lb.SelectedIndex;
-				else if (ctrl2 is TabControl tc)
-					index = tc.SelectedIndex;
-				else
-				{
-					//How to do the equivalent of what the Windows derivation does, but on linux?
-				}
-			}
-
-			return index + 1L;
+				null => 0L,
+				TabControl tc => tc.SelectedIndex + 1L,
+				Control control when ListItems(control) != null => ((ListControl)control).SelectedIndex + 1L,
+				Control control => (long)WrongClass(control, "Combo, List or Tab", DefaultErrorLong)
+			};
 		}
 
 		internal override object ControlGetItems(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
-			{
-				var ctrl2 = item.Control;
+			if (OwnControl(ctrl, title, text, excludeTitle, excludeText) is not Control control)
+				return new Keysharp.Builtins.Array();
 
-				if (ctrl2 is KeysharpComboBox cb)
-					return new Keysharp.Builtins.Array(cb.Items.Cast<object>().Select(item => (object)item.ToString()));
-				else if (ctrl2 is KeysharpListBox lb)
-					return new Keysharp.Builtins.Array(lb.Items.Cast<object>().Select(item => (object)item.ToString()));
-				else
-				{
-					//How to do the equivalent of what the Windows derivation does, but on linux?
-				}
-			}
+			if (ListItems(control) is not ListControlItems items)
+				return WrongClass(control, "Combo or List");
 
-			return new Keysharp.Builtins.Array();
+			var texts = new List<object>(items.Count);
+
+			foreach (var item in items)
+				texts.Add(item?.ToString() ?? "");
+
+			return new Keysharp.Builtins.Array(texts);
 		}
 
 		internal override void ControlGetPos(ref object outX, ref object outY, ref object outWidth, ref object outHeight, object ctrl = null, object title = null, object text = null, object excludeTitle = null, object excludeText = null)
@@ -500,20 +466,10 @@ namespace Keysharp.Internals.Os.Unix
 			WindowInfoBase.DoControlDelay();
 		}
 
-		internal override long ControlGetStyle(object ctrl, object title, object text, object excludeTitle, object excludeText) => 1;
+		internal override long ControlGetStyle(object ctrl, object title, object text, object excludeTitle, object excludeText) => WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowInfoBase item ? item.Style : 0L;
 
 		internal override string ControlGetText(object ctrl, object title, object text, object excludeTitle, object excludeText)
-		{
-			var val = "";
-
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
-			{
-				var ctrl2 = item.Control;
-				val = ctrl2 != null ? ctrl2.Text : item.Title;
-			}
-
-			return val;
-		}
+			=> OwnControl(ctrl, title, text, excludeTitle, excludeText)?.Text ?? "";
 
 		internal override void ControlHideDropDown(object ctrl, object title, object text, object excludeTitle, object excludeText) =>
 		DropdownHelper(false, ctrl, title, text, excludeTitle, excludeText);
@@ -530,41 +486,65 @@ namespace Keysharp.Internals.Os.Unix
 
 		internal override void ControlSetChecked(object val, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
-			{
-				var onoff = Conversions.ConvertOnOffToggle(val);
-				var ctrl2 = item.Control;
+			if (OwnControl(ctrl, title, text, excludeTitle, excludeText) is not Control control)
+				return;
 
-				if (ctrl2 is CheckBox cb)
-					cb.Checked = onoff == ToggleValueType.Toggle ? !cb.Checked : onoff == ToggleValueType.On;
-				else if (ctrl2 is RadioButton rb)
-					rb.Checked = onoff == ToggleValueType.Toggle ? !rb.Checked : onoff == ToggleValueType.On;
-				else
-				{
-					//How to do the equivalent of what the Windows derivation does, but on linux?
-				}
-			}
+			var onoff = Conversions.ConvertOnOffToggle(val);
+
+			if (control is CheckBox cb)
+				cb.Checked = onoff == ToggleValueType.Toggle ? cb.Checked != true : onoff == ToggleValueType.On;
+			else if (control is RadioButton rb)
+				rb.Checked = onoff == ToggleValueType.Toggle ? !rb.Checked : onoff == ToggleValueType.On;
+			else
+				_ = WrongClass(control, "Button");
+
+			WindowInfoBase.DoControlDelay();
 		}
 
 		internal override void ControlSetEnabled(object val, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
-			{
-				var onoff = Conversions.ConvertOnOffToggle(val);
+			if (OwnControl(ctrl, title, text, excludeTitle, excludeText) is not Control control)
+				return;
 
-				if (item.Control is Control ctrl2)
-					ctrl2.Enabled = onoff == ToggleValueType.Toggle ? !ctrl2.Enabled : onoff == ToggleValueType.On;
-				else
-				{
-					//How to do the equivalent of what the Windows derivation does, but on linux?
-				}
-			}
+			var onoff = Conversions.ConvertOnOffToggle(val);
+			control.Enabled = onoff == ToggleValueType.Toggle ? !control.Enabled : onoff == ToggleValueType.On;
+			WindowInfoBase.DoControlDelay();
 		}
 
+		/// <summary>
+		/// On Linux the script's own windows take keys as GTK events; on macOS the script's own Edits take text.
+		/// No way tells which X11 clients accept synthetic keys.
+		/// </summary>
 		private static void ControlSendHelper(string str, object ctrl, object title, object text, object excludeTitle, object excludeText, SendRawModes mode)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is not WindowInfoBase item)
+				return;
+
+			var own = Control.FromHandle(item.Handle);
+#if LINUX
+			if (own != null)
+			{
 				Script.TheScript.HookThread.kbdMsSender.SendKeys(str, mode, SendModes.Event, item.Handle);
+				return;
+			}
+
+			_ = Errors.UnsupportedErrorOccurred(mode == SendRawModes.RawText
+				? "ControlSendText cannot send text to another program's window on Linux."
+				: "ControlSend cannot send keys to another program's window on Linux.");
+#else
+			if (mode == SendRawModes.RawText && own is TextBox or TextArea or PasswordBox)
+			{
+				//A read-only Edit ignores typing.
+				if (own is not (TextBox { ReadOnly: true } or TextArea { ReadOnly: true } or PasswordBox { ReadOnly: true }))
+					ReplaceSelection((TextControl)own, str);
+
+				return;
+			}
+
+			_ = Errors.UnsupportedErrorOccurred(mode == SendRawModes.RawText
+				? "ControlSendText on macOS reaches only the script's own Edit controls."
+				: "ControlSend cannot send keys on macOS.");
+#endif
 		}
 
 		internal override void ControlShowDropDown(object ctrl, object title, object text, object excludeTitle, object excludeText) =>
@@ -625,21 +605,26 @@ namespace Keysharp.Internals.Os.Unix
 			if (GetEtoTextControl(ctrl, title, text, excludeTitle, excludeText) is not TextControl edit)
 				return;
 
-			//As EM_REPLACESEL: the text replaces the selection and the caret follows it.
-			var selection = edit.Selection;
-			edit.ReplaceText(selection.Start, selection.Length(), str);
-			edit.CaretIndex = selection.Start + str.Length;
+			ReplaceSelection(edit, str);
 			WindowInfoBase.DoControlDelay();
+		}
+
+		/// <summary>As EM_REPLACESEL, and as typing: the text replaces the selection and the caret follows it.</summary>
+		private static void ReplaceSelection(TextControl edit, string text)
+		{
+			var selection = edit.Selection;
+			edit.ReplaceText(selection.Start, selection.Length(), text);
+			edit.CaretIndex = selection.Start + text.Length;
 		}
 
 		/// <summary>The Edit or RichEdit control the criteria name, or null after raising the error when they name none.</summary>
 		private static TextControl GetEtoTextControl(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is not ControlInfo item)
+			if (OwnControl(ctrl, title, text, excludeTitle, excludeText) is not Control control)
 				return null;
 
-			if (item.Control is TextBox or TextArea or PasswordBox)
-				return (TextControl)item.Control;
+			if (control is TextBox or TextArea or PasswordBox)
+				return (TextControl)control;
 
 			_ = Errors.TargetErrorOccurred("The control is not an Edit", title, text, excludeTitle, excludeText);
 			return null;
@@ -655,7 +640,7 @@ namespace Keysharp.Internals.Os.Unix
 		{
 			object ret = null;
 
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
+			if (OwnControl(ctrl, title, text, excludeTitle, excludeText) is Control control)
 			{
 				var focused = false;
 				var count = false;
@@ -673,7 +658,7 @@ namespace Keysharp.Internals.Os.Unix
 					else if (Options.TryParse(opt, "col", ref col)) { col--; }
 				}
 
-				if (item.Control is KeysharpListView lv)
+				if (control is KeysharpListView lv)
 				{
 					//As in AutoHotkey, Focused takes precedence over Selected.
 					if (count && focused)
@@ -713,9 +698,7 @@ namespace Keysharp.Internals.Os.Unix
 					}
 				}
 				else
-				{
-					//How to do the equivalent of what the Windows derivation does, but on linux?
-				}
+					ret = WrongClass(control, "SysListView32");
 			}
 
 			return ret;
@@ -788,9 +771,9 @@ namespace Keysharp.Internals.Os.Unix
 				_ => null
 			};
 
-		//EM_SETSEL(start, end): select a character range, which also moves the caret to `end`. The two
-		//documented special cases are honoured because scripts rely on them: start == -1 deselects and
-		//parks the caret at the current end, and end == -1 selects to the end of the text.
+		//EM_SETSEL(start, end): select a character range. The two documented special cases are honoured
+		//because scripts rely on them: start == -1 deselects and parks the caret at the current end, and
+		//end == -1 selects to the end of the text.
 		//Eto's Range<int> is INCLUSIVE (see ScrollTextAreaToOffset), so an exclusive [start, end)
 		//becomes Range(start, end - 1), and an empty selection becomes Range(caret, caret - 1).
 		private static Action CreateTextAreaSetSelAction(Control control, nint wparam, nint lparam)
@@ -819,7 +802,6 @@ namespace Keysharp.Internals.Os.Unix
 					(from, to) = (to, from);
 
 				area.Selection = new Range<int>(from, to - 1);
-				area.CaretIndex = to;
 			};
 		}
 
@@ -865,17 +847,25 @@ namespace Keysharp.Internals.Os.Unix
 
 		private static void DropdownHelper(bool val, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
+			if (OwnControl(ctrl, title, text, excludeTitle, excludeText) is not Control control)
+				return;
+
+#if LINUX
+			if (control.ControlObject is Gtk.ComboBox combo)
 			{
-				if (item.Control is ComboBox ctrl2)
-				{
-					ctrl2.DroppedDown = val;
-				}
+				if (val)
+					combo.Popup();
 				else
-				{
-					//How to do the equivalent of what the Windows derivation does, but on linux?
-				}
+					combo.Popdown();
+
+				WindowInfoBase.DoControlDelay();
 			}
+#else
+			if (control is ComboBox)
+				_ = WindowHelper.WindowOperationUnsupported(val ? "ControlShowDropDown" : "ControlHideDropDown");
+#endif
+			else
+				_ = WrongClass(control, "Combo");
 		}
 	}
 }

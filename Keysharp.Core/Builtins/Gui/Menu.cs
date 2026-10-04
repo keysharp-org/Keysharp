@@ -1107,9 +1107,7 @@ namespace Keysharp.Builtins
 					//Windows automatically removes a menu item from one collection when it is added to another, but linux doesn't.
 					//So it must be done manually here by moving the item between collections.
 					fromMenuItems.RemoveAt(0);
-					moveItem.ResetEtoItemRecursive();
 					item.DropDownItems.Add(moveItem);
-					moveItem.Owner = item.DropDown;
 #endif
 				}
 

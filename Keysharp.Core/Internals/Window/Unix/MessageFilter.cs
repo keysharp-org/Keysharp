@@ -20,47 +20,33 @@ namespace Keysharp.Internals.Window.Unix
 	internal class MessageFilter
 	{
 		private readonly Script script;
-		internal Message handledMsg;
 
 		internal MessageFilter(Script associatedScript)
 		{
 			script = associatedScript;
 		}
 
-		internal bool CallEventHandlers(ref Message m, bool buffered = false)
+		/// <summary>
+		/// Runs the monitors inline, since a queued monitor returns too late to claim the message. A_EventInfo is
+		/// the tick count, as for a message the Windows pre-filter took off the queue.
+		/// </summary>
+		internal bool CallEventHandlers(ref Message m)
 		{
-			if (script.IsDisposed)
+			if (script.IsDisposed || !script.GuiData.onMessageHandlers.TryGetValue(m.Msg, out var monitor))
 				return false;
 
-			if (script.GuiData.onMessageHandlers.TryGetValue(m.Msg, out var monitor))
-			{
-				object eventInfo = 0L;
-				//The monitor's thread takes this as its last-found window, and AHK makes that the top-level
-				//WINDOW even when the message went to a control (the control's own handle is still passed as the
-				//callback's fourth argument). Scripts compare it against a GUI's Hwnd to tell which of their
-				//windows a click landed in, which a control handle would never match.
-				long hwnd = TopLevelOf(m.HWnd);
+			//The monitor's thread takes this as its last-found window, and AHK makes that the top-level
+			//window even when the message went to a control (the control's own handle is still passed as the
+			//callback's fourth argument). Scripts compare it against a GUI's Hwnd to tell which of their
+			//windows a click landed in, which a control handle would never match.
+			long hwnd = TopLevelOf(m.HWnd);
+			object[] args = [m.WParam.ToInt64(), m.LParam.ToInt64(), (long)m.Msg, m.HWnd.ToInt64()];
 
-				if (MessagesEqual(handledMsg, m))
-				{
-					eventInfo = A_TickCount;
-				}
+			if (!monitor.TryExecuteEmergency(script, args, A_TickCount, hwnd, out var reply))
+				return false;
 
-				object[] args = [m.WParam.ToInt64(), m.LParam.ToInt64(), (long)m.Msg, m.HWnd.ToInt64()];
-
-				if (buffered)
-				{
-					var queuedEvent = new MsgMonitorExtensions.BufferedMessageQueuedEvent(monitor, script, args, eventInfo, hwnd);
-					_ = script.EventScheduler.Enqueue(ScriptEventQueue.Normal, 0, queuedEvent.Execute);
-				}
-				else if (monitor.TryExecuteEmergency(script, args, eventInfo, hwnd, out var reply))
-				{
-					m.Result = (nint)reply;
-					return true;
-				}
-			}
-
-			return false;
+			m.Result = (nint)reply;
+			return true;
 		}
 
 		/// <summary>
@@ -78,13 +64,6 @@ namespace Keysharp.Internals.Window.Unix
 
 			return handle;
 		}
-
-		private static bool MessagesEqual(Message left, Message right)
-			=> left.HWnd == right.HWnd
-				&& left.Msg == right.Msg
-				&& left.WParam == right.WParam
-				&& left.LParam == right.LParam
-				&& left.Result == right.Result;
 	}
 }
 #endif

@@ -671,6 +671,192 @@ namespace Keysharp.Internals.Input.Linux
 
 		internal override void DetachTargetWindowThread(uint mainThread, uint targetThread) { }
 
+		protected override void OnSendKeysStarting()
+		{
+			targetHeldModifiersLR = targetSentModifiersLR = 0;
+			targetHighSurrogate = '\0';
+		}
+
+		protected override bool TargetWindowSendUsesGlobalInput => false;
+
+		// ControlSend reaches only the script's own windows, as GTK key events. Their modifiers travel as the state of
+		// those events, as Windows sets the target thread's keyboard state, rather than being pressed for every window.
+		internal override void SetModifierLRState(uint modifiersLRnew, uint modifiersLRnow, nint targetWindow
+				, bool disguiseDownWinAlt, bool disguiseUpWinAlt, long extraInfo = KeyIgnoreAllExceptModifier)
+		{
+			if (targetWindow != 0)
+				targetSentModifiersLR = modifiersLRnew;
+			else
+				base.SetModifierLRState(modifiersLRnew, modifiersLRnow, targetWindow, disguiseDownWinAlt, disguiseUpWinAlt, extraInfo);
+		}
+
+		internal override void SendKeyEventToTargetWindow(KeyEventTypes eventType, uint vk, uint sc = 0u, nint targetWindow = default, bool doKeyDelay = false, long extraInfo = KeyIgnoreAllExceptModifier)
+		{
+			bool? isNeutral = null;
+			var modifierLR = script.HookThread.KeyToModifiersLR(vk, sc, ref isNeutral);
+
+			if (eventType != KeyEventTypes.KeyUp)
+			{
+				SendGtkKey(targetWindow, true, vk, sc, modifierLR != 0);
+				targetHeldModifiersLR |= modifierLR;
+			}
+
+			if (doKeyDelay && eventType == KeyEventTypes.KeyDownAndUp)
+				DoKeyDelay(ThreadAccessors.A_KeyDuration);
+
+			if (eventType != KeyEventTypes.KeyDown)
+			{
+				SendGtkKey(targetWindow, false, vk, sc, modifierLR != 0);
+				targetHeldModifiersLR &= ~modifierLR;
+			}
+		}
+
+		internal override void SendCharToTargetWindow(char ch, nint targetWindow)
+		{
+			// A character outside the BMP comes one UTF-16 unit per call, as WM_CHAR takes it.
+			if (char.IsHighSurrogate(ch))
+			{
+				targetHighSurrogate = ch;
+				return;
+			}
+
+			var high = targetHighSurrogate;
+			targetHighSurrogate = '\0';
+
+			if (char.IsLowSurrogate(ch) && high == '\0')
+				return;
+
+			var keyval = Gdk.Global.UnicodeToKeyval(char.IsLowSurrogate(ch) ? (uint)char.ConvertToUtf32(high, ch) : ch);
+			script.InvokeOnUIThread(() =>
+			{
+				SendGtkKeyEvent(targetWindow, true, keyval, 0, 0, 0, false);
+				SendGtkKeyEvent(targetWindow, false, keyval, 0, 0, 0, false);
+			});
+		}
+
+		private void SendGtkKey(nint targetWindow, bool down, uint vk, uint sc, bool isModifier)
+		{
+			uint keycode = sc != 0 ? sc + 8 : 0; //GDK keycodes start eight above Linux evdev codes.
+			if (keycode == 0 && !KeyCodes.TryMapVkToXKeycode(vk, out keycode))
+				return;
+
+			var modifiersLR = targetHeldModifiersLR | targetSentModifiersLR;
+			var group = (int)KeyCodes.GetActiveLayoutGroup();
+			script.InvokeOnUIThread(() =>
+			{
+				var keymap = Gdk.Keymap.GetForDisplay(Gdk.Display.Default);
+				var state = GdkModifierState(keymap, group, modifiersLR);
+
+				//GDK derives the key's symbol from its keycode and modifiers, as for a key typed on the keyboard.
+				if (keymap.TranslateKeyboardState(keycode, state, group, out var keyval, out _, out _, out _))
+					SendGtkKeyEvent(targetWindow, down, keyval, keycode, group, state, isModifier);
+			});
+		}
+
+		private static Gdk.ModifierType GdkModifierState(Gdk.Keymap keymap, int group, uint modifiersLR)
+		{
+			var state = Gdk.ModifierType.None;
+
+			if ((modifiersLR & (MOD_LSHIFT | MOD_RSHIFT)) != 0)
+				state |= Gdk.ModifierType.ShiftMask;
+
+			if ((modifiersLR & (MOD_LCONTROL | MOD_RCONTROL)) != 0)
+				state |= Gdk.ModifierType.ControlMask;
+
+			if ((modifiersLR & MOD_LALT) != 0)
+				state |= Gdk.ModifierType.Mod1Mask;
+
+			//The right Alt key is AltGr where the layout gives it ISO_Level3_Shift, which selects the third level.
+			if ((modifiersLR & MOD_RALT) != 0)
+				state |= KeyCodes.TryMapVkToXKeycode(VK_RMENU, out var ralt)
+						 && keymap.TranslateKeyboardState(ralt, Gdk.ModifierType.None, group, out var keyval, out _, out _, out _)
+						 && keyval == (uint)Gdk.Key.ISO_Level3_Shift ? Gdk.ModifierType.Mod5Mask : Gdk.ModifierType.Mod1Mask;
+
+			if ((modifiersLR & (MOD_LWIN | MOD_RWIN)) != 0)
+				state |= Gdk.ModifierType.Mod4Mask | Gdk.ModifierType.SuperMask;
+
+			return state;
+		}
+
+		/// <summary>
+		/// Gives a key event to the GTK widget of one of the script's own windows or controls, as the toolkit would give
+		/// it a key typed there; a window passes it on to its focused control. Must run on the UI thread.
+		/// </summary>
+		private static void SendGtkKeyEvent(nint targetWindow, bool down, uint keyval, uint keycode, int group, Gdk.ModifierType state, bool isModifier)
+		{
+			if (Control.FromHandle(targetWindow)?.ControlObject is not Gtk.Widget widget)
+				return;
+
+			//An editable GTK combo box takes typing in its entry, as a Win32 ComboBox passes it to its edit.
+			if (widget is Gtk.ComboBox { HasEntry: true, Child: Gtk.Widget entry })
+				widget = entry;
+
+			if (!widget.IsRealized)
+				widget.Realize();
+
+			if (widget.Window is not Gdk.Window gdkWindow)
+				return;
+
+			var type = down ? Gdk.EventType.KeyPress : Gdk.EventType.KeyRelease;
+			var ev = gdk_event_new(type);
+
+			try
+			{
+				//Freeing the event releases the window reference.
+				Marshal.StructureToPtr(new GdkEventKey
+				{
+					Type = (int)type,
+					Window = g_object_ref(gdkWindow.Handle),
+					SendEvent = 1,
+					State = (uint)state,
+					Keyval = keyval,
+					HardwareKeycode = (ushort)keycode,
+					Group = (byte)group,
+					IsModifier = isModifier ? (byte)1 : (byte)0
+				}, ev, false);
+
+				if (widget.Display.DefaultSeat?.Keyboard is Gdk.Device keyboard)
+					gdk_event_set_device(ev, keyboard.Handle);
+
+				_ = widget.ProcessEvent(new Gdk.Event(ev));
+			}
+			finally
+			{
+				gdk_event_free(ev);
+			}
+		}
+
+		private uint targetHeldModifiersLR, targetSentModifiersLR;
+		private char targetHighSurrogate;
+
+		[StructLayout(LayoutKind.Sequential)]
+		private struct GdkEventKey
+		{
+			internal int Type;
+			internal nint Window;
+			internal sbyte SendEvent;
+			internal uint Time;
+			internal uint State;
+			internal uint Keyval;
+			internal int Length;
+			internal nint String;
+			internal ushort HardwareKeycode;
+			internal byte Group;
+			internal byte IsModifier; //GDK packs this bitfield immediately after Group.
+		}
+
+		[DllImport("libgdk-3.so.0")]
+		private static extern nint gdk_event_new(Gdk.EventType type);
+
+		[DllImport("libgdk-3.so.0")]
+		private static extern void gdk_event_free(nint ev);
+
+		[DllImport("libgdk-3.so.0")]
+		private static extern void gdk_event_set_device(nint ev, nint device);
+
+		[DllImport("libgobject-2.0.so.0")]
+		private static extern nint g_object_ref(nint instance);
+
 		protected internal override void LongOperationUpdate() { }
 		protected internal override void LongOperationUpdateForSendKeys() { }
 

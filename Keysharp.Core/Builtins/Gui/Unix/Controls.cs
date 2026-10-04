@@ -333,27 +333,28 @@ namespace Keysharp.Builtins
 			}
 		}
 
-		protected override void InsertItem(int index, object item)
+		protected override void InsertItem(int index, object item) => base.InsertItem(sorted ? IndexFor(item) : index, item);
+
+		/// <summary>The index an added item takes: the end, or with Sort after the items that compare equal or lower.</summary>
+		internal int IndexFor(object item)
 		{
-			if (sorted)
+			if (!sorted)
+				return Count;
+
+			var text = item?.ToString();
+			int low = 0, high = Count;
+
+			while (low < high)
 			{
-				var text = item?.ToString();
-				int low = 0, high = Count;
+				var mid = (low + high) >>> 1;
 
-				while (low < high)
-				{
-					var mid = (low + high) >>> 1;
-
-					if (string.Compare(this[mid]?.ToString(), text, CultureInfo.CurrentCulture, CompareOptions.IgnoreCase) <= 0)
-						low = mid + 1;
-					else
-						high = mid;
-				}
-
-				index = low;
+				if (string.Compare(this[mid]?.ToString(), text, CultureInfo.CurrentCulture, CompareOptions.IgnoreCase) <= 0)
+					low = mid + 1;
+				else
+					high = mid;
 			}
 
-			base.InsertItem(index, item);
+			return low;
 		}
 	}
 

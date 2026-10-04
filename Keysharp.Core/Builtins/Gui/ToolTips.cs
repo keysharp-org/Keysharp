@@ -465,8 +465,8 @@ namespace Keysharp.Builtins
 
 			if (_text.Length == 0 && _title.Length == 0)
 			{
-				script.Tray.Visible = false;
-				script.Tray.Visible = true;
+				script.Tray?.Visible = false;
+				script.Tray?.Visible = true;
 				return DefaultObject;
 			}
 
@@ -520,17 +520,10 @@ namespace Keysharp.Builtins
 				HandleInt(opts.TryCoerceLong(out long lo) ? (int?)lo : null);
 
 #if WINDOWS
-			script.Tray.Visible = true;
-			script.Tray.ShowBalloonTip(1000, _title, _text, icon);//Duration is now ignored by Windows.
-#else
-			var notification = new Notification
-			{
-				Title = _title,
-				Message = _text,
-				ContentImage = icon,
-			};
-			notification.Show();
+			script.Tray?.Visible = true;
 #endif
+			// No tray exists while the UI is unavailable, and AHK's TrayTip does not raise.
+			script.Tray?.ShowBalloonTip(1000, _title, _text, icon);//Windows ignores the duration.
 			return DefaultObject;
 		}
 	}

@@ -21,6 +21,7 @@ namespace Keysharp.Builtins.COM
 		internal string path;
 		internal string iface;             // pinned interface, or null to search all of them
 		internal ComDBusSink sink;         // live ComObjConnect subscription, if any
+		private int connectionGeneration;
 		internal override bool DisposesWhenCollected => sink != null;
 
 		public ComObject(params object[] args) : base(args)
@@ -29,12 +30,13 @@ namespace Keysharp.Builtins.COM
 				_ = Errors.ErrorOccurred("Construct a D-Bus ComObject by calling ComObject(name), not with New.");
 		}
 
-		internal ComObject(DBusBus bus, string service, string path, string iface) : base(null)
+		internal ComObject(DBusBus bus, string service, string path, string iface, DBusNodeInfo node) : base(null)
 		{
 			this.bus = bus;
 			this.service = service;
 			this.path = path;
 			this.iface = iface;
+			this.node = node;
 		}
 
 		/// <summary>ComObject("[system:|session:]bus.name", "optional.interface").</summary>
@@ -65,13 +67,13 @@ namespace Keysharp.Builtins.COM
 			var path = explicitPath ?? DerivePath(name);
 			var node = TryIntrospect(bus, name, path);
 
-			if (node == null || (!node.UserInterfaces.Any() && node.Children.Length == 0))
+			if (node == null || (node.UserInterfaces.Length == 0 && node.Children.Length == 0))
 				return Errors.ErrorOccurred(DescribeMissingPath(bus, name, path, explicitPath != null));
 
 			if (ifaceName.Length > 0 && !node.Interfaces.ContainsKey(ifaceName))
 				return Errors.ErrorOccurred($"'{name}' at '{path}' does not implement '{ifaceName}'. Available: {string.Join(", ", node.Interfaces.Keys)}");
 
-			return new ComObject(bus, name, path, ifaceName.Length > 0 ? ifaceName : null);
+			return new ComObject(bus, name, path, ifaceName.Length > 0 ? ifaceName : null, node);
 		}
 
 		/// <summary>Splits "[system:|session:]name[:/object/path]" into its parts.</summary>
@@ -141,7 +143,7 @@ namespace Keysharp.Builtins.COM
 				if (node == null)
 					return;
 
-				if (node.UserInterfaces.Any() && at != path)
+				if (node.UserInterfaces.Length > 0 && at != path)
 					found.Add(at);
 
 				foreach (var child in node.Children)
@@ -151,62 +153,52 @@ namespace Keysharp.Builtins.COM
 
 		// ---- member resolution ------------------------------------------------------------------
 
-		private DBusNodeInfo Node => DBusIntrospection.Get(bus, service, path);
+		internal readonly DBusNodeInfo node;
 
-		private IEnumerable<DBusInterfaceInfo> Candidates
+		private IEnumerable<DBusInterfaceInfo> Candidates => iface != null ? [node.Interfaces[iface]] : node.Interfaces.Values;
+
+		// Container nodes can answer Introspect with only child nodes, without declaring the interface.
+		private static readonly DBusInterfaceInfo introspectable = new () { Name = DBusCalls.IntrospectableInterface };
+		private static readonly DBusMethodInfo introspect = new () { Name = "Introspect", InSignature = "", OutSignature = "s", OutArgNames = [""] };
+
+		private DBusInterfaceInfo Resolve(Dictionary<string, DBusInterfaceInfo[]> owners, string name, out string ambiguity)
 		{
-			get
-			{
-				var node = Node;
+			ambiguity = null;
 
-				if (iface != null)
-					return node.Interfaces.TryGetValue(iface, out var only) ? [only] : [];
+			if (iface != null)
+				return node.Interfaces[iface];
 
-				// Standard interfaces come last so a service's own member of the same name wins.
-				return node.UserInterfaces.Concat(node.Interfaces.Values.Except(node.UserInterfaces));
-			}
+			if (!owners.TryGetValue(name, out var found))
+				return null;
+
+			if (found.Length == 1)
+				return found[0];
+
+			ambiguity = $"'{name}' is defined on more than one interface ({string.Join(", ", found.Select(static i => i.Name))}); pass the interface to ComObject or use ComObjQuery.";
+			return null;
 		}
 
-		private bool TryResolveMethod(string name, out DBusInterfaceInfo owner, out DBusMethodInfo method)
+		private bool TryResolveMethod(string name, out DBusInterfaceInfo owner, out DBusMethodInfo method, out string ambiguity)
 		{
-			owner = null;
+			owner = Resolve(node.MethodOwners, name, out ambiguity);
 			method = null;
-			var hits = Candidates.Where(i => i.Methods.ContainsKey(name)).ToList();
 
-			if (hits.Count == 0)
-			{
-				// Container nodes can answer Introspect with only child nodes, without declaring the interface.
-				if (name != "Introspect" || (iface != null && iface != DBusCalls.IntrospectableInterface))
-					return false;
-
-				owner = new DBusInterfaceInfo { Name = DBusCalls.IntrospectableInterface };
-				method = new DBusMethodInfo { Name = name, InSignature = "", OutSignature = "s", OutArgNames = [""] };
+			if (owner?.Methods.TryGetValue(name, out method) == true)
 				return true;
-			}
 
-			if (hits.Count > 1)
-				throw new AmbiguousMatchException($"'{name}' is defined on more than one interface ({string.Join(", ", hits.Select(h => h.Name))}); pass the interface to ComObject or use ComObjQuery.");
-
-			owner = hits[0];
-			method = owner.Methods[name];
-			return true;
-		}
-
-		private bool TryResolveProperty(string name, out DBusInterfaceInfo owner, out DBusPropertyInfo property)
-		{
-			owner = null;
-			property = null;
-			var hits = Candidates.Where(i => i.Properties.ContainsKey(name)).ToList();
-
-			if (hits.Count == 0)
+			if (ambiguity != null || name != introspect.Name || (iface != null && iface != DBusCalls.IntrospectableInterface))
 				return false;
 
-			if (hits.Count > 1)
-				throw new AmbiguousMatchException($"Property '{name}' is defined on more than one interface ({string.Join(", ", hits.Select(h => h.Name))}); pass the interface to ComObject or use ComObjQuery.");
-
-			owner = hits[0];
-			property = owner.Properties[name];
+			owner = introspectable;
+			method = introspect;
 			return true;
+		}
+
+		private bool TryResolveProperty(string name, out DBusInterfaceInfo owner, out DBusPropertyInfo property, out string ambiguity)
+		{
+			owner = Resolve(node.PropertyOwners, name, out ambiguity);
+			property = null;
+			return owner?.Properties.TryGetValue(name, out property) == true;
 		}
 
 		// ---- IMetaObject ------------------------------------------------------------------------
@@ -215,13 +207,13 @@ namespace Keysharp.Builtins.COM
 		{
 			args = NamedArgBinder.StripNames(args, out _);   // D-Bus resolves positionally only
 
-			if (!TryResolveMethod(name, out var owner, out var method))
+			if (!TryResolveMethod(name, out var owner, out var method, out var ambiguity))
 			{
 				// A property may still be callable as a zero-argument getter, matching IDispatch.
-				if (TryResolveProperty(name, out var pOwner, out var prop) && (args == null || args.Length == 0))
+				if (ambiguity == null && (args == null || args.Length == 0) && TryResolveProperty(name, out var pOwner, out var prop, out ambiguity))
 					return ReadProperty(pOwner, prop);
 
-				return Errors.MethodErrorOccurred($"'{name}' is not a method of any interface on '{service}{path}'.");
+				return Errors.MethodErrorOccurred(ambiguity ?? $"'{name}' is not a method of any interface on '{service}{path}'.");
 			}
 
 			var results = DBusCalls.Call(bus, service, path, owner.Name, method.Name,
@@ -231,21 +223,21 @@ namespace Keysharp.Builtins.COM
 
 		object IMetaObject.Get(string name, object[] args)
 		{
-			if (TryResolveProperty(name, out var owner, out var prop))
+			if (TryResolveProperty(name, out var owner, out var prop, out var ambiguity))
 				return ReadProperty(owner, prop);
 
 			// Reading a name that is really a method mirrors IDispatch's property/method blur.
-			if (TryResolveMethod(name, out var mOwner, out var method) && method.InSignature.Length == 0)
+			if (ambiguity == null && TryResolveMethod(name, out var mOwner, out var method, out ambiguity) && method.InSignature.Length == 0)
 				return ResultOf(DBusCalls.Call(bus, service, path, mOwner.Name, method.Name, "", [], method.OutSignature));
 
-			return Errors.PropertyErrorOccurred($"'{name}' is not a property of any interface on '{service}{path}'.");
+			return Errors.PropertyErrorOccurred(ambiguity ?? $"'{name}' is not a property of any interface on '{service}{path}'.");
 		}
 
 		void IMetaObject.Set(string name, object[] args, object value)
 		{
-			if (!TryResolveProperty(name, out var owner, out var prop))
+			if (!TryResolveProperty(name, out var owner, out var prop, out var ambiguity))
 			{
-				_ = Errors.PropertyErrorOccurred($"'{name}' is not a property of any interface on '{service}{path}'.");
+				_ = Errors.PropertyErrorOccurred(ambiguity ?? $"'{name}' is not a property of any interface on '{service}{path}'.");
 				return;
 			}
 
@@ -270,12 +262,12 @@ namespace Keysharp.Builtins.COM
 				return Errors.ValueErrorOccurred("Indexing a D-Bus object needs one object-path string.");
 
 			var child = rel[0] == '/' ? rel : (path == "/" ? "/" + rel : path + "/" + rel);
-			var node = TryIntrospect(bus, service, child);
+			var childNode = TryIntrospect(bus, service, child);
 
-			if (node == null || (!node.UserInterfaces.Any() && node.Children.Length == 0))
+			if (childNode == null || (childNode.UserInterfaces.Length == 0 && childNode.Children.Length == 0))
 				return Errors.ErrorOccurred($"'{service}' exposes no object at '{child}'.");
 
-			return new ComObject(bus, service, child, null);
+			return new ComObject(bus, service, child, null, childNode);
 		}
 
 		private object ReadProperty(DBusInterfaceInfo owner, DBusPropertyInfo prop)
@@ -315,13 +307,24 @@ namespace Keysharp.Builtins.COM
 			if (sinkOrPrefix == null)
 				return;
 
-			sink = new ComDBusSink(this, sinkOrPrefix);
+			// Subscription waits pump callbacks, which may reconnect or disconnect this object.
+			var generation = Volatile.Read(ref connectionGeneration);
+			var registered = new ComDBusSink(this, sinkOrPrefix);
+
+			if (generation != Volatile.Read(ref connectionGeneration))
+			{
+				registered.Dispose();
+				return;
+			}
+
+			sink = registered;
 			MaybeActivateFinalizer();
 		}
 
 		[PublicHiddenFromUser]
 		public void Dispose()
 		{
+			_ = Interlocked.Increment(ref connectionGeneration);
 			Interlocked.Exchange(ref sink, null)?.Dispose();
 			MaybeActivateFinalizer();
 		}

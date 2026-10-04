@@ -659,15 +659,6 @@ namespace Eto.Forms
             internal int FindStringExact(string value) => FindItem(list.DataStore, value, true);
         }
 
-        extension (Eto.Forms.ComboBox comboBox)
-        {
-            internal bool DroppedDown
-            {
-                get => false;
-                set => _ = value;
-            }
-        }
-
         private static int FindItem(IEnumerable<object> items, string value, bool exact)
         {
             if (string.IsNullOrEmpty(value) || items == null)

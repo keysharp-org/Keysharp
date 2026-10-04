@@ -52,4 +52,13 @@ pinned := ComObjQuery(peer, "io.keysharp.CoreTest")
 Throws(() => pinned.Introspect(), A_LineNumber, MethodError)
 Throws(() => container.MissingMethod(), A_LineNumber, MethodError)
 
+; A name two of the object's own interfaces define needs the interface pinned, while one of its own interfaces
+; shadows a standard interface defining the same name.
+Throws(() => peer.Twin(), A_LineNumber, MethodError)
+Throws(() => peer.Shared, A_LineNumber, PropertyError)
+second := ComObjQuery(peer, "io.keysharp.CoreTest.Second")
+AssertEq(second.Twin(), "io.keysharp.CoreTest.Second.Twin", A_LineNumber)
+AssertEq(second.Shared, "io.keysharp.CoreTest.Second.Shared", A_LineNumber)
+AssertEq(peer.Ping(), "io.keysharp.CoreTest.Second.Ping", A_LineNumber)
+
 FileAppend("pass`n", "*")

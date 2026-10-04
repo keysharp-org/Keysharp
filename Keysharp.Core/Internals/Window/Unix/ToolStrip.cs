@@ -86,6 +86,8 @@ namespace Keysharp.Internals.Window.Unix
 				else if (isCheckItem)
 					((CheckMenuItem)EtoItem).Checked = value;
 
+				// macOS shows a radio item's state in its text.
+				EtoItem?.Text = PresentedText;
 				CheckedChanged?.Invoke(this, EventArgs.Empty);
 			}
 		}
@@ -137,23 +139,23 @@ namespace Keysharp.Internals.Window.Unix
 		internal virtual MenuItem BuildEtoItem()
 		{
 			if (EtoItem == null)
-				EtoItem = new ButtonMenuItem();
+				InitEtoItem(new ButtonMenuItem(), EtoItem_Click);
 
-			EtoItem.Text = PresentedText;
-			EtoItem.Enabled = Enabled;
-			EtoItem.Visible = Visible;
-
-			if (EtoItem is ButtonMenuItem button && image is Eto.Drawing.Image etoImage)
-				button.Image = etoImage;
-
-			EtoItem.Click -= EtoItem_Click;
-			EtoItem.Click += EtoItem_Click;
 			return EtoItem;
 		}
 
-		internal virtual void ResetEtoItemRecursive()
+		private protected void InitEtoItem(MenuItem etoItem, EventHandler<EventArgs> click)
 		{
-			EtoItem = null;
+			EtoItem = etoItem;
+			etoItem.Tag = this;
+			etoItem.Text = PresentedText;
+			etoItem.Enabled = enabled;
+			etoItem.Visible = visible;
+
+			if (etoItem is ButtonMenuItem button && image is Eto.Drawing.Image etoImage)
+				button.Image = etoImage;
+
+			etoItem.Click += click;
 		}
 
 		private void EtoItem_Click(object sender, EventArgs e) => RaiseClick();
@@ -161,32 +163,16 @@ namespace Keysharp.Internals.Window.Unix
 
 	public class ToolStripSeparator : ToolStripItem
 	{
-		internal override MenuItem BuildEtoItem()
-		{
-			EtoItem = new SeparatorMenuItem();
-			return EtoItem;
-		}
+		internal override MenuItem BuildEtoItem() => EtoItem ??= new SeparatorMenuItem { Tag = this };
 	}
 
 	public class ToolStripItemCollection : Collection<ToolStripItem>
 	{
-		private ToolStrip owner;
-		private ToolStripMenuItem ownerMenuItem;
+		private readonly ToolStrip owner;
 
 		internal ToolStripItemCollection(ToolStrip owner)
 		{
 			this.owner = owner;
-		}
-
-		internal ToolStripItemCollection(ToolStripMenuItem ownerMenuItem)
-		{
-			this.ownerMenuItem = ownerMenuItem;
-		}
-
-		internal void SetOwner(ToolStrip newOwner)
-		{
-			owner = newOwner;
-			ownerMenuItem = null;
 		}
 
 		public ToolStripMenuItem Add(string text)
@@ -198,14 +184,15 @@ namespace Keysharp.Internals.Window.Unix
 
 		public new ToolStripItem Add(ToolStripItem item)
 		{
-			AddItem(item);
+			if (item != null)
+				base.Add(item);
 			return item;
 		}
 
 		public void AddRange(ToolStripItem[] items)
 		{
 			foreach (var item in items)
-				AddItem(item);
+				Add(item);
 		}
 
 		public ToolStripItem[] Find(string key, bool searchAllChildren)
@@ -230,63 +217,35 @@ namespace Keysharp.Internals.Window.Unix
 			}
 		}
 
-		private void AddItem(ToolStripItem item)
-		{
-			if (item == null)
-				return;
-
-			if (owner != null)
-				item.SetParent(owner);
-			else if (ownerMenuItem != null)
-				item.SetParent(ownerMenuItem.Owner);
-
-			Items.Add(item);
-			owner?.SyncEtoItems();
-			ownerMenuItem?.SyncSubItems();
-		}
-
 		protected override void InsertItem(int index, ToolStripItem item)
 		{
-			if (item != null)
-			{
-				if (owner != null)
-					item.SetParent(owner);
-				else if (ownerMenuItem != null)
-					item.SetParent(ownerMenuItem.Owner);
-			}
-
+			item?.SetParent(owner);
 			base.InsertItem(index, item);
-			owner?.SyncEtoItems();
-			ownerMenuItem?.SyncSubItems();
+			owner.SyncEtoItems();
 		}
 
 		protected override void SetItem(int index, ToolStripItem item)
 		{
-			if (item != null)
-			{
-				if (owner != null)
-					item.SetParent(owner);
-				else if (ownerMenuItem != null)
-					item.SetParent(ownerMenuItem.Owner);
-			}
-
+			this[index]?.SetParent(null);
+			item?.SetParent(owner);
 			base.SetItem(index, item);
-			owner?.SyncEtoItems();
-			ownerMenuItem?.SyncSubItems();
+			owner.SyncEtoItems();
 		}
 
 		protected override void RemoveItem(int index)
 		{
+			this[index]?.SetParent(null);
 			base.RemoveItem(index);
-			owner?.SyncEtoItems();
-			ownerMenuItem?.SyncSubItems();
+			owner.SyncEtoItems();
 		}
 
 		protected override void ClearItems()
 		{
+			foreach (var item in this)
+				item?.SetParent(null);
+
 			base.ClearItems();
-			owner?.SyncEtoItems();
-			ownerMenuItem?.SyncSubItems();
+			owner.SyncEtoItems();
 		}
 	}
 
@@ -318,7 +277,9 @@ namespace Keysharp.Internals.Window.Unix
 			set => _ = value;
 		}
 
-		internal ContextMenu ContextMenu { get; } = new ContextMenu();
+		// Made on first use: a submenu's items live in its item's native submenu, so most strips never need one.
+		internal ContextMenu ContextMenu => contextMenu ??= new ContextMenu();
+		private ContextMenu contextMenu;
 
 		public ToolStrip()
 		{
@@ -328,19 +289,48 @@ namespace Keysharp.Internals.Window.Unix
 
 		public IEnumerable<ToolStripItem> GetItems() => Items;
 
+#if LINUX
+		// GTK keeps cell positions until an item leaves the menu.
+		internal bool laidOutInColumns;
+#endif
+
 		internal virtual void SyncEtoItems()
 		{
-			ContextMenu.Items.Clear();
-			foreach (var item in Items)
-				ContextMenu.Items.Add(item.BuildEtoItem());
-
-			UnixMenuPresentation.Apply(ContextMenu, Items);
+			SyncNativeItems(ContextMenu.Items);
+			UnixMenuPresentation.Apply(ContextMenu, this);
 		}
+
+		// Keep existing native items so edits do not rebuild the whole menu.
+		internal void SyncNativeItems(MenuItemCollection native)
+		{
+			for (var i = 0; i < Items.Count; i++)
+			{
+				var etoItem = Items[i].BuildEtoItem();
+
+				while (i < native.Count && native[i] != etoItem && !Holds(native[i]))
+					native.RemoveAt(i);
+
+				if (i < native.Count && native[i] == etoItem)
+					continue;
+
+				// A native item sits in one menu at a time, so one held elsewhere, or further down this one, moves here.
+				(etoItem.Parent as ISubmenu)?.Items.Remove(etoItem);
+				native.Insert(i, etoItem);
+			}
+
+			while (native.Count > Items.Count)
+				native.RemoveAt(native.Count - 1);
+		}
+
+		// A native item stops standing for an item once the item leaves this menu or is rebuilt as another type.
+		private bool Holds(MenuItem etoItem) => etoItem.Tag is ToolStripItem item && item.Owner == this && item.EtoItem == etoItem;
 
 		public virtual void Refresh()
 		{
 			SyncEtoItems();
 		}
+
+		public void Dispose() => contextMenu?.Dispose();
 	}
 
 	public class ToolStripDropDownMenu : ToolStrip
@@ -431,32 +421,21 @@ namespace Keysharp.Internals.Window.Unix
 		internal override MenuItem BuildEtoItem()
 		{
 			if (EtoItem == null || (EtoItem is CheckMenuItem) != NeedsCheckItem)
-				EtoItem = NeedsCheckItem ? new CheckMenuItem() : new ButtonMenuItem();
+			{
+				InitEtoItem(NeedsCheckItem ? new CheckMenuItem() : new ButtonMenuItem(), EtoItem_Click);
 
-			EtoItem.Text = PresentedText;
-			EtoItem.Enabled = Enabled;
-			EtoItem.Visible = Visible;
-
-			if (EtoItem is ButtonMenuItem button && Image is Eto.Drawing.Image etoImage)
-				button.Image = etoImage;
-
-			if (EtoItem is CheckMenuItem checkItem)
-				checkItem.Checked = Checked;
-
-			EtoItem.Click -= EtoItem_Click;
-			EtoItem.Click += EtoItem_Click;
+				if (EtoItem is CheckMenuItem checkItem)
+					checkItem.Checked = Checked;
+			}
+			else
+			{
+				// macOS writes the item's options into its text, and an options change reaches the item only here.
+				EtoItem.Text = PresentedText;
+			}
 
 			SyncSubItems();
 			UnixMenuPresentation.Apply(EtoItem, Presentation);
 			return EtoItem;
-		}
-
-		internal override void ResetEtoItemRecursive()
-		{
-			foreach (var item in DropDownItems)
-				item.ResetEtoItemRecursive();
-
-			EtoItem = null;
 		}
 
 		internal void SyncSubItems()
@@ -464,15 +443,8 @@ namespace Keysharp.Internals.Window.Unix
 			if (EtoItem is not ButtonMenuItem button)
 				return;
 
-			button.Items.Clear();
-			foreach (var item in DropDownItems)
-			{
-				// Force a fresh Eto item to avoid GTK "parent already set" warnings.
-				item.ResetEtoItemRecursive();
-				button.Items.Add(item.BuildEtoItem());
-			}
-
-			UnixMenuPresentation.Apply(button, DropDownItems);
+			dropDownMenu.SyncNativeItems(button.Items);
+			UnixMenuPresentation.Apply(button, dropDownMenu);
 		}
 
 		private void EtoItem_Click(object sender, EventArgs e)
@@ -513,19 +485,19 @@ namespace Keysharp.Internals.Window.Unix
 #endif
 		}
 
-		internal static void Apply(ContextMenu menu, IReadOnlyList<ToolStripItem> items)
+		internal static void Apply(ContextMenu menu, ToolStrip strip)
 		{
 #if LINUX
 			if (menu?.ControlObject is Gtk.Menu nativeMenu)
-				Apply(nativeMenu, items);
+				Apply(nativeMenu, strip);
 #endif
 		}
 
-		internal static void Apply(ButtonMenuItem parent, IReadOnlyList<ToolStripItem> items)
+		internal static void Apply(ButtonMenuItem parent, ToolStrip strip)
 		{
 #if LINUX
 			if (parent?.ControlObject is Gtk.MenuItem nativeParent && nativeParent.Submenu is Gtk.Menu nativeMenu)
-				Apply(nativeMenu, items);
+				Apply(nativeMenu, strip);
 #endif
 		}
 
@@ -547,48 +519,53 @@ namespace Keysharp.Internals.Window.Unix
 			Gtk.StyleContext.AddProviderForScreen(screen, barBreakProvider, ApplicationStylePriority);
 		}
 
-		private static void Apply(Gtk.Menu menu, IReadOnlyList<ToolStripItem> items)
+		private static void Apply(Gtk.Menu menu, ToolStrip strip)
 		{
-			var columns = new List<(List<Gtk.Widget> Widgets, bool Bar)>();
-			var current = new List<Gtk.Widget>();
-			columns.Add((current, false));
+			var items = strip.Items;
+
+			// A GtkMenu places an item it was given no cell for in the first free row, so once a menu has had columns
+			// every item is given its cell, keeping the order right when items are added or columns removed.
+			if (!strip.laidOutInColumns)
+			{
+				for (var i = 1; i < items.Count && !strip.laidOutInColumns; i++)
+					strip.laidOutInColumns = items[i].Tag is Keysharp.Builtins.Menu.MenuItemPresentation { StartsColumn: true };
+
+				if (!strip.laidOutInColumns)
+				{
+					// An item moved here from a divided column of another menu brings its divider along.
+					foreach (var item in items)
+						(item.EtoItem?.ControlObject as Gtk.Widget)?.StyleContext.RemoveClass(BarBreakStyleClass);
+
+					return;
+				}
+			}
+
+			uint column = 0, row = 0;
+			var bar = false;
 
 			foreach (var item in items)
 			{
 				if (item.EtoItem?.ControlObject is not Gtk.Widget widget)
 					continue;
 
-				var presentation = item.Tag as Keysharp.Builtins.Menu.MenuItemPresentation;
-				Apply(item.EtoItem, presentation);
-				widget.StyleContext.RemoveClass(BarBreakStyleClass);
-
-				if (current.Count > 0 && presentation is { StartsColumn: true })
+				if (row > 0 && item.Tag is Keysharp.Builtins.Menu.MenuItemPresentation { StartsColumn: true } presentation)
 				{
-					current = [];
-					columns.Add((current, presentation.BarBreak));
-				}
-
-				current.Add(widget);
-			}
-
-			if (columns.Count == 1)
-				return;
-
-			if (columns.Any(static column => column.Bar))
-				EnsureBarBreakStyle();
-
-			for (var columnIndex = 0; columnIndex < columns.Count; ++columnIndex)
-			{
-				var (widgets, bar) = columns[columnIndex];
-
-				for (var row = 0; row < widgets.Count; ++row)
-				{
-					//Attaching a widget the menu already owns only moves it, so nothing has to be removed first.
-					menu.Attach(widgets[row], (uint)columnIndex, (uint)columnIndex + 1, (uint)row, (uint)row + 1);
+					column++;
+					row = 0;
+					bar = presentation.BarBreak;
 
 					if (bar)
-						widgets[row].StyleContext.AddClass(BarBreakStyleClass);
+						EnsureBarBreakStyle();
 				}
+
+				//Attaching a widget the menu already owns only moves it, so nothing has to be removed first.
+				menu.Attach(widget, column, column + 1, row, row + 1);
+				row++;
+
+				if (bar)
+					widget.StyleContext.AddClass(BarBreakStyleClass);
+				else
+					widget.StyleContext.RemoveClass(BarBreakStyleClass);
 			}
 		}
 #endif

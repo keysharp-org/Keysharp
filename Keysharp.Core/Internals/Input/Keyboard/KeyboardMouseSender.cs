@@ -1318,10 +1318,10 @@ namespace Keysharp.Internals.Input.Keyboard
 			// Default implementation does nothing.
 		}
 
-		internal virtual void SendCharToTargetWindow(char ch, nint targetWindow)
-		{
-			// Default implementation does nothing.
-		}
+		internal virtual void SendCharToTargetWindow(char ch, nint targetWindow) { }
+
+		/// <summary>Whether targeted sends also modify global keyboard state.</summary>
+		protected virtual bool TargetWindowSendUsesGlobalInput => true;
 
 		/// <summary>
 		/// thisHotkeyModifiersLR, if non-zero,
@@ -1339,7 +1339,8 @@ namespace Keysharp.Internals.Input.Keyboard
 			if (keys?.Length == 0)
 				return;
 
-			script.Permissions.EnsureInputControl(operation: "SendKeys");
+			if (targetWindow == 0 || TargetWindowSendUsesGlobalInput)
+				script.Permissions.EnsureInputControl(operation: "SendKeys");
 
 			try
 			{
@@ -1663,6 +1664,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			// wrongly seem that the turning off of Capslock below needs a Sleep(0) to take effect.
 			blockinputPrev = kbd.blockInput;
 			priorCapslockState = tv.storeCapsLockMode && !inBlindMode && sendRaw != SendRawModes.RawText
+								 && (targetWindow == 0 || TargetWindowSendUsesGlobalInput)
 								 ? ToggleKeyState(VK_CAPITAL, ToggleValueType.Off)
 								 : ToggleValueType.Invalid; // In blind mode, don't do store capslock (helps remapping and also adds flexibility).
 			// sendMode must be set only after setting Capslock state above, because the hook method
@@ -2612,10 +2614,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				DoKeyDelay(); // Thread-safe because only called by main thread in this mode.  See notes above.
 		}
 
-		internal virtual void SendKeyEventToTargetWindow(KeyEventTypes eventType, uint vk, uint sc = 0u, nint targetWindow = default, bool doKeyDelay = false, long extraInfo = KeyIgnoreAllExceptModifier)
-		{
-			throw new NotImplementedException();
-		}
+		internal virtual void SendKeyEventToTargetWindow(KeyEventTypes eventType, uint vk, uint sc = 0u, nint targetWindow = default, bool doKeyDelay = false, long extraInfo = KeyIgnoreAllExceptModifier) => throw new NotImplementedException();
 
 		internal abstract void SendKeybdEvent(KeyEventTypes eventType, uint vk, uint sc, uint eventFlags, long extraInfo, bool autoRepeat = false);
 

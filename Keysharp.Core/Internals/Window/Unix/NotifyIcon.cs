@@ -101,7 +101,7 @@ namespace Keysharp.Internals.Window.Unix
 			}
 		}
 
-		public void ShowBalloonTip(int timeout, string title, string text, object icon)
+		public void ShowBalloonTip(int timeout, string title, string text, Image icon)
 		{
 			if (disposed)
 				return;
@@ -109,7 +109,8 @@ namespace Keysharp.Internals.Window.Unix
 			var notification = new Notification
 			{
 				Title = title ?? "",
-				Message = text ?? ""
+				Message = text ?? "",
+				ContentImage = icon
 			};
 
 			if (notification.RequiresTrayIndicator)

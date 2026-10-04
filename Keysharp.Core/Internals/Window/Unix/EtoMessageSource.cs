@@ -309,11 +309,6 @@ namespace Keysharp.Internals.Window.Unix
 				LParam = lparam,
 				Result = 0
 			};
-			//Stashed the way the Windows pre-filter stashes a message it took off the queue, which is what
-			//gives the monitor an A_EventInfo of when the input happened rather than a bare 0.
-			filter.handledMsg = m;
-			//Dispatched inline rather than queued, because a buffered monitor has already returned by the
-			//time its result is known and so could never claim the message.
 			return filter.CallEventHandlers(ref m) || InvokeOwnerHandlers(control, ref m);
 		}
 

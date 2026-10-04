@@ -28,6 +28,7 @@ namespace Keysharp.Internals.DBus
 	internal sealed class DBusInterfaceInfo
 	{
 		internal string Name;
+		internal bool Standard;
 		internal readonly Dictionary<string, DBusMethodInfo> Methods = new (StringComparer.Ordinal);
 		internal readonly Dictionary<string, DBusPropertyInfo> Properties = new (StringComparer.Ordinal);
 		internal readonly Dictionary<string, DBusSignalInfo> Signals = new (StringComparer.Ordinal);
@@ -38,37 +39,22 @@ namespace Keysharp.Internals.DBus
 		internal readonly Dictionary<string, DBusInterfaceInfo> Interfaces = new (StringComparer.Ordinal);
 		internal string[] Children = [];
 
-		/// <summary>Interfaces excluding the standard org.freedesktop.DBus.* ones every object carries.</summary>
-		internal IEnumerable<DBusInterfaceInfo> UserInterfaces =>
-			Interfaces.Values.Where(i => !i.Name.StartsWith("org.freedesktop.DBus.", StringComparison.Ordinal));
+		/// <summary>The object's own interfaces, without the standard ones.</summary>
+		internal DBusInterfaceInfo[] UserInterfaces = [];
+
+		// User interfaces shadow standard ones; multiple owners of the same rank are ambiguous.
+		internal readonly Dictionary<string, DBusInterfaceInfo[]> MethodOwners = new (StringComparer.Ordinal);
+		internal readonly Dictionary<string, DBusInterfaceInfo[]> PropertyOwners = new (StringComparer.Ordinal);
 	}
 
 	/// <summary>
-	/// Fetches and caches org.freedesktop.DBus.Introspectable output. This is the type library of the D-Bus
+	/// Fetches and parses org.freedesktop.DBus.Introspectable output. This is the type library of the D-Bus
 	/// world: it supplies the signatures that drive marshalling and the member tables that make late binding work.
 	/// </summary>
 	internal static class DBusIntrospection
 	{
-		private static readonly ConcurrentDictionary<(DBusBus, string, string, long), DBusNodeInfo> cache = new ();
-
 		internal static DBusNodeInfo Get(DBusBus bus, string service, string path)
-		{
-			var key = (bus, service, path, DBusConnections.Generation(bus));
-
-			if (cache.TryGetValue(key, out var cached))
-				return cached;
-
-			var node = Parse(DBusCalls.Introspect(bus, service, path));
-			_ = cache.TryAdd(key, node);
-			return node;
-		}
-
-		internal static void Invalidate(DBusBus bus, string service)
-		{
-			foreach (var key in cache.Keys)
-				if (key.Item1 == bus && string.Equals(key.Item2, service, StringComparison.Ordinal))
-					_ = cache.TryRemove(key, out _);
-		}
+			=> Parse(DBusCalls.Introspect(bus, service, path));
 
 		internal static DBusNodeInfo Parse(string xml)
 		{
@@ -100,7 +86,11 @@ namespace Keysharp.Internals.DBus
 				if (string.IsNullOrEmpty(ifaceName))
 					continue;
 
-				var iface = new DBusInterfaceInfo { Name = ifaceName };
+				var iface = new DBusInterfaceInfo
+				{
+					Name = ifaceName,
+					Standard = ifaceName.StartsWith("org.freedesktop.DBus.", StringComparison.Ordinal)
+				};
 
 				foreach (var m in ifaceEl.Elements("method"))
 				{
@@ -175,7 +165,23 @@ namespace Keysharp.Internals.DBus
 			node.Children = [.. root.Elements("node")
 								 .Select(n => (string)n.Attribute("name"))
 								 .Where(n => !string.IsNullOrEmpty(n))];
+			node.UserInterfaces = [.. node.Interfaces.Values.Where(static i => !i.Standard)];
+			IndexMembers(node.MethodOwners, node, static i => i.Methods.Keys);
+			IndexMembers(node.PropertyOwners, node, static i => i.Properties.Keys);
 			return node;
+		}
+
+		private static void IndexMembers(Dictionary<string, DBusInterfaceInfo[]> owners, DBusNodeInfo node,
+										 Func<DBusInterfaceInfo, IEnumerable<string>> namesOf)
+		{
+			foreach (var iface in node.Interfaces.Values)
+				foreach (var name in namesOf(iface))
+				{
+					if (!owners.TryGetValue(name, out var found) || (found[0].Standard && !iface.Standard))
+						owners[name] = [iface];
+					else if (found[0].Standard == iface.Standard)
+						owners[name] = [.. found, iface];
+				}
 		}
 	}
 }

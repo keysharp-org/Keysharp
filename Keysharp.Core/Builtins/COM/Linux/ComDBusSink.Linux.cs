@@ -55,6 +55,10 @@ namespace Keysharp.Builtins.COM
 		{
 			// Bind to the current owner so a service restart cannot silently feed us another process's signals.
 			var owner = DBusCalls.GetNameOwner(ownerTarget.bus, ownerTarget.service);
+
+			if (owner == null)
+				return;
+
 			var weakSink = new WeakReference<ComDBusSink>(this);
 
 			foreach (var (iface, signal) in ownerTarget.AllSignals())

@@ -757,6 +757,16 @@ namespace Keysharp.Tests
 			Assert.IsTrue(TestScript("gui-window", false));
 		}
 
+		[Test, Category("Gui"), NonParallelizable]
+#if WINDOWS
+		[Apartment(ApartmentState.STA)]
+#endif
+		public void WindowFunctions()
+		{
+			SkipIfUiInitializationBlocked("Control tests require a live GUI application.");
+			Assert.IsTrue(TestScript("window-functions", false));
+		}
+
 #if WINDOWS
 		// The whole zero-copy design rests on one property: GDI+ drawing through the Bitmap and GDI reading
 		// through the DC address the same memory. If that ever stopped holding, presents would silently show
@@ -885,10 +895,6 @@ namespace Keysharp.Tests
 		[Test, Category("Gui"), NonParallelizable]
 		[Apartment(ApartmentState.STA)]
 		public void WebViewScriptSurface() => Assert.IsTrue(TestScript("gui-webview", false));
-
-		[Test, Category("Gui"), NonParallelizable]
-		[Apartment(ApartmentState.STA)]
-		public void WindowFunctions() => Assert.IsTrue(TestScript("window-functions", false));
 
 		[Test, Category("Gui")]
 		[Apartment(ApartmentState.STA)]
@@ -1993,12 +1999,25 @@ namespace Keysharp.Tests
 			Assert.IsTrue(nativeSecond.StyleContext.HasClass(UnixMenuPresentation.BarBreakStyleClass));
 			Assert.IsFalse(nativeFirst.StyleContext.HasClass(UnixMenuPresentation.BarBreakStyleClass));
 
+			_ = menu.Add("Third", callback);
+			Assert.AreSame(nativeFirst, first.EtoItem.ControlObject);
+			_ = menu.Add("Second", callback, "-BarBreak");
+			using var clearedColumn = nativeMenu.ChildGetProperty(second.EtoItem.ControlObject as Gtk.Widget, "left-attach");
+			Assert.AreEqual(0U, Convert.ToUInt32(clearedColumn.Val));
+			Assert.AreSame(nativeFirst, first.EtoItem.ControlObject);
+			var sub = new Keysharp.Builtins.Menu();
+			var subItem = (ToolStripMenuItem)sub.Add("Child", callback);
+			_ = menu.Add("Host", sub);
+			var nativeChild = subItem.EtoItem;
+			_ = sub.Add("Another", callback);
+			Assert.AreSame(nativeChild, subItem.EtoItem);
+
 			var right = (ToolStripMenuItem)menuBar.Add("Right", callback, "Right");
 			var nativeRight = (Gtk.MenuItem)right.EtoItem.ControlObject;
 			Assert.IsTrue((bool)nativeRight.GetType().GetProperty("RightJustified").GetValue(nativeRight));
 
 			menu.MenuItem.Items.RemoveAt(0);
-			Assert.AreEqual(1, menu.MenuItem.EtoMenu.Items.Count);
+			Assert.AreEqual(3, menu.MenuItem.EtoMenu.Items.Count);
 			_ = menu.Delete();
 			Assert.AreEqual(0, menu.MenuItem.EtoMenu.Items.Count);
 		}

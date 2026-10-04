@@ -221,8 +221,21 @@ namespace Keysharp.Internals.DBus
 					}
 				}
 			},
-			emitOnCapturedContext: false);
-			return task.AsTask().GetAwaiter().GetResult();
+			emitOnCapturedContext: false).AsTask();
+
+			try
+			{
+				WaitOrThrow(task, DefaultTimeoutMs, $"AddMatch({iface}.{member})");
+			}
+			catch
+			{
+				// Release a subscription whose AddMatch reply arrives after the wait was abandoned.
+				_ = task.ContinueWith(static t => t.Result.Dispose(), CancellationToken.None,
+									  TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.Default);
+				throw;
+			}
+
+			return task.Result;
 		}
 
 		// ---- the sync bridge -------------------------------------------------------------------

@@ -31,12 +31,10 @@ namespace Keysharp.Builtins.COM
 			if (wanted.Length == 0)
 				return Errors.ValueErrorOccurred("ComObjQuery needs an interface name.");
 
-			var node = DBusIntrospection.Get(co.bus, co.service, co.path);
+			if (!co.node.Interfaces.ContainsKey(wanted))
+				return Errors.ErrorOccurred($"'{co.service}' at '{co.path}' does not implement '{wanted}'. Available: {string.Join(", ", co.node.Interfaces.Keys)}");
 
-			if (!node.Interfaces.ContainsKey(wanted))
-				return Errors.ErrorOccurred($"'{co.service}' at '{co.path}' does not implement '{wanted}'. Available: {string.Join(", ", node.Interfaces.Keys)}");
-
-			return new ComObject(co.bus, co.service, co.path, wanted);
+			return new ComObject(co.bus, co.service, co.path, wanted, co.node);
 		}
 
 		/// <summary>
@@ -56,8 +54,7 @@ namespace Keysharp.Builtins.COM
 				if (co.iface != null)
 					return co.iface;
 
-				var user = DBusIntrospection.Get(co.bus, co.service, co.path).UserInterfaces.ToList();
-				return user.Count == 1 ? user[0].Name : "";
+				return co.node.UserInterfaces is [var only] ? only.Name : "";
 			}
 
 			if (string.Equals(what, "Name", StringComparison.OrdinalIgnoreCase))

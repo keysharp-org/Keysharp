@@ -277,6 +277,13 @@ namespace Keysharp.Tests
 			var meta = (Keysharp.Builtins.IMetaObject)obj;
 			Assert.That(meta.Call("Echo", ["hi"]), Is.EqualTo("echo:hi"));
 			Assert.That(meta.Call("Add", [2L, 3L]), Is.EqualTo(5L));
+			_ = Errors.OnError(new KeysharpFunc((Func<object, object, object>)((_, _) =>
+			{
+				obj.Dispose();
+				return -1L;
+			})));
+			obj.Connect(1L);
+			Assert.That(obj.sink, Is.Null, "A reentrant disconnect must cancel the unfinished connection.");
 		}
 
 		[Test]
@@ -399,8 +406,18 @@ namespace Keysharp.Tests
 							    <method name="JoinStrings"><arg direction="in" type="as"/><arg direction="out" type="s"/></method>
 							    <method name="GiveDict"><arg direction="out" type="a{sv}"/></method>
 							    <method name="Fail"/>
+							    <method name="Twin"><arg direction="out" type="s"/></method>
 							    <property name="Label" type="s" access="read"/>
+							    <property name="Shared" type="s" access="read"/>
 							    <signal name="Ping"><arg type="s"/></signal>
+							  </interface>
+							  <interface name="io.keysharp.CoreTest.Second">
+							    <method name="Twin"><arg direction="out" type="s"/></method>
+							    <method name="Ping"><arg direction="out" type="s"/></method>
+							    <property name="Shared" type="s" access="read"/>
+							  </interface>
+							  <interface name="org.freedesktop.DBus.Peer">
+							    <method name="Ping"/>
 							  </interface>
 							</node>
 							""");
@@ -481,10 +498,24 @@ namespace Keysharp.Tests
 						context.ReplyError("io.keysharp.Error.Deliberate", "boom");
 						break;
 
+					case ("io.keysharp.CoreTest", "Twin"):
+					case ("io.keysharp.CoreTest.Second", "Twin"):
+					case ("io.keysharp.CoreTest.Second", "Ping"):
+					{
+						var w = context.CreateReplyWriter("s");
+						w.WriteString($"{req.InterfaceAsString}.{req.MemberAsString}");
+						context.Reply(w.CreateMessage());
+						w.Dispose();
+						break;
+					}
+
 					case ("org.freedesktop.DBus.Properties", "Get"):
 					{
+						var r = req.GetBodyReader();
+						var iface = r.ReadString();
+						var name = r.ReadString();
 						var w = context.CreateReplyWriter("v");
-						w.WriteVariantString("test-label");
+						w.WriteVariantString($"{iface}.{name}");
 						context.Reply(w.CreateMessage());
 						w.Dispose();
 						break;

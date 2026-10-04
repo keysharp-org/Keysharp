@@ -4,24 +4,12 @@ using Tmds.DBus.Protocol;
 namespace Keysharp.Internals.DBus
 {
 	/// <summary>
-	/// Owns one connection per bus for the process. A dropped connection is replaced on next use and the
-	/// generation counter is bumped, which is how callers know their signal subscriptions and cached
-	/// introspection no longer apply.
+	/// Owns one connection per bus for the process. A dropped connection is replaced on next use.
 	/// </summary>
 	internal static class DBusConnections
 	{
 		private static readonly Lock gate = new ();
 		private static readonly DBusConnection[] connections = new DBusConnection[2];
-		private static readonly long[] generations = [0, 0];
-
-		internal static event Action<DBusBus, long> Reconnected;
-
-		/// <summary>Bumped whenever the connection for <paramref name="bus"/> is replaced.</summary>
-		internal static long Generation(DBusBus bus)
-		{
-			lock (gate)
-				return generations[(int)bus];
-		}
 
 		internal static DBusConnection Get(DBusBus bus)
 		{
@@ -63,7 +51,6 @@ namespace Keysharp.Internals.DBus
 				throw new IOException($"Cannot connect to the D-Bus {(bus == DBusBus.System ? "system" : "session")} bus: {connectFailed.Message}", connectFailed);
 			}
 
-			long generation;
 			DBusConnection winner;
 
 			lock (gate)
@@ -80,10 +67,8 @@ namespace Keysharp.Internals.DBus
 				}
 
 				connections[index] = created;
-				generation = ++generations[index];
 			}
 
-			Reconnected?.Invoke(bus, generation);
 			return created;
 		}
 
@@ -110,8 +95,6 @@ namespace Keysharp.Internals.DBus
 			{
 				toDispose = [connections[0], connections[1]];
 				connections[0] = connections[1] = null;
-				generations[0]++;
-				generations[1]++;
 			}
 
 			foreach (var c in toDispose)

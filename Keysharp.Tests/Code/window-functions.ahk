@@ -38,6 +38,65 @@ ControlDeleteItem(3, cb)
 AssertEq(ControlGetItems(cb).Length, 2, A_LineNumber)
 Throws(() => ControlDeleteItem(9, cb), A_LineNumber, TargetError)
 
+; ControlChooseString selects the first item that starts with the text, as CB_SELECTSTRING does, and returns its
+; position. A miss is an error that leaves the selection alone, and so is a control that holds no list.
+AssertEq(ControlChooseString("pur", lb), 4, A_LineNumber)
+Throws(() => ControlChooseString("Nothing", lb), A_LineNumber, TargetError)
+AssertEq(ControlGetIndex(lb), 4, A_LineNumber)
+Throws(() => ControlAddItem("Extra", ed), A_LineNumber, TargetError)
+Throws(() => ControlChooseString("one", ed), A_LineNumber, TargetError)
+
+; Both raise Change, as the LBN_SELCHANGE AutoHotkey sends does. WinForms does not turn LBN_DBLCLK into DoubleClick,
+; so that half is checked off Windows only.
+lbChanges := 0, lbDoubleClicks := 0
+OnLbChange(*) {
+	global lbChanges
+	lbChanges += 1
+}
+OnLbDoubleClick(*) {
+	global lbDoubleClicks
+	lbDoubleClicks += 1
+}
+lb.OnEvent("Change", OnLbChange)
+lb.OnEvent("DoubleClick", OnLbDoubleClick)
+ControlChooseIndex(2, lb)
+ControlChooseIndex(2, lb)
+ControlChooseString("lime", lb)
+ControlChooseIndex(0, lb)
+Sleep 50
+AssertEq(lbChanges, 4, A_LineNumber)
+#if !WINDOWS
+AssertEq(lbDoubleClicks, 4, A_LineNumber)
+#endif
+
+; ControlSendText types into the script's own Edit, replacing text that EM_SETSEL selected. Windows posts the
+; keystrokes, which arrive once the script sleeps.
+typed := g.AddEdit("x170 y+10 w150")
+ControlSendText("hello world", typed)
+SendMessage(0xB1, 0, 3, ed)   ; EM_SETSEL
+ControlSendText("six", ed)
+Sleep 50
+AssertEq(typed.Value, "hello world", A_LineNumber)
+Assert(SubStr(ed.Value, 1, 3) == "six" && !InStr(ed.Value, "one"), A_LineNumber)
+
+#if LINUX
+; On Linux the keys reach the Edit as GTK key events with their modifiers, and a window passes keys on to its focused
+; control.
+keys := g.AddEdit("x170 y+10 w150")
+ControlSend("ab{sc" Format("{:X}", GetKeySC("Left")) "}C{End}{Shift down}d{Shift up}", keys)
+AssertEq(keys.Value, "aCbD", A_LineNumber)
+ControlFocus(keys)
+ControlSend("{End}z", , g)
+AssertEq(keys.Value, "aCbDz", A_LineNumber)
+ControlSendText("{Left}+λ😀", , g)
+AssertEq(keys.Value, "aCbDz{Left}+λ😀", A_LineNumber)
+#elif OSX
+; macOS types ControlSendText into the script's own Edits only, and sends keys nowhere.
+Throws(() => ControlSend("a", typed), A_LineNumber, UnsupportedError)
+Throws(() => ControlSendText("a", lb), A_LineNumber, UnsupportedError)
+#endif
+
+#if WINDOWS
 ; "xN yN" clicks that point of the window, here in the fourth row, rather than the middle of the control there.
 ControlGetPos(&lbX, &lbY, , , lb)
 rowHeight := SendMessage(0x1A1, 0, 0, lb)   ; LB_GETITEMHEIGHT
@@ -241,6 +300,7 @@ Assert(ControlGetStyle(styleButton) & WS_DISABLED, A_LineNumber)
 ControlSetStyle("-" WS_DISABLED, styleButton)
 Assert(!(ControlGetStyle(styleButton) & WS_DISABLED), A_LineNumber)
 styleGui.Destroy()
+#endif
 
 FileAppend "pass", "*"
 ExitApp()

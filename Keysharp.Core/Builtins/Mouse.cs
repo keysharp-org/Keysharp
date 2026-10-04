@@ -293,7 +293,6 @@ namespace Keysharp.Builtins
 
 			var parent = child.NonChildParentWindow;
 			if (outputVarWin != null) Refs.SetValue(outputVarWin, (long)parent.Handle);
-#if WINDOWS
 
 			//Doing it this way overcomes the limitations of WindowFromPoint() and ChildWindowFromPoint()
 			//and also better matches the control that Window Spy would think is under the cursor:
@@ -305,45 +304,6 @@ namespace Keysharp.Builtins
 				if (pah.hwndFound != 0)
 					child = WindowQuery.CreateWindow(pah.hwndFound);
 			}
-
-#else
-
-			if (outputVarControl != null && Control.FromHandle(parent.Handle) is Control ksForm)
-			{
-				Control FindDeepest(Control ctrl)
-				{
-					Control best = null;
-
-					//GetScreenBounds rather than a rect built here, so this searches the same space as the hit
-					//test the window functions run (ControlInfo.TryFindPoint) rather than one of its own.
-					foreach (var visualChild in ctrl.VisualControls.Reverse())
-					{
-						if (!visualChild.HitTestable)
-							continue;
-
-						if (!visualChild.GetScreenBounds().Contains(pos.X, pos.Y))
-							continue;
-
-						var deeper = FindDeepest(visualChild);
-						best = deeper ?? visualChild;
-						break;
-					}
-
-					if (best != null)
-						return best;
-
-					if (ctrl.GetScreenBounds().Contains(pos.X, pos.Y))
-						return ctrl;
-
-					return null;
-				}
-
-				var hit = FindDeepest(ksForm);
-
-				if (hit != null)
-					child = new ControlInfo(hit);
-			}
-#endif
 
 			if (child.Handle == parent.Handle)//If there's no control per se, make it blank.
 			{

@@ -267,10 +267,6 @@ namespace System.Windows.Forms
 				this[i].Index = i;
 		}
 	}
-
-	public sealed class LinkLabelLinkClickedEventArgs : EventArgs
-	{
-	}
 }
 #endif
 
