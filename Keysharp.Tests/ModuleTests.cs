@@ -16,6 +16,119 @@ namespace Keysharp.Tests
 		public void ImportFile() => Assert.IsTrue(TestScript("module-import-file", false));
 
 		[Test, Category("Module")]
+		public void FileIdentity()
+		{
+			var files = new (string Name, string Source)[]
+			{
+				("main.ahk", $$"""
+					#NoTrayIcon
+					#ErrorStdOut
+					#Warn All, StdOut
+					#Include "{{Path.Combine(path, "Lib", "assert.ahk")}}"
+
+					#Import "Left/Outer" as Left
+					#Import "Left/./Outer.ahk" as Left
+					#Import "Left/Outer.ahk" as LeftAgain
+					#Import "Left/Outer.ahk:__Init" as LeftInit
+					#Import "Left/Outer.ahk:" as LeftEmpty
+					#Import "Left/Outer.ahk" { Value as SharedValue }
+					#Import "Left/./Outer" { Value as SharedValue }
+					#Import "Right/Outer.ahk" as Right
+					#Import "Left/Outer.ahk:iNnEr" as LeftInner
+					#Import "Right/Outer.ahk:Inner" as RightInner
+					#Import "Left/Outer.ahk:__Main" as MainThroughFile
+					#Import ":__Init" as MainInit
+					#Import "" as MainEmpty
+					#Import __Main as Main
+					#Import "./main.ahk" as MainByPath
+					#Import "main.ahk:Named" as NamedByPath
+					#Import "Named" as SameFileNamed
+					#Import "AHK:" as FileNamedAHK
+					#Import AHK as BuiltinAHK
+					#Include "Included/Importer.ahk"
+
+					Assert(Left == LeftAgain && Left == LeftInit && Left == LeftEmpty, A_LineNumber)
+					Assert(Main == MainInit && Main == MainThroughFile, A_LineNumber)
+					Assert(Main == MainByPath && SameFileNamed == NamedByPath, A_LineNumber)
+					Assert(Main == MainEmpty && ReadSelf() == Main, A_LineNumber)
+					AssertEq(Left.Value, 1, A_LineNumber)
+					AssertEq(Right.Value, 2, A_LineNumber)
+					Left.Value := 9
+					AssertEq(LeftAgain.Value, 9, A_LineNumber)
+					AssertEq(SharedValue, 9, A_LineNumber)
+					AssertEq(Right.Value, 2, A_LineNumber)
+					AssertEq(LeftInner.Value, 101, A_LineNumber)
+					AssertEq(RightInner.Value, 202, A_LineNumber)
+					AssertEq(Left.InnerValue, 101, A_LineNumber)
+					AssertEq(Right.InnerValue, 202, A_LineNumber)
+					AssertEq(RelativeTarget.Value, 55, A_LineNumber)
+					AssertEq(SameFileNamed.Value, 7, A_LineNumber)
+					AssertEq(FileNamedAHK.Value, 505, A_LineNumber)
+					Assert(FileNamedAHK != BuiltinAHK, A_LineNumber)
+					AssertEq(FromLeftFile(), 303, A_LineNumber)
+					AssertEq(Left.AfterReopen, 17, A_LineNumber)
+					FileAppend "pass", "*"
+
+					ReadSelf() {
+					    #Import "" as Self
+					    #Import "" { FromLeftFile as SelfFunction }
+					    AssertEq(SelfFunction(), 303, A_LineNumber)
+					    return Self
+					}
+
+					#Module Named
+					Value := 7
+					"""),
+				("Left/Outer.ahk", """
+					#Import Shared as Dependency
+					#Import ":Inner" as LocalInner
+					Value := Dependency.Value
+					InnerValue := LocalInner.Value
+
+					#Module Inner
+					Value := 101
+
+					#Module __Main
+					FromLeftFile() => 303
+
+					#Module __Init
+					AfterReopen := 17
+					"""),
+				("Right/Outer.ahk", """
+					#Import Shared as Dependency
+					#Import ":Inner" as LocalInner
+					Value := Dependency.Value
+					InnerValue := LocalInner.Value
+
+					#Module Inner
+					Value := 202
+					"""),
+				("Left/Shared.ahk", "Value := 1\n"),
+				("Right/Shared.ahk", "Value := 2\n"),
+				("Named.ahk", "Value := 99\n"),
+				("AHK.ahk", "Value := 505\n"),
+				("Included/Importer.ahk", "#Import \"IncludedTarget\" as RelativeTarget\n"),
+				("Included/IncludedTarget.ahk", "Value := 55\n"),
+			};
+			var root = Path.Combine(Path.GetTempPath(), "ks-module-files-" + Guid.NewGuid().ToString("N"));
+			try
+			{
+				foreach (var (name, source) in files)
+				{
+					var file = Path.Combine(root, name);
+					Directory.CreateDirectory(Path.GetDirectoryName(file));
+					File.WriteAllText(file, source);
+				}
+				var output = RunScript(Path.Combine(root, "main.ahk"), "module_file_identity", true, false);
+				Assert.AreEqual("pass", output.Trim(), output);
+			}
+			finally
+			{
+				try { Directory.Delete(root, true); } catch { }
+			}
+		}
+
+		[Test, Category("Module")]
 		public void Export() => Assert.IsTrue(TestScript("module-export", false));
 
 		[Test, Category("Module")]
@@ -27,8 +140,6 @@ namespace Keysharp.Tests
 		[Test, Category("Module")]
 		public void ImportUnknownMember()
 		{
-			// Importing a name a built-in module does not expose is a load-time error, as in AutoHotkey.
-
 			// Real Ks members still compile cleanly (the fix must not over-reject) — both a method (Cosh) and a
 			// type exposed under a [UserDeclaredName] (Image, whose CLR type is KeysharpImage).
 			Assert.IsEmpty(LoweringDiagnostics.Diagnostics("#import \"Ks\" { Cosh }\n"), "a valid built-in method import should not error");
@@ -92,45 +203,37 @@ namespace Keysharp.Tests
 				Assert.IsEmpty(LoweringDiagnostics.Diagnostics(src), src);
 		}
 
-		/// <summary>
-		/// A module name reaches a script only through an import, as in AutoHotkey, where a module is named by no
-		/// variable until #Import binds one. This asserts on the GENERATED CODE rather than on diagnostics: an
-		/// unimported `Ks` produces no diagnostic either way — it is simply an unset global — so a compile-only
-		/// check cannot tell the two bindings apart, which is exactly how the leak survived.
-		/// </summary>
-		[Test, Category("Module")]
-		public void ModuleNameNeedsImport()
-		{
-			static string Emit(string src)
-			{
-				var (prog, parseDiags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(src);
-				Assert.IsEmpty(parseDiags, "unexpected parse diagnostics: " + string.Join("; ", parseDiags));
-				var lowerer = new Keysharp.Compilation.Syntax.Lowerer();
-				var unit = lowerer.Build(prog, "Test");
-				Assert.IsEmpty(lowerer.Diagnostics, "unexpected diagnostics: " + string.Join("; ", lowerer.Diagnostics));
-				return unit.NormalizeWhitespace().ToFullString();
-			}
-
-			// Unimported, a module name binds to nothing. Binding it to the Statics entry instead would compile and
-			// then fail at run time, because that entry is the members-less class object Script.InitClass leaves
-			// behind for a Module type, not the IMetaObject a member access needs.
-			foreach (var (name, type) in new[] { ("Ks", "Keysharp.Builtins.Ks"), ("Ahk", "Keysharp.Runtime.Ahk") })
-			{
-				var bare = Emit($"x := {name}.App\n");
-				Assert.IsTrue(bare.Contains($"{name.ToLowerInvariant()} = null"),
-							  $"an unimported {name} must bind to null, got: " + bare);
-				Assert.IsFalse(bare.Contains($"Statics[typeof({type})]"),
-							   $"an unimported {name} must not bind to the Statics class object");
-			}
-
-			// Imported, the name binds to the module OBJECT, which dispatches member access through IMetaObject.
-			Assert.IsTrue(Emit("#import KS\nx := Ks.App\n").Contains("new Keysharp.Builtins.Ks()"),
-						  "an imported Ks must bind to the module object");
-		}
-
 		[Test, Category("Module")]
 		public void ImportDiagnostics()
 		{
+			foreach (var source in new[]
+			{
+				"Foo() {\n#Import KS { Cosh as Shared }\n#Import KS { Sinh as Shared }\n}\n",
+				"Foo() {\n#Import KS as Shared\n#Import AHK as Shared\n}\n",
+				"Foo() {\nstatic Shared\n#Import KS { Cosh as Shared }\n}\n",
+				"Foo() {\nglobal Shared\n#Import KS { Cosh as Shared }\n}\n",
+				"#Import Source { Value as Shared }\nShared() => 1\n#Module Source\nValue := 1\n",
+				"#Import Source { Value as Shared }\nHolder := Shared(x) => x\n#Module Source\nValue := 1\n",
+				"#Import Source { Value as Shared }\nclass Shared {\n}\n#Module Source\nValue := 1\n",
+				"#Import Source { Value as Shared }\nglobal Shared\n#Module Source\nValue := 1\n",
+				"#Import Source { Value as Shared }\n#Import Relay { Alias as Shared }\n#Module Source\nValue := 1\n#Module Relay\n#Import Source { Value as Alias }\n",
+			})
+			{
+				var conflicts = LoweringDiagnostics.Diagnostics(source);
+				Assert.IsTrue(System.Array.Exists(conflicts, d => d.Contains("import declaration conflicts") && d.Contains("Shared")),
+					"expected a conflicting import diagnostic, got: " + string.Join("; ", conflicts));
+			}
+
+			Assert.IsNotEmpty(LoweringDiagnostics.Diagnostics(
+				"#Import Left\n#Module Left\n#Import Right { Y as X }\n#Module Right\n#Import Left { X as Y }\n"),
+				"an alias cycle without a declaration must fail at load time");
+			Assert.IsEmpty(LoweringDiagnostics.Diagnostics(
+				"#Import Left\n#Module Left\n#Import Right { Y as FromRight }\nX := 1\n#Module Right\n#Import Left { X as FromLeft }\nY := 2\n"),
+				"a module dependency cycle with declared variables must remain valid");
+			Assert.IsEmpty(LoweringDiagnostics.Diagnostics(
+				"#Import Source { Value as Shared }\n#Import source { vAlUe as sHaReD }\n#Module Source\nValue := 1\n"),
+				"repeating the same explicit binding must remain valid");
+
 			// Writing an imported function is a load-time error (not a silent local), in a function and at module scope.
 			foreach (var (source, message) in new[]
 			{
@@ -138,6 +241,8 @@ namespace Keysharp.Tests
 				("Foo() {\n#import KS { Cosh }\nCosh++\n}\n", "This Func cannot be assigned a value: Cosh"),
 				("#import KS { Cosh }\nCosh := 5\n", "This Func cannot be used as an output variable: Cosh"),
 				("#import KS { Cosh }\nr := &Cosh\n", "This Func cannot have its reference taken: Cosh"),
+				("#Import Helper { Add }\nAdd := 1\n#Module Helper\nHolder := Add(x) => x+1\n", "This Func cannot be used as an output variable: Add"),
+				("#Import Helper { Add }\nr := &Add\n#Module Helper\nHolder := Add(x) => x+1\n", "This Func cannot have its reference taken: Add"),
 				// A #CSharp method is a function whether or not the module exports it.
 				("#Import Helper { CsMethod }\nCsMethod := 1\n#Module Helper\n#CSharp\npublic static object CsMethod() => 1;\n#EndCSharp\n",
 					"This Func cannot be used as an output variable: CsMethod"),

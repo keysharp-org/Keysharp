@@ -1159,6 +1159,12 @@ namespace Keysharp.Tests
 						"reserved", "is a name Keysharp generates");
 				Rejects("#NoTrayIcon\nf() => 1\n#CSharp\npublic static long F() => 2;\n#EndCSharp\nx := 1\n",
 						"funccol", "declared both as a script function");
+				Rejects("#NoTrayIcon\nf() => 1\n#CSharp\n[UserDeclaredName(\"F\")] public static long DifferentClrName() => 2;\n#EndCSharp\nx := 1\n",
+						"renamedfunccol", "declared both as a script function");
+				Rejects("#NoTrayIcon\n#CSharp\n[UserDeclaredName(\"Same\")] public static long One;\n[UserDeclaredName(\"sAME\")] public static long Two;\n#EndCSharp\nx := 1\n",
+						"renamedfieldcol", "conflicts with another declaration");
+				Rejects("#NoTrayIcon\n#Import M { F }\nclass Child extends F.ActualClass {\n}\n#Module M\nclass ActualClass {\n}\n#CSharp\npublic static long F() => 1;\n#EndCSharp\n",
+						"functionbase", "Invalid base class: F.ActualClass");
 				Rejects("#NoTrayIcon\n#CSharp\npublic static long R(ref long a) => a;\n#EndCSharp\nx := 1\n",
 						"refparam", "cannot be passed from a script", line: 3);
 				Rejects("#NoTrayIcon\n#CSharp\npublic static unsafe long* P() => null;\n#EndCSharp\nx := 1\n",
@@ -1177,8 +1183,6 @@ namespace Keysharp.Tests
 						"nonstatic", "must be 'static' to be callable", line: 3);
 				Rejects("#NoTrayIcon\nx := 1\n#Module M\n#CSharp\npublic static long M() => 1;\n#EndCSharp\n",
 						"modname", "its module's exact name", line: 5);
-				Rejects("#NoTrayIcon\n#CSharp\npublic static long tally() => 1;\n#EndCSharp\nx := 1\n",
-						"lowerexport", "cannot be all-lowercase", line: 3);
 				// The spelled-out forms get the keyword verdicts — the boundary check is by WRITTEN name, so
 				// `System.Char` must not slip past what `char` is rejected for.
 				Rejects("#NoTrayIcon\n#CSharp\npublic static System.Char Ch() => 'x';\n#EndCSharp\nx := 1\n",
@@ -1195,6 +1199,14 @@ namespace Keysharp.Tests
 						"options", "takes no options");
 				Rejects("#NoTrayIcon\nclass C\n{\n#CSharp\n[Export]\npublic static long M() => 1;\n#EndCSharp\n}\n",
 						"classexport", "[Export] is valid only at module scope");
+				Rejects("#NoTrayIcon\n#CSharp\npublic class Raw : Keysharp.Builtins.Any {\npublic static long Bad(long value) => value;\n}\n#EndCSharp\nx := 1\n",
+						"typereceiver", "must take the receiver as its first parameter", line: 4);
+				Rejects("#NoTrayIcon\n#CSharp\npublic class Raw : Keysharp.Builtins.Any {\npublic long Bad(ref long value) => value;\n}\n#EndCSharp\nx := 1\n",
+						"typerefparam", "cannot be passed from a script", line: 4);
+				Rejects("#NoTrayIcon\n#CSharp\npublic class Raw : Keysharp.Builtins.Any {\npublic decimal Bad => 1m;\n}\n#EndCSharp\nx := 1\n",
+						"typeproperty", "has a type that cannot be handed to a script", line: 4);
+				Rejects("#NoTrayIcon\n#CSharp\npublic class Raw : Keysharp.Builtins.Any {\npublic class Nested : Keysharp.Builtins.Any {\n[Export] public long Bad() => 1;\n}\n}\n#EndCSharp\nx := 1\n",
+						"typenestedexport", "[Export] is valid only at module scope", line: 5);
 				Rejects("#NoTrayIcon\n#CSharp \"a.cs\" \"b.cs\"\nx := 1\n",
 						"paths", "accepts exactly one quoted .cs file path");
 				Rejects("#NoTrayIcon\n#EndCSharp\nx := 1\n", "stray", "#EndCSharp without a matching #CSharp");
@@ -1554,6 +1566,30 @@ namespace Keysharp.Tests
 				Assert.IsNotNull(arr2, "a module file's file form must resolve beside the module file:\n" + code2);
 				Assert.IsTrue(compilation2.InlineCode.Contains("file-mod"), "the module file's member must be emitted:\n" + compilation2.InlineCode);
 				Assert.IsTrue(compilation2.InlineCode.Contains("module-symbol"), "module-local symbols must reach inline C#:\n" + compilation2.InlineCode);
+
+				var ordered = Path.Combine(root, "ordered.ks");
+				File.WriteAllText(ordered, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n"
+					+ "#CSharp\n#nullable enable\n#EndCSharp\nclass Holder {\n#CSharp\npublic object First() => null;\n#EndCSharp\n}\n");
+				var helper = new CompilerHelper();
+				var orderedCompilation = helper.CreateCompilationUnitFromFile(ordered, "ordered");
+				Assert.IsFalse(orderedCompilation.Errors.HasErrors);
+				var (orderedDiagnostics, orderedError) = helper.DiagnoseFromTree(orderedCompilation, "ordered", root);
+				Assert.IsNull(orderedError);
+				Assert.IsFalse(orderedDiagnostics.Any(diagnostic => diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+				Assert.IsTrue(orderedDiagnostics.Any(diagnostic => diagnostic.Id == "CS8603"),
+					"the preceding module block's nullable context must reach the class block");
+
+				File.WriteAllText(ordered, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n"
+					+ "#CSharp\n#nullable enable\n#EndCSharp\nclass Holder {\n#CSharp\npublic object First() => new object();\n"
+					+ "#nullable disable\n#pragma warning disable CS0162\n#EndCSharp\n}\n"
+					+ "#CSharp\npublic static object Later() { return null; return null; }\n#EndCSharp\nx := Later()\n");
+				var laterCompilation = helper.CreateCompilationUnitFromFile(ordered, "later");
+				Assert.IsFalse(laterCompilation.Errors.HasErrors);
+				var (laterDiagnostics, laterError) = helper.DiagnoseFromTree(laterCompilation, "later", root);
+				Assert.IsNull(laterError);
+				Assert.IsFalse(laterDiagnostics.Any(diagnostic => diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+				Assert.IsFalse(laterDiagnostics.Any(diagnostic => diagnostic.Id is "CS8603" or "CS0162"),
+					"trailing class-block nullable and pragma directives must reach the later module block");
 			}
 			finally
 			{

@@ -227,6 +227,8 @@ namespace Keysharp.Builtins
 					continue;
 
 				property = true;
+				if (desc.Type == OwnPropsMapType.None)
+					return (null, true);
 				if (desc.Call != null)
 					return (desc.Call, true);
 				if (desc.Get != null)

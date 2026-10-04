@@ -129,7 +129,7 @@ namespace Keysharp.Internals.Invoke
 					continue;
 				}
 
-				if (dkt.TryGetValue(name, out var fi))//Since the Dictionary was created above with StringComparer.OrdinalIgnoreCase, this will be a case insensitive match.
+				if (dkt.TryGetValue(name, out var fi))
 					return fi;
 
 				t = t.BaseType;
@@ -275,7 +275,7 @@ namespace Keysharp.Internals.Invoke
 					continue;
 				}
 
-				if (dkt.TryGetValue(name, out var methDkt))//Since the Dictionary was created above with StringComparer.OrdinalIgnoreCase, this will be a case insensitive match.
+				if (dkt.TryGetValue(name, out var methDkt))
 				{
 					if (paramCount < 0 || methDkt.Count == 1)
 						return methDkt.First().Value;
@@ -344,7 +344,7 @@ namespace Keysharp.Internals.Invoke
 					continue;
 				}
 
-				if (dkt.TryGetValue(name, out var propDkt))//Since the Dictionary was created above with StringComparer.OrdinalIgnoreCase, this will be a case insensitive match.
+				if (dkt.TryGetValue(name, out var propDkt))
 				{
 					if (paramCount < 0 || propDkt.Count == 1)
 						return propDkt.First().Value;
@@ -364,9 +364,9 @@ namespace Keysharp.Internals.Invoke
 		internal static MethodPropertyHolder FindMethod(string name, int paramCount)
 		{
 			var script = TheScript;
-			if (script.Vars.GlobalVars.TryGetValue(name, out var mph) && mph != null)
+			if (script.Vars.GlobalVars.TryGetValue(name, out var variable))
 			{
-				var val = mph.CallFunc(null, null);
+				var val = variable.Get();
 				if (val is KeysharpFunc fo)
 					return fo.mph;
 			}

@@ -221,16 +221,29 @@ namespace Keysharp.Builtins.COM
 			return ResultOf(results);
 		}
 
-		object IMetaObject.Get(string name, object[] args)
+		object IMetaObject.Get(string name, object[] args) => TryGet(name, args, out var value)
+			? value : Errors.PropertyErrorOccurred($"'{name}' is not a property of any interface on '{service}{path}'.");
+		bool IMetaObject.TryGet(string name, object[] args, out object value) => TryGet(name, args, out value);
+
+		private bool TryGet(string name, object[] args, out object value)
 		{
 			if (TryResolveProperty(name, out var owner, out var prop, out var ambiguity))
-				return ReadProperty(owner, prop);
+			{
+				value = ReadProperty(owner, prop);
+				return true;
+			}
 
 			// Reading a name that is really a method mirrors IDispatch's property/method blur.
-			if (ambiguity == null && TryResolveMethod(name, out var mOwner, out var method, out ambiguity) && method.InSignature.Length == 0)
-				return ResultOf(DBusCalls.Call(bus, service, path, mOwner.Name, method.Name, "", [], method.OutSignature));
+			if (ambiguity == null && TryResolveMethod(name, out var mOwner, out var method, out ambiguity))
+			{
+				value = method.InSignature.Length == 0
+					? ResultOf(DBusCalls.Call(bus, service, path, mOwner.Name, method.Name, "", [], method.OutSignature))
+					: Errors.PropertyErrorOccurred($"'{name}' is not a property of any interface on '{service}{path}'.");
+				return true;
+			}
 
-			return Errors.PropertyErrorOccurred(ambiguity ?? $"'{name}' is not a property of any interface on '{service}{path}'.");
+			value = ambiguity != null ? Errors.PropertyErrorOccurred(ambiguity) : null;
+			return ambiguity != null;
 		}
 
 		void IMetaObject.Set(string name, object[] args, object value)

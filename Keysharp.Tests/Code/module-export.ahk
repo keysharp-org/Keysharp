@@ -20,6 +20,20 @@
 #import "VariableBridge" { Bridged as TopBridged }
 #import RelaySource
 #import Export { Literal as LiteralExport }
+#Import CreatedSource { Missing as CreatedAlias }
+#Import CreatedSource
+#Import CreatedConsumer
+#Import IndirectRelay { Shared as IndirectAlias }
+#Import IndirectConsumer
+#Import DuplicateFlagsConsumer
+#Import CoarseWildcardConsumer
+#Import DemandedWildcardRelay { Shared as DemandedShared }
+#Import DemandedWildcardConsumer
+#Import CycleA { X as CycleAX }
+#Import CycleB { X as CycleBX }
+#Import CycleC { X as CycleCX }
+#Import AHK { StrLen as SeededLength, MissingAhkExport }
+#Import BuiltinRelay { StrLen as ForwardedLength }
 
 ; quoted module import should not add module name unless alias is given
 #import "Q"
@@ -59,10 +73,31 @@ Assert(!IsSet(_RePrivate), A_LineNumber)
 AssertEq(LiveShared, 1, A_LineNumber)
 LiveShared := 2
 AssertEq(VariableSource.Shared, 2, A_LineNumber)
+AssertEq(IndirectAlias, 2, A_LineNumber)
+Assert(!IndirectConsumer.DynamicIsSet("Shared"), A_LineNumber)
+Assert(DuplicateFlagsConsumer.DynamicIsSet("Exported"), A_LineNumber)
+Assert(!DuplicateFlagsConsumer.DynamicIsSet("Shared"), A_LineNumber)
+AssertEq(CoarseWildcardConsumer.Dynamic("Shared"), 2, A_LineNumber)
+Assert(CoarseWildcardConsumer.Dynamic("Named") == DNamed, A_LineNumber)
+AssertEq(DemandedShared, 2, A_LineNumber)
+Assert(!DemandedWildcardConsumer.DynamicIsSet("Shared"), A_LineNumber)
+Assert(!IsSet(CycleAX) && !IsSet(CycleBX) && !IsSet(CycleCX), A_LineNumber)
+CycleAX := "cycle storage"
+AssertEq(CycleBX, "cycle storage", A_LineNumber)
+AssertEq(CycleCX, "cycle storage", A_LineNumber)
+Assert(!IsSet(MissingAhkExport), A_LineNumber)
+Assert(ForwardedLength == SeededLength, A_LineNumber)
+AssertEq(ForwardedLength("abc"), 3, A_LineNumber)
 
 ; ---- Export can be a literal module name when no second module specifier follows it
 AssertEq(LiteralExport(), "literal Export module", A_LineNumber)
 AssertEq(Export.Literal(), "literal Export module", A_LineNumber)
+
+; A named import creates an unset source variable before wildcard re-exports are bound.
+Assert(!IsSet(CreatedAlias), A_LineNumber)
+CreatedAlias := "created"
+AssertEq(CreatedConsumer.Dynamic("Missing"), "created", A_LineNumber)
+Assert(CreatedConsumer.__Ref("Missing") == CreatedSource.__Ref("Missing"), A_LineNumber)
 
 ; ---- wildcard import excludes private-style underscore names, while explicit import permits them
 Assert(!IsSet(_Private), A_LineNumber)
@@ -133,3 +168,60 @@ Counter := 1
 
 #Module Export
 Literal() => "literal Export module"
+
+#Module CreatedConsumer
+#Import CreatedRelay { * }
+Dynamic(Name) => %Name%
+
+#Module CreatedRelay
+#Import Export CreatedSource { * }
+
+#Module CreatedSource
+
+#Module IndirectRelay
+#Import VariableSource { * }
+
+#Module IndirectConsumer
+#Import IndirectRelay { * }
+DynamicIsSet(Name) => IsSet(%Name%)
+
+#Module DuplicateFlagsRelay
+#Import VariableSource { Shared as Exported }
+#Import Export VariableSource { Shared as Exported }
+#Import Export VariableSource { Shared }
+#Import VariableSource { Shared }
+#Import Export FunctionSource { * }
+#Import VariableSource { * }
+
+#Module DuplicateFlagsConsumer
+#Import DuplicateFlagsRelay { * }
+DynamicIsSet(Name) => IsSet(%Name%)
+
+#Module CoarseWildcardRelay
+#Import Export FunctionSource { * }
+#Import VariableSource { * }
+#Import D { * }
+
+#Module CoarseWildcardConsumer
+#Import CoarseWildcardRelay { * }
+Dynamic(Name) => %Name%
+
+#Module DemandedWildcardRelay
+#Import Export FunctionSource { * }
+#Import VariableSource { * }
+
+#Module DemandedWildcardConsumer
+#Import DemandedWildcardRelay { * }
+DynamicIsSet(Name) => IsSet(%Name%)
+
+#Module CycleA
+#Import CycleB { * }
+
+#Module CycleB
+#Import CycleC { * }
+
+#Module CycleC
+#Import CycleA { * }
+
+#Module BuiltinRelay
+#Import Export AHK { * }

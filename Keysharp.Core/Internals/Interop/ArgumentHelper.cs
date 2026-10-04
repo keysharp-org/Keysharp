@@ -232,6 +232,9 @@ namespace Keysharp.Internals.Interop
 			}
 			else if (Struct.TryResolveClass(rawTag, out var structType))
 			{
+				if (Struct.IsArray(structType))
+					return ConvertPtr(n, NormalizeStructPointerArg(parameters, p, n, valueIndex, null, structType));
+
 				//A numeric type class is handled as the built-in type it mirrors, so that e.g. a Float64
 				//argument is passed in a floating-point register rather than as raw bits in an integer one.
 				code = Struct.GetPrimitiveTypeCode(structType);
@@ -661,6 +664,13 @@ namespace Keysharp.Internals.Interop
 			if (!Struct.TryResolveClass(rawReturnType, out var structType))
 				return false;
 
+			if (Struct.IsArray(structType))
+			{
+				_ = Errors.ValueErrorOccurred("Structured arrays cannot be used as a DllCall return type.");
+				failed = true;
+				return true;
+			}
+
 			// A numeric type class converts directly rather than being instantiated, so it behaves exactly like the
 			// built-in type it mirrors — including floats, which are returned in a different register.
 			builtinCode = Struct.GetPrimitiveTypeCode(structType);
@@ -701,10 +711,10 @@ namespace Keysharp.Internals.Interop
 			var input = targetRef != null ? Refs.GetValueOrNull(targetRef) : value;
 			var hasInput = input != null;
 
-			if (!hasInput && targetRef == null)
+			if (!hasInput && targetRef == null && pointerType != null)
 				return 0L;
 
-			if (hasInput && Struct.IsStructInstance(input, pointerType))
+			if (hasInput && pointerType != null && Struct.IsStructInstance(input, pointerType))
 			{
 				var pointerValue = (Struct)input;
 				return pointerValue.GetPrimitiveValue();

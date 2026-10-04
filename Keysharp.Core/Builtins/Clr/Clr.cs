@@ -134,6 +134,12 @@ namespace Keysharp.Builtins
 				object IMetaObject.Get(string name, object[] args) => Get(name, args);
 				internal virtual object Get(string name, object[] args) =>
 					Errors.ErrorOccurred($"Get not implemented on type {GetType().FullName}.");
+				bool IMetaObject.TryGet(string name, object[] args, out object value) => TryGet(name, args, out value);
+				internal virtual bool TryGet(string name, object[] args, out object value)
+				{
+					value = Get(name, args);
+					return true;
+				}
 
 				void IMetaObject.Set(string name, object[] args, object value) => Set(name, args, value);
 				internal virtual void Set(string name, object[] args, object value) =>
@@ -400,6 +406,8 @@ namespace Keysharp.Builtins
 				// Static prop/field: get
 				internal override object Get(string name, object[] args)
 					=> ManagedInvoke.GetStatic(_type, name);
+				internal override bool TryGet(string name, object[] args, out object value)
+					=> ManagedInvoke.TryGet(null, _type, name, args, out value);
 
 				// Static prop/field: set
 				internal override void Set(string name, object[] args, object value)
@@ -454,6 +462,8 @@ namespace Keysharp.Builtins
 				// Instance prop/field: get/set
 				internal override object Get(string name, object[] args)
 					=> ManagedInvoke.GetInstance(_instance, _type, name, args);
+				internal override bool TryGet(string name, object[] args, out object value)
+					=> ManagedInvoke.TryGet(_instance, _type, name, args, out value);
 
 				internal override void Set(string name, object[] args, object value)
 					=> ManagedInvoke.SetInstance(_instance, _type, name, args, value);

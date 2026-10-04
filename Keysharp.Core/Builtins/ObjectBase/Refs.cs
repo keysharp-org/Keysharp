@@ -3,20 +3,10 @@ using Keysharp.Runtime;
 namespace Keysharp.Builtins
 {
 	/// <summary>
-	/// The one place that answers "is this value a reference, and how do I read or write through it".
-	/// <para>
-	/// There are two questions, and which one applies depends on whether anything DECLARED the parameter an output
-	/// variable. Where something did -- a built-in's <c>[ByRef]</c> parameter, a script function's <c>&amp;p</c> --
-	/// <see cref="IsRef"/> accepts leniently and lets access report the truth, mirroring AutoHotkey's
-	/// <c>ObjectCanBeOutputVar</c>. Where nothing did and the code is inferring from the argument alone -- a DllCall
-	/// or COM argument that may equally be a reference or an ordinary value, <c>&amp;x</c> choosing between
-	/// forwarding a value and wrapping the variable -- <see cref="DeclaresValue"/> demands proof, because guessing wrong
-	/// there is silent.
-	/// </para>
-	/// <para>
-	/// Shape and state are separate: a reference whose target is unset is still a reference -- the call is what fills
-	/// it in -- so no caller may read a null <c>__Value</c> as "not a reference".
-	/// </para>
+	/// Reads and writes reference values through <c>__Value</c>.
+	/// Declared output parameters use <see cref="IsRef"/> and report invalid access when used.
+	/// Native argument inference and dynamic object references use <see cref="DeclaresValue"/>
+	/// to distinguish references from ordinary values. An unset target remains a valid reference.
 	/// </summary>
 	[PublicHiddenFromUser]
 	public static class Refs

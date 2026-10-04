@@ -598,22 +598,28 @@ namespace Keysharp.Builtins
 
 		// -------- Core dispatch --------
 
+		internal static bool TryGet(object instance, Type type, string name, object[] args, out object result)
+		{
+			if (args.Length == 0 && TryField(instance, type, name, false, null, out result)
+				|| TryPropertyCore(instance, type, name, args, false, null, out result)
+				|| TryMethod(instance, type, name, args, out result))
+				return true;
+			if (MemberCache[(type, name)].Methods.Count == 0
+				&& PropertyCache[(type, name ?? "", false)].Length == 0
+				&& PropertyCache[(type, name ?? "", true)].Length == 0)
+				return false;
+			result = Errors.ErrorOccurred(NoMatchMessage(type, name, args));
+			return true;
+		}
+
 		private static object InvokeCore(object instance, Type type, string name, object[] args, bool isSet, object putValue)
 		{
-			// 1) Fast field path
-			if (args.Length == 0 && TryField(instance, type, name, isSet, putValue, out var fieldResult))
-				return fieldResult;
-
-			if (TryPropertyCore(instance, type, name, args, isSet, putValue, out var propResult))
-				return propResult;
-			if (isSet)
-				return Errors.PropertyErrorOccurred(NoMatchMessage(type, name, args));
-
-			// 3) Methods (instance or static)
-			if (TryMethod(instance, type, name, args, out var callResult))
-				return callResult;
-
-			return Errors.ErrorOccurred(NoMatchMessage(type, name, args));
+			if (!isSet)
+				return TryGet(instance, type, name, args, out var result) ? result : Errors.ErrorOccurred(NoMatchMessage(type, name, args));
+			if (args.Length == 0 && TryField(instance, type, name, true, putValue, out var written)
+				|| TryPropertyCore(instance, type, name, args, true, putValue, out written))
+				return written;
+			return Errors.PropertyErrorOccurred(NoMatchMessage(type, name, args));
 		}
 
 		/// <summary>

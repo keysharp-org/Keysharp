@@ -183,7 +183,8 @@ ForwardReference(reference) {
 target := 30
 forwarded := ForwardReference(&target)
 forwarded.__Value := 31
-AssertEq(target, 31, A_LineNumber)
+AssertEq(target, 30, A_LineNumber)
+AssertEq(forwarded.__Value, 31, A_LineNumber)
 
 Forward(&parameter) => &parameter
 target := 60

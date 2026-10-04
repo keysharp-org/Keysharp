@@ -31,11 +31,10 @@ namespace Keysharp.Runtime
             var ownProps = baseObj.op;
             if (ownProps != null && ownProps.TryGetValue(key, out opm))
 			{
-				if (type == OwnPropsMapType.None) return true;
-				if ((opm.Type & type) != 0)
+				if (type == OwnPropsMapType.None || opm.Type == OwnPropsMapType.None || (opm.Type & type) != 0)
 					return true;
 			}
-			if (key.Equals("base", StringComparison.OrdinalIgnoreCase))
+			if (StringComparer.OrdinalIgnoreCase.Equals(key, "base"))
 			{
 				opm = new OwnPropsDesc(baseObj.Base);
 				return true;
@@ -51,9 +50,7 @@ namespace Keysharp.Runtime
 				ownProps = baseObj.op;
 				if (ownProps != null && ownProps.TryGetValue(key, out opm))
 				{
-					if (type == OwnPropsMapType.None)
-						return true;
-					if ((opm.Type & type) != 0)
+					if (type == OwnPropsMapType.None || opm.Type == OwnPropsMapType.None || (opm.Type & type) != 0)
 						return true;
 				}
 			}
@@ -75,7 +72,7 @@ namespace Keysharp.Runtime
 
 				if (ownProps != null && ownProps.TryGetValue(key, out opm))
 				{
-					if ((opm.Type & (OwnPropsMapType.Value | OwnPropsMapType.Get)) != 0)
+					if (opm.Type == OwnPropsMapType.None || (opm.Type & (OwnPropsMapType.Value | OwnPropsMapType.Get)) != 0)
 						return true;
 
 					if (method == null && (opm.Type & OwnPropsMapType.Call) != 0)
@@ -84,7 +81,7 @@ namespace Keysharp.Runtime
 
 				// `base` is the object's own, so it is answered before the chain is walked — and regardless of what
 				// the descriptors along it hold.
-				if (cur == baseObj && key.Equals("base", StringComparison.OrdinalIgnoreCase))
+				if (cur == baseObj && StringComparer.OrdinalIgnoreCase.Equals(key, "base"))
 				{
 					opm = new OwnPropsDesc(baseObj.Base);
 					return true;
@@ -274,7 +271,7 @@ namespace Keysharp.Runtime
 			// as an ordinary property access rather than through Refs.
 			if (item is VarRef vr && vr.IsPlain && namestr.Equals("__Value", StringComparison.OrdinalIgnoreCase))
 			{
-				return vr.__Value;
+				return args.Length > 0 ? GetPropertyResultIndex(item, namestr, vr.__Value, args) : vr.__Value;
 			}
 
 			// Unwrap (proto, this) tuple
@@ -307,7 +304,7 @@ namespace Keysharp.Runtime
 						// `s.field[i]` folds to GetPropertyValue(s, "field", i); apply any trailing index to the field
 						// value (e.g. a structured-array field element) rather than dropping it.
 						var fieldValue = getStruct.GetFieldValue(opm.StructField);
-						return args.Length > 0 ? GetIndexOrNull(fieldValue, args) : fieldValue;
+						return args.Length > 0 ? GetPropertyResultIndex(item, namestr, fieldValue, args) : fieldValue;
 					}
 
 					if (opm.Value != null)
@@ -317,11 +314,11 @@ namespace Keysharp.Runtime
 
 					if (opm.Get != null)
 					{
-						// Allow function or callable object
-						if (opm.Get is KeysharpFunc ifo)
-							return args.Length > 0 && opm.NoParamGet ? GetIndexOrNull(ifo.Call(item), args) : ifo.CallInst(item, args);
-						else
-							return Invoke(opm.Get, null, [item, ..args]);
+						var indexResult = args.Length > 0 && opm.NoParamGet;
+						var result = opm.Get is KeysharpFunc func
+							? indexResult ? func.Call(item) : func.CallInst(item, args)
+							: indexResult ? InvokeOrNull(opm.Get, null, item) : InvokeOrNull(opm.Get, null, [item, ..args]);
+						return indexResult ? GetPropertyResultIndex(item, namestr, result, args) : result;
 					}
 
 					if (opm.Call != null)
@@ -329,7 +326,7 @@ namespace Keysharp.Runtime
 						return opm.Call; // expose function object
 					}
 
-					return null;   // `base` with no base: the synthetic descriptor carries a null Value
+					return args.Length > 0 ? UnsetResultErrorOccurred(item, namestr) : null;
 				}
 
 				// __Get meta (function or callable object), only queried for Call and Value (but not Get)
@@ -338,7 +335,7 @@ namespace Keysharp.Runtime
 					return InvokeOrNull(metaGet, null, item, namestr, new Keysharp.Builtins.Array(args));
 				}
 
-				if (kso is IMetaObject mo)
+				if (kso is IMetaObject mo && kso is not Module)
 				{
 					return mo.Get(namestr, args);
 				}
@@ -350,8 +347,12 @@ namespace Keysharp.Runtime
 			// never have reached a script unwrapped, at the cost of making whatever CLR member a name happened
 			// to match look like part of the language.
 
-			return null;
+			return args.Length > 0 ? Errors.MissingPropertyErrorOccurred(item, namestr) : null;
 		}
+
+		// A trailing index needs a value from the getter even when its final item may be unset.
+		private static object GetPropertyResultIndex(object item, string name, object result, object[] args) =>
+			result == null ? UnsetResultErrorOccurred(item, name) : GetIndexOrNull(result, args);
 
 		private static readonly System.Reflection.MethodInfo anyInit = typeof(Any).GetMethod(nameof(Any.__Init), Type.EmptyTypes);
 
@@ -700,7 +701,6 @@ namespace Keysharp.Runtime
 		private static object SetPropertyValueCore(object item, object name, object[] args, object value, bool allowCreate)
 		{
 			if (!name.CoerceString(out var namestr)) return DefaultObject;
-			var target = item;
 			Any kso = null;
 
 			var argCount = args?.Length ?? 1;
@@ -709,7 +709,7 @@ namespace Keysharp.Runtime
 			// VarRef fast-path: same guard as GetPropertyValue's (VarRef.IsPlain); anything else dispatches so an
 			// override is honored.
 			if (item is VarRef vr && vr.IsPlain && namestr.Equals("__Value", StringComparison.OrdinalIgnoreCase))
-				return vr.__Value = value;
+				return argCount > 1 ? SetPropertyResultIndex(vr.__Value) : vr.__Value = value;
 
 			if (item is Any a2)
 			{
@@ -732,98 +732,59 @@ namespace Keysharp.Runtime
 				if (kso is Module module && module.TrySetProperty(namestr, Arguments()))
 					return value;
 
-				// Direct ownprop first
-				if (kso.op != null && kso.op.TryGetValue(namestr, out var own))
+				OwnPropsDesc field = null;
+				Any fieldOwner = null;
+				for (var current = kso; current != null; current = current.Base)
 				{
-					// As the read folds `s.field[i]`, an index applies to the field's value, a structured-array element.
-					if (own.StructField != null && item is Struct setStruct)
-						return argCount > 1 ? SetObject(setStruct.GetFieldValue(own.StructField), Arguments()) : setStruct.SetFieldValue(own.StructField, value);
-
-					// As in AHK, index parameters pass over a setter that takes none, and index the getter's value instead.
-					if (argCount > 1 && (own.Set == null ? own.Get != null && own.NoParamGet : own.NoParamSet))
+					if (current.op == null || !current.op.TryGetValue(namestr, out var candidate)) continue;
+					// Value and typed properties hide every setter below them.
+					if (candidate.StructField != null || candidate.Type is OwnPropsMapType.Value or OwnPropsMapType.None)
 					{
-						_ = SetObject(GetPropertyValue(target, namestr), Arguments());
-						return value;
+						if (field == null) { field = candidate; fieldOwner = current; }
+						break;
 					}
-
-					// Setter function or callable object
-					if (own.Set != null)
+					if (candidate.Set != null && (argCount == 1 || !candidate.NoParamSet))
 					{
-						if (own.Set is KeysharpFunc f)
+						if (candidate.Set is KeysharpFunc f)
 							_ = f.CallInst(item, Arguments());
 						else
-							_ = InvokeOrNull(own.Set, null, [item, ..Arguments()]);
-
+							_ = InvokeOrNull(candidate.Set, null, [item, ..Arguments()]);
 						return value;
 					}
-
-					// Pure data property (no Call/Get)
-					if (own.Call == null && own.Get == null)
+					if (field?.Get == null && candidate.Get != null || field == null && candidate.Call != null)
 					{
-						if (argCount > 1)
-							_ = SetObject(own.Value, Arguments());
-						else
-							own.Value = value;
-
-						if (value == null && own.IsEmpty) kso.op.Remove(namestr);
-
-						return value;
+						field = candidate;
+						fieldOwner = current;
 					}
-
-					return Errors.ReadOnlyPropertyErrorOccurred(namestr);
 				}
 
-				// special base
-				if (namestr.Equals("base", StringComparison.OrdinalIgnoreCase))
+				if (field == null && namestr.Equals("base", StringComparison.OrdinalIgnoreCase))
 				{
+					if (argCount > 1) return SetPropertyResultIndex(kso.Base);
 					_ = Objects.ObjSetBase(kso, value);
 					return value;
 				}
 
-				// First try to find Set
-				if (TryGetOwnPropsMap(kso, namestr, out var opm, searchBase: true,
-					type: OwnPropsMapType.Set))
+				if (field != null)
 				{
-					if (opm.StructField != null && item is Struct setStruct)
-						return argCount > 1 ? SetObject(setStruct.GetFieldValue(opm.StructField), Arguments()) : setStruct.SetFieldValue(opm.StructField, value);
-
-					if (argCount > 1 && opm.NoParamSet)
+					if (field.StructField != null)
 					{
-						_ = SetObject(GetPropertyValue(target, namestr), Arguments());
-						return value;
+						if (item is not Struct setStruct || setStruct.Ptr == 0)
+							return Errors.ErrorOccurred("Property invalid for object with null data.", null, namestr);
+						return argCount > 1 ? SetPropertyResultIndex(setStruct.GetFieldValue(field.StructField)) : setStruct.SetFieldValue(field.StructField, value);
 					}
-
-					if (opm.Set is KeysharpFunc fset)
-						_ = fset.CallInst(item, Arguments());
-					else
-						_ = InvokeOrNull(opm.Set, null, [item, ..Arguments()]);
-
-					return value;
-				}
-				// Next try to find Get/Value and set __Item[]
-				else if (TryGetOwnPropsMap(kso, namestr, out var opm2, searchBase: true,
-					type: OwnPropsMapType.Get | OwnPropsMapType.Value))
-				{
 					if (argCount > 1)
+						return SetPropertyResultIndex(field.Get is KeysharpFunc getter ? getter.Call(item)
+							: field.Get != null ? InvokeOrNull(field.Get, null, item) : field.Value ?? field.Call);
+					if (field.Get != null || field.Call != null)
+						return Errors.ReadOnlyPropertyErrorOccurred(namestr);
+					if (fieldOwner == kso && ReferenceEquals(item, kso))
 					{
-						object val = null;
-						if (opm2.Get != null)
-							val = Invoke(opm2.Get, null, item);
-						else
-							val = opm2.Value;
-						_ = SetPropertyValue(val, "__Item", Arguments());
+						field.Value = value;
+						if (value == null) kso.op.Remove(namestr);
 						return value;
 					}
-
-					if (opm2.Get != null)
-						return Errors.ReadOnlyPropertyErrorOccurred(namestr);
 				}
-				// A name that resolves to a method (Call) without a Set is a read-only property.
-				else if (TryGetOwnPropsMap(kso, namestr, out _, searchBase: true, type: OwnPropsMapType.Call))
-				{
-					return Errors.ReadOnlyPropertyErrorOccurred(namestr);
-				}
-				// __Set meta (function or callable object), only if no Set/Get/Value is found
 				else if (TryGetOwnPropsMap(kso, "__Set", out var protoSet) && (protoSet.Call ?? protoSet.Value) is object metaSet)
 				{
 					if (metaSet is KeysharpFunc f)
@@ -831,6 +792,17 @@ namespace Keysharp.Runtime
 					else
 						_ = InvokeOrNull(metaSet, null, item, namestr, new Keysharp.Builtins.Array(GetIndexArgs()), value);
 					return value;
+				}
+
+				if (argCount == 1 && !ReferenceEquals(item, kso))
+				{
+					if (item is Any receiver)
+					{
+						receiver.EnsureOwnProps()[namestr] = new OwnPropsDesc(value);
+						receiver.OnPropertyChanged(namestr);
+						return value;
+					}
+					return field != null ? Errors.ReadOnlyPropertyErrorOccurred(namestr) : Errors.MissingPropertyErrorOccurred(item, namestr);
 				}
 
 				if (kso is IMetaObject mo)
@@ -856,6 +828,15 @@ namespace Keysharp.Runtime
 
 			object[] Arguments() => args ??= [value];
 			object[] GetIndexArgs() => argCount == 1 ? System.Array.Empty<object>() : args[..^1];
+
+			object SetPropertyResultIndex(object result)
+			{
+				if (result == null)
+					return UnsetResultErrorOccurred(item, namestr);
+
+				_ = SetObject(result, Arguments());
+				return value;
+			}
 		}
 
 		public static void SetStaticMemberValueT<T>(object name, object value)

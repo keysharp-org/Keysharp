@@ -269,6 +269,11 @@ namespace Keysharp.Tests
 			AssertCompileError("#import Ks return 1\n", "after #import");
 			AssertCompileError("#import \"A\", \"B\"\n", "after #import");
 			AssertCompileError("#import \"D\" { x } as Y\n", "after #import");
+			AssertCompileError("#import M { a aſ b }\n#Module M\na := 1\n", "in #import member list");
+			AssertCompileError("#import Ks { Clr\n", "expected '}'");
+			AssertCompileError("#import M { * as X }\n#Module M\n", "in #import member list");
+			AssertCompileError("#Module Self\n#Import Export Self { * }\n", "Invalid import: *");
+			AssertCompiles("#import M { a aS b, 1,, }\n#Module M\na := 1\n", "#import M {}\n#Module M\n");
 		}
 
 		[Test, Category("Parser")]
@@ -461,6 +466,36 @@ namespace Keysharp.Tests
 			}
 			finally
 			{
+				Directory.Delete(root, true);
+			}
+		}
+
+		[Test, Category("Parser")]
+		public void DistinctCaseModuleSearchDirectories()
+		{
+			if (!OperatingSystem.IsLinux())
+				Assert.Ignore("This test needs a case-sensitive filesystem.");
+
+			var root = Path.Combine(Path.GetTempPath(), "ks_case_modules_" + Guid.NewGuid().ToString("N"));
+			var first = Path.Combine(root, "Modules");
+			var second = Path.Combine(root, "modules");
+			var previousPath = Environment.GetEnvironmentVariable("AhkImportPath");
+			_ = Directory.CreateDirectory(first);
+			_ = Directory.CreateDirectory(second);
+
+			try
+			{
+				var module = Path.Combine(second, "SearchTarget.ahk");
+				var main = Path.Combine(root, "main.ahk");
+				File.WriteAllText(module, "Value := 1\n");
+				File.WriteAllText(main, "#ErrorStdOut\n#Warn All, StdOut\n#Import SearchTarget { Value }\nanswer := Value\n");
+				Environment.SetEnvironmentVariable("AhkImportPath", first + ";" + second);
+				var (_, _, files) = CompileFile(main);
+				CollectionAssert.Contains(files, module);
+			}
+			finally
+			{
+				Environment.SetEnvironmentVariable("AhkImportPath", previousPath);
 				Directory.Delete(root, true);
 			}
 		}

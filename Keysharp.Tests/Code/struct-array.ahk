@@ -1,3 +1,5 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 
 #Requires AutoHotkey v2.1-alpha
@@ -62,5 +64,22 @@ try
 catch IndexError
     threw := true
 Assert(!(!threw), A_LineNumber)
+
+; Structured-array arguments pass their storage address, regardless of its size.
+arrayAddressCb := CallbackCreate(address => address, "Fast", [IntPtr, IntPtr])
+for arrayType in [Int8[2], Int32[2], Int32[10]] {
+    nativeArray := arrayType()
+    nativeArray[1] := 7
+    AssertEq(DllCall(arrayAddressCb, arrayType, nativeArray, "Ptr"), nativeArray.Ptr, A_LineNumber)
+}
+
+Throws(() => DllCall(arrayAddressCb, Int32[2]), A_LineNumber, ValueError)
+CallbackFree(arrayAddressCb)
+
+writeArrayCb := CallbackCreate(address => NumPut("Int", 42, address), "Fast", [IntPtr, "void"])
+DllCall(writeArrayCb, Int32[10], &outputArray, "void")
+Assert(outputArray is Int32[10], A_LineNumber)
+AssertEq(outputArray[1], 42, A_LineNumber)
+CallbackFree(writeArrayCb)
 
 FileAppend "pass", "*"

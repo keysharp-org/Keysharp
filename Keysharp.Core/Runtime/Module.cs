@@ -13,6 +13,15 @@ namespace Keysharp.Runtime
 
 		private protected virtual bool TryGetMember(string name, out ScriptVar m) => TheScript.Vars.TryGetMember(GetType(), name, out m);
 
+		/// <summary>Returns the module variable's reference, or unset when the module has no such member.</summary>
+		public object __Ref(object Name)
+		{
+			if (!Name.CoerceString(out var name))
+				return DefaultObject;
+
+			return TryGetMember(name, out var member) ? member.MakeRef(name) : null;
+		}
+
 		// Reads a member of the module, or is false for a name the module lacks, which its prototype may still have. A
 		// module's own names come first, as in AutoHotkey's ScriptModule::Invoke.
 		internal bool TryGetProperty(string name, object[] args, out object value)
@@ -52,6 +61,7 @@ namespace Keysharp.Runtime
 
 		// Null for a missing member, which the caller raises as for any object without the property.
 		object IMetaObject.Get(string name, object[] args) => TryGetProperty(name, args, out var value) ? value : null;
+		bool IMetaObject.TryGet(string name, object[] args, out object value) => TryGetProperty(name, args, out value);
 
 		void IMetaObject.Set(string name, object[] args, object value)
 		{

@@ -388,7 +388,7 @@ namespace Keysharp.Internals.Invoke
 
 		/// <summary>
 		/// Parameter name -> index into <see cref="parameters"/>, for binding named arguments (<c>f(Name: value)</c>).
-		/// Case-insensitive, matching every other identifier in the language. Built once, lazily: most methods are
+		/// Names ignore Unicode case for named-argument binding. Built once, lazily: most methods are
 		/// never called with named arguments, so the cost stays with the scripts that use them.
 		/// <para>
 		/// Excluded from the map, and so not bindable by name: the receiver, and the variadic parameter (a
@@ -404,10 +404,7 @@ namespace Keysharp.Internals.Invoke
 			if (parameters == null)   // the "fake" MPH used by ObjBindMethod: no signature to bind against
 				return map;
 
-			// [UserDeclaredName] carries the name a script writes when it cannot be the C# identifier: a documented built-in
-			// spelling, or -- on lowered user functions -- the original casing of an identifier whose case fold does
-			// not round-trip (see Lowerer.ParamDecls). BOTH spellings are registered, so the declared name and the
-			// emitted one each bind.
+			// Register the documented name first, then the CLR spelling where no documented name claims it.
 			//
 			// Two passes, because the two kinds of name can collide across parameters (a `[UserDeclaredName("text")]` on one
 			// while another is literally called `text`). Declared names go in first and are never displaced: they are
@@ -469,7 +466,8 @@ namespace Keysharp.Internals.Invoke
 		{
 			mi = m;
 			compatibilityVersion = mi.GetCustomAttribute<Keysharp.Runtime.CompatibilityModeAttribute>()?.Version;
-			moduleType = ResolveModuleType(mi.DeclaringType);
+			moduleType = !mi.IsStatic && typeof(Keysharp.Runtime.Module).IsAssignableFrom(mi.DeclaringType)
+				&& mi.DeclaringType.Assembly == typeof(Keysharp.Runtime.Module).Assembly ? null : ResolveModuleType(mi.DeclaringType);
 			// Ks and Ahk derive from Module so #import has something to bind against, but their members are builtins.
 			InScriptModule = moduleType != null && moduleType.Assembly != typeof(Keysharp.Runtime.Module).Assembly;
 			var inlineMarked = MethodPropertyHolder.IsInlineBoundary(mi);

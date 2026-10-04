@@ -434,17 +434,8 @@ namespace Keysharp.Compilation
 			return ([.. diags], ex);
 		}
 
-		internal (EmitResult, MemoryStream, Exception) CompileFromTree(SyntaxTree tree, string outputname, string currentDir, bool minimalexeout = false, IReadOnlyList<SyntaxTree> inlineTrees = null, List<Diagnostic> diagnoseSink = null, PackageManifest packages = null, IReadOnlyCollection<string> requiredProviders = null, IReadOnlyCollection<string> requiredComponents = null, Keysharp.Internals.Scripting.AppManifest appManifest = null, bool win32Resources = true, IReadOnlyList<string> sourceTexts = null)
+		private static string RuntimeDependencyDirectory(string currentDir)
 		{
-			IEnumerable<ResourceDescription> resourceDescriptions = null;
-			HashSet<string> allDependencies = null;
-			CompiledPackageProviderManifest providerManifest = null;
-			CompiledScriptingComponentManifest componentManifest = null;
-			var hasInlineTrees = inlineTrees is { Count: > 0 };
-			var coreDir = Path.GetDirectoryName(typeof(object).GetTypeInfo().Assembly.Location);
-#if WINDOWS
-			var desktopDir = Path.GetDirectoryName(typeof(Form).GetTypeInfo().Assembly.Location);
-#endif
 			var ksCoreDir = Path.GetDirectoryName(Keysharp.Builtins.Ks.A_KsCorePath);
 
 #if OSX
@@ -471,64 +462,16 @@ namespace Keysharp.Compilation
 					requiredManagedDependencies.All(dep => File.Exists(Path.Combine(dir, dep))));
 			}
 #endif
+			return ksCoreDir;
+		}
 
-			if (minimalexeout)
-			{
-				if (requiredComponents is { Count: > 0 }
-						&& !CompiledScriptingComponentManifest.TryBuild(requiredComponents, out componentManifest, out var componentFailure))
-					throw new InvalidOperationException(componentFailure);
-
-				if (requiredProviders is { Count: > 0 }
-						&& !CompiledPackageProviderManifest.TryBuild(requiredProviders, out providerManifest, out var providerFailure))
-					throw new InvalidOperationException(providerFailure);
-
-				var currentDepsConfigPath = Path.Combine(ksCoreDir ?? "", $"{Assembly.GetEntryAssembly().GetName().Name}.deps.json");
-
-				if (!File.Exists(currentDepsConfigPath))
-				{
-					currentDepsConfigPath = Path.Combine(currentDir, $"{Assembly.GetEntryAssembly().GetName().Name}.deps.json");
-
-					if (!File.Exists(currentDepsConfigPath))
-						currentDepsConfigPath = null;
-				}
-
-				if (currentDepsConfigPath != null)
-				{
-					allDependencies = GetCompiledScriptDependencies(currentDepsConfigPath);
-					resourceDescriptions = allDependencies
-											.Where(path =>
-					{
-						switch (Path.GetFileName(path).ToUpperInvariant())
-						{
-							// Keysharp.Core ships beside the executable, where it loads the other embedded assemblies and
-							// native libraries; an embedded compiler also reads it from these resources as a metadata reference.
-							case "KEYSHARP.CORE.DLL":
-								return requiredComponents?.Contains(ScriptingComponentIds.Compiler, StringComparer.OrdinalIgnoreCase) == true;
-
-							// The following would need to be included if dynamic compilation
-							// is desired by the resulting executable.
-							case "MICROSOFT.CODEANALYSIS.DLL":
-							case "MICROSOFT.CODEANALYSIS.CSHARP.DLL":
-							case "KEYSHARP.COMPONENTS.SCRIPTING.COMPILER.DLL":
-							case "KEYSHARP.COMPONENTS.SCRIPTING.PARSER.DLL":
-							case "MICROSOFT.NET.HOSTMODEL.DLL":
-								return false;
-
-							default:
-								return true;
-						}
-					})
-					.Select(path =>
-							new ResourceDescription(
-						// Prefix with Deps to avoid any naming conflicts. Not sure if this is needed.
-						resourceName: "Deps." + Path.GetFileName(path),
-						dataProvider: () => File.OpenRead(path),
-						isPublic: true
-					)
-							);
-				}
-			}
-
+		internal static IReadOnlyList<MetadataReference> CompilationReferences(string currentDir, bool hasInlineTrees, PackageManifest packages = null)
+		{
+			var coreDir = Path.GetDirectoryName(typeof(object).GetTypeInfo().Assembly.Location);
+#if WINDOWS
+			var desktopDir = Path.GetDirectoryName(typeof(Form).GetTypeInfo().Assembly.Location);
+#endif
+			var ksCoreDir = RuntimeDependencyDirectory(currentDir);
 			// Keep the common path small; broad framework references are added only for inline C#.
 			var curated = curatedFrameworkRefs ??=
 			[
@@ -618,6 +561,77 @@ namespace Keysharp.Compilation
 				foreach (var r in FrameworkReferences())
 					if (ByFileName().Add(Path.GetFileName(r.FilePath ?? "")))
 						references.Add(r);
+
+			return references;
+		}
+
+		internal (EmitResult, MemoryStream, Exception) CompileFromTree(SyntaxTree tree, string outputname, string currentDir, bool minimalexeout = false, IReadOnlyList<SyntaxTree> inlineTrees = null, List<Diagnostic> diagnoseSink = null, PackageManifest packages = null, IReadOnlyCollection<string> requiredProviders = null, IReadOnlyCollection<string> requiredComponents = null, Keysharp.Internals.Scripting.AppManifest appManifest = null, bool win32Resources = true, IReadOnlyList<string> sourceTexts = null)
+		{
+			IEnumerable<ResourceDescription> resourceDescriptions = null;
+			HashSet<string> allDependencies = null;
+			CompiledPackageProviderManifest providerManifest = null;
+			CompiledScriptingComponentManifest componentManifest = null;
+			var hasInlineTrees = inlineTrees is { Count: > 0 };
+			var ksCoreDir = RuntimeDependencyDirectory(currentDir);
+
+			if (minimalexeout)
+			{
+				if (requiredComponents is { Count: > 0 }
+						&& !CompiledScriptingComponentManifest.TryBuild(requiredComponents, out componentManifest, out var componentFailure))
+					throw new InvalidOperationException(componentFailure);
+
+				if (requiredProviders is { Count: > 0 }
+						&& !CompiledPackageProviderManifest.TryBuild(requiredProviders, out providerManifest, out var providerFailure))
+					throw new InvalidOperationException(providerFailure);
+
+				var currentDepsConfigPath = Path.Combine(ksCoreDir ?? "", $"{Assembly.GetEntryAssembly().GetName().Name}.deps.json");
+
+				if (!File.Exists(currentDepsConfigPath))
+				{
+					currentDepsConfigPath = Path.Combine(currentDir, $"{Assembly.GetEntryAssembly().GetName().Name}.deps.json");
+
+					if (!File.Exists(currentDepsConfigPath))
+						currentDepsConfigPath = null;
+				}
+
+				if (currentDepsConfigPath != null)
+				{
+					allDependencies = GetCompiledScriptDependencies(currentDepsConfigPath);
+					resourceDescriptions = allDependencies
+											.Where(path =>
+					{
+						switch (Path.GetFileName(path).ToUpperInvariant())
+						{
+							// Keysharp.Core ships beside the executable, where it loads the other embedded assemblies and
+							// native libraries; an embedded compiler also reads it from these resources as a metadata reference.
+							case "KEYSHARP.CORE.DLL":
+								return requiredComponents?.Contains(ScriptingComponentIds.Compiler, StringComparer.OrdinalIgnoreCase) == true;
+
+							// The following would need to be included if dynamic compilation
+							// is desired by the resulting executable.
+							case "MICROSOFT.CODEANALYSIS.DLL":
+							case "MICROSOFT.CODEANALYSIS.CSHARP.DLL":
+							case "KEYSHARP.COMPONENTS.SCRIPTING.COMPILER.DLL":
+							case "KEYSHARP.COMPONENTS.SCRIPTING.PARSER.DLL":
+							case "MICROSOFT.NET.HOSTMODEL.DLL":
+								return false;
+
+							default:
+								return true;
+						}
+					})
+					.Select(path =>
+							new ResourceDescription(
+						// Prefix with Deps to avoid any naming conflicts. Not sure if this is needed.
+						resourceName: "Deps." + Path.GetFileName(path),
+						dataProvider: () => File.OpenRead(path),
+						isPublic: true
+					)
+							);
+				}
+			}
+
+			var references = CompilationReferences(currentDir, hasInlineTrees, packages);
 
 			// Carried inside the assembly so the runtime binds what was compiled against, not what it re-decides —
 			// for EVERY script with packages, inline C# or not: the runtime's only source of truth is this manifest.
@@ -832,7 +846,17 @@ namespace Keysharp.Compilation
 				}
 				else
 				{
-					var lowerer = new Syntax.Lowerer();
+					var packagesPrepared = false;
+					var lowerer = new Syntax.Lowerer
+					{
+						InlineReferenceProvider = packages =>
+						{
+							packagesPrepared = true;
+							compilation.Packages = ResolvePackages(packages, errors, scriptPath, allowPackageRestore);
+							compilation.PackageRestoreNeeded = !allowPackageRestore && compilation.Packages == null && packages.Count > 0;
+							return errors.HasErrors ? null : CompilationReferences(includeDir, true, compilation.Packages);
+						}
+					};
 					compilation.Unit = lowerer.Build(prog, buildName, scriptPath, startupName, includeDir, source, output, defines, outputDirectory);
 					compilation.Manifest = lowerer.Manifest;
 					compilation.InlineCode = lowerer.InlineSource;
@@ -848,7 +872,7 @@ namespace Keysharp.Compilation
 							_ = errors.Add(ToCompilerError(d, scriptPath));
 
 					// Report syntax errors before a potentially slow package restore.
-					if (!errors.HasErrors)
+					if (!errors.HasErrors && !packagesPrepared)
 					{
 						compilation.Packages = ResolvePackages(lowerer.Packages, errors, scriptPath, allowPackageRestore);
 						compilation.PackageRestoreNeeded = !allowPackageRestore && compilation.Packages == null && lowerer.Packages is { Count: > 0 };

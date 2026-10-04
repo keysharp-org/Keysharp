@@ -26,6 +26,9 @@ namespace Keysharp.Runtime
 		/// <summary>Assigns one of the function's variables and returns the value, or returns <see cref="Undeclared"/> or <see cref="Global"/>.</summary>
 		public delegate object Writer(string name, object value);
 
+		/// <summary>Returns the canonical reference for a variable held by this function, or <see cref="Undeclared"/>.</summary>
+		public delegate object RefResolver(string name);
+
 		private sealed class Marker { }
 
 		// A name the function holds no write for: an Undeclared one is written only as a built-in variable, a Global one as
@@ -42,6 +45,7 @@ namespace Keysharp.Runtime
 
 		internal readonly Reader Read;
 		internal readonly Writer Write;
+		internal readonly RefResolver References;
 		// What a write finds for a name no declaration covers: Global in an assume-global function, else Undeclared.
 		internal readonly object Unheld;
 		// Non-capturing, so the C# compiler caches one delegate per function, which keys the one table every call shares.
@@ -55,15 +59,19 @@ namespace Keysharp.Runtime
 			internal static readonly Table Empty = new([]);
 			internal readonly Declaration[] Rows = rows;
 			internal readonly System.Collections.Generic.Dictionary<string, Declaration> ByName = rows
-				.DistinctBy(row => row.Name, System.StringComparer.OrdinalIgnoreCase)
-				.ToDictionary(row => row.Name, System.StringComparer.OrdinalIgnoreCase);
+				.DistinctBy(row => row.Name, StringComparer.OrdinalIgnoreCase)
+				.ToDictionary(row => row.Name, StringComparer.OrdinalIgnoreCase);
 		}
 
 		public FuncScope(string name, Reader read, Writer write, System.Func<Declaration[]> declarations, bool assumeGlobal)
+			: this(name, read, write, declarations, assumeGlobal, null) { }
+
+		public FuncScope(string name, Reader read, Writer write, System.Func<Declaration[]> declarations, bool assumeGlobal, RefResolver references)
 		{
 			Name = name ?? "";
 			Read = read;
 			Write = write;
+			References = references;
 			factory = declarations;
 			Unheld = assumeGlobal ? Global : Undeclared;
 		}

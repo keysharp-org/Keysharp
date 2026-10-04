@@ -142,8 +142,8 @@ namespace Keysharp.Builtins
 			foreach (var moduleKv in script.Vars.AllModuleVars)
 			{
 				_ = sb.AppendLine($"{Script.GetUserDeclaredName(moduleKv.Key) ?? moduleKv.Key.Name}:");
-				foreach (var fieldKv in moduleKv.Value.Where(kv => kv.Value?.fi != null).OrderBy(kv => kv.Key))
-					PropPrinter.Print(fieldKv.Value.CallFunc(null, null), fieldKv.Key, sb);
+				foreach (var fieldKv in moduleKv.Value.OrderBy(kv => kv.Key))
+					PropPrinter.Print(fieldKv.Value.Get(), fieldKv.Key, sb);
 				_ = sb.AppendLine();
 			}
 

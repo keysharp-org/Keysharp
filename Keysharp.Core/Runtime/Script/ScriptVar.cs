@@ -19,49 +19,54 @@ namespace Keysharp.Runtime
 	/// </summary>
 	internal readonly struct ScriptVar
 	{
-		private readonly MethodPropertyHolder holder;
-		private readonly PropertyInfo builtin;
-		private readonly object constant;
-		private readonly string constantName;
+		private readonly object storage;
+		private MethodPropertyHolder holder => storage as MethodPropertyHolder;
+		private PropertyInfo builtin => storage as PropertyInfo;
+		private MethodInfo function => storage as MethodInfo;
+		private Type classType => storage as Type;
 
-		private ScriptVar(MethodPropertyHolder holder, PropertyInfo builtin, object constant, string constantName)
-		{
-			this.holder = holder;
-			this.builtin = builtin;
-			this.constant = constant;
-			this.constantName = constantName;
-		}
+		private ScriptVar(object storage) => this.storage = storage;
 
-		internal static ScriptVar Of(MethodPropertyHolder holder) => new(holder, null, null, null);
+		internal static ScriptVar Of(MethodPropertyHolder holder) => new(holder);
 
-		internal static ScriptVar Builtin(PropertyInfo prop) => new(null, prop, null, null);
+		internal static ScriptVar Builtin(PropertyInfo prop) => new(prop);
 
-		internal static ScriptVar Constant(object value, string name) => new(null, null, value, name);
+		internal static ScriptVar Function(MethodInfo method) => new(method);
 
-		internal bool Exists => holder != null || builtin != null || constant != null;
+		internal static ScriptVar Class(Type type) => new(type);
+
+		internal bool Exists => storage != null;
+		private bool IsWritable => builtin != null ? MethodPropertyHolder.HasScriptSetter(builtin) : holder?.HasSetter == true;
+		private bool IsClass => classType != null || holder?.pi != null && !holder.HasSetter
+			&& typeof(Module).IsAssignableFrom(holder.pi.DeclaringType) && holder.pi.DeclaringType.Assembly != typeof(Module).Assembly
+			&& !holder.pi.IsDefined(typeof(InlineCSharpAttribute), false);
 
 		// What a writable variable is written through, which FromTarget turns back into it; null for a constant.
-		internal object Target => (object)holder ?? builtin;
+		internal object Target => storage is MethodPropertyHolder or PropertyInfo ? storage : null;
 
 		internal static ScriptVar FromTarget(object target) =>
 			target is MethodPropertyHolder mph ? Of(mph) : target is PropertyInfo prop ? Builtin(prop) : default;
 
-		internal object Get() =>
-			holder != null ? holder.CallFunc(null, null)
-			: builtin != null ? builtin.GetValueUnwrapped(null)
-			: constant;
+		internal object Get() => storage switch
+		{
+			MethodPropertyHolder member => member.CallFunc(null, null),
+			PropertyInfo property => MethodPropertyHolder.GetOrAdd(property).CallFunc(null, null),
+			MethodInfo method => Functions.MethodFunction(method),
+			Type type when Script.TheScript.Vars.Statics.TryGetValue(type, out var cls) => cls,
+			_ => null
+		};
 
 		/// <summary>True when the variable takes a write; otherwise raises the read-only error.</summary>
 		internal bool RequireWritable(VarUsage usage, string name)
 		{
 			// A module constant is a readonly field or a property without a setter, so it has no SetProp.
-			if (builtin != null ? MethodPropertyHolder.HasScriptSetter(builtin) : holder?.HasSetter == true)
+			if (IsWritable)
 				return true;
 
 			// A #CSharp module member without a public setter is a read-only property rather than a read-only variable.
 			_ = holder?.memberInfo.IsDefined(typeof(InlineCSharpAttribute), false) == true
 				? Errors.PropertyErrorOccurred($"{(holder.memberInfo is FieldInfo ? "Field" : "Property")} {holder.memberInfo.Name} is read-only.")
-				: Errors.VarReadOnlyErrorOccurred(builtin != null ? "built-in variable" : Errors.ConstantKind(Get()), DeclaredName(name), usage);
+				: Errors.VarReadOnlyErrorOccurred(builtin != null ? "built-in variable" : function != null ? "Func" : IsClass ? "Class" : Errors.ConstantKind(Get()), DeclaredName(name), usage);
 			return false;
 		}
 
@@ -70,7 +75,9 @@ namespace Keysharp.Runtime
 		/// as written, as for a built-in variable or a global the module only reads.
 		/// </summary>
 		internal string DeclaredName(string written) =>
-			holder != null ? Script.GetUserDeclaredName(holder.memberInfo) ?? written : constantName ?? written;
+			holder != null ? Script.GetUserDeclaredName(holder.memberInfo) ?? written
+			: function != null ? Script.GetUserDeclaredName(function) ?? function.Name
+			: classType != null ? Script.GetUserDeclaredName(classType) ?? classType.Name : written;
 
 		/// <summary>Writes a variable <see cref="RequireWritable"/> accepted.</summary>
 		internal void Set(object value)
@@ -84,12 +91,25 @@ namespace Keysharp.Runtime
 				holder.SetProp(null, value);
 		}
 
-		internal object MakeRef(string writtenName)
+		internal VarRef CreateReference(string writtenName)
 		{
 			var self = this;
-			return holder?.memberInfo is FieldInfo field
-				? Misc.MakeVarRef(Misc.FieldRef(field.DeclaringType, field.Name, () => self.Get(), value => self.Set(value)), DeclaredName(writtenName))
-				: Misc.MakeVarRef(() => self.Get(), value => self.Set(value), DeclaredName(writtenName));
+			var name = DeclaredName(writtenName);
+			void Write(object value)
+			{
+				if (self.RequireWritable(VarUsage.Assign, writtenName))
+					self.Set(value);
+			}
+
+			return new VarRef(() => self.Get(), Write, name, holder?.memberInfo is FieldInfo);
+		}
+
+		internal object MakeRef(string writtenName)
+		{
+			var member = holder?.memberInfo ?? (MemberInfo)builtin ?? function;
+			var key = member != null ? (member.DeclaringType, member.Name) : (classType, null);
+			var self = this;
+			return Script.TheScript.Vars.VariableRefs.GetOrAdd(key, _ => self.CreateReference(writtenName));
 		}
 	}
 }

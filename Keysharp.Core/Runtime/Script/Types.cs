@@ -14,7 +14,7 @@ namespace Keysharp.Runtime
 				if (!string.IsNullOrEmpty(t1.Namespace))
 					nameToUse = nameToUse.TrimStartOf($"{t1.Namespace}.").Replace('+', '.').TrimStartOf(Keywords.MainClassName + ".");
 
-				if (string.Compare(nameToUse, t2, true) == 0)
+				if (StringComparer.OrdinalIgnoreCase.Equals(nameToUse, t2))
 					return true;
 
 				t1 = t1.BaseType;

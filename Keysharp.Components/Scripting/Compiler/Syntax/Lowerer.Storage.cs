@@ -34,8 +34,9 @@ namespace Keysharp.Compilation.Syntax
 
 		private StatementSyntax DeclareVariable(FunctionScope scope, string name, ExpressionSyntax value)
 		{
-			var declaration = LocalDecl(ObjType, NameMangler.Escape(name), value);
-			var storage = Storage(scope.Find(name));
+			var variable = scope.Find(name);
+			var declaration = LocalDecl(ObjType, NameMangler.Escape(variable.Key), value);
+			var storage = Storage(variable);
 			return Unsettled(declaration, () => storage.Box != null, node => LocalDeclVar(storage.Box,
 				NewBox(((LocalDeclarationStatementSyntax)node).Declaration.Variables[0].Initializer.Value)));
 		}
@@ -44,7 +45,7 @@ namespace Keysharp.Compilation.Syntax
 		{
 			foreach (var parameter in parameters)
 				if (parameter.Owner.Variables.TryGetValue(parameter.Key, out var storage) && storage.Box != null
-					&& parameter.Owner.Params?.Any(p => p.Variadic && p.Name.Equals(parameter.Key, System.StringComparison.OrdinalIgnoreCase)) != true)
+					&& parameter.Owner.Params?.Any(p => p.Variadic && StringComparer.OrdinalIgnoreCase.Equals(p.Name, parameter.Key)) != true)
 					body.Insert(0, LocalDeclVar(storage.Box, NewBox(Id(NameMangler.Escape(parameter.Key)))));
 		}
 

@@ -362,7 +362,7 @@ namespace Keysharp.Runtime
 				{
 					var name = frames[i].Function == 0 ? frames[i].Description : Name(frames[i].Function);
 
-					if (++offset == 0 || resolvedWhat.Length != 0 && name.Equals(resolvedWhat, StringComparison.OrdinalIgnoreCase))
+					if (++offset == 0 || resolvedWhat.Length != 0 && StringComparer.OrdinalIgnoreCase.Equals(name, resolvedWhat))
 					{
 						(resolvedWhat, start, matched) = (name, i, true);
 						break;

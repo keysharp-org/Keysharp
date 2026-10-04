@@ -73,7 +73,7 @@ namespace Keysharp.Builtins
 				else if (op.Get is KeysharpFunc fo)
 					return (kv.Key, fo.Call(obj));
 				else if (op.Get != null)
-					return (kv.Key, Script.Invoke(op.Get, null, obj));
+					return (kv.Key, Script.InvokeOrNull(op.Get, null, obj));
 				else if (op.Call != null)
 					return (kv.Key, op.Call);
 			}
@@ -128,15 +128,7 @@ namespace Keysharp.Builtins
 				}
 
 				AccessFlags &= ~(OwnPropAccessFlags.NoEnumGet | OwnPropAccessFlags.NoParamGet);
-
-				if (value is KeysharpFunc func)
-				{
-					if (func.MinParams > 1)
-						AccessFlags |= OwnPropAccessFlags.NoEnumGet;
-
-					if (func.MaxParams == 1 && !func.IsVariadic)
-						AccessFlags |= OwnPropAccessFlags.NoParamGet;
-				}
+				FillAccessorFlags(value, false);
 			}
 		}
 
@@ -158,10 +150,55 @@ namespace Keysharp.Builtins
 				}
 
 				AccessFlags &= ~OwnPropAccessFlags.NoParamSet;
-
-				if (value is KeysharpFunc func && func.MaxParams == 2 && !func.IsVariadic)
-					AccessFlags |= OwnPropAccessFlags.NoParamSet;
+				FillAccessorFlags(value, true);
 			}
+		}
+
+		private void FillAccessorFlags(object value, bool setter)
+		{
+			var noParam = setter ? OwnPropAccessFlags.NoParamSet : OwnPropAccessFlags.NoParamGet;
+			var maxParams = setter ? 2 : 1;
+			if (value is KeysharpFunc func)
+			{
+				if (!setter && func.MinParams > 1) AccessFlags |= OwnPropAccessFlags.NoEnumGet;
+				if (func.MaxParams == maxParams && !func.IsVariadic) AccessFlags |= noParam;
+				return;
+			}
+			if (value is not Any accessor) return;
+			if (!setter)
+			{
+				if (!TryAccessorInteger(accessor, "MinParams", out var min)) return;
+				if (min > 1) AccessFlags |= OwnPropAccessFlags.NoEnumGet;
+			}
+			if (!TryAccessorInteger(accessor, "MaxParams", out var max) || max != maxParams) return;
+			AccessFlags |= noParam;
+			if (TryAccessorInteger(accessor, "IsVariadic", out var variadic) && variadic != 0)
+				AccessFlags &= ~noParam;
+		}
+
+		// Absent metadata is optional; a declared getter or __Get returning unset is still a type mismatch.
+		private static bool TryAccessorInteger(Any accessor, string name, out long value)
+		{
+			value = 0;
+			var present = Script.TryGetGettableProp(accessor, name, out _)
+				|| Script.TryGetOwnPropsMap(accessor, "__Get", out var meta) && (meta.Call ?? meta.Value) != null;
+			object metadata;
+			if (!present && accessor is IMetaObject dynamicAccessor)
+			{
+				if (!dynamicAccessor.TryGet(name, [], out metadata)) return true;
+				present = true;
+			}
+			else
+				metadata = Script.GetPropertyValueOrNull(accessor, name);
+			switch (metadata)
+			{
+				case long l: value = l; return true;
+				case int i: value = i; return true;
+				case bool b: value = b ? 1 : 0; return true;
+				case null when !present: return true;
+			}
+			_ = Errors.ErrorOccurred(new TypeError("Type mismatch.", null, name), DefaultObject);
+			return false;
 		}
 
 		public object Call

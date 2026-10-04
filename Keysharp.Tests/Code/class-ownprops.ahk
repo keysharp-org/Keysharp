@@ -1,4 +1,7 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
+#Warn LocalSameAsGlobal, Off
 #Include <assert>
 
 class testclass
@@ -500,5 +503,35 @@ withGetter := {}
 withGetter.DefineProp("p", {get: CallableGetter()})
 for , getterValue in withGetter.OwnProps()
 	AssertEq(getterValue, "gotten", A_LineNumber)
+
+emptyGetter := {Call: (This, Owner, *) => unset}
+indexedGetter := {Call: (This, Owner, Index) => unset, MinParams: 2, MaxParams: 2}
+returningGetter := {Call: (This, Owner, *) => Owner.Items, MaxParams: 1, IsVariadic: false}
+returningGetter.DefineProp("MinParams", {Get: (This) => 1})
+nullableCallable := {Items: [21], SetterCalled: false}
+nullableCallable.DefineProp("Empty", {Get: emptyGetter})
+nullableCallable.DefineProp("Indexed", {Get: indexedGetter})
+nullableCallable.DefineProp("ItemsAlias", {Get: returningGetter,
+	Set: {Call: (This, Owner, Value) => Owner.SetterCalled := true, MaxParams: 2}})
+nullableCallable.DefineProp("EmptyBase", {Get: {Call: (This, Owner, *) => unset, MaxParams: 1}})
+AssertEq(nullableCallable.Empty ?? "missing", "missing", A_LineNumber)
+Assert(!IsSet(nullableCallable.Empty), A_LineNumber)
+Throws(() => nullableCallable.Empty, A_LineNumber, UnsetError)
+AssertEq(nullableCallable.Indexed[1] ?? "missing", "missing", A_LineNumber)
+AssertEq(nullableCallable.ItemsAlias[1], 21, A_LineNumber)
+nullableCallable.ItemsAlias[1] := 42
+AssertEq(nullableCallable.Items[1], 42, A_LineNumber)
+Assert(!nullableCallable.SetterCalled, A_LineNumber)
+nullableCallable.ItemsAlias := 99
+Assert(nullableCallable.SetterCalled, A_LineNumber)
+AssertError(() => nullableCallable.EmptyBase[1] ?? "missing", "UnsetError: No value was returned. [EmptyBase]", A_LineNumber)
+emptyProps := {}
+emptyProps.DefineProp("Empty", {Get: emptyGetter})
+emptyProps.DefineProp("Indexed", {Get: indexedGetter})
+emptyCount := 0
+for , emptyValue in emptyProps.OwnProps()
+	emptyCount += 1
+AssertEq(emptyCount, 0, A_LineNumber)
+Throws(() => ({}).DefineProp("Invalid", {Get: {Call: (This, Owner, *) => 21, MaxParams: "1"}}), A_LineNumber, TypeError)
 
 FileAppend "pass", "*"

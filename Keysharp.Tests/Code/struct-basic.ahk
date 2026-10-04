@@ -1,4 +1,6 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 #Include <assert>
 
 struct POINT {
@@ -122,10 +124,10 @@ PropIsSet(obj, name) {
     try {
         _ := obj.%name%
         return true
-    } catch as e {
-        if e is UnsetError
+    } catch as _propertyError {
+        if _propertyError is UnsetError
             return false
-        throw e
+        throw _propertyError
     }
 }
 
@@ -136,6 +138,17 @@ dp(UNION.Prototype, "b", {type:Int32, offset:"a"})
 dp(PTR_HOLDER.Prototype, "pt", {type:POINT.Ptr})
 
 pt := POINT()
+
+; Struct instances cannot own dynamic properties, including through the Obj functions.
+for target in [pt, POINT.At(pt.Ptr), Int32(), POINT.Ptr(), Int32[2]()] {
+    Throws(() => ObjGetCapacity(target), A_LineNumber, TypeError)
+    Throws(() => ObjSetCapacity(target, 10), A_LineNumber, TypeError)
+    Throws(() => ObjHasOwnProp(target, "x"), A_LineNumber, TypeError)
+    Throws(() => ObjOwnPropCount(target), A_LineNumber, TypeError)
+    Throws(() => ObjOwnProps(target), A_LineNumber, TypeError)
+    Throws(() => dp(target, "Extra", {Value: 1}), A_LineNumber, TypeError)
+}
+Assert(ObjGetCapacity(POINT.Prototype) >= 2, A_LineNumber)
 
 Assert(!(pt.Size != 8), A_LineNumber)
 

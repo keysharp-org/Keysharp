@@ -74,8 +74,8 @@ namespace Keysharp.Tests
 			var replacement = new Script();
 			s = replacement;//Hand ownership to TearDown.
 			hsm = replacement.HotstringManager;
-			Assert.AreEqual("Keysharp Keybd", replacement.HookThread.KeybdMutexName);
-			Assert.AreEqual("Keysharp Mouse", replacement.HookThread.MouseMutexName);
+			Assert.AreEqual("AHK Keybd", replacement.HookThread.KeybdMutexName);
+			Assert.AreEqual("AHK Mouse", replacement.HookThread.MouseMutexName);
 		}
 
 		/// <summary>

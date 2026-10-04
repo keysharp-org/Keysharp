@@ -54,7 +54,7 @@ Status legend:
 | &= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compound assignment operator |
 | #App | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-only descriptor for assembly metadata, Icon, GuiTheme, ConsoleApp, HookMutexName, Linux DesktopEntry and Files; multiple blocks merge independently by key in source order, later keys win, and Files: [] clears the list. DesktopEntry selects the Linux desktop file, Wayland app_id and Taskbar target unless DESKTOP_ENTRY overrides it. Asset paths are main-script-relative logical paths and artifact builds embed Files. |
 | #ClipboardTimeout | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets how long clipboard operations should wait before timing out. |
-| #CSharp | 🟢 Full | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | Keysharp-only. Embeds C# members into the script assembly at module or class scope; `#CSharp <Library>` uses #Include's Lib-folder search order, `.cs` extension and underscore fallback. |
+| #CSharp | 🟢 Full | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | Embeds C# at module or class scope; public module members support imports and dynamic lookup. Libraries use #Include search rules. |
 | #Define | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Defines a conditional compilation symbol. |
 | #DllLoad | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #DllLoad directive loads a DLL or EXE file before the script starts executing. |
 | #ElIf | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Adds an alternate conditional compilation branch. |
@@ -67,7 +67,7 @@ Status legend:
 | #HotIfTimeout | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #HotIfTimeout directive sets the maximum time that may be spent evaluating a single #HotIf expression. |
 | #Hotstring | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #Hotstring directive changes hotstring options or ending characters. |
 | #If | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Begins a conditional compilation block. |
-| #Import | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Imports a module object and/or names from another module or script file. Module globals are implicitly available for wildcard import; imported aliases are re-exported only with #Import Export. Wildcards exclude names beginning with underscore, while explicit imports may name them. Bare unquoted imports and `as` aliases bind the module object; there are no default exports. Keysharp extension: an #Import inside a function, method, property or class body binds names lexically to that scope (AutoHotkey binds them module-wide); module loading and execution order remain eager. |
+| #Import | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Imports modules or names with shared variable storage. Function imports are lexical; class and block imports are Keysharp extensions. |
 | #Include | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #Include and #IncludeAgain directives cause the script to behave as though the specified file's contents are present at this exact position. Path separators are platform-independent: a backslash in an #Include, #Import or #CSharp path separates directories on Linux and macOS too, so `#Include Lib\Thing.ahk` resolves everywhere. |
 | #IncludeAgain | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #Include and #IncludeAgain directives cause the script to behave as though the specified file's contents are present at this exact position. Path separators are platform-independent: a backslash in an #Include, #Import or #CSharp path separates directories on Linux and macOS too, so `#Include Lib\Thing.ahk` resolves everywhere. |
 | #InputLevel | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #InputLevel directive controls which artificial keyboard and mouse events are ignored by hotkeys and hotstrings. |
@@ -75,7 +75,7 @@ Status legend:
 | #MaxThreads | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #MaxThreads directive sets the maximum number of simultaneous threads. |
 | #MaxThreadsBuffer | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #MaxThreadsBuffer directive causes some or all hotkeys to buffer rather than ignore keypresses when their #MaxThreadsPerHotkey limit has been reached. |
 | #MaxThreadsPerHotkey | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #MaxThreadsPerHotkey directive sets the maximum number of simultaneous threads per hotkey or hotstring. |
-| #Module | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #Module directive starts a new module or reopens an existing module. |
+| #Module | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Starts or reopens a file-local module; names use Unicode ordinal case-insensitive comparison. |
 | #NoTrayIcon | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Disables the startup tray icon. #NoTrayIcon and #TrayIcon apply in source order, so the later directive determines visibility. |
 | #Nullable | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Accepted; nullable-context state is a no-op in Keysharp. |
 | #Package | 🟢 Full | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | Keysharp-only. Resolves NuGet packages at compile time for Clr and inline C#. Supports managed, resource and native assets, but not package build hooks. Windows verified. |
@@ -119,7 +119,7 @@ Status legend:
 | ~= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Regex match operator |
 | 1, 2, 3 | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Comma operator evaluates expressions left-to-right and returns the last value. |
 | A_AhkPath | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The full path to the executable compiling the script. For compiled scripts, it's the path to the compiled executable. |
-| A_AhkVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The version of the program used to compile the script. |
+| A_AhkVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | AutoHotkey compatibility target: 2.1-alpha.33. |
 | A_AllowMainWindow | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_AppData | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. %APPDATA% on Windows; $XDG_CONFIG_HOME else ~/.config on Linux; ~/Library/Application Support on macOS. |
 | A_AppDataCommon | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. %ProgramData% on Windows; the first entry of $XDG_CONFIG_DIRS else /etc/xdg on Linux; /Library/Application Support on macOS. Writable only by an administrator, like %ProgramData%. |
@@ -457,7 +457,7 @@ Status legend:
 | DateAdd() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The DateAdd function adds or subtracts time from a date-time value. |
 | DateDiff() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The DateDiff function compares two date-time values and returns the difference. |
 | Default | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Default branch label used by switch. |
-| DefineProp() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Defines or modifies an own property without invoking an overridden method. |
+| DefineProp() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Defines own properties with callable accessors; struct instances raise TypeError. |
 | DetectHiddenText() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The DetectHiddenText function determines whether invisible text in a window is "seen" for the purpose of finding the window. |
 | DetectHiddenWindows() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The DetectHiddenWindows function determines whether invisible windows are "seen" by the script. |
 | DirCopy() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Copies a folder along with all its sub-folders and files (similar to xcopy). A .zip, .tar, .tar.gz or .tgz source is extracted into the destination folder; a plain .gz is decompressed to the destination as a single file. |
@@ -467,7 +467,7 @@ Status legend:
 | DirExist() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Checks for the existence of a folder and returns its attributes. |
 | DirMove() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Moves a folder along with all its sub-folders and files. It can also rename a folder. |
 | DirSelect() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Displays the native folder-selection dialog on every platform. Some legacy Windows folder-dialog option flags have no portable equivalent. |
-| DllCall() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Calls a native shared-library function on every platform, accepting numeric type classes and a 'void' return type; reference.md lists how string arguments differ from AutoHotkey. |
+| DllCall() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Calls native functions; supports numeric type classes and void returns. Structured arrays pass by address but cannot be returned. |
 | Download() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Downloads a resource to a file over http, https or ftp, streamed rather than buffered, waiting while pumping so timers and the GUI stay alive. Only the *0 cache flag is supported. An FTP login is anonymous unless the URL carries userinfo credentials, and a directory URL saves the server LIST output. A gopher URL raises a ValueError. |
 | DriveEject() | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | Ejects or retracts the tray of the specified CD/DVD drive. |
 | DriveGetCapacity() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the total capacity of the drive which contains the specified path, in megabytes. |
@@ -834,6 +834,7 @@ Status legend:
 | Min() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the smaller of two numbers. If either is not numeric, the empty string is returned. The smaller value of an array is computed if one is passed in. |
 | Mod() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the remainder when the first number is divided by the second number. Throws an exception if the second number is 0. |
 | Modifiers on either term of a custom combination | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Keysharp extension: both terms of a custom combination may carry modifiers (`<^a & b::`, `a & <^b::`). Those on the prefix are tested against the modifiers held when the prefix key went down and kept until it is released, so a key whose firmware asserts modifiers and drops them immediately still works as a prefix; those on the suffix are tested against the live state as the suffix is pressed. A combination asking for neither continues to ignore the modifier state. This covers keyboards whose Copilot key emits LWin+LShift+F23 and whose Office key emits LCtrl+LShift+LAlt+LWin. |
+| Module.__Ref() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a module variable's original VarRef, including imported aliases; unknown names return unset. |
 | Monitor | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | Keysharp-specific Ks class for one display: identity and metadata beyond the AHK MonitorGet* functions, plus brightness and DDC/CI control. A Monitor is a snapshot of the topology (call Refresh() to re-read) plus a live handle to the device. On macOS the geometry, identity and change events are verified, but Model and Adapter are always empty (CoreGraphics exposes no product-name or adapter API) and Connection only distinguishes the built-in panel. |
 | Monitor.All | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | Every monitor in index order, built from one topology enumeration. Preferred over a loop of Monitor(i), which re-enumerates per monitor and can be shifted by a hotplug midway through. |
 | Monitor.Brightness | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Get or set the monitor's brightness as a percentage (0-100); assigning another value raises ValueError before any device transaction. Each access is a real device transaction (tens of milliseconds over DDC/CI) and is deliberately not cached, because the monitor's own buttons can change the value too. Windows uses WMI for the built-in panel and DDC/CI for external monitors. Linux uses the kernel backlight class for the built-in panel (a direct sysfs write where permitted, else logind's SetBrightness) and DDC/CI over /dev/i2c-* for external monitors, which needs i2c-dev loaded and access to the bus (a root install adds a udev rule granting the local-seat user access to display-controller i2c buses only; ddcutil's own rule works too) - hence partial. macOS uses the private DisplayServices framework for the built-in panel and Apple's own displays, and DDC/CI for every other external monitor: on Apple Silicon over the private IOAVService (the only option, since IOFramebuffer does not exist under the DCP architecture), on Intel over the public IOKit I2C API - the Intel path is implemented but untested. Throws an OSError naming the reason where unsupported; test IsBrightnessSupported to branch without an exception. |
@@ -878,17 +879,17 @@ Status legend:
 | ObjFromPtr() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Creates or retrieves an object wrapper from a raw pointer. |
 | ObjFromPtrAddRef() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Creates/retrieves an object wrapper from a pointer and increments its reference count. |
 | ObjGetBase | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the value's base object. Differs in that it only returns the name of the base type as a string. |
-| ObjGetCapacity() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the current capacity of the object's internal own-property storage. |
+| ObjGetCapacity() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns own-property storage capacity; structs raise TypeError. |
 | ObjGetDataPtr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the address of the object's structured data (typed properties). |
 | ObjGetDataSize() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the size of the object's structure (typed properties), in bytes. |
-| ObjHasOwnProp() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether the object defines the specified own property name. |
-| ObjOwnPropCount() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the number of own properties currently defined on the object. |
-| ObjOwnProps | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Enumerates an object's own properties. |
+| ObjHasOwnProp() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Checks for an own property; structs raise TypeError. |
+| ObjOwnPropCount() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Counts own properties; structs raise TypeError. |
+| ObjOwnProps | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Enumerates own properties; structs raise TypeError. |
 | ObjPtr() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Returns an Integer containing the object's IUnknown address without adding a native reference. Keep the object alive while using the pointer. |
 | ObjPtrAddRef() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Returns object pointer address and increments its reference count. |
 | ObjRelease() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ObjAddRef and ObjRelease functions increment or decrement an object's reference count. |
 | ObjSetBase() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets an object's base object. The native type cannot change and the base chain may not become circular. Neither object may have typed properties, since those fix the memory layout; a prototype which has none is writable. |
-| ObjSetCapacity() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Unlike AHK doesn't set the exact capacity, but ensures the internal own props objects can hold the requested number of props. |
+| ObjSetCapacity() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Ensures capacity instead of setting an exact size; structs raise TypeError. |
 | ObjSetDataPtr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the address of the object's structured data. (Slated for removal in AHK; prefer Struct.At.) |
 | OnClipboardChange() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Registers callbacks for native platform clipboard content changes. |
 | OnError() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Registers callbacks for errors nothing catches. An error reaches them where it is raised, before the stack unwinds, or, once it passes a try statement with catches, in mode Exit after that statement's finally. |
@@ -1016,7 +1017,7 @@ Status legend:
 | StrTitle() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The StrLower, StrUpper and StrTitle functions convert a string to lowercase, uppercase or title case. |
 | Struct.__Ref() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves a nested struct or virtual property reference. |
 | struct.__Value | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Backing value property for struct instances. |
-| Struct.Array | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Base class for fixed-length, fixed-element-type structured arrays. |
+| Struct.Array | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fixed-length typed arrays; DllCall parameters pass their storage address. |
 | Struct.Ptr | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Pointer class/property used for pointer-to-struct fields, native parameters and struct addresses. |
 | structures | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | User-defined structures via the struct keyword: typed fields, nesting, At, numeric types, pointer classes, #StructPack alignment, and structured arrays (Int32[10] / Struct.Array). |
 | StrUpper() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Converts a string to uppercase. |
@@ -1069,7 +1070,7 @@ Status legend:
 | Url | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Percent-encoding. Encode escapes everything outside the RFC 3986 unreserved set, per byte, with a space becoming %20 rather than +. Decode resolves the escapes and leaves a lone % and a + as themselves. |
 | ValidateScript() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Checks a script file or script text for syntax errors with the optional parser component, as the --validate-syntax switch does, without compiling it. Returns {IsValid, Errors, Warnings}, the last two Arrays of messages prefixed with file and line. Raises an Error if the parser component is not installed. |
 | ValueError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
-| VarSetStrCapacity() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sizes the memory a variable keeps for StrPtr and Str arguments, emptying the variable, and -1 sets the variable to what native code wrote there, up to the first null. |
+| VarSetStrCapacity() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sizes native string memory; -1 reads back. Variable aliases share storage; property and built-in references lack native memory. |
 | VerCompare() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The VerCompare function compares two version strings. |
 | While | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | While-loop statement. |
 | WinActivate() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinActivate function activates the specified window. An unimplemented backend operation raises UnsupportedError. |

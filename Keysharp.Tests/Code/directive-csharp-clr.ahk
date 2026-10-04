@@ -86,6 +86,9 @@ public static string ReadSpan(ReadOnlySpan<byte> bytes) => System.Convert.ToBase
 public static byte[] ThreeBytes() => new byte[] { 1, 2, 3 };
 
 public static long ByteCount(byte[] bytes) => bytes.Length;
+
+public class NativeGetter { public object Call(object Owner) => 42L; }
+public static NativeGetter MakeNativeGetter() => new();
 #EndCSharp
 
 class Meas
@@ -112,6 +115,9 @@ l := MakeList()
 Assert(IsManagedInstance(l), A_LineNumber)
 AssertEq(l.Count, 2, A_LineNumber)
 AssertEq(l[1], "b", A_LineNumber)
+getterHolder := {}
+getterHolder.DefineProp("Value", {Get: MakeNativeGetter()})
+AssertEq(getterHolder.Value, 42, A_LineNumber)
 
 ; ...and unwraps back to its real type when handed to a member that declares it.
 AssertEq(TakeList(l), 2, A_LineNumber)
@@ -171,8 +177,7 @@ tarr := TypedArr()
 AssertEq(Type(tarr), "Array", A_LineNumber)
 AssertEq(tarr[2], 5, A_LineNumber)
 
-; Module properties and fields with declared CLR types wrap on read. Naming an inline member
-; statically would declare a colliding script global, so access goes through the variable store.
+; Dynamic module reads preserve CLR wrapping for fields and properties.
 wname := "Words"
 sname := "Stash"
 AssertEq(%wname%.Count, 3, A_LineNumber)

@@ -867,12 +867,10 @@ namespace Keysharp.Parsing.Syntax
 				return new ImportDirective(args, module, alias, named, quoted, reExport);   // nameless `#import` — a no-op for the lowerer
 			// Preserve imports from a module literally named Export. The word is a modifier only when another module
 			// specifier follows it, rather than `{` or `as`.
-			if (toks.Count > 1 && toks[0].Kind == TokenKind.Identifier
-				&& toks[0].Text.Equals("Export", System.StringComparison.OrdinalIgnoreCase)
+			if (toks.Count > 1 && toks[0].IsKeyword("Export")
 				&& toks[1].LeadingWhitespace
 				&& toks[1].Kind != TokenKind.LBrace
-				&& !(toks[1].Kind == TokenKind.Identifier
-					&& toks[1].Text.Equals("as", System.StringComparison.OrdinalIgnoreCase)))
+				&& !toks[1].IsKeyword("as"))
 			{
 				reExport = true;
 				i++;
@@ -892,25 +890,44 @@ namespace Keysharp.Parsing.Syntax
 				}
 			}
 			else ErrorAt(toks[i], $"expected a module name after #import but found '{toks[i].Text}'");
-			if (i < toks.Count && toks[i].Kind == TokenKind.Identifier && toks[i].Text.Equals("as", System.StringComparison.OrdinalIgnoreCase))
+			if (i < toks.Count && toks[i].IsKeyword("as"))
 			{
 				i++;
 				if (i < toks.Count && toks[i].Kind == TokenKind.Identifier) alias = toks[i++].Text;
 				else ErrorAt(i < toks.Count ? toks[i] : toks[^1], "expected an alias name after 'as' in #import");
 			}
-			if (i < toks.Count && toks[i].Kind == TokenKind.LBrace)   // `{ name, name as alias, * }` — captured raw, split by the lowerer
+			if (i < toks.Count && toks[i].Kind == TokenKind.LBrace)
 			{
-				var nb = new System.Text.StringBuilder();
-				int depth = 0;
-				for (; i < toks.Count; i++)
+				i++;
+				var entries = new List<string>();
+				bool Word(Token token) => (token.Kind is TokenKind.Identifier or TokenKind.Number)
+					&& token.Text.All(c => char.IsAsciiLetterOrDigit(c) || c == '_' || c >= 0x80);
+				string ReadName()
 				{
-					var t = toks[i];
-					if (t.Kind == TokenKind.LBrace) { if (++depth == 1) continue; }
-					else if (t.Kind == TokenKind.RBrace && --depth == 0) { i++; break; }
-					if (nb.Length > 0 && t.LeadingWhitespace) nb.Append(' ');
-					nb.Append(t.Text);
+					if (i >= toks.Count || !Word(toks[i]))
+						ErrorAt(i < toks.Count ? toks[i] : toks[^1], "expected a name in #import member list");
+					var result = toks[i++].Text;
+					while (i < toks.Count && !toks[i].LeadingWhitespace && Word(toks[i])) result += toks[i++].Text;
+					return result;
 				}
-				named = nb.ToString().Trim();
+				while (i < toks.Count && toks[i].Kind != TokenKind.RBrace)
+				{
+					// AutoHotkey permits empty entries and numeric names in a member list.
+					if (toks[i].Kind == TokenKind.Comma) { i++; continue; }
+					var entry = toks[i].Kind == TokenKind.Star ? toks[i++].Text : ReadName();
+					if (entry != "*" && i < toks.Count && toks[i].LeadingWhitespace
+						&& toks[i].IsKeyword("as"))
+					{
+						i++;
+						entry += " as " + ReadName();
+					}
+					entries.Add(entry);
+					if (i < toks.Count && toks[i].Kind is not (TokenKind.Comma or TokenKind.RBrace))
+						ErrorAt(toks[i], $"unexpected '{toks[i].Text}' in #import member list");
+				}
+				if (i >= toks.Count) ErrorAt(toks[^1], "expected '}' after #import member list");
+				i++;
+				named = string.Join(", ", entries);
 			}
 			if (i < toks.Count)
 				ErrorAt(toks[i], $"unexpected '{toks[i].Text}' after #import — a directive must be alone on its line");
@@ -924,14 +941,14 @@ namespace Keysharp.Parsing.Syntax
 		// Maximum comma-separated arguments a directive accepts (at paren/bracket/brace depth 0). -1 means the rest of
 		// the line is a single literal value (a path, message, version, or option string) where commas are literal
 		// text, not argument separators. Values taken from the AHK v2 source (Script::IsDirective).
-		private static int MaxDirectiveArgs(string name) => name.ToUpperInvariant() switch
+		private static int MaxDirectiveArgs(string name) => (Ascii.IsValid(name) ? name.ToLowerInvariant() : name) switch
 		{
-			"NOTRAYICON" or "ERRORSTDOUT" => 0,
-			"WARN" => 2,   // #Warn [Type], [Mode]
-			"TRAYICON" => 2,   // #TrayIcon [FileName [, IconNumber]]
-			"HOTIF" or "HOTIFTIMEOUT" or "INPUTLEVEL" or "CLIPBOARDTIMEOUT" or "MAXTHREADS"
-				or "MAXTHREADSPERHOTKEY" or "MAXTHREADSBUFFER" or "SUSPENDEXEMPT" or "USEHOOK"
-				or "SINGLEINSTANCE" or "STRUCTPACK" or "PERSISTENT" => 1,
+			"notrayicon" or "errorstdout" => 0,
+			"warn" => 2,   // #Warn [Type], [Mode]
+			"trayicon" => 2,   // #TrayIcon [FileName [, IconNumber]]
+			"hotif" or "hotiftimeout" or "inputlevel" or "clipboardtimeout" or "maxthreads"
+				or "maxthreadsperhotkey" or "maxthreadsbuffer" or "suspendexempt" or "usehook"
+				or "singleinstance" or "structpack" or "persistent" => 1,
 			_ => -1,
 		};
 
@@ -1031,11 +1048,10 @@ namespace Keysharp.Parsing.Syntax
 				ThrowLexDiagnostic(t);
 				// #include / #includeagain <file>: read the file, lex it, and splice its tokens in (recursing into the
 				// outer loop handles nested includes). Plain #include dedups already-included files; #includeagain doesn't.
-				if (_includeDir != null && t.Kind == TokenKind.Hash && i + 1 < src.Count && src[i + 1].Kind == TokenKind.Identifier
-					&& (src[i + 1].Text.Equals("include", System.StringComparison.OrdinalIgnoreCase)
-						|| src[i + 1].Text.Equals("includeagain", System.StringComparison.OrdinalIgnoreCase)) && Emit())
+				if (_includeDir != null && t.Kind == TokenKind.Hash && i + 1 < src.Count
+					&& (src[i + 1].IsKeyword("include") || src[i + 1].IsKeyword("includeagain")) && Emit())
 				{
-					bool again = src[i + 1].Text.Equals("includeagain", System.StringComparison.OrdinalIgnoreCase);
+					bool again = src[i + 1].IsKeyword("includeagain");
 					int j = i + 2;
 					var fileToks = new List<Token>();
 					while (j < src.Count && src[j].Kind != TokenKind.Newline && src[j].Kind != TokenKind.EOF) fileToks.Add(src[j++]);
@@ -1127,8 +1143,7 @@ namespace Keysharp.Parsing.Syntax
 				if (Emit())
 				{
 					if (t.Kind == TokenKind.Hash && i + 1 < src.Count
-						&& src[i + 1].Kind == TokenKind.Identifier
-						&& src[i + 1].Text.Equals("errorstdout", System.StringComparison.OrdinalIgnoreCase))
+						&& src[i + 1].IsKeyword("errorstdout"))
 						_errorStdOut = true;
 
 					if (t.Kind == TokenKind.Hash && i + 1 < src.Count && src[i + 1].IsKeyword("csharp"))

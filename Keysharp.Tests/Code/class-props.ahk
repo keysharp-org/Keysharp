@@ -303,4 +303,82 @@ NumPut("Short", 0, variantProperty.Storage, 8)
 Assert(!variantProperty[], A_LineNumber)
 #endif
 
+; Indexing a value yielded by a parameterless getter requires that getter to return a value.
+class UnsetIndexHolder {
+	Data => unset
+	Indexed[Index] => unset
+	Indexable => NullableIndexValue()
+	Writable {
+		get => unset
+		set => unset
+	}
+}
+class NullableIndexValue {
+	__Item[Index] => unset
+}
+unsetHolder := UnsetIndexHolder()
+AssertEq(unsetHolder.Data ?? "missing", "missing", A_LineNumber)
+Assert(!IsSet(unsetHolder.Data), A_LineNumber)
+AssertEq(unsetHolder.Indexed[1] ?? "missing", "missing", A_LineNumber)
+AssertEq(unsetHolder.Indexable[1] ?? "missing", "missing", A_LineNumber)
+AssertEq(unsetHolder.Missing ?? "missing", "missing", A_LineNumber)
+Throws(() => unsetHolder.Missing[1] ?? "missing", A_LineNumber, PropertyError)
+AssertError(() => unsetHolder.Data[1], "UnsetError: No value was returned. [Data]", A_LineNumber)
+AssertError(() => unsetHolder.Data[1] ?? 0, "UnsetError: No value was returned. [Data]", A_LineNumber)
+AssertError(() => unsetHolder.Data[1] := 2, "UnsetError: No value was returned. [Data]", A_LineNumber)
+AssertError(() => unsetHolder.Writable[1] := 2, "UnsetError: No value was returned. [Writable]", A_LineNumber)
+ownUnsetHolder := {}
+ownUnsetHolder.DefineProp("Data", {Get: (This) => unset})
+ownUnsetHolder.DefineProp("Writable", {Get: (This) => unset, Set: (This, Value) => unset})
+AssertError(() => ownUnsetHolder.Data[1], "UnsetError: No value was returned. [Data]", A_LineNumber)
+AssertError(() => ownUnsetHolder.Data[1] := 2, "UnsetError: No value was returned. [Data]", A_LineNumber)
+AssertError(() => ownUnsetHolder.Writable[1] := 2, "UnsetError: No value was returned. [Writable]", A_LineNumber)
+indexedRefValue := [1, 2]
+indexedVarRef := &indexedRefValue
+AssertEq(indexedVarRef.__Value[1], 1, A_LineNumber)
+indexedVarRef.__Value[2] := 3
+AssertEq(indexedVarRef.__Value[2], 3, A_LineNumber)
+unsetRefValue := unset
+unsetVarRef := &unsetRefValue
+AssertError(() => unsetVarRef.__Value[1], "UnsetError: No value was returned. [__Value]", A_LineNumber)
+AssertError(() => unsetVarRef.__Value[1] ?? 0, "UnsetError: No value was returned. [__Value]", A_LineNumber)
+AssertError(() => unsetVarRef.__Value[1] := 2, "UnsetError: No value was returned. [__Value]", A_LineNumber)
+AssertError(() => Any.Prototype.Base[1] := 2, "UnsetError: No value was returned. [Base]", A_LineNumber)
+
+class IndexedSetterParent {
+	P[Index] {
+		set => this.Seen := Index
+	}
+}
+setterParent := IndexedSetterParent()
+setterParent.DefineProp("P", {Get: (This) => [1, 2]})
+setterParent.P[2] := 7
+AssertEq(setterParent.Seen, 2, A_LineNumber)
+setterParent.DefineProp("P", {Value: [1, 2]})
+setterParent.DeleteProp("Seen")
+setterParent.P[2] := 7
+AssertEq(setterParent.P[2], 7, A_LineNumber)
+Assert(!setterParent.HasOwnProp("Seen"), A_LineNumber)
+
+class SuperDataParent {
+	static Value := 1
+	static Handler := (*) => 123
+}
+class SuperDataChild extends SuperDataParent {
+	static Change() => super.Value := 2
+	static Clear() {
+		super.Value := unset
+		super.Handler := unset
+	}
+}
+SuperDataChild.Change()
+AssertEq(SuperDataParent.Value, 1, A_LineNumber)
+AssertEq(SuperDataChild.Value, 2, A_LineNumber)
+Assert(SuperDataChild.HasOwnProp("Value"), A_LineNumber)
+SuperDataChild.Clear()
+AssertEq(SuperDataParent.Value, 1, A_LineNumber)
+Assert(SuperDataChild.HasOwnProp("Value") && (SuperDataChild.Value ?? "missing") == "missing", A_LineNumber)
+Assert(!HasMethod(SuperDataChild, "Handler"), A_LineNumber)
+Throws(() => SuperDataChild.Handler(), A_LineNumber)
+
 FileAppend "pass", "*"

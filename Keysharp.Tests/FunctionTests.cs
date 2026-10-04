@@ -195,6 +195,18 @@ namespace Keysharp.Tests
 				Assert.IsTrue(System.Array.Exists(diagnostics, d => d.StartsWith($"{line}:") && d.EndsWith($"This function declaration conflicts with an existing {existing}: tick")),
 					source.Replace("\n", "\\n") + ": " + string.Join("; ", diagnostics));
 			}
+			foreach (var source in new[]
+			{
+				"Õ() => 1\nõ() => 2\n",
+				"F(Σ, ς) => 1\n",
+				"class Ω {\n}\nclass ω {\n}\n",
+				"class C {\n MΣ() => 1\n Mς() => 2\n}\n",
+				"class C {\n Σ => 1\n ς => 2\n}\n",
+				"class C {\n M(This) => 1\n}\n",
+				"class C {\n P[Value] {\n set => 1\n }\n}\n"
+			})
+				Assert.IsTrue(System.Array.Exists(LoweringDiagnostics.Diagnostics(source),
+					diagnostic => diagnostic.Contains("declaration conflicts")), source);
 		}
 
 		[Test, Category("Function"), NonParallelizable]
@@ -234,7 +246,7 @@ namespace Keysharp.Tests
 				("#Import Ks { Cosh }\ncosh := 1\n", 5, $"This Func cannot {output}: Cosh"),
 				("#Import Ks as KsModule\nksmodule := 1\n", 5, $"This Module cannot {output}: KsModule"),
 				("F() {\n\t#Import Ks { Cosh as Hyp }\n\thyp := 1\n}\n", 6, $"This Func cannot {output}: Hyp"),
-				("#Import __Main\n__main := 1\n", 5, $"This Module cannot {output}: __main"),
+				("#Import __Main\n__main := 1\n", 5, $"This Module cannot {output}: __Main"),
 				("F() {\n\tHelper() => 1\n\tG() {\n\t\tHelper := 5\n\t}\n}\n", 7, $"This Func cannot {output}: Helper"),
 			})
 			{

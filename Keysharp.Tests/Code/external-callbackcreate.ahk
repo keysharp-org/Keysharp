@@ -1,10 +1,12 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 
 #import KS { RealThread, Await }
 #Include <assert>
 val := ""
 #if WINDOWS
-callback := CallbackCreate(TheFunc, "&")
+callback := CallbackCreate(TheFunc, "&", 2)
 DllCall(callback, "float", 10.5, "int64", 42)
 #elif LINUX || OSX
 callback := CallbackCreate(TheFunc, "&", 2)

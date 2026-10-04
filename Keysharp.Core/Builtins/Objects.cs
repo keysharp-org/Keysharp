@@ -30,7 +30,7 @@ namespace Keysharp.Builtins
 			if (obj is KeysharpObject kso)
 				return (long)(kso.op?.Capacity ?? 0);
 
-			return Errors.ErrorOccurred($"Object of type {obj.GetType()} was not of type KeysharpObject.");
+			return Errors.TypeErrorOccurred(obj, typeof(KeysharpObject));
 		}
 
 		/// <summary>
@@ -40,7 +40,8 @@ namespace Keysharp.Builtins
 		/// <param name="name">The OwnProp name to search for.</param>
 		/// <returns>Returns 1 if an object owns a property by the specified name, otherwise 0.</returns>
 		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if obj is not an object.</exception>
-		public static long ObjHasOwnProp(object obj, object name) => KeysharpObject.HasOwnProp(obj, name);
+		public static long ObjHasOwnProp(object obj, object name) => obj is Struct
+			? (long)Errors.TypeErrorOccurred(obj, typeof(KeysharpObject), 0L) : KeysharpObject.HasOwnProp(obj, name);
 
 		/// <summary>
 		/// Returns the number of properties owned by an object.
@@ -48,7 +49,8 @@ namespace Keysharp.Builtins
 		/// <param name="obj">The object to get the OwnProps count for.</param>
 		/// <returns>The number of properties owned by an obj.</returns>
 		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if obj was not of type KeysharpObject.</exception>
-		public static long ObjOwnPropCount(object obj) => KeysharpObject.OwnPropCount(obj);
+		public static long ObjOwnPropCount(object obj) => obj is Struct
+			? (long)Errors.TypeErrorOccurred(obj, typeof(KeysharpObject), 0L) : KeysharpObject.OwnPropCount(obj);
 
 		/// <summary>
 		/// Returns an OwnProps iterator for the given object.
@@ -56,7 +58,8 @@ namespace Keysharp.Builtins
 		/// <param name="obj">The object whose OwnProps will be retrieved.</param>
 		/// <returns>An <see cref="Enumerator"/> object for obj.</returns>
 		/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if obj is not an object.</exception>
-		public static object ObjOwnProps(object obj) => KeysharpObject.OwnProps(obj);
+		public static object ObjOwnProps(object obj) => obj is Struct
+			? Errors.TypeErrorOccurred(obj, typeof(KeysharpObject)) : KeysharpObject.OwnProps(obj);
 
 		/// <summary>
 		/// Returns a Props iterator for the given value.
@@ -207,6 +210,9 @@ namespace Keysharp.Builtins
 
 		public static object DefineProp(object obj, object name, object descriptor)
 		{
+			if (obj is Struct)
+				return Errors.TypeErrorOccurred(obj, typeof(KeysharpObject));
+
 			if (obj is not Any target)
 				return Errors.ArgumentErrorOccurred(obj, 1);
 
@@ -347,7 +353,7 @@ namespace Keysharp.Builtins
 				return (long)capacity;
 			}
 
-			return Errors.ErrorOccurred($"Object of type {obj.GetType()} was not of type KeysharpObject.");
+			return Errors.TypeErrorOccurred(obj, typeof(KeysharpObject));
 		}
 #if WINDOWS
 		/// <summary>

@@ -120,8 +120,8 @@
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
                      "macos":  "unknown",
-                     "notes":  "Keysharp-only. Embeds C# members into the script assembly at module or class scope; `#CSharp <Library>` uses #Include's Lib-folder search order, `.cs` extension and underscore fallback.",
-                     "tested-by":  "directive-csharp.ahk; directive-csharp-clr.ahk; directive-csharp-errors.ahk; directive-csharp-class.ahk; directive-csharp-modules.ahk; directive-csharp-module-scopes.ahk; directive-csharp-symbols.ahk; DirectiveTests.CSharpLibraryFile"
+                     "notes":  "Embeds C# at module or class scope; public module members support imports and dynamic lookup. Libraries use #Include search rules.",
+                     "tested-by":  "directive-csharp.ahk; directive-csharp-clr.ahk; directive-csharp-errors.ahk; directive-csharp-class.ahk; directive-csharp-modules.ahk; directive-csharp-module-scopes.ahk; directive-csharp-symbols.ahk; module-object-members.ahk; DirectiveTests.CSharpLibraryFile; DirectiveTests.CSharpFileScopes; ProviderDeploymentTests.InlineNamesFromPackageConstants"
                  },
                  {
                      "category":  "Environment/System",
@@ -261,8 +261,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Imports a module object and/or names from another module or script file. Module globals are implicitly available for wildcard import; imported aliases are re-exported only with #Import Export. Wildcards exclude names beginning with underscore, while explicit imports may name them. Bare unquoted imports and `as` aliases bind the module object; there are no default exports. Keysharp extension: an #Import inside a function, method, property or class body binds names lexically to that scope (AutoHotkey binds them module-wide); module loading and execution order remain eager.",
-                     "tested-by":  "module-export.ahk; module-basic.ahk; module-scoped-import.ahk; module-object-members.ahk; module-extends.ahk; module-wildcard-own-vars.ahk"
+                     "notes":  "Imports modules or names with shared variable storage. Function imports are lexical; class and block imports are Keysharp extensions.",
+                     "tested-by":  "module-export.ahk; module-basic.ahk; module-import.ahk; module-scoped-import.ahk; module-object-members.ahk; module-extends.ahk; module-wildcard-own-vars.ahk; ModuleTests.FileIdentity; directive-csharp-modules.ahk; ParserTests.DistinctCaseModuleSearchDirectories"
                  },
                  {
                      "category":  "Environment/System",
@@ -343,13 +343,24 @@
                  {
                      "category":  "Environment/System",
                      "feature":  "#Module",
-                     "syntax":  "",
+                     "syntax":  "#Module ModuleName",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The #Module directive starts a new module or reopens an existing module.",
-                     "tested-by":  "module-basic.ahk"
+                     "notes":  "Starts or reopens a file-local module; names use Unicode ordinal case-insensitive comparison.",
+                     "tested-by":  "module-basic.ahk; ModuleTests.FileIdentity"
+                 },
+                 {
+                     "category":  "Core Language",
+                     "feature":  "Module.__Ref()",
+                     "syntax":  "ModuleObject.__Ref(Name) / &ModuleObject.Member",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Returns a module variable\u0027s original VarRef, including imported aliases; unknown names return unset.",
+                     "tested-by":  "module-object-members.ahk"
                  },
                  {
                      "category":  "Environment/System",
@@ -1289,7 +1300,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The version of the program used to compile the script."
+                     "notes":  "AutoHotkey compatibility target: 2.1-alpha.33.",
+                     "tested-by":  "props-script-properties.ahk"
                  },
                  {
                      "category":  "Environment/System",
@@ -4758,8 +4770,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Calls a native shared-library function on every platform, accepting numeric type classes and a \u0027void\u0027 return type; reference.md lists how string arguments differ from AutoHotkey.",
-                     "tested-by":  "external-dllcall.ahk"
+                     "notes":  "Calls native functions; supports numeric type classes and void returns. Structured arrays pass by address but cannot be returned.",
+                     "tested-by":  "external-dllcall.ahk; struct-array.ahk; struct-basic.ahk"
                  },
                  {
                      "category":  "FileSystem",
@@ -8936,8 +8948,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns the current capacity of the object\u0027s internal own-property storage.",
-                     "tested-by":  "collections-object.ahk"
+                     "notes":  "Returns own-property storage capacity; structs raise TypeError.",
+                     "tested-by":  "collections-object.ahk; struct-basic.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -8967,8 +8979,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns whether the object defines the specified own property name.",
-                     "tested-by":  "class-ownprops.ahk"
+                     "notes":  "Checks for an own property; structs raise TypeError.",
+                     "tested-by":  "class-ownprops.ahk; struct-basic.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -8978,8 +8990,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns the number of own properties currently defined on the object.",
-                     "tested-by":  "class-ownprops.ahk"
+                     "notes":  "Counts own properties; structs raise TypeError.",
+                     "tested-by":  "class-ownprops.ahk; struct-basic.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -8989,8 +9001,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Enumerates an object\u0027s own properties.",
-                     "tested-by":  "collections-object.ahk"
+                     "notes":  "Enumerates own properties; structs raise TypeError.",
+                     "tested-by":  "collections-object.ahk; struct-basic.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -9044,8 +9056,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Unlike AHK doesn\u0027t set the exact capacity, but ensures the internal own props objects can hold the requested number of props.",
-                     "tested-by":  "collections-object.ahk"
+                     "notes":  "Ensures capacity instead of setting an exact size; structs raise TypeError.",
+                     "tested-by":  "collections-object.ahk; struct-basic.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -11070,13 +11082,13 @@
                  {
                      "category":  "Interop/Memory",
                      "feature":  "VarSetStrCapacity()",
-                     "syntax":  "x := VarSetStrCapacity(\"var\", 10000)",
+                     "syntax":  "GrantedCapacity := VarSetStrCapacity(&TargetVar [, RequestedCapacity])",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Sizes the memory a variable keeps for StrPtr and Str arguments, emptying the variable, and -1 sets the variable to what native code wrote there, up to the first null.",
-                     "tested-by":  "external-dllcall.ahk"
+                     "notes":  "Sizes native string memory; -1 reads back. Variable aliases share storage; property and built-in references lack native memory.",
+                     "tested-by":  "external-dllcall.ahk; module-object-members.ahk; module-scoped-import.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -11731,7 +11743,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Defines or modifies an own property without invoking an overridden method."
+                     "notes":  "Defines own properties with callable accessors; struct instances raise TypeError.",
+                     "tested-by":  "struct-basic.ahk; class-props.ahk; class-ownprops.ahk"
                  },
                  {
                      "category":  "Interop/Memory",
@@ -11999,7 +12012,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Base class for fixed-length, fixed-element-type structured arrays."
+                     "notes":  "Fixed-length typed arrays; DllCall parameters pass their storage address.",
+                     "tested-by":  "struct-array.ahk"
                  },
                  {
                      "category":  "Interop/Memory",

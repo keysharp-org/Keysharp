@@ -51,6 +51,8 @@ namespace Keysharp.Runtime
 
 					proto.SetBaseInternal(script.Vars.Prototypes[t.BaseType]);
 					proto.DefinePropInternal("__Class", new OwnPropsDesc("Module"));
+					proto.DefinePropInternal(nameof(Module.__Ref), new OwnPropsDesc(null, null, null,
+						new KeysharpFunc(typeof(Module).GetMethod(nameof(Module.__Ref)))));
 					return proto;
 				}
 

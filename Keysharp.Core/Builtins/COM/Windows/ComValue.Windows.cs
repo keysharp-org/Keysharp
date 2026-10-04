@@ -173,6 +173,7 @@ namespace Keysharp.Builtins.COM
 		}
 
 		object IMetaObject.Get(string name, object[] args) => RawGetProperty(name, args);
+		bool IMetaObject.TryGet(string name, object[] args, out object value) => TryRawGetProperty(name, args, out value);
 
 		void IMetaObject.Set(string name, object[] args, object value) => RawSetProperty(name, args, value);
 
@@ -402,19 +403,38 @@ namespace Keysharp.Builtins.COM
 
 		internal unsafe object RawGetProperty(string propertyName, object[] args)
 		{
-			if (RawGetIDsOfNames(propertyName, out int dispId) < 0)
-				return Errors.MissingPropertyErrorOccurred(this, propertyName);
+			_ = TryRawGetProperty(propertyName, args, out var result, optional: false);
+			return result;
+		}
 
-			var hr = InvokeGet(dispId, propertyName, args, out var result);
+		internal unsafe bool TryRawGetProperty(string propertyName, object[] args, out object result, bool optional = true)
+		{
+			result = null;
+			var hr = RawGetIDsOfNames(propertyName, out int dispId);
+			if (optional && hr is DISP_E_UNKNOWNNAME or DISP_E_MEMBERNOTFOUND)
+				return false;
+			if (hr < 0)
+			{
+				result = Errors.MissingPropertyErrorOccurred(this, propertyName);
+				return true;
+			}
+
+			hr = InvokeGet(dispId, propertyName, args, out result);
 
 			// `obj.member[args]` on a property with no parameters of its own indexes its value, as it does a field's. The type
 			// info, read already by a conversion failure's retry, says whether it has none; without any, a refused count does.
 			if (args.Length > 0 && (hr == DISP_E_BADPARAMCOUNT || IsConversionFailure(hr))
 					&& MemberInfo(dispId, propertyName, FuncOrGet) is var info && (info == null ? hr == DISP_E_BADPARAMCOUNT : info.expectedTypes == null)
 					&& InvokeGet(dispId, propertyName, [], out var value) >= 0)
-				return GetIndexOrNull(value, args);
+			{
+				result = GetIndexOrNull(value, args);
+				return true;
+			}
 
-			return hr >= 0 ? result : ReferenceEquals(result, conversionFailed) ? DefaultObject : Errors.ErrorOccurred($"Get property failed for '{propertyName}' ({result})");
+			if (optional && hr is DISP_E_UNKNOWNNAME or DISP_E_MEMBERNOTFOUND)
+				return false;
+			result = hr >= 0 ? result : ReferenceEquals(result, conversionFailed) ? DefaultObject : Errors.ErrorOccurred($"Get property failed for '{propertyName}' ({result})");
+			return true;
 		}
 
 		// The flag matching the syntax first, so a server exposing a member both ways reads it, then both, for a server

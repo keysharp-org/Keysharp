@@ -20,10 +20,15 @@ namespace Keysharp.Compilation.Syntax
 		public const string OperatorManifestField = "CompiledOperators";
 
 		/// <summary>
-		/// A global slot — variable, function object, or class singleton: the lowercased identifier,
-		/// C#-escaped. AHK identifiers are case-insensitive, so every name canonicalizes to lower.
+		/// A global slot — variable, function object, or class singleton: the ASCII-lowercased identifier,
+		/// C#-escaped.
 		/// </summary>
-		public static string Global(string name) => Escape(name.ToLowerInvariant());
+		public static string Global(string name) => Escape(AsciiLower(name));
+		private static string AsciiLower(string name) => string.Create(name.Length, name, static (target, source) =>
+		{
+			for (var i = 0; i < source.Length; i++)
+				target[i] = source[i] is >= 'A' and <= 'Z' ? (char)(source[i] + ('a' - 'A')) : source[i];
+		});
 
 		/// <summary>Top-level function implementation method: <c>FN_&lt;TitleCase&gt;</c>.</summary>
 		public static string FunctionMethod(string name) => Keywords.TopLevelFunctionPrefix + TitleCase(name);
@@ -31,25 +36,39 @@ namespace Keysharp.Compilation.Syntax
 		/// <summary>Class instance method implementation: <c>&lt;TitleCase&gt;</c>.</summary>
 		public static string Method(string name) => TitleCase(name);
 
-		/// <summary>User class C# type name: <c>&lt;TitleCase&gt;</c> (so it never collides with the lowercased variable
-		/// slot), disambiguated if it would shadow a framework/structural root (see <see cref="AvoidReserved"/>).</summary>
-		public static string ClassType(string name) => AvoidReserved(TitleCase(name));
+		/// <summary>User class C# type name, disambiguated from its singleton slot and framework roots.</summary>
+		public static string ClassType(string name)
+		{
+			var typeName = TitleCase(name);
+			if (!IsTextIdentifier(typeName)) return Encode(typeName, "__KSType");
+			return typeName == AsciiLower(name) ? typeName + "_KS" : AvoidReserved(typeName);
+		}
 
-		/// <summary>Module C# class name: identifier module names are preserved, while path specifiers are encoded into
-		/// valid, collision-resistant identifiers. The synthesized default module <c>__Main</c> is exempt.</summary>
-		public static string ModuleClass(string moduleName)
+		/// <summary>Module C# class name: valid identifiers are preserved; other names use collision-resistant encoding.
+		/// The synthesized default module <c>__Main</c> is exempt.</summary>
+		public static string ModuleClass(string moduleName, bool disambiguate = false)
 		{
 			if (moduleName == "__Main") return "__Main";
 			const string pathPrefix = "__KSPath";
-			if (!moduleName.Contains('/') && !moduleName.Contains('\\')
+			if (!disambiguate && IsTextIdentifier(moduleName)
 				&& !moduleName.StartsWith(pathPrefix, System.StringComparison.Ordinal)
+				&& !moduleName.StartsWith("__KSFile", System.StringComparison.Ordinal)
 				&& !ReservedTypeNames.Contains(moduleName))
 				return moduleName;
 
-			// Encode every UTF-16 code unit so path separators never reach Roslyn identifiers. Identifier modules using
-			// the reserved prefix are encoded too, preventing a literal module name from colliding with a path module.
-			var encoded = new System.Text.StringBuilder(pathPrefix);
-			foreach (var c in moduleName)
+			return Encode(moduleName, pathPrefix);
+		}
+
+		// C# removes formatting characters when it lexes a textual identifier.
+		private static bool IsTextIdentifier(string name) => SyntaxFacts.IsValidIdentifier(name)
+			&& !name.Any(c => char.GetUnicodeCategory(c) == UnicodeCategory.Format);
+
+		// Inline C# wrappers are parsed from text, so their owners need valid identifiers. Reserved prefixes prevent
+		// literal script names from colliding with an encoded name; ClassType's prefix cannot be produced by TitleCase.
+		private static string Encode(string name, string prefix)
+		{
+			var encoded = new System.Text.StringBuilder(prefix);
+			foreach (var c in name)
 				encoded.Append('_').Append(((int)c).ToString("X4", CultureInfo.InvariantCulture));
 			return encoded.ToString();
 		}
@@ -61,7 +80,7 @@ namespace Keysharp.Compilation.Syntax
 			new(System.StringComparer.Ordinal)
 			{
 				"System", "Keysharp", "Program", "MainScript", "__Main",
-				EntryPointMethod, AutoExecMethod, OperatorManifestField
+				EntryPointMethod, AutoExecMethod, OperatorManifestField, "KS_module"
 			};
 		private static string AvoidReserved(string csName) => ReservedTypeNames.Contains(csName) ? csName + "_KS" : csName;
 
@@ -94,8 +113,8 @@ namespace Keysharp.Compilation.Syntax
 		/// </summary>
 		public static string StaticLocalField(string funcImplName, string varName)
 		{
-			var funcKey = funcImplName.ToLowerInvariant();
-			return $"{Keywords.StaticLocalFieldPrefix}{funcKey.Length}_{funcKey}_{varName.ToLowerInvariant()}";
+			var funcKey = AsciiLower(funcImplName);
+			return $"{Keywords.StaticLocalFieldPrefix}{funcKey.Length}_{funcKey}_{AsciiLower(varName)}";
 		}
 
 		/// <summary>Escapes a C# (contextual) keyword by prefixing '@' (e.g. <c>class</c> -> <c>@class</c>). Only a whole
@@ -106,9 +125,16 @@ namespace Keysharp.Compilation.Syntax
 			(SyntaxFacts.GetKeywordKind(ident) != SyntaxKind.None || SyntaxFacts.GetContextualKeywordKind(ident) != SyntaxKind.None)
 				? "@" + ident : ident;
 
-		// Title-cases for prefix-safety (built-in prefixes like get_/set_ are lowercase, so user names
-		// are title-cased to avoid colliding with them). Lower-cases first for deterministic output.
-		private static string TitleCase(string s) =>
-			CultureInfo.InvariantCulture.TextInfo.ToTitleCase(s.ToLowerInvariant());
+		// ASCII title-casing separates user methods from generated get_/set_ prefixes without folding Unicode names.
+		private static string TitleCase(string s) => string.Create(s.Length, s, static (target, source) =>
+		{
+			var wordStart = true;
+			for (var i = 0; i < source.Length; i++)
+			{
+				var character = source[i] is >= 'A' and <= 'Z' ? (char)(source[i] + ('a' - 'A')) : source[i];
+				target[i] = wordStart && character is >= 'a' and <= 'z' ? (char)(character - ('a' - 'A')) : character;
+				wordStart = !char.IsLetterOrDigit(character);
+			}
+		});
 	}
 }

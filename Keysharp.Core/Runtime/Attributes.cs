@@ -138,17 +138,24 @@ namespace Keysharp.Runtime
 		{ }
 	}
 
-	/// <summary>
-	/// The built-in modules a script module imports with <c>#Import Mod { * }</c>, the most recent import first. The
-	/// compiler binds only the names the module's code writes, so a dynamic reference (<c>%"Name"%</c>) resolves the
-	/// rest through these at run time.
-	/// </summary>
-	[AttributeUsage(AttributeTargets.Class, Inherited = false)]
-	public sealed class WildcardImportAttribute : Attribute
+	[PublicHiddenFromUser]
+	public enum ModuleBindingKind : byte
 	{
-		public Type[] Modules { get; }
+		Field,
+		Property,
+		BuiltinVariable,
+		Function,
+		Class
+	}
 
-		public WildcardImportAttribute(params Type[] modules) => Modules = modules;
+	/// <summary>The terminal declaration an imported module name denotes, without introducing storage.</summary>
+	[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+	public sealed class ModuleBindingAttribute(string name, Type owner, string member, ModuleBindingKind kind) : Attribute
+	{
+		public string Name { get; } = name;
+		public Type Owner { get; } = owner;
+		public string Member { get; } = member;
+		public ModuleBindingKind Kind { get; } = kind;
 	}
 
 	/// <summary>

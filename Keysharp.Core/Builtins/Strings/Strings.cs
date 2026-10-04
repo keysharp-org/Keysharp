@@ -1594,7 +1594,7 @@ namespace Keysharp.Builtins
 
 			//As in AutoHotkey, only a variable has memory to size; a property would report room it never keeps.
 			if (capacity != 0 && (memory ??= StringMemory.Of(targetVar)) == null)
-				return Errors.TypeErrorOccurred("Only a variable's own reference has memory to size, not a property's or one made afresh, such as for a function's own variable through %name%.", 0L);
+				return Errors.TypeErrorOccurred("Only a variable's own reference has memory to size; property and virtual references have none.", 0L);
 
 			_ = Refs.SetValue(targetVar, "");
 			memory?.Reserve((int)capacity);

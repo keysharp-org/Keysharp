@@ -1,5 +1,7 @@
 #import KS { A_NewLine, A_ProcessArch, A_OSArch, A_OSType }
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 #Include <assert>
 
 ; Can't really test if some of these properties have "valid" values. So at least just test if they can be compiled properly in a script.
@@ -80,7 +82,7 @@ myfunc()
 Assert(A_NewLine = "`n" || A_NewLine = "`r`n", A_LineNumber)
 
 ; The AutoHotkey version Keysharp implements.
-Assert(A_AhkVersion = "2.1-alpha.32", A_LineNumber)
+Assert(A_AhkVersion = "2.1-alpha.33", A_LineNumber)
 
 Assert(!IsSet(A_E) && !IsSet(A_IPAddress) && !IsSet(A_PeekFrequency) && !IsSet(A_PI) && !IsSet(A_TempFile)
 	&& !IsSet(A_ThisMenu) && !IsSet(A_ThisMenuItem) && !IsSet(A_ThisMenuItemPos), A_LineNumber)

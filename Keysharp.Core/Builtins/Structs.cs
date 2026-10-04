@@ -579,6 +579,8 @@ namespace Keysharp.Builtins
 
 		internal static long GetSize(Type structType) => GetLayoutInfo(structType, true).Size;
 
+		internal static bool IsArray(Type structType) => GetLayoutInfo(structType, true).IsArray;
+
 		internal static bool IsPrimitive(Type structType) => GetLayoutInfo(structType, true).IsPrimitive;
 
 		// The built-in DllCall type a numeric type class is equivalent to, or Invalid if structType is not one.
@@ -1187,14 +1189,10 @@ namespace Keysharp.Builtins
 						return true;
 					}
 			}
-			else if (descriptor is Any any && any.op != null)
+			else if (descriptor is Any any && any.op != null && any.op.TryGetValue(name, out var desc))
 			{
-				foreach (var (key, desc) in any.op)
-					if (key.Equals(name, StringComparison.OrdinalIgnoreCase))
-					{
-						value = desc.Value ?? desc.Get ?? desc.Set ?? desc.Call;
-						return true;
-					}
+				value = desc.Value ?? desc.Get ?? desc.Set ?? desc.Call;
+				return true;
 			}
 
 			value = null;

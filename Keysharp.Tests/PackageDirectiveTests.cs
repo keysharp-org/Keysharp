@@ -508,12 +508,14 @@ namespace Keysharp.Tests
 				// AutoHotkey v1 directives, deliberately not carried over.
 				"#InstallMouseHook\n", "#InstallKeybdHook\n", "#NoEnv\n", "#LTrim\n", "#MaxMem 64\n",
 				"#KeyHistory 0\n", "#HotkeyInterval 2000\n",
+				"#ſingleInstance Off\n", "#ſuspendExempt\n",
 			})
 			{
 				var (_, diags) = Lower(bad);
 				Assert.AreEqual(1, diags.Count, bad + " -> " + string.Join("; ", diags));
 				StringAssert.Contains("Unrecognized directive", diags[0]);
 			}
+			Assert.IsEmpty(Lower("#sUsPeNdExEmPt false\n#sInGlEiNsTaNcE Off\n").Diags);
 		}
 
 		/// <summary>

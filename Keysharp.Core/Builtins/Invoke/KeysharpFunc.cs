@@ -14,6 +14,14 @@ namespace Keysharp.Builtins
 	public interface IMetaObject
 	{
 		object Get(string name, object[] args);
+
+		/// <summary>Returns false only for an absent property; an unset value and getter failures remain distinct.</summary>
+		internal bool TryGet(string name, object[] args, out object value)
+		{
+			value = Get(name, args);
+			return true;
+		}
+
 		void Set(string name, object[] args, object value);
 		object Call(string name, object[] args);
 		object get_Item(object[] indexArgs);

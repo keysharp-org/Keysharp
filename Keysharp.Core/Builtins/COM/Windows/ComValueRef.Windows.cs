@@ -18,6 +18,16 @@ namespace Keysharp.Builtins.COM
 			return RawGetProperty(name, args);
 		}
 
+		bool IMetaObject.TryGet(string name, object[] args, out object value)
+		{
+			if ((vt & VarEnum.VT_BYREF) != 0 && name.Equals("__Value", StringComparison.OrdinalIgnoreCase))
+			{
+				value = __Value;
+				return true;
+			}
+			return TryRawGetProperty(name, args, out value);
+		}
+
 		void IMetaObject.Set(string name, object[] args, object value)
 		{
 			if ((vt & VarEnum.VT_BYREF) != 0 && name.Equals("__Value", StringComparison.OrdinalIgnoreCase))

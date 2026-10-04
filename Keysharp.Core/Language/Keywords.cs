@@ -98,7 +98,7 @@ namespace Keysharp.Language
 		/// — it varies per module (including `__Main`), so it is tested directly at the use site.</para>
 		/// </summary>
 		internal static readonly FrozenSet<string> InlineReservedModuleNames = FrozenSet.Create(StringComparer.OrdinalIgnoreCase,
-				AutoExecSectionName);
+				AutoExecSectionName, "KS_module");
 
 		/// <summary>
 		/// The same idea for a CLASS-scoped block: names the lowerer generates into every user class. Kept apart from

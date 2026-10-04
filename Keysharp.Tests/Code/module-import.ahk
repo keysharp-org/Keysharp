@@ -43,14 +43,30 @@ a := Foo()
 AssertEq(a, "local", A_LineNumber)
 
 ; ---- explicit imports with alternative syntax (as opposed to "import { a } from Test")
-#import "Test" { Hello as ReturnHello }
+#import test { hELLo as ReturnHello }
 #import "Test" { Hello }
+#import "TEST" as QuotedTest { Value as QuotedValue }
 
 v := ReturnHello()
 AssertEq(v, "Hello", A_LineNumber)
 
 v := Hello()
 AssertEq(v, "Hello", A_LineNumber)
+AssertEq(test.Value, 1, A_LineNumber)
+AssertEq(QuotedValue, 1, A_LineNumber)
+AssertEq(QuotedTest.Value, 1, A_LineNumber)
+
+ReadMixedCaseModule() {
+    #Import tEsT as ScopedTest { vALuE as sCoPeDvAlUe }
+    return ScopedTest.Value == ScopedValue && ScopedValue == 1
+}
+Assert(ReadMixedCaseModule(), A_LineNumber)
+
+class MixedCaseModuleImport {
+    #Import TeSt as ClassTest
+    Read() => ClassTest.Value
+}
+AssertEq(MixedCaseModuleImport().Read(), 1, A_LineNumber)
 
 if true
 {
@@ -112,6 +128,7 @@ Foo() => "B"
 Bar() => "B"
 
 #Module Test
+Value := 1
 Hello() => "Hello"
 
 #Module Mixed

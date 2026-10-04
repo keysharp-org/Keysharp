@@ -191,29 +191,47 @@ namespace Keysharp.Builtins.COM
 			return Invoke(command, positional, named);
 		}
 
-		object IMetaObject.Get(string name, object[] args)
+		object IMetaObject.Get(string name, object[] args) => TryGet(name, args, out var value)
+			? value : Errors.PropertyErrorOccurred(Unknown(name, "property"));
+		bool IMetaObject.TryGet(string name, object[] args, out object value) => TryGet(name, args, out value);
+
+		private bool TryGet(string name, object[] args, out object value)
 		{
 			if (isCollection && string.Equals(name, "Count", StringComparison.OrdinalIgnoreCase))
-				return Count();
+			{
+				value = Count();
+				return true;
+			}
 
 			if (ResolveProperty(name) is AESdefProperty property)
-				return ReadProperty(property);
+			{
+				value = ReadProperty(property);
+				return true;
+			}
 
 			if (ResolveElement(name) is AESdefClass element)
-				return Collection(element);
+			{
+				value = Collection(element);
+				return true;
+			}
 
 			try
 			{
 				// Reading the name of a command that needs no parameters runs it, as IDispatch would.
-				if (TryResolveCommand(name, out var command) && !command.HasDirectParameter)
-					return Invoke(command, [], null);
+				if (TryResolveCommand(name, out var command))
+				{
+					value = !command.HasDirectParameter ? Invoke(command, [], null) : Errors.PropertyErrorOccurred(Unknown(name, "property"));
+					return true;
+				}
 			}
 			catch (AmbiguousMatchException ex)
 			{
-				return Errors.PropertyErrorOccurred(ex.Message);
+				value = Errors.PropertyErrorOccurred(ex.Message);
+				return true;
 			}
 
-			return Errors.PropertyErrorOccurred(Unknown(name, "property"));
+			value = null;
+			return false;
 		}
 
 		void IMetaObject.Set(string name, object[] args, object value)

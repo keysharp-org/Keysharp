@@ -1,13 +1,11 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 
-; =========================
-; module-scoped-import.ahk
-; #import scoped to a function body / class body (Keysharp extension), plus laziness and write-through.
-; Each check is silent on success; the script's only output is the single "pass" at the end.
-; =========================
+; Function and class imports, shadowing, and write-through.
 
-; A bare module-scope import binds the module NAME to a Module object, so a method call dispatches via IMetaObject.
 #import KS
+#import ScopedImportOrder { BeforeModuleWildcard, AfterModuleWildcard }
 #Include <assert>
 AssertEq(Ks.Cosh(0), 1, A_LineNumber)
 
@@ -28,73 +26,75 @@ FnKsUtilities() {
 }
 Assert(FnKsUtilities(), A_LineNumber)
 
-; ---- 1. Function-scoped built-in import: Cosh visible inside, resolves correctly
+FnDynamicBuiltinSetter(name, value) {
+    #Import KS { A_PeekFrequency }
+    %name% := value
+    return &%name%
+}
+dynamicFrequencyBefore := Ks.A_PeekFrequency
+dynamicBuiltinRef := FnDynamicBuiltinSetter("A_PeekFrequency", 38)
+Assert(dynamicBuiltinRef == Ks.__Ref("A_PeekFrequency"), A_LineNumber)
+AssertEq(Ks.A_PeekFrequency, 38, A_LineNumber)
+FnDynamicBuiltinSetter("A_PeekFrequency", dynamicFrequencyBefore)
+
+; A script wildcard retains its scope rules when its exported alias targets a built-in variable.
+FnRelayedBuiltinSetter(name, value) {
+    #Import ScopedBuiltinRelay { * }
+    %name% := value
+    return &%name%
+}
+relayedDirectoryBefore := A_WorkingDir
+try {
+    relayedBuiltinRef := FnRelayedBuiltinSetter("Directory", A_Temp)
+    Assert(relayedBuiltinRef == &A_WorkingDir, A_LineNumber)
+    AssertEq(A_WorkingDir, A_Temp, A_LineNumber)
+}
+finally
+    A_WorkingDir := relayedDirectoryBefore
+
+; Function imports support aliases, module objects, closures and dynamic calls.
 FnBuiltin() {
-    #import KS { Cosh }
-    return Cosh(0)   ; cosh(0) = 1
-}
-AssertEq(FnBuiltin(), 1, A_LineNumber)
-
-; ---- 1b. Function-scoped bare import: the module object dispatches a method call
-FnModuleObject() {
     #import KS
-    return Ks.Cosh(0)
+    #import KS { Cosh }
+    #import KS { Cosh as C }
+    #import KS { Cosh as C }
+    coshCallback := () => Cosh(0)
+    name := "Cosh"
+    return [Ks.Cosh(0), Cosh(0), C(0), coshCallback(), %name%(0)]
 }
-AssertEq(FnModuleObject(), 1, A_LineNumber)
+for builtinValue in FnBuiltin()
+    AssertEq(builtinValue, 1, A_LineNumber)
 
-; ---- 2. Function-scoped file import: a separate module member, bound only inside the function
-FnFile() {
+; File imports reach parameter defaults and static nested functions too.
+FnFile(value := HelperFn()) {
     #import "module_scoped_import_helper" { HelperFn }
-    return HelperFn()
+    static Nested() => HelperFn()
+    return value "," Nested() "," HelperFn()
 }
-AssertEq(FnFile(), 42, A_LineNumber)
+AssertEq(FnFile(), "42,42,42", A_LineNumber)
 
-; ---- 3. Function-scoped wildcard import, only referenced names materialize
+; Scoped wildcards supply names the function reads.
 FnWild() {
     #import KS { * }
     return Cosh(0)
 }
 AssertEq(FnWild(), 1, A_LineNumber)
 
-; ---- 4. Aliased import inside a function
-FnAlias() {
-    #import KS { Cosh as C }
-    return C(0)
-}
-AssertEq(FnAlias(), 1, A_LineNumber)
-
-; ---- 5. Closure sees the enclosing function's import
-FnClosure() {
-    #import KS { Cosh }
-    f := () => Cosh(0)
-    return f()
-}
-AssertEq(FnClosure(), 1, A_LineNumber)
-
-; ---- 6. Write-through: assigning an imported script VARIABLE propagates to the source module
+; An explicit import writes through to the module's variable.
 FnWrite() {
     #import "module_scoped_import_helper" { helperVar, GetHelperVar }
     helperVar := 7
-    return GetHelperVar()   ; reads the module's own helperVar
+    return GetHelperVar()
 }
 AssertEq(FnWrite(), 7, A_LineNumber)
 
-; ---- 8. %name% dynamic deref of a scoped import resolves in-scope
-FnDeref() {
-    #import KS { Cosh }
-    n := "Cosh"
-    return %n%(0)
-}
-AssertEq(FnDeref(), 1, A_LineNumber)
-
-; ---- 9. Class-body import visible in a method
+; Class imports reach methods and nested classes.
 class WithImport {
     #import KS { Cosh }
     Compute() => Cosh(0)
 }
 AssertEq(WithImport().Compute(), 1, A_LineNumber)
 
-; ---- 10. Class-body import visible in a nested class's method
 class Outer {
     #import KS { Cosh }
     class Inner {
@@ -103,7 +103,7 @@ class Outer {
 }
 AssertEq(Outer.Inner().Compute(), 1, A_LineNumber)
 
-; ---- 11. A local declared in the function shadows an import of the same name
+; An explicit local shadows an import.
 FnShadow() {
     #import KS { Cosh }
     local Cosh := 5
@@ -111,19 +111,20 @@ FnShadow() {
 }
 AssertEq(FnShadow(), 5, A_LineNumber)
 
-; ---- 12. An import in one function does not leak into another: the SAME alias bound to DIFFERENT
-;          functions in each frame must resolve independently (Cosh(0)=1, Sinh(0)=0).
+; Aliases remain independent across functions, including exported scoped imports.
 FnA() {
     #import KS { Cosh as Shared }
     return Shared(0)
 }
 FnB() {
-    #import KS { Sinh as Shared }
+    #import Export KS { Sinh as Shared }
     return Shared(0)
 }
 Assert(FnA() == 1 && FnB() == 0, A_LineNumber)
+FnExportSibling() => IsSet(Shared)
+Assert(!IsSet(Shared) && !FnExportSibling(), A_LineNumber)
 
-; ---- 13. %name% resolves every name a scoped wildcard import brings in, written in the body or not
+; Dynamic lookup sees every name supplied by a wildcard.
 FnWildDeref(name) {
     #import KS { * }
     return %name%
@@ -137,7 +138,7 @@ class WildDeref {
 }
 AssertEq(WildDeref.Lookup("Sinh")(0), 0, A_LineNumber)
 
-; ---- 14. Of two scoped wildcard imports which supply a name, the later one wins
+; The later wildcard wins when both supply a name.
 FnHelperThenKs() {
     #import "module_scoped_import_helper" { * }
     #import KS { * }
@@ -153,8 +154,7 @@ FnKsThenHelper() {
 AssertEq(FnHelperThenKs(), "1.0,1.0", A_LineNumber)
 AssertEq(FnKsThenHelper(), "helper,helper", A_LineNumber)
 
-; ---- 15. A scoped wildcard import supplies no name the scope assigns: an assignment makes a local, which %name%
-;          reaches too. A Ks property is no exception, and a script module's variable keeps its value.
+; Assignments create locals instead of writing through wildcard imports.
 FnWildAssign() {
     #import KS { * }
     HashMap := "mine"
@@ -173,8 +173,7 @@ FnWildScriptAssign() {
 }
 AssertEq(FnWildScriptAssign(), "local,1", A_LineNumber)
 
-; ---- 16. In a class body: a method which assigns the name has a local, one which only reads it has the import,
-;          and a name a field initializer assigns, other than the field's own, is a local of __Init.
+; Methods and field initializers follow the same wildcard shadowing rules.
 class WildAssign {
     #import KS { * }
     static Imported() => Cosh(0)
@@ -188,8 +187,7 @@ AssertEq(WildAssign.Imported(), 1, A_LineNumber)
 AssertEq(WildAssign.Assigned(), "mine,mine", A_LineNumber)
 AssertEq(WildAssign().Field, "mine,mine", A_LineNumber)
 
-; ---- 17. A global declaration makes the name the module's variable, in the function and in a closure nested in
-;          it, which no scoped wildcard import supplies.
+; Explicit globals shadow wildcards in a function and its closure.
 FnWildGlobal() {
     #import KS { * }
     global Tanh
@@ -198,7 +196,7 @@ FnWildGlobal() {
 }
 AssertEq(FnWildGlobal(), "0,0,0,0", A_LineNumber)
 
-; ---- 18. `x++` is an assignment too, so it makes a local of a name a scoped wildcard import supplies.
+; Incrementing a wildcard name creates a local too.
 FnWildIncrement() {
     #import "module_scoped_import_helper" { * }
     before := GetHelperVar()
@@ -208,9 +206,7 @@ FnWildIncrement() {
 }
 AssertEq(FnWildIncrement(), "0,1", A_LineNumber)
 
-; ---- 19. A function the scope imports is a constant: assigning or updating it by dynamic name, or taking a reference to
-;          it, raises as for a module's function, before any operator runs. A name a wildcard supplies is none to assign
-;          or take a reference to either.
+; Dynamic writes and references reject imported functions and wildcard-only names.
 FnImportedConstant() {
     #import KS { Cosh }
     errors := ""
@@ -246,19 +242,111 @@ FnWildBuiltinWrite() {
 AssertEq(FnWildBuiltinWrite(), "Variable not found. [A_PeekFrequency];Variable not found. [A_PeekFrequency];", A_LineNumber)
 AssertEq(Ks.A_PeekFrequency, peekFrequency, A_LineNumber)
 
-; ---- 20. An assume-global function assigns the module's own global, which a scoped wildcard does not supply.
-FnHelperVar() {
-    #import "module_scoped_import_helper" { GetHelperVar }
-    return GetHelperVar()
-}
+; Assume-global assignments leave wildcard variables unchanged.
 FnWildAssumeGlobal() {
     global
     #import "module_scoped_import_helper" { * }
+    local before := GetHelperVar()
     helperVar := "main"
-    return GetHelperVar()
+    return GetHelperVar() == before
 }
-helperBefore := FnHelperVar()
-AssertEq(FnWildAssumeGlobal(), helperBefore, A_LineNumber)
+Assert(FnWildAssumeGlobal(), A_LineNumber)
 AssertEq(helperVar, "main", A_LineNumber)
 
+FnNestedImport() {
+    Shared := "outer"
+    Nested() {
+        #import KS { Cosh as Shared }
+        name := "Shared"
+        return Shared(0) "," %name%(0)
+    }
+    return Nested() "," Shared
+}
+AssertEq(FnNestedImport(), "1.0,1.0,outer", A_LineNumber)
+
+FnNestedImportedRef(&helperVar) {
+    Nested() {
+        #import "module_scoped_import_helper" { helperVar }
+        reference := &helperVar
+        reference.__Value := "module"
+        return helperVar
+    }
+    return Nested() "," helperVar
+}
+outerValue := "outer"
+AssertEq(FnNestedImportedRef(&outerValue), "module,outer", A_LineNumber)
+
+; Dynamic and bare references share local storage, with a separate box for each invocation.
+FnStorageReferences(value := "default", values*) {
+    localValue := "local"
+    capturedValue := "captured"
+    static staticValue := "static"
+    Nested() {
+        if IsSet(capturedValue)
+            return &%"capturedValue"%
+    }
+    return [&localValue, &%"localValue"%, &value, &%"value"%, &values, &%"values"%,
+            &staticValue, &%"staticValue"%, &capturedValue, Nested]
+}
+firstRefs := FnStorageReferences()
+secondRefs := FnStorageReferences("provided", 1, 2)
+for index in [1, 3, 5, 7]
+    Assert(firstRefs[index] == firstRefs[index + 1] && secondRefs[index] == secondRefs[index + 1], A_LineNumber)
+Assert(firstRefs[1] != secondRefs[1] && firstRefs[3] != secondRefs[3] && firstRefs[5] != secondRefs[5], A_LineNumber)
+Assert(firstRefs[7] == secondRefs[7], A_LineNumber)
+AssertEq(firstRefs[3].__Value, "default", A_LineNumber)
+AssertEq(firstRefs[5].__Value.Length, 0, A_LineNumber)
+secondRefs[6].__Value.Push(3)
+AssertEq(secondRefs[5].__Value.Length, 3, A_LineNumber)
+Assert(firstRefs[9] == firstRefs[10](), A_LineNumber)
+firstRefs[10]().__Value := "after return"
+AssertEq(firstRefs[9].__Value, "after return", A_LineNumber)
+
+FnParameterReference(&value) => &%"value"%
+parameterValue := "parameter"
+Assert(FnParameterReference(&parameterValue) == &parameterValue, A_LineNumber)
+
+; An enclosing wildcard written after a nested function has precedence in that function too.
+FnNestedWildcardOrder() {
+    Nested() {
+        #import KS { * }
+        name := "Cosh"
+        return Cosh(0) "," %name%(0)
+    }
+    #import "module_scoped_import_helper" { * }
+    return Nested()
+}
+AssertEq(FnNestedWildcardOrder(), "helper,helper", A_LineNumber)
+
+; Unassigned references outside a nested function leave its wildcard binding independent.
+FnNestedWildcardReads() {
+    before := IsSet(HelperFn)
+    Nested() {
+        #import "module_scoped_import_helper" { * }
+        return HelperFn()
+    }
+    after := IsSet(HelperFn)
+    return before "," Nested() "," after
+}
+AssertEq(FnNestedWildcardReads(), "0,42,0", A_LineNumber)
+
+AssertEq(BeforeModuleWildcard(), "helper,helper", A_LineNumber)
+AssertEq(AfterModuleWildcard(), "1.0,1.0", A_LineNumber)
+
 FileAppend "pass", "*"
+
+#Module ScopedImportOrder
+BeforeModuleWildcard() {
+    #import KS { * }
+    name := "Cosh"
+    return Cosh(0) "," %name%(0)
+}
+#import "module_scoped_import_helper" { * }
+AfterModuleWildcard() {
+    #import KS { * }
+    name := "Cosh"
+    return Cosh(0) "," %name%(0)
+}
+
+#Module ScopedBuiltinRelay
+#Import Export AHK { A_WorkingDir as Directory }

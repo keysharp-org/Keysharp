@@ -31,10 +31,8 @@ namespace Keysharp.Builtins
 			this.variable = variable;
 		}
 
-		// A variable's one reference, which can keep its memory for native code: one holding the value itself, as a
-		// compiled local's and a script's VarRef(Value) do, or the one Misc.FieldRef keeps for a variable in a static
-		// field. A reference made afresh each time it is taken keeps none, nor does a script subclass, which stores its
-		// value where its own __Value says.
+		// A variable's canonical reference owns native memory: a local's value lives in it, while a static field's cached
+		// reference reaches its storage. Virtual references and script subclasses own no native memory.
 		internal bool IsVariable => variable && GetType() == typeof(VarRef);
 
 		public object __Value

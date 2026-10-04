@@ -1260,7 +1260,7 @@ namespace Keysharp.Parsing.Lexing
 			while (i < _n && (_s[i] == ' ' || _s[i] == '\t')) i++;
 			const string kw = "hotstring";
 			if (i + kw.Length > _n) return;
-			for (int k = 0; k < kw.Length; k++) if (char.ToLowerInvariant(_s[i + k]) != kw[k]) return;
+			if (!_s.AsSpan(i, kw.Length).Equals(kw, StringComparison.OrdinalIgnoreCase)) return;
 			i += kw.Length;
 			int s = i;
 			while (i < _n && _s[i] != '\n' && _s[i] != '\r') i++;
