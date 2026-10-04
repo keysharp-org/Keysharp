@@ -17,6 +17,8 @@ namespace Keysharp.Internals.UI
 		// How much of the buffer the tab already shows, or -1 when its text must be replaced.
 		private int shown = -1;
 		private bool refreshQueued;
+		// Showing the Debug tab refreshes text accumulated while the window was hidden.
+		private bool windowVisible;
 
 		internal void Append(string text, bool clear)
 		{
@@ -38,8 +40,8 @@ namespace Keysharp.Internals.UI
 					shown = -1;
 				}
 
-				post = !refreshQueued;
-				refreshQueued = true;
+				post = windowVisible && !refreshQueued;
+				refreshQueued |= post;
 			}
 
 			if (post)
@@ -72,6 +74,7 @@ namespace Keysharp.Internals.UI
 			lock (gate)
 			{
 				refreshQueued = false;
+				windowVisible = visible;
 
 				if (!visible)
 					return;
