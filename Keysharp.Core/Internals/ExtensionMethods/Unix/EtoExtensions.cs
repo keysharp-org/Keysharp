@@ -9,25 +9,20 @@ namespace Eto.Forms
         // Friend assemblies can call the getter without importing an internal extension property.
         internal static Color GetForeColor(Control control)
         {
-            if (control is TextControl tc)
-                return tc.TextColor;
-            if (control is ListControl lc)
-                return lc.TextColor;
-            if (control is DateTimePicker dtp)
-                return dtp.TextColor;
-            if (control is GroupBox gb)
-                return gb.TextColor;
-            if (control is NumericStepper ns)
-                return ns.TextColor;
+            Color? color = control switch
+            {
+                TextControl tc => tc.TextColor,
+                ListControl lc => lc.TextColor,
+                DateTimePicker dtp => dtp.TextColor,
+                GroupBox gb => gb.TextColor,
+                NumericStepper ns => ns.TextColor,
+                KeysharpLinkLabel link => link.TextColor,
+                KeysharpListView listView => listView.TextColor,
+                _ => null
+            };
 
-            var prop = control.GetType().GetProperty("TextColor");
-            if (prop != null && prop.PropertyType == typeof(Color) && prop.CanRead && prop.GetValue(control) is Color color)
-                return color;
-
-            if (control.Properties.TryGetValue("ForeColor", out var stored) && stored is Color storedColor)
-                return storedColor;
-
-            return SystemColors.ControlText;
+            return color ?? (control.Properties.TryGetValue("ForeColor", out var stored) && stored is Color storedColor
+                ? storedColor : SystemColors.ControlText);
         }
 
         extension(Eto.Forms.Form)
@@ -430,21 +425,15 @@ namespace Eto.Forms
                 get => GetForeColor(control);
                 set
                 {
-                    if (control is TextControl tc)
-                        tc.TextColor = value;
-                    else if (control is ListControl lc)
-                        lc.TextColor = value;
-                    else if (control is DateTimePicker dtp)
-                        dtp.TextColor = value;
-                    else if (control is GroupBox gb)
-                        gb.TextColor = value;
-                    else if (control is NumericStepper ns)
-                        ns.TextColor = value;
-                    else
+                    switch (control)
                     {
-                        var prop = control.GetType().GetProperty("TextColor");
-                        if (prop != null && prop.PropertyType == typeof(Color) && prop.CanWrite)
-                            prop.SetValue(control, value);
+                        case TextControl tc: tc.TextColor = value; break;
+                        case ListControl lc: lc.TextColor = value; break;
+                        case DateTimePicker dtp: dtp.TextColor = value; break;
+                        case GroupBox gb: gb.TextColor = value; break;
+                        case NumericStepper ns: ns.TextColor = value; break;
+                        case KeysharpLinkLabel link: link.TextColor = value; break;
+                        case KeysharpListView listView: listView.TextColor = value; break;
                     }
 
                     control.Properties["ForeColor"] = value;
@@ -507,27 +496,24 @@ namespace Eto.Forms
             }
             internal Font Font
             {
-                get
+                // Containers such as a Form have no font of their own, so theirs is kept in the Properties bag, where
+                // a font set on the Gui (e.g. Gui.SetFont) is remembered for the controls added afterwards.
+                get => control switch
                 {
-                    // Most controls expose a native Font property (via Eto's CommonControl), but containers
-                    // such as Window/Form do not. For those, fall back to the Properties bag so a font set on
-                    // the Gui (e.g. Gui.SetFont) is remembered and inherited by controls added afterwards.
-                    var prop = control.GetType().GetProperty("Font");
-                    if (prop != null && prop.PropertyType == typeof(Font) && prop.CanRead && prop.GetValue(control) is Font font)
-                        return font;
-
-                    if (control.Properties.TryGetValue("Font", out var stored) && stored is Font storedFont)
-                        return storedFont;
-
-                    return MainWindow.OurDefaultFont;
-                }
+                    CommonControl common => common.Font,
+                    GroupBox group => group.Font,
+                    KeysharpLinkLabel link => link.Font,
+                    _ => null
+                } ?? (control.Properties.TryGetValue("Font", out var stored) && stored is Font storedFont ? storedFont : MainWindow.OurDefaultFont);
                 set
                 {
-                    var prop = control.GetType().GetProperty("Font");
-			        if (prop != null && prop.PropertyType == typeof(Font) && prop.CanWrite)
-				        prop.SetValue(control, value);
-                    else
-                        control.Properties["Font"] = value;
+                    switch (control)
+                    {
+                        case CommonControl common: common.Font = value; break;
+                        case GroupBox group: group.Font = value; break;
+                        case KeysharpLinkLabel link: link.Font = value; break;
+                        default: control.Properties["Font"] = value; break;
+                    }
                 }
             }
             internal DockStyle Dock
@@ -665,24 +651,16 @@ namespace Eto.Forms
 			internal Collection<TabPage> TabPages => tc.Pages;
 		}
 
+        //As the Windows list messages search: from the first item, ignoring case, matching an item's start or all of it.
+        extension (Eto.Forms.ListControl list)
+        {
+            internal int FindString(string value) => FindItem(list.DataStore, value, false);
+
+            internal int FindStringExact(string value) => FindItem(list.DataStore, value, true);
+        }
+
         extension (Eto.Forms.ComboBox comboBox)
         {
-            internal int FindString(string value)
-            {
-                if (string.IsNullOrEmpty(value) || comboBox.DataStore == null)
-                    return -1;
-
-                var index = 0;
-                foreach (var item in comboBox.DataStore)
-                {
-                    if (string.Equals(item?.ToString(), value, StringComparison.OrdinalIgnoreCase))
-                        return index;
-                    index++;
-                }
-
-                return -1;
-            }
-
             internal bool DroppedDown
             {
                 get => false;
@@ -690,94 +668,128 @@ namespace Eto.Forms
             }
         }
 
-        extension (Eto.Forms.ListBox listBox)
+        private static int FindItem(IEnumerable<object> items, string value, bool exact)
         {
-            internal int FindString(string value)
-            {
-                if (string.IsNullOrEmpty(value) || listBox.DataStore == null)
-                    return -1;
-
-                var index = 0;
-                foreach (var item in listBox.DataStore)
-                {
-                    if (string.Equals(item?.ToString(), value, StringComparison.OrdinalIgnoreCase))
-                        return index;
-                    index++;
-                }
-
+            if (string.IsNullOrEmpty(value) || items == null)
                 return -1;
+
+            var index = 0;
+
+            foreach (var item in items)
+            {
+                var text = item?.ToString() ?? "";
+
+                if (exact ? text.Equals(value, StringComparison.OrdinalIgnoreCase) : text.StartsWith(value, StringComparison.OrdinalIgnoreCase))
+                    return index;
+
+                index++;
             }
+
+            return -1;
         }
 
-        extension (Eto.Forms.TextBox textBox)
+        //GTK offsets count Unicode characters; .NET strings and the edit commands count UTF-16 units.
+        internal static int TextOffset(TextControl control, int index, bool toNative)
         {
-            internal int SelectionStart
+#if LINUX
+            int characters = 0, units = 0;
+
+            foreach (var rune in (control.Text ?? "").EnumerateRunes())
+            {
+                if ((toNative ? units : characters) >= index)
+                    break;
+
+                characters++;
+                units += rune.Utf16SequenceLength;
+            }
+
+            return toNative ? characters : units;
+#else
+            return index;
+#endif
+        }
+
+        //The caret and selection of an Edit or RichEdit, whichever Eto control it is. Eto gives a PasswordBox no caret, so on
+        //Linux the GTK entry's own is used, and elsewhere it reads as the end of the text.
+        extension (Eto.Forms.TextControl control)
+        {
+            internal int CaretIndex
+            {
+                get => control switch
+                {
+                    TextBox box => TextOffset(control, box.CaretIndex, false),
+                    TextArea area => TextOffset(control, area.CaretIndex, false),
+#if LINUX
+                    PasswordBox when control.ControlObject is Gtk.Entry entry => TextOffset(control, entry.Position, false),
+#endif
+                    _ => (control.Text ?? "").Length
+                };
+                set
+                {
+                    switch (control)
+                    {
+                        case TextBox box: box.CaretIndex = TextOffset(control, value, true); break;
+                        case TextArea area: area.CaretIndex = TextOffset(control, value, true); break;
+#if LINUX
+                        case PasswordBox when control.ControlObject is Gtk.Entry entry: entry.Position = TextOffset(control, value, true); break;
+#endif
+                    }
+                }
+            }
+
+            internal Range<int> Selection
             {
                 get
                 {
-                    var prop = textBox.GetType().GetProperty("CaretIndex");
-                    return prop?.GetValue(textBox) is int i ? i : 0;
+                    Range<int> selection;
+
+                    switch (control)
+                    {
+                        case TextBox box: selection = box.Selection; break;
+                        case TextArea area: selection = area.Selection; break;
+#if LINUX
+                        case PasswordBox when control.ControlObject is Gtk.Entry entry:
+                            _ = entry.GetSelectionBounds(out var start, out var end);
+                            selection = start == end ? Range.FromLength(entry.Position, 0) : new Range<int>(Math.Min(start, end), Math.Max(start, end) - 1);
+                            break;
+#endif
+                        default: return Range.FromLength(control.CaretIndex, 0);
+                    }
+
+                    return new Range<int>(TextOffset(control, selection.Start, false), TextOffset(control, selection.End + 1, false) - 1);
                 }
                 set
                 {
-                    var prop = textBox.GetType().GetProperty("CaretIndex");
-                    prop?.SetValue(textBox, value);
+                    var selection = new Range<int>(TextOffset(control, value.Start, true), TextOffset(control, value.End + 1, true) - 1);
+
+                    switch (control)
+                    {
+                        case TextBox box: box.Selection = selection; break;
+                        case TextArea area: area.Selection = selection; break;
+#if LINUX
+                        case PasswordBox when control.ControlObject is Gtk.Entry entry: entry.SelectRegion(selection.Start, selection.End + 1); break;
+#endif
+                    }
                 }
             }
 
-            internal long GetLineFromCharIndex(int index) => 0;
-
-            internal string[] Lines => (textBox.Text ?? "").Split('\n');
-
-            internal void Paste(string text)
+            /// <summary>
+            /// Replaces the characters in <c>[start, start + length)</c>. A TextArea replaces only those, so a RichEdit
+            /// keeps the formatting around them; the others take the whole text back. Where the caret ends up is up to
+            /// the toolkit.
+            /// </summary>
+            internal void ReplaceText(int start, int length, string text)
             {
-                if (text == null)
-                    return;
-
-                textBox.Text = (textBox.Text ?? "") + text;
-            }
-        }
-
-        extension (Eto.Forms.TextArea textArea)
-        {
-            internal int SelectionStart
-            {
-                get
+                if (control is TextArea area)
                 {
-                    var prop = textArea.GetType().GetProperty("CaretIndex");
-                    return prop?.GetValue(textArea) is int i ? i : 0;
+                    control.Selection = Range.FromLength(start, length);
+                    area.SelectedText = text;
                 }
-                set
+                else
                 {
-                    var prop = textArea.GetType().GetProperty("CaretIndex");
-                    prop?.SetValue(textArea, value);
+                    var current = control.Text ?? "";
+                    control.Text = string.Concat(current.AsSpan(0, start), text, current.AsSpan(start + length));
                 }
-            }
-
-            internal long GetLineFromCharIndex(int index)
-            {
-                var text = textArea.Text ?? "";
-                if (index <= 0)
-                    return 0;
-
-                var count = 0;
-                for (var i = 0; i < Math.Min(index, text.Length); i++)
-                {
-                    if (text[i] == '\n')
-                        count++;
-                }
-
-                return count;
-            }
-
-            internal string[] Lines => (textArea.Text ?? "").Split('\n');
-
-            internal void Paste(string text)
-            {
-                if (text == null)
-                    return;
-
-                textArea.Text = (textArea.Text ?? "") + text;
             }
         }
 

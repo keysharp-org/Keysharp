@@ -68,35 +68,15 @@ namespace Keysharp.Builtins
 					if (!value.CoerceString(out var s))
 						return;
 
-					if (_control is KeysharpListBox lb)
-					{
-						if (lb.SelectionMode == SelectionMode.One)
-						{
-							lb.SelectedItem = s;
-						}
-						else
-						{
-							for (var i = 0; i < lb.Items.Count; i++)
-							{
-								if (lb.Items[i] is string item && item == s)
-									lb.SetSelected(i, true);
-							}
-						}
-					}
-					else if (_control is KeysharpComboBox cb)
-					{
-						if (s?.Length == 0)
-							cb.SelectedItem = -1;
-
-						if (cb.DropDownStyle == ComboBoxStyle.DropDownList)
-							cb.SelectedItem = s;
-						else
-							cb.Text = s;
-					}
+					if (this is List list && _control is KeysharpListBox or KeysharpComboBox)
+						_ = list.ChooseItem(s, true);
 					else if (_control is KeysharpTabControl tc)
 						tc.SelectTab(s);
 					else if (_control is KeysharpGroupBox gb)
 						gb.Text = s;
+					//A status bar's text is its first part's, as SetWindowText sets it in AutoHotkey.
+					else if (this is StatusBar sb)
+						_ = sb.SetText(s);
 					else
 						_control.Text = s;
 
@@ -167,8 +147,9 @@ namespace Keysharp.Builtins
 						return (long)pb.Value;
 					else if (_control is KeysharpTabControl tc)
 						return (long)tc.SelectedIndex + 1;
-					else if (_control is KeysharpStatusStrip ss)
-						return ss.Text;//Unsure if this is what's intended.
+					//A StatusBar has no value in AutoHotkey, only the text of its parts.
+					else if (_control is KeysharpStatusStrip)
+						return DefaultObject;
 					else if (_control is KeysharpPictureBox pic)
 						return pic.Filename;
 					else if (_control is KeysharpActiveX kax)
@@ -196,34 +177,12 @@ namespace Keysharp.Builtins
 					}
 					else if (_control is KeysharpRadioButton rb)
 						rb.Checked = Options.OnOff(value) ?? false;
-					else if (_control is KeysharpComboBox cmb)
+					else if (this is List list && _control is KeysharpListBox or KeysharpComboBox)
 					{
-						if (!value.CoerceInt(out var ival))
+						if (!value.CoerceLong(out var position))
 							return;
 
-						cmb.SelectedIndex = ival - 1;
-					}
-					else if (_control is KeysharpListBox lb)
-					{
-						if (value is Array ar)
-						{
-							lb.ClearSelected();
-
-							foreach (var arval in ar)
-							{
-								if (!arval.CoerceInt(out var arIndex))
-									return;
-
-								lb.SetSelected(arIndex - 1, true);
-							}
-						}
-						else
-						{
-							if (!value.CoerceInt(out var ival))
-								return;
-
-							lb.SelectedIndex = ival - 1;
-						}
+						_ = list.ChooseItem(position, true);
 					}
 					else if (_control is KeysharpDateTimePicker dtp)
 					{
@@ -265,8 +224,8 @@ namespace Keysharp.Builtins
 
 						tc.SelectedIndex = ival - 1;
 					}
-					else if (_control is KeysharpStatusStrip ss)
-						ss.Text = val;
+					else if (_control is KeysharpStatusStrip)
+						_ = Errors.ErrorOccurred("Invalid usage.");
 					else if (_control is KeysharpPictureBox pic)
 					{
 						if (val == "")
@@ -599,7 +558,7 @@ namespace Keysharp.Builtins
 
 					long val;
 
-					if (opts.number)
+					if (opts.number.IsTrue())
 						val = WindowsAPI.GetWindowLongPtr(txt.Handle, WindowsAPI.GWL_STYLE).ToInt64() | 0x2000;
 					else
 						val = WindowsAPI.GetWindowLongPtr(txt.Handle, WindowsAPI.GWL_STYLE).ToInt64() & ~0x2000;
@@ -640,7 +599,7 @@ namespace Keysharp.Builtins
 
 					long val;
 
-					if (opts.number)
+					if (opts.number.IsTrue())
 						val = WindowsAPI.GetWindowLongPtr(rtxt.Handle, WindowsAPI.GWL_STYLE).ToInt64() | 0x2000;
 					else
 						val = WindowsAPI.GetWindowLongPtr(rtxt.Handle, WindowsAPI.GWL_STYLE).ToInt64() & ~0x2000;

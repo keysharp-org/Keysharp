@@ -52,48 +52,127 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>
-			/// Selects the item at a 1-based position, or the first whose text matches. Unlike ControlChooseIndex, this
-			/// raises no Change or DoubleClick event.
+			/// Selects by 1-based position or case-insensitive text prefix without raising a Change event.
 			/// </summary>
 			public object Choose(object value)
 			{
-				var s = value as string;
-				_ = value.TryCoerceInt(out var i);
-				i--;
+				if (value is double number)
+					value = Script.FormatFloat(number);
 
-				if (Ctrl is KeysharpTabControl tc)
+				if (Ctrl is not KeysharpTabControl tc)
+					return ChooseItem(value, false);
+
+				TabPage page = null;
+
+				if (value is string s)
+					page = s.Length > 0 ? tc.FindTab(s, false) : null;
+				else if (!value.CoerceInt(out var i))
+					return DefaultObject;
+				else if (i >= 1 && i <= tc.TabPages.Count)
+					page = tc.TabPages[i - 1];
+
+				//A tab control always shows one tab, so there is no choosing none.
+				if (page == null)
+					return Errors.InvalidParameterErrorOccurred(1, "Gui.List.Prototype.Choose", value);
+
+				eventHandlerActive = false;
+
+				try
 				{
-					if (!string.IsNullOrEmpty(s))
-					{
-						if (tc.FindTab(s, false) is TabPage tp)
-							tc.SelectTab(tp);
-					}
-					else if (i >= 0)
-						tc.SelectTab(i);
+					tc.SelectTab(page);
 				}
-				else if (Ctrl is KeysharpListBox lb)
+				finally
 				{
-					if (!string.IsNullOrEmpty(s))
-						lb.SelectItem(s);
-					else if (i >= 0)
-						lb.SetSelected(i, true);
-					else
-						lb.ClearSelected();
-				}
-				else if (Ctrl is KeysharpComboBox cb)
-				{
-					if (!string.IsNullOrEmpty(s))
-						cb.SelectItem(s);
-					else if (i >= 0)
-						cb.SelectedIndex = i;
-					else if (cb.DropDownStyle != ComboBoxStyle.DropDownList)
-					{
-						cb.SelectedIndex = -1;
-						cb.ResetText();
-					}
+					eventHandlerActive = true;
 				}
 
 				return DefaultObject;
+			}
+
+			internal object ChooseItem(object value, bool exact)
+			{
+				int index, count;
+
+				switch (Ctrl)
+				{
+					case KeysharpListBox lb:
+						count = lb.Items.Count;
+						index = value is string ls ? (exact ? lb.FindStringExact(ls) : lb.FindString(ls)) : 0;
+						break;
+
+					case KeysharpComboBox cb:
+						count = cb.Items.Count;
+						index = value is string cs ? (exact ? cb.FindStringExact(cs) : cb.FindString(cs)) : 0;
+						break;
+
+					default:
+						return DefaultObject;
+				}
+
+				//Text puts any text into a ComboBox's field and selects nothing, as AutoHotkey's ControlSetChoice does.
+				var fieldText = exact && value is string text && Ctrl is KeysharpComboBox { DropDownStyle: not ComboBoxStyle.DropDownList } ? text : null;
+
+				if (fieldText != null)
+					index = -1;
+				else if (value is string s)
+				{
+					if (s.Length == 0)
+						index = -1;
+					else if (index < 0)
+						return Invalid();
+				}
+				else if (!value.CoerceInt(out var position))
+					return DefaultObject;
+				else if ((index = position - 1) < -1 || index >= count)
+					return Invalid();
+
+				eventHandlerActive = false;
+
+				try
+				{
+					switch (Ctrl)
+					{
+#if WINDOWS
+						case KeysharpListBox lb when lb.SelectionMode != SelectionMode.One:
+							if (exact || index < 0)
+								lb.ClearSelected();
+
+							if (index < 0)
+								break;
+
+							lb.SetSelected(index, true);
+
+							if (value is string match)
+								for (var i = index + 1; i < count; i++)
+									if (lb.Items[i] is string item && (exact ? item.Equals(match, StringComparison.OrdinalIgnoreCase) : item.StartsWith(match, StringComparison.OrdinalIgnoreCase)))
+										lb.SetSelected(i, true);
+
+							break;
+#endif
+
+						case KeysharpListBox lb:
+							lb.SelectedIndex = index;
+							break;
+
+						case KeysharpComboBox cb:
+							cb.SelectedIndex = index;
+
+							//CB_SETCURSEL -1 also empties a ComboBox's field.
+							if (index < 0 && cb.DropDownStyle != ComboBoxStyle.DropDownList)
+								cb.Text = fieldText ?? "";
+
+							break;
+					}
+				}
+				finally
+				{
+					eventHandlerActive = true;
+				}
+
+				return DefaultObject;
+
+				object Invalid() => exact ? Errors.ValueErrorOccurred("Invalid value.", value)
+									: Errors.InvalidParameterErrorOccurred(1, "Gui.List.Prototype.Choose", value);
 			}
 
 			/// <summary>

@@ -6,9 +6,11 @@ namespace Keysharp.Builtins
 		public partial class Control : KeysharpObject
 		{
 			//The ListView selection and focus last reported to the script, which ItemSelect and ItemFocus are diffed against.
-			private protected HashSet<int> listViewSelectedRows;
-			private protected int listViewFocusedRow = -1;
+			//Held by row rather than by number, so that rows inserted or deleted before them do not change them.
+			private HashSet<KeysharpListView.ListViewItem> listViewSelection;
+			private KeysharpListView.ListViewItem listViewFocus;
 			private bool listViewCheckClickActive;
+			private bool listViewMouseSelectPending;
 			public string ClassNN => _control is Window && WindowQuery.CreateWindow(_control.Handle) is WindowInfoBase wi ? wi.ClassNN : "";
 
 			public object Gui => gui != null && gui.TryGetTarget(out var g) ? g : Errors.ErrorOccurred("GUI control's parent GUI is no longer available.");
@@ -52,21 +54,20 @@ namespace Keysharp.Builtins
 
 					if (_control is KeysharpListBox lb)
 					{
+						var item = lb.SelectedIndex >= 0 ? lb.Items[lb.SelectedIndex]?.ToString() : null;
+
 						if (lb.SelectionMode == SelectionMode.One)
-						{
-							if (lb.SelectedIndices.Count > 0 && lb.SelectedItem is string s)
-								return s;
-						}
-						else
-							return new Array(lb.SelectedItems);
+							return item ?? "";
+
+						return item != null ? Array.Literal(item) : new Array();
 					}
 
 					if (_control is KeysharpComboBox cb)
 					{
-						if (cb.DropDownStyle == ComboBoxStyle.DropDownList && cb.SelectedIndex > 0 && cb.SelectedItem is string s)
-							return s;
-						else
-							return cb.Text;
+						if (cb.DropDownStyle != ComboBoxStyle.DropDownList)
+							return cb.Text ?? "";
+
+						return cb.SelectedIndex >= 0 ? cb.Items[cb.SelectedIndex]?.ToString() ?? "" : "";
 					}
 
 					if (_control is KeysharpStatusStrip ss)
@@ -87,37 +88,15 @@ namespace Keysharp.Builtins
 					if (!value.CoerceString(out var s))
 						return;
 
-					if (_control is KeysharpListBox lb)
-					{
-						if (lb.SelectionMode == SelectionMode.One)
-						{
-							lb.SelectedItem = s;
-						}
-						else
-						{
-							lb.SelectedItems.Clear();
-							lb.SelectedIndices.Clear();
-							for (var i = 0; i < lb.Items.Count; i++)
-							{
-								if (lb.Items[i] is string item && item == s)
-									lb.SetSelected(i, true);
-							}
-						}
-					}
-					else if (_control is KeysharpComboBox cb)
-					{
-						if (s?.Length == 0)
-							cb.SelectedIndex = -1;
-
-						if (cb.DropDownStyle == ComboBoxStyle.DropDownList)
-							cb.SelectedItem = s;
-						else
-							cb.Text = s;
-					}
+					if (this is List list && _control is KeysharpListBox or KeysharpComboBox)
+						_ = list.ChooseItem(s, true);
 					else if (_control is KeysharpTabControl tc)
 						tc.SelectTab(s);
 					else if (_control is KeysharpGroupBox gb)
 						gb.Text = s;
+					//A status bar's text is its first part's, as SetWindowText sets it in AutoHotkey.
+					else if (this is StatusBar sb)
+						_ = sb.SetText(s);
 					else
 						_control.Text = s;
 
@@ -162,9 +141,12 @@ namespace Keysharp.Builtins
 					}
 					else if (_control is KeysharpListBox lb)
 					{
-						return lb.SelectionMode == SelectionMode.One
-							   ? lb.SelectedIndices.Count > 0 ? (long)lb.SelectedIndices[0] + 1 : 0L
-							   : new Array(lb.SelectedIndices.Cast<int>().Select(x => (long)x + 1));
+						var position = lb.SelectedIndex + 1L;
+
+						if (lb.SelectionMode == SelectionMode.One)
+							return position;
+
+						return position > 0 ? Array.Literal(position) : new Array();
 					}
 					else if (_control is KeysharpDateTimePicker dtp)
 						return Conversions.ToYYYYMMDDHH24MISS(dtp.Value.GetValueOrDefault());
@@ -176,8 +158,9 @@ namespace Keysharp.Builtins
 						return (long)pb.Value;
 					else if (_control is KeysharpTabControl tc)
 						return (long)tc.SelectedIndex + 1;
-					else if (_control is KeysharpStatusStrip ss)
-						return ss.Text;//Unsure if this is what's intended.
+					//A StatusBar has no value in AutoHotkey, only the text of its parts.
+					else if (_control is KeysharpStatusStrip)
+						return DefaultObject;
 					else if (_control is KeysharpPictureBox pic)
 						return pic.Filename;
 					else if (_control is TextControl ctrl)
@@ -214,39 +197,12 @@ namespace Keysharp.Builtins
 					}
 					else if (_control is KeysharpRadioButton rb)
 						rb.Checked = Options.OnOff(value) ?? false;
-					else if (_control is KeysharpComboBox cmb)
+					else if (this is List list && _control is KeysharpListBox or KeysharpComboBox)
 					{
-						if (!value.CoerceInt(out var ival))
+						if (!value.CoerceLong(out var position))
 							return;
 
-						cmb.SelectedIndex = ival - 1;
-					}
-					else if (_control is KeysharpListBox lb)
-					{
-						if (value is Array ar)
-						{
-							lb.SelectedItems.Clear();
-							lb.SelectedIndices.Clear();
-
-							foreach (var arval in ar)
-							{
-								if (!arval.CoerceInt(out var index))
-									return;
-
-								lb.SetSelected(index - 1, true);
-							}
-						}
-						else
-						{
-							if (!value.CoerceInt(out var ival))
-								return;
-
-							lb.SelectedItems.Clear();
-							lb.SelectedIndices.Clear();
-							var index = ival - 1;
-							if (index >= 0 && index < lb.Items.Count)
-								lb.SelectedItem = lb.Items[index];
-						}
+						_ = list.ChooseItem(position, true);
 					}
 					else if (_control is KeysharpDateTimePicker dtp)
 					{
@@ -288,8 +244,8 @@ namespace Keysharp.Builtins
 
 						tc.SelectedIndex = ival - 1;
 					}
-					else if (_control is KeysharpStatusStrip ss)
-						ss.Text = val;
+					else if (_control is KeysharpStatusStrip)
+						_ = Errors.ErrorOccurred("Invalid usage.");
 					else if (_control is KeysharpPictureBox pic)
 					{
 						if (val == "")
@@ -432,7 +388,6 @@ namespace Keysharp.Builtins
 					lv.SelectedRowsChanged += Lv_SelectedRowsChanged;
 					lv.ColumnClicked += Lv_ColumnClick;
 					lv.CellEdited += Lv_AfterLabelEdit;
-					lv.KeyDown += Lv_KeyDownEdit;
 					lv.MouseDoubleClick += Lv_MouseDoubleClickEdit;
 				}
 				else if (_control is KeysharpTrackBar tb)
@@ -562,175 +517,90 @@ namespace Keysharp.Builtins
 				}
 				else if (_control is KeysharpListBox lb)
 				{
-					if (opts.vscroll.HasValue)
-						lb.ScrollAlwaysVisible = opts.vscroll.Value;
-
-					if (opts.hscrollamt != int.MinValue)
-						lb.HorizontalScrollbar = true;
-
-					if (opts.hscrollamt > 0)
-						lb.HorizontalExtent = opts.hscrollamt;
-
 					if (opts.sort.HasValue)
 						lb.Sorted = opts.sort.Value;
 				}
 				else if (_control is KeysharpComboBox cb)
 				{
-					if (opts.sort.IsTrue())
+					if (opts.sort.HasValue)
 					{
-						cb.Sorted = true;
+						cb.Sorted = opts.sort.Value;
 
 						if (cb.DropDownStyle != ComboBoxStyle.DropDownList)
-						{
-							cb.AutoComplete = true;
-						}
-					}
-					else if (opts.sort.IsFalse())
-					{
-						cb.Sorted = false;
-
-						if (cb.DropDownStyle != ComboBoxStyle.DropDownList)
-						{
-							cb.AutoComplete = false;
-						}
+							cb.AutoComplete = opts.sort.Value;
 					}
 
 					if (typename != Keyword_DropDownList && opts.cmbsimple.HasValue)
-					{
 						cb.DropDownStyle = opts.cmbsimple.IsTrue() ? ComboBoxStyle.Simple : ComboBoxStyle.DropDown;
-					}
 				}
 				else if (_control is KeysharpTextBox txt)
 				{
-					txt.AcceptsTab = opts.wanttab ?? false;
-					txt.AcceptsReturn = opts.wantreturn ?? false;
+					if (opts.rdonly.HasValue)
+						txt.ReadOnly = opts.rdonly.Value;
 
-					if (opts.wantctrla.IsFalse())
-					{
-						//txt.PreviewKeyDown += Builtins.Gui.SuppressCtrlAPreviewKeyDown;
-						txt.KeyDown += Builtins.Gui.SuppressCtrlAKeyDown;
-					}
-					else if (opts.wantctrla.IsTrue())
-					{
-						//txt.PreviewKeyDown -= Builtins.Gui.SuppressCtrlAPreviewKeyDown;
-						txt.KeyDown -= Builtins.Gui.SuppressCtrlAKeyDown;
-					}
+					SetWantCtrlA(txt, opts.wantctrla);
 
 					if (opts.limit != int.MinValue)
 						txt.MaxLength = opts.limit;
 
-					txt.IsNumeric = opts.number;
+					if (opts.number.HasValue)
+						txt.IsNumeric = opts.number.Value;
 
-					if (opts.lowercase.IsTrue())
-						txt.CharacterCasing = CharacterCasing.Lower;
-					else if (opts.uppercase.IsTrue())
-						txt.CharacterCasing = CharacterCasing.Upper;
-					else
-						txt.CharacterCasing = CharacterCasing.Normal;
+					txt.CharacterCasing = opts.Casing(txt.CharacterCasing);
 				}
 				else if (_control is KeysharpPasswordBox ptxt)
 				{
-					ptxt.AcceptsTab = opts.wanttab ?? false;
-					ptxt.AcceptsReturn = opts.wantreturn ?? false;
+					if (opts.rdonly.HasValue)
+						ptxt.ReadOnly = opts.rdonly.Value;
 
-					if (opts.wantctrla.IsFalse())
-					{
-						ptxt.KeyDown += Builtins.Gui.SuppressCtrlAKeyDown;
-					}
-					else if (opts.wantctrla.IsTrue())
-					{
-						ptxt.KeyDown -= Builtins.Gui.SuppressCtrlAKeyDown;
-					}
+					SetWantCtrlA(ptxt, opts.wantctrla);
 
 					if (opts.limit != int.MinValue)
 						ptxt.MaxLength = opts.limit;
 
-					ptxt.IsNumeric = opts.number;
+					if (opts.number.HasValue)
+						ptxt.IsNumeric = opts.number.Value;
 
-					if (opts.lowercase.IsTrue())
-						ptxt.CharacterCasing = CharacterCasing.Lower;
-					else if (opts.uppercase.IsTrue())
-						ptxt.CharacterCasing = CharacterCasing.Upper;
-					else
-						ptxt.CharacterCasing = CharacterCasing.Normal;
+					ptxt.CharacterCasing = opts.Casing(ptxt.CharacterCasing);
 
-					if (opts.pwd)
-					{
-						if (opts.pwdch != "")
-							ptxt.PasswordChar = opts.pwdch[0];
-						else
-							ptxt.UseSystemPasswordChar = true;
-					}
+					if (opts.pwd && opts.pwdch != "")
+						ptxt.PasswordChar = opts.pwdch[0];
 				}
 				else if (_control is KeysharpTextArea ttxt)
 				{
-					ttxt.AcceptsTab = opts.wanttab ?? true;
-					ttxt.AcceptsReturn = opts.wantreturn ?? true;
+					if (opts.wanttab.HasValue)
+						ttxt.AcceptsTab = opts.wanttab.Value;
 
-					if (opts.wantctrla.IsFalse())
-					{
-						ttxt.KeyDown += Builtins.Gui.SuppressCtrlAKeyDown;
-					}
-					else if (opts.wantctrla.IsTrue())
-					{
-						ttxt.KeyDown -= Builtins.Gui.SuppressCtrlAKeyDown;
-					}
+					if (opts.wantreturn.HasValue)
+						ttxt.AcceptsReturn = opts.wantreturn.Value;
 
-					if (opts.vscroll.IsTrue() && opts.hscrollamt != int.MinValue)
-						ttxt.ScrollBars = ScrollBars.Both;
-					else if (opts.vscroll.IsTrue() || ttxt.Multiline)
-						ttxt.ScrollBars = ScrollBars.Vertical;
-					else if (opts.hscrollamt != int.MinValue)
-						ttxt.ScrollBars = ScrollBars.Horizontal;
+					if (opts.rdonly.HasValue)
+						ttxt.ReadOnly = opts.rdonly.Value;
 
-					if (opts.limit != int.MinValue)
-						ttxt.MaxLength = opts.limit;
+					SetWantCtrlA(ttxt, opts.wantctrla);
 
-					ttxt.IsNumeric = opts.number;
+					if (opts.number.HasValue)
+						ttxt.IsNumeric = opts.number.Value;
 
-					if (opts.lowercase.IsTrue())
-						ttxt.CharacterCasing = CharacterCasing.Lower;
-					else if (opts.uppercase.IsTrue())
-						ttxt.CharacterCasing = CharacterCasing.Upper;
-					else
-						ttxt.CharacterCasing = CharacterCasing.Normal;
+					ttxt.CharacterCasing = opts.Casing(ttxt.CharacterCasing);
 
 					if (opts.wordwrap.HasValue)
-						ttxt.WordWrap = opts.wordwrap.IsTrue();
+						ttxt.Wrap = opts.wordwrap.IsTrue();
 				}
 				else if (_control is KeysharpRichEdit rtxt)
 				{
-					rtxt.AcceptsTab = opts.wanttab ?? false;
+					if (opts.wanttab.HasValue)
+						rtxt.AcceptsTab = opts.wanttab.Value;
 
-					if (opts.wantctrla.IsFalse())
-					{
-						//rtxt.PreviewKeyDown += Builtins.Gui.SuppressCtrlAPreviewKeyDown;
-						rtxt.KeyDown += Builtins.Gui.SuppressCtrlAKeyDown;
-					}
-					else if (opts.wantctrla.IsTrue())
-					{
-						//rtxt.PreviewKeyDown -= Builtins.Gui.SuppressCtrlAPreviewKeyDown;
-						rtxt.KeyDown -= Builtins.Gui.SuppressCtrlAKeyDown;
-					}
+					if (opts.rdonly.HasValue)
+						rtxt.ReadOnly = opts.rdonly.Value;
 
-					if (opts.vscroll.IsTrue() && opts.hscrollamt != int.MinValue)
-						rtxt.ScrollBars = RichTextBoxScrollBars.Both;
-					else if (opts.vscroll.IsTrue() || rtxt.Multiline)
-						rtxt.ScrollBars = RichTextBoxScrollBars.Vertical;
-					else if (opts.hscrollamt != int.MinValue)
-						rtxt.ScrollBars = RichTextBoxScrollBars.Horizontal;
+					SetWantCtrlA(rtxt, opts.wantctrla);
 
-					if (opts.limit != int.MinValue)
-						rtxt.MaxLength = opts.limit;
+					if (opts.number.HasValue)
+						rtxt.IsNumeric = opts.number.Value;
 
-					rtxt.IsNumeric = opts.number;
-
-					if (opts.lowercase.IsTrue())
-						rtxt.CharacterCasing = CharacterCasing.Lower;
-					else if (opts.uppercase.IsTrue())
-						rtxt.CharacterCasing = CharacterCasing.Upper;
-					else
-						rtxt.CharacterCasing = CharacterCasing.Normal;
+					rtxt.CharacterCasing = opts.Casing(rtxt.CharacterCasing);
 				}
 				else if (_control is KeysharpTrackBar tb)
 				{
@@ -758,14 +628,8 @@ namespace Keysharp.Builtins
 				}
 				else if (_control is KeysharpTreeView tv)
 				{
-					if (opts.buttons.HasValue)
-						tv.ShowPlusMinus = opts.buttons.Value;
-
 					if (opts.rdonly.HasValue)
 						tv.LabelEdit = !opts.rdonly.Value;
-
-					if (opts.lines.HasValue)
-						tv.ShowLines = opts.lines.Value;
 
 					if (tv.LabelEdit)
 					{
@@ -811,9 +675,6 @@ namespace Keysharp.Builtins
 						lv.KeyDown -= Builtins.Gui.Tv_Lv_KeyDown;
 					}
 
-					if (opts.wantf2.HasValue)
-						lv.AllowF2Edit = !opts.wantf2.IsFalse();
-
 					if (opts.lvview.HasValue)
 						lv.View = opts.lvview.Value;
 
@@ -821,11 +682,6 @@ namespace Keysharp.Builtins
 						lv.AllowColumnReorder = true;
 					else if ((opts.remlvstyle & 0x10) == 0x10)
 						lv.AllowColumnReorder = false;
-
-					if ((opts.addlvstyle & 0x20) == 0x20)
-						lv.FullRowSelect = true;
-					else if ((opts.remlvstyle & 0x20) == 0x20)
-						lv.FullRowSelect = false;
 
 					if (opts.sort.IsTrue())
 						lv.Sorting = SortOrder.Ascending;
@@ -881,22 +737,14 @@ namespace Keysharp.Builtins
 				}
 				else if (_control is KeysharpNumericUpDown nud)
 				{
-					if (opts.halign.HasValue)
-						nud.UpDownAlign = opts.halign.Value == GuiOptions.HorizontalAlignment.Left ? LeftRightAlignment.Left : LeftRightAlignment.Right;
-
 					if (opts.nudinc.HasValue)
 						nud.Increment = opts.nudinc.Value;
-
-					if (opts.hex.HasValue)
-						nud.Hexadecimal = opts.hex.Value;
 
 					if (opts.nudlow.HasValue)
 						nud.Minimum = opts.nudlow.Value;
 
 					if (opts.nudhigh.HasValue)
 						nud.Maximum = opts.nudhigh.Value;
-
-					nud.ThousandsSeparator = (opts.addstyle & 0x80) != 0x80;
 				}
 
 				SetContentAlignment(_control, opts);
@@ -925,6 +773,17 @@ namespace Keysharp.Builtins
 				//	Reflections.SafeSetProperty(_control, "BorderStyle", opts.thinborder.Value ? BorderStyle.FixedSingle : BorderStyle.None);
 
 				return DefaultObject;
+			}
+
+			private static void SetWantCtrlA(Forms.Control edit, bool? want)
+			{
+				if (!want.HasValue)
+					return;
+
+				edit.KeyDown -= Builtins.Gui.SuppressCtrlAKeyDown;
+
+				if (!want.Value)
+					edit.KeyDown += Builtins.Gui.SuppressCtrlAKeyDown;
 			}
 
 			public object Redraw()
@@ -960,22 +819,20 @@ namespace Keysharp.Builtins
 
 			internal void _control_Click(object sender, EventArgs e)
 			{
-				if (!eventHandlerActive)
+				//Where this runs on MouseDown, only the left button is a click, as in AutoHotkey.
+				if (!eventHandlerActive || e is MouseEventArgs { Buttons: not MouseButtons.Primary })
 					return;
 
-				if (_control is KeysharpTreeView)
+				if (_control is KeysharpListView lv)
 				{
-					//Don't report Click here: this runs on MouseDown, before the TreeView updates its
-					//selection, so GetSelection() would return the previously selected item (forcing the
-					//user to click twice). The Click event is reported from Tv_CellClick instead, which
-					//receives the actually-clicked node. This mirrors the Windows backend.
+					//A click on a row is reported from Lv_CellClick, which is given the row; MouseDown comes before the
+					//selection follows it. A click on no row raises no CellClick, and AutoHotkey reports it as row 0.
+					if (lv.GetCellAt((e as MouseEventArgs)?.Location ?? default) is null or { Type: GridCellType.None })
+						clickHandlers?.InvokeEventHandlers(this, 0L);
 				}
-				else if (_control is KeysharpListView lv)
+				else if (_control is KeysharpTreeView)
 				{
-					if (lv.SelectedIndices.Count > 0)
-						clickHandlers.InvokeEventHandlers(this, lv.SelectedIndices[0] + 1L);
-					else
-						clickHandlers.InvokeEventHandlers(this, 0L);
+					//As for a ListView row, the clicked node is reported from Tv_CellClick.
 				}
 				else if (_control is KeysharpLinkLabel ll)
 				{
@@ -1030,8 +887,8 @@ namespace Keysharp.Builtins
 				{
 					KeysharpListBox lb => lb.SelectedIndex + 1L,
 					KeysharpListView lv when !fromKeyboard => lv.GetCellAt(location) is { RowIndex: >= 0 } cell ? cell.RowIndex + 1L : 0L,
-					KeysharpListView lv => lv.SelectedIndices.Count > 0 ? lv.SelectedIndices[0] + 1L : 0L,
-					KeysharpTreeView tv when !fromKeyboard => (tv.GetCellAt(location)?.Item as TreeNode)?.Handle.ToInt64() ?? 0L,
+					KeysharpListView lv => lv.FocusedRow + 1L,
+					KeysharpTreeView tv when !fromKeyboard => tv.NodeAt(location)?.Handle.ToInt64() ?? 0L,
 					KeysharpTreeView tv => tv.SelectedNode?.Handle.ToInt64() ?? 0L,
 					KeysharpStatusStrip sbar when !fromKeyboard => sbar.PartFromPoint(),
 					_ => 0L
@@ -1097,10 +954,10 @@ namespace Keysharp.Builtins
 					return;
 
 				//Clicking the checkbox column toggles the check and raises ItemCheck (not Click).
-				if (tv.HasCheckBoxes && e.Column == tv.Columns.IndexOf(tv.CheckColumn))
+				if (tv.HasCheckBoxes && e.Column == tv.Columns.IndexOf(tv.CheckColumn) && e.Buttons == MouseButtons.Primary)
 				{
 					node.Checked = !node.Checked;
-					tv.CheckedBeginInvoke(new Action(tv.ReloadData), true, false);
+					tv.CheckedBeginInvoke(new Action(() => tv.ReloadItem(node, false)), true, false);
 					itemCheckHandlers?.InvokeEventHandlers(this, node.Handle.ToInt64(), node.Checked ? 1L : 0L);
 					return;
 				}
@@ -1131,34 +988,39 @@ namespace Keysharp.Builtins
 				}
 
 				if (e.Item is not KeysharpListView.ListViewItem item)
-				{
 					return;
-				}
 
 				var rowIndex = e.Row;
-				if (rowIndex < 0)
-					rowIndex = lv.Items.IndexOf(item);
-				if (rowIndex < 0)
-					return;
 
 				var grid = (Eto.Forms.GridView)lv;
 				var checkColumnIndex = lv.HasCheckBoxes ? grid.Columns.IndexOf(lv.CheckColumn) : -1;
-				if (checkColumnIndex >= 0 && e.Column == checkColumnIndex)
+				var checkClick = checkColumnIndex >= 0 && e.Column == checkColumnIndex && e.Buttons == MouseButtons.Primary;
+				if (checkClick)
 				{
 					listViewCheckClickActive = true;
 					item.Checked = !item.Checked;
-					lv.RefreshDataStore();
+					lv.ReloadData(rowIndex);
 					itemCheckHandlers?.InvokeEventHandlers(this, rowIndex + 1L, item.Checked ? 1L : 0L);
 					_ = Eto.Forms.Application.Instance.InvokeAsync(() => listViewCheckClickActive = false);
 
-					if (lv.MultiSelect)
-						grid.SelectRow(rowIndex);
-					else
-						grid.SelectedRow = rowIndex;
+				}
 
-					lv.FocusedItem = item;
-					listViewFocusedRow = rowIndex;
-					Lv_SelectedRowsChanged(sender, EventArgs.Empty);
+				lv.FocusedItem = item;
+				//The toolkit applies Ctrl/Shift selection after CellClick; selecting here changes its anchor or toggle.
+				if (lv.MultiSelect && (e.Modifiers & (Forms.Keys.Control | Forms.Keys.Shift | Forms.Keys.Application)) != 0)
+				{
+					listViewMouseSelectPending = true;
+					lv.CheckedBeginInvoke(() =>
+					{
+						if (_control != lv || lv.IsDisposed)
+							return;
+
+						Lv_SelectedRowsChanged(sender, EventArgs.Empty);
+						listViewMouseSelectPending = false;
+
+						if (!checkClick && e.Buttons == MouseButtons.Primary)
+							clickHandlers?.InvokeEventHandlers(this, rowIndex + 1L);
+					}, false, true);
 					return;
 				}
 
@@ -1167,9 +1029,10 @@ namespace Keysharp.Builtins
 				else
 					grid.SelectedRow = rowIndex;
 
-				lv.FocusedItem = item;
-				listViewFocusedRow = rowIndex;
 				Lv_SelectedRowsChanged(sender, EventArgs.Empty);
+
+				if (!checkClick && e.Buttons == MouseButtons.Primary)
+					clickHandlers?.InvokeEventHandlers(this, rowIndex + 1L);
 			}
 
 			internal void Lv_SelectedRowsChanged(object sender, EventArgs e)
@@ -1177,71 +1040,55 @@ namespace Keysharp.Builtins
 				if (_control is not KeysharpListView lv)
 					return;
 
-				var prevFocusedRow = listViewFocusedRow;
-				var current = new HashSet<int>();
 				var grid = (Eto.Forms.GridView)lv;
-				foreach (var index in grid.SelectedRows)
-					current.Add(index + 1);
-				if (current.Count == 0 && grid.SelectedRow >= 0)
-					current.Add(grid.SelectedRow + 1);
+				var items = lv.Items;
+				var current = new HashSet<KeysharpListView.ListViewItem>();
+				var first = -1;
 
-				var previous = listViewSelectedRows ?? [];
-
-				lv.SelectedItems.Clear();
-				lv.SelectedIndices.Clear();
-				for (var i = 0; i < lv.Items.Count; i++)
+				foreach (var row in grid.SelectedRows)
 				{
-					var isSelected = current.Contains(i + 1);
-					lv.Items[i].Selected = isSelected;
-					if (isSelected)
-					{
-						lv.SelectedItems.Add(lv.Items[i]);
-						lv.SelectedIndices.Add(i);
-					}
+					_ = current.Add(items[row]);
+
+					if (first < 0 || row < first)
+						first = row;
 				}
 
-				//A change the script made raises no event, as in AutoHotkey, but must not be reported later either; the
-				//focus it set stays as it set it.
+				var previous = listViewSelection;
+				var previousFocus = listViewFocus;
+				listViewSelection = current;
+
+				//A change the script made raises no event, as in AutoHotkey, and is not reported later either; the focus it
+				//set stays as it set it.
 				if (!eventHandlerActive)
 				{
-					listViewSelectedRows = current;
+					listViewFocus = lv.FocusedItem;
 					return;
 				}
 
+				//The user moved the selection away from the focused row, so the focus moves with it.
+				if (!listViewMouseSelectPending && first >= 0 && (lv.FocusedItem is not { } focused || !current.Contains(focused)))
+					lv.FocusedItem = items[first];
+
+				listViewFocus = lv.FocusedItem;
+
 				if (selectedItemChangedHandlers != null)
 				{
-					foreach (var row in current)
+					//Deselections first, as the native control reports them. A row the selection lost by being deleted is
+					//no longer there to report.
+					if (previous != null && !previous.IsSubsetOf(current))
 					{
-						if (!previous.Contains(row))
-							selectedItemChangedHandlers.InvokeEventHandlers(this, (long)row, 1L);
+						for (var i = 0; i < items.Count; i++)
+							if (previous.Contains(items[i]) && !current.Contains(items[i]))
+								selectedItemChangedHandlers.InvokeEventHandlers(this, i + 1L, 0L);
 					}
 
-					foreach (var row in previous)
-					{
-						if (!current.Contains(row))
-							selectedItemChangedHandlers.InvokeEventHandlers(this, (long)row, 0L);
-					}
+					foreach (var row in grid.SelectedRows)
+						if (previous == null || !previous.Contains(items[row]))
+							selectedItemChangedHandlers.InvokeEventHandlers(this, row + 1L, 1L);
 				}
 
-				listViewSelectedRows = current;
-
-				var preferred = grid.SelectedRow >= 0 && current.Contains(grid.SelectedRow + 1)
-					? grid.SelectedRow
-					: current.Count > 0 ? current.Max() - 1 : -1;
-
-				if (preferred >= 0 && preferred < lv.Items.Count)
-				{
-					lv.FocusedItem = lv.Items[preferred];
-					listViewFocusedRow = preferred;
-				}
-				else
-				{
-					lv.FocusedItem = null;
-					listViewFocusedRow = -1;
-				}
-
-				if (focusedItemChangedHandlers != null && listViewFocusedRow >= 0 && listViewFocusedRow != prevFocusedRow)
-					focusedItemChangedHandlers.InvokeEventHandlers(this, (long)(listViewFocusedRow + 1));
+				if (focusedItemChangedHandlers != null && listViewFocus != null && listViewFocus != previousFocus)
+					focusedItemChangedHandlers.InvokeEventHandlers(this, lv.FocusedRow + 1L);
 			}
 
 			internal void Lv_ColumnClick(int columnIndex)
@@ -1250,39 +1097,13 @@ namespace Keysharp.Builtins
 					columnClickHandlers?.InvokeEventHandlers(this, columnIndex + 1L);
 			}
 
-			internal void Lv_KeyDownEdit(object sender, KeyEventArgs e)
-			{
-				if (_control is not KeysharpListView lv)
-					return;
-
-				if (!lv.LabelEdit || !lv.AllowF2Edit)
-					return;
-
-				if (e.Key != Forms.Keys.F2)
-					return;
-
-				if (lv.SelectedItems.Count > 0)
-					lv.SelectedItems[0].BeginEdit();
-				else if (lv.FocusedItem != null)
-					lv.FocusedItem.BeginEdit();
-				else if (lv.Items.Count > 0)
-					lv.Items[0].BeginEdit();
-
-				e.Handled = true;
-			}
-
 			internal void Lv_MouseDoubleClickEdit(object sender, MouseEventArgs e)
 			{
-				if (_control is not KeysharpListView lv)
-					return;
-
-				if (!lv.LabelEdit)
-					return;
-
-				if (lv.SelectedItems.Count > 0)
-					lv.SelectedItems[0].BeginEdit();
-				else if (lv.FocusedItem != null)
-					lv.FocusedItem.BeginEdit();
+				if (_control is KeysharpListView { LabelEdit: true } lv)
+				{
+					var row = ((Eto.Forms.GridView)lv).SelectedRow;
+					lv.BeginEditRow(row >= 0 ? row : lv.FocusedRow);
+				}
 			}
 
 			internal void Tv_AfterSelect(object sender, EventArgs e)

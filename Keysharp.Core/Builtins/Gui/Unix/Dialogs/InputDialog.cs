@@ -1,99 +1,61 @@
 #if !WINDOWS
-using System.ComponentModel;
 using Eto.Forms;
 using Eto.Drawing;
 
 namespace Keysharp.Builtins
 {
-	internal class InputDialog : Dialog
+	/// <summary>
+	/// The InputBox off Windows. Its result is the word InputBox reports as Result, or null when the window was closed
+	/// without a button, which is a Cancel.
+	/// </summary>
+	internal sealed class InputDialog : Dialog<string>
 	{
-		private readonly Script owner;
-		private readonly Button btnCancel;
-		private readonly Button btnOK;
-		private readonly Forms.Label prompt;
-		private readonly PasswordBox txtMessage;
-		private UITimer timer;
+		private readonly TextControl input;
+		private readonly int x, y;
 
-		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-		public string Default { get; set; }
-
-		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-		public string Message
+		/// <param name="passwordChar">Null for plain text, "" to mask it with the toolkit's character.</param>
+		/// <param name="width">The client area's width as InputBox's W gives it, or int.MinValue to fit the contents; likewise the others.</param>
+		internal InputDialog(string title, string prompt, string defaultText, string passwordChar, int width, int height, int x, int y)
 		{
-			get => txtMessage.Text;
-			set => txtMessage.Text = value;
-		}
-
-		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-		public string PasswordChar
-		{
-			get => txtMessage.PasswordChar.ToString();
-			set
-			{
-				if (string.IsNullOrEmpty(value))
-					txtMessage.PasswordChar = '\0';
-				else
-					txtMessage.PasswordChar = value[0];
-			}
-		}
-
-		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-		public string Prompt
-		{
-			get => prompt.Text;
-			set => prompt.Text = value;
-		}
-
-		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-		public string Result { get; private set; } = "";
-
-		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-		public int Timeout { get; set; }
-
-		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-		public new string Title
-		{
-			get => base.Title;
-			set => base.Title = value;
-		}
-
-		public InputDialog()
-		{
-			owner = Script.TheScript;
-			prompt = new Forms.Label();
-			txtMessage = new ();
-			btnOK = new Button { Text = "OK" };
-			btnCancel = new Button { Text = "Cancel" };
-
-			btnOK.Click += (_, _) =>
-			{
-				Result = "OK";
-				Close();
-			};
-			btnCancel.Click += (_, _) =>
-			{
-				Result = "Cancel";
-				Close();
-			};
-
-			DefaultButton = btnOK;
-			AbortButton = btnCancel;
+			this.x = x;
+			this.y = y;
+			Title = title;
 			Resizable = false;
+			Topmost = true;
 
-			Content = new StackLayout
+			if (Script.TheScript.scriptIcon is { } icon)//Not the tray's: that is null under #NoTrayIcon or A_IconHidden.
+				Icon = icon;
+
+			if (passwordChar == null)
+				input = new TextBox { Text = defaultText };
+			else
+			{
+				var box = new PasswordBox { Text = defaultText };
+
+				if (passwordChar.Length > 0)
+					box.PasswordChar = passwordChar[0];
+
+				input = box;
+			}
+
+			var ok = new Button { Text = "OK" };
+			ok.Click += (_, _) => Close("OK");
+			var cancel = new Button { Text = "Cancel" };
+			cancel.Click += (_, _) => Close("Cancel");
+			DefaultButton = ok;
+			AbortButton = cancel;
+
+			//The prompt takes whatever height the field and the buttons leave.
+			Content = new TableLayout
 			{
 				Padding = new Padding(10),
-				Spacing = 8,
-				Items =
+				Spacing = new Size(8, 8),
+				Size = new Size(width == int.MinValue ? -1 : width, height == int.MinValue ? -1 : height),
+				Rows =
 				{
-					prompt,
-					txtMessage,
-					new StackLayout
-					{
-						Orientation = Orientation.Horizontal,
-						Spacing = 8,
-						Items = { btnOK, btnCancel }
-					}
+					new TableRow(new Forms.Label { Text = prompt, Wrap = WrapMode.Word }) { ScaleHeight = true },
+					input,
+					new TableLayout(new TableRow(new TableCell(null, true), ok, cancel)) { Spacing = new Size(8, 0) }
 				}
 			};
 
@@ -101,30 +63,22 @@ namespace Keysharp.Builtins
 			// inherit one reliably, so give this dialog its own standard menu.
 			GuiHelper.EnsureSystemMenu(this);
 
-			Shown += InputDialog_Shown;
+			if (x != int.MinValue && y != int.MinValue)
+				Location = new Point(x, y);
+			else if (x != int.MinValue || y != int.MinValue)
+				Shown += (_, _) => CentreOmittedCoordinate();
+
+			Shown += (_, _) => input.Focus();
 		}
 
-		private void InputDialog_Shown(object sender, System.EventArgs e)
+		internal string Value => input.Text;
+
+		//As in AutoHotkey, a coordinate left out centres the dialog in that direction.
+		private void CentreOmittedCoordinate()
 		{
-			var icon = owner.scriptIcon;//Not the tray's: that is null under #NoTrayIcon or A_IconHidden, and shows the suspended icon while suspended.
-
-			if (icon != null)
-				Icon = icon;
-
-			txtMessage.Text = Default;
-			txtMessage.Focus();
-
-			if (Timeout > 0)
-			{
-				timer = new UITimer { Interval = Timeout };
-				timer.Elapsed += (_, _) =>
-				{
-					timer.Stop();
-					Result = "Cancel";
-					Close();
-				};
-				timer.Start();
-			}
+			var area = (Screen ?? Eto.Forms.Screen.PrimaryScreen).WorkingArea;
+			Location = new Point(x != int.MinValue ? x : (int)(area.X + (area.Width - Width) / 2),
+								 y != int.MinValue ? y : (int)(area.Y + (area.Height - Height) / 2));
 		}
 	}
 }

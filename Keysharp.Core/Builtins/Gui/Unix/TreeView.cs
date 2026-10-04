@@ -4,8 +4,8 @@ namespace Keysharp.Builtins
 	public partial class Gui
 	{
 		/// <summary>
-		/// The Eto half of <see cref="Gui.TreeView"/>. The tree keeps a map from ID to node, and a change to the
-		/// nodes reaches the view when it next reloads, which -Redraw defers.
+		/// The Eto half of <see cref="Gui.TreeView"/>. The tree keeps a map from ID to node. Top-level items reach the
+		/// view as they are added and removed; any other change to the nodes reaches it with the tree's next reload.
 		/// </summary>
 		public partial class TreeView
 		{
@@ -29,7 +29,10 @@ namespace Keysharp.Builtins
 				var siblings = parent?.Nodes ?? Tv.Nodes;
 				var index = after == null ? 0 : ReferenceEquals(after, siblings[^1]) ? siblings.Count : siblings.IndexOf(after) + 1;
 				var node = siblings.Insert(index, text);
-				Tv.ReloadDataIfActive();
+
+				if (parent != null)
+					Tv.InvalidateModel();
+
 				Tv.DelayedExpandParent(node);
 				return node;
 			}
@@ -37,13 +40,15 @@ namespace Keysharp.Builtins
 			private partial void RemoveNode(TreeNode node)
 			{
 				var tv = Tv;
+				var nested = node.Parent is TreeNode;
 				ForgetExpansion(node);
 				node.Remove();
 
 				if (ReferenceEquals(tv.SelectedNode, node))
 					tv.SelectedNode = null;
 
-				tv.ReloadDataIfActive();
+				if (nested)
+					tv.InvalidateModel();
 			}
 
 			//An item marked to expand once it has children keeps no mark after it is gone.
@@ -62,20 +67,9 @@ namespace Keysharp.Builtins
 				tv.ClearMarksForExpansion();
 				tv.SelectedNode = null;
 				tv.TopNode = null;
-				tv.ReloadDataIfActive();
 			}
 
-			private partial int NodeCount() => CountNodes(Tv.Nodes);
-
-			private static int CountNodes(TreeNodeCollection nodes)
-			{
-				var count = nodes.Count;
-
-				foreach (var node in nodes)
-					count += CountNodes(node.Nodes);
-
-				return count;
-			}
+			private partial int NodeCount() => Tv.NodeCount;
 
 			private partial bool IsBold(TreeNode node) => node.NodeFont?.Bold == true;
 
@@ -107,9 +101,13 @@ namespace Keysharp.Builtins
 
 			private partial void SortChildren(TreeNode node)
 			{
+				var selected = Tv.SelectedNode;
 				(node?.Nodes ?? Tv.Nodes).SortByText();
-				Tv.ReloadDataIfActive();
+				Tv.InvalidateModel();
+				Tv.SelectedNode = selected;
 			}
+
+			partial void ShowItemChange(TreeNode node) => Tv.ShowItemChange(node);
 		}
 	}
 }

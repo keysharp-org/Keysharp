@@ -768,7 +768,7 @@ namespace Keysharp.Builtins
 					var ml = opts.multiline.IsTrue() || opts.rows > 1 || opts.height != int.MinValue;
 #if WINDOWS
 
-					if (opts.number)
+					if (opts.number.IsTrue())
 						opts.addstyle |= WindowsAPI.ES_NUMBER;
 
 					if (opts.limit == int.MinValue && !ml)
@@ -823,120 +823,59 @@ namespace Keysharp.Builtins
 
 					ctrl = txt;
 #else
-					if (!ml) {
-						KeysharpTextBox txt = null;
-						KeysharpPasswordBox ptxt = null;
+					//The toolkit's multi-line edit has no character limit or password mode, so those options are
+					//single-line only here.
+					var casing = opts.lowercase.IsTrue() ? CharacterCasing.Lower : opts.uppercase.IsTrue() ? CharacterCasing.Upper : CharacterCasing.Normal;
+					var numeric = opts.number.IsTrue();
 
-						if (opts.pwd)
-							ptxt = new KeysharpPasswordBox(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle);
-						else
-							txt = new KeysharpTextBox(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle);
-
-						if (txt != null)
-						{
-							txt.ReadOnly = opts.rdonly ?? false;
-							txt.Font = Conversions.ConvertFont(form.Font);
-						}
-						else
-						{
-							ptxt.ReadOnly = opts.rdonly ?? false;
-							ptxt.Font = Conversions.ConvertFont(form.Font);
-						}
-
-						if (opts.number)
-						{
-							if (txt != null)
-								txt.IsNumeric = true;
-							else
-								ptxt.IsNumeric = true;
-						}
-
-						if (opts.limit != int.MinValue)
-						{
-							if (txt != null)
-								txt.MaxLength = opts.limit;
-							else
-								ptxt.MaxLength = opts.limit;
-						}
-
-						if (opts.lowercase.IsTrue())
-						{
-							if (txt != null)
-								txt.CharacterCasing = CharacterCasing.Lower;
-							else
-								ptxt.CharacterCasing = CharacterCasing.Lower;
-						}
-						else if (opts.uppercase.IsTrue())
-						{
-							if (txt != null)
-								txt.CharacterCasing = CharacterCasing.Upper;
-							else
-								ptxt.CharacterCasing = CharacterCasing.Upper;
-						}
-						else
-						{
-							if (txt != null)
-								txt.CharacterCasing = CharacterCasing.Normal;
-							else
-								ptxt.CharacterCasing = CharacterCasing.Normal;
-						}
-
-						if (opts.pwd)
-						{
-							if (opts.pwdch != "")
-								ptxt.PasswordChar = opts.pwdch[0];
-							else
-								ptxt.UseSystemPasswordChar = true;
-						}
-
-						if (opts.wantctrla.IsFalse())
-						{
-							if (txt != null)
-								txt.KeyDown += SuppressCtrlAKeyDown;
-							else
-								ptxt.KeyDown += SuppressCtrlAKeyDown;
-						}
-						ctrl = txt ?? (Forms.Control)ptxt;
-					}
-					else
-					{
-						var txt = new KeysharpTextArea(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
+					if (ml)
+						ctrl = new KeysharpTextArea(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 						{
 							AcceptsTab = opts.wanttab ?? true,
 							AcceptsReturn = opts.wantreturn ?? true,
-							Multiline = ml,
 							ReadOnly = opts.rdonly ?? false,
-							WordWrap = ml,
-							Font = Conversions.ConvertFont(form.Font)
+							Wrap = true,
+							Font = form.Font,
+							IsNumeric = numeric,
+							CharacterCasing = casing
+						};
+					else if (opts.pwd)
+					{
+						var ptxt = new KeysharpPasswordBox(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
+						{
+							ReadOnly = opts.rdonly ?? false,
+							Font = form.Font,
+							IsNumeric = numeric,
+							CharacterCasing = casing
 						};
 
-						if (opts.number)
-							txt.IsNumeric = true;
+						//Without a character of its own the toolkit's masking character is kept.
+						if (opts.pwdch != "")
+							ptxt.PasswordChar = opts.pwdch[0];
+
+						if (opts.limit != int.MinValue)
+							ptxt.MaxLength = opts.limit;
+
+						ctrl = ptxt;
+					}
+					else
+					{
+						var txt = new KeysharpTextBox(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
+						{
+							ReadOnly = opts.rdonly ?? false,
+							Font = form.Font,
+							IsNumeric = numeric,
+							CharacterCasing = casing
+						};
 
 						if (opts.limit != int.MinValue)
 							txt.MaxLength = opts.limit;
 
-						if (opts.lowercase.IsTrue())
-							txt.CharacterCasing = CharacterCasing.Lower;
-						else if (opts.uppercase.IsTrue())
-							txt.CharacterCasing = CharacterCasing.Upper;
-						else
-							txt.CharacterCasing = CharacterCasing.Normal;
-
-						if (opts.pwd)
-						{
-							if (opts.pwdch != "")
-								txt.PasswordChar = opts.pwdch[0];
-							else
-								txt.UseSystemPasswordChar = true;
-						}
-
-						if (opts.wantctrla.IsFalse())
-						{
-							txt.KeyDown += SuppressCtrlAKeyDown;
-						}
 						ctrl = txt;
 					}
+
+					if (opts.wantctrla.IsFalse())
+						ctrl.KeyDown += SuppressCtrlAKeyDown;
 
 #endif
 					holder = new Edit(this, ctrl, typeo);
@@ -948,7 +887,7 @@ namespace Keysharp.Builtins
 					var ml = !opts.multiline.IsFalse();
 #if WINDOWS
 
-					if (opts.number)
+					if (opts.number.IsTrue())
 						opts.addstyle |= WindowsAPI.ES_NUMBER;
 
 					if (opts.limit == int.MinValue && !ml)
@@ -958,16 +897,11 @@ namespace Keysharp.Builtins
 					var txt = new KeysharpRichEdit(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 					{
 						AcceptsTab = opts.wanttab ?? false,
-						Multiline = ml,
 						ReadOnly = opts.rdonly ?? false,
 						Font = Conversions.ConvertFont(form.Font)
 					};
-#if !WINDOWS
-
-					if (opts.number)
-						txt.IsNumeric = true;
-
-#endif
+#if WINDOWS
+					txt.Multiline = ml;
 
 					if (opts.limit != int.MinValue)
 						txt.MaxLength = opts.limit;
@@ -978,6 +912,10 @@ namespace Keysharp.Builtins
 						txt.ScrollBars = RichTextBoxScrollBars.Vertical;
 					else if (opts.hscrollamt != int.MinValue)
 						txt.ScrollBars = RichTextBoxScrollBars.Horizontal;
+#else
+					if (opts.number.IsTrue())
+						txt.IsNumeric = true;
+#endif
 
 					if (opts.lowercase.IsTrue())
 						txt.CharacterCasing = CharacterCasing.Lower;
@@ -1022,11 +960,14 @@ namespace Keysharp.Builtins
 					var nud = new KeysharpNumericUpDown(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 					{
 						Increment = opts.nudinc ?? 1,
-						ThousandsSeparator = (opts.addstyle & 0x80) != 0x80,
-						UpDownAlign = opts.halign.HasValue && opts.halign.Value == GuiOptions.HorizontalAlignment.Left ? LeftRightAlignment.Left : LeftRightAlignment.Right,
-						Hexadecimal = opts.hex.IsTrue(),
-						Font = Conversions.ConvertFont(form.Font)
+						Font = form.Font
 					};
+#if WINDOWS
+					//Eto's stepper shows decimal digits on the right and no thousands separator.
+					nud.ThousandsSeparator = (opts.addstyle & 0x80) != 0x80;
+					nud.UpDownAlign = opts.halign.HasValue && opts.halign.Value == GuiOptions.HorizontalAlignment.Left ? LeftRightAlignment.Left : LeftRightAlignment.Right;
+					nud.Hexadecimal = opts.hex.IsTrue();
+#endif
 
 					if (opts.nudlow.HasValue)
 						nud.Minimum = opts.nudlow.Value;
@@ -1125,8 +1066,10 @@ namespace Keysharp.Builtins
 							chk.CheckState = CheckState.Indeterminate;
 					}
 
+#if WINDOWS
 					if (opts.halign.GetValueOrDefault() == GuiOptions.HorizontalAlignment.Right)
 						chk.CheckAlign = ContentAlignment.MiddleRight;
+#endif
 
 					ctrl = chk;
 					holder = new CheckBox(this, ctrl, typeo);
@@ -1211,7 +1154,7 @@ namespace Keysharp.Builtins
 
 					if (opts.choose.Any())
 						ddl.SelectedIndex = opts.choose[0];
-
+#if WINDOWS
 					ddl.IntegralHeight = true;
 
 					if (opts.rows != float.MinValue)
@@ -1219,6 +1162,7 @@ namespace Keysharp.Builtins
 						ddl.IntegralHeight = false;
 						ddl.MaxDropDownItems = (int)opts.rows;
 					}
+#endif
 
 					ctrl = ddl;
 					holder = isCombo ? new ComboBox(this, ctrl, typeo) : new DDL(this, ctrl, typeo);
@@ -1247,7 +1191,7 @@ namespace Keysharp.Builtins
 
 						lb.Items.AddRange(items.Select(x => opts.lowercase.IsTrue() ? x.ToLower() : opts.uppercase.IsTrue() ? x.ToUpper() : x).ToArray());
 					}
-
+#if WINDOWS
 					if (opts.vscroll.HasValue)
 						lb.ScrollAlwaysVisible = opts.vscroll.Value;
 
@@ -1257,16 +1201,13 @@ namespace Keysharp.Builtins
 					if (opts.hscrollamt > 0)
 						lb.HorizontalExtent = opts.hscrollamt;
 
-					if (opts.choose.Any())
+					if (opts.choose.Any() && lb.SelectionMode == SelectionMode.MultiExtended)
 					{
-						if (lb.SelectionMode == SelectionMode.MultiExtended)
-						{
-							foreach (var ch in opts.choose)
-								lb.SelectedIndices.Add(ch);
-						}
-						else if (lb.SelectionMode == SelectionMode.One)
-							lb.SelectedIndex = opts.choose[0];
+						foreach (var ch in opts.choose)
+							lb.SelectedIndices.Add(ch);
 					}
+					else if (opts.choose.Any())
+						lb.SelectedIndex = opts.choose[0];
 
 					if (opts.tabstops.Any())
 					{
@@ -1276,6 +1217,11 @@ namespace Keysharp.Builtins
 
 					if ((opts.addstyle & 0x100) == 0x100)
 						lb.IntegralHeight = false;
+#else
+					//Eto's list box selects one item at a time, so a Multi list takes the first item Choose names.
+					if (opts.choose.Any())
+						lb.SelectedIndex = opts.choose[0];
+#endif
 
 					ctrl = lb;
 					holder = new ListBox(this, ctrl, typeo);
@@ -1304,7 +1250,6 @@ namespace Keysharp.Builtins
 
 #if !WINDOWS
 					lv.SyncColumns();
-					Reflections.SafeSetProperty(lv, "AllowF2Edit", !opts.wantf2.IsFalse());
 #endif
 					if (lv.LabelEdit && !opts.wantf2.IsFalse())//Note that checking !IsFalse() is not the same as IsTrue().
 						lv.KeyDown += Tv_Lv_KeyDown;
@@ -1319,15 +1264,11 @@ namespace Keysharp.Builtins
 					if (opts.multiline.HasValue)
 						lv.MultiSelect = opts.multiline.Value;
 
-					if ((opts.addlvstyle & 0x10) == 0x10)
-						lv.AllowColumnReorder = true;
-					else if ((opts.remlvstyle & 0x10) == 0x10)
-						lv.AllowColumnReorder = false;
-
-					if ((opts.addlvstyle & 0x20) == 0x20)
-						lv.FullRowSelect = true;
-					else if ((opts.remlvstyle & 0x20) == 0x20)
-						lv.FullRowSelect = false;
+					//LVS_EX_HEADERDRAGDROP and LVS_EX_FULLROWSELECT are on unless removed, as in AHK.
+					lv.AllowColumnReorder = (opts.remlvstyle & 0x10) == 0;
+#if WINDOWS
+					lv.FullRowSelect = (opts.remlvstyle & 0x20) == 0;
+#endif
 
 					if (opts.header.HasValue)
 						lv.HeaderStyle = opts.header.IsFalse() ? ColumnHeaderStyle.None : ColumnHeaderStyle.Clickable;
@@ -1369,14 +1310,7 @@ namespace Keysharp.Builtins
 #else
 					var tv = new KeysharpTreeView(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle);
 					tv.CheckBoxes = opts.ischecked.HasValue && opts.ischecked.Value != 0;
-					if (opts.buttons.HasValue)
-						tv.ShowPlusMinus = opts.buttons.Value;
-
-					if (opts.lines.HasValue)
-						tv.ShowLines = opts.lines.Value;
-
 					tv.LabelEdit = opts.rdonly.IsFalse();
-					tv.HideSelection = false;
 
 					if (tv.LabelEdit && !opts.wantf2.IsFalse())//Note that checking !IsFalse() is not the same as IsTrue().
 						tv.KeyDown += Tv_Lv_KeyDown;
@@ -1701,10 +1635,12 @@ namespace Keysharp.Builtins
 						Font = Conversions.ConvertFont(form.Font)
 					};
 					StatusStrip = ss;
+#if WINDOWS
 					ss.AutoSize = false;
 					ss.ImageScalingSize = new Size(Convert.ToInt32(28 * dpiscale), Convert.ToInt32(28 * dpiscale));
 					ss.Dock = DockStyle.Bottom;//Docking must be used and must be on the bottom. Don't ever set form.AutoSize = true with this, they are incompatible.
 					ss.SizingGrip = false;
+#endif
 					if (opts.bgcolor.HasValue)
 						ss.BackColor = opts.bgcolor.Value;
 
@@ -1715,6 +1651,9 @@ namespace Keysharp.Builtins
 						Name = $"AutoToolStripLabel{ss.Items.Count}",
 						Font = Conversions.ConvertFont(form.Font)
 					});
+#if !WINDOWS
+					ss.UpdateItems();
+#endif
 
 					ctrl = ss;
 					holder = new StatusBar(this, ctrl, typeo);
@@ -2008,12 +1947,14 @@ namespace Keysharp.Builtins
 					{
 						if (ctrl is KeysharpComboBox cmb && cmb.DropDownStyle != ComboBoxStyle.Simple)
 						{
-							var combinedHeight = Convert.ToInt32(dpiscale * opts.height);
 							var baseHeight = cmb.PreferredSize.Height;
+#if WINDOWS
+							var combinedHeight = Convert.ToInt32(dpiscale * opts.height);
 							var minDropHeight = GetComboMinDropHeight(cmb);
 							var dropHeight = Math.Max(minDropHeight, combinedHeight - baseHeight);
 							cmb.IntegralHeight = false;
 							cmb.DropDownHeight = dropHeight;
+#endif
 							finalHeight = baseHeight;
 						}
 						else
@@ -2036,8 +1977,16 @@ namespace Keysharp.Builtins
 #endif
 					else if (ctrl is KeysharpGroupBox)
 						r = 2;
+#if WINDOWS
 					else if (ctrl is KeysharpTextBox tb)
 						r = tb.Multiline ? 3 : 1;
+#else
+					//A multi-line Edit is a KeysharpTextArea here.
+					else if (ctrl is KeysharpTextArea)
+						r = 3;
+					else if (ctrl is KeysharpTextBox)
+						r = 1;
+#endif
 					else if (ctrl is KeysharpPasswordBox || ctrl is KeysharpDateTimePicker || ctrl is HotkeyBox)
 						r = 1;
 					else if (ctrl is TabPage || ctrl is KeysharpTabControl)
@@ -2057,6 +2006,7 @@ namespace Keysharp.Builtins
 
 					if (ctrl is KeysharpComboBox cmb)
 					{
+#if WINDOWS
 						if (rowsSpecified)
 						{
 							var rowCount = Math.Max(r, 1);
@@ -2067,6 +2017,7 @@ namespace Keysharp.Builtins
 								cmb.DropDownHeight = GetComboDropHeight(cmb, rowCount);
 							}
 						}
+#endif
 					}
 					else if (ctrl is KeysharpListBox lb)
 					{
@@ -2184,7 +2135,7 @@ namespace Keysharp.Builtins
 			//Lay such controls out at least as tall as they actually render. Multi-row/variable controls (lists,
 			//multiline text, containers) are excluded so an intentionally smaller explicit height is still honored.
 			if (finalHeight >= 0
-				&& (ctrl is KeysharpNumericUpDown || ctrl is KeysharpTextBox { Multiline: false }
+				&& (ctrl is KeysharpNumericUpDown || ctrl is KeysharpTextBox
 					|| ctrl is KeysharpPasswordBox || ctrl is HotkeyBox || ctrl is KeysharpDateTimePicker))
 				finalHeight = Math.Max(finalHeight, ctrl.PreferredSize.Height);
 #endif
@@ -2522,23 +2473,11 @@ namespace Keysharp.Builtins
 
 			return holder;
 
-			int GetComboItemHeight(KeysharpComboBox combo)
-			{
 #if WINDOWS
-				return combo.ItemHeight > 0 ? combo.ItemHeight : Convert.ToInt32(fontpixels + 0.5);
-#else
-				return Convert.ToInt32(fontpixels + 0.5);
-#endif
-			}
+			//Eto's combo box sizes its own drop-down list, so these are Windows only.
+			int GetComboItemHeight(KeysharpComboBox combo) => combo.ItemHeight > 0 ? combo.ItemHeight : Convert.ToInt32(fontpixels + 0.5);
 
-			int GetComboDropChromeHeight()
-			{
-#if WINDOWS
-				return SystemInformation.BorderSize.Height * 2;
-#else
-				return 2;
-#endif
-			}
+			int GetComboDropChromeHeight() => SystemInformation.BorderSize.Height * 2;
 
 			int GetComboMinDropHeight(KeysharpComboBox combo)
 			{
@@ -2556,6 +2495,7 @@ namespace Keysharp.Builtins
 				var minHeight = itemHeight + chrome;
 				return Math.Max(height, minHeight);
 			}
+#endif
 			bool IsTextLike(Forms.Control control) => control is KeysharpLabel || control is KeysharpLinkLabel;
 		}
 
@@ -3633,11 +3573,15 @@ namespace Keysharp.Builtins
 						result.DefinePropInternal(tb.Name, new OwnPropsDesc(tb.Value));
 					else if (control is KeysharpListBox lb)
 					{
+#if WINDOWS
 						result.DefinePropInternal(lb.Name, new OwnPropsDesc(!guictrl.AltSubmit
 									   ? guictrl.Value
 									   : lb.SelectionMode == SelectionMode.One
 									   ? lb.SelectedItem as string ?? ""
 									   : new Array(lb.SelectedItems.Cast<object>().Where(xx => xx is string).Select(x => x as string))));
+#else
+						result.DefinePropInternal(lb.Name, new OwnPropsDesc(!guictrl.AltSubmit ? guictrl.Value : guictrl.Text));
+#endif
 					}
 					else if (control is RadioButton rb)//This is supposed to do something special if it's part of a group, but unsure how to determine that.
 					{
@@ -4211,8 +4155,8 @@ namespace Keysharp.Builtins
 			{
 				if (sender is KeysharpTreeView tv)
 					tv.BeginLabelEdit(tv.SelectedNode);
-				else if (sender is KeysharpListView lv && lv.SelectedItems.Count > 0)
-					lv.SelectedItems[0].BeginEdit();
+				else if (sender is KeysharpListView lv)
+					lv.BeginEditRow(((GridView)lv).SelectedRow);
 			}
 #endif
 		}
@@ -4484,7 +4428,7 @@ namespace Keysharp.Builtins
 			internal int? nudinc;
 			internal int? nudlow;
 			internal string nudrange = "";
-			internal bool number = false;
+			internal bool? number;
 			internal bool opt16 = false;
 
 			//MonthCal.
@@ -4531,6 +4475,12 @@ namespace Keysharp.Builtins
 			internal int y = int.MinValue;
 			internal Positioning xpos = Positioning.None;
 			internal Positioning ypos = Positioning.None;
+
+			internal CharacterCasing Casing(CharacterCasing current) =>
+				lowercase == true ? CharacterCasing.Lower
+				: uppercase == true ? CharacterCasing.Upper
+				: lowercase == false && current == CharacterCasing.Lower || uppercase == false && current == CharacterCasing.Upper ? CharacterCasing.Normal
+				: current;
 
 			internal enum Positioning
 			{

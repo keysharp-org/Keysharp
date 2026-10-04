@@ -283,8 +283,9 @@ namespace Keysharp.Builtins
 
 			try
 			{
-				if (timeout != 0)
-					showCts.CancelAfter(TimeSpan.FromSeconds(timeout));
+				//AutoHotkey caps a timeout at 2147483 seconds, which also keeps it in CancelAfter's range.
+				if (timeout > 0)
+					showCts.CancelAfter(TimeSpan.FromSeconds(Math.Min(timeout, 2147483.0)));
 
 				var showTask = script.InvokeOnUIThread(() => show(showCts.Token));
 
@@ -680,6 +681,33 @@ namespace Keysharp.Builtins
 				return "All Files (*.*)|*.*";
 		}
 
+		/// <summary>PasswordChar is null without Password, or empty for the toolkit's default mask.</summary>
+		private static (int W, int H, int X, int Y, double Timeout, string PasswordChar) ParseInputBoxOptions(string options)
+		{
+			int w = int.MinValue, h = int.MinValue, x = int.MinValue, y = int.MinValue;
+			var timeout = 0.0;
+			string passwordChar = null;
+
+			foreach (Range r in options.AsSpan().SplitAny(Spaces))
+			{
+				var temp = 0;
+				var pw = "";
+				var opt = options.AsSpan(r).Trim();
+
+				if (opt.Length == 0)
+					continue;
+
+				if (Options.TryParse(opt, "w", ref temp)) w = temp;
+				else if (Options.TryParse(opt, "h", ref temp)) h = temp;
+				else if (Options.TryParse(opt, "x", ref temp)) x = temp;
+				else if (Options.TryParse(opt, "y", ref temp)) y = temp;
+				else if (Options.TryParse(opt, "t", ref timeout)) { }
+				else if (Options.TryParseString(opt, "Password", ref pw, StringComparison.OrdinalIgnoreCase, true)) passwordChar = pw;
+			}
+
+			return (w, h, x, y, timeout, passwordChar);
+		}
+
 		/// <summary>
 		/// Displays an input box to ask the user to enter a string.
 		/// </summary>
@@ -709,30 +737,7 @@ namespace Keysharp.Builtins
 			if (!prompt.CoerceString(out var p) || !title.CoerceString(out var t) || !options.CoerceString(out var opts) || !@default.CoerceString(out var def))
 				return null;
 
-			var w = int.MinValue;
-			var h = int.MinValue;
-			var x = int.MinValue;
-			var y = int.MinValue;
-			var pw = "";
-			var passwordSpecified = false;
-			var timeoutSeconds = 0.0;
-
-			foreach (Range r in opts.AsSpan().SplitAny(Spaces))
-			{
-				var temp = 0;
-				var opt = opts.AsSpan(r).Trim();
-
-				if (opt.Length > 0)
-				{
-					if (Options.TryParse(opt, "w", ref temp)) { w = temp; }
-					else if (Options.TryParse(opt, "h", ref temp)) { h = temp; }
-					else if (Options.TryParse(opt, "x", ref temp)) { x = temp; }
-					else if (Options.TryParse(opt, "y", ref temp)) { y = temp; }
-					else if (Options.TryParse(opt, "t", ref timeoutSeconds)) { }
-					else if (Options.TryParseString(opt, "Password", ref pw, StringComparison.OrdinalIgnoreCase, true)) { passwordSpecified = true; }
-				}
-			}
-
+			var (w, h, x, y, timeoutSeconds, passwordChar) = ParseInputBoxOptions(opts);
 			var owner = GuiHelper.DialogOwner;
 
 			return RunInterruptibleUIDialog(() =>
@@ -744,8 +749,8 @@ namespace Keysharp.Builtins
 					Title = t?.Length == 0 ? A_ScriptName : t
 				};
 
-				if (passwordSpecified)
-					input.PasswordChar = pw;
+				if (passwordChar != null)
+					input.PasswordChar = passwordChar;
 				input.Timeout = timeoutSeconds;
 				_ = input.ShowDialog(GetDialogOwnerHandle(owner));
 
@@ -761,69 +766,18 @@ namespace Keysharp.Builtins
 			if (!prompt.CoerceString(out var p) || !title.CoerceString(out var t) || !options.CoerceString(out var opts) || !@default.CoerceString(out var def))
 				return null;
 
-			var pw = "";
-			var passwordSpecified = false;
-
-			foreach (Range r in opts.AsSpan().SplitAny(Spaces))
-			{
-				var opt = opts.AsSpan(r).Trim();
-				if (opt.Length > 0)
-					passwordSpecified |= Options.TryParseString(opt, "Password", ref pw, StringComparison.OrdinalIgnoreCase, true);
-			}
+			var (w, h, x, y, timeout, passwordChar) = ParseInputBoxOptions(opts);
 
 			return RunInterruptibleUIDialog(() =>
 			{
-				var dlg = new Eto.Forms.Dialog<Eto.Forms.DialogResult>
-				{
-					Title = t?.Length == 0 ? A_ScriptName : t,
-					Resizable = false,
-					Topmost = true
-				};
-				Eto.Forms.TextBox textBox = null;
-				Eto.Forms.PasswordBox passwordBox = null;
-				Eto.Forms.Control inputControl;
-				if (passwordSpecified)
-				{
-					passwordBox = new Eto.Forms.PasswordBox { Text = def };
-					inputControl = passwordBox;
-				}
-				else
-				{
-					textBox = new Eto.Forms.TextBox { Text = def };
-					inputControl = textBox;
-				}
-
-				var layout = new Eto.Forms.DynamicLayout
-				{
-					Padding = new Eto.Drawing.Padding(10),
-					DefaultSpacing = new Eto.Drawing.Size(5, 5)
-				};
-				if (p.Length > 0)
-					layout.AddRow(new Eto.Forms.Label { Text = p, Wrap = WrapMode.Word });
-				layout.AddRow(inputControl);
-
-				var ok = new Eto.Forms.Button { Text = "OK" };
-				ok.Click += (_, _) => dlg.Close(Eto.Forms.DialogResult.Ok);
-				var cancel = new Eto.Forms.Button { Text = "Cancel" };
-				cancel.Click += (_, _) => dlg.Close(Eto.Forms.DialogResult.Cancel);
-				dlg.DefaultButton = ok;
-				dlg.AbortButton = cancel;
-
-				layout.AddRow(new Eto.Forms.StackLayout
-				{
-					Orientation = Orientation.Horizontal,
-					HorizontalContentAlignment = HorizontalAlignment.Right,
-					Items = { ok, cancel }
-				});
-
-				dlg.Content = layout;
-				var result = ShowEtoDialog(token => dlg.ShowModalAsync(token));
+				using var input = new InputDialog(t?.Length == 0 ? A_ScriptName : t, p, def, passwordChar, w, h, x, y);
+				var result = ShowEtoDialog(token => input.ShowModalAsync(token), timeout, "Timeout");
 				var obj = new KeysharpObject();
-				obj.DefinePropInternal("Value", new OwnPropsDesc(passwordSpecified ? passwordBox.Text : textBox.Text));
-				obj.DefinePropInternal("Result", new OwnPropsDesc(result == Eto.Forms.DialogResult.Ok ? "OK" : "Cancel"));
+				obj.DefinePropInternal("Value", new OwnPropsDesc(input.Value));
+				obj.DefinePropInternal("Result", new OwnPropsDesc(result ?? "Cancel"));
 				return obj;
 			});
-			}
+		}
 #endif
 
 		/// <summary>

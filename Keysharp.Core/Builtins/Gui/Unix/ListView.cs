@@ -4,21 +4,18 @@ namespace Keysharp.Builtins
 	public partial class Gui
 	{
 		/// <summary>
-		/// The Eto half of <see cref="Gui.ListView"/>. The grid holds the selection, and the rows' cells are rebound
-		/// after a change. A selection the script changes is passed to the ItemSelect bookkeeping, which records it
-		/// without raising an event.
+		/// The Eto half of <see cref="Gui.ListView"/>. The grid shows the rows as they are inserted and removed and holds
+		/// the selection. A selection or focus the script changes is passed to the ItemSelect bookkeeping, which records
+		/// it without raising an event.
 		/// </summary>
 		public partial class ListView
 		{
 			private partial long InsertRow(int index, in ListViewRowOptions options, string[] texts)
 			{
-				var lv = Lv;
-				var row = (index < 0
-						   ? lv.AddRow(texts, options.check == true, options.colstart)
-						   : lv.InsertRow(index, texts, options.check == true, options.colstart)) - 1;
+				var row = Lv.InsertRow(index, texts, options.check == true, options.colstart);
 
 				if (ApplyRowState(row, options))
-					Lv_SelectedRowsChanged(lv, EventArgs.Empty);
+					Lv_SelectedRowsChanged(Lv, EventArgs.Empty);
 
 				return row + 1L;
 			}
@@ -26,7 +23,7 @@ namespace Keysharp.Builtins
 			private partial void ModifyRows(int start, int end, in ListViewRowOptions options, string[] texts)
 			{
 				var lv = Lv;
-				var needsRefresh = false;
+				var changed = false;
 				var selectionChanged = false;
 
 				for (var row = start; row < end; row++)
@@ -38,14 +35,14 @@ namespace Keysharp.Builtins
 						if (texts[i] is string text)
 						{
 							KeysharpListView.SetCellText(item, j, text);
-							needsRefresh = true;
+							changed = true;
 						}
 					}
 
 					if (options.check is bool check)
 					{
 						item.Checked = check;
-						needsRefresh = true;
+						changed = true;
 					}
 
 					selectionChanged |= ApplyRowState(row, options);
@@ -54,8 +51,8 @@ namespace Keysharp.Builtins
 						((Eto.Forms.GridView)lv).ScrollToRow(row);
 				}
 
-				if (needsRefresh)
-					lv.RefreshDataStore();
+				if (changed)
+					lv.ReloadData(Enumerable.Range(start, end - start));
 
 				if (selectionChanged)
 					Lv_SelectedRowsChanged(lv, EventArgs.Empty);
@@ -84,16 +81,12 @@ namespace Keysharp.Builtins
 
 				if (options.focus is bool focus)
 				{
+					var item = lv.Items[row];
+
 					if (focus)
-					{
-						lv.FocusedItem = lv.Items[row];
-						listViewFocusedRow = row;
-					}
-					else if (listViewFocusedRow == row)
-					{
+						lv.FocusedItem = item;
+					else if (lv.FocusedItem == item)
 						lv.FocusedItem = null;
-						listViewFocusedRow = -1;
-					}
 				}
 
 				return options.select.HasValue || options.focus.HasValue;
@@ -103,37 +96,45 @@ namespace Keysharp.Builtins
 			{
 				var lv = Lv;
 
-				if (index < 0)
-					lv.Items.Clear();
-				else
-					lv.Items.RemoveAt(index);
+				//A selected row the script deletes is gone rather than deselected, so the user hears of nothing.
+				eventHandlerActive = false;
 
-				lv.RefreshDataStore();
-				lv.SelectedItems.Clear();
-				lv.SelectedIndices.Clear();
-				lv.FocusedItem = null;
-				listViewSelectedRows = [];
-				listViewFocusedRow = -1;
+				try
+				{
+					if (index < 0)
+					{
+						lv.Items.Clear();
+						lv.FocusedItem = null;
+					}
+					else
+					{
+						if (lv.Items[index] == lv.FocusedItem)
+							lv.FocusedItem = null;
+
+						lv.Items.RemoveAt(index);
+					}
+				}
+				finally
+				{
+					eventHandlerActive = true;
+				}
 			}
 
 			private partial int NextRow(int start, bool focused)
 			{
-				var lv = Lv;
-
 				if (focused)
 				{
-					var row = lv.FocusedItem is { } item ? lv.Items.IndexOf(item) : -1;
+					var row = Lv.FocusedRow;
 					return row > start ? row : -1;
 				}
 
-				var grid = (Eto.Forms.GridView)lv;
 				var next = -1;
 
-				foreach (var row in grid.SelectedRows)
+				foreach (var row in ((Eto.Forms.GridView)Lv).SelectedRows)
 					if (row > start && (next < 0 || row < next))
 						next = row;
 
-				return next < 0 && grid.SelectedRow > start ? grid.SelectedRow : next;
+				return next;
 			}
 
 			private partial int InsertColumn(int index, string title, string[][] rows)
@@ -160,22 +161,11 @@ namespace Keysharp.Builtins
 			private partial void DeleteColumn(int index)
 			{
 				var lv = Lv;
-				var oldCount = lv.Columns.Count;
 				lv.Columns.RemoveAt(index);
-				var newCount = lv.Columns.Count;
 
 				foreach (var item in lv.Items)
-				{
-					var values = new List<string>(oldCount);
-
-					for (var i = 0; i < oldCount; i++)
-						values.Add(KeysharpListView.GetCellText(item, i));
-
-					values.RemoveAt(index);
-
-					for (var i = 0; i < newCount; i++)
-						KeysharpListView.SetCellText(item, i, values[i]);
-				}
+					if (index < item.SubItems.Count)
+						item.SubItems.RemoveAt(index);
 
 				lv.SyncColumns();
 			}

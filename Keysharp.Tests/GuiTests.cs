@@ -747,6 +747,16 @@ namespace Keysharp.Tests
 			Assert.IsTrue(TestScript("control-coordinates", false));
 		}
 
+		[Test, Category("Gui"), NonParallelizable]
+#if WINDOWS
+		[Apartment(ApartmentState.STA)]
+#endif
+		public void GuiWindow()
+		{
+			SkipIfUiInitializationBlocked("Control tests require a live GUI application.");
+			Assert.IsTrue(TestScript("gui-window", false));
+		}
+
 #if WINDOWS
 		// The whole zero-copy design rests on one property: GDI+ drawing through the Bitmap and GDI reading
 		// through the DC address the same memory. If that ever stopped holding, presents would silently show
@@ -875,10 +885,6 @@ namespace Keysharp.Tests
 		[Test, Category("Gui"), NonParallelizable]
 		[Apartment(ApartmentState.STA)]
 		public void WebViewScriptSurface() => Assert.IsTrue(TestScript("gui-webview", false));
-
-		[Test, Category("Gui"), NonParallelizable]
-		[Apartment(ApartmentState.STA)]
-		public void GuiWindow() => Assert.IsTrue(TestScript("gui-window", false));
 
 		[Test, Category("Gui"), NonParallelizable]
 		[Apartment(ApartmentState.STA)]

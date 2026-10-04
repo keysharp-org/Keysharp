@@ -56,152 +56,131 @@ namespace Keysharp.Builtins
 		Lower
 	}
 
-	internal static class TextCasingHelper
+	/// <summary>
+	/// The Uppercase and Lowercase options of an Edit or RichEdit, which convert only the text an edit inserted, whether
+	/// typed, pasted or set, as the Windows edit control does. The toolkit reports a typed character from inside its own
+	/// edit, where the text cannot be changed again, so the inserted text is converted on the UI loop's next pass.
+	/// </summary>
+	internal sealed class TextNormalizer
 	{
-		internal static string ApplyCharacterCasing(CharacterCasing casing, string value)
+		private readonly TextControl control;
+		private readonly Action normalize;
+		private CharacterCasing casing;
+		private bool pending, rewriting;
+		private string normalizedText = "";
+
+		internal TextNormalizer(TextControl control)
 		{
-			return casing switch
-			{
-				CharacterCasing.Upper => value.ToUpperInvariant(),
-				CharacterCasing.Lower => value.ToLowerInvariant(),
-				_ => value
-			};
+			this.control = control;
+			normalize = Normalize;
 		}
 
-		internal static string ApplyCharacterCasingDelta(CharacterCasing casing, string previous, string current)
+		internal CharacterCasing Casing
 		{
-			if (casing == CharacterCasing.Normal)
-				return current;
+			get => casing;
+			set
+			{
+				casing = value;
+				normalizedText = control.Text ?? "";
+			}
+		}
 
-			previous ??= "";
-			current ??= "";
+		/// <summary>Called for every text change, including the one this makes itself.</summary>
+		internal void TextChanged()
+		{
+			if (rewriting || pending || casing == CharacterCasing.Normal)
+				return;
 
-			var prefix = 0;
-			var maxPrefix = Math.Min(previous.Length, current.Length);
-			while (prefix < maxPrefix && previous[prefix] == current[prefix])
-				prefix++;
+			pending = true;
+			Application.Instance.AsyncInvoke(normalize);
+		}
+
+		private void Normalize()
+		{
+			pending = false;
+
+			if (control.IsDisposed || casing == CharacterCasing.Normal)
+				return;
+
+			var current = control.Text ?? "";
+			var previous = normalizedText;
+			var prefix = current.AsSpan().CommonPrefixLength(previous);
+
+			//GTK replacement boundaries must encompass both units of a surrogate pair.
+			if (prefix > 0 && prefix < current.Length && char.IsHighSurrogate(current[prefix - 1]) && char.IsLowSurrogate(current[prefix]))
+				prefix--;
 
 			var suffix = 0;
-			var maxSuffix = Math.Min(previous.Length - prefix, current.Length - prefix);
-			while (suffix < maxSuffix
-				&& previous[previous.Length - 1 - suffix] == current[current.Length - 1 - suffix])
+			var maxSuffix = Math.Min(current.Length, previous.Length) - prefix;
+
+			while (suffix < maxSuffix && current[^(suffix + 1)] == previous[^(suffix + 1)])
 				suffix++;
 
-			var insertedLength = current.Length - prefix - suffix;
-			if (insertedLength <= 0)
-				return current;
+			if (suffix > 0 && suffix < current.Length && char.IsHighSurrogate(current[^(suffix + 1)]) && char.IsLowSurrogate(current[^suffix]))
+				suffix--;
 
-			var inserted = current.Substring(prefix, insertedLength);
-			var adjusted = ApplyCharacterCasing(casing, inserted);
+			var length = current.Length - prefix - suffix;
 
-			if (string.Equals(inserted, adjusted, StringComparison.Ordinal))
-				return current;
+			if (length > 0)
+			{
+				var inserted = current.AsSpan(prefix, length);
+				var adjusted = casing == CharacterCasing.Upper ? inserted.ToString().ToUpperInvariant() : inserted.ToString().ToLowerInvariant();
 
-			return string.Concat(current.AsSpan(0, prefix), adjusted, current.AsSpan(current.Length - suffix));
-		}
+				if (!inserted.SequenceEqual(adjusted))
+				{
+					var caret = control.CaretIndex;
+					rewriting = true;
 
-		internal static int GetCaretIndex(object control)
-		{
-			var prop = control.GetType().GetProperty("CaretIndex");
-			return prop?.GetValue(control) is int i ? i : 0;
-		}
+					try
+					{
+						control.ReplaceText(prefix, length, adjusted);
+					}
+					finally
+					{
+						rewriting = false;
+					}
 
-		internal static void SetCaretIndex(object control, int index)
-		{
-			var prop = control.GetType().GetProperty("CaretIndex");
-			prop?.SetValue(control, index);
+					control.CaretIndex = caret;
+					current = control.Text ?? "";
+				}
+			}
+
+			normalizedText = current;
 		}
 	}
 
-	internal sealed class TextNormalizeState
+	/// <summary>
+	/// The Number option of an Edit or RichEdit, which as ES_NUMBER refuses a typed character that is not a digit. Text a
+	/// script sets or the user pastes is taken as it is, as in AutoHotkey.
+	/// </summary>
+	internal static class NumberOption
 	{
-		private bool suppressTextNormalize;
-		private bool pendingTextNormalize;
-		private string lastCasedText = "";
-
-		internal void Reset(string text)
+		private static readonly EventHandler<TextInputEventArgs> refuseNonDigits = (_, e) =>
 		{
-			lastCasedText = text ?? "";
-		}
+			foreach (var ch in e.Text ?? "")
+			{
+				if (!char.IsDigit(ch))
+				{
+					e.Cancel = true;
+					return;
+				}
+			}
+		};
 
-		internal void HandleTextChanged(
-			Func<string> getText,
-			Action<string> setText,
-			Func<CharacterCasing> getCasing,
-			Func<bool> isNumeric,
-			Func<int> getCaretIndex,
-			Action<int> setCaretIndex,
-			Action<Action> schedule)
+		//Subscribed only while the option is on, since handling TextInput routes the control's keys through Eto's own
+		//input context.
+		internal static void Apply(TextControl control, ref bool numeric, bool value)
 		{
-			if (suppressTextNormalize)
+			if (value == numeric)
 				return;
 
-			var casing = getCasing();
-			var numeric = isNumeric();
+			numeric = value;
 
-			if (!numeric && casing == CharacterCasing.Normal)
-			{
-				lastCasedText = getText() ?? "";
-				return;
-			}
-
-			if (pendingTextNormalize)
-				return;
-
-			pendingTextNormalize = true;
-
-			void Normalize()
-			{
-				pendingTextNormalize = false;
-				var current = getText() ?? "";
-				var adjusted = current;
-
-				if (numeric)
-				{
-					if (current.Any(ch => !char.IsDigit(ch)))
-						adjusted = string.Join("", current.Where(ch => char.IsDigit(ch)));
-				}
-				else
-				{
-					adjusted = TextCasingHelper.ApplyCharacterCasingDelta(casing, lastCasedText, current);
-				}
-
-				if (!string.Equals(current, adjusted, StringComparison.Ordinal))
-				{
-					suppressTextNormalize = true;
-					var caret = getCaretIndex();
-					setText(adjusted);
-					setCaretIndex(Math.Min(caret, adjusted.Length));
-					suppressTextNormalize = false;
-				}
-
-				lastCasedText = adjusted;
-			}
-
-			if (schedule != null)
-				schedule(Normalize);
+			if (value)
+				control.TextInput += refuseNonDigits;
 			else
-				Normalize();
+				control.TextInput -= refuseNonDigits;
 		}
-	}
-
-	public enum ScrollBars
-	{
-		None,
-		Horizontal,
-		Vertical,
-		Both
-	}
-
-	public enum RichTextBoxScrollBars
-	{
-		None,
-		Horizontal,
-		Vertical,
-		Both,
-		ForcedHorizontal,
-		ForcedVertical,
-		ForcedBoth
 	}
 
 	public enum SizeGripStyle
@@ -293,26 +272,19 @@ namespace Keysharp.Builtins
 		Marquee
 	}
 
+	//The style numbers the shared Gui code passes to each constructor are Win32 styles, which these controls have no use for.
+
 	public class KeysharpButton : Button
 	{
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
 		public bool AutoSize { get; set; }
 
 		public KeysharpButton(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
 		}
 	}
 
 	public class KeysharpCheckBox : CheckBox
 	{
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
-
 		//Projected from Checked rather than stored alongside it: a stored copy cannot see the user ticking
 		//the box, so it only ever reports the last assignment.
 		public CheckState CheckState
@@ -326,259 +298,203 @@ namespace Keysharp.Builtins
 				Checked = value == CheckState.Indeterminate ? null : value == CheckState.Checked;
 			}
 		}
-		public ContentAlignment CheckAlign { get; set; } = ContentAlignment.MiddleLeft;
 
 		public KeysharpCheckBox(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
+		}
+	}
+
+	/// <summary>
+	/// The items of a ListBox, DropDownList or ComboBox. With Sort, each item goes after the items that compare equal
+	/// or lower, ignoring case, as a Windows list with LBS_SORT or CBS_SORT places it.
+	/// </summary>
+	public sealed class ListControlItems : ObservableCollection<object>
+	{
+		private bool sorted;
+
+		internal bool Sorted
+		{
+			get => sorted;
+			set
+			{
+				if (value == sorted)
+					return;
+
+				sorted = value;
+
+				if (sorted && Count > 1)
+				{
+					var items = this.ToArray();
+					ClearItems();
+
+					foreach (var item in items)
+						Add(item);
+				}
+			}
+		}
+
+		protected override void InsertItem(int index, object item)
+		{
+			if (sorted)
+			{
+				var text = item?.ToString();
+				int low = 0, high = Count;
+
+				while (low < high)
+				{
+					var mid = (low + high) >>> 1;
+
+					if (string.Compare(this[mid]?.ToString(), text, CultureInfo.CurrentCulture, CompareOptions.IgnoreCase) <= 0)
+						low = mid + 1;
+					else
+						high = mid;
+				}
+
+				index = low;
+			}
+
+			base.InsertItem(index, item);
 		}
 	}
 
 	public class KeysharpComboBox : ComboBox
 	{
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
+		private ComboBoxStyle dropDownStyle = ComboBoxStyle.DropDown;
 
-		public ComboBoxStyle DropDownStyle { get; set; } = ComboBoxStyle.DropDown;
-		public new ObservableCollection<object> Items => DataStore as ObservableCollection<object>;
-		public object SelectedItem { get; set; }
-		public bool DroppedDown { get; set; }
-		public int MaxDropDownItems { get; set; }
-		public bool Sorted { get; set; }
-		public bool IntegralHeight { get; set; }
-		public int DropDownHeight { get; set; }
+		/// <summary>A DropDownList is a combo box whose text cannot be edited. Eto has no always-open list, so Simple shows as DropDown.</summary>
+		public ComboBoxStyle DropDownStyle
+		{
+			get => dropDownStyle;
+			set
+			{
+				dropDownStyle = value;
+				ReadOnly = value == ComboBoxStyle.DropDownList;
+			}
+		}
+
+		public new ListControlItems Items { get; } = new ();
+
+		public bool Sorted
+		{
+			get => Items.Sorted;
+			set => Items.Sorted = value;
+		}
 
 		public KeysharpComboBox(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
 			ItemTextBinding = Binding.Delegate<object, string>(item => item?.ToString());
-			DataStore = new ObservableCollection<object>();
-		}
-
-		public void ResetText()
-		{
-			Text = "";
+			DataStore = Items;
 		}
 	}
 
 	public class KeysharpDateTimePicker : DateTimePicker
 	{
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
-
 		public KeysharpDateTimePicker(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
 		}
 	}
 
 	public class KeysharpCustomControl : Control
 	{
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
-		private readonly string className;
-
 		public KeysharpCustomControl(string _className, int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
-			className = _className;
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
 		}
 	}
 
 	public class KeysharpTextBox : TextBox
 	{
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
-		private readonly TextNormalizeState normalizeState = new TextNormalizeState();
-		private CharacterCasing characterCasing = CharacterCasing.Normal;
+		private readonly TextNormalizer normalizer;
 
-		internal bool IsNumeric { get; set; }
-		public bool AcceptsTab { get; set; }
-		public bool AcceptsReturn { get; set; }
-		public bool Multiline { get; set; }
-		public bool WordWrap { get; set; }
-		public char PasswordChar { get; set; }
-		public bool UseSystemPasswordChar { get; set; }
+		private bool numeric;
+
+		internal bool IsNumeric
+		{
+			get => numeric;
+			set => NumberOption.Apply(this, ref numeric, value);
+		}
+
 		public CharacterCasing CharacterCasing
 		{
-			get => characterCasing;
-			set
-			{
-				characterCasing = value;
-				normalizeState.Reset(Text ?? "");
-			}
-		}
-		public ScrollBars ScrollBars { get; set; } = ScrollBars.None;
-
-		public KeysharpTextBox(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
-		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
-			normalizeState.Reset(Text ?? "");
-			TextChanged += KeysharpEdit_TextChanged;
+			get => normalizer.Casing;
+			set => normalizer.Casing = value;
 		}
 
-		private void KeysharpEdit_TextChanged(object sender, EventArgs e)
+		public KeysharpTextBox(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0) => normalizer = new (this);
+
+		protected override void OnTextChanged(EventArgs e)
 		{
-			normalizeState.HandleTextChanged(
-				() => Text,
-				value => Text = value,
-				() => CharacterCasing,
-				() => IsNumeric,
-				() => TextCasingHelper.GetCaretIndex(this),
-				index => TextCasingHelper.SetCaretIndex(this, index),
-				null);
+			normalizer.TextChanged();
+			base.OnTextChanged(e);
 		}
 	}
 
 	public class KeysharpPasswordBox : PasswordBox
 	{
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
-		private readonly TextNormalizeState normalizeState = new TextNormalizeState();
-		private bool useSystemPasswordChar;
-		private CharacterCasing characterCasing = CharacterCasing.Normal;
+		private readonly TextNormalizer normalizer;
 
-		internal bool IsNumeric { get; set; }
-		public bool AcceptsTab { get; set; }
-		public bool AcceptsReturn { get; set; }
-		public bool Multiline { get; set; }
-		public bool WordWrap { get; set; }
-		public bool UseSystemPasswordChar
+		private bool numeric;
+
+		internal bool IsNumeric
 		{
-			get => useSystemPasswordChar;
-			set
-			{
-				useSystemPasswordChar = value;
-				if (value)
-					PasswordChar = '\0';
-			}
+			get => numeric;
+			set => NumberOption.Apply(this, ref numeric, value);
 		}
+
 		public CharacterCasing CharacterCasing
 		{
-			get => characterCasing;
-			set
-			{
-				characterCasing = value;
-				normalizeState.Reset(Text ?? "");
-			}
-		}
-		public ScrollBars ScrollBars { get; set; } = ScrollBars.None;
-
-		public KeysharpPasswordBox(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
-		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
-			normalizeState.Reset(Text ?? "");
-			TextChanged += KeysharpEdit_TextChanged;
+			get => normalizer.Casing;
+			set => normalizer.Casing = value;
 		}
 
-		private void KeysharpEdit_TextChanged(object sender, EventArgs e)
+		public KeysharpPasswordBox(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0) => normalizer = new (this);
+
+		protected override void OnTextChanged(EventArgs e)
 		{
-			normalizeState.HandleTextChanged(
-				() => Text,
-				value => Text = value,
-				() => CharacterCasing,
-				() => IsNumeric,
-				() => TextCasingHelper.GetCaretIndex(this),
-				index => TextCasingHelper.SetCaretIndex(this, index),
-				action => Application.Instance.InvokeAsync(action));
+			normalizer.TextChanged();
+			base.OnTextChanged(e);
 		}
 	}
 
 	public class KeysharpTextArea : TextArea
 	{
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
-		private readonly TextNormalizeState normalizeState = new TextNormalizeState();
-		private CharacterCasing characterCasing = CharacterCasing.Normal;
+		private readonly TextNormalizer normalizer;
 
-		internal bool IsNumeric { get; set; }
-		public bool Multiline { get; set; }
-		public int MaxLength = -1;
-		public bool WordWrap {
-			get => Wrap;
-			set => Wrap = value;
+		private bool numeric;
+
+		internal bool IsNumeric
+		{
+			get => numeric;
+			set => NumberOption.Apply(this, ref numeric, value);
 		}
-		public char PasswordChar { get; set; }
-		public bool UseSystemPasswordChar { get; set; }
+
 		public CharacterCasing CharacterCasing
 		{
-			get => characterCasing;
-			set
-			{
-				characterCasing = value;
-				normalizeState.Reset(Text ?? "");
-			}
-		}
-		public ScrollBars ScrollBars { get; set; } = ScrollBars.None;
-
-		public KeysharpTextArea(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
-		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
-			normalizeState.Reset(Text ?? "");
-			TextChanged += KeysharpEdit_TextChanged;
+			get => normalizer.Casing;
+			set => normalizer.Casing = value;
 		}
 
-		private void KeysharpEdit_TextChanged(object sender, EventArgs e)
+		public KeysharpTextArea(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0) => normalizer = new (this);
+
+		protected override void OnTextChanged(EventArgs e)
 		{
-			normalizeState.HandleTextChanged(
-				() => Text,
-				value => Text = value,
-				() => CharacterCasing,
-				() => IsNumeric,
-				() => TextCasingHelper.GetCaretIndex(this),
-				index => TextCasingHelper.SetCaretIndex(this, index),
-				action => Application.Instance.InvokeAsync(action));
+			normalizer.TextChanged();
+			base.OnTextChanged(e);
 		}
 	}
 
 	public class KeysharpGroupBox : GroupBox
 	{
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
-
 		public KeysharpGroupBox(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
 		}
 	}
 
 	public class KeysharpLabel : Forms.Label
 	{
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
-
 		public bool AutoSize { get; set; }
 
 		public KeysharpLabel(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
 		}
 	}
 
@@ -594,16 +510,15 @@ namespace Keysharp.Builtins
 
 		internal bool clickSet = false;
 		internal List<Tuple<int, int, Tuple<string, string>>> links;
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
 		private string text = "";
 		private Font font;
 		private Color? textColor;
 		private (float left, float right)[] linkBounds;//Cached x-extent of each link, parallel to links.
+		private (string text, float x, float width, bool link)[] segments = [];//What Paint draws, measured once per Text or Font.
+		private float lineHeight;
 		private bool cursorOverLink;
 		private readonly bool transparent;//True when the native widget is windowless and the form shows through.
 
-		public bool AutoSize { get; set; }
 		public Color TextColor
 		{
 			get => textColor ?? SystemColors.ControlText;
@@ -642,10 +557,6 @@ namespace Keysharp.Builtins
 
 		public KeysharpLinkLabel(string text, int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
 #if LINUX
 			//Make the underlying GTK EventBox windowless so the form shows through (true transparency, like a
 			//Label). Otherwise the drawing area paints its own window black where no text is drawn.
@@ -694,72 +605,52 @@ namespace Keysharp.Builtins
 				e.Graphics.FillRectangle(backgroundBrush, new Rectangle(0, 0, Width, Height));
 			}
 
-			if (text.Length == 0)
-				return;
+			var textColor = TextColor;
 
-			var pos = 0;
-			var x = 0f;
-
-			if (links != null)
+			foreach (var (segment, x, width, link) in segments)
 			{
-				foreach (var link in links)
-				{
-					var start = Math.Min(text.Length, link.Item1);
-					var stop = Math.Min(text.Length, start + link.Item2);
+				var color = link ? LinkColor : textColor;
+				e.Graphics.DrawText(f, color, x, 0, segment);
 
-					if (start > pos)
-						x = DrawSegment(e.Graphics, f, text.Substring(pos, start - pos), x, TextColor, false);
-
-					x = DrawSegment(e.Graphics, f, text.Substring(start, stop - start), x, LinkColor, true);
-					pos = stop;
-				}
+				if (link)
+					e.Graphics.DrawLine(color, x, lineHeight - 1, x + width, lineHeight - 1);
 			}
-
-			if (pos < text.Length)
-				_ = DrawSegment(e.Graphics, f, text.Substring(pos), x, TextColor, false);
-		}
-
-		private static float DrawSegment(Graphics g, Font f, string segment, float x, Color color, bool underline)
-		{
-			if (segment.Length == 0)
-				return x;
-
-			var size = g.MeasureString(f, segment);
-			g.DrawText(f, color, x, 0, segment);
-
-			if (underline)
-				g.DrawLine(color, x, size.Height - 1, x + size.Width, size.Height - 1);
-
-			return x + size.Width;
 		}
 
 		private void UpdateSize()
 		{
-			try
+			var f = font ?? MainWindow.OurDefaultFont;
+			//A single space gives empty text a sensible line height.
+			var size = f.MeasureString(text.Length > 0 ? text : " ");
+			Size = new Size((int)Math.Ceiling(size.Width) + 1, (int)Math.Ceiling(size.Height));
+			lineHeight = size.Height;
+			var list = new List<(string, float, float, bool)>();
+			var bounds = links is { Count: > 0 } ? new (float, float)[links.Count] : null;
+			var pos = 0;
+
+			for (var i = 0; bounds != null && i < links.Count; i++)
 			{
-				using var bmp = new Bitmap(1, 1, PixelFormat.Format32bppRgba);
-				using var g = new Graphics(bmp);
-				var f = font ?? MainWindow.OurDefaultFont;
-				//Measure a single space for empty text so the control keeps a sensible line height.
-				var size = g.MeasureString(f, text.Length > 0 ? text : " ");
-				Size = new Size((int)Math.Ceiling(size.Width) + 1, (int)Math.Ceiling(size.Height));
-
-				if (links != null && links.Count > 0)
-				{
-					linkBounds = new (float, float)[links.Count];
-
-					for (var i = 0; i < links.Count; i++)
-					{
-						var start = Math.Min(text.Length, links[i].Item1);
-						var stop = Math.Min(text.Length, start + links[i].Item2);
-						linkBounds[i] = (g.MeasureString(f, text.Substring(0, start)).Width,
-										 g.MeasureString(f, text.Substring(0, stop)).Width);
-					}
-				}
-				else
-					linkBounds = null;
+				var start = Math.Min(text.Length, links[i].Item1);
+				var stop = Math.Min(text.Length, start + links[i].Item2);
+				AddSegment(pos, start, false);
+				bounds[i] = (f.MeasureString(text[..start]).Width, f.MeasureString(text[..stop]).Width);
+				AddSegment(start, stop, true);
+				pos = Math.Max(pos, stop);
 			}
-			catch { }
+
+			AddSegment(pos, text.Length, false);
+			segments = [.. list];
+			linkBounds = bounds;
+
+			//Placed by the width of everything before it, as the whole text is laid out.
+			void AddSegment(int from, int to, bool link)
+			{
+				if (to > from)
+				{
+					var x = from == 0 ? 0f : f.MeasureString(text[..from]).Width;
+					list.Add((text[from..to], x, f.MeasureString(text[..to]).Width - x, link));
+				}
+			}
 		}
 
 		/// <summary>
@@ -803,108 +694,26 @@ namespace Keysharp.Builtins
 
 	public class KeysharpListBox : ListBox
 	{
-		public class TabOffsetCollection : Collection<int>
-		{
-			public void AddRange(IEnumerable<int> values)
-			{
-				if (values == null)
-					return;
-				foreach (var value in values)
-					Add(value);
-			}
-		}
-
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
-
+		/// <summary>
+		/// Multi still makes Value and Text arrays, but Eto's list box selects one item at a time, so they hold at
+		/// most one.
+		/// </summary>
 		public SelectionMode SelectionMode { get; set; } = SelectionMode.One;
-		public new ObservableCollection<object> Items => DataStore as ObservableCollection<object>;
-		public IList<int> SelectedIndices { get; } = new List<int>();
-		public IList<object> SelectedItems { get; } = new List<object>();
-		public int ItemHeight { get; set; } = 16;
-		public bool ScrollAlwaysVisible { get; set; }
-		public bool HorizontalScrollbar { get; set; }
-		public int HorizontalExtent { get; set; }
-		public bool Sorted { get; set; }
-		public bool IntegralHeight { get; set; }
-		public bool UseCustomTabOffsets { get; set; }
-		public TabOffsetCollection CustomTabOffsets { get; } = new TabOffsetCollection();
 
-		public object SelectedItem
+		public new ListControlItems Items { get; } = new ();
+
+		public int ItemHeight { get; set; } = 16;
+
+		public bool Sorted
 		{
-			get => SelectedItems.Count > 0 ? SelectedItems[0] : null;
-			set
-			{
-				SelectedItems.Clear();
-				SelectedIndices.Clear();
-				if (value != null)
-				{
-					SelectedItems.Add(value);
-					var index = Items.IndexOf(value);
-					if (index >= 0)
-						SelectedIndices.Add(index);
-				}
-			}
+			get => Items.Sorted;
+			set => Items.Sorted = value;
 		}
 
 		public KeysharpListBox(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
 			ItemTextBinding = Binding.Delegate<object, string>(item => item?.ToString());
-			DataStore = new ObservableCollection<object>();
-		}
-
-		public void SetSelected(int index, bool value)
-		{
-			if (index < 0 || index >= Items.Count)
-				return;
-
-			if (value)
-			{
-				if (!SelectedIndices.Contains(index))
-					SelectedIndices.Add(index);
-				var item = Items[index];
-				if (!SelectedItems.Contains(item))
-					SelectedItems.Add(item);
-			}
-			else
-			{
-				_ = SelectedIndices.Remove(index);
-				_ = SelectedItems.Remove(Items[index]);
-			}
-		}
-
-		public void ClearSelected()
-		{
-			SelectedItems.Clear();
-			SelectedIndices.Clear();
-			SelectedIndex = -1;
-		}
-
-		// The underlying Eto ListBox only tracks selection through its base SelectedIndex.
-		// Mirror that into SelectedIndices/SelectedItems (the collections that the Text and
-		// Value properties read from) whenever the user changes the selection in the UI, or
-		// when an initial selection is applied via the Choose option. This runs before the
-		// SelectedIndexChanged event reaches subscribers, so Change-event callbacks observe
-		// the up-to-date selection. Programmatic selection via SetSelected/SelectedItem
-		// updates those collections directly and leaves the base index untouched, so it does
-		// not trigger this and is not clobbered.
-		protected override void OnSelectedIndexChanged(EventArgs e)
-		{
-			var index = SelectedIndex;
-			SelectedIndices.Clear();
-			SelectedItems.Clear();
-
-			if (index >= 0 && index < Items.Count)
-			{
-				SelectedIndices.Add(index);
-				SelectedItems.Add(Items[index]);
-			}
-
-			base.OnSelectedIndexChanged(e);
+			DataStore = Items;
 		}
 	}
 
@@ -912,6 +721,7 @@ namespace Keysharp.Builtins
 	{
 		internal event Action<int> ColumnClicked;
 
+		/// <summary>A row: the text of its cells, first column first, and its check.</summary>
 		public class ListViewItem
 		{
 			public class ListViewSubItem
@@ -919,55 +729,27 @@ namespace Keysharp.Builtins
 				public string Text { get; set; } = "";
 			}
 
-			public class ListViewSubItemCollection : Collection<ListViewSubItem>
-			{
-			}
-
-			public int Index { get; internal set; }
-			internal KeysharpListView Owner { get; set; }
 			public bool Checked { get; set; }
-			public bool Selected { get; set; }
-			public bool Focused { get; set; }
-			public string Text { get; set; } = "";
-			public ListViewSubItemCollection SubItems { get; } = new ListViewSubItemCollection();
-
-			public void BeginEdit()
-			{
-				Owner?.BeginEditItem(this);
-			}
+			public List<ListViewSubItem> SubItems { get; } = [];
 		}
 
-		public class ListViewItemCollection : Collection<ListViewItem>
+		/// <summary>The rows, which the grid shows as they are inserted and removed.</summary>
+		public sealed class ListViewItemCollection : ObservableCollection<ListViewItem>
 		{
-			protected override void InsertItem(int index, ListViewItem item)
-			{
-				base.InsertItem(index, item);
-				RefreshIndices();
-			}
-
-			protected override void SetItem(int index, ListViewItem item)
-			{
-				base.SetItem(index, item);
-				RefreshIndices();
-			}
-
-			protected override void RemoveItem(int index)
-			{
-				base.RemoveItem(index);
-				RefreshIndices();
-			}
-
-			private void RefreshIndices()
-			{
-				for (var i = 0; i < Count; i++)
-					this[i].Index = i;
-			}
+			//Reorders the rows without a notification of its own, so the caller reloads them once.
+			internal void Sort(Comparison<ListViewItem> compare) => ((List<ListViewItem>)Items).Sort(compare);
 		}
 
-		public ListViewItemCollection Items { get; } = new ListViewItemCollection();
-		public new ListViewItemCollection SelectedItems { get; } = new ListViewItemCollection();
-		public IList<int> SelectedIndices { get; } = new List<int>();
-		public ListViewItem FocusedItem { get; set; }
+		public ListViewItemCollection Items { get; } = [];
+
+		/// <summary>The focused row, which the selection does not change unless the user moves it away.</summary>
+		internal ListViewItem FocusedItem { get; set; }
+
+		internal int FocusedRow => FocusedItem is { } item ? Items.IndexOf(item) : -1;
+
+		/// <summary>The selected rows, lowest first: what the code shared with the WinForms ListView reads.</summary>
+		public IReadOnlyList<int> SelectedIndices => [.. SelectedRows];
+
 		public new WinForms.ColumnHeaderCollection Columns { get; } = new WinForms.ColumnHeaderCollection();
 		public bool CheckBoxes
 		{
@@ -976,7 +758,6 @@ namespace Keysharp.Builtins
 			{
 				checkBoxes = value;
 				UpdateCheckColumn();
-				RefreshDataStore();
 			}
 		}
 		public new bool GridLines
@@ -997,17 +778,15 @@ namespace Keysharp.Builtins
 				ApplyLabelEdit();
 			}
 		}
-		internal bool AllowF2Edit { get; set; } = true;
 		public View View
 		{
-			get => view;
+			get => View.Details;
 			set
 			{
 				if (value != View.Details)
 					throw new NotImplementedException("ListView view modes other than Report are not implemented on Linux.");
 
-				view = value;
-				ApplyView();
+				ApplyHeaderStyle();
 			}
 		}
 		public SortOrder Sorting
@@ -1016,28 +795,21 @@ namespace Keysharp.Builtins
 			set
 			{
 				sorting = value;
-				SortBySorting();
+
+				if (sorting != SortOrder.None)
+					SortRows(0, sorting == SortOrder.Ascending ? CompareSorted : (x, y) => CompareSorted(y, x));
 			}
 		}
 		public bool MultiSelect
 		{
-			get => multiSelect;
-			set
-			{
-				multiSelect = value;
-				AllowMultipleSelection = value;
-			}
+			get => AllowMultipleSelection;
+			set => AllowMultipleSelection = value;
 		}
 		public bool AllowColumnReorder
 		{
-			get => allowColumnReorder;
-			set
-			{
-				allowColumnReorder = value;
-				Reflections.SafeSetProperty(this, "AllowColumnReordering", value);
-			}
+			get => AllowColumnReordering;
+			set => AllowColumnReordering = value;
 		}
-		public bool FullRowSelect { get; set; }
 		public ColumnHeaderStyle HeaderStyle
 		{
 			get => headerStyle;
@@ -1052,39 +824,47 @@ namespace Keysharp.Builtins
 			get => autoSortHeader;
 			set => autoSortHeader = value;
 		}
+
+		/// <summary>
+		/// The text colour of the c option, which the ForeColor accessor sets as it sets other controls' TextColor. Only
+		/// the cell formatting can show it.
+		/// </summary>
+		public Color TextColor
+		{
+			get => textColor ?? SystemColors.ControlText;
+			set
+			{
+				textColor = value;
+				RefreshColors();
+			}
+		}
+
 		internal ImageList ImageList { get; set; }
 
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
+		private readonly int addStyle;
 		private readonly List<GridColumn> etoColumns = [];
 		private readonly List<TextBoxCell> etoTextCells = [];
-		private readonly List<ListViewItem> etoItems = [];
-		private bool multiSelect;
+		private readonly Dictionary<GridColumn, int> columnNumbers = [];
 		private bool checkBoxes;
 		private bool gridLines;
 		private SortOrder sorting;
 		private bool labelEdit;
-		private bool allowColumnReorder;
 		private ColumnHeaderStyle headerStyle = ColumnHeaderStyle.Clickable;
 		private bool autoSortHeader = true;
+		private bool formatting;
+		private Color? textColor;
 		private GridColumn checkColumn;
-		private CheckBoxCell checkCell;
-		private View view = View.Details;
 
-	internal GridColumn CheckColumn => checkColumn;
-	internal bool HasCheckBoxes => checkBoxes;
+		internal GridColumn CheckColumn => checkColumn;
+		internal bool HasCheckBoxes => checkBoxes;
 
 		public KeysharpListView(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
 			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
 			DataStore = Items;
 			ShowHeader = true;
-			SelectedRowsChanged += (_, _) => SyncSelection();
+			MultiSelect = true;//Unless -Multi, as in AutoHotkey.
 			ColumnHeaderClick += OnColumnHeaderClickInternal;
-			CellFormatting += FormatColors;
 		}
 
 		protected override void Dispose(bool disposing)
@@ -1095,29 +875,44 @@ namespace Keysharp.Builtins
 			base.Dispose(disposing);
 		}
 
+		/// <summary>Draws a row again with its colours, or every row when the row is -1.</summary>
 		internal void RefreshColors(int row = -1)
 		{
+			//Eto calls the formatting back for every cell it draws, so it is attached only once a colour is set. It cannot
+			//be detached again.
+			if (!formatting)
+			{
+				formatting = true;
+				CellFormatting += FormatColors;
+			}
+
 			if (row >= 0)
 				ReloadData(row);
 			else
-				ReloadData(Enumerable.Range(0, Items.Count));
+				ReloadAllRows();
 
 			Invalidate();
 		}
 
-		internal void FormatColors(object sender, GridCellFormatEventArgs e)
+		private void FormatColors(object sender, GridCellFormatEventArgs e)
 		{
 			if (this.GetGuiControl() is not Gui.ListView owner)
 				return;
 
-			// The checkbox column is outside the script's column numbering and takes the row style.
-			var column = etoColumns.IndexOf(e.Column) + 1;
-			var colors = owner.GetColors(e.Row + 1, column);
+			//The checkbox column is outside the script's column numbering and takes the row's colours.
+			var colors = owner.GetColors(e.Row + 1, columnNumbers.TryGetValue(e.Column, out var column) ? column : 0);
 
-			e.ForegroundColor = colors.Text ?? this.ForeColor;
+			if ((colors.Text ?? textColor) is Color text)
+				e.ForegroundColor = text;
 
-			if (colors.Back is { } back)
+			if (colors.Back is Color back)
 				e.BackgroundColor = back;
+		}
+
+		private void ReloadAllRows()
+		{
+			if (Items.Count > 0)
+				ReloadData(Enumerable.Range(0, Items.Count));
 		}
 
 		internal void SyncColumns()
@@ -1125,11 +920,8 @@ namespace Keysharp.Builtins
 			base.Columns.Clear();
 			etoColumns.Clear();
 			etoTextCells.Clear();
+			columnNumbers.Clear();
 			checkColumn = null;
-			checkCell = null;
-
-			foreach (var item in Items)
-				EnsureSubItems(item, Columns.Count);
 
 			for (var i = 0; i < Columns.Count; i++)
 			{
@@ -1155,36 +947,30 @@ namespace Keysharp.Builtins
 				base.Columns.Add(column);
 				etoColumns.Add(column);
 				etoTextCells.Add(cell);
+				columnNumbers[column] = i + 1;
 			}
 
 			UpdateCheckColumn();
 			ApplyLabelEdit();
 			ApplyHeaderStyle();
-			RefreshDataStore();
+			ReloadAllRows();
 			EnsureResizableColumns();
 		}
 
-		/// <summary>Reorders the rows by a column's cells.</summary>
+		/// <summary>Reorders the rows by a column's cells, keeping each row's selection.</summary>
 		internal void SortRows(int column, Comparison<string> compare)
 		{
-			var list = Items.ToList();
-			list.Sort((a, b) => compare(GetCellText(a, column), GetCellText(b, column)));
-			Items.Clear();
+			if (Items.Count < 2)
+				return;
 
-			foreach (var item in list)
-				Items.Add(item);
+			using (SelectionPreserver)
+				Items.Sort((a, b) => compare(GetCellText(a, column), GetCellText(b, column)));
 
-			RefreshDataStore();
+			ReloadAllRows();
 		}
 
-		//The control's own Sort option keeps the rows in the order of their first column, as the native one does.
-		private void SortBySorting()
-		{
-			if (sorting == SortOrder.Ascending)
-				SortRows(0, (x, y) => string.Compare(x, y, StringComparison.OrdinalIgnoreCase));
-			else if (sorting == SortOrder.Descending)
-				SortRows(0, (x, y) => string.Compare(y, x, StringComparison.OrdinalIgnoreCase));
-		}
+		//The order of the control's own Sort option, by the first column.
+		private static int CompareSorted(string x, string y) => string.Compare(x, y, StringComparison.OrdinalIgnoreCase);
 
 		private void OnColumnHeaderClickInternal(object sender, GridColumnEventArgs e)
 		{
@@ -1220,47 +1006,47 @@ namespace Keysharp.Builtins
 			ColumnClicked?.Invoke(baseColumnIndex);
 		}
 
-	internal int AddRow(IReadOnlyList<string> values, bool isChecked = false, int colStart = 0)
-	{
+		/// <summary>
+		/// Adds a row at an index, at the end when the index is -1 or past the end, or where the Sort option keeps it in
+		/// order, and returns the index it took.
+		/// </summary>
+		internal int InsertRow(int index, IReadOnlyList<string> values, bool isChecked, int colStart)
+		{
 			if (base.Columns.Count == 0 && Columns.Count > 0)
 				SyncColumns();
 
-		var item = new ListViewItem();
-		item.Owner = this;
-		EnsureSubItems(item, Columns.Count);
+			var item = new ListViewItem { Checked = isChecked };
 
 			for (int i = 0, j = colStart; i < values.Count && j < Columns.Count; i++, j++)
 				SetCellText(item, j, values[i]);
 
-			item.Checked = isChecked;
-			Items.Add(item);
-			SortBySorting();
-			RefreshDataStore();
-			return item.Index + 1;
+			if (sorting != SortOrder.None)
+				index = SortedIndex(GetCellText(item, 0));
+			else if (index < 0 || index > Items.Count)
+				index = Items.Count;
+
+			Items.Insert(index, item);
+			return index;
 		}
 
-	internal int InsertRow(int index, IReadOnlyList<string> values, bool isChecked = false, int colStart = 0)
-	{
-			if (base.Columns.Count == 0 && Columns.Count > 0)
-				SyncColumns();
+		//Where a row goes among rows in the order of the Sort option: after those whose first column sorts no later.
+		private int SortedIndex(string text)
+		{
+			var descending = sorting == SortOrder.Descending;
+			int low = 0, high = Items.Count;
 
-		var item = new ListViewItem();
-		item.Owner = this;
-		EnsureSubItems(item, Columns.Count);
+			while (low < high)
+			{
+				var mid = (low + high) >>> 1;
+				var order = CompareSorted(GetCellText(Items[mid], 0), text);
 
-			for (int i = 0, j = colStart; i < values.Count && j < Columns.Count; i++, j++)
-				SetCellText(item, j, values[i]);
+				if (descending ? order >= 0 : order <= 0)
+					low = mid + 1;
+				else
+					high = mid;
+			}
 
-			item.Checked = isChecked;
-			if (index < 0 || index >= Items.Count)
-				Items.Add(item);
-			else
-				Items.Insert(index, item);
-
-			SortBySorting();
-
-			RefreshDataStore();
-			return item.Index + 1;
+			return low;
 		}
 
 		public void AutoResizeColumns(ColumnHeaderAutoResizeStyle style)
@@ -1274,7 +1060,7 @@ namespace Keysharp.Builtins
 			foreach (var column in etoColumns)
 				column.AutoSize = true;
 
-			RefreshDataStore();
+			ReloadAllRows();
 
 			foreach (var column in etoColumns)
 			{
@@ -1287,246 +1073,158 @@ namespace Keysharp.Builtins
 			EnsureResizableColumns();
 		}
 
-	internal void RefreshDataStore()
-	{
-		etoItems.Clear();
-		etoItems.AddRange(Items);
-		foreach (var item in etoItems)
-			item.Owner = this;
-		DataStore = null;
-		DataStore = etoItems;
-		ReloadData(Enumerable.Range(0, etoItems.Count));
-	}
-
-	internal void BeginEditItem(ListViewItem item)
-	{
-		var row = Items.IndexOf(item);
-		if (row < 0)
-			return;
-
-		var column = checkColumn != null ? 1 : 0;
-		BeginEdit(row, column);
-	}
-
-	private void UpdateCheckColumn()
-	{
-		if (checkBoxes)
+		/// <summary>Starts editing a row's first column, if there is such a row.</summary>
+		internal void BeginEditRow(int row)
 		{
-			if (checkColumn == null)
+			if (row >= 0 && row < Items.Count)
+				BeginEdit(row, checkColumn != null ? 1 : 0);
+		}
+
+		private void UpdateCheckColumn()
+		{
+			if (checkBoxes)
 			{
-				checkCell = new CheckBoxCell
+				if (checkColumn == null)
 				{
-					Binding = new DelegateBinding<ListViewItem, bool?>
+					checkColumn = new GridColumn
 					{
-						GetValue = item => item.Checked,
-						SetValue = (item, value) => item.Checked = value == true
-					}
-				};
-				Reflections.SafeSetProperty(checkCell, "Editable", true);
-				checkColumn = new GridColumn
-				{
-					DataCell = checkCell,
-					AutoSize = false,
-					Width = 24,
-					Resizable = false
-				};
-				base.Columns.Insert(0, checkColumn);
+						DataCell = new CheckBoxCell
+						{
+							Binding = new DelegateBinding<ListViewItem, bool?>
+							{
+								GetValue = item => item.Checked,
+								SetValue = (item, value) => item.Checked = value == true
+							}
+						},
+						AutoSize = false,
+						Width = 24,
+						Resizable = false
+					};
+					base.Columns.Insert(0, checkColumn);
+				}
+			}
+			else if (checkColumn != null)
+			{
+				_ = base.Columns.Remove(checkColumn);
+				checkColumn = null;
 			}
 		}
-		else if (checkColumn != null)
-		{
-			_ = base.Columns.Remove(checkColumn);
-			checkColumn = null;
-			checkCell = null;
-		}
-	}
 
 		private void ApplyHeaderStyle()
 		{
-			var isDetails = view == View.Details;
-			ShowHeader = isDetails && headerStyle != ColumnHeaderStyle.None;
-			var sortable = isDetails && headerStyle == ColumnHeaderStyle.Clickable;
+			ShowHeader = headerStyle != ColumnHeaderStyle.None;
+			var sortable = headerStyle == ColumnHeaderStyle.Clickable;
 			foreach (var column in etoColumns)
 				column.Sortable = sortable;
 		}
 
-		private void ApplyView()
+		internal void SetColumnWidth(int columnIndex, int width)
 		{
-			var isDetails = view == View.Details;
-			ApplyHeaderStyle();
-
-			if (etoColumns.Count > 0)
-			{
-				for (var i = 0; i < etoColumns.Count; i++)
-				{
-					var visible = isDetails || i == 0;
-					Reflections.SafeSetProperty(etoColumns[i], "Visible", visible);
-					if (!visible)
-						etoColumns[i].Width = 0;
-				}
-			}
-
-			EnsureResizableColumns();
+			if (columnIndex < 0 || columnIndex >= etoColumns.Count)
+				return;
+			etoColumns[columnIndex].Width = width;
+			if (columnIndex < Columns.Count)
+				Columns[columnIndex].Width = width;
 		}
 
-	internal void SetColumnWidth(int columnIndex, int width)
-	{
-		if (columnIndex < 0 || columnIndex >= etoColumns.Count)
-			return;
-		etoColumns[columnIndex].Width = width;
-		if (columnIndex < Columns.Count)
-			Columns[columnIndex].Width = width;
-	}
-
-	internal void SetColumnAlignment(int columnIndex, Eto.Forms.TextAlignment alignment)
-	{
-		if (columnIndex < 0 || columnIndex >= etoColumns.Count)
-			return;
-
-		etoColumns[columnIndex].HeaderTextAlignment = alignment;
-		etoTextCells[columnIndex].TextAlignment = alignment;
-		if (columnIndex < Columns.Count)
-			Columns[columnIndex].TextAlign = MapHorizontalAlignment(alignment);
-	}
-
-	internal void AutoResizeColumn(int columnIndex, bool includeHeader)
-	{
-		if (columnIndex < 0 || columnIndex >= etoColumns.Count)
-			return;
-
-		var column = etoColumns[columnIndex];
-		column.AutoSize = true;
-		RefreshDataStore();
-		column.AutoSize = false;
-		if (column.Width <= 0)
-			column.Width = 100;
-
-		if (includeHeader)
+		internal void SetColumnAlignment(int columnIndex, Eto.Forms.TextAlignment alignment)
 		{
-			var headerWidth = MeasureHeaderTextWidth(column.HeaderText);
-			if (column.Width < headerWidth)
-				column.Width = headerWidth;
+			if (columnIndex < 0 || columnIndex >= etoColumns.Count)
+				return;
+
+			etoColumns[columnIndex].HeaderTextAlignment = alignment;
+			etoTextCells[columnIndex].TextAlignment = alignment;
+			if (columnIndex < Columns.Count)
+				Columns[columnIndex].TextAlign = MapHorizontalAlignment(alignment);
 		}
 
-		if (columnIndex < Columns.Count)
-			Columns[columnIndex].Width = column.Width;
-	}
-
-	private static int MeasureHeaderTextWidth(string text)
-	{
-		var label = new Eto.Forms.Label { Text = text ?? "" };
-		var size = label.PreferredSize;
-		return (int)size.Width + 10;
-	}
-
-	private void EnsureResizableColumns()
-	{
-		foreach (var column in etoColumns)
+		internal void AutoResizeColumn(int columnIndex, bool includeHeader)
 		{
-			column.Resizable = true;
+			if (columnIndex < 0 || columnIndex >= etoColumns.Count)
+				return;
+
+			var column = etoColumns[columnIndex];
+			column.AutoSize = true;
+			ReloadAllRows();
 			column.AutoSize = false;
 			if (column.Width <= 0)
 				column.Width = 100;
-		}
-	}
 
-	private void ApplyLabelEdit()
-	{
-		for (var i = 0; i < etoTextCells.Count; i++)
-		{
-			var editable = labelEdit && i == 0;
-			Reflections.SafeSetProperty(etoTextCells[i], "Editable", editable);
-			Reflections.SafeSetProperty(etoColumns[i], "Editable", editable);
-		}
-	}
+			if (includeHeader)
+			{
+				var headerWidth = MeasureHeaderTextWidth(column.HeaderText);
+				if (column.Width < headerWidth)
+					column.Width = headerWidth;
+			}
 
-	private static Eto.Forms.TextAlignment MapTextAlignment(WinForms.HorizontalAlignment alignment) =>
-		alignment switch
-		{
-			WinForms.HorizontalAlignment.Center => Eto.Forms.TextAlignment.Center,
-			WinForms.HorizontalAlignment.Right => Eto.Forms.TextAlignment.Right,
-			_ => Eto.Forms.TextAlignment.Left
-		};
-
-	private static WinForms.HorizontalAlignment MapHorizontalAlignment(Eto.Forms.TextAlignment alignment) =>
-		alignment switch
-		{
-			Eto.Forms.TextAlignment.Center => WinForms.HorizontalAlignment.Center,
-			Eto.Forms.TextAlignment.Right => WinForms.HorizontalAlignment.Right,
-			_ => WinForms.HorizontalAlignment.Left
-		};
-
-	private void SyncSelection()
-	{
-		SelectedItems.Clear();
-		SelectedIndices.Clear();
-
-		foreach (var item in Items)
-		{
-			item.Selected = false;
-			item.Focused = false;
+			if (columnIndex < Columns.Count)
+				Columns[columnIndex].Width = column.Width;
 		}
 
-		foreach (var row in SelectedRows)
+		private static int MeasureHeaderTextWidth(string text)
 		{
-			if (row < 0 || row >= Items.Count)
-				continue;
-
-			SelectedIndices.Add(row);
-			SelectedItems.Add(Items[row]);
-			Items[row].Selected = true;
+			using var label = new Eto.Forms.Label { Text = text ?? "" };
+			var size = label.PreferredSize;
+			return (int)size.Width + 10;
 		}
 
-		FocusedItem = SelectedItems.Count > 0 ? SelectedItems[0] : null;
-		if (FocusedItem != null)
-			FocusedItem.Focused = true;
-	}
-
-	private static void EnsureSubItems(ListViewItem item, int count)
-	{
-		while (item.SubItems.Count < count)
-			item.SubItems.Add(new ListViewItem.ListViewSubItem());
-	}
-
-	internal static string GetCellText(ListViewItem item, int columnIndex)
-	{
-			if (columnIndex == 0)
-				return string.IsNullOrEmpty(item.Text) && item.SubItems.Count > 0 ? item.SubItems[0].Text : item.Text;
-
-			return columnIndex < item.SubItems.Count ? item.SubItems[columnIndex].Text : "";
+		private void EnsureResizableColumns()
+		{
+			foreach (var column in etoColumns)
+			{
+				column.Resizable = true;
+				column.AutoSize = false;
+				if (column.Width <= 0)
+					column.Width = 100;
+			}
 		}
 
-	internal static void SetCellText(ListViewItem item, int columnIndex, string value)
-	{
-			EnsureSubItems(item, columnIndex + 1);
+		private void ApplyLabelEdit()
+		{
+			for (var i = 0; i < etoColumns.Count; i++)
+				etoColumns[i].Editable = labelEdit && i == 0;
+		}
 
-			if (columnIndex == 0)
-				item.Text = value ?? "";
+		private static Eto.Forms.TextAlignment MapTextAlignment(WinForms.HorizontalAlignment alignment) =>
+			alignment switch
+			{
+				WinForms.HorizontalAlignment.Center => Eto.Forms.TextAlignment.Center,
+				WinForms.HorizontalAlignment.Right => Eto.Forms.TextAlignment.Right,
+				_ => Eto.Forms.TextAlignment.Left
+			};
 
-			item.SubItems[columnIndex].Text = value ?? "";
+		private static WinForms.HorizontalAlignment MapHorizontalAlignment(Eto.Forms.TextAlignment alignment) =>
+			alignment switch
+			{
+				Eto.Forms.TextAlignment.Center => WinForms.HorizontalAlignment.Center,
+				Eto.Forms.TextAlignment.Right => WinForms.HorizontalAlignment.Right,
+				_ => WinForms.HorizontalAlignment.Left
+			};
+
+		internal static string GetCellText(ListViewItem item, int columnIndex) =>
+			columnIndex < item.SubItems.Count ? item.SubItems[columnIndex].Text : "";
+
+		internal static void SetCellText(ListViewItem item, int columnIndex, string value)
+		{
+			var cells = item.SubItems;
+
+			while (cells.Count <= columnIndex)
+				cells.Add(new ListViewItem.ListViewSubItem());
+
+			cells[columnIndex].Text = value ?? "";
 		}
 	}
 
 	public class KeysharpMonthCalendar : Forms.Calendar
 	{
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
 
 		public KeysharpMonthCalendar(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
 		}
 	}
 
 	public class KeysharpNumericUpDown : NumericStepper
 	{
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
-
-		public bool ThousandsSeparator { get; set; }
 		public double Minimum
 		{
 			get => MinValue;
@@ -1537,22 +1235,14 @@ namespace Keysharp.Builtins
 			get => MaxValue;
 			set => MaxValue = value;
 		}
-		public LeftRightAlignment UpDownAlign { get; set; } = LeftRightAlignment.Right;
-		public bool Hexadecimal { get; set; }
 
 		public KeysharpNumericUpDown(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
 		}
 	}
 
 	public class KeysharpPictureBox : ImageView
 	{
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
 		private bool scaleHeight;
 		private bool scaleWidth;
 		private PictureBoxSizeMode sizeMode = PictureBoxSizeMode.Normal;
@@ -1589,19 +1279,13 @@ namespace Keysharp.Builtins
 		public KeysharpPictureBox(string filename, int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
 			Filename = filename;
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
-			Filename = filename;
 		}
 	}
 
 	public class KeysharpProgressBar : Drawable
 	{
 		private readonly bool customColors = false;
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
+		private readonly int addStyle;
 		private int minimum;
 		private int maximum = 100;
 		private int value;
@@ -1669,9 +1353,6 @@ namespace Keysharp.Builtins
 		public KeysharpProgressBar(bool _customColors, int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
 			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
 			customColors = _customColors;
 			Paint += KeysharpProgressBar_Paint;
 		}
@@ -1754,71 +1435,53 @@ namespace Keysharp.Builtins
 
 	public class KeysharpRadioButton : RadioButton
 	{
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
 
 		public bool AutoSize { get; set; }
 
 		public KeysharpRadioButton(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
 		}
 
 		public KeysharpRadioButton(RadioButton controller, int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 			: base(controller)
 		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
 		}
 	}
 
 	public partial class KeysharpRichEdit : RichTextArea
 	{
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
+		private readonly TextNormalizer normalizer;
 
-		internal bool IsNumeric { get; set; }
-		internal bool Multiline {get; set; }
-		internal int MaxLength = -1;
-		internal CharacterCasing CharacterCasing { get; set; } = CharacterCasing.Normal;
-		public RichTextBoxScrollBars ScrollBars { get; set; } = RichTextBoxScrollBars.None;
+		private bool numeric;
+
+		internal bool IsNumeric
+		{
+			get => numeric;
+			set => NumberOption.Apply(this, ref numeric, value);
+		}
+
+		internal CharacterCasing CharacterCasing
+		{
+			get => normalizer.Casing;
+			set => normalizer.Casing = value;
+		}
 
 		public KeysharpRichEdit(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
-			TextChanged += KeysharpRichEdit_TextChanged;
+			normalizer = new (this);
 			HookSelectionEvents();
 		}
 
-		private void KeysharpRichEdit_TextChanged(object sender, EventArgs e)
+		protected override void OnTextChanged(EventArgs e)
 		{
-			//Eto's text buffer reports a formatting change as a text change. Rewriting Text here would throw
-			//away the formatting that was just applied, and none of this is an edit the user made.
-			if (IsFormatting)
-				return;
-
-			Modified = true;
-
-			if (IsNumeric && Text.Any(ch => !char.IsDigit(ch)))
-				Text = string.Join("", Text.Where(ch => char.IsDigit(ch)));
-
-			switch (CharacterCasing)
+			//Eto's text buffer reports a formatting change as a text change, which is no edit.
+			if (!IsFormatting)
 			{
-				case CharacterCasing.Upper:
-					Text = Text.ToUpperInvariant();
-					break;
-				case CharacterCasing.Lower:
-					Text = Text.ToLowerInvariant();
-					break;
+				Modified = true;
+				normalizer.TextChanged();
 			}
+
+			base.OnTextChanged(e);
 		}
 	}
 
@@ -1826,62 +1489,58 @@ namespace Keysharp.Builtins
 	{
 		internal class StatusStripItemCollection : Collection<KeysharpToolStripStatusLabel>
 		{
-			private readonly KeysharpStatusStrip owner;
-
-			internal StatusStripItemCollection(KeysharpStatusStrip owner)
-			{
-				this.owner = owner;
-			}
-
+			//Returns the part, where the WinForms collection the shared code also adds to returns its index.
 			public new KeysharpToolStripStatusLabel Add(KeysharpToolStripStatusLabel item)
 			{
 				base.Add(item);
-				owner?.UpdateItems();
 				return item;
-			}
-
-			protected override void InsertItem(int index, KeysharpToolStripStatusLabel item)
-			{
-				base.InsertItem(index, item);
-				owner?.UpdateItems();
-			}
-
-			protected override void SetItem(int index, KeysharpToolStripStatusLabel item)
-			{
-				base.SetItem(index, item);
-				owner?.UpdateItems();
-			}
-
-			protected override void RemoveItem(int index)
-			{
-				base.RemoveItem(index);
-				owner?.UpdateItems();
-			}
-
-			protected override void ClearItems()
-			{
-				base.ClearItems();
-				owner?.UpdateItems();
 			}
 		}
 
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
+		/// <summary>The widgets of a part: its text in three labels, left, centred and right, after its icon if it has one.</summary>
+		private sealed class PartView
+		{
+			internal readonly Forms.Label Left = NewLabel(Forms.TextAlignment.Left);
+			internal readonly Forms.Label Center = NewLabel(Forms.TextAlignment.Center);
+			internal readonly Forms.Label Right = NewLabel(Forms.TextAlignment.Right);
+			internal readonly TableLayout Text;
+			internal readonly Panel Panel;
+			internal ImageView Icon;
+			internal Font Font;
+			internal Color Back, Fore;
 
-		internal bool AutoSize { get; set; }
-		internal Size ImageScalingSize { get; set; }
-		internal DockStyle Dock { get; set; }
-		internal bool SizingGrip { get; set; }
-		internal StatusStripItemCollection Items { get; }
-		private readonly List<Control> partControls = new();
+			internal PartView()
+			{
+				Text = new TableLayout
+				{
+					Padding = Padding.Empty,
+					Spacing = new Size(4, 0),
+					Rows = { new TableRow(new TableCell(Left, true), new TableCell(Center, true), new TableCell(Right, true)) }
+				};
+				Panel = new Panel { Content = Text, Padding = new Padding(4, 2) };
+			}
+
+			private static Forms.Label NewLabel(Forms.TextAlignment alignment) =>
+				new() { TextAlignment = alignment, VerticalAlignment = Forms.VerticalAlignment.Center };
+		}
+
+		private readonly StackLayout body = new() { Orientation = Orientation.Horizontal, Spacing = 0, Padding = new Padding(0) };
+		private readonly List<PartView> parts = [];
+
+		internal StatusStripItemCollection Items { get; } = [];
 
 		public KeysharpStatusStrip(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
-			Items = new StatusStripItemCollection(this);
+			Content = new StackLayout
+			{
+				Orientation = Orientation.Vertical,
+				Spacing = 0,
+				Items =
+				{
+					new StackLayoutItem(new Panel { BackgroundColor = Colors.Gray, Height = 1 }, true),
+					new StackLayoutItem(body, true)
+				}
+			};
 		}
 
 		/// <summary>
@@ -1925,122 +1584,102 @@ namespace Keysharp.Builtins
 			return Items.Count;
 		}
 
+		/// <summary>
+		/// Lays the parts out again after parts were added or removed or their widths changed. A part that remains keeps
+		/// its widgets, and a new one is built here.
+		/// </summary>
 		internal void UpdateItems()
 		{
-			partControls.Clear();
+			if (parts.Count > Items.Count)
+				parts.RemoveRange(Items.Count, parts.Count - Items.Count);
 
-			var parts = new List<StackLayoutItem>();
+			body.SuspendLayout();
+			body.Items.Clear();
 
 			for (var i = 0; i < Items.Count; i++)
 			{
 				var item = Items[i];
-				var partControl = BuildPartControl(item, i);
-				if (item.Width > 0)
-					partControl.Width = item.Width;
 
-				partControls.Add(partControl);
-				parts.Add(new StackLayoutItem(partControl, item.Width <= 0 || item.Spring));
+				if (i == parts.Count)
+				{
+					parts.Add(new PartView());
+					UpdatePart(i);
+				}
+
+				var panel = parts[i].Panel;
+				panel.Width = item.Width > 0 ? item.Width : -1;
+				body.Items.Add(new StackLayoutItem(panel, item.Width <= 0 || item.Spring));
 			}
 
-			var body = new StackLayout
-			{
-				Orientation = Orientation.Horizontal,
-				Spacing = 0,
-				Padding = new Padding(0, 0, 0, 0)
-			};
-			body.Items.AddRange(parts);
-
-			var border = new Panel
-			{
-				BackgroundColor = Colors.Gray,
-				Height = 1
-			};
-
-			var layout = new StackLayout
-			{
-				Orientation = Orientation.Vertical,
-				Spacing = 0
-			};
-			layout.Items.Add(new StackLayoutItem(border, true));
-			layout.Items.Add(new StackLayoutItem(body, true));
-
-			Content = layout;
+			body.ResumeLayout();
 		}
 
-		private Control BuildPartControl(KeysharpToolStripStatusLabel item, int index)
+		/// <summary>Shows a part's text, icon and colours in its widgets, setting only what changed.</summary>
+		internal void UpdatePart(int index)
 		{
+			var item = Items[index];
+			var view = parts[index];
 			var back = item.BackColor.A > 0 ? item.BackColor : BackgroundColor;
 			var fore = Properties.Get<Color?>("ForeColor") ?? Colors.Transparent;
-			Control textLayout = BuildTextLayout(item.Text ?? string.Empty, item.Font ?? this.Font, back, fore);
+			var font = item.Font ?? this.Font;
+			var text = (item.Text ?? "").AsSpan();
+			var tab = text.IndexOf('\t');
+			view.Left.Text = (tab < 0 ? text : text[..tab]).ToString();
+			text = tab < 0 ? [] : text[(tab + 1)..];
+			tab = text.IndexOf('\t');
+			view.Center.Text = (tab < 0 ? text : text[..tab]).ToString();
+			text = tab < 0 ? [] : text[(tab + 1)..];
+			tab = text.IndexOf('\t');
+			view.Right.Text = (tab < 0 ? text : text[..tab]).ToString();
+
+			if (!ReferenceEquals(view.Font, font))
+			{
+				view.Font = font;
+				view.Left.Font = view.Center.Font = view.Right.Font = font;
+			}
+
+			//Explicit text colours are copied; the default follows the native theme.
+			if (view.Fore != fore && fore.A > 0)
+				view.Left.TextColor = view.Center.TextColor = view.Right.TextColor = fore;
+
+			view.Fore = fore;
+
+			if (view.Back != back)
+			{
+				view.Back = back;
+				view.Panel.BackgroundColor = view.Left.BackgroundColor = view.Center.BackgroundColor = view.Right.BackgroundColor = back;
+
+				if (view.Icon != null)
+					view.Icon.BackgroundColor = back;
+			}
 
 			if (item.Image != null)
 			{
-				// Scale the icon down to fit the status bar height (minus padding) instead of letting the
-				// ImageView render the bitmap at its full native size, which overflows the bar on Linux.
-				var iconSize = Math.Max(16, this.Height - 12);
-				var imgView = new ImageView { Image = item.Image, BackgroundColor = back, Size = new Size(iconSize, iconSize) };
-				textLayout = new StackLayout
+				if (view.Icon == null)
 				{
-					Orientation = Orientation.Horizontal,
-					Spacing = 4,
-					Padding = new Padding(2, 0),
-					Items =
+					//The text moves into a row after the icon, so it leaves the part first.
+					view.Panel.Content = null;
+					view.Icon = new ImageView { BackgroundColor = back };
+					view.Panel.Content = new StackLayout
 					{
-						new StackLayoutItem(imgView, false),
-						new StackLayoutItem(textLayout, true)
-					}
-				};
+						Orientation = Orientation.Horizontal,
+						Spacing = 4,
+						Padding = new Padding(2, 0),
+						Items = { new StackLayoutItem(view.Icon, false), new StackLayoutItem(view.Text, true) }
+					};
+				}
+
+				//Scaled to the bar's height less its padding, as the bitmap's own size can overflow the bar.
+				var iconSize = Math.Max(16, Height - 12);
+				view.Icon.Image = item.Image;
+				view.Icon.Size = new Size(iconSize, iconSize);
 			}
-
-			var panel = new Panel
-			{
-				BackgroundColor = back,
-				Content = textLayout,
-				Padding = new Padding(4, 2)
-			};
-
-			return panel;
 		}
-
-		private static Control BuildTextLayout(string text, Font font, Color back, Color fore)
-		{
-			var segments = text.Split('\t');
-			var left = segments.Length > 0 ? segments[0] : string.Empty;
-			var center = segments.Length > 1 ? segments[1] : string.Empty;
-			var right = segments.Length > 2 ? segments[2] : string.Empty;
-
-			// Copy explicit text colors; default labels follow the native theme.
-			var leftLabel = new Forms.Label { Text = left, Font = font, BackgroundColor = back, TextAlignment = Forms.TextAlignment.Left, VerticalAlignment = Forms.VerticalAlignment.Center };
-			var centerLabel = new Forms.Label { Text = center, Font = font, BackgroundColor = back, TextAlignment = Forms.TextAlignment.Center, VerticalAlignment = Forms.VerticalAlignment.Center };
-			var rightLabel = new Forms.Label { Text = right, Font = font, BackgroundColor = back, TextAlignment = Forms.TextAlignment.Right, VerticalAlignment = Forms.VerticalAlignment.Center };
-
-			if (fore.A > 0)
-			{
-				leftLabel.TextColor = fore;
-				centerLabel.TextColor = fore;
-				rightLabel.TextColor = fore;
-			}
-
-			var row = new TableRow(
-				new TableCell(leftLabel, true),
-				new TableCell(centerLabel, true),
-				new TableCell(rightLabel, true));
-
-			return new TableLayout
-			{
-				Padding = Padding.Empty,
-				Spacing = new Size(4, 0),
-				Rows = { row }
-			};
-		}
-
 	}
 
 	public class KeysharpTabControl : TabControl
 	{
 		internal Color? bgcolor;
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
 
 		public TabAlignment Alignment { get; set; }
 		public TabAppearance Appearance { get; set; }
@@ -2049,10 +1688,6 @@ namespace Keysharp.Builtins
 
 		public KeysharpTabControl(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
 #if LINUX
 			if (this.ToNative() is Gtk.Notebook notebook)
 				notebook.Scrollable = true;
@@ -2155,8 +1790,6 @@ namespace Keysharp.Builtins
 	public class KeysharpTrackBar : Slider
 	{
 		public bool inverted = false;
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
 
 		public int Minimum
 		{
@@ -2180,10 +1813,6 @@ namespace Keysharp.Builtins
 
 		public KeysharpTrackBar(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
 		}
 	}
 
@@ -2227,7 +1856,8 @@ namespace Keysharp.Builtins
 		public bool Checked { get; set; }
 		public int ImageIndex { get; set; } = -1;
 		public int SelectedImageIndex { get; set; } = -1;
-		public bool IsExpanded { get; private set; }
+		//The tree sets Expanded when the user expands or collapses the item too.
+		public bool IsExpanded => Expanded;
 		public Font NodeFont { get; set; }
 		public IntPtr Handle => new IntPtr(id);
 
@@ -2237,43 +1867,9 @@ namespace Keysharp.Builtins
 				Values = new object[1];
 		}
 
-		public TreeNode NextNode
-		{
-			get
-			{
-				var siblings = GetSiblings();
-				if (siblings == null)
-					return null;
+		public TreeNode NextNode => GetSiblings() is { } siblings && siblings.IndexOf(this) is var i and >= 0 && i + 1 < siblings.Count ? siblings[i + 1] : null;
 
-				for (var i = 0; i < siblings.Count; i++)
-				{
-					if (siblings[i] == this)
-						return i + 1 < siblings.Count ? siblings[i + 1] : null;
-				}
-
-				return null;
-			}
-		}
-
-		public TreeNode PrevNode
-		{
-			get
-			{
-				var siblings = GetSiblings();
-				if (siblings == null)
-					return null;
-
-				for (var i = 0; i < siblings.Count; i++)
-				{
-					if (siblings[i] == this)
-						return i - 1 >= 0 ? siblings[i - 1] : null;
-				}
-
-				return null;
-			}
-		}
-
-		public TreeNode FirstNode => Nodes.Count > 0 ? Nodes[0] : null;
+		public TreeNode PrevNode => GetSiblings() is { } siblings && siblings.IndexOf(this) is var i and > 0 ? siblings[i - 1] : null;
 
 		private TreeNodeCollection GetSiblings()
 		{
@@ -2304,19 +1900,23 @@ namespace Keysharp.Builtins
 			TreeView?.ScrollIntoView(this);
 		}
 
+		//The tree shows an expansion the script makes once it reloads.
 		public void Expand()
 		{
-			if (Nodes == null || Nodes.Count == 0)
+			if (Nodes.Count == 0 || Expanded)
 				return;
 
-			IsExpanded = true;
 			Expanded = true;
+			TreeView?.InvalidateModel();
 		}
 
 		public void Collapse()
 		{
-			IsExpanded = false;
+			if (!Expanded)
+				return;
+
 			Expanded = false;
+			TreeView?.InvalidateModel();
 		}
 
 		private void ExpandParents()
@@ -2458,11 +2058,9 @@ namespace Keysharp.Builtins
 
 	public class KeysharpTreeView : TreeGridView
 	{
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
-		private readonly Dictionary<ITreeGridItem, bool> expandStates = [];
+		private readonly HashSet<TreeNode> expandMarks = [];
 		private readonly Dictionary<long, TreeNode> nodesById = [];
-		private bool reloadSuspended;
+		private bool reloadSuspended, modelStale;
 		private TreeNode selectedNode;
 		private GridColumn checkColumn;
 		private GridColumn imageColumn;
@@ -2486,13 +2084,18 @@ namespace Keysharp.Builtins
 			set
 			{
 				selectedNode = value;
+
 				if (!ReferenceEquals(SelectedItem, value))
+				{
+					EnsureModel();
 					SelectedItem = value;
+				}
 			}
 		}
 		internal TreeNode TopNode { get; set; }
 		internal TreeNodeCollection Nodes { get; }
 		internal TreeGridItemCollection RootItems { get; }
+		internal int NodeCount => nodesById.Count;
 		public bool CheckBoxes
 		{
 			get => checkBoxes;
@@ -2502,8 +2105,6 @@ namespace Keysharp.Builtins
 				UpdateCheckColumn();
 			}
 		}
-		public bool ShowLines { get; set; } = true;
-		public bool ShowPlusMinus { get; set; } = true;
 		public bool LabelEdit
 		{
 			get => labelEdit;
@@ -2514,7 +2115,6 @@ namespace Keysharp.Builtins
 					textColumn.Editable = value;
 			}
 		}
-		public bool HideSelection { get; set; }
 
 		private bool checkBoxes;
 		private bool labelEdit;
@@ -2525,10 +2125,6 @@ namespace Keysharp.Builtins
 
 		public KeysharpTreeView(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
 			RootItems = new TreeGridItemCollection();
 			Nodes = new TreeNodeCollection(this, null, RootItems);
 
@@ -2545,6 +2141,7 @@ namespace Keysharp.Builtins
 			if (node == null || !LabelEdit)
 				return;
 
+			EnsureModel();
 			var row = GetVisibleRowIndex(node);
 			if (row < 0)
 				return;
@@ -2567,6 +2164,7 @@ namespace Keysharp.Builtins
 			if (node == null)
 				return;
 
+			EnsureModel();
 			var rowIndex = GetVisibleRowIndex(node);
 
 			if (rowIndex >= 0)
@@ -2593,24 +2191,26 @@ namespace Keysharp.Builtins
 			return false;
 		}
 
-		internal void DelayedExpandParent(TreeNode node)
+		/// <summary>The node under a point of the control, or null.</summary>
+		internal TreeNode NodeAt(PointF location)
 		{
-			var parent = node.Parent ?? node;
-			if (expandStates.TryGetValue(parent, out var b) && b)
-			{
-				if (parent.Expandable)
-				{
-					parent.Expanded = true;
-					_ = expandStates.Remove(parent);
-				}
-			}
+			EnsureModel();
+			return GetCellAt(location)?.Item as TreeNode;
 		}
 
-		internal void MarkForExpansion(TreeNode node) => expandStates[node] = true;
+		internal void DelayedExpandParent(TreeNode node)
+		{
+			var parent = node.Parent as TreeNode ?? node;
 
-		internal void RemoveMarkForExpansion(TreeNode node) => _ = expandStates.Remove(node);
+			if (parent.Nodes.Count > 0 && expandMarks.Remove(parent))
+				parent.Expand();
+		}
 
-		internal void ClearMarksForExpansion() => expandStates.Clear();
+		internal void MarkForExpansion(TreeNode node) => expandMarks.Add(node);
+
+		internal void RemoveMarkForExpansion(TreeNode node) => _ = expandMarks.Remove(node);
+
+		internal void ClearMarksForExpansion() => expandMarks.Clear();
 
 		internal TreeNode FindNode(long id) => nodesById.TryGetValue(id, out var node) ? node : null;
 
@@ -2631,22 +2231,53 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Batches model updates: while suspended (via -Redraw), <see cref="ReloadDataIfActive"/> is a no-op so that
-		/// bulk Add/Delete operations don't rebuild the entire native tree model (and re-measure every row) on each call.
-		/// A single <see cref="TreeGridView.ReloadData"/> on +Redraw then refreshes the view once. This avoids O(N^2)
-		/// construction and the "gtk_tree_view_unref_tree_helper: assertion 'node != NULL' failed" warnings caused by
-		/// repeatedly resetting the model while rows are still referenced.
+		/// Records a change GTK sees only through a reload of the whole model: an item added or removed below the top
+		/// level, a sort, or an expansion the script makes. The changes of one turn of the message loop, or of the time
+		/// -Redraw holds them, share one reload, and anything that maps a node to a row of the view reloads first.
 		/// </summary>
-		internal bool ReloadSuspended => reloadSuspended;
+		internal void InvalidateModel()
+		{
+			if (modelStale)
+				return;
+
+			modelStale = true;
+
+			if (!reloadSuspended)
+				Application.Instance.AsyncInvoke(() =>
+				{
+					if (!reloadSuspended && !IsDisposed)
+						EnsureModel();
+				});
+		}
+
+		/// <summary>Reloads the model if a change is waiting for it, so that the view's rows match the nodes.</summary>
+		internal void EnsureModel()
+		{
+			if (modelStale)
+			{
+				modelStale = false;
+				ReloadData();
+			}
+		}
+
+		/// <summary>
+		/// Shows a change to one item's text, check mark, font or icon, which GTK reads from the item only when told. A
+		/// reload that is waiting shows it anyway.
+		/// </summary>
+		internal void ShowItemChange(TreeNode node)
+		{
+			if (reloadSuspended || modelStale)
+				InvalidateModel();
+			else
+				ReloadItem(node, false);
+		}
 
 		internal void SuspendReload() => reloadSuspended = true;
 
-		internal void ResumeReload() => reloadSuspended = false;
-
-		internal void ReloadDataIfActive()
+		internal void ResumeReload()
 		{
-			if (!reloadSuspended)
-				ReloadData();
+			reloadSuspended = false;
+			EnsureModel();
 		}
 
 		internal void SelectNode(TreeNode node, bool ensureVisible)
@@ -2661,7 +2292,6 @@ namespace Keysharp.Builtins
 				parent = parent.Parent as TreeNode;
 			}
 
-			SelectedItem = node;
 			SelectedNode = node;
 			if (ensureVisible)
 				node.EnsureVisible();
@@ -2741,16 +2371,10 @@ namespace Keysharp.Builtins
 	/// </summary>
 	public class KeysharpWebView : WebView, IWebViewBackend
 	{
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
 		private IWebViewEventSink sink;
 
 		public KeysharpWebView(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
-			addStyle = _addStyle;
-			addExStyle = _addExStyle;
-			removeStyle = _removeStyle;
-			removeExStyle = _removeExStyle;
 			//Eto leaves this false, which suppresses the page's own context menu. Windows leaves it on, so
 			//turn it on here too and let BrowserContextMenuEnabled be the one place the choice is made.
 			BrowserContextMenuEnabled = true;

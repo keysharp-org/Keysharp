@@ -436,11 +436,6 @@ namespace Keysharp.Internals.UI.Unix
 
 		private void reloadScriptToolStripMenuItem_Click(object sender, EventArgs e) => Keysharp.Builtins.Flow.Reload();
 
-		public void SetTextInternal(string s, MainFocusedTab tab, TextArea txt, bool focus)
-		{
-			SetTextInternal(s, tab, focus);
-		}
-
 		private void ShowIfNeeded()
 		{
 			if (ShouldSkipUiUpdate())

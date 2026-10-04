@@ -334,7 +334,7 @@ namespace Keysharp.Builtins
 					return lv.Items.Count;
 
 				if (m[0] is 'S' or 's')
-					return lv.SelectedItems.Count;
+					return lv.SelectedIndices.Count;
 
 				if (m.StartsWith("Col", StringComparison.OrdinalIgnoreCase))
 					return lv.Columns.Count;

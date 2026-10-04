@@ -901,231 +901,193 @@ namespace Keysharp.Internals.Os.Windows
 					}
 				}
 
-				if (Control.FromHandle(item.Handle) is ListView lv)
+				if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETITEMCOUNT, 0, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var row_count) == 0)
+					return Errors.TargetErrorOccurred($"Could not get row count for list view", title, text, excludeTitle, excludeText);
+
+				var col_count = new nint(-1);  // Fix for v1.0.37.01: Use -1 to indicate "undetermined col count".
+
+				if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETHEADER, 0, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var header_control) != 0
+						&& header_control.ToInt64() != 0) // Relies on short-circuit boolean order.
+					_ = WindowsAPI.SendMessageTimeout(header_control, WindowsAPI.HDM_GETITEMCOUNT, 0, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out col_count);
+
+				var rowct = row_count.ToInt64();
+				var colct = col_count.ToInt64();
+
+				if (!count && col != int.MinValue && (col < 0 || colct > -1 && col >= colct))
+					return Errors.ValueErrorOccurred($"Column {col + 1} does not exist in the list view.");
+
+				if (count)
 				{
-					if (count && sel)
-						ret = (long)lv.SelectedItems.Count;
-					else if (count && focused)
-						ret = lv.FocusedItem is ListViewItem lvi ? lvi.Index + 1L : (object)0L;
-					else if (count && countcol)
-						ret = (long)lv.Columns.Count;
-					else if (count)
-						ret = (long)lv.Items.Count;
-					else
+					if (focused) // Listed first so that it takes precedence over include_selected_only.
 					{
-						var sb = new StringBuilder(1024);
-						var items = new List<ListViewItem>();
+						if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETNEXTITEM, -1, WindowsAPI.LVNI_FOCUSED, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var result) == 0)
+							return Errors.TargetErrorOccurred($"Could not get next item for list view", title, text, excludeTitle, excludeText);
 
-						if (focused)
-						{
-							if (lv.FocusedItem is ListViewItem lvi)
-								items.Add(lvi);
-						}
-						else if (sel)
-							items.AddRange(lv.SelectedItems.Cast<ListViewItem>());
-						else
-							items.AddRange(lv.Items.Cast<ListViewItem>());
-
-						if (col >= 0)
-						{
-							if (col >= lv.Columns.Count)
-								return Errors.ValueErrorOccurred($"Column {col + 1} is greater than list view column count of {lv.Columns.Count} in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}");
-
-							items.ForEach(templvi => sb.AppendLine(templvi.SubItems[col].Text));
-						}
-						else
-							items.ForEach(templvi => sb.AppendLine(string.Join('\t', templvi.SubItems.Cast<ListViewItem.ListViewSubItem>().Select(x => x.Text))));
-
-						ret = sb.ToString();
+						ret = result.ToInt64() + 1L;
 					}
+					else if (sel)
+					{
+						if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETSELECTEDCOUNT, 0, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var result) == 0)
+							return Errors.TargetErrorOccurred($"Could not get selected item count for list view", title, text, excludeTitle, excludeText);
+
+						ret = result.ToInt64();
+					}
+					else if (countcol) // "Count Col" returns the number of columns.
+						ret = colct;
+					else // Total row count.
+						ret = rowct;
+
+					return ret;
 				}
-				else
+
+				if (rowct < 1 || colct == 0) // But don't return when col_count == -1 (i.e. always make the attempt when col count is undetermined).
+					return DefaultObject;  // No text in the control, so indicate success.
+
+				// One block in the remote process holds the LVITEM and, after it, the buffer its text is written to.
+				var lvItemSize = Marshal.SizeOf<LVITEM>();
+				var remotelvi = WindowsAPI.AllocInterProcMem((uint)(lvItemSize + WindowsAPI.LV_REMOTE_BUF_SIZE * sizeof(char)), item.Handle, ProcessAccessTypes.PROCESS_QUERY_INFORMATION, out var prochandle);
+
+				if (remotelvi == 0)
+					return Errors.TargetErrorOccurred($"Could not allocate inter process memory for list view", title, text, excludeTitle, excludeText);
+
+				var lvItem = new LVITEM
 				{
-					if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETITEMCOUNT, 0, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var row_count) == 0)
-						return Errors.TargetErrorOccurred($"Could not get row count for list view", title, text, excludeTitle, excludeText);
+					mask = 0x0001,//LVIF_TEXT
+					cchTextMax = WindowsAPI.LV_REMOTE_BUF_SIZE - 1,
+					pszText = remotelvi + lvItemSize
+				};
+				long i, total_length;
+				nint next = 0;
+				var is_selective = focused || sel;
+				var single_col_mode = col > -1 || colct == -1;// Get only one column in these cases.
+				var localText = new byte[WindowsAPI.LV_REMOTE_BUF_SIZE * sizeof(char)];
+				var sb = new StringBuilder(1024);
 
-					var col_count = new nint(-1);  // Fix for v1.0.37.01: Use -1 to indicate "undetermined col count".
-
-					if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETHEADER, 0, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var header_control) != 0
-							&& header_control.ToInt64() != 0) // Relies on short-circuit boolean order.
-						_ = WindowsAPI.SendMessageTimeout(header_control, WindowsAPI.HDM_GETITEMCOUNT, 0, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out col_count);
-
-					var rowct = row_count.ToInt64();
-					var colct = col_count.ToInt64();
-
-					if (count)
+				try
+				{
+					for (i = 0, next = new nint(-1), total_length = 0; i < rowct; ++i) // For each row:
 					{
-						if (focused) // Listed first so that it takes precedence over include_selected_only.
+						if (is_selective)
 						{
-							if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETNEXTITEM, -1, WindowsAPI.LVNI_FOCUSED, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var result) == 0)
-								return Errors.TargetErrorOccurred($"Could not get next item for list view", title, text, excludeTitle, excludeText);
-
-							ret = result.ToInt64() + 1L;
+							// Fix for v1.0.37.01: Prevent an infinite loop that might occur if the target control no longer
+							// exists (perhaps having been closed in the middle of the operation) or is permanently hung.
+							// If GetLastError() were to return zero after the below, it would mean the function timed out.
+							// However, rather than checking and retrying, it seems better to abort the operation because:
+							// 1) Timeout should be quite rare.
+							// 2) Reduces code size.
+							// 3) Having a retry really should be accompanied by SLEEP_WITHOUT_INTERRUPTION because all this
+							//    time our thread would not pumping messages (and worse, if the keyboard/mouse hooks are installed,
+							//    mouse/key lag would occur).
+							if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETNEXTITEM, next.ToInt32(), focused ? WindowsAPI.LVNI_FOCUSED : WindowsAPI.LVNI_SELECTED,
+															  SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out next) == 0
+									|| next.ToInt32() == -1) // No next item.  Relies on short-circuit boolean order.
+								break; // End of estimation phase (if estimate is too small, the text retrieval below will truncate it).
 						}
-						else if (sel)
+						else
+							next = new nint(i);
+
+						for (lvItem.iSubItem = (col > -1) ? col : 0 // iSubItem is which field to fetch. If it's zero, the item vs. subitem will be fetched.
+											   ; colct == -1 || lvItem.iSubItem < colct // If column count is undetermined (-1), always make the attempt.
+								; ++lvItem.iSubItem) // For each column:
 						{
-							if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETSELECTEDCOUNT, 0, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var result) == 0)
-								return Errors.TargetErrorOccurred($"Could not get selected item count for list view", title, text, excludeTitle, excludeText);
+							if (WindowsAPI.WriteProcessMemory(prochandle, remotelvi, ref lvItem, lvItemSize, out _)
+									&& WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETITEMTEXT, next, remotelvi, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var itemlen) != 0)
+								total_length += itemlen.ToInt64();
 
-							ret = result.ToInt64();
+							//else timed out or failed, don't include the length in the estimate.  Instead, the
+							// text-fetching routine below will ensure the text doesn't overflow the var capacity.
+							if (single_col_mode)
+								break;
 						}
-						else if (countcol) // "Count Col" returns the number of columns.
-							ret = colct;
-						else // Total row count.
-							ret = rowct;
-
-						return ret;
 					}
 
-					if (rowct < 1 || colct == 0) // But don't return when col_count == -1 (i.e. always make the attempt when col count is undetermined).
-						return DefaultObject;  // No text in the control, so indicate success.
+					// Add to total_length enough room for one linefeed per row, and one tab after each column
+					// except the last (formula verified correct, though it's inflated by 1 for safety). "i" contains the
+					// actual number of rows that will be transcribed, which might be less than rowct if is_selective==true.
+					total_length += i * (single_col_mode ? 1 : colct);
+					var capacity = total_length; // LRESULT avoids signed vs. unsigned compiler warnings.
 
-					// One block in the remote process holds the LVITEM and, after it, the buffer its text is written to.
-					var lvItemSize = Marshal.SizeOf<LVITEM>();
-					var remotelvi = WindowsAPI.AllocInterProcMem((uint)(lvItemSize + WindowsAPI.LV_REMOTE_BUF_SIZE * sizeof(char)), item.Handle, ProcessAccessTypes.PROCESS_QUERY_INFORMATION, out var prochandle);
+					if (capacity > 0) // For maintainability, avoid going negative.
+						--capacity; // Adjust to exclude the zero terminator, which simplifies things below.
 
-					if (remotelvi == 0)
-						return Errors.TargetErrorOccurred($"Could not allocate inter process memory for list view", title, text, excludeTitle, excludeText);
-
-					var lvItem = new LVITEM
+					// RETRIEVE THE TEXT FROM THE REMOTE LISTVIEW
+					// Start total_length at zero in case actual size is greater than estimate, in which case only a partial set of text along with its '\t' and '\n' chars will be written.
+					for (i = 0, next = new nint(-1), total_length = 0; i < rowct; ++i) // For each row:
 					{
-						mask = 0x0001,//LVIF_TEXT
-						cchTextMax = WindowsAPI.LV_REMOTE_BUF_SIZE - 1,
-						pszText = remotelvi + lvItemSize
-					};
-					long i, total_length;
-					nint next = 0;
-					var is_selective = focused || sel;
-					var single_col_mode = col > -1 || colct == -1;// Get only one column in these cases.
-					var localText = new byte[WindowsAPI.LV_REMOTE_BUF_SIZE * sizeof(char)];
-					var sb = new StringBuilder(1024);
-
-					try
-					{
-						for (i = 0, next = new nint(-1), total_length = 0; i < rowct; ++i) // For each row:
+						if (is_selective)
 						{
-							if (is_selective)
-							{
-								// Fix for v1.0.37.01: Prevent an infinite loop that might occur if the target control no longer
-								// exists (perhaps having been closed in the middle of the operation) or is permanently hung.
-								// If GetLastError() were to return zero after the below, it would mean the function timed out.
-								// However, rather than checking and retrying, it seems better to abort the operation because:
-								// 1) Timeout should be quite rare.
-								// 2) Reduces code size.
-								// 3) Having a retry really should be accompanied by SLEEP_WITHOUT_INTERRUPTION because all this
-								//    time our thread would not pumping messages (and worse, if the keyboard/mouse hooks are installed,
-								//    mouse/key lag would occur).
-								if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETNEXTITEM, next.ToInt32(), focused ? WindowsAPI.LVNI_FOCUSED : WindowsAPI.LVNI_SELECTED,
-																  SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out next) == 0
-										|| next.ToInt32() == -1) // No next item.  Relies on short-circuit boolean order.
-									break; // End of estimation phase (if estimate is too small, the text retrieval below will truncate it).
-							}
-							else
-								next = new nint(i);
+							// Fix for v1.0.37.01: Prevent an infinite loop (for details, see comments in the estimation phase above).
+							if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETNEXTITEM, next.ToInt32(), focused ? WindowsAPI.LVNI_FOCUSED : WindowsAPI.LVNI_SELECTED
+															  , SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out next) == 0
+									|| next.ToInt32() == -1) // No next item.
+								break; // See comment above for why unconditional break vs. continue.
+						}
+						else // Retrieve every row, so the "next" row becomes the "i" index.
+							next = new nint(i);
 
-							for (lvItem.iSubItem = (col > -1) ? col : 0 // iSubItem is which field to fetch. If it's zero, the item vs. subitem will be fetched.
-												   ; colct == -1 || lvItem.iSubItem < colct // If column count is undetermined (-1), always make the attempt.
-									; ++lvItem.iSubItem) // For each column:
-							{
-								if (WindowsAPI.WriteProcessMemory(prochandle, remotelvi, ref lvItem, lvItemSize, out _)
-										&& WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETITEMTEXT, next, remotelvi, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var itemlen) != 0)
-									total_length += itemlen.ToInt64();
-
-								//else timed out or failed, don't include the length in the estimate.  Instead, the
-								// text-fetching routine below will ensure the text doesn't overflow the var capacity.
-								if (single_col_mode)
-									break;
-							}
+						// Insert a linefeed before each row except the first:
+						if (i != 0 && total_length < capacity) // If we're at capacity, it will exit the loops when the next field is read.
+						{
+							_ = sb.Append('\n');
+							++total_length;
 						}
 
-						// Add to total_length enough room for one linefeed per row, and one tab after each column
-						// except the last (formula verified correct, though it's inflated by 1 for safety). "i" contains the
-						// actual number of rows that will be transcribed, which might be less than rowct if is_selective==true.
-						total_length += i * (single_col_mode ? 1 : colct);
-						var capacity = total_length; // LRESULT avoids signed vs. unsigned compiler warnings.
-
-						if (capacity > 0) // For maintainability, avoid going negative.
-							--capacity; // Adjust to exclude the zero terminator, which simplifies things below.
-
-						// RETRIEVE THE TEXT FROM THE REMOTE LISTVIEW
-						// Start total_length at zero in case actual size is greater than estimate, in which case only a partial set of text along with its '\t' and '\n' chars will be written.
-						for (i = 0, next = new nint(-1), total_length = 0; i < rowct; ++i) // For each row:
+						// iSubItem is which field to fetch. If it's zero, the item vs. subitem will be fetched:
+						for (lvItem.iSubItem = (col > -1) ? col : 0
+											   ; colct == -1 || lvItem.iSubItem < colct // If column count is undetermined (-1), always make the attempt.
+								; ++lvItem.iSubItem) // For each column:
 						{
-							if (is_selective)
+							// Insert a tab before each column except the first and except when in single-column mode:
+							if (!single_col_mode && lvItem.iSubItem != 0 && total_length < capacity)  // If we're at capacity, it will exit the loops when the next field is read.
 							{
-								// Fix for v1.0.37.01: Prevent an infinite loop (for details, see comments in the estimation phase above).
-								if (WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETNEXTITEM, next.ToInt32(), focused ? WindowsAPI.LVNI_FOCUSED : WindowsAPI.LVNI_SELECTED
-																  , SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out next) == 0
-										|| next.ToInt32() == -1) // No next item.
-									break; // See comment above for why unconditional break vs. continue.
-							}
-							else // Retrieve every row, so the "next" row becomes the "i" index.
-								next = new nint(i);
-
-							// Insert a linefeed before each row except the first:
-							if (i != 0 && total_length < capacity) // If we're at capacity, it will exit the loops when the next field is read.
-							{
-								_ = sb.AppendLine();
+								_ = sb.Append('\t');
 								++total_length;
 							}
 
-							// iSubItem is which field to fetch. If it's zero, the item vs. subitem will be fetched:
-							for (lvItem.iSubItem = (col > -1) ? col : 0
-												   ; colct == -1 || lvItem.iSubItem < colct // If column count is undetermined (-1), always make the attempt.
-									; ++lvItem.iSubItem) // For each column:
+							if (!WindowsAPI.WriteProcessMemory(prochandle, remotelvi, ref lvItem, lvItemSize, out _)
+									|| WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETITEMTEXT, next, remotelvi, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var templen) == 0)
+								continue; // Timed out or failed. It seems more useful to continue getting text rather than aborting the operation.
+
+							// Never more than the buffer holds, whatever the control reports.
+							var length = (uint)Math.Clamp(templen.ToInt64(), 0, WindowsAPI.LV_REMOTE_BUF_SIZE - 1);
+
+							// Otherwise, the message was successfully sent.
+							if (length > 0)
 							{
-								// Insert a tab before each column except the first and except when in single-column mode:
-								if (!single_col_mode && lvItem.iSubItem != 0 && total_length < capacity)  // If we're at capacity, it will exit the loops when the next field is read.
+								if (total_length + length > capacity)
+									goto break_both; // "goto" for simplicity and code size reduction.
+
+								// Otherwise:
+								// READ THE TEXT FROM THE REMOTE PROCESS
+								// Although MSDN has the following comment about LVM_GETITEM, it is not present for
+								// LVM_GETITEMTEXT. Therefore, to improve performance (by avoiding a second call to
+								// ReadProcessMemory) and to reduce code size, we'll take them at their word until
+								// proven otherwise.  Here is the MSDN comment about LVM_GETITEM: "Applications
+								// should not assume that the text will necessarily be placed in the specified
+								// buffer. The control may instead change the pszText member of the structure
+								// to point to the new text, rather than place it in the buffer."
+								if (WindowsAPI.ReadProcessMemory(prochandle, lvItem.pszText, localText, length * sizeof(char), out var bytesread))
 								{
-									_ = sb.Append('\t');
-									++total_length;
+									_ = sb.Append(MemoryMarshal.Cast<byte, char>(new ReadOnlySpan<byte>(localText, 0, (int)bytesread)));
+									total_length += length; // Recalculate length in case its different than the estimate (for any reason).
 								}
 
-								if (!WindowsAPI.WriteProcessMemory(prochandle, remotelvi, ref lvItem, lvItemSize, out _)
-										|| WindowsAPI.SendMessageTimeout(item.Handle, WindowsAPI.LVM_GETITEMTEXT, next, remotelvi, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 2000, out var templen) == 0)
-									continue; // Timed out or failed. It seems more useful to continue getting text rather than aborting the operation.
-
-								// Never more than the buffer holds, whatever the control reports.
-								var length = (uint)Math.Clamp(templen.ToInt64(), 0, WindowsAPI.LV_REMOTE_BUF_SIZE - 1);
-
-								// Otherwise, the message was successfully sent.
-								if (length > 0)
-								{
-									if (total_length + length > capacity)
-										goto break_both; // "goto" for simplicity and code size reduction.
-
-									// Otherwise:
-									// READ THE TEXT FROM THE REMOTE PROCESS
-									// Although MSDN has the following comment about LVM_GETITEM, it is not present for
-									// LVM_GETITEMTEXT. Therefore, to improve performance (by avoiding a second call to
-									// ReadProcessMemory) and to reduce code size, we'll take them at their word until
-									// proven otherwise.  Here is the MSDN comment about LVM_GETITEM: "Applications
-									// should not assume that the text will necessarily be placed in the specified
-									// buffer. The control may instead change the pszText member of the structure
-									// to point to the new text, rather than place it in the buffer."
-									if (WindowsAPI.ReadProcessMemory(prochandle, lvItem.pszText, localText, length * sizeof(char), out var bytesread))
-									{
-										_ = sb.Append(MemoryMarshal.Cast<byte, char>(new ReadOnlySpan<byte>(localText, 0, (int)bytesread)));
-										total_length += length; // Recalculate length in case its different than the estimate (for any reason).
-									}
-
-									//else it failed; but even so, continue on to put in a tab (if called for).
-								}
-
-								//else length is zero; but even so, continue on to put in a tab (if called for).
-								if (single_col_mode)
-									break;
+								//else it failed; but even so, continue on to put in a tab (if called for).
 							}
-						}
 
-						break_both:
-						ret = sb.ToString();
+							//else length is zero; but even so, continue on to put in a tab (if called for).
+							if (single_col_mode)
+								break;
+						}
 					}
-					finally
-					{
-						_ = WindowsAPI.VirtualFreeEx(prochandle, remotelvi, 0, VirtualAllocExTypes.MEM_RELEASE);
-						_ = WindowsAPI.CloseHandle(prochandle);
-					}
+
+					break_both:
+					ret = sb.ToString();
+				}
+				finally
+				{
+					_ = WindowsAPI.VirtualFreeEx(prochandle, remotelvi, 0, VirtualAllocExTypes.MEM_RELEASE);
+					_ = WindowsAPI.CloseHandle(prochandle);
 				}
 
 				return ret;

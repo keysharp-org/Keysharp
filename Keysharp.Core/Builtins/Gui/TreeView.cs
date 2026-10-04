@@ -287,6 +287,7 @@ namespace Keysharp.Builtins
 							node.Text = name;
 
 						Apply(node, o, false);
+						ShowItemChange(node);
 					}
 				}
 				finally
@@ -418,6 +419,9 @@ namespace Keysharp.Builtins
 
 			/// <summary>Sorts the node's children by text, one level and at once, or the top-level nodes when it is null.</summary>
 			private partial void SortChildren(TreeNode node);
+
+			/// <summary>Shows a change to the node's text, check mark, font or icon, where the toolkit does not see it by itself.</summary>
+			partial void ShowItemChange(TreeNode node);
 		}
 	}
 }

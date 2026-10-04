@@ -61,7 +61,7 @@ namespace Keysharp.Builtins
 
 		internal int SelectionStart
 		{
-			get => Selection.Start;
+			get => ((TextControl)this).Selection.Start;
 			set => SelectRange(value, 0);
 		}
 
@@ -69,10 +69,10 @@ namespace Keysharp.Builtins
 		{
 			get
 			{
-				var sel = Selection;
+				var sel = ((TextControl)this).Selection;
 				return Math.Max(0, sel.End - sel.Start + 1);
 			}
-			set => SelectRange(Selection.Start, value);
+			set => SelectRange(SelectionStart, value);
 		}
 
 		/// <summary>
@@ -140,13 +140,7 @@ namespace Keysharp.Builtins
 			ScrollTo(new Eto.Forms.Range<int>(caret, caret));
 		}
 
-		internal void SelectRange(int start, int length)
-		{
-			if (length > 0)
-				Selection = new Eto.Forms.Range<int>(start, start + length - 1);
-			else
-				CaretIndex = start;
-		}
+		internal void SelectRange(int start, int length) => ((TextControl)this).Selection = Eto.Forms.Range.FromLength(start, length);
 
 		internal void LoadRichFile(string path, bool rtf)
 		{
@@ -184,7 +178,7 @@ namespace Keysharp.Builtins
 				return;
 			}
 
-			var range = new Eto.Forms.Range<int>(start, start + length - 1);
+			var range = new Eto.Forms.Range<int>(EtoExtensions.TextOffset(this, start, true), EtoExtensions.TextOffset(this, start + length, true) - 1);
 			var buffer = Buffer;
 
 			if (fmt.color is Eto.Drawing.Color c)
@@ -232,35 +226,42 @@ namespace Keysharp.Builtins
 			//change a script asked about; the pair is what tells the holder to drop the events it raises.
 			BeginFormatUpdate();
 			var here = Selection;
-			SelectRange(start, Math.Min(length, 1));
-			var fmt = new RichEditFormat();
-			var font = SelectionFont;
 
-			if (font != null)
+			try
 			{
-				fmt.name = font.FamilyName;
-				fmt.size = Math.Round(Conversions.UnscaleFontSize(font.Size), 3);
+				SelectRange(start, Math.Min(length, 1));
+				var fmt = new RichEditFormat();
+				var font = SelectionFont;
+
+				if (font != null)
+				{
+					fmt.name = font.FamilyName;
+					fmt.size = Math.Round(Conversions.UnscaleFontSize(font.Size), 3);
+				}
+
+				fmt.bold = SelectionBold;
+				fmt.italic = SelectionItalic;
+				fmt.underline = SelectionUnderline;
+				fmt.strike = SelectionStrikethrough;
+				var fore = SelectionForeground;
+
+				if (fore.Ab > 0)
+					fmt.color = fore;
+
+				var back = SelectionBackground;
+
+				//Transparent is how a backend reports "no background of its own", and the control's own colour is
+				//what the buffer had to be given for "BackgroundDefault" - neither is a colour this range chose.
+				if (back.Ab > 0 && back != DefaultBack)
+					fmt.back = back;
+
+				return fmt;
 			}
-
-			fmt.bold = SelectionBold;
-			fmt.italic = SelectionItalic;
-			fmt.underline = SelectionUnderline;
-			fmt.strike = SelectionStrikethrough;
-			var fore = SelectionForeground;
-
-			if (fore.Ab > 0)
-				fmt.color = fore;
-
-			var back = SelectionBackground;
-
-			//Transparent is how a backend reports "no background of its own", and the control's own colour is
-			//what the buffer had to be given for "BackgroundDefault" - neither is a colour this range chose.
-			if (back.Ab > 0 && back != DefaultBack)
-				fmt.back = back;
-
-			Selection = here;
-			EndFormatUpdate();
-			return fmt;
+			finally
+			{
+				Selection = here;
+				EndFormatUpdate();
+			}
 		}
 
 		// ---- what Eto has no answer for; the holder refuses these before it reaches them -----------------
@@ -331,11 +332,17 @@ namespace Keysharp.Builtins
 		{
 			BeginFormatUpdate();
 			var here = Selection;
-			SelectRange(start, Math.Min(length, 1));
-			var font = SelectionFont;
-			Selection = here;
-			EndFormatUpdate();
-			return font;
+
+			try
+			{
+				SelectRange(start, Math.Min(length, 1));
+				return SelectionFont;
+			}
+			finally
+			{
+				Selection = here;
+				EndFormatUpdate();
+			}
 		}
 
 		//Eto reports a caret move and a selection change separately; both mean the same thing to a script.

@@ -92,6 +92,38 @@ re.ScrollCaret()
 
 ; --- Find -----------------------------------------------------------------------------------------------
 
+re.Value := "one`ntwo`nthree"
+re.Select(5, 3)
+AssertEq(EditGetSelectedText(re), "two", A_LineNumber)
+AssertEq(EditGetCurrentLine(re), 2, A_LineNumber)
+AssertEq(EditGetCurrentCol(re), 1, A_LineNumber)
+EditPaste("2", re)
+AssertEq(re.Value, "one`n2`nthree", A_LineNumber)
+
+re.Value := "😀x"
+re.Select(3, 1)
+AssertEq(re.SelectionStart, 3, A_LineNumber)
+AssertEq(EditGetSelectedText(re), "x", A_LineNumber)
+AssertEq(EditGetCurrentCol(re), 3, A_LineNumber)
+EditPaste("z", re)
+AssertEq(re.Value, "😀z", A_LineNumber)
+
+upper := g.AddRichEdit("w100 h50 Uppercase")
+upper.Value := "abc"
+Sleep 50
+AssertEq(upper.Value, "ABC", A_LineNumber)
+upper.Value := "😀ab"
+Sleep 50
+AssertEq(upper.Value, "😀AB", A_LineNumber)
+upper.Value := "😁ab"
+Sleep 50
+AssertEq(upper.Value, "😁AB", A_LineNumber)
+upper.Value := "ab😀"
+Sleep 50
+upper.Value := "cd" Chr(0x2F600)
+Sleep 50
+AssertEq(upper.Value, "CD" Chr(0x2F600), A_LineNumber)
+
 re.Value := "alpha beta Alpha gamma"
 AssertEq(re.Find("alpha"), 1, A_LineNumber)
 AssertEq(re.Find("alpha", 2), 12, A_LineNumber)            ; case-insensitive by default

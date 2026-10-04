@@ -389,12 +389,7 @@ namespace System.Windows.Forms
 #if !WINDOWS
 			control.ResumeLayout();
 			if (control is KeysharpTreeView ktv)
-			{
 				ktv.ResumeReload();
-				ktv.ReloadData();
-			}
-			else if (control is TreeGridView tgv)
-				tgv.ReloadData();
 #else
 			_ = WindowsAPI.SendMessage(control.Handle, WindowsAPI.WM_SETREDRAW, 1, 0);
 			control.Refresh();
@@ -538,58 +533,6 @@ namespace System.Windows.Forms
 			}
 
 			return p;
-		}
-
-		/// <summary>
-		/// Selects or deselects a <see cref="ListBox"/> item based on a text match.<br/>
-		/// If no match is found, all existing selections are cleared.
-		/// </summary>
-		/// <param name="lb">The <see cref="ListBox"/> whose item will be selected or deselected.</param>
-		/// <param name="text">The text of the item to match.</param>
-		/// <param name="clear">True to deselect the item. Default: false.</param>
-		internal static void SelectItem(this ListBox lb, string text, bool clear = false)
-		{
-#if WINDOWS
-			if (lb.SelectionMode == SelectionMode.One)
-			{
-				var index = lb.FindString(text);
-
-				if (index != ListBox.NoMatches)
-					lb.SetSelected(index, true);
-				else if (clear)
-					lb.ClearSelected();
-			}
-			else if (lb.SelectionMode != SelectionMode.None)
-			{
-				for (var i = 0; i < lb.Items.Count; i++)
-					if (lb.Items[i] is string s)
-						lb.SetSelected(i, s.StartsWith(text, StringComparison.CurrentCultureIgnoreCase));
-			}
-#else
-			var index = lb.FindString(text);
-
-			if (index >= 0)
-				lb.SelectedIndex = index;
-			else if (clear)
-				lb.SelectedIndex = -1;
-#endif
-		}
-
-		/// <summary>
-		/// Selects or deselects a <see cref="ComboBox"/> item based on a text match.<br/>
-		/// If no match is found, the existing selection is cleared.
-		/// </summary>
-		/// <param name="cb">The <see cref="ComboBox"/> whose item will be selected or deselected.</param>
-		/// <param name="text">The text of the item to match.</param>
-		/// <param name="clear">True to deselect the item. Default: false.</param>
-		internal static void SelectItem(this ComboBox cb, string text, bool clear = false)
-		{
-			var index = cb.FindString(text);
-
-			if (index >= 0)
-				cb.SelectedIndex = index;
-			else if (clear)
-				cb.SelectedIndex = -1;
 		}
 
 		/// <summary>

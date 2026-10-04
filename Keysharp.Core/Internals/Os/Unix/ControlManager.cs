@@ -570,101 +570,85 @@ namespace Keysharp.Internals.Os.Unix
 		internal override void ControlShowDropDown(object ctrl, object title, object text, object excludeTitle, object excludeText) =>
 		DropdownHelper(true, ctrl, title, text, excludeTitle, excludeText);
 
+		//Lines are counted at the line breaks in the text, so a long line the control wraps is still one line, unlike in
+		//a Windows edit control.
 		internal override long EditGetCurrentCol(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
-			{
-				var ctrl2 = item.Control;
+			if (GetEtoTextControl(ctrl, title, text, excludeTitle, excludeText) is not TextControl edit)
+				return 0L;
 
-				if (ctrl2 is TextBoxBase txt)
-					return txt.SelectionStart + 1;
-				else
-				{
-					//How to do the equivalent of what the Windows derivation does, but on linux?
-				}
-			}
-
-			return 0L;
+			var before = BeforeSelection(edit);
+			return before.Length - before.LastIndexOf('\n');
 		}
 
-		internal override long EditGetCurrentLine(object ctrl, object title, object text, object excludeTitle, object excludeText)
-		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
-			{
-				var ctrl2 = item.Control;
-
-				if (ctrl2 is TextBoxBase txt)
-					return txt.GetLineFromCharIndex(txt.SelectionStart);//On linux the line index is 1-based, so don't add 1 to it.
-				else
-				{
-					//How to do the equivalent of what the Windows derivation does, but on linux?
-				}
-			}
-
-			return 0L;
-		}
+		internal override long EditGetCurrentLine(object ctrl, object title, object text, object excludeTitle, object excludeText) =>
+			GetEtoTextControl(ctrl, title, text, excludeTitle, excludeText) is TextControl edit ? BeforeSelection(edit).Count('\n') + 1L : 0L;
 
 		internal override string EditGetLine(int n, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
+			if (GetEtoTextControl(ctrl, title, text, excludeTitle, excludeText) is not TextControl edit)
+				return DefaultObject;
+
+			if (n < 1)
+				return (string)Errors.InvalidParameterErrorOccurred(1, "EditGetLine", n, DefaultErrorString);
+
+			var rest = (edit.Text ?? "").AsSpan();
+
+			for (var i = 1; i < n; i++)
 			{
-				var ctrl2 = item.Control;
-				n--;
+				var lineBreak = rest.IndexOf('\n');
 
-				if (ctrl2 is TextBoxBase txt)
-				{
-					var lines = txt.Lines;
+				if (lineBreak < 0)
+					return (string)Errors.ValueErrorOccurred($"Requested line of {n} is greater than the number of lines ({i}) in the text box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}", null, DefaultErrorString);
 
-					if (n >= lines.Length)
-						return (string)Errors.ValueErrorOccurred($"Requested line of {n + 1} is greater than the number of lines ({lines.Length}) in the text box in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}", null, DefaultErrorString);
-
-					return lines[n];
-				}
-				else
-				{
-					//How to do the equivalent of what the Windows derivation does, but on linux?
-				}
+				rest = rest[(lineBreak + 1)..];
 			}
 
-			return DefaultObject;
+			var end = rest.IndexOf('\n');
+			return (end < 0 ? rest : rest[..end]).TrimEnd('\r').ToString();
 		}
 
-		internal override long EditGetLineCount(object ctrl, object title, object text, object excludeTitle, object excludeText)
-		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
-			{
-				if (item.Control is TextBoxBase txt)
-				{
-					var val = txt.Lines.LongLength;
-					return val == 0L ? 1L : val;
-				}
-				else
-				{
-					//How to do the equivalent of what the Windows derivation does, but on linux?
-				}
-			}
-
-			return 0L;
-		}
+		internal override long EditGetLineCount(object ctrl, object title, object text, object excludeTitle, object excludeText) =>
+			GetEtoTextControl(ctrl, title, text, excludeTitle, excludeText) is TextControl edit ? (edit.Text ?? "").AsSpan().Count('\n') + 1L : 0L;
 
 		internal override string EditGetSelectedText(object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
-			{
-				if (item.Control is TextBoxBase ctrl2)
-					return ctrl2.SelectedText;
-			}
+			if (GetEtoTextControl(ctrl, title, text, excludeTitle, excludeText) is not TextControl edit)
+				return DefaultObject;
 
-			return DefaultObject;
+			var selection = edit.Selection;
+			return selection.Length() > 0 ? (edit.Text ?? "").Substring(selection.Start, selection.Length()) : "";
 		}
 
 		internal override void EditPaste(string str, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is ControlInfo item)
-			{
-				if (item.Control is TextBox ctrl2)
-					ctrl2.Paste(str);
-			}
+			if (GetEtoTextControl(ctrl, title, text, excludeTitle, excludeText) is not TextControl edit)
+				return;
+
+			//As EM_REPLACESEL: the text replaces the selection and the caret follows it.
+			var selection = edit.Selection;
+			edit.ReplaceText(selection.Start, selection.Length(), str);
+			edit.CaretIndex = selection.Start + str.Length;
+			WindowInfoBase.DoControlDelay();
+		}
+
+		/// <summary>The Edit or RichEdit control the criteria name, or null after raising the error when they name none.</summary>
+		private static TextControl GetEtoTextControl(object ctrl, object title, object text, object excludeTitle, object excludeText)
+		{
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is not ControlInfo item)
+				return null;
+
+			if (item.Control is TextBox or TextArea or PasswordBox)
+				return (TextControl)item.Control;
+
+			_ = Errors.TargetErrorOccurred("The control is not an Edit", title, text, excludeTitle, excludeText);
+			return null;
+		}
+
+		private static ReadOnlySpan<char> BeforeSelection(TextControl edit)
+		{
+			var all = edit.Text ?? "";
+			return all.AsSpan(0, Math.Min(edit.Selection.Start, all.Length));
 		}
 
 		internal override object ListViewGetContent(string options, object ctrl, object title, object text, object excludeTitle, object excludeText)
@@ -691,38 +675,39 @@ namespace Keysharp.Internals.Os.Unix
 
 				if (item.Control is KeysharpListView lv)
 				{
-					if (count && sel)
-						ret = (long)lv.SelectedItems.Count;
-					else if (count && focused)
-						ret = lv.FocusedItem is ListViewItem lvi ? lvi.Index + 1L : (object)0L;
+					//As in AutoHotkey, Focused takes precedence over Selected.
+					if (count && focused)
+						ret = lv.FocusedRow + 1L;
+					else if (count && sel)
+						ret = (long)lv.SelectedIndices.Count;
 					else if (count && countcol)
 						ret = (long)lv.Columns.Count;
 					else if (count)
 						ret = (long)lv.Items.Count;
 					else
 					{
+						if (col != int.MinValue && (col < 0 || col >= lv.Columns.Count))
+							return Errors.ValueErrorOccurred($"Column {col + 1} is outside the list view column count of {lv.Columns.Count}.");
+
+						IEnumerable<int> rows = focused ? (lv.FocusedRow is var focusedRow and >= 0 ? [focusedRow] : []) : sel ? lv.SelectedIndices : Enumerable.Range(0, lv.Items.Count);
 						var sb = new StringBuilder(1024);
-						var items = new List<ListViewItem>();
+						var firstRow = true;
 
-						if (focused)
+						//A linefeed between rows, none after the last, and a tab between the cells of a row.
+						foreach (var row in rows)
 						{
-							if (lv.FocusedItem is ListViewItem lvi)
-								items.Add(lvi);
-						}
-						else if (sel)
-							items.AddRange(lv.SelectedItems.Cast<ListViewItem>());
-						else
-							items.AddRange(lv.Items.Cast<ListViewItem>());
+							if (!firstRow)
+								_ = sb.Append('\n');
 
-						if (col >= 0)
-						{
-							if (col >= lv.Columns.Count)
-								return Errors.ValueErrorOccurred($"Column ${col + 1} is greater than list view column count of {lv.Columns.Count} in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}");
+							firstRow = false;
+							var cells = lv.Items[row];
 
-							items.ForEach(templvi => sb.AppendLine(templvi.SubItems[col].Text));
+							if (col >= 0)
+								_ = sb.Append(GetCellText(cells, col));
+							else
+								for (var c = 0; c < lv.Columns.Count; c++)
+									_ = (c > 0 ? sb.Append('\t') : sb).Append(GetCellText(cells, c));
 						}
-						else
-							items.ForEach(templvi => sb.AppendLine(string.Join('\t', templvi.SubItems.Cast<ListViewItem.ListViewSubItem>().Select(x => x.Text))));
 
 						ret = sb.ToString();
 					}

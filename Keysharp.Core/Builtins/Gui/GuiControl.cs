@@ -549,12 +549,7 @@ namespace Keysharp.Builtins
 						doubleClickHandlers.InvokeEventHandlers(this, 0L);
 				}
 				else if (_control is KeysharpListBox lb)
-				{
-					if (lb.SelectedIndices.Count > 0)
-						doubleClickHandlers.InvokeEventHandlers(this, lb.SelectedIndices[0] + 1L);
-					else
-						doubleClickHandlers.InvokeEventHandlers(this, 0L);
-				}
+					doubleClickHandlers.InvokeEventHandlers(this, lb.SelectedIndex + 1L);
 #if !WINDOWS
 				//Off Windows a StatusBar is one control whose parts are child controls, so the part has to be
 				//resolved from where the click landed. On Windows each part raises its own event instead - see

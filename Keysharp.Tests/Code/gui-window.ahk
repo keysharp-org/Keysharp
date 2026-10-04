@@ -3,6 +3,7 @@
 #Warn All, StdOut
 #Include <assert>
 
+#if WINDOWS
 ; Gui.Opt changes an existing window in place, as AutoHotkey does, so a script that keyed anything by the Hwnd
 ; keeps finding its window. An owned window or a tool window has no taskbar button.
 
@@ -58,6 +59,7 @@ for opts in ["-Caption +Resize", "+Resize -Caption"] {
 tool.Destroy()
 owned.Destroy()
 owner.Destroy()
+#endif
 
 ; A control type's own members live on its class, as in AutoHotkey, so another type has none of them.
 lists := Gui()
@@ -203,11 +205,13 @@ kidB := tv.Add("b", p2)
 kidA := tv.Add("a", p2)
 grandZ := tv.Add("z", kidB)
 grandY := tv.Add("y", kidB)
+tv.Modify(p2)
 tv.Modify(p2, "Sort")
 AssertEq(tv.GetChild(p2), kidA, A_LineNumber)
 AssertEq(tv.GetNext(kidA), kidB, A_LineNumber)
 AssertEq(tv.GetChild(kidB), grandZ, A_LineNumber)
 tv.Modify(0, "Sort")
+AssertEq(tv.GetSelection(), p2, A_LineNumber)
 AssertEq(tv.GetNext(0), after, A_LineNumber)
 AssertEq(tv.GetText(p1), "P1", A_LineNumber)
 AssertEq(tv.Modify(p1, "-Bold"), p1, A_LineNumber)
@@ -234,8 +238,78 @@ lb := lists.Add("ListBox", , ["a", "b", "c"])
 Throws(() => lb.Delete(0), A_LineNumber, ValueError)
 lb.Delete(2)
 AssertEq(ControlGetItems(lb).Length, 2, A_LineNumber)
+
+; Row updates preserve selection and focus without rebuilding the widget.
+rows := lists.AddListView("w200 h100", ["Name", "Size"])
+rows.Add(, "first", "1")
+rows.Add("Select Focus", "second", "2")
+rows.Add(, "third", "3")
+rows.Insert(1, , "before", "0")
+rows.Modify(3, , "changed")
+AssertEq(rows.GetNext(), 3, A_LineNumber)
+AssertEq(rows.GetNext(0, "F"), 3, A_LineNumber)
+rows.Delete(1)
+AssertEq(rows.GetNext(), 2, A_LineNumber)
+AssertEq(ListViewGetContent("Selected", rows), "changed`t2", A_LineNumber)
+AssertEq(ListViewGetContent("Col2", rows), "1`n2`n3", A_LineNumber)
+Throws(() => ListViewGetContent("Col3", rows), A_LineNumber, ValueError)
+Throws(() => ListViewGetContent("Col0", rows), A_LineNumber, ValueError)
+
+#if WINDOWS
+multi := lists.AddListBox("Multi", ["same", "other", "same"])
+multi.Text := "same"
+AssertEq(multi.Value.Length, 2, A_LineNumber)
+#endif
+
+sb.Text := "first"
+AssertEq(sb.Text, "first", A_LineNumber)
+AssertEq(sb.Value, "", A_LineNumber)
+Throws(() => sb.Value := "x", A_LineNumber, Error)
+
+changes := 0
+Changed(*) {
+	global changes
+	changes += 1
+}
+lb := lists.AddListBox(, ["Red", "Green", "Blue"])
+lb.OnEvent("Change", Changed)
+lb.Choose("gr")
+AssertEq(lb.Value, 2, A_LineNumber)
+lb.Text := "blue"
+AssertEq(lb.Value, 3, A_LineNumber)
+Throws(() => lb.Text := "Bl", A_LineNumber, ValueError)
+Throws(() => lb.Value := [1], A_LineNumber, TypeError)
+lb.Choose(0)
+AssertEq(lb.Text, "", A_LineNumber)
+Throws(() => lb.Choose(4), A_LineNumber, ValueError)
+numeric := lists.AddListBox(, ["first", "1.0"])
+numeric.Choose(1.0)
+AssertEq(numeric.Value, 2, A_LineNumber)
+ddl := lists.AddDropDownList("Sort", ["b", "C", "a"])
+ddl.Value := 1
+AssertEq(ddl.Text, "a", A_LineNumber)
+ddl.Text := "c"
+AssertEq(ddl.Value, 3, A_LineNumber)
+cb := lists.AddComboBox(, ["Alpha", "Beta"])
+cb.OnEvent("Change", Changed)
+cb.Text := "Gamma"
+AssertEq(cb.Value, 0, A_LineNumber)
+AssertEq(cb.Text, "Gamma", A_LineNumber)
+cb.Choose("be")
+AssertEq(cb.Text, "Beta", A_LineNumber)
+Sleep 20
+AssertEq(changes, 0, A_LineNumber)
+
+ed := lists.AddEdit("r3 w200", "one`ntwo`nthree")
+AssertEq(EditGetLineCount(ed), 3, A_LineNumber)
+AssertEq(EditGetLine(2, ed), "two", A_LineNumber)
+Throws(() => EditGetLine(0, ed), A_LineNumber, ValueError)
+Throws(() => EditGetLine(9, ed), A_LineNumber, ValueError)
+num := lists.AddEdit("Number w100", "1a2")
+AssertEq(num.Value, "1a2", A_LineNumber)
 lists.Destroy()
 
+#if WINDOWS
 ; A handler named as a method of the Gui's event sink runs as AutoHotkey runs it: looked up on the sink when the
 ; event fires, with the sink as this and the Gui or control first.
 class EventSink {
@@ -275,5 +349,6 @@ Sleep 200
 AssertEq(sink.log.Length, 0, A_LineNumber)
 
 win.Destroy()
+#endif
 FileAppend "pass", "*"
 ExitApp()

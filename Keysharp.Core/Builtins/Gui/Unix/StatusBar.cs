@@ -4,8 +4,8 @@ namespace Keysharp.Builtins
 	public partial class Gui
 	{
 		/// <summary>
-		/// The Eto half of <see cref="Gui.StatusBar"/>: each part is a label the strip lays out again after a change.
-		/// There are no icon handles off Windows, so SetIcon returns 0.
+		/// The Eto half of <see cref="Gui.StatusBar"/>: each part is a row of labels, which a change of text or icon updates
+		/// in place and a change of parts lays out again. There are no icon handles off Windows, so SetIcon returns 0.
 		/// </summary>
 		public partial class StatusBar
 		{
@@ -14,7 +14,7 @@ namespace Keysharp.Builtins
 				var item = Strip.Items[part];
 				var old = item.Image;
 				item.Image = bitmap;
-				Strip.UpdateItems();
+				Strip.UpdatePart(part);
 				old?.Dispose();
 				return 0;
 			}
@@ -55,7 +55,7 @@ namespace Keysharp.Builtins
 				if (style >= 0)
 					item.Style = (int)style;
 
-				Strip.UpdateItems();
+				Strip.UpdatePart(part);
 			}
 		}
 	}
