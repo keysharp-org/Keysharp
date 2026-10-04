@@ -124,6 +124,7 @@ namespace Keysharp.Compilation.Syntax
 		private readonly HashSet<Stmt> _packagesSeen = new(ReferenceEqualityComparer.Instance);
 		private readonly List<string> _capabilityRequirements = [];
 		private readonly HashSet<DirectiveStmt> _capabilityRequirementsSeen = new(ReferenceEqualityComparer.Instance);
+		private bool _capabilityErrorStdOut;
 		private readonly HashSet<string> _requiredProviders = new(System.StringComparer.OrdinalIgnoreCase);
 		private readonly HashSet<string> _requiredComponents = new(System.StringComparer.OrdinalIgnoreCase);
 		public IReadOnlyCollection<string> RequiredProviders => _requiredProviders;
@@ -3789,11 +3790,21 @@ namespace Keysharp.Compilation.Syntax
 		// runtime call can batch scopes across the main script and imported modules.
 		private void PrescanCapabilityRequirements(List<Stmt> body)
 		{
+			var errorStdOutBefore = false;
+
 			foreach (var statement in body)
-				if (statement is DirectiveStmt directive
-					&& TryGetCapabilityRequirement(directive, out var capabilities)
-					&& _capabilityRequirementsSeen.Add(directive))
-					_capabilityRequirements.Add(capabilities);
+				if (statement is DirectiveStmt directive)
+				{
+					if (directive.Name.Equals("ErrorStdOut", System.StringComparison.OrdinalIgnoreCase))
+						errorStdOutBefore = true;
+					else if (TryGetCapabilityRequirement(directive, out var capabilities)
+						&& _capabilityRequirementsSeen.Add(directive))
+					{
+						if (_capabilityRequirements.Count == 0)
+							_capabilityErrorStdOut = errorStdOutBefore;
+						_capabilityRequirements.Add(capabilities);
+					}
+				}
 		}
 
 		// Gathers the program's `#Package [*i] <id> [version]` directives into one package set (see the _packages field
@@ -7151,8 +7162,12 @@ namespace Keysharp.Compilation.Syntax
 			// #Warn output runs first (at load time, before any script logic), per the configured mode.
 			stmts.AddRange(EmitWarnings());
 			if (_capabilityRequirements.Count > 0)
+			{
+				// The batched check runs before module auto-exec reaches its directives.
+				if (_capabilityErrorStdOut) stmts.Add(ExprStmt(Assign(Access("MainScript.ErrorStdOut"), BoolLit(true))));
 				stmts.Add(ExprStmt(Inv(Access("Keysharp.Runtime.Script.RequireCapabilities"),
 					_capabilityRequirements.Select(Str).ToArray())));
+			}
 			// Resolve operators before any hook registration, class initialization or module auto-execution can use them.
 			if (_hasOperatorDeclarations)
 				stmts.Add(ExprStmt(Inv(Access("MainScript.Operators.Register"), Id(NameMangler.OperatorManifestField))));

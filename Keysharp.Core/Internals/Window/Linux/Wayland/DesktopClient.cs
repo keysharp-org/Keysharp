@@ -697,7 +697,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			{
 				try
 				{
-					using var probe = DesktopConnection.Connect(ConnectionRole.Rpc, ProbeTimeoutMs);
+					var lease = GetLease();
+					using var probe = DesktopConnection.Connect(ConnectionRole.Rpc, ProbeTimeoutMs, leaseId: lease.Id);
+					Learn(probe.Backend, probe.AvailableOperations);
 				}
 				catch
 				{

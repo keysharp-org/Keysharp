@@ -31,8 +31,8 @@ namespace Keysharp.Internals.Input.Linux
 		internal enum ConnectionRole : uint
 		{
 			Rpc = 0,
-			Lease = 1,
 			CallbackStream = 2,
+			Lease = 3,
 		}
 
 		private enum AuthorizationMode : uint

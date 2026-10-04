@@ -113,6 +113,10 @@ namespace Keysharp.Internals.Input.Unix
 			needShift = false;
 			needAltGr = false;
 
+			// XKB names these keys with special keysyms, not their Unicode control values.
+			if (rune.Value is '\b' or '\t' or '\r' or '\n')
+				return KeyCodes.TryMapAsciiToVk(rune, out vk, out needShift);
+
 			if (!TryGetReadyKeymap(out var currentKeymap))
 				return KeyCodes.TryMapAsciiToVk(rune, out vk, out needShift);
 

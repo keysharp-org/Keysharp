@@ -841,7 +841,7 @@ namespace Keysharp.Runtime
 			if (CapabilityRequests.ParseRequested(capabilities) is not { } requested)
 				return DefaultObject;
 
-			CapabilityRequests.RequestBatched(requested);
+			var result = CapabilityRequests.RequestBatched(requested);
 
 			var denied = new List<string>();
 
@@ -852,10 +852,10 @@ namespace Keysharp.Runtime
 			if (denied.Count == 0)
 				return DefaultObject;
 
-			_ = Diagnostics.Debug.WriteLine(
-				$"Keysharp: required capability/capabilities not granted: {string.Join(", ", denied)}. Exiting. " +
-				"Re-run and choose Allow (or grant it persistently) to continue.");
-			return Builtins.Flow.ExitApp(1L);
+			var reason = result.Message.IsNullOrEmpty() ? string.Empty : $" {result.Message}";
+			_ = Errors.ErrorOccurred($"Required capabilities not granted: {string.Join(", ", denied)}.{reason}",
+				null, ErrorMode.ExitApp);
+			return DefaultObject;
 		}
 
 		public static bool HandleSingleInstance(string title, eScriptInstance inst)

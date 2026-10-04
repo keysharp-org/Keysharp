@@ -373,31 +373,31 @@ namespace Eto.Forms
             }
         }
 
-        extension(Eto.Widget widget)
+        internal static nint GetHandle(Eto.Widget widget)
         {
-            internal nint Handle {
-                get
-                {
 #if LINUX
-                    // X11 only: on Wayland the GdkWindow is not a GdkX11Window, so gdk_x11_window_get_xid
-                    // asserts (a Gdk-CRITICAL per call) and returns 0 anyway. Skipping it on Wayland avoids
-                    // that wasted native call + log spam — which, called per window operation, is a real cost
-                    // when many overlay windows (e.g. OCR highlights) are created in a tight loop.
-                    if (!Keysharp.Internals.Platform.Desktop.IsWaylandSession && widget is Form form)
-                    {
-                        var native = form.ToNative() as Gtk.Window;
-                        var gdkWin = native?.Window;
-                        if (gdkWin != null)
-                        {
-                            var xid = gdk_x11_window_get_xid(gdkWin.Handle);
-                            if (xid != 0)
-                                return xid;
-                        }
-                    }
-#endif
-                    return widget.NativeHandle;
+            // X11 only: on Wayland the GdkWindow is not a GdkX11Window, so gdk_x11_window_get_xid
+            // asserts (a Gdk-CRITICAL per call) and returns 0 anyway. Skipping it on Wayland avoids
+            // that wasted native call + log spam — which, called per window operation, is a real cost
+            // when many overlay windows (e.g. OCR highlights) are created in a tight loop.
+            if (!Keysharp.Internals.Platform.Desktop.IsWaylandSession && widget is Form form)
+            {
+                var native = form.ToNative() as Gtk.Window;
+                var gdkWin = native?.Window;
+                if (gdkWin != null)
+                {
+                    var xid = gdk_x11_window_get_xid(gdkWin.Handle);
+                    if (xid != 0)
+                        return xid;
                 }
             }
+#endif
+            return widget.NativeHandle;
+        }
+
+        extension(Eto.Widget widget)
+        {
+            internal nint Handle => GetHandle(widget);
             internal string Name
             {
                 get => widget.Properties.TryGetValue("Name", out object name) ? (string)name : "";

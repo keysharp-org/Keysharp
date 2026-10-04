@@ -14,6 +14,26 @@ namespace Keysharp.Tests
 	{
 #if LINUX
 		[Test, Category("Misc")]
+		public void XkbMapperMapsControlKeysWithReadyKeymap()
+		{
+			using var mapper = new LinuxXkbCharMapperProvider(() => 0);
+			mapper.ConfigureLayout("evdev", "pc105", "us", null, null);
+			Assert.AreNotEqual(nint.Zero, mapper.GetCurrentKeymapHandle());
+
+			foreach (var (character, expectedVk) in new[]
+			{
+				('\b', VK_BACK), ('\t', VK_TAB), ('\r', VK_RETURN), ('\n', VK_RETURN),
+			})
+			{
+				Assert.IsTrue(mapper.TryMapRuneToKeystroke(new Rune(character), null,
+					out var vk, out var needShift, out var needAltGr), $"{(int)character:X4}");
+				Assert.AreEqual(expectedVk, vk);
+				Assert.IsFalse(needShift);
+				Assert.IsFalse(needAltGr);
+			}
+		}
+
+		[Test, Category("Misc")]
 		public void XkbMapperUsesConfiguredNonUsLayout()
 		{
 			using var mapper = new LinuxXkbCharMapperProvider(() => 0);

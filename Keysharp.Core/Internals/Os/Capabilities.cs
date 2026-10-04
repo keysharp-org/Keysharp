@@ -26,11 +26,11 @@ namespace Keysharp.Internals.Os
 	/// </summary>
 	internal static class CapabilityRequests
 	{
-		internal static void RequestBatched(List<KeysharpCapability> requested)
+		internal static PermissionResult RequestBatched(List<KeysharpCapability> requested)
 		{
 			var permissions = Script.TheScript.Permissions;
 
-			_ = permissions.RequestCapabilities(
+			return permissions.RequestCapabilities(
 				inputMonitoring: requested.Contains(KeysharpCapability.InputMonitoring),
 				inputControl: requested.Contains(KeysharpCapability.InputControl),
 				windowMonitoring: requested.Contains(KeysharpCapability.WindowMonitoring),

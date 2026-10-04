@@ -407,7 +407,7 @@ namespace Keysharp.Tests
 				var states = (IDictionary)OwnToplevelsField("states");
 				var claimedIds = (HashSet<string>)OwnToplevelsField("claimedIds");
 				var form = new Eto.Forms.Form { Content = new PixelLayout(), ClientSize = new Size(200, 100) };
-				var handle = form.Handle;
+				var handle = EtoExtensions.GetHandle(form);
 				var state = TrackOwnToplevel(form, handle);
 
 				void Bind()
@@ -460,7 +460,7 @@ namespace Keysharp.Tests
 
 				try
 				{
-					var state = TrackOwnToplevel(form, form.Handle);
+					var state = TrackOwnToplevel(form, EtoExtensions.GetHandle(form));
 					SetOwnToplevelField(state, "Mapped", true);
 					SetOwnToplevelField(state, "MapGeneration", 1);
 					Assert.IsNull(correlate.Invoke(null, [new ListingBackend(false), state]));
