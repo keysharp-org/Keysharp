@@ -242,7 +242,9 @@ namespace Eto.Forms
             {
                 appId = Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.CurrentAppId(form, appId);
 
-                if (form.ToNative() is Gtk.Window gtkWin && gtkWin.Window is Gdk.Window gdkWin)
+                // GTK can use XWayland even in a Wayland session; this native call requires a Wayland window.
+                if (form.ToNative() is Gtk.Window gtkWin && gtkWin.Window is Gdk.Window gdkWin
+                    && GLib.GType.FromName("GdkWaylandWindow").IsInstance(gdkWin.Handle))
                 {
                     gdk_wayland_window_set_application_id(gdkWin.Handle, appId);
                     return true;

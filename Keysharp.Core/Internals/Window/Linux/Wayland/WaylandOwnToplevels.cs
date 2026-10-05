@@ -1286,10 +1286,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			// A freshly mapped surface can appear before its state notification reaches the lease.
 			var waitMs = (int)Math.Min(retryMs, Math.Max(1, deadline - Environment.TickCount64));
 			var app = Eto.Forms.Application.Instance;
+			var canPump = Script.TheScript?.CanPumpTaskWait == true;
 
-			if (Script.TheScript?.CanPumpTaskWait != true && app?.IsUIThread == true)
+			if (!canPump && app?.IsUIThread == true)
 			{
 				// GTK can need to commit the surface before a script scheduler exists on this thread.
+				app.RunIteration();
 				var until = Environment.TickCount64 + waitMs;
 				while (!change.IsCompleted && Environment.TickCount64 < until)
 				{
@@ -1299,11 +1301,21 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return;
 			}
 
+			// A completed state signal skips the task wait's pump, but GTK still needs to draw and commit.
+			if (canPump)
+				Keysharp.Internals.Flow.SleepWithoutInterruption();
+
 			_ = change.WaitWithoutInterruption(waitMs);
 		}
 
 		private static WaylandWindowInfo Claim(FormState state, int mapGeneration, WaylandWindowInfo pick)
 		{
+			// Metadata can identify a toplevel before its first buffer commits. Keep correlating until
+			// geometry is readable, as callers query its position immediately after binding.
+			if (!pick.HasKnownField(WaylandWindowFields.Frame)
+				|| pick.FrameGeometry.Width <= 0 || pick.FrameGeometry.Height <= 0)
+				return null;
+
 			lock (sync)
 			{
 				if (!IsBindableLocked(state, mapGeneration) || claimedIds.Contains(pick.CompositorId))

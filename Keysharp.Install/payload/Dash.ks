@@ -1,4 +1,4 @@
-#Requires Keysharp v2.0
+#Requires Keysharp v0.0.0.17
 #SingleInstance Force
 #import KS { A_DirSeparator, A_KsVersion, Font, Image, Monitor, WinFromPoint }
 #App { GuiTheme: "Dark" }
@@ -10,9 +10,8 @@
     probe finds; the source keeps its own name so it cannot shadow that .cks (the probe prefers
     .ks). A repo checkout runs it, minus the Demos tool - Demos\ is CopyToPublishDirectory only.
 
-    `#Requires Keysharp` rather than `AutoHotkey`: `#import KS` on the next line means this
-    cannot run on AutoHotkey at all, so claiming otherwise would be a lie. The v2.0 line is
-    the compatibility mode, unchanged.
+    The requirement names the Keysharp release because this script uses the KS module.
+    Keysharp release numbers are separate from AutoHotkey compatibility versions.
 
     The UI is one Image-rendered surface (the same drawing layer the demos' Shell.ks cards
     use) inside a dark Gui with a native title bar. Hover and clicks use a mouse poll;

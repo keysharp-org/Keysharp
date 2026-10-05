@@ -1,4 +1,4 @@
-#Requires Keysharp v2.0
+#Requires Keysharp v0.0.0.17
 #SingleInstance Ignore
 #NoTrayIcon
 #import KS { Json, Task, Await, A_KsVersion, A_DirSeparator }

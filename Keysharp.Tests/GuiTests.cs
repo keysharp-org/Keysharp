@@ -351,6 +351,13 @@ namespace Keysharp.Tests
 		}
 
 #if LINUX
+		[Test, Category("Gui"), Category("Curated")]
+		public void PictureBeforeShow()
+		{
+			SkipIfUiInitializationBlocked("Pictures need a GTK backend.");
+			Assert.IsTrue(TestScript("gui-picture", false));
+		}
+
 		[TestCase(true), TestCase(false), Category("Gui")]
 		public void WaylandSurfaceOrigin(bool decorated)
 		{
@@ -485,6 +492,35 @@ namespace Keysharp.Tests
 			});
 		}
 
+		[Test, Category("Gui")]
+		public void WaylandCorrelationWaitsForFirstBuffer()
+		{
+			SkipIfUiInitializationBlocked("Correlation needs a GTK window.");
+			s.InvokeOnUIThread(() =>
+			{
+				using var form = new Eto.Forms.Form { Content = new PixelLayout(), ClientSize = new Size(200, 100) };
+				var handle = EtoExtensions.GetHandle(form);
+				var state = TrackOwnToplevel(form, handle);
+				SetOwnToplevelField(state, "Mapped", true);
+				SetOwnToplevelField(state, "MapGeneration", 1);
+				var backend = new ListingBackend(true)
+				{
+					WindowsOnList = count =>
+					{
+						var appIds = (IDictionary)OwnToplevelsField("correlationAppIds");
+						return [new WaylandWindowInfo(42, "first-buffer", "own toplevel",
+							appId: (string)appIds[handle], pid: Environment.ProcessId,
+							frameGeometry: count < 3 ? Rectangle.Empty : new Rectangle(10, 20, 200, 100))];
+					}
+				};
+				var correlate = typeof(WaylandOwnToplevels).GetMethod("CorrelateCore", BindingFlags.NonPublic | BindingFlags.Static);
+				var window = (WaylandWindowInfo)correlate.Invoke(null, [backend, state, true]);
+				Assert.IsNotNull(window);
+				Assert.AreEqual(new Rectangle(10, 20, 200, 100), window.FrameGeometry);
+				Assert.GreaterOrEqual(backend.ListCalls, 3);
+			});
+		}
+
 		private static object OwnToplevelsField(string name)
 			=> typeof(WaylandOwnToplevels).GetField(name, BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
 
@@ -504,6 +540,7 @@ namespace Keysharp.Tests
 			public string BackendKey => "test";
 			public string Name => "test";
 			internal IReadOnlyList<WaylandWindowInfo> Windows { get; init; } = [];
+			internal Func<int, IReadOnlyList<WaylandWindowInfo>> WindowsOnList { get; init; }
 			internal int ListCalls { get; private set; }
 
 			public bool TryGetCursorPos(out int x, out int y)
@@ -515,7 +552,7 @@ namespace Keysharp.Tests
 			public bool TryListWindows(bool includeHidden, out IReadOnlyList<WaylandWindowInfo> windows)
 			{
 				ListCalls++;
-				windows = Windows;
+				windows = WindowsOnList?.Invoke(ListCalls) ?? Windows;
 				return lists;
 			}
 		}

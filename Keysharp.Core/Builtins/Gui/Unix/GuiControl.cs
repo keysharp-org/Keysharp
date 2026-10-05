@@ -290,10 +290,12 @@ namespace Keysharp.Builtins
 							if (pic.SizeMode != PictureBoxSizeMode.CenterImage)
 								pic.SizeMode = PictureBoxSizeMode.CenterImage;
 
+							// Before layout, GTK's allocation is 1x1; use the assigned control size.
+							var size = pic.GetSize();
 							if (width == int.MinValue)
-								width = pic.Width;
+								width = size.Width;
 							if (height == int.MinValue)
-								height = pic.Height;
+								height = size.Height;
 
 							var (bmp, source) = ImageHelper.LoadImage(filename, width, height, iconnumber);
 							(source as IDisposable)?.Dispose();
