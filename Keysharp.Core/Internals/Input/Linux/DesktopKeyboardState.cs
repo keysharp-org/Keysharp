@@ -21,7 +21,7 @@ namespace Keysharp.Internals.Input.Linux
 
 	internal sealed class DesktopKeyboardState
 	{
-		internal static readonly DesktopKeyboardState Current = new(DesktopClient.SubscribeKeyboardState);
+		internal static DesktopKeyboardState Current => Script.TheScript.LinuxServices.KeyboardState;
 		private readonly object gate = new();
 		private readonly Func<Action<byte[]>, Action<Exception>, IDisposable> subscribe;
 		private IDisposable subscription;

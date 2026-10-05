@@ -1,4 +1,5 @@
 #if LINUX
+using Keysharp.Internals.Linux;
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
 	/// <summary>keysharp-desktop backend with KWin focus and capture-id behavior.</summary>
@@ -11,8 +12,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (!TryGetServiceHandle(handle, out var id))
 				return false;
 
-			var focused = DesktopClient.FocusWindow(id);
-			_ = focused && DesktopClient.RaiseWindow(id);
+			var focused = DesktopClient.Current.FocusWindow(id);
+			_ = focused && DesktopClient.Current.RaiseWindow(id);
 			return focused;
 		}
 

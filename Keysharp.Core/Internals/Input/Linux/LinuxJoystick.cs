@@ -70,7 +70,7 @@ namespace Keysharp.Internals.Input.Linux
 
 		private static void RefreshLocked(long now)
 		{
-			if (!KeysharpInputManager.TryListGamepads(out var gamepads, out var generation))
+			if (!KeysharpInputManager.Current.TryListGamepads(out var gamepads, out var generation))
 				gamepads = [];
 
 			cachedDevices = gamepads;
@@ -108,7 +108,7 @@ namespace Keysharp.Internals.Input.Linux
 			if (!TryGetDevice(index, out device, out var generation))
 				return false;
 
-			if (KeysharpInputManager.TryGetGamepadState(device.DeviceId, generation, out state))
+			if (KeysharpInputManager.Current.TryGetGamepadState(device.DeviceId, generation, out state))
 				return true;
 
 			lock (deviceCacheGate)
@@ -119,7 +119,7 @@ namespace Keysharp.Internals.Input.Linux
 			}
 
 			return TryGetDevice(index, out device, out generation)
-				&& KeysharpInputManager.TryGetGamepadState(device.DeviceId, generation, out state);
+				&& KeysharpInputManager.Current.TryGetGamepadState(device.DeviceId, generation, out state);
 		}
 
 		/// <summary>

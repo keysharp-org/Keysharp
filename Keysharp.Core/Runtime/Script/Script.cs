@@ -484,6 +484,9 @@ namespace Keysharp.Runtime
 			}
 		}
 
+#if LINUX
+		internal Keysharp.Internals.Linux.LinuxServices LinuxServices { get; }
+#endif
 		internal IPermissionManager Permissions => Platform.Permissions;
 		internal ProcessesData ProcessesData => processesData ?? (processesData = new ());
 		internal Reflections Reflections { get; private set; }
@@ -607,6 +610,9 @@ namespace Keysharp.Runtime
 			var programType = program ?? GetCallingType();
 			var manifest = Keysharp.Internals.Scripting.AppManifest.FromAssembly(programType?.Assembly);
 
+#if LINUX
+			LinuxServices = new(this);
+#endif
 			DestructorPump = new(this);
 			WinEventManager = new(this);
 			MonitorEventManager = new(this);
@@ -679,9 +685,6 @@ namespace Keysharp.Runtime
 
 #if WINDOWS
 			Application.AddMessageFilter(msgFilter);
-#elif LINUX
-			Keysharp.Internals.Input.Linux.KeysharpInputManager.RegisterOwner(this);
-			Keysharp.Internals.Window.Linux.Wayland.DesktopClient.RegisterOwner(this);
 #endif
 		}
 
@@ -1656,8 +1659,7 @@ namespace Keysharp.Runtime
 			Teardown(ComMethodData.Dispose);
 #endif
 #if LINUX
-			Teardown(() => Keysharp.Internals.Input.Linux.KeysharpInputManager.DisconnectClients(this));
-			Teardown(() => Keysharp.Internals.Window.Linux.Wayland.DesktopClient.DisconnectClients(this));
+			Teardown(LinuxServices.Dispose);
 #endif
 			Teardown(() => flowData?.Dispose());
 

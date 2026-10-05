@@ -63,7 +63,9 @@ namespace Keysharp.Tests
 		[Test, Category("Threading")]
 		public void HookMutexIsolation()
 		{
-			s.Dispose();//Otherwise it stays in KeysharpInputManager.owners and blocks every later DisconnectClients.
+			var defaultKeyboardMutex = s.HookThread.KeybdMutexName;
+			var defaultMouseMutex = s.HookThread.MouseMutexName;
+			s.Dispose();
 
 			using (var named = new Script(typeof(SchedulerTests), "CustomHookMutex"))
 			{
@@ -74,8 +76,8 @@ namespace Keysharp.Tests
 			var replacement = new Script();
 			s = replacement;//Hand ownership to TearDown.
 			hsm = replacement.HotstringManager;
-			Assert.AreEqual("AHK Keybd", replacement.HookThread.KeybdMutexName);
-			Assert.AreEqual("AHK Mouse", replacement.HookThread.MouseMutexName);
+			Assert.AreEqual(defaultKeyboardMutex, replacement.HookThread.KeybdMutexName);
+			Assert.AreEqual(defaultMouseMutex, replacement.HookThread.MouseMutexName);
 		}
 
 		/// <summary>

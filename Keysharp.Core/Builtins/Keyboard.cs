@@ -1069,7 +1069,7 @@ break_twice:;
 				blockMask = Keysharp.Internals.Input.Linux.KeysharpInputClient.BlockInputMask.Keyboard
 					| Keysharp.Internals.Input.Linux.KeysharpInputClient.BlockInputMask.Mouse;
 
-			var directBlockApplied = Keysharp.Internals.Input.Linux.KeysharpInputManager.TrySetBlockInput(
+			var directBlockApplied = Keysharp.Internals.Input.Linux.KeysharpInputManager.Current.TrySetBlockInput(
 				script, blockMask, out var blockMessage);
 			var mouseMoveApplied = !script.KeyboardData.blockMouseMove || script.HookThread.HasMouseHook();
 			var platformApplied = directBlockApplied && (script.KeyboardData.blockInput || mouseMoveApplied);
@@ -1179,7 +1179,7 @@ break_twice:;
 				? Keysharp.Internals.Input.Linux.KeysharpInputClient.Operations.QueryPointerButtons
 				: Keysharp.Internals.Input.Linux.KeysharpInputClient.Operations.QueryKeyState;
 
-			if (Keysharp.Internals.Input.Linux.KeysharpInputManager.HasInputOperation(required))
+			if (Keysharp.Internals.Input.Linux.KeysharpInputManager.Current.HasInputOperation(required))
 				return;
 #endif
 			EnsureInputPermissions(monitoring: true, control: false, "read input state");

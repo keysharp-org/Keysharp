@@ -193,7 +193,7 @@ namespace Keysharp.Internals.Input.Linux
 
 			SendKeyEvent(KeyEventTypes.KeyDownAndUp, vk);
 
-			_ = KeysharpInputManager.WaitForSynthesisState();
+			_ = script.LinuxServices.Input.WaitForSynthesisState();
 
 			if (vk == VK_CAPITAL && toggleValue == ToggleValueType.Off && script.HookThread.IsKeyToggledOn(vk))
 			{
@@ -615,12 +615,12 @@ namespace Keysharp.Internals.Input.Linux
 			return false;
 		}
 
-		private static void SendRelativeMouseMove(int dx, int dy, ulong extraInfo)
+		private void SendRelativeMouseMove(int dx, int dy, ulong extraInfo)
 		{
 			if (dx == 0 && dy == 0)
 				return;
 
-			KeysharpInputManager.SendInputViaSynthesisChannel(
+			script.LinuxServices.Input.SendInputViaSynthesisChannel(
 			[
 				KeysharpInputClient.Input.MouseEvent(
 					dx,
@@ -894,7 +894,7 @@ namespace Keysharp.Internals.Input.Linux
 
 			if (inputs.Count <= MaxInputBatchSize)
 			{
-				ApplySynthesisModifiers(KeysharpInputManager.SendInputViaSynthesisChannel(inputs, flags));
+				ApplySynthesisModifiers(script.LinuxServices.Input.SendInputViaSynthesisChannel(inputs, flags));
 				return;
 			}
 
@@ -916,7 +916,7 @@ namespace Keysharp.Internals.Input.Linux
 				for (var i = 0; i < count; i++)
 					batch[i] = inputs[offset + i];
 
-				ApplySynthesisModifiers(KeysharpInputManager.SendInputViaSynthesisChannel(batch, flags));
+				ApplySynthesisModifiers(script.LinuxServices.Input.SendInputViaSynthesisChannel(batch, flags));
 				offset += count;
 			}
 		}

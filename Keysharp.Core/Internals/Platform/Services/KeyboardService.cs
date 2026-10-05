@@ -162,7 +162,7 @@ namespace Keysharp.Internals
 			=> TryGetBitmapKeyState(vk, physical: true, deviceID, out isDown);
 
 		public bool TryGetModifierLRStateLogical(out uint mods, byte[] keymapBuffer = null)
-			=> Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetModifierState(
+			=> Keysharp.Internals.Input.Linux.KeysharpInputManager.Current.TryGetModifierState(
 				out mods, out _, out _, out _, out _);
 
 		public bool TryGetKeyStateLogical(uint vk, out bool isDown)
@@ -182,7 +182,7 @@ namespace Keysharp.Internals
 
 			if (modifierMask != 0)
 			{
-				if (!Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetModifierState(
+				if (!Keysharp.Internals.Input.Linux.KeysharpInputManager.Current.TryGetModifierState(
 						out var logicalMods, out var physicalMods, out _, out _, out _))
 					return false;
 
@@ -199,7 +199,7 @@ namespace Keysharp.Internals
 		{
 			isDown = false;
 
-			if (!Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetKeyState(
+			if (!Keysharp.Internals.Input.Linux.KeysharpInputManager.Current.TryGetKeyState(
 				out var mods, out _, out var numLock, out _, out var logicalKeys, out var physicalKeys, deviceID))
 				return false;
 
@@ -213,7 +213,7 @@ namespace Keysharp.Internals
 			if (Keysharp.Internals.Input.Hooks.HookThread.InHookCallback && TryGetIndicatorSnapshot(out capsOn, out numOn, out scrollOn))
 				return true;
 
-			return Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetModifierState(
+			return Keysharp.Internals.Input.Linux.KeysharpInputManager.Current.TryGetModifierState(
 				out _, out _, out capsOn, out numOn, out scrollOn);
 		}
 

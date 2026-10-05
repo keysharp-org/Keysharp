@@ -7,8 +7,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 	internal class DesktopBackend : IWaylandBackend
 	{
 		internal const string X11BackendKey = "x11";
-		internal static readonly DesktopBackend X11 = new(X11BackendKey,
-			"X11 (keysharp-desktop)", nativeHandles: true);
+		internal static DesktopBackend X11 => Script.TheScript.LinuxServices.X11;
+
+		private readonly DesktopClient desktop;
+		private DesktopClient Desktop => desktop ?? DesktopClient.Current;
 
 		private readonly object windowListSync = new();
 		private readonly SyntheticWindowHandleMap<string> handles = new();
@@ -25,8 +27,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		internal DesktopBackend(string backendKey, string name, bool nativeHandles = false,
-			bool usePushWindowEvents = true)
+			bool usePushWindowEvents = true, DesktopClient desktop = null)
 		{
+			this.desktop = desktop;
 			BackendKey = backendKey;
 			Name = name;
 			this.nativeHandles = nativeHandles;
@@ -36,9 +39,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		public string BackendKey { get; }
 		public string Name { get; }
 		public virtual bool SupportsWindowEvents
-			=> DesktopClient.ProviderSupportsWindowList();
+			=> Desktop.ProviderSupportsWindowList();
 		public virtual bool SupportsPushWindowEvents
-			=> usePushWindowEvents && DesktopClient.ProviderSupportsWindowWatch();
+			=> usePushWindowEvents && Desktop.ProviderSupportsWindowWatch();
 
 		public virtual IDisposable SubscribeWindowEvents(Action<WaylandWindowEvent> sink)
 		{
@@ -69,19 +72,19 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 
 			return RecoveringSubscription.Create(
-				onError => DesktopClient.WatchWindowEvents(OnEvent, onError),
+				onError => Desktop.WatchWindowEvents(OnEvent, onError),
 				() => new WaylandPollingEventSource(this, sink),
-				DesktopClient.ProbeProvider,
+				Desktop.ProbeProvider,
 				subscribeAvailability);
 		}
 
 		public bool TryListWindows(bool includeHidden, out IReadOnlyList<WaylandWindowInfo> windows)
 		{
-			if (DesktopClient.TryReadWindows(out var state))
+			if (Desktop.TryReadWindows(out var state))
 			{
 				lock (windowListSync)
 				{
-					if (!DesktopClient.TryReadCachedWindows(out state)) { windows = []; return false; }
+					if (!Desktop.TryReadCachedWindows(out state)) { windows = []; return false; }
 					var all = state.Select(ResolveWindow).ToArray();
 					RememberWindows(all, true);
 					windows = includeHidden ? all : all.Where(window => window.Visible).ToArray();
@@ -91,7 +94,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (SupportsPushWindowEvents) { windows = []; return false; }
 			// Providers without a watch cannot maintain an authoritative mirror.
 			lock (windowListSync)
-				return TryParseWindowList(DesktopClient.QueryWindowList(includeHidden),
+				return TryParseWindowList(Desktop.QueryWindowList(includeHidden),
 					includeHidden, out windows);
 		}
 
@@ -125,13 +128,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return false;
 
 			// An explicit query needs current geometry, including a window published ahead of the lease's mirror.
-			var json = DesktopClient.QueryWindow(id, out var status);
+			var json = Desktop.QueryWindow(id, out var status);
 			if (TryReadWindow(handle, json, status, out window, out notFound) || notFound)
 				return window != null;
 
 			if (status == NativeClientStatus.Unsupported
-				? DesktopClient.TryReadWindows(out var state)
-				: DesktopClient.TryReadCachedWindows(out state))
+				? Desktop.TryReadWindows(out var state)
+				: Desktop.TryReadCachedWindows(out state))
 			{
 				lock (windowListSync)
 				{
@@ -144,7 +147,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					}
 				}
 				// Only a mirror that has observed this identity can establish its removal.
-				notFound = status == NativeClientStatus.Unsupported && DesktopClient.IsMirroredWindow(id);
+				notFound = status == NativeClientStatus.Unsupported && Desktop.IsMirroredWindow(id);
 				return false;
 			}
 
@@ -185,7 +188,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		internal bool TryGetWindowAt(int x, int y, bool deepest, out WaylandWindowInfo window)
 		{
-			if (TryParseWindow(DesktopClient.QueryWindowAt(x, y, deepest), out window))
+			if (TryParseWindow(Desktop.QueryWindowAt(x, y, deepest), out window))
 				return true;
 
 			window = TryListWindows(false, out var windows) ? FindWindowAt(windows, x, y) : null;
@@ -230,7 +233,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (!TryGetServiceHandle(handle, out var id))
 				return false;
 
-			var json = DesktopClient.QueryChildren(id);
+			var json = Desktop.QueryChildren(id);
 
 			if (json == null || json.Length == 0)
 				return false;
@@ -256,17 +259,17 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		public bool TryGetCursorPos(out int x, out int y)
-			=> DesktopClient.QueryCursorPosition(out x, out y);
+			=> Desktop.QueryCursorPosition(out x, out y);
 
 		public bool TryGetWorkArea(out Rectangle area)
-			=> DesktopClient.QueryWorkArea(out area);
+			=> Desktop.QueryWorkArea(out area);
 
 		public virtual bool TryActivateWindow(nint handle)
-			=> TryGetServiceHandle(handle, out var id) && DesktopClient.FocusWindow(id);
+			=> TryGetServiceHandle(handle, out var id) && Desktop.FocusWindow(id);
 
 		public bool TryReserveWindow(ulong cookie, int x, int y, int ttlMs)
 		{
-			if (!DesktopClient.ReserveWindow(cookie, x, y, ttlMs))
+			if (!Desktop.ReserveWindow(cookie, x, y, ttlMs))
 				return false;
 			RememberReservation(cookie, ttlMs);
 			return true;
@@ -284,7 +287,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		public bool TryGetReservedWindow(ulong cookie, out nint handle, out string compositorId)
 		{
-			compositorId = DesktopClient.GetReservedWindow(cookie);
+			compositorId = Desktop.GetReservedWindow(cookie);
 			return TryReadReservedWindow(cookie, compositorId, out handle);
 		}
 
@@ -301,7 +304,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		public bool TryMoveResizeWindow(nint handle, Rectangle bounds, bool setPosition, bool setSize)
 			=> TryGetServiceHandle(handle, out var id)
-				&& DesktopClient.MoveResizeWindow(id,
+				&& Desktop.MoveResizeWindow(id,
 					setPosition ? bounds.X : int.MinValue,
 					setPosition ? bounds.Y : int.MinValue,
 					setSize && bounds.Width > 0 ? bounds.Width : 0,
@@ -309,29 +312,29 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		public bool TrySetNoBorder(nint handle, bool noBorder)
 			=> TryGetServiceHandle(handle, out var id)
-				&& DesktopClient.SetWindowDecorated(id, !noBorder);
+				&& Desktop.SetWindowDecorated(id, !noBorder);
 
 		public bool TrySetWindowState(nint handle, FormWindowState state)
 			=> TryGetServiceHandle(handle, out var id)
-				&& DesktopClient.SetWindowState(id,
+				&& Desktop.SetWindowState(id,
 					WaylandWindowStateProtocol.ToShellExtensionState(state));
 
 		public bool TryUnminimizeWindow(nint handle)
 			=> TryGetServiceHandle(handle, out var id)
-				&& DesktopClient.SetWindowState(id, WaylandWindowStateProtocol.Unminimized);
+				&& Desktop.SetWindowState(id, WaylandWindowStateProtocol.Unminimized);
 
 		public bool TrySetAlwaysOnTop(nint handle, bool onTop)
 			=> TryGetServiceHandle(handle, out var id)
-				&& DesktopClient.SetWindowAbove(id, onTop);
+				&& Desktop.SetWindowAbove(id, onTop);
 
 		public bool TrySetSkipTaskbar(nint handle, bool skip)
 			=> TryGetServiceHandle(handle, out var id)
-				&& DesktopClient.SetWindowSkipTaskbar(id, skip);
+				&& Desktop.SetWindowSkipTaskbar(id, skip);
 
 		public virtual bool TrySetZOrder(nint handle, ZOrder z)
 			=> TryGetServiceHandle(handle, out var id)
-				&& (z == ZOrder.Top ? DesktopClient.RaiseWindow(id)
-					: z == ZOrder.Bottom && DesktopClient.LowerWindow(id));
+				&& (z == ZOrder.Top ? Desktop.RaiseWindow(id)
+					: z == ZOrder.Bottom && Desktop.LowerWindow(id));
 
 		public bool TrySetTransparency(nint handle, object alpha)
 		{
@@ -345,17 +348,17 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				opacity = Math.Clamp(a, 0, 255);
 			}
 			return TryGetServiceHandle(handle, out var id)
-				&& DesktopClient.SetWindowOpacity(id, opacity);
+				&& Desktop.SetWindowOpacity(id, opacity);
 		}
 
 		public bool SupportsTransparency
-			=> DesktopClient.ProviderSupportsTransparency();
+			=> Desktop.ProviderSupportsTransparency();
 
 		public bool SupportsWindowMove
-			=> DesktopClient.ProviderSupportsWindowMove();
+			=> Desktop.ProviderSupportsWindowMove();
 
 		public bool TryCloseWindow(nint handle)
-			=> TryGetServiceHandle(handle, out var id) && DesktopClient.CloseWindow(id);
+			=> TryGetServiceHandle(handle, out var id) && Desktop.CloseWindow(id);
 
 		public bool TryKillWindow(nint handle)
 		{
@@ -364,13 +367,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			// A force-kill is compositor-specific on Wayland. Where it is absent, retain WinKill's
 			// documented graceful-close fallback instead of sending an operation the provider rejected.
-			if (!DesktopClient.ProviderSupportsWindowKill())
-				return DesktopClient.CloseWindow(id);
+			if (!Desktop.ProviderSupportsWindowKill())
+				return Desktop.CloseWindow(id);
 
 			// As AHK does, ask first and force only a window still there after about 500 ms, so an app that
 			// would have closed cleanly keeps its shutdown path. The pump-aware sleep lets one of our own
 			// windows dispatch the close it was sent.
-			_ = DesktopClient.CloseWindow(id);
+			_ = Desktop.CloseWindow(id);
 
 			for (var waited = 0; waited < 500 && TryGetWindow(handle, out _); waited += 25)
 				Keysharp.Internals.Flow.SleepWithoutInterruption(25);
@@ -379,65 +382,65 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return true;
 
 			// The broker would signal the owning process, which must never be this one.
-			return remaining?.PID != Environment.ProcessId && DesktopClient.KillWindow(id);
+			return remaining?.PID != Environment.ProcessId && Desktop.KillWindow(id);
 		}
 
 		internal bool TryRedrawWindow(nint handle)
-			=> TryGetServiceHandle(handle, out var id) && DesktopClient.RedrawWindow(id);
+			=> TryGetServiceHandle(handle, out var id) && Desktop.RedrawWindow(id);
 
 		internal bool TryClickWindow(nint handle, Point at, uint button, int count)
 			=> TryGetServiceHandle(handle, out var id)
-				&& DesktopClient.ClickWindow(id, at.X, at.Y, button, count);
+				&& Desktop.ClickWindow(id, at.X, at.Y, button, count);
 
 		internal bool TrySendWindowButton(nint handle, Point at, uint button, bool down)
 			=> TryGetServiceHandle(handle, out var id)
-				&& DesktopClient.SendWindowButton(id, at.X, at.Y, button, down);
+				&& Desktop.SendWindowButton(id, at.X, at.Y, button, down);
 
 		internal bool TryFocusChildWindow(nint handle)
 			=> TryGetServiceHandle(handle, out var id)
-				&& DesktopClient.FocusChildWindow(id);
+				&& Desktop.FocusChildWindow(id);
 
 		internal bool TrySetWindowTitle(nint handle, string title)
-			=> TryGetServiceHandle(handle, out var id) && DesktopClient.SetWindowTitle(id, title);
+			=> TryGetServiceHandle(handle, out var id) && Desktop.SetWindowTitle(id, title);
 
 		internal bool TrySetWindowVisible(nint handle, bool visible)
-			=> TryGetServiceHandle(handle, out var id) && DesktopClient.SetWindowVisible(id, visible);
+			=> TryGetServiceHandle(handle, out var id) && Desktop.SetWindowVisible(id, visible);
 
 		public bool SupportsMouse
-			=> DesktopClient.ProviderSupportsAbsolutePointer();
+			=> Desktop.ProviderSupportsAbsolutePointer();
 
 		public bool TrySendMouseMoveAbsolute(int x, int y)
-			=> DesktopClient.SendMouseMoveAbsolute(x, y);
+			=> Desktop.SendMouseMoveAbsolute(x, y);
 
 		public bool TrySendMouseMoveRelative(int dx, int dy)
-			=> DesktopClient.SendMouseMoveRelative(dx, dy);
+			=> Desktop.SendMouseMoveRelative(dx, dy);
 
 		public bool TrySendMouseButton(uint button, bool pressed)
-			=> DesktopClient.SendMouseButton(button, pressed);
+			=> Desktop.SendMouseButton(button, pressed);
 
 		public bool TrySendMouseScroll(int delta, bool vertical)
-			=> DesktopClient.SendMouseScroll(delta, vertical);
+			=> Desktop.SendMouseScroll(delta, vertical);
 
-		public bool SupportsClipboard => DesktopClient.ProviderSupportsClipboard();
+		public bool SupportsClipboard => Desktop.ProviderSupportsClipboard();
 
 		public string[] GetClipboardMimetypes()
-			=> DesktopClient.GetClipboardMimetypes();
+			=> Desktop.GetClipboardMimetypes();
 
 		public byte[] GetClipboardContent(string mimetype)
-			=> DesktopClient.GetClipboardContent(mimetype);
+			=> Desktop.GetClipboardContent(mimetype);
 
 		public bool SetClipboardContent(string mimetype, byte[] bytes)
-			=> DesktopClient.SetClipboardContent(mimetype, bytes);
+			=> Desktop.SetClipboardContent(mimetype, bytes);
 
 		public string GetClipboardText()
-			=> DesktopClient.GetClipboardText();
+			=> Desktop.GetClipboardText();
 
 		public bool SetClipboardText(string text)
-			=> DesktopClient.SetClipboardText(text);
+			=> Desktop.SetClipboardText(text);
 
 		public IDisposable SubscribeClipboardChanges(Action<string, string[]> handler,
 			Action<Exception> onError = null)
-			=> handler == null ? null : DesktopClient.WatchClipboardChanges(handler, onError);
+			=> handler == null ? null : Desktop.WatchClipboardChanges(handler, onError);
 
 		private void RememberWindows(IReadOnlyList<WaylandWindowInfo> windows, bool complete)
 		{

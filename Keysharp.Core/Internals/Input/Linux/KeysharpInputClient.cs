@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using Keysharp.Internals.Linux;
+using Keysharp.Internals.Os;
 
 namespace Keysharp.Internals.Input.Linux
 {
@@ -267,7 +268,7 @@ namespace Keysharp.Internals.Input.Linux
 			}
 		}
 
-		private readonly LinuxConnectionOwner owner;
+		private readonly ILinuxConnectionDispatcher owner;
 		private readonly KeysharpInputClient lease;
 		private readonly KeyboardMirror keyboardState = new();
 		private Action<KeysharpInputClient, HookEvent> hookEventHandler;
@@ -289,7 +290,7 @@ namespace Keysharp.Internals.Input.Linux
 
 		private KeysharpInputClient(nint connection, ConnectionRole role,
 			LinuxPermissionScope grantedScopes, Operations availableOperations,
-			LinuxConnectionOwner owner, KeysharpInputClient lease, ulong leaseId)
+			ILinuxConnectionDispatcher owner, KeysharpInputClient lease, ulong leaseId)
 		{
 			this.connection = connection;
 			this.owner = owner;
@@ -326,7 +327,9 @@ namespace Keysharp.Internals.Input.Linux
 			ConnectionRole role = ConnectionRole.Lease, KeysharpInputClient lease = null)
 		{
 			KeysharpInputClient client = null;
-			var owner = new LinuxConnectionOwner($"keysharp-input {role}",
+			ILinuxConnectionDispatcher owner = role == ConnectionRole.Rpc
+				? new LinuxRpcDispatcher(() => client?.Cleanup())
+				: new LinuxConnectionOwner($"keysharp-input {role}",
 				() => client == null || client.connection == 0
 					|| role == ConnectionRole.CallbackStream && client.hookEventHandler == null
 					? -1 : Native.ksi_connection_fd(client.connection),
@@ -344,7 +347,7 @@ namespace Keysharp.Internals.Input.Linux
 			catch { owner.Dispose(); throw; }
 		}
 
-		private static KeysharpInputClient ConnectCore(LinuxConnectionOwner owner, Operations requested,
+		private static KeysharpInputClient ConnectCore(ILinuxConnectionDispatcher owner, Operations requested,
 			string socketPath, int requestTimeoutMs, ConnectionRole role, KeysharpInputClient lease)
 		{
 			if ((requested & ~Operations.All) != 0)
@@ -955,16 +958,31 @@ namespace Keysharp.Internals.Input.Linux
 				&& HasOperations(requiredFromService);
 		}
 
+		internal PermissionResult Authorize(LinuxPermissionScope scopes, Operations operations, string operation, bool prompt)
+		{
+			var granted = operations != Operations.None || scopes == LinuxPermissionScope.None
+				? TryRequestOperations(operations, out var status, !prompt)
+				: TryRequestScopes(scopes, out status, !prompt);
+			return granted ? new(PermissionStatus.Granted)
+				: new(status == (int)NativeClientStatus.Unsupported ? PermissionStatus.Unsupported : PermissionStatus.Denied,
+					$"keysharp-input could not authorize '{operation}'. Required scopes: {scopes}; granted scopes: {GrantedScopes}.");
+		}
+
 		internal bool TryRequestScopes(LinuxPermissionScope requestedScopes,
 			out int status, bool checkOnly = false)
 		{
 			if (lease != null) return lease.TryRequestScopes(requestedScopes, out status, checkOnly);
-			if (!owner.IsOwnerThread)
+			var result = owner.Invoke(() =>
 			{
-				var result = owner.Invoke(() => { var success = TryRequestScopes(requestedScopes, out var value, checkOnly); return (success, value); });
-				status = result.value;
-				return result.success;
-			}
+				var success = AuthorizeScopes(requestedScopes, out var value, checkOnly);
+				return (success, value);
+			});
+			status = result.value;
+			return result.success;
+		}
+
+		private bool AuthorizeScopes(LinuxPermissionScope requestedScopes, out int status, bool checkOnly)
+		{
 			if (requestedScopes == LinuxPermissionScope.None
 				|| (requestedScopes & ~ManagedScopes) != 0)
 				throw new ArgumentOutOfRangeException(nameof(requestedScopes));

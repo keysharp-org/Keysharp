@@ -213,7 +213,7 @@ namespace Keysharp.Internals.Window.Linux.X11
 		{
 			var result = new List<NativeMonitor>();
 			answered = false;
-			var json = Wayland.DesktopClient.QueryDisplays();
+			var json = Keysharp.Internals.Linux.DesktopClient.Current.QueryDisplays();
 			if (json == null || json.Length == 0) return result;
 			try
 			{

@@ -239,8 +239,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				try
 				{
 					// Each connection reports the backend as it opens, so resolving it afterwards costs no probe.
-					_ = DesktopClient.OpenSession(LinuxPermissionScope.WindowMonitoring);
-					_ = DesktopClient.OpenSession(LinuxPermissionScope.WindowControl);
+					_ = DesktopClient.Current.OpenSession(LinuxPermissionScope.WindowMonitoring);
+					_ = DesktopClient.Current.OpenSession(LinuxPermissionScope.WindowControl);
 					_ = WaylandBackend.Current;
 				}
 				catch
@@ -1011,7 +1011,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						return false;
 				}
 
-				_ = DesktopClient.WindowChangeSignal.WaitWithoutInterruption(PositionVerifyDelayMs);
+				_ = DesktopClient.Current.WindowChangeSignal.WaitWithoutInterruption(PositionVerifyDelayMs);
 
 				if (!TryAtTarget(backend, state, generation, handle, tx, ty, out var atTarget) || atTarget)
 					break;
@@ -1156,7 +1156,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			{
 				while (true)
 				{
-					var change = DesktopClient.WindowChangeSignal;
+					var change = DesktopClient.Current.WindowChangeSignal;
 					lock (sync)
 						if (!IsBindableLocked(state, mapGeneration))
 							return null;
@@ -1247,7 +1247,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			while (Environment.TickCount64 < deadline)
 			{
-				var change = DesktopClient.WindowChangeSignal;
+				var change = DesktopClient.Current.WindowChangeSignal;
 				if (readable = backend.TryGetWindow(reserved, out info) && info?.HasKnownField(WaylandWindowFields.Frame) == true
 					&& info.FrameGeometry.Width > 0 && info.FrameGeometry.Height > 0) break;
 				WaitForWindowChange(change, deadline, ReservedGeometryRetryMs);
@@ -1265,7 +1265,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			while (Environment.TickCount64 < deadline)
 			{
-				var change = DesktopClient.WindowChangeSignal;
+				var change = DesktopClient.Current.WindowChangeSignal;
 
 				if (!backend.TryGetWindow(compositorHandle, out var info, out var notFound))
 				{

@@ -78,18 +78,15 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
-		public void PromptAndPendingRpcDoNotBlockLastOwnerShutdown()
+		public void PromptAndPendingRpcDoNotBlockShutdown()
 		{
-			const BindingFlags fields = BindingFlags.Static | BindingFlags.NonPublic;
+			const BindingFlags fields = BindingFlags.Instance | BindingFlags.NonPublic;
+			using var service = new KeysharpInputManager();
 			const BindingFlags instance = BindingFlags.Instance | BindingFlags.NonPublic;
 			var manager = typeof(KeysharpInputManager);
 			var clients = manager.GetField("client", fields);
-			var owners = (HashSet<Script>)manager.GetField("owners", fields).GetValue(null);
-			Assert.That(owners, Is.Empty);
-			Assert.That(clients.GetValue(null), Is.Null);
-			var stopped = manager.GetField("clientsStopped", fields);
-			var wasStopped = stopped.GetValue(null);
-			var query = manager.GetField("queries", fields).GetValue(null);
+			Assert.That(clients.GetValue(service), Is.Null);
+			var query = manager.GetField("queries", fields).GetValue(service);
 			var cached = query.GetType().GetField("current", instance);
 			Assert.That(cached.GetValue(query), Is.Null);
 			using var leaseOwner = new LinuxConnectionOwner("fake input lease", () => -1, () => false, () => { });
@@ -101,16 +98,14 @@ namespace Keysharp.Tests
 				LinuxPermissionScope.InputControl, KeysharpInputClient.Operations.BlockInput, leaseOwner, null, 42UL]);
 			var rpc = (KeysharpInputClient)constructor.Invoke([(nint)1, KeysharpInputClient.ConnectionRole.Rpc,
 				LinuxPermissionScope.InputControl, KeysharpInputClient.Operations.BlockInput, queryOwner, lease, 42UL]);
-			var script = (Script)RuntimeHelpers.GetUninitializedObject(typeof(Script));
 			using var promptEntered = new ManualResetEventSlim();
 			using var rpcEntered = new ManualResetEventSlim();
 			using var release = new ManualResetEventSlim();
-			KeysharpInputManager.RegisterOwner(script);
-			clients.SetValue(null, lease);
+			clients.SetValue(service, lease);
 			cached.SetValue(query, rpc);
 			var prompt = Task.Run(() =>
 			{
-				lock ((Lock)manager.GetField("authorizationGate", fields).GetValue(null))
+				lock ((Lock)manager.GetField("authorizationGate", fields).GetValue(service))
 				{
 					promptEntered.Set();
 					Assert.That(release.Wait(2_000), Is.True);
@@ -129,11 +124,11 @@ namespace Keysharp.Tests
 				})]));
 				Assert.That(rpcEntered.Wait(500), Is.True, "An existing RPC lane must bypass the authorization lock.");
 				var elapsed = Stopwatch.StartNew();
-				shutdown = Task.Run(() => KeysharpInputManager.DisconnectClients(script));
+				shutdown = Task.Run(() => service.Dispose());
 				Assert.That(shutdown.Wait(500), Is.True, "Shutdown must retire clients while authorization and an RPC are pending.");
 				Assert.That(elapsed.ElapsedMilliseconds, Is.LessThan(500));
-				Assert.That(KeysharpInputManager.AuthorizationLease, Is.Null);
-				Assert.That(KeysharpInputManager.HasInputOperation(KeysharpInputClient.Operations.BlockInput), Is.False);
+				Assert.That(service.AuthorizationLease, Is.Null);
+				Assert.That(service.HasInputOperation(KeysharpInputClient.Operations.BlockInput), Is.False);
 				Assert.That(request.IsCompleted, Is.False);
 			}
 			finally
@@ -142,8 +137,7 @@ namespace Keysharp.Tests
 				Assert.That(prompt.Wait(1_000), Is.True);
 				if (shutdown != null) Assert.That(shutdown.Wait(1_000), Is.True);
 				if (request != null) Assert.That(request.Wait(1_000), Is.True);
-				KeysharpInputManager.DisconnectClients(script);
-				stopped.SetValue(null, wasStopped);
+				service.Dispose();
 			}
 			Assert.That(request.Result, Is.False, "A retired RPC must not report a successful result in a later session.");
 		}

@@ -74,7 +74,7 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 
 		// One keysharp-input query answers all modifiers, where IsKeyDownLogical would make one per key.
 		internal override uint GetModifierLRStateLogical()
-			=> KeysharpInputManager.TryGetModifierState(out var logical, out _, out _, out _, out _)
+			=> script.LinuxServices.Input.TryGetModifierState(out var logical, out _, out _, out _, out _)
 				? logical : kbdMsSender.modifiersLRLogical;
 
 		protected override void StopPlatformHookCore(bool dispose)
@@ -202,7 +202,7 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 
 			// A callback stream can suppress events, so opening one requires both powers.
 			required |= KeysharpInputClient.Operations.BlockInput;
-			var permission = KeysharpInputManager.EnsureOperations(required,
+			var permission = script.LinuxServices.Input.EnsureOperations(required,
 				"install keyboard/mouse hooks");
 
 			if (!permission.IsGranted)
@@ -224,7 +224,7 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 				inputServiceHookClient = KeysharpInputClient.Connect(
 					required,
 					role: KeysharpInputClient.ConnectionRole.CallbackStream,
-					lease: KeysharpInputManager.AuthorizationLease);
+					lease: script.LinuxServices.Input.AuthorizationLease);
 				inputServiceHookClient.SetHookQuarantineHandler(HandleHookQuarantined);
 				inputServiceHookClient.SetNestedHookEventHandler(ProcessNestedHookEvent);
 
@@ -286,7 +286,7 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 
 		private void ResyncModifiers(bool keyboardResumed)
 		{
-			if (KeysharpInputManager.TryGetModifierState(out var logicalMods, out var physicalMods, out _, out _, out _))
+			if (script.LinuxServices.Input.TryGetModifierState(out var logicalMods, out var physicalMods, out _, out _, out _))
 			{
 				kbdMsSender.modifiersLRLogical = kbdMsSender.modifiersLRLogicalNonIgnored = logicalMods;
 				kbdMsSender.modifiersLRPhysical = physicalMods;

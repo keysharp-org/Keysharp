@@ -24,7 +24,30 @@ namespace Keysharp.Tests
 		public void DesktopClientConnectsToInstalledService()
 		{
 			RequireLibrary("libkeysharp-desktop.so.1", typeof(DesktopClient).Assembly);
-			Assert.That(DesktopClient.ProbeProvider(), Is.True);
+			using var services = new LinuxServices();
+			Assert.That(services.Desktop.ProbeProvider(), Is.True);
+		}
+
+		[Test]
+		public void PermissionCheckDoesNotSubscribeToWindowState()
+		{
+			RequireLibrary("libkeysharp-desktop.so.1", typeof(DesktopClient).Assembly);
+			using var services = new LinuxServices();
+			var result = services.Permissions.RequestWindowMonitoring(prompt: false);
+			Assert.That(result.Status, Is.EqualTo(Keysharp.Internals.Os.PermissionStatus.Granted)
+				.Or.EqualTo(Keysharp.Internals.Os.PermissionStatus.Denied), result.Message);
+			const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+			var lease = typeof(DesktopClient).GetField("authorizationLease", flags).GetValue(services.Desktop);
+			Assert.That(lease, Is.Not.Null);
+			var state = lease.GetType().GetProperty("State", flags).GetValue(lease);
+			Assert.That(state.GetType().GetField("domains", flags).GetValue(state), Is.EqualTo(16u),
+				"A permission check should subscribe only to live grants, without window, keyboard or display snapshots.");
+			if (result.IsGranted && services.Desktop.ProviderSupportsWindowWatch())
+			{
+				_ = services.Desktop.WindowChangeSignal;
+				Assert.That(state.GetType().GetField("domains", flags).GetValue(state), Is.EqualTo(17u),
+					"Waiting for window changes must start the window subscription on demand.");
+			}
 		}
 
 		/// <summary>Gamepad access is ungated, so a connection that asked for no scope can still

@@ -822,7 +822,7 @@ namespace Keysharp.Builtins
 #if LINUX
 				if (Platform.Desktop.IsWaylandSession)
 				{
-					if (Keysharp.Internals.Window.Linux.Wayland.DesktopClient.TryProbeWindowSupport(out _, out var visibility)
+					if (Keysharp.Internals.Linux.DesktopClient.Current.TryProbeWindowSupport(out _, out var visibility)
 						&& !visibility)
 						return Errors.UnsupportedErrorOccurred("WinHide is unavailable: the desktop service does not support changing foreign-window visibility.");
 

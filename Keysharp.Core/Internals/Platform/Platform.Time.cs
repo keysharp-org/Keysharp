@@ -24,7 +24,7 @@ namespace Keysharp.Internals
 			public static bool TryGetIdleTime(out long milliseconds) => Keysharp.Internals.Input.MacOS.MacNativeInput.TryGetIdleTime(out milliseconds);
 #else
 			public static bool TryGetIdleTime(out long milliseconds)
-				=> Keysharp.Internals.Input.Linux.KeysharpInputManager.TryGetIdleTime(out milliseconds);
+				=> Keysharp.Internals.Input.Linux.KeysharpInputManager.Current.TryGetIdleTime(out milliseconds);
 #endif
 		}
 	}

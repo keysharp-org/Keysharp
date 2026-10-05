@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace Keysharp.Internals.Linux
 {
-	internal sealed class LinuxConnectionOwner : IDisposable
+	internal sealed class LinuxConnectionOwner : ILinuxConnectionDispatcher
 	{
 		private readonly ConcurrentQueue<Action> commands = new();
 		private readonly object lifecycle = new();
@@ -29,9 +29,9 @@ namespace Keysharp.Internals.Linux
 			thread = new Thread(Run) { IsBackground = true, Name = name };
 		}
 
-		internal bool IsOwnerThread => Thread.CurrentThread == thread;
-		internal bool IsRunning => Volatile.Read(ref stopping) == 0;
-		internal void Start()
+		public bool IsOwnerThread => Thread.CurrentThread == thread;
+		public bool IsRunning => Volatile.Read(ref stopping) == 0;
+		public void Start()
 		{
 			lock (lifecycle)
 			{
@@ -40,7 +40,7 @@ namespace Keysharp.Internals.Linux
 			}
 		}
 
-		internal T Invoke<T>(Func<T> command, int timeoutMs = 130_000)
+		public T Invoke<T>(Func<T> command, int timeoutMs = 130_000)
 		{
 			ObjectDisposedException.ThrowIf(!IsRunning, this);
 
@@ -75,7 +75,7 @@ namespace Keysharp.Internals.Linux
 			}
 		}
 
-		internal void Post(Action command)
+		public void Post(Action command)
 		{
 			ObjectDisposedException.ThrowIf(!IsRunning, this);
 			if (IsOwnerThread) { command(); return; }

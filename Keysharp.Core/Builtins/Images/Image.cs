@@ -455,7 +455,7 @@ namespace Keysharp.Builtins
 #if LINUX
 			if (w is Keysharp.Internals.Window.Linux.Wayland.WaylandWindowInfo wayland
 				&& !wayland.HasKnownField(Keysharp.Internals.Window.Linux.Wayland.WaylandWindowFields.Frame)
-				&& Keysharp.Internals.Window.Linux.Wayland.DesktopClient.TryProbeWindowSupport(out var capture, out _)
+				&& Keysharp.Internals.Linux.DesktopClient.Current.TryProbeWindowSupport(out var capture, out _)
 				&& !capture)
 				return Errors.UnsupportedErrorOccurred("Image.FromWindow is unavailable: the desktop service provides neither window capture nor global window geometry.");
 #endif

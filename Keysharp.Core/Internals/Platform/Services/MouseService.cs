@@ -34,10 +34,10 @@ namespace Keysharp.Internals
 
 		// Button state requires the input service monitoring grant.
 		public bool TryGetButtonStateLogical(uint vk, out bool down)
-			=> KeysharpInputManager.TryGetButtonStateLogical(vk, out down);
+			=> KeysharpInputManager.Current.TryGetButtonStateLogical(vk, out down);
 
 		public bool TryGetButtonStatePhysical(uint vk, out bool down)
-			=> KeysharpInputManager.TryGetButtonStatePhysical(vk, out down);
+			=> KeysharpInputManager.Current.TryGetButtonStatePhysical(vk, out down);
 
 		// Maps a daemon absolute-pointer axis (normalised to [min,max] across the whole virtual desktop) to a screen
 		// pixel. origin is the virtual desktop's Left/Top and size its Width/Height: the desktop can start at a
@@ -91,7 +91,7 @@ namespace Keysharp.Internals
 			// primary; the virtual-desktop bounds carry the true size and (possibly negative) origin.
 			var vb = Platform.Screen.GetVirtualScreenBounds();
 
-			if (KeysharpInputManager.TryGetPointerPosition(
+			if (KeysharpInputManager.Current.TryGetPointerPosition(
 					out var rawX, out var rawY, out var minX, out var maxX, out var minY, out var maxY)
 				&& TryScalePointerAxis(rawX, minX, maxX, vb.X, vb.Width, out x)
 				&& TryScalePointerAxis(rawY, minY, maxY, vb.Y, vb.Height, out y))

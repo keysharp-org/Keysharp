@@ -1,4 +1,5 @@
 #if LINUX
+using Keysharp.Internals.Linux;
 namespace Keysharp.Internals.Window.Linux.Wayland
 {
 	/// <summary>Selects the keysharp-desktop backend reported by the service.</summary>
@@ -91,7 +92,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		private static IWaylandBackend ProbeReportedBackend()
-			=> DesktopClient.TryProbeBackend(out var backend) ? Select(backend) : null;
+			=> DesktopClient.Current.TryProbeBackend(out var backend) ? Select(backend) : null;
 
 		/// <summary>Maps a broker-reported backend onto its handler. Only ever called on a Wayland session
 		/// (see <see cref="Probe"/>), which is what makes the X11 report below mean what it does. Separate from

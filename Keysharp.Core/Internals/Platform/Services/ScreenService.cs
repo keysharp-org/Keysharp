@@ -1,4 +1,5 @@
 #if LINUX
+using Keysharp.Internals.Linux;
 using Wl = Keysharp.Internals.Window.Linux.Wayland;
 #endif
 
@@ -160,17 +161,17 @@ namespace Keysharp.Internals
 
 		public override bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
 		{
-			var status = Wl.DesktopClient.CaptureWithStatus(bounds.X, bounds.Y,
+			var status = DesktopClient.Current.CaptureWithStatus(bounds.X, bounds.Y,
 				bounds.Width, bounds.Height, out bmp);
-			return status == Wl.DesktopCaptureStatus.Captured
-				|| Wl.DesktopClient.AllowsCaptureFallback(status)
+			return status == DesktopCaptureStatus.Captured
+				|| DesktopClient.AllowsCaptureFallback(status)
 				&& base.TryCaptureRegion(bounds, out bmp);
 		}
 
 		public override bool TryCaptureWindow(nint h, bool includeDecoration, out Bitmap bmp, out PixelScale pixelScale)
 		{
 			bmp = h.ToInt64() is > 0 and <= uint.MaxValue
-				? Wl.DesktopClient.CaptureWindow((ulong)h, includeDecoration) : null;
+				? DesktopClient.Current.CaptureWindow((ulong)h, includeDecoration) : null;
 			pixelScale = PixelScale.One;
 			return bmp != null;
 		}
@@ -261,17 +262,17 @@ namespace Keysharp.Internals
 
 		public override bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
 		{
-			var direct = Wl.DesktopClient.CaptureWithStatus(bounds.X, bounds.Y,
+			var direct = DesktopClient.Current.CaptureWithStatus(bounds.X, bounds.Y,
 				bounds.Width, bounds.Height, out bmp);
 
-			if (direct == Wl.DesktopCaptureStatus.Captured)
+			if (direct == DesktopCaptureStatus.Captured)
 				return true;
 
-			if (!Wl.DesktopClient.AllowsCaptureFallback(direct))
+			if (!DesktopClient.AllowsCaptureFallback(direct))
 				return false;
 
 			return Wl.BrokerDesktopCapture.Capture(bounds, GetDisplays(), out bmp)
-				== Wl.DesktopCaptureStatus.Captured;
+				== DesktopCaptureStatus.Captured;
 		}
 
 		public override bool TryCaptureWindow(nint handle, bool includeDecoration, out Bitmap bmp,
@@ -285,7 +286,7 @@ namespace Keysharp.Internals
 			if (backend == null || !backend.TryGetNativeWindowId(handle, out var id))
 				return false;
 
-			bmp = Wl.DesktopClient.CaptureWindow(id, includeDecoration);
+			bmp = DesktopClient.Current.CaptureWindow(id, includeDecoration);
 
 			if (bmp == null)
 				return false;

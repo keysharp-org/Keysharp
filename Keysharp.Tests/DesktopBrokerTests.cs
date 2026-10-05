@@ -8,24 +8,19 @@ namespace Keysharp.Tests
 	[TestFixture, Category("Internal"), Category("Curated")]
 	public class DesktopBrokerTests
 	{
+		private LinuxServices services;
+		[SetUp] public void SetUp() => services = new();
+		[TearDown] public void TearDown() => services.Dispose();
+
 		[Test]
 		public void X11UsesPushWindowEventsWhenOffered()
 		{
-			const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Static;
-			var capabilities = typeof(DesktopClient).GetNestedType("Capabilities", BindingFlags.NonPublic);
+			const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
+			var capabilities = typeof(DesktopClient).GetField("capabilities", flags).GetValue(services.Desktop);
 			var operation = typeof(DesktopClient).GetNestedType("Operation", BindingFlags.NonPublic);
-			FieldInfo Field(string name) => capabilities.GetField(name, flags);
-			string[] names = ["current", "probeAt", "recheckMs"];
-			var saved = names.Select(name => Field(name).GetValue(null)).ToArray();
-			try
-			{
-				capabilities.GetMethod("Learn", flags).Invoke(null, [DesktopClient.Backend.X11, Enum.Parse(operation, "WindowWatch")]);
-				Assert.That(DesktopBackend.X11.SupportsPushWindowEvents, Is.True);
-			}
-			finally
-			{
-				for (var i = 0; i < names.Length; i++) Field(names[i]).SetValue(null, saved[i]);
-			}
+			capabilities.GetType().GetMethod("Learn", flags).Invoke(capabilities,
+				[DesktopClient.Backend.X11, Enum.Parse(operation, "WindowWatch")]);
+			Assert.That(services.X11.SupportsPushWindowEvents, Is.True);
 		}
 
 		/// <summary>A broker left running by a previous X11 login reports that session, not this one. The
@@ -61,7 +56,7 @@ namespace Keysharp.Tests
 				$"{{\"ok\":true,\"window\":{{\"id\":\"{id}\",\"validFields\":[\"id\"]}}}}");
 			Assert.Multiple(() =>
 			{
-				Assert.That(DesktopBackend.X11.TryReadWindow(24, json, (NativeClientStatus)status, out var window,
+				Assert.That(services.X11.TryReadWindow(24, json, (NativeClientStatus)status, out var window,
 					out var notFound), Is.EqualTo(found));
 				Assert.That(window != null, Is.EqualTo(found));
 				Assert.That(notFound, Is.EqualTo(gone));
@@ -98,7 +93,7 @@ namespace Keysharp.Tests
 				"visible":true,"decorated":true,"transparency":127,
 				"validFields":["frame","client","title","appId","visible","transparency"]}]}
 				""";
-			Assert.That(DesktopBackend.X11.TryParseWindowList(Encoding.UTF8.GetBytes(json),
+			Assert.That(services.X11.TryParseWindowList(Encoding.UTF8.GetBytes(json),
 				out var windows), Is.True);
 			Assert.That(windows, Has.Count.EqualTo(1));
 			var window = windows[0];
@@ -122,7 +117,7 @@ namespace Keysharp.Tests
 		{
 			var fixtures = new[]
 			{
-				(Name: "X11 append_window", Backend: DesktopBackend.X11, WorkspaceKnown: true, Json:
+				(Name: "X11 append_window", Backend: services.X11, WorkspaceKnown: true, Json:
 					"{\"ok\":true,\"windows\":[{\"id\":\"24\",\"title\":\"Editor\",\"appId\":\"Example.Editor\",\"pid\":123,\"frame\":{\"x\":1,\"y\":2,\"width\":300,\"height\":200},\"client\":{\"x\":1,\"y\":2,\"width\":300,\"height\":200},\"active\":true,\"minimized\":true,\"maximized\":false,\"visible\":false,\"alwaysOnTop\":true,\"decorated\":false,\"transparency\":127,\"onCurrentWorkspace\":false,\"validFields\":[\"frame\",\"client\",\"visible\",\"transparency\",\"title\",\"appId\",\"pid\",\"minimized\",\"maximized\",\"alwaysOnTop\",\"active\",\"decorated\",\"onCurrentWorkspace\"]}]}"),
 				(Name: "GNOME _windowInfo", Backend: new DesktopBackend("gnome-test", "GNOME"), WorkspaceKnown: true, Json:
 					"{\"ok\":true,\"windows\":[{\"id\":\"24\",\"title\":\"Editor\",\"appId\":\"Example.Editor\",\"pid\":123,\"frame\":{\"x\":1,\"y\":2,\"width\":300,\"height\":200},\"client\":{\"x\":1,\"y\":2,\"width\":300,\"height\":200},\"buffer\":null,\"active\":true,\"minimized\":true,\"maximized\":false,\"visible\":false,\"alwaysOnTop\":true,\"decorated\":false,\"transparency\":127,\"onCurrentWorkspace\":false,\"validFields\":[\"id\",\"title\",\"appId\",\"frame\",\"client\",\"active\",\"minimized\",\"maximized\",\"visible\",\"alwaysOnTop\",\"transparency\",\"pid\",\"decorated\",\"onCurrentWorkspace\"]}]}"),
@@ -173,7 +168,7 @@ namespace Keysharp.Tests
 				"validFields":["id","title","appId"]}]}
 				""";
 
-			Assert.That(DesktopBackend.X11.TryParseWindowList(Encoding.UTF8.GetBytes(json),
+			Assert.That(services.X11.TryParseWindowList(Encoding.UTF8.GetBytes(json),
 				out var windows), Is.True);
 			Assert.That(windows, Has.Count.EqualTo(1));
 			var window = windows[0];
@@ -234,7 +229,7 @@ namespace Keysharp.Tests
 		[TestCase("{\"ok\":false,\"windows\":[]}")]
 		[TestCase("{\"ok\":true,\"windows\":null}")]
 		public void InvalidWindowRepliesFailClosed(string json)
-			=> Assert.That(DesktopBackend.X11.TryParseWindowList(Encoding.UTF8.GetBytes(json), out _),
+			=> Assert.That(services.X11.TryParseWindowList(Encoding.UTF8.GetBytes(json), out _),
 				Is.False);
 
 		[Test]
@@ -244,7 +239,7 @@ namespace Keysharp.Tests
 				{"ok":true,"windows":[null,{"id":"-1"},{"id":"4294967296"},
 				{"id":"24","frame":{"x":4294967297,"y":0,"width":10,"height":20}}]}
 				""";
-			Assert.That(DesktopBackend.X11.TryParseWindowList(Encoding.UTF8.GetBytes(json),
+			Assert.That(services.X11.TryParseWindowList(Encoding.UTF8.GetBytes(json),
 				out var windows), Is.True);
 			Assert.That(windows, Has.Count.EqualTo(1));
 			Assert.That(windows[0].Bounds.Width, Is.Zero);
@@ -437,7 +432,8 @@ namespace Keysharp.Tests
 		{
 			const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
 			var type = typeof(DesktopClient).GetNestedType("DesktopRpcSession", BindingFlags.NonPublic);
-			var session = Activator.CreateInstance(type, true);
+			var session = Activator.CreateInstance(type, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+				null, [services.Desktop], null);
 			var lease = type.GetField("leaseId", flags);
 			lease.SetValue(session, 99UL);
 			var stop = type.GetMethod("Dispose", flags);
@@ -452,7 +448,8 @@ namespace Keysharp.Tests
 		public void RpcSessionShutdownBypassesABlockedRequest()
 		{
 			var type = typeof(DesktopClient).GetNestedType("DesktopRpcSession", BindingFlags.NonPublic);
-			var session = Activator.CreateInstance(type, true);
+			var session = Activator.CreateInstance(type, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+				null, [services.Desktop], null);
 			var requestLock = type.GetField("sync", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(session);
 			using var entered = new ManualResetEventSlim();
 			using var release = new ManualResetEventSlim();

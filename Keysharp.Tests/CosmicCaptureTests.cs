@@ -1,4 +1,5 @@
 #if LINUX
+using Keysharp.Internals.Linux;
 using Keysharp.Internals;
 using Keysharp.Internals.Window.Linux.Wayland;
 

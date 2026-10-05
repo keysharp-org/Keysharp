@@ -102,7 +102,6 @@ namespace Keysharp.Internals
 		private readonly IInput input = new LinuxInput();
 		private readonly IHotkeys hotkeys = new LinuxHotkeys();
 		private readonly ISession session = new LinuxSession();
-		private readonly IPermissionManager permissions = new LinuxPermissionManager();
 		// Lazy for the same reason as screen, plus the choice inspects Eto's resolved clipboard handler, which is
 		// only meaningful once the toolkit is up.
 		private readonly Lazy<IClipboard> clipboard = new (LinuxClipboards.Resolve);
@@ -117,7 +116,7 @@ namespace Keysharp.Internals
 		internal override IInput Input => input;
 		internal override IHotkeys Hotkeys => hotkeys;
 		internal override ISession Session => session;
-		internal override IPermissionManager Permissions => permissions;
+		internal override IPermissionManager Permissions => Script.TheScript.LinuxServices.Permissions;
 		internal override IClipboard GetClipboardCore(Script owner) => clipboard.Value;
 
 		public override void Dispose()

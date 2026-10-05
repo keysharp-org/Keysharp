@@ -1,103 +1,161 @@
 #if LINUX
+using Keysharp.Internals.Os;
 using System.Runtime.InteropServices;
-using Keysharp.Internals.Linux;
+using Keysharp.Internals.Window.Linux.Wayland;
 
-namespace Keysharp.Internals.Window.Linux.Wayland
+namespace Keysharp.Internals.Linux
 {
-	internal static unsafe partial class DesktopClient
+	internal sealed unsafe partial class DesktopClient
 	{
 		private sealed record StateMessage(uint Kind, uint Domain, ulong Epoch, ulong Sequence,
 			WaylandWindowInfo Window, byte[] Data, LinuxPermissionScope Grants, WaylandWindowInfo PreviousWindow = null);
-		private static readonly Task unavailableWindowChange = new TaskCompletionSource<bool>().Task;
+		private readonly Task unavailableWindowChange = new TaskCompletionSource<bool>().Task;
 
-		internal static Task WindowChangeSignal
+		internal Task WindowChangeSignal
 		{
 			get
 			{
-				try { return GetLease().Windows.ChangeSignal; }
+				try
+				{
+					var state = GetLease().State;
+					state.EnsureDomains(1);
+					return state.Windows.ChangeSignal;
+				}
 				catch { return unavailableWindowChange; }
 			}
 		}
 
-		internal static bool TryReadWindows(out IReadOnlyList<WaylandWindowInfo> windows)
+		internal bool TryReadWindows(out IReadOnlyList<WaylandWindowInfo> windows)
 		{
 			if (TryReadCachedWindows(out windows)) return true;
 			windows = [];
-			if (!Capabilities.Offers(Operation.WindowWatch)) return false;
-			if (RequestAuthorization(LinuxPermissionScope.WindowMonitoring, false).Status != PermissionStatus.Granted)
+			if (!capabilities.Offers(Operation.WindowWatch)) return false;
+			if (Permissions.RequestDesktop(LinuxPermissionScope.WindowMonitoring, false).Status != PermissionStatus.Granted)
 				return false;
 			try
 			{
 				var lease = GetLease();
-				lease.EnsureDomains(1);
-				return lease.Windows.WaitReady() && lease.Windows.TryRead(out windows);
+				lease.State.EnsureDomains(1);
+				return lease.State.Windows.WaitReady() && lease.State.Windows.TryRead(out windows);
 			}
 			catch (Exception exception) { DebugLine(exception.Message); return false; }
 		}
 
-		internal static bool TryReadCachedWindows(out IReadOnlyList<WaylandWindowInfo> windows)
+		internal bool TryReadCachedWindows(out IReadOnlyList<WaylandWindowInfo> windows)
 		{
 			var lease = Volatile.Read(ref authorizationLease);
 			windows = [];
 			return lease?.IsOpen == true && (lease.Scopes & LinuxPermissionScope.WindowMonitoring) != 0
-				&& lease.Windows.TryRead(out windows);
+				&& lease.State.Windows.TryRead(out windows);
 		}
 
-		internal static bool IsMirroredWindow(ulong handle)
-			=> Volatile.Read(ref authorizationLease)?.Windows.KnowsWindow(handle) == true;
+		internal bool IsMirroredWindow(ulong handle)
+			=> Volatile.Read(ref authorizationLease)?.State.Windows.KnowsWindow(handle) == true;
 
-		private static IDisposable SubscribeState(uint domain, Action<StateMessage> handler, Action<Exception> onError)
+		private IDisposable SubscribeState(uint domain, Action<StateMessage> handler, Action<Exception> onError)
 		{
 			try
 			{
 				var scope = domain == 1 ? LinuxPermissionScope.WindowMonitoring
 					: domain == 8 ? LinuxPermissionScope.ClipboardMonitoring : LinuxPermissionScope.None;
-				if (RequestAuthorization(scope, false).Status != PermissionStatus.Granted) return null;
-				return GetLease().Subscribe(domain, handler, onError);
+				if (Permissions.RequestDesktop(scope, false).Status != PermissionStatus.Granted) return null;
+				return GetLease().State.Subscribe(domain, handler, onError);
 			}
 			catch (Exception exception) { onError?.Invoke(exception); return null; }
 		}
 
 		private sealed class AuthorizationLease : IDisposable
 		{
-			private readonly DesktopConnection connection;
+			private readonly DesktopClient service;
+			private readonly GrantCursor grantCursor = new();
+			private uint scopes;
+			private int disposed;
+			internal DesktopConnection Connection { get; }
+			internal DesktopState State { get; }
+			internal ulong Id => Connection.LeaseId;
+			internal bool IsOpen => Volatile.Read(ref disposed) == 0 && Connection.IsOpen;
+			internal LinuxPermissionScope Scopes => IsOpen ? (LinuxPermissionScope)Volatile.Read(ref scopes) : LinuxPermissionScope.None;
+			internal void PublishCapabilities() => service.capabilities.Learn(Connection.Backend, Connection.AvailableOperations);
+
+			internal AuthorizationLease(DesktopClient service)
+			{
+				this.service = service;
+				Connection = DesktopConnection.Connect(ConnectionRole.AuthorizationLease, AuthorizationTimeoutMs);
+				State = new(this);
+				Connection.StreamFailed = error => Fail(error);
+				Connection.StateReceived = Receive;
+				try { State.EnsureDomains(16); }
+				catch { Connection.Dispose(); throw; }
+			}
+
+			internal CallResult Authorize(LinuxPermissionScope requestedScopes, AuthorizationMode mode)
+				=> Connection.Owner.Invoke(() =>
+				{
+					var result = Connection.Authorize(requestedScopes, mode, out var granted);
+					if (result.ShouldReconnect) return result;
+					if (!IsOpen) return new CallResult(NativeClientStatus.Revoked, 0, 0,
+						"The desktop lease has stopped.", "authorize");
+					if (result.IsSuccess) Volatile.Write(ref scopes, (uint)granted);
+					while (Connection.DrainState()) { }
+					return result;
+				});
+
+			private void Receive(StateMessage message)
+			{
+				if (!IsOpen) return;
+				if (message.Domain == 16)
+				{
+					if (!grantCursor.Apply(message.Kind, message.Epoch, message.Sequence))
+						throw new InvalidDataException("The desktop lease grant stream lost its sequence; a fresh lease is required.");
+					if (message.Kind != 3 && message.Kind != 12) return;
+					Volatile.Write(ref scopes, (uint)message.Grants);
+					State.Revoke();
+					return;
+				}
+				State.Receive(message);
+			}
+
+			private void Fail(Exception error, bool notify = true)
+			{
+				if (Interlocked.Exchange(ref disposed, 1) != 0) return;
+				Volatile.Write(ref scopes, 0);
+				State.Fail(error, notify);
+			}
+
+			public void Dispose()
+			{
+				Fail(new ObjectDisposedException(nameof(AuthorizationLease)), false);
+				Connection.Dispose();
+			}
+		}
+
+		private sealed class DesktopState(AuthorizationLease lease) : IDisposable
+		{
+			private DesktopConnection connection => lease.Connection;
+			private bool IsOpen => Volatile.Read(ref disposed) == 0 && lease.IsOpen;
+			private LinuxPermissionScope Scopes => lease.Scopes;
 			private readonly object sync = new();
 			private readonly List<StateSubscription> observers = [];
 			private readonly Dictionary<uint, (ulong Epoch, ulong Sequence, bool Ready)> positions = [];
 			private readonly Dictionary<uint, byte[]> data = [], pendingData = [];
 			private readonly HashSet<uint> awaitingSnapshot = [];
-			private readonly GrantCursor grantCursor = new();
-			private uint scopes, domains;
+			private uint domains;
 			private int disposed;
-			internal readonly object PromptSync = new();
 			internal readonly DesktopWindowMirror Windows = new();
-			internal ulong Id => connection.LeaseId;
-			internal bool IsOpen => Volatile.Read(ref disposed) == 0 && connection.IsOpen;
-			internal bool HasWindowState => (domains & 1) != 0;
-			internal LinuxPermissionScope Scopes => IsOpen ? (LinuxPermissionScope)Volatile.Read(ref scopes) : LinuxPermissionScope.None;
-			internal void PublishCapabilities() => Capabilities.Learn(connection.Backend, connection.AvailableOperations);
+			internal bool HasWindowState => (Volatile.Read(ref domains) & 1) != 0;
 
-			internal AuthorizationLease()
+			internal void Revoke()
 			{
-				connection = DesktopConnection.Connect(ConnectionRole.AuthorizationLease, AuthorizationTimeoutMs);
-				connection.StreamFailed = error => Fail(error);
-				connection.StateReceived = Receive;
-				try { EnsureDomains(16); }
-				catch { connection.Dispose(); throw; }
-			}
-
-			internal CallResult Authorize(LinuxPermissionScope requestedScopes, AuthorizationMode mode)
-				=> connection.Owner.Invoke(() =>
+				if ((Scopes & LinuxPermissionScope.WindowMonitoring) == 0) Windows.Invalidate();
+				StateSubscription[] revoked;
+				lock (sync)
 				{
-					var result = connection.Authorize(requestedScopes, mode, out var granted);
-					if (result.ShouldReconnect) return result;
-					if (!IsOpen) return new CallResult(NativeClientStatus.Revoked, 0, 0,
-						"The desktop lease has stopped.", "authorize");
-					if (result.IsSuccess) Volatile.Write(ref scopes, (uint)granted);
-					while (connection.DrainState()) { }
-					if ((Scopes & LinuxPermissionScope.WindowMonitoring) != 0) EnsureDomains(1);
-					return result;
-				});
+					revoked = observers.Where(observer => !Permits(observer.Domain)).ToArray();
+					foreach (var observer in revoked) { observers.Remove(observer); data.Remove(observer.Domain); }
+				}
+				foreach (var observer in revoked) observer.Fail(new IOException("The desktop state permission was revoked."));
+				EnsureDomains(0);
+			}
 
 			internal void EnsureDomains(uint requested)
 				=> connection.Owner.Invoke(() =>
@@ -108,7 +166,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					if ((Scopes & LinuxPermissionScope.WindowMonitoring) != 0
 						&& (connection.AvailableOperations & Operation.WindowWatch) != 0) allowed |= 1;
 					if ((Scopes & LinuxPermissionScope.ClipboardMonitoring) != 0) allowed |= 8;
-					var next = (domains | requested | (allowed & 6)) & allowed;
+					var next = (domains | requested | 16) & allowed;
 					if (next != domains)
 					{
 						var result = connection.SubscribeState(next);
@@ -177,26 +235,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				catch { observer.Dispose(); throw; }
 			}
 
-			private void Receive(StateMessage message)
+			internal void Receive(StateMessage message)
 			{
 				if (!IsOpen) return;
-				if (message.Domain == 16)
-				{
-					if (!grantCursor.Apply(message.Kind, message.Epoch, message.Sequence))
-						throw new InvalidDataException("The desktop lease grant stream lost its sequence; a fresh lease is required.");
-					if (message.Kind != 3 && message.Kind != 12) return;
-					Volatile.Write(ref scopes, (uint)message.Grants);
-					if ((Scopes & LinuxPermissionScope.WindowMonitoring) == 0) Windows.Invalidate();
-					StateSubscription[] revoked;
-					lock (sync)
-					{
-						revoked = observers.Where(observer => !Permits(observer.Domain)).ToArray();
-						foreach (var observer in revoked) { observers.Remove(observer); data.Remove(observer.Domain); }
-					}
-					foreach (var observer in revoked) observer.Fail(new IOException("The desktop state permission was revoked."));
-					EnsureDomains(0);
-					return;
-				}
 				if (!Permits(message.Domain)) return;
 				if (message.Kind == 13) { Resynchronize(message.Domain); return; }
 				lock (sync)
@@ -254,10 +295,9 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				=> domain == 1 ? (Scopes & LinuxPermissionScope.WindowMonitoring) != 0
 					: domain != 8 || (Scopes & LinuxPermissionScope.ClipboardMonitoring) != 0;
 
-			private void Fail(Exception exception, bool notify = true)
+			internal void Fail(Exception exception, bool notify = true)
 			{
 				if (Interlocked.Exchange(ref disposed, 1) != 0) return;
-				Volatile.Write(ref scopes, 0);
 				Windows.Invalidate();
 				LinuxDisplayChanges.Raise();
 				StateSubscription[] current;
@@ -268,11 +308,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			public void Dispose()
 			{
-				Fail(new ObjectDisposedException(nameof(AuthorizationLease)), false);
-				connection.Dispose();
+				Fail(new ObjectDisposedException(nameof(DesktopState)), false);
 			}
 
-			private sealed class StateSubscription(AuthorizationLease lease, uint domain,
+			private sealed class StateSubscription(DesktopState state, uint domain,
 				Action<StateMessage> handler, Action<Exception> onError) : IDisposable
 			{
 				private readonly object dispatching = new();
@@ -295,7 +334,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				public void Dispose()
 				{
 					Interlocked.Exchange(ref disposed, 1);
-					lock (lease.sync) lease.observers.Remove(this);
+					lock (state.sync) state.observers.Remove(this);
 				}
 			}
 		}

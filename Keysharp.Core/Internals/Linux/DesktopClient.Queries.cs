@@ -1,12 +1,13 @@
 #if LINUX
+using Keysharp.Internals.Os;
 using System.Runtime.InteropServices;
-using Keysharp.Internals.Linux;
+using Keysharp.Internals.Window.Linux.Wayland;
 
-namespace Keysharp.Internals.Window.Linux.Wayland
+namespace Keysharp.Internals.Linux
 {
-	internal static unsafe partial class DesktopClient
+	internal sealed unsafe partial class DesktopClient
 	{
-		internal static byte[] QueryWindow(ulong handle, out NativeClientStatus status)
+		internal byte[] QueryWindow(ulong handle, out NativeClientStatus status)
 		{
 			byte[] value = null;
 			return Call(Operation.WindowQuery,
@@ -14,47 +15,47 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				out status, NativeClientStatus.NotFound) ? value : null;
 		}
 
-		internal static byte[] QueryChildren(ulong handle)
+		internal byte[] QueryChildren(ulong handle)
 		{
 			byte[] value = null;
 			return Call(Operation.WindowChildren,
 				connection => connection.WindowChildren(handle, out value)) ? value : null;
 		}
 
-		internal static byte[] QueryWindowAt(int x, int y, bool deepest)
+		internal byte[] QueryWindowAt(int x, int y, bool deepest)
 		{
 			byte[] value = null;
 			return Call(Operation.WindowAtPoint,
 				connection => connection.WindowAtPoint(x, y, deepest, out value)) ? value : null;
 		}
 
-		internal static byte[] QueryDisplays()
+		internal byte[] QueryDisplays()
 		{
-			try { return GetLease().TryReadData(4, out var value) ? value : null; }
+			try { return GetLease().State.TryReadData(4, out var value) ? value : null; }
 			catch (Exception exception) { DebugLine(exception.Message); return null; }
 		}
 
-		internal static bool SetWindowTitle(ulong handle, string title)
+		internal bool SetWindowTitle(ulong handle, string title)
 			=> Call(Operation.WindowSetTitle,
 				connection => connection.SetTitle(handle, title));
 
-		internal static bool SetWindowVisible(ulong handle, bool visible)
+		internal bool SetWindowVisible(ulong handle, bool visible)
 			=> Call(Operation.WindowSetVisible,
 				connection => connection.SetVisible(handle, visible));
 
-		internal static bool RedrawWindow(ulong handle)
+		internal bool RedrawWindow(ulong handle)
 			=> Call(Operation.WindowRedraw,
 				connection => connection.Redraw(handle));
 
-		internal static bool ClickWindow(ulong handle, int x, int y, uint button, int count)
+		internal bool ClickWindow(ulong handle, int x, int y, uint button, int count)
 			=> Call(Operation.WindowClick,
 				connection => connection.Click(handle, x, y, button, (uint)count));
 
-		internal static bool SendWindowButton(ulong handle, int x, int y, uint button, bool down)
+		internal bool SendWindowButton(ulong handle, int x, int y, uint button, bool down)
 			=> Call(Operation.WindowButton,
 				connection => connection.WindowButton(handle, x, y, button, down));
 
-		internal static bool FocusChildWindow(ulong handle)
+		internal bool FocusChildWindow(ulong handle)
 			=> Call(Operation.WindowFocusChild,
 				connection => connection.FocusChild(handle));
 
