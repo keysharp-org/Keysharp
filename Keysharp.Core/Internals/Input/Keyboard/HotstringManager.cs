@@ -17,6 +17,7 @@ namespace Keysharp.Internals.Input.Keyboard
 		internal bool hsDoReset;
 		internal bool hsEndCharRequired = true;
 		internal long hsKeyDelay;
+		internal long hsInputLevel = -1; // Unset defaults fall back to #InputLevel.
 		internal bool hsOmitEndChar;
 		internal long hsPriority;
 		internal bool hsResetUponMouseClick = true;
@@ -61,7 +62,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			var hs = new HotstringDefinition(script, _name, _funcObj, _options, _hotstring, _replacement, _hasContinuationSection, _suspend, declarationSuspendExempt);
 
 			if (!hs.constructedOK)
-				return Errors.ValueErrorOccurred($"Invalid hotstring: {_name}.");
+				return DefaultObject;
 
 			Add(hs);
 			shsDkt.GetOrAdd(_hotstring[0]).Add(hs);
@@ -201,6 +202,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			hsSameLineAction = false;
 			hsEndCharRequired = true;
 			hsKeyDelay = 0;
+			hsInputLevel = -1;
 			hsOmitEndChar = false;
 			hsPriority = 0;
 			hsSendMode = SendModes.Input;

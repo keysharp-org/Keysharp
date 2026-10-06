@@ -65,12 +65,12 @@ Status legend:
 | #ErrorStdOut | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Standalone directive that sends subsequent load-time errors and uncaught runtime errors to standard error instead of displaying a dialog. The command-line switch applies to load-time errors from the start of loading. |
 | #HotIf | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #HotIf directive creates context-sensitive hotkeys and hotstrings. They perform a different action (or none at all) depending on any condition (an expression). |
 | #HotIfTimeout | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #HotIfTimeout directive sets the maximum time that may be spent evaluating a single #HotIf expression. |
-| #Hotstring | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #Hotstring directive changes hotstring options or ending characters. |
+| #Hotstring | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Changes hotstring options or ending characters. Keysharp adds `I<n>` (0 through 100), setting a hotstring default that overrides #InputLevel. Invalid options raise ValueError. |
 | #If | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Begins a conditional compilation block. |
 | #Import | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Imports modules or names with shared variable storage. Function imports are lexical; class and block imports are Keysharp extensions. |
 | #Include | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #Include and #IncludeAgain directives cause the script to behave as though the specified file's contents are present at this exact position. Path separators are platform-independent: a backslash in an #Include, #Import or #CSharp path separates directories on Linux and macOS too, so `#Include Lib\Thing.ahk` resolves everywhere. |
 | #IncludeAgain | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #Include and #IncludeAgain directives cause the script to behave as though the specified file's contents are present at this exact position. Path separators are platform-independent: a backslash in an #Include, #Import or #CSharp path separates directories on Linux and macOS too, so `#Include Lib\Thing.ahk` resolves everywhere. |
-| #InputLevel | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #InputLevel directive controls which artificial keyboard and mouse events are ignored by hotkeys and hotstrings. |
+| #InputLevel | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the default input level (0 through 100, omitted: 0) for subsequent hotkeys and hotstrings without an explicit I default. Invalid values are rejected during parsing. |
 | #Line | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Accepted; line/file override for diagnostics is a no-op. |
 | #MaxThreads | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #MaxThreads directive sets the maximum number of simultaneous threads. |
 | #MaxThreadsBuffer | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #MaxThreadsBuffer directive causes some or all hotkeys to buffer rather than ignore keypresses when their #MaxThreadsPerHotkey limit has been reached. |
@@ -172,7 +172,6 @@ Status legend:
 | A_IconTip | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets or returns the tool tip text of the system tray icon. |
 | A_Index | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The current loop iteration. Outside a loop it is a value of the current pseudo-thread, 0 when it starts, which a script may assign. |
 | A_InitialWorkingDir | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
-| A_InputLevel | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the current thread input level. Assigning a value outside 0 through 100 raises ValueError. |
 | A_Is64bitOS | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_IsAdmin | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_IsCompiled | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | True if the program is running as a compiled executable, else false if it's running as a script passed to Keysharp.exe. |
@@ -673,7 +672,7 @@ Status legend:
 | HotIfWinNotExist() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sets hotkey context for windows that do not exist. |
 | Hotkey() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The Hotkey function creates, modifies, enables, or disables a hotkey while the script is running. |
 | Hotkeys/Hotstrings | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Linux and macOS use a suppression-capable global hook, which requires InputMonitoring and InputControl. |
-| Hotstring() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The Hotstring function creates, modifies, enables, or disables a hotstring while the script is running. |
+| Hotstring() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Creates, modifies, enables, or disables hotstrings. Keysharp adds `I<n>` (0 through 100); omitted I preserves existing levels, and `Hotstring("I<n>")` sets the default. Invalid options raise ValueError. |
 | Http | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | HTTP requests, as static shortcuts on a shared stateless client or as a session carrying default headers, credentials and cookies. A non-2xx status is an answer rather than an error. Options: Headers, Timeout (idle, seconds), OnData and BaseUrl per request or as session defaults, each also readable as a session property; Body and Json describe one request and are refused on a session; Auth, Proxy, IgnoreCertificateErrors and Handler configure the connection and belong to Http(Options). An unknown option key raises. Each method has an Async twin returning a Task. Download() fetches straight to a file, opened only once the response headers arrive. OnData(Chunk, Received, Total) streams the body and stops the transfer when it returns a non-zero Integer. Session.Close() releases connections, and ToClr() on the session and the response are the escape hatches. |
 | Http.Response | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | What a server answered. Headers merges the response and content headers case-insensitively, Text decodes per the response charset, and Body is the raw bytes. Both are empty when OnData took the body. |
 | If | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Conditional statement. |

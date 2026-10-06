@@ -149,6 +149,9 @@ namespace Keysharp.Tests
 			var bad = LoweringDiagnostics.Diagnostics("#import \"Ks\" { NotARealKsMember123 }\n");
 			Assert.IsTrue(System.Array.Exists(bad, d => d.Contains("has no exported member") && d.Contains("NotARealKsMember123")),
 				"expected a 'has no exported member' diagnostic, got: " + string.Join("; ", bad));
+			var removed = LoweringDiagnostics.Diagnostics("#Import Ks { A_InputLevel }\n");
+			Assert.IsTrue(System.Array.Exists(removed, d => d.Contains("has no exported member") && d.Contains("A_InputLevel")),
+				"A_InputLevel must not be exported by Ks: " + string.Join("; ", removed));
 		}
 
 		[Test, Category("Module")]

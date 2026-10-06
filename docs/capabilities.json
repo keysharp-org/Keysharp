@@ -239,8 +239,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The #Hotstring directive changes hotstring options or ending characters.",
-                     "tested-by":  "hotstring-directives.ahk"
+                     "notes":  "Changes hotstring options or ending characters. Keysharp adds `I<n>` (0 through 100), setting a hotstring default that overrides #InputLevel. Invalid options raise ValueError.",
+                     "tested-by":  "hotstring-directives.ahk; HotstringTests.HotstringInputLevel"
                  },
                  {
                      "category":  "Environment/System",
@@ -289,13 +289,13 @@
                  {
                      "category":  "Environment/System",
                      "feature":  "#InputLevel",
-                     "syntax":  "",
+                     "syntax":  "#InputLevel [Level]",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The #InputLevel directive controls which artificial keyboard and mouse events are ignored by hotkeys and hotstrings.",
-                     "tested-by":  "directive-misc.ahk"
+                     "notes":  "Sets the default input level (0 through 100, omitted: 0) for subsequent hotkeys and hotstrings without an explicit I default. Invalid values are rejected during parsing.",
+                     "tested-by":  "directive-misc.ahk; HotstringTests.HotstringInputLevel; ParserTests.InputLevel"
                  },
                  {
                      "category":  "Environment/System",
@@ -6692,8 +6692,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The Hotstring function creates, modifies, enables, or disables a hotstring while the script is running.",
-                     "tested-by":  "Gui/guitest.ks"
+                     "notes":  "Creates, modifies, enables, or disables hotstrings. Keysharp adds `I<n>` (0 through 100); omitted I preserves existing levels, and `Hotstring(\"I<n>\")` sets the default. Invalid options raise ValueError.",
+                     "tested-by":  "Gui/guitest.ks; HotstringTests.HotstringInputLevel"
                  },
                  {
                      "category":  "Flow/Expressions",
@@ -11654,16 +11654,6 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Gets or sets the timeout for evaluating #HotIf criteria."
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "A_InputLevel",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Gets or sets the current thread input level. Assigning a value outside 0 through 100 raises ValueError."
                  },
                  {
                      "category":  "Keysharp Module (Ks)",

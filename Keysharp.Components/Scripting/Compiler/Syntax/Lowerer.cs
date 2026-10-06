@@ -911,14 +911,16 @@ namespace Keysharp.Compilation.Syntax
 				if (directiveName == "errorstdout")
 				{
 					errorStdOutBeforeDirective = true;
+					AddDhhr(directive, ExprStmt(Assign(Access("MainScript.ErrorStdOut"), BoolLit(true))));
 					continue;
 				}
-				if (directiveName is not ("suspendexempt" or "hotstring" or "hotif"))
+				if (directiveName is not ("suspendexempt" or "hotstring" or "hotif" or "inputlevel"))
 					continue;
 				_errorStdOutActive = errorStdOutBeforeDirective;
 				switch (directiveName)
 				{
 					case "suspendexempt": AddDhhr(directive, LowerDirective(directive)); break;
+					case "inputlevel": AddDhhr(directive, LowerDirective(directive)); break;
 					case "hotstring": LowerHotstringDirective(directive); break;
 					case "hotif": LowerHotIf(directive); break;
 				}
@@ -1771,7 +1773,8 @@ namespace Keysharp.Compilation.Syntax
 					return null;
 				case DirectiveStmt dir when StringComparer.OrdinalIgnoreCase.Equals(dir.Name, "SuspendExempt")
 					|| StringComparer.OrdinalIgnoreCase.Equals(dir.Name, "Hotstring")
-					|| StringComparer.OrdinalIgnoreCase.Equals(dir.Name, "HotIf"):
+					|| StringComparer.OrdinalIgnoreCase.Equals(dir.Name, "HotIf")
+					|| StringComparer.OrdinalIgnoreCase.Equals(dir.Name, "InputLevel"):
 					return null;
 				case DirectiveStmt dir: return LowerDirective(dir);   // value-setting directives; rest are no-ops here
 				// A hotkey/hotstring/remap inside a plain block — the `{ … }` commonly used to group a `#HotIf`
@@ -1815,7 +1818,7 @@ namespace Keysharp.Compilation.Syntax
 				case "clipboardtimeout": return Set("Keysharp.Builtins.Ks.A_ClipboardTimeout", NumArg(1000));
 				case "hotiftimeout": return Set("Keysharp.Builtins.Ks.A_HotIfTimeout",
 						NumArg(Keysharp.Builtins.Accessors.DefaultHotIfTimeout));
-				case "inputlevel": return Set("Keysharp.Builtins.Ks.A_InputLevel", NumArg(0));   // setter validates 0..100
+				case "inputlevel": return ExprStmt(Inv(Access("Keysharp.Runtime.Keyboard.HotkeyDefinition.SetInputLevel"), NumArg(0)));
 				case "suspendexempt":
 					return Set(DeclarationSuspendExemptVariable, BoolArg() ? True : False);
 				case "maxthreadsbuffer":

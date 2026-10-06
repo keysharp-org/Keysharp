@@ -1169,6 +1169,7 @@ Controlling another application needs **Automation** permission, granted per tar
 * Syntax:
 	+ The spread operator `*` may be used multiple times in one function call: `MyFunc(arr1*, arr2*)`.
 	+ The 40 character limit for hotstring abbreviations has been removed. There is no limit to the length.
+	+ Hotstrings accept the Keysharp-specific `I<n>` option (0 through 100). Precedence is per-hotstring `I<n>`, then a `#Hotstring I<n>` or `Hotstring("I<n>")` default, then `#InputLevel`. Omitting `I` when updating a hotstring preserves its level.
 	* Reference parameters for functions using `&` are supported with the following improvements and caveats:
 	+ Passing class members, array indexes and map values by reference is supported.
 		+ `func(&classobj.classprop)`

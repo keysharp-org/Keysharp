@@ -3,6 +3,7 @@ using StringAssert = NUnit.Framework.StringAssert;
 using CollectionAssert = NUnit.Framework.CollectionAssert;
 using Keysharp.Components.Scripting;
 using Keysharp.Components.Scripting.Compiler;
+using Keysharp.Components.Scripting.Parser;
 
 namespace Keysharp.Tests
 {
@@ -283,6 +284,28 @@ namespace Keysharp.Tests
 			AssertCompileError("#Warn VarUnset, Off, Extra\n", "accepts at most 2 arguments");
 			AssertCompileError("#MaxThreads 4, 8\n", "accepts a single argument");
 			AssertCompiles("#HotIf (1, 2)\nx::y\n#HotIf\n", "#Warn VarUnset, Off\n", "#Hotstring EndChars -,.?!\n");
+		}
+
+		[Test, Category("Parser")]
+		public void InputLevel()
+		{
+			var parser = new ParserComponent();
+			foreach (var value in new[] { "-1", "101", "0x65", "1.5", "1e2", "true", "false", "nonsense", "1tail", "1 + 2", "\"1\"", "999999999999999999999999" })
+			{
+				var result = parser.ValidateSyntax(new ScriptSyntaxValidationRequest
+				{
+					SourceText = $"#ErrorStdOut\n#Warn All, StdOut\n#InputLevel {value}\n"
+				});
+				Assert.IsFalse(result.Success, value);
+				StringAssert.Contains("#InputLevel must be an integer from 0 through 100", result.Diagnostics[0].Message);
+				Assert.AreEqual(3, result.Diagnostics[0].Line);
+				Assert.AreEqual(1, result.Diagnostics[0].Column);
+			}
+
+			var valid = string.Join("\n", new[] { "", "0", "100", "+1", "-0", "0x64", "+0X01", "-0x0", "50 ; comment" }
+				.Select(value => $"#iNpUtLeVeL {value}")) + "\n";
+			Assert.IsTrue(parser.ValidateSyntax(new ScriptSyntaxValidationRequest { SourceText = valid }).Success);
+			AssertCompiles(valid);
 		}
 
 		[Test, Category("Parser")]

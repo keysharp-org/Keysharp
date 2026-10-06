@@ -5,6 +5,9 @@ namespace Keysharp.Runtime.Keyboard
 	[PublicHiddenFromUser]
 	public static class HotkeyDefinition
 	{
+		public static void SetInputLevel(long level)
+			=> Script.TheScript.AccessorData.inputLevel = level;
+
 		public static object AddHotkey(KeysharpFunc callback, uint hookAction, string name)
 			=> AddHotkey(callback, hookAction, name, false);
 

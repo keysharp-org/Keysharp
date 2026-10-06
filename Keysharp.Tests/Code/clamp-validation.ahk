@@ -2,7 +2,7 @@
 #ErrorStdOut
 #Warn All, StdOut
 
-#Import Ks { A_InputLevel, Monitor, Taskbar }
+#Import Ks { Monitor, Taskbar }
 #Import AHK { A_SendLevel }
 #Include <assert>
 
@@ -12,11 +12,6 @@ IsValueError(callback) {
 		return true
 
 	return false
-}
-
-SetInputLevel(value) {
-	global A_InputLevel
-	A_InputLevel := value
 }
 
 SetSendLevel(value) {
@@ -33,12 +28,6 @@ Assert(IsValueError(() => SetSendLevel(-1)), A_LineNumber)
 AssertEq(A_SendLevel, 50, A_LineNumber)
 Assert(IsValueError(() => SetSendLevel(101)), A_LineNumber)
 AssertEq(A_SendLevel, 50, A_LineNumber)
-
-A_InputLevel := 50
-Assert(IsValueError(() => SetInputLevel(-1)), A_LineNumber)
-AssertEq(A_InputLevel, 50, A_LineNumber)
-Assert(IsValueError(() => SetInputLevel(101)), A_LineNumber)
-AssertEq(A_InputLevel, 50, A_LineNumber)
 
 Assert(IsValueError(() => KeyHistory(-1)), A_LineNumber)
 Assert(IsValueError(() => KeyHistory(501)), A_LineNumber)

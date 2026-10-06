@@ -403,6 +403,9 @@ namespace Keysharp.Tests
 			Assert.IsTrue(s.HotkeyData.shk[3].firstVariant.suspendExempt);
 			Assert.IsTrue(s.HotkeyData.shk[4].firstVariant.suspendExempt);
 			Assert.IsFalse(s.HotkeyData.shk[5].firstVariant.suspendExempt);
+			Assert.AreEqual(50, s.HotkeyData.shk[5].firstVariant.inputLevel);
+			Assert.AreEqual(0, hsm.Hotstrings[0].inputLevel);
+			Assert.AreEqual(50, hsm.Hotstrings[7].inputLevel);
 			// While suspended, exactly the exempt hotstrings stay enabled.
 			bool[] exempt = [true, true, false, false, true, true, true, false, true, false];
 			Assert.AreEqual(exempt.Length, hsm.Hotstrings.Length);

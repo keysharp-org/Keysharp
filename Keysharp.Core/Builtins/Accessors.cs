@@ -1645,24 +1645,6 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// The default input level to use for subsequently created hotkeys and hotstrings.
-		/// </summary>
-		public static object A_InputLevel
-		{
-			get => Script.TheScript.AccessorData.inputLevel;
-			set
-			{
-				if (!value.CoerceLong(out var level))
-					return;
-
-				if (level is >= 0 and <= 100)
-					Script.TheScript.AccessorData.inputLevel = level;
-				else
-					_ = Errors.ValueErrorOccurred("A_InputLevel must be from 0 through 100.", value);
-			}
-		}
-
-		/// <summary>
 		/// The <c>Persistent()</c> setting, not whether anything keeps the script running: a hotkey, a timer or a
 		/// visible window keeps it running whatever this reads. Assigning it is <c>Persistent(value)</c>, so clearing it
 		/// lets a script with nothing else to do exit when its last thread ends.

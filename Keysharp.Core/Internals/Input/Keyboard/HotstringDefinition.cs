@@ -113,12 +113,14 @@ namespace Keysharp.Internals.Input.Keyboard
 			endCharRequired = hm.hsEndCharRequired;
 			detectWhenInsideWord = hm.hsDetectWhenInsideWord;
 			doReset = hm.hsDoReset;
-			inputLevel = script.AccessorData.inputLevel;
+			inputLevel = hm.hsInputLevel < 0 ? script.AccessorData.inputLevel : hm.hsInputLevel;
 			suspendExempt = hm.hsSuspendExempt || declarationSuspendExempt;
 			constructedOK = false;
 			var unusedX = false; // do not assign  mReplacement if execute_action is true.
-			ParseOptions(_options, ref priority, ref keyDelay, ref sendMode, ref caseSensitive, ref conformToCase, ref doBackspace
-						 , ref omitEndChar, ref sendRaw, ref endCharRequired, ref detectWhenInsideWord, ref doReset, ref unusedX, ref suspendExempt);
+			if (!ParseOptions(_options, ref priority, ref keyDelay, ref sendMode, ref caseSensitive, ref conformToCase, ref doBackspace
+						 , ref omitEndChar, ref sendRaw, ref endCharRequired, ref detectWhenInsideWord, ref doReset, ref unusedX, ref suspendExempt, ref inputLevel))
+				return;
+
 			str = _hotstring;
 			Name = _name;
 
@@ -132,145 +134,157 @@ namespace Keysharp.Internals.Input.Keyboard
 
 		public override string ToString() => Name;
 
-		internal static void ParseOptions(ReadOnlySpan<char> _options, ref long _priority, ref long _keyDelay, ref SendModes _sendMode
+		internal static bool ParseOptions(ReadOnlySpan<char> _options, ref long _priority, ref long _keyDelay, ref SendModes _sendMode
 										  , ref bool _caseSensitive, ref bool _conformToCase, ref bool _doBackspace, ref bool _omitEndChar, ref SendRawModes _sendRaw
-										  , ref bool _endCharRequired, ref bool _detectWhenInsideWord, ref bool _doReset, ref bool _executeAction, ref bool _suspendExempt)
+										  , ref bool _endCharRequired, ref bool _detectWhenInsideWord, ref bool _doReset, ref bool _executeAction, ref bool _suspendExempt, ref long _inputLevel)
 		{
 			// In this case, colon rather than zero marks the end of the string.  However, the string
 			// might be empty so check for that too.  In addition, this is now called from
 			// IsDirective(), so that's another reason to check for normal string termination.
 			var colon = _options.IndexOf(':');
 			var opts = _options.Slice(0, colon == -1 ? _options.Length : colon);
+			var (priority, keyDelay, sendMode, caseSensitive, conformToCase, doBackspace, omitEndChar, sendRaw
+				, endCharRequired, detectWhenInsideWord, doReset, executeAction, suspendExempt, inputLevel) =
+				(_priority, _keyDelay, _sendMode, _caseSensitive, _conformToCase, _doBackspace, _omitEndChar, _sendRaw
+				, _endCharRequired, _detectWhenInsideWord, _doReset, _executeAction, _suspendExempt, _inputLevel);
 
 			for (var i = 0; i < opts.Length; i++)
 			{
-				var ch = char.ToUpper(opts[i]);
+				var ch = char.ToUpperInvariant(opts[i]);
 				var next = i < opts.Length - 1 ? opts.Slice(i + 1) : "";
 
 				switch (ch)
 				{
 					case '*':
-						_endCharRequired = next.Length > 0 && next[0] == '0';
+						endCharRequired = !ReadFlag(next, ref i);
 						break;
 
 					case '?':
-						_detectWhenInsideWord = next.Length == 0 || next[0] != '0';
+						detectWhenInsideWord = ReadFlag(next, ref i);
 						break;
 
 					case 'B':
-						_doBackspace = next.Length == 0 || next[0] != '0';
+						doBackspace = ReadFlag(next, ref i);
 						break;
 
 					case 'C':
 						if (next.Length == 0)// treat as plain "C"
 						{
-							_conformToCase = false;  // No point in conforming if its case sensitive.
-							_caseSensitive = true;
+							conformToCase = false;  // No point in conforming if its case sensitive.
+							caseSensitive = true;
 						}
 						else if (next[0] == '0') // restore both settings to default.
 						{
-							_conformToCase = true;
-							_caseSensitive = false;
+							conformToCase = true;
+							caseSensitive = false;
 							i++;
 						}
 						else if (next[0] == '1')
 						{
-							_conformToCase = false;
-							_caseSensitive = false;
+							conformToCase = false;
+							caseSensitive = false;
 							i++;
 						}
 						else//It was just a 'C' followed by another option.
 						{
-							_conformToCase = false;  // No point in conforming if its case sensitive.
-							_caseSensitive = true;
+							conformToCase = false;  // No point in conforming if its case sensitive.
+							caseSensitive = true;
 						}
 
 						break;
 
 					case 'O':
-						_omitEndChar = next.Length == 0 || next[0] != '0';
+						omitEndChar = ReadFlag(next, ref i);
 						break;
 
-					// For options such as K & P: Use atoi() vs. ATOI() to avoid interpreting something like 0x01C
-					// as hex when in fact the C was meant to be an option letter:
+					// Decimal prefixes leave following option letters for the next iteration.
 					case 'K':
 					case 'P':
+					case 'I':
 					{
 						var number = next.BeginNums(allowSign: true);
-						var val = long.TryParse(number, out var parsed) ? parsed : 0; // 0 when there are no digits, as AutoHotkey reads it.
+						var parsed = long.TryParse(number, out var val);
+
+						if (!parsed || (ch == 'I' && val is < 0 or > 100) || number.Length < next.Length && next[number.Length] == '.')
+						{
+							_ = Errors.ValueErrorOccurred(ch == 'I' ? "Hotstring input level must be an integer from 0 through 100."
+								: $"Hotstring option {ch} requires an integer.", next.ToString());
+							return false;
+						}
 
 						if (ch == 'K')
-							_keyDelay = val;
+							keyDelay = val;
+						else if (ch == 'P')
+							priority = val;
 						else
-							_priority = val;
+							inputLevel = val;
 
 						i += number.Length;
 					}
 					break;
 
 					case 'R':
-						_sendRaw = (next.Length == 0 || next[0] != '0') ? SendRawModes.Raw : SendRawModes.NotRaw;
+						sendRaw = ReadFlag(next, ref i) ? SendRawModes.Raw : SendRawModes.NotRaw;
 						break;
 
 					case 'T':
-						_sendRaw = (next.Length == 0 || next[0] != '0') ? SendRawModes.RawText : SendRawModes.NotRaw;
+						sendRaw = ReadFlag(next, ref i) ? SendRawModes.RawText : SendRawModes.NotRaw;
 						break;
 
 					case 'S':
-					{
-						var tempch = (char)0;
-
-						if (next.Length > 0)
+						switch (next.IsEmpty ? '\0' : char.ToUpperInvariant(next[0]))
 						{
-							tempch = char.ToUpper(next[0]);
+							case 'I':
+								i++;
+								sendMode = SendModes.InputThenPlay;
+								break;
 
-							// Skip over S's sub-letter (if any) to exclude it from  further consideration.
-							switch (tempch)
-							{
-								// There is no means to choose SM_INPUT because it seems too rarely desired (since auto-replace
-								// hotstrings would then become interruptible, allowing the keystrokes of fast typists to get
-								// interspersed with the replacement text).
-								case 'I':
-									i++;
-									_sendMode = SendModes.InputThenPlay;
-									break;
+							case 'E':
+								i++;
+								sendMode = SendModes.Event;
+								break;
 
-								case 'E':
-									i++;
-									_sendMode = SendModes.Event;
-									break;
+							case 'P':
+								i++;
+								sendMode = SendModes.Play;
+								break;
 
-								case 'P':
-									i++;
-									_sendMode = SendModes.Play;
-									break;
-
-								default:
-									if (tempch == '0')
-									{
-										i++;
-										_suspendExempt = false;
-									}
-									else
-										_suspendExempt = true;
-
-									break;
-							}
+							default:
+								suspendExempt = ReadFlag(next, ref i);
+								break;
 						}
-						else
-							_suspendExempt = true;
-					}
-					break;
+						break;
 
 					case 'Z':
-						_doReset = next.Length == 0 || next[0] != '0';
+						doReset = ReadFlag(next, ref i);
 						break;
 
 					case 'X':
-						_executeAction = next.Length == 0 || next[0] != '0';
+						executeAction = ReadFlag(next, ref i);
 						break;
-						// Otherwise: Ignore other characters, such as the digits that comprise the number after the P option.
+
+					case ' ':
+					case '\t':
+						break;
+
+					default:
+						_ = Errors.ValueErrorOccurred("Invalid hotstring option.", opts.Slice(i).ToString());
+						return false;
 				}
+			}
+
+			(_priority, _keyDelay, _sendMode, _caseSensitive, _conformToCase, _doBackspace, _omitEndChar, _sendRaw
+			, _endCharRequired, _detectWhenInsideWord, _doReset, _executeAction, _suspendExempt, _inputLevel) =
+				(priority, keyDelay, sendMode, caseSensitive, conformToCase, doBackspace, omitEndChar, sendRaw
+				, endCharRequired, detectWhenInsideWord, doReset, executeAction, suspendExempt, inputLevel);
+			return true;
+
+			static bool ReadFlag(ReadOnlySpan<char> next, ref int index)
+			{
+				var enabled = next.IsEmpty || next[0] != '0';
+				if (!next.IsEmpty && next[0] is '0' or '1')
+					index++;
+				return enabled;
 			}
 		}
 
@@ -514,7 +528,7 @@ namespace Keysharp.Internals.Input.Keyboard
 		{
 			var unused_X_option = false;
 			ParseOptions(aOptions, ref priority, ref keyDelay, ref sendMode, ref caseSensitive, ref conformToCase, ref doBackspace
-						 , ref omitEndChar, ref sendRaw, ref endCharRequired, ref detectWhenInsideWord, ref doReset, ref unused_X_option, ref suspendExempt);
+						 , ref omitEndChar, ref sendRaw, ref endCharRequired, ref detectWhenInsideWord, ref doReset, ref unused_X_option, ref suspendExempt, ref inputLevel);
 		}
 
 		internal ResultType PerformInNewThreadMadeByCaller(long criterionFoundHwnd, CaseConformModes caseMode, char endChar, uint triggerVk, bool recheckCriterionOnReceipt, int skipChars = 0)

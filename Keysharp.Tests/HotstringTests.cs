@@ -542,6 +542,53 @@ namespace Keysharp.Tests
 			Assert.IsFalse(hsm.Hotstrings[1].SuspendExempt);
 		}
 
+		[Test, Category("Hotstring"), Category("Internal"), NonParallelizable]
+		public void HotstringInputLevel()
+		{
+			Assert.IsTrue(TestScript("hotstring-input-level", false));
+			var definitions = hsm.Hotstrings.ToArray().ToDictionary(definition => definition.str);
+			(string Trigger, long Level)[] levels =
+			[
+				("initial", 3), ("fallback", 4), ("directiveDefault", 15),
+				("explicitPlay", 2), ("shadowedFallback", 15), ("directiveEvent", 17),
+				("explicitZero", 0), ("explicitMaximum", 100), ("modeOnly", 17),
+				("zeroDefault", 0), ("finalDirective", 8), ("dynamicDirective", 8),
+				("dynamicDefault", 23), ("dynamicAfterFailure", 23), ("dynamicModeOnly", 23),
+				("dynamicInvalid", 41), ("dynamicPreserved", 41), ("dynamicReset", 0), ("dynamicMaximum", 100),
+				("dynamicZero", 0), ("mixInputAfter", 1), ("mixInputBefore", 2),
+				("mixPlayAfter", 3), ("mixPlayBefore", 4), ("mixEventAfter", 5),
+				("mixEventBefore", 6), ("mixSuspendAfter", 7), ("mixSuspendBefore", 8),
+				("mixRawAfter", 9), ("mixRawBefore", 10), ("mixSigned", 1),
+				("mixLastLevel", 12)
+			];
+
+			foreach (var (trigger, level) in levels)
+				Assert.AreEqual(level, definitions[trigger].inputLevel, trigger);
+
+			Assert.AreEqual(levels.Length, definitions.Count);
+			Assert.AreEqual(SendModes.InputThenPlay, definitions["directiveDefault"].SendMode);
+			Assert.AreEqual(SendRawModes.Raw, definitions["directiveDefault"].SendRaw);
+			Assert.AreEqual(SendModes.Play, definitions["explicitPlay"].SendMode);
+			Assert.AreEqual(SendModes.Event, definitions["directiveEvent"].SendMode);
+			Assert.IsTrue(definitions["explicitZero"].SuspendExempt);
+			Assert.AreEqual(SendRawModes.Raw, definitions["explicitZero"].SendRaw);
+			Assert.IsFalse(definitions["dynamicAfterFailure"].SuspendExempt);
+			Assert.AreEqual("original", definitions["dynamicInvalid"].Replacement);
+			Assert.IsTrue(definitions["dynamicInvalid"].EndCharRequired);
+			Assert.IsFalse(definitions["dynamicInvalid"].SuspendExempt);
+			Assert.AreEqual("updated", definitions["dynamicPreserved"].Replacement);
+			Assert.AreEqual(SendModes.InputThenPlay, definitions["mixInputAfter"].SendMode);
+			Assert.AreEqual(SendModes.InputThenPlay, definitions["mixInputBefore"].SendMode);
+			Assert.AreEqual(SendModes.Play, definitions["mixPlayAfter"].SendMode);
+			Assert.AreEqual(SendModes.Play, definitions["mixPlayBefore"].SendMode);
+			Assert.AreEqual(SendModes.Event, definitions["mixEventAfter"].SendMode);
+			Assert.AreEqual(SendModes.Event, definitions["mixEventBefore"].SendMode);
+			Assert.IsTrue(definitions["mixSuspendAfter"].SuspendExempt);
+			Assert.IsTrue(definitions["mixSuspendBefore"].SuspendExempt);
+			Assert.AreEqual(SendRawModes.Raw, definitions["mixRawAfter"].SendRaw);
+			Assert.AreEqual(SendRawModes.Raw, definitions["mixRawBefore"].SendRaw);
+		}
+
 		[Test, Category("Hotstring"), NonParallelizable]
 		public void HotstringParsing()
 		{

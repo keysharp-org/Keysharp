@@ -333,6 +333,8 @@ break_twice:;
 		/// Hotstring: The hotstring's trigger string, preceded by the usual colons and option characters. For example, "::btw" or ":*:]d".
 		/// NewOptions: To set new default options for subsequently created hotstrings, pass the options to the<br/>
 		///     Hotstring function without any leading or trailing colon. For example: Hotstring "T".<br/>
+		///     In sets the input level from 0 through 100, for example I1. An individual hotstring's input level<br/>
+		///     overrides the default, which falls back to #InputLevel when no I option has been set.<br/>
 		/// SubFunction:
 		///     EndChars: Retrieves or modifies the set of characters used as ending characters by the hotstring recognizer.<br/>
 		///     MouseReset: Retrieves or modifies the global setting which controls whether mouse clicks reset the hotstring recognizer.<br/>
@@ -402,7 +404,7 @@ break_twice:;
 			{
 				HotstringDefinition.ParseOptions(name, ref hm.hsPriority, ref hm.hsKeyDelay, ref hm.hsSendMode, ref hm.hsCaseSensitive
 												 , ref hm.hsConformToCase, ref hm.hsDoBackspace, ref hm.hsOmitEndChar, ref hm.hsSendRaw, ref hm.hsEndCharRequired
-												 , ref hm.hsDetectWhenInsideWord, ref hm.hsDoReset, ref xOption, ref hm.hsSuspendExempt);
+												 , ref hm.hsDetectWhenInsideWord, ref hm.hsDoReset, ref xOption, ref hm.hsSuspendExempt, ref hm.hsInputLevel);
 				return DefaultObject;
 			}
 
@@ -436,9 +438,10 @@ break_twice:;
 			var detectInsideWord = hm.hsDetectWhenInsideWord;
 			var un = false; var lun = 0L; var sm = SendModes.Event; var sr = SendRawModes.NotRaw; // Unused.
 			var executeAction = false;
+			long inputLevel = -1;
 
-			if (hotstringOptions.Length > 0)
-				HotstringDefinition.ParseOptions(hotstringOptions, ref lun, ref lun, ref sm, ref caseSensitive, ref un, ref un, ref un, ref sr, ref un, ref detectInsideWord, ref un, ref executeAction, ref un);
+			if (hotstringOptions.Length > 0 && !HotstringDefinition.ParseOptions(hotstringOptions, ref lun, ref lun, ref sm, ref caseSensitive, ref un, ref un, ref un, ref sr, ref un, ref detectInsideWord, ref un, ref executeAction, ref un, ref inputLevel))
+				return DefaultObject;
 
 			object ifunc = null;
 

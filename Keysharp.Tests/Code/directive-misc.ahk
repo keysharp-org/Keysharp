@@ -53,8 +53,6 @@ Assert(A_WinActivateForce, A_LineNumber)
 
 #INPUTLEVEL 50
 
-AssertEq(A_InputLevel, 50, A_LineNumber)
-
 Hotkey("F5", (*) => "")
 Suspend(1)
 Hotstring("::dynamic", "ok")

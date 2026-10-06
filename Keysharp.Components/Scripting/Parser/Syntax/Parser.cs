@@ -746,6 +746,12 @@ namespace Keysharp.Parsing.Syntax
 			else
 			{
 				ValidateDirectiveArgs(name, argToks);
+				if (name.Equals("inputlevel", System.StringComparison.OrdinalIgnoreCase) && args.Length > 0)
+				{
+					if (!args.TryParseLong(out var level) || level is < 0 or > 100)
+						ErrorAt(dirToken, "#InputLevel must be an integer from 0 through 100");
+					args = level.ToString(CultureInfo.InvariantCulture);
+				}
 				dir = new DirectiveStmt(name, args);
 			}
 
