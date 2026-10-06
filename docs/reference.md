@@ -79,6 +79,22 @@ On NixOS, use the [NixOS guide](linux-nixos.md). For COSMIC-specific setup and l
 
 #### All three projects at once
 
+On Ubuntu 24.04 (noble), Ubuntu 26.04 (resolute), and derivatives using those bases
+(including Pop!_OS 24.04), prefer the [Launchpad PPA](https://launchpad.net/~descolada/+archive/ubuntu/keysharp):
+
+```sh
+sudo apt install software-properties-common
+sudo add-apt-repository ppa:descolada/keysharp
+sudo apt update
+sudo apt install keysharp
+```
+
+Apt installs the recommended components and keeps PPA packages updated.
+Debian and Ubuntu 22.04-based distributions, including Pop!_OS 22.04, use the
+release installer. See
+[Linux installation](install-linux.md#install-from-the-ubuntu-ppa) for base requirements,
+portable migration and package availability checks.
+
 `keysharp-linux-setup.sh` on the [Releases](https://github.com/keysharp-org/Keysharp/releases) page resolves and installs all three system-wide. Installation requires root; the diagnosis and dry-run modes do not. Download it, then run it:
 
 ```sh
@@ -89,13 +105,14 @@ It carries no payload. Each project is downloaded from its own latest release, v
 
 `--dry-run` reports the plan without downloading. `--skip-input` and `--skip-desktop` leave a component out. `--keysharp-version`, `--input-version` and `--desktop-version` pin a version instead of taking the latest; there is no cross-project version lock, because the client ABI is what decides compatibility.
 
-Keysharp recommends the virtual packages `keysharp-input-client-abi-0` and `keysharp-desktop-client-abi-0`. Any installed alternative that provides the same client ABI is left in place. Product versions select release artifacts; the client ABI decides compatibility. Keysharp still runs when either component is absent, but its corresponding privileged features are unavailable.
+Keysharp recommends the virtual packages `keysharp-input-client-abi-1` and `keysharp-desktop-client-abi-1` (version 1.0 or newer). Any installed alternative that provides the same client ABI is left in place. Product versions select release artifacts; the client ABI decides compatibility. Keysharp still runs when either component is absent, but its corresponding privileged features are unavailable.
 
 The `.deb` recommends WebKitGTK (`libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37`) for `Gui.WebView`, so a normal `apt install` brings the version available for the distribution. The tarball and `keysharp-linux-setup.sh` do not install recommendations; install the available package separately if a script uses `WebView`.
 
 #### Keysharp on its own
 
-The Keysharp `.deb` and the Keysharp tarball each install Keysharp and nothing else. From the tarball:
+The Keysharp `.deb` and tarball contain Keysharp alone; apt also installs available
+recommended components unless recommendations are disabled. From the tarball:
 
 ```sh
 sudo bash ./install.sh

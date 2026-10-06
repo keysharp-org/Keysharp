@@ -1,6 +1,34 @@
 # Install Keysharp on Linux
 
-## Install
+## Install from the Ubuntu PPA
+
+On Ubuntu 24.04 (noble), Ubuntu 26.04 (resolute), and derivatives using those bases
+(including Pop!_OS 24.04), prefer the
+[Launchpad PPA](https://launchpad.net/~descolada/+archive/ubuntu/keysharp) for amd64
+and arm64. Apt keeps installed packages updated:
+
+```sh
+sudo apt install software-properties-common
+sudo add-apt-repository ppa:descolada/keysharp
+sudo apt update
+sudo apt install keysharp
+```
+
+Keysharp recommends both components, so apt installs available compatible providers
+unless told not to install recommended packages. On GNOME or Cinnamon, then run
+`keysharp-desktop enable-extension` as yourself, not with `sudo`, and log out and
+back in if it asks you to.
+
+The PPA targets Ubuntu releases, not Debian or Ubuntu 22.04-based distributions
+such as Pop!_OS 22.04. Use the release installer below on those systems.
+Check the Ubuntu base in `/etc/os-release` (`UBUNTU_CODENAME`) on a derivative;
+do not substitute a different Ubuntu codename to make an unsupported base use the PPA.
+
+When switching from portable components to the PPA, run their portable uninstallers
+first. The portable `keysharp-input` v1.0.0 uninstaller leaves its ABI 1 library
+behind; see [portable component removal](#uninstall) for the extra cleanup.
+
+## Install from a release
 
 Download `keysharp-linux-setup.sh` from a
 [release](https://github.com/keysharp-org/Keysharp/releases), then run:
@@ -23,25 +51,17 @@ channel. A healthy compatible component also keeps its existing channel, so its
 channel can differ from Keysharp's. Setup prints the selected Keysharp channel and
 the detected channel for each component.
 
-## Install from the Ubuntu PPA
-
-On Ubuntu 24.04 and 26.04, Keysharp and both components are also published to a
-Launchpad PPA for amd64 and arm64, so apt keeps them updated:
-
-```sh
-sudo add-apt-repository ppa:descolada/keysharp
-sudo apt install keysharp
-```
-
-Keysharp recommends both components, so apt installs them too unless told not to
-install recommended packages. On GNOME or Cinnamon, then run
-`keysharp-desktop enable-extension` as yourself, not with `sudo`, and log out and
-back in if it asks you to.
-
 ## Update, repair or customize
 
-Rerun setup to update or reinstall Keysharp and to install or repair missing or
-unhealthy components:
+For PPA installations, update through apt:
+
+```sh
+sudo apt update
+sudo apt install --only-upgrade keysharp keysharp-input keysharp-desktop
+```
+
+For release installations, rerun setup to update or reinstall Keysharp and to
+install or repair missing or unhealthy components:
 
 ```sh
 sudo sh ./keysharp-linux-setup.sh
@@ -66,6 +86,11 @@ Downloaded packages do not add an update repository, so rerun setup when you wan
 a newer release, or install from the PPA instead.
 
 ## Diagnose
+
+If apt cannot find a PPA package, refresh its index with `sudo apt update`, then
+check `apt-cache policy keysharp keysharp-input keysharp-desktop`. Confirm that
+the configured PPA series matches your Ubuntu base. A source upload listed on
+Launchpad becomes installable only after its binary builds succeed and are published.
 
 Run setup's offline diagnosis without `sudo` to see the Keysharp channel and each
 component's channel, version, client ABI and service health:
@@ -152,6 +177,14 @@ the `channel=` value reported for that component:
   `sudo /usr/local/share/doc/keysharp-desktop/uninstall.sh`.
 - For `nix` or `system`, remove it through the configuration or package manager
   that owns it.
+
+After running the portable `keysharp-input` v1.0.0 uninstaller, remove its remaining
+ABI 1 library files before installing the Debian or PPA package:
+
+```sh
+sudo rm -f -- /usr/local/lib/libkeysharp-input.so.1 /usr/local/lib/libkeysharp-input.so.1.*
+sudo ldconfig
+```
 
 The uninstallers retain shared permission grants under
 `/var/lib/keysharp-permissions/v1`.

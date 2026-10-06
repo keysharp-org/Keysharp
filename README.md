@@ -49,15 +49,29 @@ Prebuilt packages are on the [Releases](https://github.com/keysharp-org/Keysharp
 
 ### Linux
 
-- On distributions other than NixOS, download `keysharp-linux-setup.sh` from a [release](https://github.com/keysharp-org/Keysharp/releases), then run:
+On Ubuntu 24.04 (noble), Ubuntu 26.04 (resolute), and derivatives using those bases
+(including Pop!_OS 24.04), prefer the [Launchpad PPA](https://launchpad.net/~descolada/+archive/ubuntu/keysharp)
+so apt keeps installed packages updated:
+
+```sh
+sudo apt install software-properties-common
+sudo add-apt-repository ppa:descolada/keysharp
+sudo apt update
+sudo apt install keysharp
+```
+
+On GNOME or Cinnamon, run `keysharp-desktop enable-extension` as your graphical
+user and log out and back in if requested.
+
+The PPA does not target Debian or Ubuntu 22.04-based distributions such as Pop!_OS 22.04.
+
+- On Debian and other supported distributions,
+  download `keysharp-linux-setup.sh` from a [release](https://github.com/keysharp-org/Keysharp/releases), then run:
   ```sh
   sudo sh ./keysharp-linux-setup.sh
   ```
 - Log out and back in if setup reports a newly enabled compositor extension.
 - Run `keysharp hello.ks`.
-
-On Ubuntu 24.04 and 26.04 you can instead install from the Launchpad PPA, which apt
-keeps updated; see [Linux installation](docs/install-linux.md#install-from-the-ubuntu-ppa).
 
 Setup adds the optional `keysharp-input` and `keysharp-desktop` services and keeps
 healthy compatible installations. [Linux installation](docs/install-linux.md) covers
