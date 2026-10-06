@@ -452,12 +452,16 @@ namespace Keysharp.Tests
         public void FlowWorkerCriticalDispatch() => Assert.IsTrue(TestScript("flow-worker-critical-dispatch", false));
 
         // Forces the headless branch: with a display present RunMainWindow takes the GUI path, where the ambient
-        // context comes from the UI framework instead of the scheduler.
+        // context comes from the UI framework instead of the scheduler. The slot is emptied for the same reason:
+        // the install only fills an empty one, and NUnit keeps a SafeSynchronizationContext of its own there to
+        // catch exceptions from async void methods, which a real run has nothing of.
         [Test, Category("Flow"), NonParallelizable]
         public void FlowHeadlessAmbientContext()
         {
             var previous = Environment.GetEnvironmentVariable("KEYSHARP_FORCE_HEADLESS");
             Environment.SetEnvironmentVariable("KEYSHARP_FORCE_HEADLESS", "1");
+            var previousContext = SynchronizationContext.Current;
+            SynchronizationContext.SetSynchronizationContext(null);
 
             try
             {
@@ -465,6 +469,7 @@ namespace Keysharp.Tests
             }
             finally
             {
+                SynchronizationContext.SetSynchronizationContext(previousContext);
                 Environment.SetEnvironmentVariable("KEYSHARP_FORCE_HEADLESS", previous);
             }
         }

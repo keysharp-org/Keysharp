@@ -412,6 +412,12 @@ namespace Keysharp.Main
 					appBinaryFilePath: $"{namenoext}.dll",
 					windowsGraphicalUserInterface: false,
 					assemblyToCopyResorcesFrom: outputDllPath);
+#if OSX
+
+				if (AdHocSign(finalPath) is { } signError)
+					return Runner.Message(signError, true);
+
+#endif
 #elif WINDOWS
 				var ver = GetLatestDotNetVersion();
 				finalPath = $"{path}.exe";
@@ -576,6 +582,39 @@ namespace Keysharp.Main
 					name = name.Substring(0, dash);
 
 				return Version.TryParse(name, out var version) ? version : new Version(0, 0);
+			}
+		}
+#endif
+#if OSX
+		// Stamping the script's path into the apphost invalidates the signature the template arrived with, and
+		// macOS on arm64 refuses to exec a binary whose signature does not verify: the kernel sends SIGKILL
+		// before any managed code runs, so the exe would die with exit 137 and no diagnostic. An ad-hoc
+		// signature carries no identity but satisfies that check. HostModel cannot do this itself - the public
+		// package is the .NET Core 3.1 one, which predates Mach-O signing entirely - so sign out of process.
+		// /usr/bin/codesign is part of the base system, not the Command Line Tools.
+		private static string AdHocSign(string path)
+		{
+			try
+			{
+				using var proc = Process.Start(new ProcessStartInfo("/usr/bin/codesign")
+				{
+					ArgumentList = { "--force", "--sign", "-", path },
+					RedirectStandardError = true,
+					RedirectStandardOutput = true,
+					UseShellExecute = false,
+				});
+
+				if (proc == null)
+					return $"Could not start /usr/bin/codesign to sign {path}.";
+
+				var stderr = proc.StandardError.ReadToEnd();
+				_ = proc.StandardOutput.ReadToEnd();
+				proc.WaitForExit();
+				return proc.ExitCode == 0 ? null : $"Signing {path} failed: codesign exited with {proc.ExitCode}. {stderr.Trim()}";
+			}
+			catch (Exception ex)
+			{
+				return $"Signing {path} failed: {ex.Message}";
 			}
 		}
 #endif

@@ -1289,7 +1289,16 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The full path and name of the folder designated to hold temporary files.
 		/// </summary>
-		public static string A_Temp => Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar);
+		public static string A_Temp =>
+#if OSX
+		// /var is a symlink to /private/var, and the temp folder lives under it. The kernel reports the
+		// resolved form for anything it hands back - getcwd() after setting A_WorkingDir, and so the
+		// paths Loop Files builds for a relative pattern - so returning the symlinked spelling here
+		// would make A_Temp unequal to the same directory named any other way.
+		CanonicalDirectory(Path.GetTempPath()).TrimEnd(Path.DirectorySeparatorChar);
+#else
+		Path.GetTempPath().TrimEnd(Path.DirectorySeparatorChar);
+#endif
 
 		/// <summary>
 		/// The name of the function currently being executed.
@@ -1610,6 +1619,34 @@ namespace Keysharp.Builtins
 			_ => (string)Errors.ErrorOccurred($"Unknown send mode \"{mode}\". Expected Event, Input, Play or InputThenPlay.", DefaultErrorString),
 		};
 
+#if OSX
+
+		[System.Runtime.InteropServices.DllImport("libc", SetLastError = true)]
+		private static extern IntPtr realpath(string path, IntPtr resolved);
+
+		[System.Runtime.InteropServices.DllImport("libc")]
+		private static extern void free(IntPtr ptr);
+
+		// Path.GetFullPath leaves symlinked components alone, so realpath is the only way to reach the
+		// spelling the kernel reports for the same directory. Falls back to the given path so a directory
+		// that cannot be resolved is still usable.
+		private static string CanonicalDirectory(string path)
+		{
+			try
+			{
+				var ptr = realpath(path, IntPtr.Zero);
+
+				if (ptr != IntPtr.Zero)
+				{
+					try { return System.Runtime.InteropServices.Marshal.PtrToStringUTF8(ptr) ?? path; }
+					finally { free(ptr); }
+				}
+			}
+			catch { }
+
+			return path;
+		}
+#endif
 	}
 
 	public partial class Ks

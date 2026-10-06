@@ -264,7 +264,7 @@ Status legend:
 | A_StartupCommon | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_StoreCapsLockMode | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Toggles whether the state of CapsLock is restored after a Send. |
 | A_Tab | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | String containing a single tab. |
-| A_Temp | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
+| A_Temp | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. On macOS the path is canonical (/private/var/...), matching what the OS reports for the same directory, rather than the /var symlink. |
 | A_ThisFunc | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The name of the function. If called outside of a function, empty string is returned. |
 | A_ThisHotkey | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_Thread | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The current pseudo-thread as a Thread object. Id keeps the former A_ThreadId layout: a 48-bit creation sequence and a 16-bit zero-based stack position. |

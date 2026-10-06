@@ -704,10 +704,8 @@ Assert(Http.Get(root "/text").ToClr().IsSuccessStatusCode, A_LineNumber)
 ; lets the script exit. A child script shows both, since a script here that failed to exit would hang the run.
 #if WINDOWS
 	hostBinary := "Keysharp.exe"
-#elif LINUX
-	hostBinary := "./Keysharp"
 #else
-	hostBinary := "./osx-arm64/Keysharp.app/Contents/MacOS/Keysharp"
+	hostBinary := "./Keysharp"
 #endif
 
 streamScript := "#NoTrayIcon`n#ErrorStdOut`n#Warn All, StdOut`n#Warn Experimental, Off`n#Import Ks { Http }`nslow := `"" root "/slow`"`n" . "

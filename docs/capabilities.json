@@ -2798,7 +2798,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Built-in variable."
+                     "notes":  "Built-in variable. On macOS the path is canonical (/private/var/...), matching what the OS reports for the same directory, rather than the /var symlink."
                  },
                  {
                      "category":  "Environment/System",

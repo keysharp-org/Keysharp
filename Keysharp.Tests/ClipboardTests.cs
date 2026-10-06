@@ -297,7 +297,16 @@ namespace Keysharp.Tests
 			Assert.IsTrue((bool)Ks.KeysharpClipboard.Has(Clip, "text"));      // case-insensitive kind
 			Assert.IsFalse((bool)Ks.KeysharpClipboard.Has(Clip, "Image"));
 			Assert.IsFalse((bool)Ks.KeysharpClipboard.Has(Clip, "NoSuchFormatAnywhere"));
-			Assert.IsTrue((bool)Ks.KeysharpClipboard.Has(Clip, Platform.Clipboard.KindFormats(ClipboardKind.Text)[0]));
+			// The native probe is fed what the clipboard actually advertises, not KindFormats, which is a
+			// recognition list whose entries need not be present: the Eto backend lists the freedesktop and the
+			// Cocoa name for one kind together, so on macOS its first text entry is a GTK name the pasteboard
+			// never holds. Every advertised format must answer the probe -- that is what makes Formats usable
+			// as the argument to Has.
+			var advertised = Platform.Clipboard.GetFormats();
+			Assert.IsTrue(advertised.Length > 0, "setting text must leave the clipboard advertising a format");
+
+			foreach (var format in advertised)
+				Assert.IsTrue((bool)Ks.KeysharpClipboard.Has(Clip, format), format);
 		}
 
 		/// <summary>Every typed getter reports an absent format as "" (falsy), which is what makes

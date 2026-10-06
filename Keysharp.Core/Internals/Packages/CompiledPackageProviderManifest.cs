@@ -8,7 +8,6 @@ namespace Keysharp.Internals.Os
 	{
 		internal const string ResourceName = "Keysharp.Components.Packages.Providers.json";
 		internal const string AssetResourcePrefix = "Keysharp.Components.Packages.Provider/";
-		private static readonly HashSet<(Assembly Assembly, string Provider)> prepared = [];
 
 		[JsonPropertyName("providers")] public List<Entry> Providers { get; set; } = [];
 
@@ -124,19 +123,6 @@ namespace Keysharp.Internals.Os
 
 		/// <summary>Extracts and registers an embedded provider before the first imperative package resolution.</summary>
 		internal static bool TryPrepare(Assembly assembly, string providerName, out string failure)
-		{
-			var key = (assembly, providerName.ToLowerInvariant());
-			lock (prepared)
-			{
-				failure = null;
-				if (prepared.Contains(key)) return true;
-				if (!TryPrepareCore(assembly, providerName, out failure)) return false;
-				prepared.Add(key);
-				return true;
-			}
-		}
-
-		private static bool TryPrepareCore(Assembly assembly, string providerName, out string failure)
 		{
 			failure = null;
 

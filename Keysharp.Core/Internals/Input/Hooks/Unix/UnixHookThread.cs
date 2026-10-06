@@ -587,6 +587,11 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 
 		internal override uint CharToVKAndModifiers(char ch, ref uint? modifiersLr, KeybdLayoutRef layout, bool enableAZFallback = true)
 		{
+			// A linefeed is a plain Enter, as a carriage return is. Mapping it through the layout instead
+			// would either fail or land on Ctrl+Enter, since no key types U+000A on its own.
+			if (ch == '\n')
+				return VK_RETURN;
+
 			// Delegate to the Unix char mapper used by the sender; add Shift/AltGr if needed. The layout
 			// group is snapshotted once per send in the carrier, so every char reuses it (no per-char query).
 			if (Rune.TryCreate(ch, out var rune)

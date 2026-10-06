@@ -8,10 +8,8 @@
 headlessDirectives := "#NoTrayIcon`n#ErrorStdOut`n#Warn All, StdOut`n"
 #if WINDOWS
 	hostBinary := "Keysharp.exe"
-#elif LINUX
-	hostBinary := "./Keysharp"
 #else
-	hostBinary := "./osx-arm64/Keysharp.app/Contents/MacOS/Keysharp"
+	hostBinary := "./Keysharp"
 #endif
 
 WaitForRunScriptExit(processInfo, timeoutMs := 10000) {
