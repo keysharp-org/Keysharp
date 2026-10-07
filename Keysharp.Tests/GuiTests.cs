@@ -16,6 +16,16 @@ namespace Keysharp.Tests
 	{
 		private const string MsgBoxTitle = "this is a sample title";
 
+		[Test, Category("Gui"), NonParallelizable]
+#if WINDOWS
+		[Apartment(ApartmentState.STA)]
+#endif
+		public void OwnWindowFromPoint()
+		{
+			SkipIfUiInitializationBlocked("Window point queries require a live GUI application.");
+			Assert.IsTrue(TestScript("gui-window-from-point", false));
+		}
+
 		[Test, Category("Gui")]
 		public void DisplaySelection()
 		{
@@ -2074,6 +2084,39 @@ namespace Keysharp.Tests
 #endif
 
 #if !WINDOWS
+		[TestCase(true), TestCase(false), Category("Gui")]
+		public void ListViewClickSelection(bool multiSelect)
+		{
+			SkipIfUiInitializationBlocked("ListView selection requires a live Eto application.");
+			s.InvokeOnUIThread(() =>
+			{
+				var gui = new Gui();
+
+				try
+				{
+					var list = (Gui.ListView)gui.Add("ListView", multiSelect ? "w200 h100" : "w200 h100 -Multi", new Keysharp.Builtins.Array("Name"));
+					_ = list.Add("Select", "First");
+					_ = list.Add("Select", "Second");
+					_ = list.Add("", "Third");
+					Assert.AreEqual(multiSelect ? 2L : 1L, list.GetCount("Selected"));
+					var grid = (KeysharpListView)list.Ctrl;
+					var column = ((GridView)grid).Columns[0];
+
+					foreach (var row in new[] { 2, 0, 0 })
+					{
+						list.Lv_CellClick(grid, new GridCellMouseEventArgs(column, row, 0, grid.Items[row], MouseButtons.Primary, Keys.None, PointF.Empty));
+						Assert.AreEqual(1L, list.GetCount("Selected"), "a plain click must replace the selection before native mouse tracking resumes");
+						Assert.AreEqual(row + 1L, list.GetNext());
+						Assert.AreEqual(row + 1L, list.GetNext(0L, "Focused"));
+					}
+				}
+				finally
+				{
+					_ = gui.Destroy();
+				}
+			});
+		}
+
 		[Test, Category("Gui")]
 		public void MainWindowVisibility()
 		{

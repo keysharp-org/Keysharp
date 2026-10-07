@@ -164,10 +164,11 @@ namespace Keysharp.Internals
 				return false;
 			}
 
-			if (!MacNativeWindows.TrySetOwnWindowAlwaysOnTop(native.WindowNumber, onTop))
+			var succeeded = MacNativeWindows.TrySetOwnWindowAlwaysOnTop(native.WindowNumber, onTop);
+			if (!succeeded)
 				Diagnostics.Debug.WriteLine("AlwaysOnTop failed for this macOS window.");
 
-			return true;
+			return succeeded;
 		}
 
 		public override bool TryMoveResize(nint h, Rectangle bounds, bool setPos, bool setSize)
@@ -197,8 +198,9 @@ namespace Keysharp.Internals
 			if (!TryNative(h, out var native))
 				return false;
 
-			using var window = MacAccessibility.ResolveWindowElement(native, "unminimize window");
-			if (!MacAccessibility.TrySetWindowState(window, FormWindowState.Normal))
+			using var window = MacAccessibility.ResolveWindowElement(native, "unminimize window", waitForWindow: true);
+			if (!MacAccessibility.TryGetWindowState(window, out var current)
+				|| current == FormWindowState.Minimized && !MacAccessibility.TrySetWindowState(window, FormWindowState.Normal))
 				_ = Errors.OSErrorOccurred("Unminimizing the macOS window failed.");
 
 			return true;
@@ -209,24 +211,8 @@ namespace Keysharp.Internals
 			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TrySetState(h, state);
 
-			using var window = MacAccessibility.ResolveWindowElement(native, "set window state");
-			switch (state)
-			{
-				// macOS has no "maximized" window state; the nearest equivalent to a Windows/Linux maximize
-				// is native full screen (what the green button does by default), so map WinMaximize onto it.
-				case FormWindowState.Maximized:
-					return MacAccessibility.TrySetFullScreen(window, true);
-
-				// WinRestore: leave full screen first (AppKit restores the prior frame), then un-minimize + raise.
-				case FormWindowState.Normal:
-					if (MacAccessibility.TryGetWindowState(window, out var current) && current == FormWindowState.Maximized
-						&& !MacAccessibility.TrySetFullScreen(window, false))
-						return false;
-					return MacAccessibility.TrySetWindowState(window, state);
-
-				default: // Minimized
-					return MacAccessibility.TrySetWindowState(window, state);
-			}
+			using var window = MacAccessibility.ResolveWindowElement(native, "set window state", waitForWindow: true);
+			return MacAccessibility.TrySetWindowState(window, state);
 		}
 
 		public override bool TrySetStyle(nint h, long style)
@@ -240,14 +226,15 @@ namespace Keysharp.Internals
 				return false;
 			}
 
-			if (!MacNativeWindows.TrySetOwnWindowFrameStyle(native.WindowNumber,
+			var succeeded = MacNativeWindows.TrySetOwnWindowFrameStyle(native.WindowNumber,
 					(style & WS_CAPTION) == WS_CAPTION,
 					(style & WS_SYSMENU) != 0,
 					(style & WS_THICKFRAME) != 0,
-					(style & WS_MINIMIZEBOX) != 0))
+					(style & WS_MINIMIZEBOX) != 0);
+			if (!succeeded)
 				Diagnostics.Debug.WriteLine("Setting the window style failed for this macOS window.");
 
-			return true;
+			return succeeded;
 		}
 
 		public override bool TrySetExStyle(nint h, long exStyle)
@@ -278,10 +265,11 @@ namespace Keysharp.Internals
 				a = Math.Clamp(raw, 0, 255) / 255.0;
 			}
 
-			if (!MacNativeWindows.TrySetOwnWindowAlpha(native.WindowNumber, a))
+			var succeeded = MacNativeWindows.TrySetOwnWindowAlpha(native.WindowNumber, a);
+			if (!succeeded)
 				Diagnostics.Debug.WriteLine("Opacity control failed for this macOS window.");
 
-			return true;
+			return succeeded;
 		}
 
 		public override bool TryActivate(nint h)
@@ -289,7 +277,7 @@ namespace Keysharp.Internals
 			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TryActivate(h);
 
-			using var window = MacAccessibility.ResolveWindowElement(native, "activate window");
+			using var window = MacAccessibility.ResolveWindowElement(native, "activate window", waitForWindow: true);
 			return window != null ? MacAccessibility.TryActivateWindow(window)
 				: MacNativeWindows.ActivateAppByPid(native.OwnerPid);
 		}
@@ -354,14 +342,9 @@ namespace Keysharp.Internals
 			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TryHide(h);
 
-			var hidden = native.OwnerPid == Environment.ProcessId
+			return native.OwnerPid == Environment.ProcessId
 				? MacNativeWindows.TryHideOwnWindow(native.WindowNumber, native)
 				: MacNativeWindows.HideApplication(native.OwnerPid);
-			if (hidden)
-				return true;
-
-			using var window = MacAccessibility.ResolveWindowElement(native, "minimize window");
-			return MacAccessibility.TrySetWindowState(window, FormWindowState.Minimized);
 		}
 
 		public override bool TryShow(nint h)
@@ -372,6 +355,8 @@ namespace Keysharp.Internals
 			var restored = native.OwnerPid == Environment.ProcessId
 							? MacNativeWindows.TryShowOwnWindow(native.WindowNumber)
 							: MacNativeWindows.UnhideApplication(native.OwnerPid);
+			if (!restored && native.OwnerPid != Environment.ProcessId)
+				return false;
 
 			using var window = MacAccessibility.ResolveWindowElement(native, "show window");
 			var activated = window != null ? MacAccessibility.TryActivateWindow(window)
@@ -379,11 +364,10 @@ namespace Keysharp.Internals
 			return restored || activated;
 		}
 
-		// Own controls/windows are invalidated through the toolkit (base) — try that FIRST. AppKit repaints
-		// foreign windows on its own schedule and exposes no "invalidate that window" call, so for those the
-		// verb only reports that the window exists rather than doing anything.
+		// Public AppKit invalidation requires a window owned by this process.
 		public override bool TryRedraw(nint h)
-			=> base.TryRedraw(h) || MacNativeWindows.TryGetWindowInfo(h, out _, includeTextMetadata: false);
+			=> base.TryRedraw(h) || (TryNative(h, out var native) && native.OwnerPid == Environment.ProcessId
+				&& MacNativeWindows.TryRedrawOwnWindow(native.WindowNumber));
 
 		public override bool TryClick(nint h, Point at, uint button, int count)
 		{
@@ -467,7 +451,11 @@ namespace Keysharp.Internals
 		{
 			if (MacNativeWindows.TryGetWindowAtPoint(new POINT(x, y), out var native))
 			{
-				child = (nint)native.WindowNumber;
+				// Own GUIs must compare equal to Gui.Hwnd and keep their toolkit client geometry.
+				child = native.OwnerPid == Environment.ProcessId
+					&& MacNativeWindows.TryGetOwnWindowHandle(native.WindowNumber, out var ownHandle)
+					&& TryOwnControl(ownHandle, out _)
+					? ownHandle : (nint)native.WindowNumber;
 				return true;
 			}
 

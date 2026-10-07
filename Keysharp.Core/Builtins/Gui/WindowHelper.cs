@@ -16,7 +16,7 @@ namespace Keysharp.Builtins
 				operation: operation);
 
 		internal static object WindowOperationUnsupported(string commandName)
-			=> Errors.UnsupportedErrorOccurred($"{commandName} is not implemented on {WindowOperationPlatformName()}.");
+			=> Errors.UnsupportedErrorOccurred($"{commandName} is unsupported for this target on {WindowOperationPlatformName()}.");
 
 		private static string WindowOperationPlatformName()
 		{

@@ -8,14 +8,14 @@
     double-clicked Keysharp.exe, Keysharp.app, or `keysharp` with no arguments. Every package
     compiles this to Keysharp.cks at the app root, which the ordinary <exe-name>.ahk/.ks/.cks
     probe finds; the source keeps its own name so it cannot shadow that .cks (the probe prefers
-    .ks). A repo checkout runs it, minus the Demos tool - Demos\ is CopyToPublishDirectory only.
+    .ks). Package Manager and Demos appear when their install payload is staged beside the executable.
 
     The requirement names the Keysharp release because this script uses the KS module.
     Keysharp release numbers are separate from AutoHotkey compatibility versions.
 
     The UI is one Image-rendered surface (the same drawing layer the demos' Shell.ks cards
-    use) inside a dark Gui with a native title bar. Hover and clicks use a mouse poll;
-    the title bar handles dragging and closing. Rendering with Keysharp's own Image class is the point:
+    use) inside a dark Gui with a native title bar. Hover uses a mouse poll; native mouse events deliver clicks.
+    The title bar handles dragging and closing. Rendering with Keysharp's own Image class is the point:
     the Dash is itself a demo of what a Keysharp script can draw. The cost is accessibility:
     a bitmap has no focusable controls, so there is no keyboard navigation and nothing for a
     screen reader (Escape and the window Close still work). Fixing that properly means real
@@ -125,12 +125,11 @@ W := 520
 Pad := 20
 InnerW := W - Pad * 2
 
-; Rasterization scale. Seeded from the monitor the window will open on (the primary, which is where
-; an uncentred Gui.Show lands) and re-read from the window's actual monitor on every poll - see
-; SyncScale.
+; Native screen units determine layout and hit-testing. macOS backing pixels have a separate density.
 Scale := Monitor.Primary.Scale
+RasterScale := Scale
 
-PollFast := 25    ; cursor over the window: hover and clicks must feel immediate
+PollFast := 25    ; cursor over the window: hover must feel immediate
 PollSlow := 150   ; cursor elsewhere: only has to notice it coming back
 
 ; ---------------------------------------------------------------------------
@@ -143,6 +142,7 @@ PollSlow := 150   ; cursor elsewhere: only has to notice it coming back
 Model := []
 HoverId := ""
 StatusMsg := "ready"
+ActionBusy := false
 
 Add(id, x, y, w, h, draw, cb := "") {
     global Model
@@ -207,9 +207,12 @@ Dash.MarginY := 0
 Dash.OnEvent("Close", (*) => ExitApp())
 Dash.OnEvent("Escape", (*) => ExitApp())
 Pic := Dash.AddPicture("x0 y0 w" W " h" H)
+; Mouse events retain brief taps and the original client coordinates.
+Pic.OnMessage(0x0201, ClickCard)
 
 Render()
 Dash.Show("w" W " h" H)
+SyncScale()
 
 SetTimer(PollMouse, PollFast)
 
@@ -217,7 +220,7 @@ SetTimer(PollMouse, PollFast)
 ; rendering
 ; ---------------------------------------------------------------------------
 Render() {
-    img := Image.Create(W, H, , Scale)
+    img := Image.Create(W, H, , RasterScale)
     img.FillRoundRect(0, 0, W, H, 0, ClrBg)
     for M in Model
         M.draw.Call(img, M, HoverId = M.id)
@@ -236,39 +239,36 @@ DrawHeader(img, m, hov) {
         img.DrawImage(LogoPath, Pad, 15, 34, 34)
         TitleX := Pad + 46
     }
-    img.DrawText("Keysharp", TitleX, 12, ClrText, "s15 bold", FontUi)
-    img.DrawText("v" A_KsVersion "   |   Desktop automation and scripting", TitleX, 40, ClrDim, "s8", FontUi)
+    img.DrawText("Keysharp", TitleX, 10, ClrText, "s17 bold", FontUi)
+    img.DrawText("v" A_KsVersion "   |   Desktop automation and scripting", TitleX, 39, ClrDim, "s9", FontUi)
     img.DrawLine(Pad, m.Height, m.Width - Pad, m.Height, ClrEdge, 1)
 }
 
 DrawPrimary(glyph, label, sub, img, m, hov) {
     img.FillRoundRect(m.X, m.Y, m.Width, m.Height, 10, hov ? ClrPrimHov : ClrPrim)
     img.DrawRoundRect(m.X, m.Y, m.Width, m.Height, 10, hov ? ClrAccent : "0xFF33415F", 1)
-    img.DrawText(glyph, m.X + 16, m.Y + 14, ClrAccent, "s15 bold", FontUi)
-    img.DrawText(label, m.X + 46, m.Y + 9, ClrText, "s11 bold", FontUi)
-    img.DrawText(sub, m.X + 46, m.Y + 31, ClrDim, "s8", FontUi)
+    img.DrawText(glyph, m.X + 16, m.Y + 17, ClrAccent, "s17 bold", FontUi)
+    img.DrawText(label, m.X + 46, m.Y + 9, ClrText, "s13 bold", FontUi)
+    img.DrawText(sub, m.X + 46, m.Y + 33, ClrDim, "s9", FontUi)
 }
 
 DrawTool(tool, img, m, hov) {
     img.FillRoundRect(m.X, m.Y, m.Width, m.Height, 9, hov ? ClrCardHov : ClrCard)
-    img.DrawText(tool.glyph, m.X + 14, m.Y + 9, ClrDim, "s11", FontGlyph)
-    img.DrawText(tool.label, m.X + 44, m.Y + 10, hov ? ClrText : ClrDim, "s10", FontUi)
+    img.DrawText(tool.glyph, m.X + 14, m.Y + 11, ClrDim, "s13", FontGlyph)
+    img.DrawText(tool.label, m.X + 44, m.Y + 12, hov ? ClrText : ClrDim, "s12", FontUi)
 }
 
 DrawFooter(img, m, hov) {
-    img.DrawText(StatusMsg, Pad, m.Y + 6, ClrFaint, "s8", FontUi)
+    img.DrawText(StatusMsg, Pad, m.Y + 8, ClrFaint, "s9", FontUi)
     Hint := "Turn everyday tasks into simple scripts."
-    Hw := img.MeasureText(Hint, "s8", FontUi).Width
-    img.DrawText(Hint, m.Width - Pad - Hw, m.Y + 6, ClrFaint, "s8", FontUi)
+    Hw := img.MeasureText(Hint, "s9", FontUi).Width
+    img.DrawText(Hint, m.Width - Pad - Hw, m.Y + 8, ClrFaint, "s9", FontUi)
 }
 
 ; ---------------------------------------------------------------------------
 ; interaction
 ; ---------------------------------------------------------------------------
-HitTest(px, py) {
-    ; physical client px -> authored units
-    Ax := px / Scale
-    Ay := py / Scale
+HitTest(Ax, Ay) {
     Found := ""
     for M in Model
         if IsObject(M.cb) && Ax >= M.X && Ax <= M.X + M.Width && Ay >= M.Y && Ay <= M.Y + M.Height
@@ -276,26 +276,43 @@ HitTest(px, py) {
     return Found
 }
 
+ClickCard(Control, WParam, LParam, Message) {
+    global ActionBusy
+    if ActionBusy
+        return 0
+    SyncScale()
+    X := (LParam << 48) >> 48
+    Y := (LParam << 32) >> 48
+#if WINDOWS
+    X /= Scale
+    Y /= Scale
+#endif
+    Target := HitTest(X, Y)
+    if Target = ""
+        return
+    ActionBusy := true
+    try {
+        Target.cb.Call()
+    } finally {
+        ActionBusy := false
+    }
+    return 0
+}
+
 PollMouse() {
     global HoverId
-    static PrevDown := false
-    static Busy := false
     static Interval := PollFast
-    if Busy
+    if ActionBusy
         return
-    Down := GetKeyState("LButton", "P")
     CoordMode("Mouse", "Screen")
     MouseGetPos(&Mx, &My)
-    WinGetClientPos(&Cx, &Cy, &Cw, &Ch, "ahk_id " Dash.Hwnd)   ; physical screen px, like MouseGetPos
-    ; "Inside" alone is not enough: another window may cover us, and hover/clicks must not act
-    ; through it. WinFromPoint answers "is OUR window truly under the cursor" regardless of focus
-    ; (it reports the top-level window, not the child control), so the first click on a
-    ; visible-but-inactive Dash works too.
+    WinGetClientPos(&Cx, &Cy, &Cw, &Ch, "ahk_id " Dash.Hwnd)   ; native screen units, like MouseGetPos
+    ; Another window may cover us, so hover also checks the window under the cursor.
     Inside := Mx >= Cx && Mx < Cx + Cw && My >= Cy && My < Cy + Ch
     if Inside
         Inside := WinFromPoint(Mx, My) = Dash.Hwnd
 
-    ; Hover and click only ever happen with the cursor over the window, so away from it the poll
+    ; Hover only happens with the cursor over the window, so away from it the poll
     ; drops to a rate that just notices the cursor coming back. A launcher left open otherwise
     ; spends the whole day at 40 window queries a second for nothing.
     Want := Inside ? PollFast : PollSlow
@@ -306,34 +323,22 @@ PollMouse() {
 
     if Inside
         SyncScale()
-    M := Inside ? HitTest(Mx - Cx, My - Cy) : ""
+    M := Inside ? HitTest((Mx - Cx) / Scale, (My - Cy) / Scale) : ""
     NewId := M = "" ? "" : M.id
     if NewId != HoverId {
         HoverId := NewId
         Render()
     }
-    if Down && !PrevDown && M != "" {
-        PrevDown := true
-        Busy := true
-        try {
-            M.cb.Call()
-        } finally {
-            Busy := false
-        }
-        return
-    }
-    PrevDown := Down
 }
 
-; The window's own monitor decides the scale, not the primary one: the artwork is rasterized at
-; Scale and HitTest divides by it, so a stale value after a drag to a differently-scaled display
-; both blurs the surface and lands clicks off their targets. Cheap enough to check per poll, and
-; only redraws when it actually changed.
+; Follow the window's monitor so raster density and hit-testing stay correct after a move.
 SyncScale() {
-    global Scale
+    global Scale, RasterScale
     Now := Monitor.FromWindow("ahk_id " Dash.Hwnd).Scale
-    if Now != Scale {
+    NowRaster := Dash.PixelScale
+    if Now != Scale || NowRaster != RasterScale {
         Scale := Now
+        RasterScale := NowRaster
         Render()
     }
 }

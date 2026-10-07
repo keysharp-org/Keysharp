@@ -5247,7 +5247,7 @@ UpdateWindowSuiteSummary(final := false) {
 }
 
 StartWindowFixture() {
-	global gWindowFixturePid, gWindowFixturePrefix, gWindowSummary, gWindowEventExpected
+	global gWindowFixturePid, gWindowFixturePrefix, gWindowSummary, gWindowEventExpected, gWindowEventSeen
 	global gWindowFixtureCommandPath, gWindowFixtureCommandSequence
 	global gWindowPrimaryHwnd, gWindowSecondaryHwnd
 
@@ -5264,6 +5264,9 @@ StartWindowFixture() {
 		LaunchWindowFixture(&gWindowFixturePid, token, gWindowFixtureCommandPath)
 		; A cold child compiles its script before it can create either window.
 		ok := WaitForWindow(FixtureWindowsReady, 60000, gWindowFixturePid)
+		; Window discovery can precede attachment of the native event observer.
+		if ok && gWindowEventSeen.Has("Exist")
+			WaitForWindow((*) => WindowEventCountAtLeast("Exist", 1), 5000, gWindowFixturePid)
 		AddWindowResult("Fixture", "Launch", ok ? "PASS" : "FAIL",
 			"Two foreign windows from a live child process",
 			"PID=" gWindowFixturePid " alive=" ProcessExist(gWindowFixturePid)
@@ -5522,9 +5525,9 @@ RunForeignWindowQueries(captureReady) {
 	try {
 		alpha := WinGetTransparent(gWindowPrimaryHwnd)
 		actual := "state=" WinGetMinMax(gWindowPrimaryHwnd)
-			", enabled=" WinGetEnabled(gWindowPrimaryHwnd)
-			", top=" WinGetAlwaysOnTop(gWindowPrimaryHwnd)
-			", alpha=" (alpha = "" ? "<opaque>" : alpha)
+			. ", enabled=" WinGetEnabled(gWindowPrimaryHwnd)
+			. ", top=" WinGetAlwaysOnTop(gWindowPrimaryHwnd)
+			. ", alpha=" (alpha = "" ? "<opaque>" : alpha)
 		AddWindowResult("Info", "State and attributes", "PASS", "Readable values", actual)
 		AddWindowResult("Info", "Style and ExStyle", "PASS", "Readable platform projection",
 			Format("0x{1:X} / 0x{2:X}", WinGetStyle(gWindowPrimaryHwnd), WinGetExStyle(gWindowPrimaryHwnd)))
@@ -5590,10 +5593,12 @@ RunWindowCaptureTest() {
 }
 
 RunForeignWindowMutations() {
-	global gWindowFixturePrefix, gWindowPrimaryHwnd
+	global gWindowFixturePrefix, gWindowPrimaryHwnd, gWindowSecondaryHwnd
 	global gWindowEventSeen, gWindowEventExpected
 	primaryTitle := gWindowFixturePrefix " Primary"
 
+	WindowChange("Focus", "Activate secondary", (*) => WinActivate(gWindowSecondaryHwnd),
+		(*) => WinActive(gWindowSecondaryHwnd), "Secondary window becomes active", "Active")
 	WindowChange("Focus", "Activate", (*) => WinActivate(gWindowPrimaryHwnd),
 		(*) => WinActive(gWindowPrimaryHwnd), "Window becomes active", "Active")
 
@@ -5620,19 +5625,42 @@ RunForeignWindowMutations() {
 	} catch as err
 		AddWindowError("Geometry", "Move, resize and point query", err)
 
-	for step in [
-		["Minimize", WinMinimize, -1, "Minimize"],
-		["Restore after minimize", WinRestore, 0, "Restore"],
-		["Maximize", WinMaximize, 1, ""],
-		["Minimize maximized window", WinMinimize, -1, "Minimize"],
-		["Restore to maximized", WinRestore, 1, "Restore"],
-		["Restore after maximize", WinRestore, 0, ""],
-		["Restore normal window", WinRestore, 0, ""]
-	] {
-		action := step[2], expectedState := step[3]
-		WindowChange("State", step[1], (*) => action.Call(gWindowPrimaryHwnd),
-			(*) => WinGetMinMax(gWindowPrimaryHwnd) = expectedState, expectedState, step[4])
+	if WindowChange("State", "Minimize", (*) => WinMinimize(gWindowPrimaryHwnd),
+		(*) => WinGetMinMax(gWindowPrimaryHwnd) = -1, -1, "Minimize")
+		WindowChange("State", "Restore after minimize", (*) => WinRestore(gWindowPrimaryHwnd),
+			(*) => WinGetMinMax(gWindowPrimaryHwnd) = 0, 0, "Restore")
+	else
+		AddWindowResult("State", "Restore after minimize", "SKIP", 0, "Minimize did not succeed")
+	if WindowChange("State", "Maximize", (*) => WinMaximize(gWindowPrimaryHwnd),
+		(*) => WinGetMinMax(gWindowPrimaryHwnd) = 1, 1) {
+		canRestoreMaximized := false
+		if WindowChange("State", "Minimize maximized window", (*) => WinMinimize(gWindowPrimaryHwnd),
+			(*) => WinGetMinMax(gWindowPrimaryHwnd) = -1, -1, "Minimize")
+			canRestoreMaximized := WindowChange("State", "Restore to maximized", (*) => WinRestore(gWindowPrimaryHwnd),
+				(*) => WinGetMinMax(gWindowPrimaryHwnd) = 1, 1, "Restore")
+		else
+			AddWindowResult("State", "Restore to maximized", "SKIP", 1, "Maximized window could not be minimized")
+		WindowChange("State", "Restore after maximize", (*) => WinRestore(gWindowPrimaryHwnd),
+			(*) => WinGetMinMax(gWindowPrimaryHwnd) = 0, 0)
+		if canRestoreMaximized {
+			try {
+				WinMaximize(gWindowPrimaryHwnd)
+				WinMinimize(gWindowPrimaryHwnd)
+				WinRestore(gWindowPrimaryHwnd)
+				restored := WaitForWindow((*) => WinGetMinMax(gWindowPrimaryHwnd) = 1)
+				WinRestore(gWindowPrimaryHwnd)
+				normal := WaitForWindow((*) => WinGetMinMax(gWindowPrimaryHwnd) = 0)
+				AddWindowResult("State", "Consecutive state changes", restored && normal ? "PASS" : "FAIL",
+					"Restore to maximized, then normal", restored "/" normal)
+			} catch as err
+				AddWindowResult("State", "Consecutive state changes", "FAIL", "Verified operations succeed consecutively", err.Message)
+		}
+	} else {
+		for testName in ["Minimize maximized window", "Restore to maximized", "Restore after maximize"]
+			AddWindowResult("State", testName, "SKIP", "A maximized fixture", "Maximize did not succeed")
 	}
+	WindowChange("State", "Restore normal window", (*) => WinRestore(gWindowPrimaryHwnd),
+		(*) => WinGetMinMax(gWindowPrimaryHwnd) = 0, 0)
 
 	WindowChange("Attributes", "Always-on-top on", (*) => WinSetAlwaysOnTop("On", gWindowPrimaryHwnd),
 		(*) => WinGetAlwaysOnTop(gWindowPrimaryHwnd), 1)
@@ -5653,17 +5681,10 @@ RunForeignWindowMutations() {
 		"Parent Retitle", "TitleChange")
 	try WinSetTitle(primaryTitle, gWindowPrimaryHwnd)
 
-#if WINDOWS
 	WindowChange("Attributes", "Disable", (*) => WinSetEnabled(false, gWindowPrimaryHwnd),
 		(*) => !WinGetEnabled(gWindowPrimaryHwnd), 0)
 	WindowChange("Attributes", "Enable", (*) => WinSetEnabled(true, gWindowPrimaryHwnd),
 		(*) => WinGetEnabled(gWindowPrimaryHwnd), 1)
-#else
-	AddWindowResult("Attributes", "Disable", "SKIP", "Foreign window enable state is supported",
-		"Unsupported on this platform")
-	AddWindowResult("Attributes", "Enable", "SKIP", "Foreign window enable state is supported",
-		"Unsupported on this platform")
-#endif
 
 	try {
 		WinRedraw(gWindowPrimaryHwnd)
@@ -5715,8 +5736,11 @@ WindowChange(area, testName, action, verify, expected, eventName := "") {
 			gWindowEventExpected[eventName] := expectedCount
 			WaitForWindow((*) => WindowEventCountAtLeast(eventName, expectedCount))
 		}
-	} catch as err
+		return ok
+	} catch as err {
 		AddWindowError(area, testName, err)
+		return false
+	}
 }
 
 WindowEventCountAtLeast(eventName, expectedCount) {

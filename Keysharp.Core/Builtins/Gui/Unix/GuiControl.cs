@@ -1026,7 +1026,7 @@ namespace Keysharp.Builtins
 					return;
 				}
 
-				if (lv.MultiSelect)
+				if (lv.MultiSelect && e.Buttons != MouseButtons.Primary)
 					grid.SelectRow(rowIndex);
 				else
 					grid.SelectedRow = rowIndex;

@@ -35,18 +35,34 @@ CaptureFixtureWindow(title) {
 	global fixtureCommandPath
 	try {
 		img := Image.FromWindow(title)
+		redPatch := "", tealPatch := ""
 		try {
+			; Display profiles can shift captured RGB values; require solid patches within a bounded tolerance.
+			redPatch := Image.Create(8, 8, 0xCC5533)
+			tealPatch := Image.Create(8, 8, 0x2A9D8F)
+			redMatch := img.Search(redPatch, 0, 0, img.Width // 2, img.Height, 4)
+			tealMatch := img.Search(tealPatch, img.Width // 2, 0, , img.Height, 4)
 			ok := img.Width > 100 && img.Height > 100
 				&& IsNumber(img.OriginX) && IsNumber(img.OriginY) && img.ScaleX > 0 && img.ScaleY > 0
-				&& IsObject(img.SearchPixel(0xCC5533)) && IsObject(img.SearchPixel(0x2A9D8F))
+				&& IsObject(redMatch) && IsObject(tealMatch)
 			result := (ok ? "PASS" : "FAIL") "`n" img.Width "x" img.Height
 				. " origin=" img.OriginX "," img.OriginY " scale=" img.ScaleX "," img.ScaleY
-		} finally
+				. " red=" CaptureMatchText(img, redMatch) " teal=" CaptureMatchText(img, tealMatch)
+		} finally {
+			if IsObject(redPatch)
+				redPatch.Dispose()
+			if IsObject(tealPatch)
+				tealPatch.Dispose()
 			img.Dispose()
+		}
 	} catch as err
 		result := (err is UnsupportedError ? "UNSUPPORTED" : "ERROR") "`n" err.Message
 	FileAppend(result, fixtureCommandPath, "UTF-8-RAW")
 }
+
+CaptureMatchText(img, match) => IsObject(match)
+	? match.X "," match.Y " " Format("0x{:06X}", img.GetPixel(match.X + 4, match.Y + 4) & 0xFFFFFF)
+	: "missing"
 
 CleanupFixtureFiles(*) {
 	global fixtureCommandPath, fixtureParentPid, fixtureCapture
@@ -81,8 +97,8 @@ ShowFixtureWindows() {
 	fixtureSecondary.AddText("x16 y180 w328 h24", "Known fixture text: DELTA ECHO")
 	fixtureSecondary.OnEvent("Close", (*) => CloseSecondaryFixture())
 
-	fixturePrimary.Show("w510 h310")
 	fixtureSecondary.Show("w360 h225")
+	fixturePrimary.Show("w510 h310")
 }
 
 ReadFixtureCommand() {

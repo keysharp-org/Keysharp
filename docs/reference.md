@@ -214,27 +214,35 @@ macOS support is in active development. The following table summarises what work
 
 Permissions are requested automatically when first needed, or up front with `#Requires capability` (see [Additions and Improvements](#additions-and-improvements) below). Grant them in **System Settings → Privacy & Security**.
 
+For foreign windows on macOS, `WinHide()`/`WinShow()` hide/unhide the owning application. `WinMaximize()` uses fullscreen; minimizing leaves fullscreen, and the same script's `WinRestore()` or `WinActivate()` restores it. Foreign title changes require writable `AXTitle`. Foreign level, opacity, enabled state, frame style, lowering and redraw are unsupported.
+
 ### Installing on macOS
 
 macOS 15 or later is required. Separate `osx-arm64` assets for Apple Silicon and `osx-x64` assets for Intel Macs are available on the [Releases](https://github.com/keysharp-org/Keysharp/releases) page.
 
-#### DMG — user install, no administrator password required
+#### DMG — graphical setup
 
-The DMG contains `Keysharp.app`, `Keyview.app`, `Install.command`, and `Uninstall.command`.
+Open the DMG and double-click **Keysharp Setup.app**. The native SwiftUI setup app runs without .NET, shows installation progress and logs, and uses macOS's administrator dialog to install the bundled package. It installs `Keysharp.app`, `Keyview.app`, and `Keysharp Setup.app` in `/Applications`. The package installs the .NET 10 runtime if it is missing, which requires an internet connection.
 
-Double-click **Install.command** (it runs in Terminal) to:
-1. Copy `Keysharp.app` and `Keyview.app` to `/Applications`.
-2. Optionally install the `keysharp` and `keyview` terminal commands to `/usr/local/bin` (requests an administrator password).
-3. Optionally install the VS Code AutoHotkey v2 extension compatibility shim at `~/.local/bin/AutoHotkey.exe`.
+Select any optional integrations before clicking **Install Keysharp**:
 
-Alternatively, drag both apps to the **Applications** folder shortcut inside the DMG, or to any folder of your choice (e.g. `~/Applications/`).
+- The `keysharp` and `keyview` terminal commands in `/usr/local/bin`.
+- The VS Code AutoHotkey v2 extension compatibility shim at `~/.local/bin/AutoHotkey.exe`.
 
-**First-launch Gatekeeper workaround** — because the app is not notarized, macOS will block it on the first open. Right-click (or Control-click) `Keysharp.app` → **Open**, then click **Open** in the prompt. Do the same for `Keyview.app`. After that one-time step the apps open normally.
+If Keysharp is already installed, the DMG setup app offers **Update Keysharp**. Installation and updates stop running Keysharp scripts and Keyview before replacing the apps. The installed setup app offers **Apply options** to add integrations later; leaving an option unchecked preserves any existing integration. Its **Download update** button opens the releases page so you can download and run a newer DMG. It does not retain the installation package.
 
-Alternatively, in Terminal:
+**Gatekeeper** — a local self-signed, ad-hoc-signed, or unsigned build is not notarized, so macOS may block it. After trying to open setup, use **System Settings → Privacy & Security → Open Anyway**, following [Apple's instructions](https://support.apple.com/en-us/102445). For a trusted download whose quarantine flag prevents opening, clear it before mounting the DMG:
+
+```sh
+xattr -dr com.apple.quarantine ~/Downloads/Keysharp-osx-*.dmg
+```
+
+The same command can be used with the downloaded `.pkg` path. If installed apps are blocked for the same reason:
+
 ```sh
 xattr -dr com.apple.quarantine /Applications/Keysharp.app
 xattr -dr com.apple.quarantine /Applications/Keyview.app
+xattr -dr com.apple.quarantine "/Applications/Keysharp Setup.app"
 ```
 
 The equivalent manual setup for the terminal commands is:
@@ -243,24 +251,22 @@ sudo ln -sf /Applications/Keysharp.app/Contents/MacOS/Keysharp /usr/local/bin/ke
 sudo ln -sf /Applications/Keyview.app/Contents/MacOS/Keyview /usr/local/bin/keyview
 ```
 
-Without terminal commands, use `Keyview.app` to write and run scripts. Keyview finds the sibling `Keysharp` binary automatically, whether the apps live in `/Applications/`, `~/Applications/`, or directly on a mounted DMG volume.
+Without terminal commands, use `Keyview.app` to write and run scripts. Keyview finds the sibling `Keysharp` binary automatically. Source-built app bundles can also run from a folder of your choice, such as `~/Applications/`, when the .NET 10 runtime is available.
 
-For thqby's **AutoHotkey v2 Language Support** VS Code extension, answer "Yes" to the compatibility shim prompt in `Install.command`. It creates `~/.local/bin/AutoHotkey.exe`; then use `/Users/YOUR_USERNAME/.local/bin/AutoHotkey.exe` as the interpreter path in the extension.
+For thqby's **AutoHotkey v2 Language Support** VS Code extension, select the compatibility shim in setup. It creates `~/.local/bin/AutoHotkey.exe`; then use `/Users/YOUR_USERNAME/.local/bin/AutoHotkey.exe` as the interpreter path in the extension.
 
 The extension is designed for AutoHotkey on Windows, so static language features and running scripts are the most compatible features; Windows-specific debugging, help, and compiler integration will not work.
 
-#### PKG — system install, requires administrator password
+#### PKG — Apple Installer
 
-The `.pkg` installer places both apps in `/Applications/`. After copying the apps, it shows two prompts (as the logged-in user):
-- Whether to install the `keysharp` and `keyview` terminal commands in `/usr/local/bin`.
-- Whether to install the VS Code AutoHotkey v2 extension compatibility shim at `~/.local/bin/AutoHotkey.exe`.
+The standalone `.pkg` installs the same applications and .NET runtime as the DMG setup app. It uses Apple's Installer and requires an administrator password. Open `/Applications/Keysharp Setup.app` after installation, select any terminal commands or VS Code shim you want, and click **Apply options**.
 
 Install from Finder by double-clicking the `.pkg` and following the installer prompts (you will be asked for your administrator password), or from Terminal:
 ```sh
 sudo installer -pkg Keysharp-osx-<architecture>.pkg -target /
 ```
 
-Apply the same first-launch Gatekeeper workaround as above for each app after installation.
+The Gatekeeper instructions above also apply to the standalone package and installed apps.
 
 #### macOS permissions
 
@@ -279,18 +285,21 @@ Grant each permission in **System Settings → Privacy & Security** when prompte
 
 #### Uninstalling
 
-Both the DMG and the PKG bundle an uninstaller that removes the app(s), terminal commands, the package receipt (PKG installs), and stored settings/cache data — no manual `rm` commands needed.
+Open **Keysharp Setup.app** from `/Applications` or the DMG, then click **Uninstall Keysharp**. It removes Keysharp and Keyview, the terminal commands and VS Code shim, and the package receipt. Running Keysharp scripts and Keyview are stopped before removal. **Keep my settings** is selected by default; clear it to also remove Keysharp's Application Support, preferences, and cache data for your account. The shared .NET runtime is kept.
 
-**DMG install** — open the mounted DMG and double-click **Uninstall.command** (it runs in Terminal). Eject the DMG and empty the Trash afterwards if you also dragged the apps there yourself — macOS Launch Services can still launch apps sitting in the Trash until it's emptied.
+The setup utility remains in `/Applications` after uninstall so you can still open the download page. Quit it, then move **Keysharp Setup.app** to the Trash if you want to remove the utility as well.
 
-**PKG install** — run the bundled uninstaller from a terminal:
+The terminal uninstaller keeps its existing default of removing stored settings and cache data:
+
 ```sh
 sudo keysharp-uninstall
 ```
 
+To keep settings, run `sudo keysharp-uninstall --keep-settings`. With `sudo`, the uninstaller uses the invoking user's account for per-user files; `--user USERNAME` selects a different account explicitly.
+
 If you removed the apps by hand instead and `.ks`/`.ahk` files still open in Keysharp, the apps are most likely still sitting in the Trash — empty it, since Launch Services can launch apps from there even though Spotlight does not index it.
 
-macOS may retain granted permissions (Accessibility, Input Monitoring, Screen Recording) even after the app is removed. To revoke them, open **System Settings → Privacy & Security**, select each category, and remove any Keysharp or Keyview entries — the uninstaller cannot do this for you.
+The uninstaller leaves macOS permission grants untouched. To revoke them, open **System Settings → Privacy & Security**, select each category, and remove any Keysharp or Keyview entries.
 
 If you reinstall a different build (e.g. switching between a locally-built, ad-hoc-signed, and notarized version) and permissions seem stuck — toggles that won't stay on, or the app not appearing/disappearing from a permission list — the old TCC grant may be tied to the previous code signature. Reset *every* permission category for Keysharp/Keyview with `tccutil`:
 ```sh
@@ -302,6 +311,7 @@ tccutil reset All org.keysharp.keyview
 ### Building from source on macOS
 
 * Install the [.NET 10 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.0).
+* Install Xcode Command Line Tools (`xcode-select --install`) for the Swift compiler and macOS SDK used to build the native setup app.
 * In the same parent folder as `keysharp`, clone the Keysharp branch of [the Keysharp fork of Eto](https://github.com/keysharp-org/Eto/tree/Keysharp). If `keysharp` is at `foo/keysharp`, clone Eto to `foo/Eto`:
   ```sh
   git clone -b Keysharp https://github.com/keysharp-org/Eto.git
@@ -311,14 +321,14 @@ tccutil reset All org.keysharp.keyview
   bash ./Keysharp.Install/package-macos.sh
   ```
   The script selects `osx-arm64` or `osx-x64` from the host architecture. Set `RID` explicitly to cross-publish, for example `RID=osx-x64 bash ./Keysharp.Install/package-macos.sh`. Output is written to `dist/`:
-  - `Keysharp-<rid>.dmg` — drag-and-drop user install
-  - `Keysharp-<rid>.pkg` — system install with terminal commands
+  - `Keysharp-<rid>.dmg` — graphical setup with an embedded package
+  - `Keysharp-<rid>.pkg` — the same payload through Apple's Installer
 * For a quick debug run without packaging, build and run directly:
   ```sh
   dotnet build Keyview/Keyview.csproj -c Debug
   open bin/Debug/net10.0/<rid>/Keyview.app
   ```
-* The signing and notarization steps are skipped by default (no developer account required). To enable ad-hoc signing for local testing: `ADHOC_SIGN=true bash ./Keysharp.Install/package-macos.sh`.
+* No Apple developer account is needed for local packaging. The script reuses a local `Keysharp` signing identity when available; `Keysharp.Install/macos/create-signing-cert.sh` creates one. `ADHOC_SIGN=true bash ./Keysharp.Install/package-macos.sh` explicitly requests ad-hoc signing, and `SKIP_SIGN=true` skips signing. These modes do not notarize the apps. See [building and packaging](building.md) for the Developer ID and notarization requirements and current limitations.
 
 ### GUI menus and editing shortcuts
 
@@ -747,7 +757,7 @@ Controlling another application needs **Automation** permission, granted per tar
 * New string functions:
 	+ `ReplaceLineEndings(Str, EndOfLine?) => String`: Makes all line endings in a string (CR LF, CR, LF, form feed, NEL, U+2028 and U+2029) match `EndOfLine`, which defaults to `` `n `` on every platform.
 * Window functions:
-	+ `WinFromPoint(X, Y)`: Gets the window at a specific screen position.
+	+ `WinFromPoint(X, Y)`: Gets the window at a specific screen position. On macOS, its return value and the window output from `MouseGetPos()` match `Gui.Hwnd` for a GUI owned by this script; windows owned by other processes use their window-server ID (`CGWindowID`).
 	+ `WinMinimizeAllUndo()`: Unminimizes top-level windows without clearing maximization; respects `DetectHiddenWindows`. Unlike AHK's shell undo, needs no preceding `WinMinimizeAll()` call.
 * Keysharp-only members on AutoHotkey classes:
 	+ They need no `#Import`, but AutoHotkey v2.1 does not define them, so a script using one is not portable to AutoHotkey.
@@ -1157,7 +1167,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		}
 		```
 		+ The lock belongs to a *real* thread and is reentrant. `Acquire` blocks the whole real thread, so acquiring on the main thread stalls the message loop — pass a timeout there.
-	+ New class `Image` provides cross-platform image capture and manipulation. Capture with `Image.FromDesktop()`, `Image.FromMonitor(Number)`, `Image.FromRect(X, Y, Width, Height)` or `Image.FromWindow(WinTitle [, Options, WinText, ExcludeTitle, ExcludeText])`; load with `Image.FromFile(Path)`, `Image.FromBitmap(Handle)` or `Image.FromClipboard()` (the `Clipboard.Image` getter, returning `""` when no image is available). `Image.Create(Width, Height [, Background])` creates an ARGB canvas; omitted or empty `Background` is transparent.
+	+ New class `Image` provides cross-platform image capture and manipulation. Capture with `Image.FromDesktop()`, `Image.FromMonitor(Number)`, `Image.FromRect(X, Y, Width, Height)` or `Image.FromWindow(WinTitle [, Options, WinText, ExcludeTitle, ExcludeText])`; load with `Image.FromFile(Path)`, `Image.FromBitmap(Handle)` or `Image.FromClipboard()` (the `Clipboard.Image` getter, returning `""` when no image is available). `Image.Create(Width, Height [, Background, Scale := 1])` creates an ARGB canvas; omitted or empty `Background` is transparent. A positive finite `Scale` multiplies bitmap dimensions, drawing coordinates, line widths and text sizes; `MeasureText()` stays in logical units. Use `Gui.PixelScale` for GUI pictures.
 		+ `FromWindow` accepts a mode string or an object containing `Mode` and optional `Decorations`. The supported modes are `"BitBlt"`, `"BitBltOpaque"`, `"PrintWindow"`, `"PrintWindowOpaque"` and `"FullContent"` (the default). The Opaque modes temporarily turn off window transparency; FullContent uses PrintWindow with PW_RENDERFULLCONTENT. Names are case-insensitive; empty strings, numbers and unknown names raise `ValueError`. Linux and macOS validate the mode but use their own capture technique. `Decorations` defaults to false and requests client-area-only capture on KWin; other backends capture a fixed extent. Capture availability and occlusion behavior depend on the backend. `FromRect` and the other capture factories use absolute screen coordinates and ignore Pixel `CoordMode`.
 		+ Paint with `Clear`, `DrawLine`, `DrawRect`/`FillRect`, `DrawRoundRect`/`FillRoundRect`, `DrawEllipse`/`FillEllipse`, `DrawImage`, and `DrawText(Text, X, Y [, Color, Options, FontName])`. Text options use Gui font syntax such as `"s16 bold italic"` and are validated when `DrawText` is called; `MeasureText(Text [, Options, FontName])` returns `{Width, Height}`. A font size is in points at 96 DPI whatever resolution the bitmap carries, so text drawn on a loaded or copied image matches `MeasureText`. Colors accept names, opaque `0xRRGGBB`, and `0xAARRGGBB`; preserve a fully transparent alpha with an eight-digit string or `"Transparent"`, because numeric `0x00RRGGBB` is indistinguishable from opaque RGB. Any other color string raises `ValueError`. Raster geometry transforms (`Scale`, `Resize`, `Rotate`, `Flip`, `Crop`) and color transforms (`Grayscale`, `Alpha`, `Brightness`, `Contrast`) are chainable and applied lazily. Save with `Save(Filename)` or `ToBitmap()`, preview with `Show([Title, Wait])`, and duplicate with `Copy()`.
 		+ Build reusable vector geometry with `Image.Path([FillRule])`. A path provides `MoveTo`, `LineTo`, `CubicTo`, `ArcTo`, `Close`, `AddRect`, `AddRoundRect`, `AddEllipse`, `AddPolygon`, `AddPath`, `Clear`, and `Clone`; paint it with `FillPath` or `DrawPath`. `Image.Brush.LinearGradient` and `Image.Brush.RadialGradient` create immutable gradient descriptions accepted by both path methods and by `DrawText`'s Color parameter.
@@ -1339,6 +1349,7 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ New methods and properties:
 		+ `Gui`:
 			+ `Visible`: Gets/sets whether the window is visible or not.
+			+ `PixelScale`: Read-only backing pixels per GUI unit; Windows `-DPIScale` returns `1`. Use `Image.Create(Width, Height, , MyGui.PixelScale)` for GUI pictures and reread it after display changes. Windows/Linux mappings are source-reviewed; live behavior remains unverified.
 		+ `Menu`:
 			+ `HideItem()`, `ShowItem()` and `ToggleItemVis()`: Shows, hides or toggles the visibility of a specific menu item.
 			+ `MenuItemName()`: Gets the name of a menu item, rather than having to use `DllCall()`.

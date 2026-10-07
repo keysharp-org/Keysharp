@@ -94,6 +94,35 @@ namespace Keysharp.Internals
 			}
 
 #if WINDOWS
+			[LibraryImport("kernel32.dll", SetLastError = true)]
+			private static partial uint WaitForSingleObject(nint handle, uint milliseconds);
+
+			internal static bool Exists(int pid)
+			{
+				if (pid <= 0)
+					return pid == 0; // Windows always has the System Idle Process.
+
+				var handle = Os.Windows.WindowsAPI.OpenProcess(Os.Windows.ProcessAccessTypes.SYNCHRONIZE, false, (uint)pid);
+				if (handle == 0)
+				{
+					if (Marshal.GetLastPInvokeError() == 87) // ERROR_INVALID_PARAMETER: no such PID.
+						return false;
+
+					// A denied handle can outlive an exited process; consult the running-process snapshot.
+					try { return GetParentProcessId(pid).HasValue; }
+					catch (Win32Exception) { return false; }
+				}
+
+				try
+				{
+					return WaitForSingleObject(handle, 0) == 258; // WAIT_TIMEOUT: the process has not exited.
+				}
+				finally
+				{
+					_ = Os.Windows.WindowsAPI.CloseHandle(handle);
+				}
+			}
+
 			[StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
 			private unsafe struct ProcessEntry32
 			{
@@ -224,6 +253,20 @@ namespace Keysharp.Internals
 			public static uint CurrentThreadId() => (uint)Keysharp.Internals.Window.Linux.X11.Xlib.gettid();
 
 			public static bool DestroyIcon(nint icon) => Keysharp.Internals.Window.Linux.X11.Xlib.GdipDisposeImage(icon) == 0;
+#endif
+
+#if !WINDOWS
+			[LibraryImport("libc", EntryPoint = "kill", SetLastError = true)]
+			private static partial int PosixKill(int pid, int signal);
+
+			internal static bool Exists(int pid)
+			{
+				if (pid <= 0)
+					return false;
+
+				// Signal zero checks existence; EPERM means the process exists but belongs to another user.
+				return PosixKill(pid, 0) == 0 || Marshal.GetLastPInvokeError() == 1;
+			}
 #endif
 		}
 	}

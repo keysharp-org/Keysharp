@@ -359,6 +359,11 @@ namespace Keysharp.Builtins
 				}
 			}
 
+			return FindProcessByName(name);
+		}
+
+		private static Process FindProcessByName(string name)
+		{
 			const string exe = ".exe";
 
 			if (name.EndsWith(exe, StringComparison.OrdinalIgnoreCase))
@@ -383,7 +388,10 @@ namespace Keysharp.Builtins
 		/// <summary>The PID of the first process <see cref="FindProcess"/> matches, or 0 when none does.</summary>
 		private static long FindProcessId(string name)
 		{
-			using var proc = FindProcess(name);
+			if (int.TryParse(name, out var id) && Platform.Process.Exists(id))
+				return id;
+
+			using var proc = FindProcessByName(name);
 			return proc?.Id ?? 0L;
 		}
 

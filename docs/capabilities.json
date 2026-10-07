@@ -4682,8 +4682,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The DetectHiddenWindows function determines whether invisible windows are \"seen\" by the script.",
-                     "tested-by":  "external-callbackcreate.ahk"
+                     "notes":  "Determines whether invisible windows are seen by the script. On macOS, application hiding affects title searches; direct handles still work.",
+                     "tested-by":  "external-callbackcreate.ahk; Gui/guitest.ks; MacInputTests.HiddenApplicationWindows"
                  },
                  {
                      "category":  "FileSystem",
@@ -6407,6 +6407,17 @@
                      "macos":  "partial",
                      "notes":  "Sets options for the window. Raw Win32 style and extended-style options (+0x..., +E0x...) have no portable equivalent and are ignored on Linux and macOS; the named options are honoured through the toolkit\u0027s own properties. The Theme option is unsupported on every platform. +Round rounds the window\u0027s outer corners, on Windows 11 only.",
                      "tested-by":  "ControlTests/picture_tests.ahk"
+                 },
+                 {
+                     "category":  "Windowing/GUI",
+                     "feature":  "Gui.PixelScale",
+                     "syntax":  "Scale := MyGui.PixelScale",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Read-only backing pixels per GUI unit. Windows -DPIScale returns 1; otherwise the native window scale is used. Pass it to Image.Create for GUI pictures. Windows/Linux mappings are source-reviewed; live behavior remains unverified.",
+                     "tested-by":  "gui-window-from-point.ahk; GuiTests.OwnWindowFromPoint"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -8796,7 +8807,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Retrieves the current mouse position and, optionally, the window and control beneath it. Cursor coordinates are not permission-gated. Requesting a window or control output requires WindowMonitoring and returns blank when there is no corresponding target.",
+                     "notes":  "Retrieves the current mouse position and, optionally, the window and control beneath it. Cursor coordinates are not permission-gated. Requesting a window or control output requires WindowMonitoring and returns blank when there is no corresponding target. On macOS, the window output for a GUI owned by this script matches Gui.Hwnd; windows owned by other processes use their window-server ID (CGWindowID).",
                      "tested-by":  "ControlTests/control_get_focus.ahk"
                  },
                  {
@@ -9285,7 +9296,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Checks if the specified process exists.",
-                     "tested-by":  "process-run-wait-close.ahk"
+                     "tested-by":  "process-run-wait-close.ahk; ProcessTests.ProcessExistAfterExit"
                  },
                  {
                      "category":  "Core Language",
@@ -11174,8 +11185,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Returns the window handle at screen coordinates and requires WindowMonitoring. Omitting the coordinates uses the current cursor position, which is not separately permission-gated.",
-                     "tested-by":  "DesktopBrokerTests.WindowAtPreference; DesktopBrokerTests.WindowAtExclusions"
+                     "notes":  "Returns the window handle at screen coordinates and requires WindowMonitoring. Omitting the coordinates uses the current cursor position, which is not separately permission-gated. On macOS, the handle for a GUI owned by this script matches Gui.Hwnd; windows owned by other processes use their window-server ID (CGWindowID).",
+                     "tested-by":  "DesktopBrokerTests.WindowAtPreference; DesktopBrokerTests.WindowAtExclusions; GuiTests.OwnWindowFromPoint"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11402,7 +11413,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Hides the specified window. On Wayland, raises UnsupportedError when the desktop service confirms that foreign-window visibility control is unavailable; an attempted hide that fails for another reason raises OSError. On macOS, windows owned by the calling process are hidden individually; for windows owned by other applications, macOS provides no per-window hide API, so the entire owning application is hidden instead."
+                     "notes":  "Hides the specified window. On Wayland, raises UnsupportedError when the desktop service confirms that foreign-window visibility control is unavailable; an attempted hide that fails for another reason raises OSError. On macOS, windows owned by the calling process are hidden individually; for windows owned by other applications, macOS provides no per-window hide API, so the entire owning application is hidden instead.",
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11423,7 +11435,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinMaximize function enlarges the specified window to its maximum size. An unimplemented backend operation raises UnsupportedError.",
+                     "notes":  "Enlarges the specified window. On macOS, foreign windows use native fullscreen. Unsupported targets raise UnsupportedError.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -11434,7 +11446,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinMinimize function collapses the specified window into a button on the task bar. An unimplemented backend operation raises UnsupportedError.",
+                     "notes":  "Minimizes the specified window. On macOS, foreign windows leave fullscreen before minimizing. Unsupported targets raise UnsupportedError.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -11489,7 +11501,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "full",
-                     "notes":  "The WinMoveTop function brings the specified window to the top of the stack without explicitly activating it. On Wayland this is provided natively on KWin (compositor scripting) or by the Keysharp GNOME or Cinnamon shell extension (compositor-dependent). On macOS this is done via the Accessibility AXRaise action, which raises the window within its owning application without activating that application. An unimplemented backend operation raises UnsupportedError."
+                     "notes":  "The WinMoveTop function brings the specified window to the top of the stack without explicitly activating it. On Wayland this is provided natively on KWin (compositor scripting) or by the Keysharp GNOME or Cinnamon shell extension (compositor-dependent). On macOS this is done via the Accessibility AXRaise action, which raises the window within its owning application without activating that application. An unimplemented backend operation raises UnsupportedError.",
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11498,8 +11511,8 @@
                      "windows":  "full",
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
-                     "macos":  "unsupported",
-                     "notes":  "Redraws a window. Own windows are invalidated through the toolkit on every platform. For a foreign window X11 approximates it with XClearWindow, Wayland has no equivalent and raises an OSError, and macOS reports success without doing anything because AppKit owns repainting. An unimplemented backend operation raises UnsupportedError."
+                     "macos":  "partial",
+                     "notes":  "Redraws owned windows through the toolkit or native APIs. X11 approximates foreign redraw with XClearWindow; Wayland raises OSError and macOS raises UnsupportedError."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11509,7 +11522,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Restores minimized windows to their prior state and maximized windows to normal. Live Linux/macOS behavior remains unverified. An unimplemented backend operation raises UnsupportedError.",
+                     "notes":  "Restores minimized windows to their prior state and maximized windows to normal. On macOS, foreign fullscreen windows minimized by the same script regain fullscreen. Linux restoration remains unverified. Unsupported targets raise UnsupportedError.",
                      "tested-by":  "Gui/guitest.ks (manual)"
                  },
                  {
@@ -11520,7 +11533,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinSetAlwaysOnTop function makes the specified window stay on top of all other windows (except other always-on-top windows). Hyprland has no keep-above state, so turning it on floats the window above the tiled layout and raises it, and turning it off returns the window to the layout. On macOS, only supported for windows owned by the calling process; macOS provides no API to change another process\u0027s window level, and raising it via Accessibility would require repeatedly stealing focus, so it is a no-op for windows owned by other applications. An unimplemented backend operation raises UnsupportedError."
+                     "notes":  "The WinSetAlwaysOnTop function makes the specified window stay on top of all other windows (except other always-on-top windows). Hyprland has no keep-above state, so turning it on floats the window above the tiled layout and raises it, and turning it off returns the window to the layout. macOS supports owned windows only; foreign targets raise UnsupportedError."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11559,8 +11572,8 @@
                      "windows":  "full",
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
-                     "macos":  "unsupported",
-                     "notes":  "Changes the style of the specified window. X11 and Wayland map WS_CAPTION to the desktop provider decoration state for foreign windows; other native Win32 style bits have no equivalent. Script-owned windows use toolkit behavior. macOS has no equivalent. An unimplemented backend operation raises UnsupportedError.",
+                     "macos":  "partial",
+                     "notes":  "Changes the style of the specified window. X11 and Wayland map WS_CAPTION to the desktop provider decoration state for foreign windows; other native Win32 style bits have no equivalent. Script-owned windows use toolkit behavior. macOS supports caption, close, resize and minimize styles on owned windows only. An unimplemented backend operation raises UnsupportedError.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -11571,7 +11584,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinSetTitle function changes the title of the specified window. On Wayland, script-owned titles can be changed but no supported compositor backend exposes title mutation for another application, so a foreign target raises OSError. On macOS, windows owned by the calling process have their title set directly; for windows owned by other applications, setting AXTitle via the Accessibility API is attempted, but most applications treat it as read-only and the call has no effect. An unimplemented backend operation raises UnsupportedError."
+                     "notes":  "Changes the specified window's title. Wayland supports owned windows only. macOS foreign targets require writable AXTitle; read-only titles raise UnsupportedError.",
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11601,7 +11615,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinShow function unhides the specified window. On macOS, windows owned by the calling process are restored individually; for windows owned by other applications, the entire owning application is unhidden (the inverse of WinHide\u0027s fallback). An unimplemented backend operation raises UnsupportedError."
+                     "notes":  "The WinShow function unhides the specified window. On macOS, windows owned by the calling process are restored individually; for windows owned by other applications, the entire owning application is unhidden (the inverse of WinHide\u0027s fallback). An unimplemented backend operation raises UnsupportedError.",
+                     "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",

@@ -14,8 +14,10 @@ namespace Keysharp.Internals.Window.MacOS
 		internal readonly Rectangle Bounds;
 		internal readonly bool IsOnScreen;
 		internal readonly double Alpha;
+		internal readonly bool IsApplicationHidden;
 
-		internal MacNativeWindow(uint windowNumber, int ownerPid, string ownerName, string title, Rectangle bounds, bool isOnScreen, double alpha)
+		internal MacNativeWindow(uint windowNumber, int ownerPid, string ownerName, string title, Rectangle bounds, bool isOnScreen, double alpha,
+			bool isApplicationHidden = false)
 		{
 			WindowNumber = windowNumber;
 			OwnerPid = ownerPid;
@@ -24,11 +26,11 @@ namespace Keysharp.Internals.Window.MacOS
 			Bounds = bounds;
 			IsOnScreen = isOnScreen;
 			Alpha = alpha;
+			IsApplicationHidden = isApplicationHidden;
 		}
 
-		// True for any real window regardless of on-screen state (includes minimized windows in the Dock).
-		// Minimized macOS windows have kCGWindowIsOnscreen=false but are NOT "hidden" in the AHK sense.
-		internal bool Visible => Alpha > 0.001 && Bounds.Width > 0 && Bounds.Height > 0;
+		// Minimized windows remain visible to AHK searches; a hidden application does not.
+		internal bool Visible => !IsApplicationHidden && Alpha > 0.001 && Bounds.Width > 0 && Bounds.Height > 0;
 
 		// True only when the window is physically on screen — used by point-hit-testing.
 		internal bool VisibleOnScreen => IsOnScreen && Visible;
@@ -109,6 +111,18 @@ namespace Keysharp.Internals.Window.MacOS
 		private static readonly nint kWindowBounds = CreateCFString("kCGWindowBounds");
 		private static readonly nint kWindowAlpha = CreateCFString("kCGWindowAlpha");
 		private static readonly nint kWindowIsOnscreen = CreateCFString("kCGWindowIsOnscreen");
+		private static readonly nint runningApplicationClass = MonoMac.ObjCRuntime.Class.GetHandle("NSRunningApplication");
+		private static readonly nint runningApplicationWithPid = MonoMac.ObjCRuntime.Selector.GetHandle("runningApplicationWithProcessIdentifier:");
+		private static readonly nint isHiddenSelector = MonoMac.ObjCRuntime.Selector.GetHandle("isHidden");
+		private static readonly nint hideApplicationSelector = MonoMac.ObjCRuntime.Selector.GetHandle("hide");
+		private static readonly nint unhideApplicationSelector = MonoMac.ObjCRuntime.Selector.GetHandle("unhide");
+		[LibraryImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
+		private static partial nint GetRunningApplication(nint receiver, nint selector, int pid);
+
+		[LibraryImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
+		// Objective-C BOOL needs one-byte marshaling.
+		[return: MarshalAs(UnmanagedType.I1)]
+		private static partial bool SendApplicationBoolean(nint receiver, nint selector);
 
 		[LibraryImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
 		private static partial nint CGWindowListCopyWindowInfo(uint option, uint relativeToWindow);
@@ -145,7 +159,19 @@ namespace Keysharp.Internals.Window.MacOS
 			return (bounds.Width, bounds.Height);
 		}
 
-		internal static List<MacNativeWindow> Snapshot(bool onScreenOnly = false) => SnapshotCore(onScreenOnly, includeTextMetadata: true);
+		internal static List<MacNativeWindow> Snapshot(bool onScreenOnly = false)
+		{
+			// Only OnScreenOnly guarantees front-to-back order; the full inventory also contains minimized windows.
+			var windows = SnapshotCore(onScreenOnly: true, includeTextMetadata: true);
+			if (!onScreenOnly)
+			{
+				var seen = new HashSet<uint>(windows.Select(w => w.WindowNumber));
+				foreach (var window in SnapshotCore(onScreenOnly: false, includeTextMetadata: true))
+					if (seen.Add(window.WindowNumber))
+						windows.Add(window);
+			}
+			return windows;
+		}
 
 		internal static bool TryGetWindowInfo(nint handle, out MacNativeWindow info) => TryGetWindowInfo(handle, out info, includeTextMetadata: true);
 
@@ -267,10 +293,11 @@ namespace Keysharp.Internals.Window.MacOS
 		{
 			try
 			{
-				NSApplication.SharedApplication.ActivationPolicy =
-					accessory
+				var policy = accessory
 					? NSApplicationActivationPolicy.Accessory
 					: NSApplicationActivationPolicy.Regular;
+				if (NSApplication.SharedApplication.ActivationPolicy != policy)
+					NSApplication.SharedApplication.ActivationPolicy = policy;
 			}
 			catch { }
 		}
@@ -328,6 +355,10 @@ namespace Keysharp.Internals.Window.MacOS
 						{
 							try
 							{
+								// App-wide hiding must preserve the Dock policy so the application can be shown again.
+								if (SendApplicationBoolean(NSApplication.SharedApplication.Handle, isHiddenSelector))
+									return;
+
 								var anyUserFacingWindowVisible = ActiveNativeDialogs > 0
 									|| NSApplication.SharedApplication.Windows.Any(w => w.IsVisible && IsUserFacingWindow(w));
 								SetActivationPolicy(accessory: !anyUserFacingWindowVisible);
@@ -557,58 +588,50 @@ namespace Keysharp.Internals.Window.MacOS
 		// macOS equivalent of AHK's WinHide for windows we don't own (the Dock icon is left as-is,
 		// since macOS gives other apps no way to control their own Dock presence externally).
 		internal static bool HideApplication(int pid)
-		{
-			if (pid <= 0)
-				return false;
-
-			if (MacAccessibility.TrySetApplicationHidden(pid, true))
-				return true;
-
-			if (!MacAccessibility.EnsureAutomationAccess(pid, "hide window", prompt: true))
-				return false;
-
-			try
-			{
-				var app = NSRunningApplication.GetRunningApplication(pid);
-
-				if (app == null)
-					return false;
-
-				// Hide() asserts it's called on the main thread (AppKitThreadAccessException
-				// otherwise), so marshal over to it.
-				return Application.Instance.Invoke(app.Hide);
-			}
-			catch
-			{
-				return false;
-			}
-		}
+			=> SetApplicationHidden(pid, true);
 
 		// Reverses HideApplication().
 		internal static bool UnhideApplication(int pid)
+			=> SetApplicationHidden(pid, false);
+
+		private static bool SetApplicationHidden(int pid, bool hidden)
 		{
 			if (pid <= 0)
 				return false;
 
-			if (MacAccessibility.TrySetApplicationHidden(pid, false))
-				return true;
-
-			if (!MacAccessibility.EnsureAutomationAccess(pid, "show window", prompt: true))
-				return false;
-
+			bool accepted;
 			try
 			{
-				var app = NSRunningApplication.GetRunningApplication(pid);
+				accepted = Application.Instance.Invoke(() =>
+				{
+					using var pool = new NSAutoreleasePool();
+					var app = GetRunningApplication(runningApplicationClass, runningApplicationWithPid, pid);
+					if (app == 0)
+						return false;
 
-				if (app == null)
-					return false;
-
-				return Application.Instance.Invoke(app.Unhide);
+					return SendApplicationBoolean(app, hidden ? hideApplicationSelector : unhideApplicationSelector);
+				});
 			}
 			catch
 			{
 				return false;
 			}
+
+			if (accepted)
+				return true;
+
+			// NSRunningApplication caches hidden state until the next run-loop turn.
+			Flow.TryDoEvents();
+			return Flow.WaitUntil(() => TryGetApplicationHidden(pid, out var current) && current == hidden, 1000, 10);
+		}
+
+		private static bool TryGetApplicationHidden(int pid, out bool hidden)
+		{
+			// NSRunningApplication is thread-safe; the MonoMac wrapper incorrectly enforces UI-thread access.
+			using var pool = new NSAutoreleasePool();
+			var app = GetRunningApplication(runningApplicationClass, runningApplicationWithPid, pid);
+			hidden = app != 0 && SendApplicationBoolean(app, isHiddenSelector);
+			return app != 0;
 		}
 
 		// Finds the NSWindow for one of our own windows by its window number, including windows
@@ -631,6 +654,12 @@ namespace Keysharp.Internals.Window.MacOS
 					return native;
 
 			return null;
+		}
+
+		internal static bool TryGetOwnWindowHandle(uint windowNumber, out nint handle)
+		{
+			handle = Application.Instance?.Invoke(() => FindOwnWindow(windowNumber)?.Handle ?? 0) ?? 0;
+			return handle != 0;
 		}
 
 		// Eto hands out the raw NSWindow pointer as a window's handle (MacView.NativeHandle => Control.Handle),
@@ -742,6 +771,16 @@ namespace Keysharp.Internals.Window.MacOS
 			return true;
 		}
 
+		internal static bool TryRedrawOwnWindow(uint windowNumber)
+		{
+			var native = FindOwnWindow(windowNumber);
+			if (native == null)
+				return false;
+
+			Application.Instance.Invoke(native.Display);
+			return true;
+		}
+
 		// Sets the title bar text of one of our own windows. There is no equivalent for windows
 		// owned by other applications via AppKit; MacAccessibility.TrySetWindowTitle (AXTitle) is
 		// attempted for those instead.
@@ -837,9 +876,10 @@ namespace Keysharp.Internals.Window.MacOS
 				var count = CFArrayGetCount(arrayRef);
 				var capacity = count > int.MaxValue ? int.MaxValue : (int)count;
 				var list = new List<MacNativeWindow>(capacity);
+				var hiddenApplications = new Dictionary<int, bool>();
 				for (nint i = 0; i < count; i++)
 					if (TryReadWindowInfo(CFArrayGetValueAtIndex(arrayRef, i), out var info,
-						includeTextMetadata, includeOwnerName, onScreenOnly, containingPoint))
+						includeTextMetadata, includeOwnerName, onScreenOnly, containingPoint, hiddenApplications))
 						list.Add(info);
 
 				return list;
@@ -851,7 +891,7 @@ namespace Keysharp.Internals.Window.MacOS
 		}
 
 		private static bool TryReadWindowInfo(nint dictionary, out MacNativeWindow info, bool includeTextMetadata,
-			bool includeOwnerName, bool onScreenOnly, POINT? containingPoint = null)
+			bool includeOwnerName, bool onScreenOnly, POINT? containingPoint = null, Dictionary<int, bool> hiddenApplications = null)
 		{
 			info = default;
 			if (!TryGetUInt32(dictionary, kWindowNumber, out var windowNumber))
@@ -877,7 +917,15 @@ namespace Keysharp.Internals.Window.MacOS
 			if (includeTextMetadata)
 				_ = TryGetString(dictionary, kWindowName, out title);
 
-			info = new MacNativeWindow(windowNumber, ownerPid, ownerName, title, bounds, onScreen, alpha);
+			var applicationHidden = false;
+			if (ownerPid > 0 && (hiddenApplications == null || !hiddenApplications.TryGetValue(ownerPid, out applicationHidden)))
+			{
+				_ = TryGetApplicationHidden(ownerPid, out applicationHidden);
+				if (hiddenApplications != null)
+					hiddenApplications[ownerPid] = applicationHidden;
+			}
+
+			info = new MacNativeWindow(windowNumber, ownerPid, ownerName, title, bounds, onScreen, alpha, applicationHidden);
 			return true;
 		}
 

@@ -79,6 +79,19 @@ namespace Keysharp.Tests
 			Assert.AreEqual(11u, id);
 		}
 
+		[Test]
+		public void HiddenApplicationWindows()
+		{
+			var frame = new Rectangle(100, 100, 640, 480);
+			var minimized = new MacNativeWindow(11, 1, "App", "Window", frame, false, 1);
+			var hidden = new MacNativeWindow(11, 1, "App", "Window", frame, true, 1, isApplicationHidden: true);
+
+			Assert.IsTrue(minimized.Visible, "minimization must not hide a window from title searches");
+			Assert.IsFalse(minimized.VisibleOnScreen);
+			Assert.IsFalse(hidden.Visible, "a hidden application's window must require DetectHiddenWindows");
+			Assert.IsFalse(hidden.VisibleOnScreen);
+		}
+
 		[Test, Category("Input")]
 		public void InjectedMetadata()
 		{

@@ -526,6 +526,7 @@ namespace Keysharp.Runtime
 		internal Keysharp.Internals.Audio.AudioEventManager AudioEventManager { get; }
 
 #if OSX
+		internal readonly Dictionary<(int Pid, uint WindowNumber), MacAccessibility.WindowElement> MacFullScreenRestoreWindows = new();
 		internal string ldLibraryPath = Environment.GetEnvironmentVariable("DYLD_LIBRARY_PATH") ?? "";
 #elif LINUX
 		internal string ldLibraryPath = Environment.GetEnvironmentVariable("LD_LIBRARY_PATH") ?? "";
@@ -1643,6 +1644,9 @@ namespace Keysharp.Runtime
 			Teardown(() => InvokeOnUIThread(() => inputData?.Dispose()));
 			inputTimerExists = false;
 			Teardown(WinEventManager.Dispose);
+#if OSX
+			Teardown(() => MacAccessibility.ClearFullScreenRestores(this));
+#endif
 			// Same reasoning as ClrEventManager below: the monitor backend hangs off the *static*
 			// SystemEvents.DisplaySettingsChanged, so it has to be detached explicitly or it roots this Script.
 			Teardown(MonitorEventManager.Dispose);

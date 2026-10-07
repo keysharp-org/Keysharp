@@ -1,7 +1,6 @@
 using Keysharp.Builtins;
 #if OSX
 using System.Runtime.InteropServices;
-using Keysharp.Internals.AppleEvents;
 using static Keysharp.Internals.AppleEvents.CF;
 
 namespace Keysharp.Internals.Window.MacOS
@@ -16,6 +15,7 @@ namespace Keysharp.Internals.Window.MacOS
 		private const int kAXValueCFRangeType = 4;
 		private const uint kCGHIDEventTap = 0;
 		private const float WindowMessagingTimeout = 0.2f;
+		private const int WindowStateTransitionTimeout = 2500;
 
 		private enum CGEventType : uint
 		{
@@ -89,7 +89,6 @@ namespace Keysharp.Internals.Window.MacOS
 			private static readonly nint attrPosition = CreateCFString("AXPosition");
 			private static readonly nint attrSize = CreateCFString("AXSize");
 			private static readonly nint attrMinimized = CreateCFString("AXMinimized");
-		private static readonly nint attrHidden = CreateCFString("AXHidden");
 			private static readonly nint attrFullScreen = CreateCFString("AXFullScreen");
 			private static readonly nint attrFullScreenButton = CreateCFString("AXFullScreenButton");
 			private static readonly nint attrCloseButton = CreateCFString("AXCloseButton");
@@ -110,10 +109,6 @@ namespace Keysharp.Internals.Window.MacOS
 		private static int promptedListen;
 		private static int promptedPost;
 		private static int promptedScreen;
-
-		// Apple Events ("Automation") permission is granted per target application, so failures
-		// are tracked per target pid rather than with a single flag.
-		private static readonly HashSet<int> loggedAutomationFailurePids = new();
 
 			[LibraryImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
 			private static partial nint AXUIElementCreateApplication(int pid);
@@ -229,17 +224,29 @@ namespace Keysharp.Internals.Window.MacOS
 			}
 		}
 
-		internal static WindowElement ResolveWindowElement(MacNativeWindow info, string operation, bool prompt = true)
-			=> EnsureAccessibilityAccess(operation, prompt) && TryFindWindowElement(info, out var element)
-				? new WindowElement(element, info) : null;
+		internal static WindowElement ResolveWindowElement(MacNativeWindow info, string operation, bool prompt = true, bool waitForWindow = false)
+		{
+			if (!EnsureAccessibilityAccess(operation, prompt))
+				return null;
+			if (TryFindWindowElement(info, out var element))
+				return new WindowElement(element, info);
+			if (!waitForWindow)
+				return null;
+
+			// AX and window-server frames can disagree during full-screen animations.
+			var live = info;
+			_ = Flow.WaitUntil(() => !MacNativeWindows.TryGetWindowInfo((nint)info.WindowNumber, out live)
+				|| live.OwnerPid != info.OwnerPid || TryFindWindowElement(live, out element), WindowStateTransitionTimeout, 25);
+			return element != 0 ? new WindowElement(element, live) : null;
+		}
 
 		internal static bool TryActivateWindow(WindowElement window)
 		{
 			if (window == null)
 				return false;
 
-			if (TryReadBool(window.Element, attrMinimized, out var minimized) && minimized
-				&& !TryWriteBool(window.Element, attrMinimized, false))
+			if (TryGetWindowState(window, out var state) && state == FormWindowState.Minimized
+				&& !TrySetWindowState(window, FormWindowState.Normal))
 				return false;
 
 			return MacNativeWindows.ActivateAppByPid(window.Info.OwnerPid) && TryRaiseWindow(window);
@@ -250,7 +257,7 @@ namespace Keysharp.Internals.Window.MacOS
 
 		internal static bool TrySetWindowTitle(WindowElement window, string title)
 		{
-			if (window == null)
+			if (window == null || !IsAttributeSettable(window.Element, attrTitle))
 				return false;
 
 			var titleRef = CreateString(title);
@@ -277,23 +284,146 @@ namespace Keysharp.Internals.Window.MacOS
 			if (window == null)
 				return false;
 
-			if (TryReadBool(window.Element, attrMinimized, out var minimized) && minimized)
+			var knowsMinimized = TryReadBool(window.Element, attrMinimized, out var minimized);
+			if (knowsMinimized && minimized)
+			{
 				state = FormWindowState.Minimized;
-			else if (TryReadBool(window.Element, attrFullScreen, out var full) && full)
+				return true;
+			}
+
+			var knowsFullScreen = TryReadBool(window.Element, attrFullScreen, out var full);
+			if (knowsFullScreen && full)
 				state = FormWindowState.Maximized;
 
-			return true;
+			return knowsMinimized || knowsFullScreen;
 		}
 
 		internal static bool TrySetWindowState(WindowElement window, FormWindowState state)
 		{
-			if (window == null)
+			if (!TryGetWindowState(window, out var current))
 				return false;
 
-			if (state == FormWindowState.Minimized)
-				return TryWriteBool(window.Element, attrMinimized, true);
+			var owner = Script.TheScript;
+			var restores = owner.MacFullScreenRestoreWindows;
+			WindowElement previous;
+			lock (restores)
+				restores.Remove((window.Info.OwnerPid, window.Info.WindowNumber), out previous);
+			using var saved = previous;
+			var restoreFullScreen = current == FormWindowState.Minimized && saved != null && CFEqual(saved.Element, window.Element);
 
-			return TryWriteBool(window.Element, attrMinimized, false) && TryRaiseWindow(window);
+			if (state == FormWindowState.Minimized)
+			{
+				if (current == FormWindowState.Minimized)
+				{
+					if (restoreFullScreen)
+						RememberFullScreenRestore(owner, window);
+					return true;
+				}
+				if (current != FormWindowState.Maximized)
+				{
+					if (!IsAttributeSettable(window.Element, attrMinimized))
+						return false;
+					return ChangeMinimized(window, true) || ReportWindowStateFailure("minimize the window");
+				}
+
+				if (!TryReadBool(window.Element, attrMinimized, out _) || !TrySetFullScreen(window, false))
+					return false;
+				// Miniaturization can be ignored while AppKit finishes its full-screen animation.
+				if (!CompleteFullScreenChange(window, false) || !ChangeMinimized(window, true))
+				{
+					_ = TryWriteBool(window.Element, attrMinimized, false);
+					_ = TrySetFullScreen(window, true);
+					return ReportWindowStateFailure("minimize the full-screen window");
+				}
+				RememberFullScreenRestore(owner, window);
+				return true;
+			}
+
+			if (current == FormWindowState.Minimized && !ChangeMinimized(window, false))
+			{
+				if (restoreFullScreen && TryReadBool(window.Element, attrMinimized, out var stillMinimized) && stillMinimized)
+					RememberFullScreenRestore(owner, window);
+				return ReportWindowStateFailure("unminimize the window");
+			}
+			if (state == FormWindowState.Maximized)
+			{
+				if (!TrySetFullScreen(window, true))
+					return false;
+				return CompleteFullScreenChange(window, true) || ReportWindowStateFailure("maximize the window");
+			}
+			if (restoreFullScreen)
+			{
+				if (!TrySetFullScreen(window, true) || !CompleteFullScreenChange(window, true))
+				{
+					if (TryReadBool(window.Element, attrFullScreen, out var fullScreen) && !fullScreen && ChangeMinimized(window, true))
+						RememberFullScreenRestore(owner, window);
+					return ReportWindowStateFailure("restore the minimized window to full-screen mode");
+				}
+				return true;
+			}
+			if (current != FormWindowState.Maximized)
+				return true;
+			if (!TrySetFullScreen(window, false))
+				return false;
+			return CompleteFullScreenChange(window, false) || ReportWindowStateFailure("leave full-screen mode");
+		}
+
+		private static bool ChangeMinimized(WindowElement window, bool minimized)
+			=> Flow.WaitUntil(() => TryReadBool(window.Element, attrMinimized, out var current)
+				&& (current == minimized || TryWriteBool(window.Element, attrMinimized, minimized)
+					&& TryReadBool(window.Element, attrMinimized, out current) && current == minimized),
+				WindowStateTransitionTimeout, 25);
+
+		private static bool CompleteFullScreenChange(WindowElement window, bool fullScreen)
+			=> Flow.WaitUntil(() => TryReadBool(window.Element, attrFullScreen, out var current)
+				&& (current == fullScreen || IsAttributeSettable(window.Element, attrFullScreen)
+					&& TryWriteBool(window.Element, attrFullScreen, fullScreen)
+					&& TryReadBool(window.Element, attrFullScreen, out current) && current == fullScreen),
+				WindowStateTransitionTimeout, 25);
+
+		private static bool ReportWindowStateFailure(string operation)
+		{
+			_ = Errors.OSErrorOccurredWithMessage($"macOS could not {operation} within {WindowStateTransitionTimeout} ms.");
+			// Continuing after OSError must not make the caller report a second UnsupportedError.
+			return true;
+		}
+
+		private static void RememberFullScreenRestore(Script owner, WindowElement window)
+		{
+			var restores = owner.MacFullScreenRestoreWindows;
+			lock (restores)
+			{
+				if (owner.IsDisposed)
+					return;
+				if (restores.Remove((window.Info.OwnerPid, window.Info.WindowNumber), out var previous))
+					previous.Dispose();
+				restores[(window.Info.OwnerPid, window.Info.WindowNumber)] = new WindowElement(CFRetain(window.Element), window.Info);
+			}
+		}
+
+		internal static void ForgetFullScreenRestore(Script owner, uint windowNumber, nint element)
+		{
+			if (owner == null)
+				return;
+			var restores = owner.MacFullScreenRestoreWindows;
+			lock (restores)
+				foreach (var entry in restores.Where(entry => entry.Key.WindowNumber == windowNumber
+					&& CFEqual(entry.Value.Element, element)).ToArray())
+				{
+					restores.Remove(entry.Key);
+					entry.Value.Dispose();
+				}
+		}
+
+		internal static void ClearFullScreenRestores(Script owner)
+		{
+			var restores = owner.MacFullScreenRestoreWindows;
+			lock (restores)
+			{
+				foreach (var window in restores.Values)
+					window.Dispose();
+				restores.Clear();
+			}
 		}
 
 		internal static bool TrySetFullScreen(WindowElement window, bool on)
@@ -325,26 +455,6 @@ namespace Keysharp.Internals.Window.MacOS
 			finally
 			{
 				CFRelease(button);
-			}
-		}
-
-		internal static bool TrySetApplicationHidden(int pid, bool hidden)
-		{
-			if (pid <= 0 || !EnsureAccessibilityAccess("hide/show application", prompt: true))
-				return false;
-
-			var appElement = AXUIElementCreateApplication(pid);
-			if (appElement == 0)
-				return false;
-
-			try
-			{
-				_ = AXUIElementSetMessagingTimeout(appElement, WindowMessagingTimeout);
-				return TryWriteBool(appElement, attrHidden, hidden);
-			}
-			finally
-			{
-				CFRelease(appElement);
 			}
 		}
 
@@ -568,32 +678,6 @@ namespace Keysharp.Internals.Window.MacOS
 				Diagnostics.Debug.WriteLine(
 					$"macOS Screen Recording permission is required for '{operation}'. " +
 					"Grant access in System Settings -> Privacy & Security -> Screen Recording, then restart the app.");
-			}
-
-			return false;
-		}
-
-		internal static bool EnsureAutomationAccess(int pid, string operation, bool prompt = false)
-		{
-			if (pid <= 0)
-				return false;
-
-			try
-			{
-				var bundleId = MonoMac.AppKit.NSRunningApplication.GetRunningApplication(pid)?.BundleIdentifier;
-				var target = new AETarget { Pid = pid, BundleId = bundleId, DisplayName = bundleId };
-				if (AECalls.EnsurePermitted(target, prompt))
-					return true;
-			}
-			catch (AEException)
-			{
-			}
-
-			lock (loggedAutomationFailurePids)
-			{
-				if (loggedAutomationFailurePids.Add(pid))
-					Diagnostics.Debug.WriteLine($"macOS Automation permission is required for '{operation}'. " +
-						"Grant access in System Settings -> Privacy & Security -> Automation, then try again.");
 			}
 
 			return false;

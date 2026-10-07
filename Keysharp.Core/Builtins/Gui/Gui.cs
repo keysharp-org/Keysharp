@@ -387,6 +387,13 @@ namespace Keysharp.Builtins
 
 		public long Hwnd => form.Handle;
 
+		/// <summary>Backing pixels per GUI coordinate unit.</summary>
+#if WINDOWS
+		public double PixelScale => DpiScale;
+#else
+		public double PixelScale => Keysharp.Internals.ScaleFactor.Normalize(form.LogicalPixelSize);
+#endif
+
 		/// <summary>
 		/// The backing toolkit window as an ordinary <c>Ks.Clr</c> object. Its concrete type is platform-dependent
 		/// and unspecified; changes made through it bypass this class's own state and event wiring.

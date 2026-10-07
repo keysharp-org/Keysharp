@@ -10,8 +10,8 @@ namespace Keysharp.Internals.Window.MacOS
 	/// <summary>
 	/// The macOS window-event source behind <c>Ks.WinEvent</c>. macOS has no single global window-event hook
 	/// (the Win32 <c>SetWinEventHook</c> equivalent does not exist), so this builds the stream out of per-application
-	/// <c>AXObserver</c>s: every running application (sans LSUIElement-prohibited background processes) gets one
-	/// observer, kept in sync with launches/terminations via <c>NSWorkspace</c> notifications. Each observer reports
+	/// <c>AXObserver</c>s: every running application except those with a Prohibited activation policy gets one
+	/// observer, kept in sync with <c>NSWorkspace</c> notifications and application-list discovery. Each observer reports
 	/// window create/destroy/move/resize/minimize/restore/title-change for that app's windows, plus app activation
 	/// and focused-window changes, which together drive every <see cref="WindowEventType"/> — and, only while a
 	/// CaretMove subscription exists (see <see cref="SetCaretEvents"/>), selected-text changes for CaretMove.
@@ -70,6 +70,16 @@ namespace Keysharp.Internals.Window.MacOS
 			internal AppObserverState(int pid) => this.pid = pid;
 		}
 
+		[Register("KeysharpAppListObserver")]
+		private sealed class AppListObserver(Script owner) : NSObject
+		{
+			public override void ObserveValue(NSString keyPath, NSObject ofObject, NSDictionary change, nint context)
+			{
+				if (windowEventsRunning && !owner.IsDisposed && ReferenceEquals(eventOwner, owner))
+					ReconcileApps();
+			}
+		}
+
 		// --- observer state (main-thread only) ----------------------------------------------------------------
 		private static Action<WindowEventRaw> eventSink;
 		private static readonly Dictionary<int, AppObserverState> appObservers = new();
@@ -77,6 +87,8 @@ namespace Keysharp.Internals.Window.MacOS
 		private static NSObject appLaunchObserver;
 		private static NSObject appTerminateObserver;
 		private static NSObject appActivatedObserver;
+		private static AppListObserver appListObserver;
+		private static readonly NSString runningAppsKey = new("runningApplications");
 		private static AXObserverCallbackDelegate axCallbackDelegate;            // kept alive for the process lifetime
 		private static nint axCallbackPtr;
 		private static nint runLoopMode;                                        // kCFRunLoopCommonModes
@@ -119,14 +131,13 @@ namespace Keysharp.Internals.Window.MacOS
 					runLoopMode = ResolvePointerConstant("kCFRunLoopCommonModes");
 
 				var wsnc = NSWorkspace.SharedWorkspace.NotificationCenter;
-				// On launch, add the new app's observer straight from the notification: NSWorkspace's
-				// RunningApplications list can still be momentarily stale at this point, so a plain reconcile here
-				// races and may miss the app (and thus every event from its first window). Activation is the safety
-				// net — by the time an app is activated it is reliably listed, so reconcile then catches anything the
-				// launch path missed (e.g. apps already running before the stream started but only now seen).
+				// Launch notifications exclude LSUIElement applications. Their presence is reported by KVO instead.
 				appLaunchObserver = wsnc.AddObserver("NSWorkspaceDidLaunchApplicationNotification", OnAppLaunched);
 				appTerminateObserver = wsnc.AddObserver("NSWorkspaceDidTerminateApplicationNotification", _ => ReconcileApps());
-				appActivatedObserver = wsnc.AddObserver("NSWorkspaceDidActivateApplicationNotification", _ => ReconcileApps());
+				appActivatedObserver = wsnc.AddObserver("NSWorkspaceDidActivateApplicationNotification", OnAppActivated);
+				var listObserver = new AppListObserver(owner);
+				NSWorkspace.SharedWorkspace.AddObserver(listObserver, runningAppsKey, NSKeyValueObservingOptions.New, 0);
+				appListObserver = listObserver;
 
 				windowEventsRunning = true;
 				ReconcileApps();
@@ -186,6 +197,12 @@ namespace Keysharp.Internals.Window.MacOS
 			try
 			{
 				var wsnc = NSWorkspace.SharedWorkspace.NotificationCenter;
+				if (appListObserver != null)
+				{
+					NSWorkspace.SharedWorkspace.RemoveObserver(appListObserver, runningAppsKey);
+					appListObserver.Dispose();
+					appListObserver = null;
+				}
 
 				if (appLaunchObserver != null)
 				{
@@ -220,9 +237,6 @@ namespace Keysharp.Internals.Window.MacOS
 
 		// --- application tracking --------------------------------------------------------------------------------
 
-		/// <summary>Brings the per-app observer set in line with the currently running applications. Called on
-		/// start and on every launch/terminate notification (diff rather than reacting to a single app keeps it
-		/// robust against missed/coalesced notifications).</summary>
 		/// <summary>Adds an observer for a just-launched app straight from the notification's
 		/// <c>NSWorkspaceApplicationKey</c> (avoiding the stale-RunningApplications race), then reconciles as a
 		/// fallback in case the key wasn't present.</summary>
@@ -240,8 +254,15 @@ namespace Keysharp.Internals.Window.MacOS
 				{
 					var pid = app.ProcessIdentifier;
 
-					if (pid > 0 && !appObservers.ContainsKey(pid))
-						AddAppObserver(pid);
+					if (pid > 0)
+					{
+						if (!appObservers.ContainsKey(pid))
+							AddAppObserver(pid);
+
+						// RunningApplications can lag this launch; reconciling it would remove the observer just added.
+						if (appObservers.ContainsKey(pid))
+							return;
+					}
 				}
 			}
 			catch (Exception ex)
@@ -252,6 +273,29 @@ namespace Keysharp.Internals.Window.MacOS
 			ReconcileApps();
 		}
 
+		private static void OnAppActivated(NSNotification note)
+		{
+			if (!windowEventsRunning)
+				return;
+
+			try
+			{
+				var value = note?.UserInfo?["NSWorkspaceApplicationKey"];
+				var app = value == null ? null : MonoMac.ObjCRuntime.Runtime.GetNSObject<NSRunningApplication>(value.Handle);
+				var alreadyObserved = app != null && appObservers.ContainsKey(app.ProcessIdentifier);
+				ReconcileApps();
+
+				// An observer installed during reconciliation missed the activation that led us to the app.
+				if (!alreadyObserved && app != null && appObservers.TryGetValue(app.ProcessIdentifier, out var state))
+					ReportFocusedWindow(state);
+			}
+			catch (Exception ex)
+			{
+				Diagnostics.Debug.WriteLine($"macOS window-event activation handler failed: {ex.Message}");
+			}
+		}
+
+		/// <summary>Brings the per-app observer set in line with the currently running applications.</summary>
 		private static void ReconcileApps()
 		{
 			if (!windowEventsRunning)
@@ -280,6 +324,7 @@ namespace Keysharp.Internals.Window.MacOS
 			catch (Exception ex)
 			{
 				Diagnostics.Debug.WriteLine($"macOS window-event app reconcile failed: {ex.Message}");
+				return;
 			}
 
 			foreach (var pid in appObservers.Keys.Where(p => !current.Contains(p)).ToArray())
@@ -332,8 +377,8 @@ namespace Keysharp.Internals.Window.MacOS
 
 			appObservers[pid] = state;
 
-			// Seed tracking for the app's already-open windows so their move/close events are caught (without
-			// firing Create for windows that existed before we attached).
+			// A newly discovered app may have created its windows before the observer attached. The manager's
+			// registration-time matching set suppresses Exist for windows that already existed at Start().
 			EnumerateAppWindows(state);
 		}
 
@@ -347,12 +392,14 @@ namespace Keysharp.Internals.Window.MacOS
 				if (!windowElements.Remove(id, out var element))
 					continue;
 
-				CFRelease(element);
-
 				// An app quitting destroys its windows; surface a confirmed Close for the ones we were tracking (the
 				// manager de-dupes against any per-window destroyed notifications that also fired).
 				if (emitCloseForWindows)
+				{
+					ForgetFullScreenRestore(Volatile.Read(ref eventOwner), id, element);
 					Emit(WindowEventType.Close, (nint)id, destroyConfirmed: true);
+				}
+				CFRelease(element);
 			}
 
 			if (state.runLoopSource != 0)
@@ -378,8 +425,8 @@ namespace Keysharp.Internals.Window.MacOS
 				{
 					var entry = CFArrayGetValueAtIndex(windowsArray, i);
 
-					if (entry != 0)
-						_ = TrackWindow(state, entry, emitCreateShow: false);
+					if (entry != 0 && TrackWindow(state, entry) == 0)
+						ScheduleTrackRetry(state, entry, WindowCreateResolveRetries);
 				}
 			}
 			finally
@@ -392,11 +439,11 @@ namespace Keysharp.Internals.Window.MacOS
 
 		/// <summary>Registers the per-window notifications (move/resize/minimize/restore/title-change/destroy) for a
 		/// window element, keyed by its CGWindowID (passed as the refcon so they can be attributed in the callback —
-		/// essential for destroy, whose element is already dead), and optionally emits Create+Show for a freshly
-		/// created window. Returns the resolved CGWindowID (0 if it couldn't be determined — the create path then
+		/// essential for destroy, whose element is already dead), and emits Create+Show for a newly tracked window.
+		/// Returns the resolved CGWindowID (0 if it couldn't be determined — the create path then
 		/// schedules a bounded retry via <see cref="ScheduleTrackRetry"/>); already-tracked windows are returned as-is
 		/// without re-registering or re-emitting.</summary>
-		private static uint TrackWindow(AppObserverState state, nint windowElement, bool emitCreateShow)
+		private static uint TrackWindow(AppObserverState state, nint windowElement)
 		{
 			if (!TryResolveWindowId(windowElement, out var id))
 				return 0;
@@ -420,11 +467,8 @@ namespace Keysharp.Internals.Window.MacOS
 			_ = AXObserverAddNotification(state.observer, retained, nTitleChanged, refcon);
 			_ = AXObserverAddNotification(state.observer, retained, nUIElementDestroyed, refcon);
 
-			if (emitCreateShow)
-			{
-				Emit(WindowEventType.Create, (nint)id);
-				Emit(WindowEventType.Show, (nint)id);
-			}
+			Emit(WindowEventType.Create, (nint)id);
+			Emit(WindowEventType.Show, (nint)id);
 
 			return id;
 		}
@@ -468,7 +512,7 @@ namespace Keysharp.Internals.Window.MacOS
 							&& ReferenceEquals(eventOwner, owner)
 							&& appObservers.TryGetValue(state.pid, out var live)
 							&& ReferenceEquals(live, state)
-							&& TrackWindow(live, retained, emitCreateShow: true) == 0)
+							&& TrackWindow(live, retained) == 0)
 							ScheduleTrackRetry(live, retained, remaining - 1);
 					}
 					finally
@@ -510,6 +554,7 @@ namespace Keysharp.Internals.Window.MacOS
 					// registration so later move/minimize/close events for it aren't lost after a hide/show cycle.
 					if (!hidden && id != 0 && windowElements.Remove(id, out var dead))
 					{
+						ForgetFullScreenRestore(owner, id, element);
 						CFRelease(dead);
 						foreach (var state in appObservers.Values)
 							if (state.windowIds.Remove(id))
@@ -550,36 +595,41 @@ namespace Keysharp.Internals.Window.MacOS
 					// TrackWindow returns 0 when the CGWindowID isn't resolvable yet (AXWindowNumber not populated for a
 					// brand-new/offscreen window). Dropping it here would leave the window invisible to WinEvent for its
 					// whole life, so schedule a bounded short retry (by which time AXWindowNumber is normally set).
-					if (appObservers.TryGetValue((int)refcon, out var state) && TrackWindow(state, element, emitCreateShow: true) == 0)
+					if (appObservers.TryGetValue((int)refcon, out var state) && TrackWindow(state, element) == 0)
 						ScheduleTrackRetry(state, element, WindowCreateResolveRetries);
 				}
 				else if (CFEqual(notification, nFocusedWindowChanged))
 				{
-					// element is the newly focused window.
 					if (TryResolveWindowId(element, out var id))
 						Emit(WindowEventType.Active, (nint)id);
+					else if (appObservers.TryGetValue((int)refcon, out var state))
+						ReportFocusedWindow(state);
 				}
 				else if (CFEqual(notification, nApplicationActivated))
 				{
-					// element is the application; its AXFocusedWindow is the window that is now active.
-					if (appObservers.TryGetValue((int)refcon, out var state)
-						&& TryCopyAttributeValue(state.appElement, attrFocusedWindow, out var focused))
-					{
-						try
-						{
-							if (TryResolveWindowId(focused, out var id))
-								Emit(WindowEventType.Active, (nint)id);
-						}
-						finally
-						{
-							CFRelease(focused);
-						}
-					}
+					if (appObservers.TryGetValue((int)refcon, out var state))
+						ReportFocusedWindow(state);
 				}
 			}
 			catch (Exception ex)
 			{
 				Diagnostics.Debug.WriteLine($"macOS window-event callback failed: {ex.Message}");
+			}
+		}
+
+		private static void ReportFocusedWindow(AppObserverState state)
+		{
+			if (!TryCopyAttributeValue(state.appElement, attrFocusedWindow, out var focused))
+				return;
+
+			try
+			{
+				if (TryResolveWindowId(focused, out var id))
+					Emit(WindowEventType.Active, (nint)id);
+			}
+			finally
+			{
+				CFRelease(focused);
 			}
 		}
 
