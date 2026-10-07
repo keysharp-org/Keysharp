@@ -84,12 +84,139 @@ Assert(SubStr(ed.Value, 1, 3) == "six" && !InStr(ed.Value, "one"), A_LineNumber)
 ; control.
 keys := g.AddEdit("x170 y+10 w150")
 ControlSend("ab{sc" Format("{:X}", GetKeySC("Left")) "}C{End}{Shift down}d{Shift up}", keys)
+_WaitForText(keys, "aCbD")
 AssertEq(keys.Value, "aCbD", A_LineNumber)
 ControlFocus(keys)
 ControlSend("{End}z", , g)
+_WaitForText(keys, "aCbDz")
 AssertEq(keys.Value, "aCbDz", A_LineNumber)
 ControlSendText("{Left}+λ😀", , g)
+_WaitForText(keys, "aCbDz{Left}+λ😀")
 AssertEq(keys.Value, "aCbDz{Left}+λ😀", A_LineNumber)
+keys.Opt("+ReadOnly")
+ControlSendText("ignored", , g)
+; A later insertion confirms the read-only send has reached the UI thread.
+ControlSendText(".", typed)
+Assert(_WaitForText(typed, "hello world."), A_LineNumber)
+AssertEq(keys.Value, "aCbDz{Left}+λ😀", A_LineNumber)
+keys.Opt("-ReadOnly")
+savedKeyDelay := A_KeyDelay
+SetKeyDelay -1
+ControlSend("{Home}{Insert}", keys)
+ControlSendText("X", keys)
+_WaitForText(keys, "XCbDz{Left}+λ😀")
+AssertEq(keys.Value, "XCbDz{Left}+λ😀", A_LineNumber)
+ControlSend("{Insert}", keys)
+
+SendMessage(0xB1, 0, 3, ed)
+expected := "λ😀" SubStr(ed.Value, 4)
+ControlSendText("λ😀", ed)
+_WaitForText(ed, expected)
+AssertEq(SubStr(ed.Value, 1, 3), "λ😀", A_LineNumber)
+before := ed.Value
+ed.Opt("+ReadOnly")
+ControlSendText("`b`nignored", ed)
+ControlSendText(".", typed)
+Assert(_WaitForText(typed, "hello world.."), A_LineNumber)
+AssertEq(ed.Value, before, A_LineNumber)
+
+; GTK overwrite replaces a complete cursor position, including combining characters.
+grapheme := g.AddEdit("x170 y+10 w150", "e" Chr(0x301) "z")
+ControlSend("{Home}{Insert}", grapheme)
+ControlSendText("X", grapheme)
+_WaitForText(grapheme, "Xz")
+AssertEq(grapheme.Value, "Xz", A_LineNumber)
+
+ordered := g.AddEdit("x350 y10 w150 r3")
+ControlFocus(ordered)
+ControlSend("ab{Left}", ordered)
+ControlSendText("λ", ordered)
+ControlSend("{End}c", ordered)
+_WaitForText(ordered, "aλbc")
+AssertEq(ordered.Value, "aλbc", A_LineNumber)
+
+; An unhandled key sent to the window reaches its event handlers after the focused Edit.
+formEscapes := 0
+OnFormEscape(*) {
+	global formEscapes
+	formEscapes += 1
+}
+g.OnEvent("Escape", OnFormEscape)
+ControlSend("{Escape}", , g)
+ControlSendText("!", , g)
+Assert(_WaitForText(ordered, "aλbc!"), A_LineNumber)
+escapeStart := A_TickCount
+while formEscapes == 0 && A_TickCount - escapeStart < 2000
+	Sleep 10
+AssertEq(formEscapes, 1, A_LineNumber)
+g.OnEvent("Escape", OnFormEscape, -1)
+
+ordered.Value := ""
+ControlSendText("a`nb", ordered)
+_WaitForText(ordered, "a`nb")
+AssertEq(StrReplace(ordered.Value, "`r"), "a`nb", A_LineNumber)
+ordered.Value := ""
+ControlSendText("a`rb", ordered)
+_WaitForText(ordered, "a`nb")
+AssertEq(StrReplace(ordered.Value, "`r"), "a`nb", A_LineNumber)
+ordered.Value := ""
+ControlSendText("ab`bc", ordered)
+_WaitForText(ordered, "ac")
+AssertEq(ordered.Value, "ac", A_LineNumber)
+ordered.Value := ""
+ControlSend("{U+03BB}{U+1F600}", ordered)
+_WaitForText(ordered, "λ😀")
+AssertEq(ordered.Value, "λ😀", A_LineNumber)
+ordered.Value := ""
+ControlSend("{Text}a`nb", ordered)
+_WaitForText(ordered, "a`nb")
+AssertEq(StrReplace(ordered.Value, "`r"), "a`nb", A_LineNumber)
+
+noReturn := g.AddEdit("x350 y+10 w150 r3 -WantReturn")
+ControlSendText("a`nb", noReturn)
+_WaitForText(noReturn, "ab")
+AssertEq(noReturn.Value, "ab", A_LineNumber)
+
+numeric := g.AddEdit("x350 y+10 w150 r3 Number")
+ControlSendText("a1`nλ2`t", numeric)
+_WaitForText(numeric, "12")
+AssertEq(numeric.Value, "12", A_LineNumber)
+SendMessage(0xB1, 0, 2, numeric)
+ControlSendText("λ", numeric)
+ControlSendText(".", typed)
+Assert(_WaitForText(typed, "hello world..."), A_LineNumber)
+AssertEq(numeric.Value, "12", A_LineNumber)
+ControlSendText("3", numeric)
+_WaitForText(numeric, "3")
+AssertEq(numeric.Value, "3", A_LineNumber)
+
+; Rejected input must preserve a single-line selection and the character under an overwrite cursor.
+numericLine := g.AddEdit("x520 y10 w150 Number", "12")
+ControlSend("^a", numericLine)
+ControlSendText("λ", numericLine)
+ControlSendText(".", typed)
+Assert(_WaitForText(typed, "hello world...."), A_LineNumber)
+AssertEq(numericLine.Value, "12", A_LineNumber)
+ControlSendText("3", numericLine)
+Assert(_WaitForText(numericLine, "3"), A_LineNumber)
+ControlSend("{Home}{Insert}", numericLine)
+ControlSendText("λ", numericLine)
+ControlSendText(".", typed)
+Assert(_WaitForText(typed, "hello world....."), A_LineNumber)
+AssertEq(numericLine.Value, "3", A_LineNumber)
+ControlSendText("4", numericLine)
+Assert(_WaitForText(numericLine, "4"), A_LineNumber)
+
+numericPassword := g.AddEdit("x520 y+10 w150 Number Password", "12")
+AssertEq(numericPassword.Value, "12", A_LineNumber)
+ControlSend("^a", numericPassword)
+ControlSendText("λ", numericPassword)
+ControlSendText(".", typed)
+Assert(_WaitForText(typed, "hello world......"), A_LineNumber)
+AssertEq(numericPassword.Value, "12", A_LineNumber)
+ControlSendText("3", numericPassword)
+Assert(_WaitForText(numericPassword, "3"), A_LineNumber)
+SetKeyDelay savedKeyDelay
 #elif OSX
 ; macOS types ControlSendText into the script's own Edits only, and sends keys nowhere.
 Throws(() => ControlSend("a", typed), A_LineNumber, UnsupportedError)
@@ -304,3 +431,12 @@ styleGui.Destroy()
 
 FileAppend "pass", "*"
 ExitApp()
+
+_WaitForText(Control, Text) {
+	; Targeted sends post asynchronously to the UI thread.
+	Text := StrReplace(Text, "`r")
+	start := A_TickCount
+	while StrReplace(Control.Value, "`r") != Text && A_TickCount - start < 2000
+		Sleep 10
+	return StrReplace(Control.Value, "`r") == Text
+}

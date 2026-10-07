@@ -60,22 +60,25 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return null;
 
 			void OnEvent(WaylandWindowEventKind kind, WaylandWindowInfo serviceWindow)
-			{
-				lock (windowListSync)
-				{
-					var window = ResolveWindow(serviceWindow);
-					RememberWindows([window], false);
-					var bounds = window.FrameGeometry.Width > 0 && window.FrameGeometry.Height > 0
-						? window.FrameGeometry : (Rectangle?)null;
-					sink(new WaylandWindowEvent(kind, window.Handle) { Bounds = bounds });
-				}
-			}
+				=> sink(ResolveWindowEvent(kind, serviceWindow));
 
 			return RecoveringSubscription.Create(
 				onError => Desktop.WatchWindowEvents(OnEvent, onError),
 				() => new WaylandPollingEventSource(this, sink),
 				Desktop.ProbeProvider,
 				subscribeAvailability);
+		}
+
+		internal WaylandWindowEvent ResolveWindowEvent(WaylandWindowEventKind kind, WaylandWindowInfo serviceWindow)
+		{
+			lock (windowListSync)
+			{
+				var window = ResolveWindow(serviceWindow);
+				RememberWindows([window], false);
+				var bounds = window.FrameGeometry.Width > 0 && window.FrameGeometry.Height > 0
+					? window.FrameGeometry : (Rectangle?)null;
+				return new WaylandWindowEvent(kind, WaylandOwnToplevels.ResolveEventHandle(window)) { Bounds = bounds };
+			}
 		}
 
 		public bool TryListWindows(bool includeHidden, out IReadOnlyList<WaylandWindowInfo> windows)

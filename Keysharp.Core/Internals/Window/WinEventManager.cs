@@ -78,7 +78,8 @@ namespace Keysharp.Internals.Window
 	/// per-subscription dedup. Move events are delivered as the backend reports them; only the Linux backend merges
 	/// a window's queued moves.
 	/// </summary>
-	internal sealed class WinEventManager(Script script)
+	internal sealed class WinEventManager(Script script, Func<nint> queryForeground = null,
+		Func<IWindowEventBackend> createBackend = null)
 		: EventManagerBase<WinEventRegistration, IWindowEventBackend, WinEventManager.Payload>(script, true)
 	{
 		internal static readonly int typeCount = Enum.GetValues<WindowEventType>().Length;
@@ -98,6 +99,7 @@ namespace Keysharp.Internals.Window
 		private WindowEventMask installedMask = WindowEventMask.None;
 		private volatile bool foregroundTracking;
 		private volatile bool foregroundEvents;
+		private volatile bool foregroundReady;
 		private nint foregroundWindowHandle;
 		private long foregroundGeneration;
 
@@ -110,13 +112,15 @@ namespace Keysharp.Internals.Window
 		{
 			get
 			{
-				if (!foregroundEvents)
-					try { return WindowQuery.GetForegroundWindowHandle(); }
+				if (!foregroundEvents || !foregroundReady)
+					try { return QueryForeground(); }
 					catch { }
 
 				return Volatile.Read(ref foregroundWindowHandle);
 			}
 		}
+
+		private nint QueryForeground() => queryForeground != null ? queryForeground() : WindowQuery.GetForegroundWindowHandle();
 
 		/// <summary>
 		/// Adds or removes the input hook's internal demand for foreground events. The input hook calls this on
@@ -132,11 +136,11 @@ namespace Keysharp.Internals.Window
 				if (disposed || foregroundTracking == enabled)
 					return;
 
+				// Backend startup may block before a snapshot or native event has seeded the cache.
+				foregroundReady = false;
 				foregroundTracking = enabled;
 				generation = ++foregroundGeneration;
-
-				if (!enabled)
-					Volatile.Write(ref foregroundWindowHandle, 0);
+				Volatile.Write(ref foregroundWindowHandle, 0);
 
 				try
 				{
@@ -147,8 +151,16 @@ namespace Keysharp.Internals.Window
 					if (enabled)
 					{
 						foregroundTracking = false;
+						foregroundEvents = false;
+						foregroundReady = false;
 						generation = ++foregroundGeneration;
 						Volatile.Write(ref foregroundWindowHandle, 0);
+
+						try { SyncNativeLocked(); }
+						catch (Exception recovery)
+						{
+							Diagnostics.Debug.WriteLine($"Foreground window tracking recovery failed: {recovery.Message}");
+						}
 					}
 
 					Diagnostics.Debug.WriteLine(
@@ -163,7 +175,7 @@ namespace Keysharp.Internals.Window
 
 			try
 			{
-				queried = WindowQuery.GetForegroundWindowHandle();
+				queried = QueryForeground();
 			}
 			catch (Exception exception)
 			{
@@ -173,14 +185,17 @@ namespace Keysharp.Internals.Window
 
 			lock (gate)
 				if (!disposed && foregroundTracking && foregroundGeneration == generation)
+				{
 					Volatile.Write(ref foregroundWindowHandle, queried);
+					foregroundReady = true;
+				}
 		}
 
 		// ---- source hooks --------------------------------------------------------------------
 
 		protected override IWindowEventBackend CreateBackend()
 		{
-			var created = Platform.WindowEvents.CreateBackend(script);
+			var created = createBackend != null ? createBackend() : Platform.WindowEvents.CreateBackend(script);
 
 			if (created != null)
 				created.Sink = OnNativeEvent;
@@ -340,6 +355,12 @@ namespace Keysharp.Internals.Window
 						{
 							foregroundGeneration++;
 							Volatile.Write(ref foregroundWindowHandle, raw.Hwnd);
+							foregroundReady = true;
+						}
+						else if (!foregroundReady)
+						{
+							// A removal during the query makes its pending foreground seed unsafe.
+							foregroundGeneration++;
 						}
 						else if (foregroundWindowHandle == raw.Hwnd)
 						{

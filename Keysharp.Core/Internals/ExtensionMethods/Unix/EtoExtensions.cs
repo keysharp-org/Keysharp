@@ -554,13 +554,8 @@ namespace Eto.Forms
                     return control switch
                     {
                         Window window => window.Title ?? "",
-                        TextBox textBox => textBox.Text ?? "",
-                        TextArea textArea => textArea.Text ?? "",
+                        TextControl textControl => textControl.Text ?? "",
                         KeysharpLinkLabel linkLabel => linkLabel.Text ?? "",
-                        Label label => label.Text ?? "",
-                        Button button => button.Text ?? "",
-                        CheckBox checkBox => checkBox.Text ?? "",
-                        RadioButton radioButton => radioButton.Text ?? "",
                         GroupBox groupBox => groupBox.Text ?? "",
                         ComboBox comboBox => comboBox.Text ?? "",
                         DropDown dropDown => dropDown.Text ?? "",
@@ -575,26 +570,11 @@ namespace Eto.Forms
                         case Window window:
                             window.Title = value;
                             break;
-                        case TextBox textBox:
-                            textBox.Text = value;
-                            break;
-                        case TextArea textArea:
-                            textArea.Text = value;
+                        case TextControl textControl:
+                            textControl.Text = value;
                             break;
                         case KeysharpLinkLabel linkLabel:
                             linkLabel.Text = value;
-                            break;
-                        case Label label:
-                            label.Text = value;
-                            break;
-                        case Button button:
-                            button.Text = value;
-                            break;
-                        case CheckBox checkBox:
-                            checkBox.Text = value;
-                            break;
-                        case RadioButton radioButton:
-                            radioButton.Text = value;
                             break;
                         case GroupBox groupBox:
                             groupBox.Text = value;

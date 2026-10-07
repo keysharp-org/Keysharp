@@ -40,6 +40,9 @@ AssertEq(Channel(colored, 0, 0, 0), 0x44, A_LineNumber)
 AssertEq(Channel(colored, 0, 0, 1), 0x55, A_LineNumber)
 AssertEq(Channel(colored, 0, 0, 2), 0x66, A_LineNumber)
 AssertEq(Channel(Image.Create(4, 3, "0x80445566"), 0, 0, 3), 0x80, A_LineNumber)
+#if WINDOWS || LINUX
+AssertEq(Image.Create(2, 2, 0x80112233).GetPixel(0, 0), 0x80112233, A_LineNumber)
+#endif
 
 ; A colour string that is no name or number raises, rather than drawing black or transparent.
 Throws(() => Image.Create(4, 4, "Rde"), A_LineNumber, ValueError)
@@ -54,9 +57,11 @@ AssertEq(badColour.GetPixel(1, 1), 0, A_LineNumber)
 ; A queued Clear rewrites the image's own pixels, and a draw after it still lands on them.
 cleared := Image.Create(2, 2, "Red").Clear(0x80112233)
 AssertEq(cleared.GetPixel(0, 0), 0x80112233, A_LineNumber)
-cleared.FillRect(1, 1, 1, 1, "Blue")
-AssertEq(cleared.GetPixel(1, 1), 0xFF0000FF, A_LineNumber)
-AssertEq(cleared.GetPixel(0, 1), 0x80112233, A_LineNumber)
+for color in [0xFF0000FF, 0xFFFF0000, 0xFF0000FF] {
+    cleared.FillRect(1, 1, 1, 1, color)
+    AssertEq(cleared.GetPixel(1, 1), color, A_LineNumber)
+    AssertEq(cleared.GetPixel(0, 1), 0x80112233, A_LineNumber)
+}
 
 canvas := Image.Create(12, 12)
 copy := canvas.Copy()
@@ -205,6 +210,12 @@ Assert(movedPixel.x == 5 && movedPixel.y == 3, A_LineNumber)
 
 path := A_Temp A_DirSeparator "keysharp-image-" A_TickCount ".png"
 try {
+#if WINDOWS || LINUX
+    cleared.Save(path)
+    loadedClear := Image.FromFile(path)
+    AssertEq(loadedClear.GetPixel(0, 1), 0x80112233, A_LineNumber)
+#endif
+
     Image.Create(20, 10, "0xFF102030").Save(path)
     Assert(FileExist(path) != "", A_LineNumber)
     loaded := Image.FromFile(path)

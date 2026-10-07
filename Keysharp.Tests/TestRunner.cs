@@ -54,26 +54,38 @@ namespace Keysharp.Tests
 		[TearDown]
 		public void CleanupAfterEachTest()
 		{
-#if !WINDOWS
-			if (!Script.IsUiInitializationBlocked && Application.Instance is { } app)
+			try
 			{
-				void CloseWindows()
+#if !WINDOWS
+				if (!Script.IsUiInitializationBlocked && Application.Instance is { } app)
 				{
-					foreach (var window in app.Windows.ToArray())
-						window.Close();
+					void CloseWindows()
+					{
+						foreach (var window in app.Windows.ToArray())
+							window.Close();
 
-					app.MainForm = null;
+						app.MainForm = null;
+					}
+
+					if (app.IsUIThread)
+						CloseWindows();
+					else
+						app.Invoke(CloseWindows);
 				}
-
-				if (app.IsUIThread)
-					CloseWindows();
-				else
-					app.Invoke(CloseWindows);
-			}
 #endif
-			s?.Dispose();
-			s = null;
-			hsm = null;
+			}
+			finally
+			{
+				try
+				{
+					s?.Dispose();
+				}
+				finally
+				{
+					s = null;
+					hsm = null;
+				}
+			}
 		}
 
 		private void ResetScriptState()
@@ -101,6 +113,23 @@ namespace Keysharp.Tests
 			var context = new QueuedSynchronizationContext();
 			s.UIThreadContext = context;
 			return context;
+		}
+
+		protected void InvokeCompiledScript(Action action)
+		{
+			// Generated code owns a new Script; release the compilation context before it is replaced.
+			s.Dispose();
+			hsm = null;
+
+			try
+			{
+				action();
+			}
+			finally
+			{
+				s = Script.TheScript;
+				hsm = s.HotstringManager;
+			}
 		}
 
 		// A script is silent while it succeeds and writes a single "pass" once it reaches its end, so anything else
@@ -143,32 +172,36 @@ namespace Keysharp.Tests
 			{
 				using (var writer = new StringWriter(buffer))
 				{
+					var previousOutput = Console.Out;
+
 					try
 					{
-						Console.SetOut(writer);
-						// Don't let finalizers queued by the previous run's teardown overlap this one.
-						GC.WaitForPendingFinalizers();
-
-						if (ScriptExecutionState.Assembly == null)
-							throw new Exception("Compilation failed.");
-
-						//Environment.SetEnvironmentVariable("SCRIPT", script);
-						var program = ScriptExecutionState.Assembly.GetType($"{Keywords.MainNamespaceName}.{Keywords.MainClassName}");
-						var main = program.GetMethod("Main");
-						var temp = new string[] { };
-						Environment.ExitCode = 0;
-#if WINDOWS
-						var result = StaTask.RunSync(() => main.Invoke(null, [temp]));
-#else
 						object result = null;
-						try
-						{
-							result = main.Invoke(null, [temp]);
-						}
-						catch (Keysharp.Builtins.Flow.UserRequestedExitException)
-						{
-						}
+						InvokeCompiledScript(() => {
+							Console.SetOut(writer);
+							// Don't let finalizers queued by the previous run's teardown overlap this one.
+							GC.WaitForPendingFinalizers();
+
+							if (ScriptExecutionState.Assembly == null)
+								throw new Exception("Compilation failed.");
+
+							//Environment.SetEnvironmentVariable("SCRIPT", script);
+							var program = ScriptExecutionState.Assembly.GetType($"{Keywords.MainNamespaceName}.{Keywords.MainClassName}");
+							var main = program.GetMethod("Main");
+							var temp = new string[] { };
+							Environment.ExitCode = 0;
+#if WINDOWS
+							result = StaTask.RunSync(() => main.Invoke(null, [temp]));
+#else
+							try
+							{
+								result = main.Invoke(null, [temp]);
+							}
+							catch (Keysharp.Builtins.Flow.UserRequestedExitException)
+							{
+							}
 #endif
+						});
 
 						//Silent on success, like the script's own assertions: the run's only "pass" is the one the script writes.
 						if (exitCode.HasValue)
@@ -198,20 +231,11 @@ namespace Keysharp.Tests
 					{
 						writer.Flush();
 						output = buffer.ToString();
-
-						using (var console = Console.OpenStandardOutput())
-						{
-							var stdout = new StreamWriter(console);
-							stdout.AutoFlush = true;
-							Console.SetOut(stdout);
-						}
+						Console.SetOut(previousOutput);
 					}
 				}
 			}
 
-			//The compiled program builds its own Script; take it over so the test can read back what the run registered.
-			s = Script.TheScript;
-			hsm = s.HotstringManager;
 			return output;
 		}
 

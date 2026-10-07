@@ -74,7 +74,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (!backend.TryListWindows(true, out var windows) || windows == null)
 				return;
 
-			tracker.Update(windows, Emit);
+			tracker.Update(windows, Emit, WaylandOwnToplevels.RetireEventAlias);
 		}
 
 		internal static nint ActiveHandle(IReadOnlyList<WaylandWindowInfo> windows)
@@ -100,23 +100,26 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private bool seeded;
 
 		private readonly record struct Snapshot(string Title, bool Minimized, Rectangle Frame,
-			WaylandWindowFields KnownFields)
+			WaylandWindowFields KnownFields, WaylandWindowInfo Identity)
 		{
 			internal bool Knows(WaylandWindowFields field) => (KnownFields & field) != 0;
 
 			internal static Snapshot From(WaylandWindowInfo window)
 				=> new(window.Title ?? string.Empty, window.Minimized, window.FrameGeometry,
-					window.KnownFields & TrackedFields);
+					window.KnownFields & TrackedFields, window);
 
 			internal static Snapshot Merge(Snapshot prior, Snapshot current)
 				=> new(
 					current.Knows(WaylandWindowFields.Title) ? current.Title : prior.Title,
 					current.Knows(WaylandWindowFields.Minimized) ? current.Minimized : prior.Minimized,
 					current.Knows(WaylandWindowFields.Frame) ? current.Frame : prior.Frame,
-					current.KnownFields | prior.KnownFields);
+					current.KnownFields | prior.KnownFields,
+					current.Identity.HasKnownField(WaylandWindowFields.CompositorId)
+						|| current.Identity.ServiceHandle != prior.Identity.ServiceHandle ? current.Identity : prior.Identity);
 		}
 
-		internal void Update(IReadOnlyList<WaylandWindowInfo> windows, Action<WaylandWindowEvent> emit)
+		internal void Update(IReadOnlyList<WaylandWindowInfo> windows, Action<WaylandWindowEvent> emit,
+			Action<WaylandWindowInfo> onClosed = null)
 		{
 			ArgumentNullException.ThrowIfNull(windows);
 			ArgumentNullException.ThrowIfNull(emit);
@@ -156,9 +159,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return;
 			}
 
-			foreach (var handle in previous.Keys)
-				if (!current.ContainsKey(handle))
-					emit(new WaylandWindowEvent(WaylandWindowEventKind.Closed, handle));
+			foreach (var prior in previous)
+				if (!current.ContainsKey(prior.Key))
+				{
+					try { emit(new WaylandWindowEvent(WaylandWindowEventKind.Closed, prior.Key)); }
+					finally { onClosed?.Invoke(prior.Value.Identity); }
+				}
 
 			previous = current;
 

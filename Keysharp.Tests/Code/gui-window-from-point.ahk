@@ -8,8 +8,8 @@ Target := Gui("+AlwaysOnTop", "Window point target")
 Cover := Gui("+AlwaysOnTop", "Window point cover")
 try {
     Target.Show("x40 y80 w240 h180 NA")
+    AssertEq(WindowAtCenter(Target), Target.Hwnd, A_LineNumber)
     WinGetClientPos(&X, &Y, &Width, &Height, "ahk_id " Target.Hwnd)
-    AssertEq(WindowAt(X + Width // 2, Y + Height // 2, Target.Hwnd), Target.Hwnd, A_LineNumber)
     Assert(Target.PixelScale > 0, A_LineNumber)
     Canvas := Image.Create(240, 180, , Target.PixelScale)
     AssertEq(Canvas.Width, Round(240 * Target.PixelScale), A_LineNumber)
@@ -29,10 +29,10 @@ try {
     AssertEq(FoundHeight, Height, A_LineNumber)
 
     Cover.Show("x" (X + 30) " y" (Y + 30) " w100 h70 NA")
+    AssertEq(WindowAtCenter(Cover), Cover.Hwnd, A_LineNumber)
     WinGetClientPos(&CoverX, &CoverY, &CoverWidth, &CoverHeight, "ahk_id " Cover.Hwnd)
     PointX := CoverX + CoverWidth // 2
     PointY := CoverY + CoverHeight // 2
-    AssertEq(WindowAt(PointX, PointY, Cover.Hwnd), Cover.Hwnd, A_LineNumber)
 
     Cover.Hide()
     AssertEq(WindowAt(PointX, PointY, Target.Hwnd), Target.Hwnd, A_LineNumber)
@@ -42,6 +42,18 @@ try {
 }
 
 FileAppend "pass", "*"
+
+WindowAtCenter(Window) {
+    ; Wayland placement can change while the shown window is being correlated.
+    Loop 100 {
+        WinGetClientPos(&ClientX, &ClientY, &ClientWidth, &ClientHeight, "ahk_id " Window.Hwnd)
+        PointHandle := WinFromPoint(ClientX + ClientWidth // 2, ClientY + ClientHeight // 2)
+        if PointHandle = Window.Hwnd
+            return PointHandle
+        Sleep(10)
+    }
+    return PointHandle
+}
 
 WindowAt(X, Y, Expected) {
     Loop 100 {

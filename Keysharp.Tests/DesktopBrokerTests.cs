@@ -428,6 +428,156 @@ namespace Keysharp.Tests
 		}
 
 		[Test]
+		public void SnapshotRefreshPreservesWindowEvents()
+		{
+			var mirror = new DesktopWindowMirror();
+			var events = new List<WaylandWindowEventKind>();
+			ulong sequence = 0;
+			void Refresh(params WaylandWindowInfo[] windows)
+			{
+				events.Clear();
+				Assert.That(mirror.Apply(1, 1, ++sequence, null, out _), Is.True);
+				foreach (var window in windows)
+					Assert.That(mirror.Apply(2, 1, sequence, window, out _), Is.True);
+				Assert.That(mirror.Apply(3, 1, sequence, null, out _, out var changes), Is.True);
+				foreach (var change in changes)
+					DesktopClient.DispatchWindowEvents(change.Kind, change.Window, change.Previous,
+						(kind, _) => events.Add(kind));
+			}
+			Refresh(Window());
+			Assert.That(events, Is.Empty, "the initial snapshot seeds state without reporting existing windows");
+			Refresh(Window());
+			Assert.That(events, Is.Empty, "an unchanged compositor refresh must stay silent");
+			var minimized = new WaylandWindowInfo(42, title: "edited", visible: true, minimized: true);
+			Refresh(minimized);
+			Assert.That(events, Is.EqualTo(new[] { WaylandWindowEventKind.TitleChanged, WaylandWindowEventKind.Minimized }));
+			Assert.That(mirror.TryRead(out var current), Is.True);
+			Assert.That(current.Single(), Is.SameAs(minimized), "refresh events describe committed window state");
+			Refresh(minimized);
+			Assert.That(events, Is.Empty, "replaying a changed snapshot must not repeat its events");
+			Refresh(Window(title: "edited"));
+			Assert.That(events, Is.EqualTo(new[] { WaylandWindowEventKind.Restored }));
+			Refresh(new WaylandWindowInfo(42, title: "unknown", minimized: true, knownFields: WaylandWindowFields.None));
+			Assert.That(events, Is.Empty, "unknown fields cannot invent snapshot transitions");
+			Refresh(Window(), new WaylandWindowInfo(43));
+			Assert.That(events, Is.EqualTo(new[] { WaylandWindowEventKind.Created }));
+			Refresh(Window());
+			Assert.That(events, Is.EqualTo(new[] { WaylandWindowEventKind.Closed }));
+			mirror.Invalidate();
+			Refresh(Window(title: "recovered"));
+			Assert.That(events, Is.Empty, "a fresh stream must seed state again after invalidation");
+		}
+
+		[Test]
+		public void IdOnlyWindowCloseKeepsItsPreviousLifetimeIdentity()
+		{
+			const string json = """
+				{"ok":true,"window":{"id":"4200","compositorId":"0xabcd",
+				"frame":{"x":10,"y":20,"width":200,"height":100}}}
+				""";
+			Assert.That(DesktopWindowParser.TrySingle(Encoding.UTF8.GetBytes(json),
+				_ => new nint(42), out var full), Is.True);
+			try
+			{
+				BindOwnEventWindow(full, 101);
+				var mirror = new DesktopWindowMirror();
+				mirror.Apply(1, 1, 0, null, out _);
+				mirror.Apply(2, 1, 0, full, out _);
+				mirror.Apply(3, 1, 0, null, out _);
+				var closed = new WaylandWindowInfo(0, compositorId: "4200",
+					serviceHandle: 4200, knownFields: WaylandWindowFields.None);
+				Assert.That(mirror.Apply(5, 1, 1, closed, out var previous), Is.True);
+				Assert.That(previous, Is.SameAs(full));
+				DesktopClient.DispatchWindowEvents(5, closed, previous, (kind, reported) =>
+				{
+					Assert.That(kind, Is.EqualTo(WaylandWindowEventKind.Closed));
+					Assert.That(reported, Is.SameAs(full), "An id-only close retains the previous lifetime identity.");
+				});
+				Assert.That(WaylandOwnToplevels.ResolveEventHandle(full.Handle), Is.EqualTo(new nint(101)));
+				WaylandOwnToplevels.RetireEventAlias(previous ?? closed);
+				Assert.That(WaylandOwnToplevels.ResolveEventHandle(full.Handle), Is.EqualTo(full.Handle));
+			}
+			finally { WaylandOwnToplevels.Reset(); }
+		}
+
+		[Test]
+		public void CloseIdentitySurvivesSnapshotPruning()
+		{
+			const string json = """
+				{"ok":true,"windows":[{"id":"4200","compositorId":"0xabcd",
+				"frame":{"x":10,"y":20,"width":200,"height":100}}]}
+				""";
+			var backend = new DesktopBackend("close-test", "test");
+			Assert.That(backend.TryParseWindowList(Encoding.UTF8.GetBytes(json), out var windows), Is.True);
+			var original = windows.Single();
+			try
+			{
+				BindOwnEventWindow(original, 101);
+				var empty = Encoding.UTF8.GetBytes("{\"ok\":true,\"windows\":[]}");
+				backend.TryParseWindowList(empty, out _);
+				backend.TryParseWindowList(empty, out _);
+				Assert.That(backend.IsKnown(original.Handle), Is.False);
+				var closed = new WaylandWindowInfo(0, serviceHandle: 4200, knownFields: WaylandWindowFields.None);
+				var normalized = backend.ResolveWindowEvent(WaylandWindowEventKind.Closed, closed);
+				Assert.That(normalized.Handle, Is.EqualTo(new nint(101)),
+					"A queued close keeps the form handle after queries retire its synthetic handle.");
+				WaylandOwnToplevels.RetireEventAlias(original);
+				Assert.That(backend.ResolveWindowEvent(WaylandWindowEventKind.Closed, closed).Handle,
+					Is.Not.EqualTo(new nint(101)));
+			}
+			finally { WaylandOwnToplevels.Reset(); }
+		}
+
+		[Test]
+		public void PollingCloseRetiresOwnIdentityAfterCapture()
+		{
+			var original = new WaylandWindowInfo(42, "poll-first", serviceHandle: 4200,
+				frameGeometry: new Rectangle(10, 20, 200, 100));
+			var tracker = new WaylandWindowSnapshotTracker();
+			try
+			{
+				BindOwnEventWindow(original, 101);
+				tracker.Update([original], _ => { }, WaylandOwnToplevels.RetireEventAlias);
+				tracker.Update([new WaylandWindowInfo(42, "4200", serviceHandle: 4200,
+					knownFields: WaylandWindowFields.None)], _ => { }, WaylandOwnToplevels.RetireEventAlias);
+				tracker.Update([], windowEvent =>
+				{
+					Assert.That(windowEvent.Kind, Is.EqualTo(WaylandWindowEventKind.Closed));
+					Assert.That(WaylandOwnToplevels.ResolveEventHandle(windowEvent.Handle), Is.EqualTo(new nint(101)));
+				}, WaylandOwnToplevels.RetireEventAlias);
+				Assert.That(WaylandOwnToplevels.ResolveEventHandle(original.Handle), Is.EqualTo(original.Handle));
+
+				var oldMap = new WaylandWindowInfo(42, "poll-second", serviceHandle: 4201,
+					frameGeometry: original.FrameGeometry);
+				var newer = new WaylandWindowInfo(42, "poll-third", serviceHandle: 4202,
+					frameGeometry: original.FrameGeometry);
+				BindOwnEventWindow(oldMap, 102);
+				tracker.Update([oldMap], _ => { }, WaylandOwnToplevels.RetireEventAlias);
+				tracker.Update([], windowEvent =>
+				{
+					Assert.That(WaylandOwnToplevels.ResolveEventHandle(windowEvent.Handle), Is.EqualTo(new nint(102)));
+					BindOwnEventWindow(newer, 103);
+				}, WaylandOwnToplevels.RetireEventAlias);
+				Assert.That(WaylandOwnToplevels.ResolveEventHandle(newer.Handle), Is.EqualTo(new nint(103)),
+					"closing an older map cannot retire a newer alias");
+			}
+			finally { WaylandOwnToplevels.Reset(); }
+		}
+
+		private static void BindOwnEventWindow(WaylandWindowInfo window, nint formHandle)
+		{
+			// Exercise map identity without creating a GTK window or contacting a compositor.
+			const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
+			var stateType = typeof(WaylandOwnToplevels).GetNestedType("FormState", BindingFlags.NonPublic);
+			var state = Activator.CreateInstance(stateType, nonPublic: true);
+			stateType.GetField("FormHandle", flags).SetValue(state, formHandle);
+			stateType.GetField("Mapped", flags).SetValue(state, true);
+			stateType.GetField("MapGeneration", flags).SetValue(state, 1);
+			var claim = typeof(WaylandOwnToplevels).GetMethod("Claim", BindingFlags.NonPublic | BindingFlags.Static);
+			Assert.That(claim.Invoke(null, [state, 1, window]), Is.SameAs(window));
+		}
+
+		[Test]
 		public void RpcRetirementPreservesANewerLease()
 		{
 			const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
@@ -564,6 +714,11 @@ namespace Keysharp.Tests
 		[Test]
 		public void ServiceIdentifiersKeepTheirFullWidthAndStackingOrder()
 		{
+			Assert.That(DesktopWindowParser.TrySingle(
+				Encoding.UTF8.GetBytes("{\"ok\":true,\"window\":{\"id\":\"4294967338\"}}"),
+				_ => new nint(24), out var queried), Is.True);
+			Assert.That(queried.Handle, Is.EqualTo(new nint(24)));
+			Assert.That(queried.ServiceHandle, Is.EqualTo(0x10000002AUL));
 			var mirror = new DesktopWindowMirror();
 			mirror.Apply(1, 1, 0, null, out _);
 			mirror.Apply(2, 1, 0, new WaylandWindowInfo(0, serviceHandle: 0x10000002A, stackingOrder: 2), out _);

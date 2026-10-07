@@ -10,6 +10,40 @@ namespace Keysharp.Tests
 {
 	public class RunnerTests : TestRunner
 	{
+		[TestCase(true), TestCase(false), Category("Internal"), Category("Curated")]
+		public void CompilationContextLifetime(bool execute)
+		{
+			Script compilationContext = null;
+
+			void CaptureContext(object sender, AssemblyLoadEventArgs args)
+			{
+				if (args.LoadedAssembly.GetType($"{Keywords.MainNamespaceName}.{Keywords.MainClassName}") != null)
+					compilationContext = Script.TheScript;
+			}
+
+			AppDomain.CurrentDomain.AssemblyLoad += CaptureContext;
+
+			try
+			{
+				var previousOutput = Console.Out;
+				var output = RunScript("#ErrorStdOut\n#Warn All, StdOut\nFileAppend 'pass', '*'\n",
+					"compilation-context-lifetime", execute, false);
+				Assert.AreSame(previousOutput, Console.Out, "A script run must restore the test host's output writer.");
+				Assert.IsNotNull(compilationContext);
+				Assert.AreEqual(execute, compilationContext.IsDisposed,
+					"An executing program must release its compilation context; a compile-only run still owns it.");
+				Assert.AreEqual(!execute, ReferenceEquals(compilationContext, s));
+
+				if (execute)
+					Assert.IsTrue(HasPassed(output));
+			}
+			finally
+			{
+				AppDomain.CurrentDomain.AssemblyLoad -= CaptureContext;
+				compilationContext?.Dispose();
+			}
+		}
+
 		[Test, Category("Misc")]
 		public void CommandLineSwitches()
 		{

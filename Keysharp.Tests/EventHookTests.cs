@@ -596,28 +596,115 @@ namespace Keysharp.Tests
 			}
 		}
 
+		private sealed class ForegroundBackend : IWindowEventBackend
+		{
+			internal Action Starting;
+			internal Action<WindowEventMask> Stopping;
+			public Action<WindowEventRaw> Sink { get; set; }
+			public void Start(WindowEventMask mask) => Starting?.Invoke();
+			public void Stop(WindowEventMask mask) => Stopping?.Invoke(mask);
+			public void Dispose() { }
+		}
+
+		[Test]
+		public void ForegroundStartupFailureCanRetry()
+		{
+			var backend = new ForegroundBackend();
+			var starts = 0;
+			var stopped = WindowEventMask.None;
+			backend.Starting = () =>
+			{
+				if (++starts == 1)
+					throw new InvalidOperationException("Native install failed.");
+			};
+			backend.Stopping = mask => stopped |= mask;
+			using var manager = new WinEventManager(Script.TheScript, () => 0x1110, () => backend);
+
+			manager.SetForegroundTracking(true);
+			Assert.AreEqual(WindowEventMask.Active | WindowEventMask.Close, stopped,
+				"A failed startup rolls back its partially installed hooks.");
+			manager.SetForegroundTracking(true);
+			Assert.AreEqual(2, starts, "A later attempt must install the native source again.");
+			backend.Sink(new WindowEventRaw(WindowEventType.Active, 0x2220, 0));
+			Assert.AreEqual((nint)0x2220, manager.ForegroundWindowHandle);
+		}
+
+		[TestCase(0), TestCase(0x1110)]
+		public void ForegroundCacheInitialization(int initial)
+		{
+			var backend = new ForegroundBackend();
+			nint foreground = initial;
+			nint duringStartup = -1;
+			var queries = 0;
+			using var manager = new WinEventManager(Script.TheScript,
+				() => { queries++; return foreground; }, () => backend);
+			backend.Starting = () => duringStartup = manager.ForegroundWindowHandle;
+
+			manager.SetForegroundTracking(true);
+			Assert.AreEqual((nint)initial, duringStartup, "Reads during backend startup use the live foreground.");
+			Assert.AreEqual(2, queries, "The startup read and initial snapshot both query the foreground.");
+			foreground = 0x2220;
+			Assert.AreEqual((nint)initial, manager.ForegroundWindowHandle, "A seeded zero is also a valid cached foreground.");
+			Assert.AreEqual(2, queries, "A seeded cache avoids live queries.");
+
+			manager.SetForegroundTracking(false);
+			backend.Starting = () =>
+			{
+				duringStartup = manager.ForegroundWindowHandle;
+				backend.Sink(new WindowEventRaw(WindowEventType.Active, 0, 0));
+			};
+			manager.SetForegroundTracking(true);
+			Assert.AreEqual((nint)0x2220, duringStartup, "Restarting tracking does not expose the previous cache.");
+			Assert.AreEqual((nint)0, manager.ForegroundWindowHandle, "A native event wins over the startup snapshot.");
+			Assert.AreEqual(4, queries, "An authoritative native zero does not cause another live query.");
+		}
+
+		[TestCase((int)WindowEventType.Close), TestCase((int)WindowEventType.Deactivate)]
+		public void ForegroundRemovalRejectsPendingSeed(int type)
+		{
+			var backend = new ForegroundBackend();
+			var queries = 0;
+			using var manager = new WinEventManager(Script.TheScript, () =>
+			{
+				if (++queries == 1)
+				{
+					backend.Sink(new WindowEventRaw((WindowEventType)type, 0x1110, 0));
+					return 0x1110;
+				}
+
+				return 0;
+			}, () => backend);
+
+			manager.SetForegroundTracking(true);
+			Assert.AreEqual(1, queries);
+			Assert.AreEqual((nint)0, manager.ForegroundWindowHandle, "The removed window cannot become the cached foreground.");
+			Assert.AreEqual(2, queries, "An invalidated seed falls back to a fresh foreground query.");
+			Assert.AreEqual((nint)0, manager.ForegroundWindowHandle);
+			Assert.AreEqual(3, queries, "A removal does not establish an authoritative zero foreground.");
+
+			backend.Sink(new WindowEventRaw(WindowEventType.Active, 0, 0));
+			Assert.AreEqual((nint)0, manager.ForegroundWindowHandle);
+			Assert.AreEqual(3, queries, "An authoritative native zero finishes cache initialization.");
+		}
+
 		/// <summary>A deactivation clears the tracked foreground only when it names that window, so focus moving to no
 		/// window does not leave a stale foreground behind.</summary>
 		[Test, Category("Internal"), NonParallelizable]
 		public void DeactivateClearsOnlyTheTrackedForeground()
 		{
-			var manager = Script.TheScript.WinEventManager;
-			var tracked = typeof(WinEventManager).GetField("foregroundWindowHandle",
-				System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+			using var manager = new WinEventManager(Script.TheScript, () => 0, () => new ForegroundBackend());
 
 			nint Send(WindowEventType type, nint hwnd)
 			{
 				manager.OnNativeEvent(new WindowEventRaw(type, hwnd, 0));
-				return (nint)tracked.GetValue(manager);
+				return manager.ForegroundWindowHandle;
 			}
 
 			manager.SetForegroundTracking(true);
 
 			try
 			{
-				if (Send(WindowEventType.Active, 0x1110) != 0x1110)
-					Assert.Ignore("This environment has no window-event source.");
-
+				Assert.AreEqual((nint)0x1110, Send(WindowEventType.Active, 0x1110));
 				Assert.AreEqual((nint)0x1110, Send(WindowEventType.Deactivate, 0x2220), "Another window's deactivation is ignored.");
 				Assert.AreEqual((nint)0, Send(WindowEventType.Deactivate, 0x1110), "The foreground window's deactivation clears it.");
 			}

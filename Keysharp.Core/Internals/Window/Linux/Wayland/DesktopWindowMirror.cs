@@ -3,11 +3,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 {
 	internal sealed class DesktopWindowMirror
 	{
+		internal readonly record struct SnapshotChange(uint Kind, WaylandWindowInfo Window, WaylandWindowInfo Previous);
 		private readonly object sync = new();
 		private Dictionary<ulong, WaylandWindowInfo> windows = [];
 		private Dictionary<ulong, WaylandWindowInfo> snapshot;
 		private ulong epoch, sequence;
 		private bool ready;
+		private bool compareSnapshot;
 		private readonly HashSet<ulong> knownWindows = [];
 		private TaskCompletionSource<bool> changed = new(TaskCreationOptions.RunContinuationsAsynchronously);
 		internal Task ChangeSignal { get { lock (sync) return changed.Task; } }
@@ -28,6 +30,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				epoch = 0;
 				sequence = 0;
 				snapshot = null;
+				compareSnapshot = false;
 				windows.Clear();
 				knownWindows.Clear();
 				SignalChange();
@@ -35,12 +38,18 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		internal bool Apply(uint kind, ulong nextEpoch, ulong nextSequence, WaylandWindowInfo window, out WaylandWindowInfo previous)
+			=> Apply(kind, nextEpoch, nextSequence, window, out previous, out _);
+
+		internal bool Apply(uint kind, ulong nextEpoch, ulong nextSequence, WaylandWindowInfo window,
+			out WaylandWindowInfo previous, out IReadOnlyList<SnapshotChange> snapshotChanges)
 		{
 			lock (sync)
 			{
+				snapshotChanges = [];
 				previous = window != null ? windows.GetValueOrDefault(window.ServiceHandle) : null;
 				if (kind == 1)
 				{
+					compareSnapshot = ready && epoch == nextEpoch;
 					ready = false;
 					epoch = nextEpoch;
 					sequence = nextSequence;
@@ -61,8 +70,20 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				}
 				else if (kind == 3 && snapshot != null)
 				{
+					if (compareSnapshot)
+					{
+						// A compositor refresh can consume a property notification before its live delta arrives.
+						var changes = new List<SnapshotChange>();
+						foreach (var current in snapshot.Values)
+							changes.Add(windows.TryGetValue(current.ServiceHandle, out var prior)
+								? new(11, current, prior) : new(4, current, null));
+						foreach (var prior in windows.Values)
+							if (!snapshot.ContainsKey(prior.ServiceHandle)) changes.Add(new(5, prior, prior));
+						snapshotChanges = changes;
+					}
 					windows = snapshot;
 					snapshot = null;
+					compareSnapshot = false;
 					ready = true;
 				}
 				else if (kind >= 4 && kind <= 11 && window != null && snapshot == null)

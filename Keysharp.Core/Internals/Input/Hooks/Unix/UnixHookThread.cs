@@ -3,9 +3,6 @@ using Keysharp.Builtins;
 using System;
 using System.Collections.Generic;
 using Keysharp.Internals.Input.Keyboard;
-#if LINUX
-using Keysharp.Internals.Input.Linux;
-#endif
 using static Keysharp.Internals.Input.Keyboard.KeyboardUtils;
 using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
 using static Keysharp.Internals.Input.Keyboard.KeyboardMouseSender;
@@ -50,9 +47,6 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 		internal UnixHookThread(Script script, string mutexName) : base(script, mutexName)
 		{
 			ConfigureScanCodeNames();
-#if LINUX
-			_ = DesktopKeyboardState.Current.Get();
-#endif
 		}
 
 		internal SendScope EnterSendScope() => new(this);

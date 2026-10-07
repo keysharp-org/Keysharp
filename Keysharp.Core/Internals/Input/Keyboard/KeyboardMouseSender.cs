@@ -1320,6 +1320,9 @@ namespace Keysharp.Internals.Input.Keyboard
 
 		internal virtual void SendCharToTargetWindow(char ch, nint targetWindow) { }
 
+		protected virtual void SendTextKey(uint vk, uint modifiersLR, uint persistentModifiersLR, nint targetWindow)
+			=> SendKey(vk, 0, modifiersLR, persistentModifiersLR, 1, KeyEventTypes.KeyDownAndUp, 0, targetWindow);
+
 		/// <summary>Whether targeted sends also modify global keyboard state.</summary>
 		protected virtual bool TargetWindowSendUsesGlobalInput => true;
 
@@ -2148,7 +2151,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 						vk = sub[keyIndex] switch
 					{
-							'\n' => VK_RETURN,
+							'\r' or '\n' => VK_RETURN,
 							'\b' => VK_BACK,
 							'\t' => VK_TAB,
 							_ => 0,
@@ -2166,7 +2169,12 @@ namespace Keysharp.Internals.Input.Keyboard
 					}
 
 					if (vk != 0)
-						SendKey(vk, 0, modsForNextKey.Value, persistentModifiersForThisSendKeys, 1, KeyEventTypes.KeyDownAndUp, 0, targetWindow);
+					{
+						if (sendRaw == SendRawModes.RawText)
+							SendTextKey(vk, modsForNextKey.Value, persistentModifiersForThisSendKeys, targetWindow);
+						else
+							SendKey(vk, 0, modsForNextKey.Value, persistentModifiersForThisSendKeys, 1, KeyEventTypes.KeyDownAndUp, 0, targetWindow);
+					}
 					else // Try to send it by alternate means.
 					{
 						// In this mode, mods_for_next_key is ignored due to being unsupported.

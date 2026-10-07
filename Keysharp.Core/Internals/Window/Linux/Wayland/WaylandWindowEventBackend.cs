@@ -253,6 +253,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				if (windowEvent.Handle == 0)
 					return;
 
+				// Queued events keep their own-window identity after the compositor binding is retired.
+				windowEvent = windowEvent with { Handle = WaylandOwnToplevels.ResolveEventHandle(windowEvent.Handle) };
 				var move = windowEvent.Kind == WaylandWindowEventKind.MoveResized;
 				var dropped = false;
 

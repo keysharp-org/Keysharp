@@ -659,6 +659,21 @@ namespace Keysharp.Internals.Input.Linux
 
 		protected override bool TargetWindowSendUsesGlobalInput => false;
 
+		protected override void SendTextKey(uint vk, uint modifiersLR, uint persistentModifiersLR, nint targetWindow)
+		{
+			var previous = targetTextKey;
+			targetTextKey = targetWindow != 0;
+
+			try
+			{
+				base.SendTextKey(vk, modifiersLR, persistentModifiersLR, targetWindow);
+			}
+			finally
+			{
+				targetTextKey = previous;
+			}
+		}
+
 		// ControlSend reaches only the script's own windows, as GTK key events. Their modifiers travel as the state of
 		// those events, as Windows sets the target thread's keyboard state, rather than being pressed for every window.
 		internal override void SetModifierLRState(uint modifiersLRnew, uint modifiersLRnow, nint targetWindow
@@ -706,12 +721,100 @@ namespace Keysharp.Internals.Input.Linux
 			if (char.IsLowSurrogate(ch) && high == '\0')
 				return;
 
-			var keyval = Gdk.Global.UnicodeToKeyval(char.IsLowSurrogate(ch) ? (uint)char.ConvertToUtf32(high, ch) : ch);
-			script.InvokeOnUIThread(() =>
+			var codepoint = char.IsLowSurrogate(ch) ? char.ConvertToUtf32(high, ch) : ch;
+			script.PostToUIThread(() =>
 			{
+				//Literal text bypasses input methods, which can queue and reorder synthetic keys.
+				var widget = GetGtkTarget(targetWindow, out var owner);
+				owner?.Properties.Get<Gtk.IMContextSimple>(GtkInputContextKey)?.Reset();
+				if (TryCommitGtkText(widget, char.ConvertFromUtf32(codepoint), owner))
+					return;
+
+				var keyval = Gdk.Global.UnicodeToKeyval((uint)codepoint);
 				SendGtkKeyEvent(targetWindow, true, keyval, 0, 0, 0, false);
 				SendGtkKeyEvent(targetWindow, false, keyval, 0, 0, 0, false);
 			});
+		}
+
+		private static bool TryCommitGtkText(Gtk.Widget widget, string text, Control owner = null)
+		{
+			if (widget is not Gtk.Entry and not Gtk.TextView)
+				return false;
+			if (widget is Gtk.Entry { IsEditable: false } or Gtk.TextView { Editable: false })
+				return true;
+
+			var entry = widget as Gtk.Entry;
+			entry?.ResetImContext();
+			var entryStart = 0;
+			var entryEnd = 0;
+			if (entry != null && !entry.GetSelectionBounds(out entryStart, out entryEnd))
+			{
+				entryStart = entryEnd = entry.Position;
+				if (entry.OverwriteMode && entryEnd < entry.Buffer.Length)
+				{
+					entryEnd++;
+					if (entry.Visibility)
+					{
+						var attributes = entry.Layout.LogAttrs;
+						while (entryEnd < entry.Buffer.Length && !attributes[entryEnd].IsCursorPosition)
+							entryEnd++;
+					}
+				}
+			}
+
+			owner ??= Control.FromHandle(widget.Handle);
+			if (owner is Eto.ICallbackSource { Callback: Control.ICallback callback })
+			{
+				if (entry != null && owner is TextBox box && callback is TextBox.ICallback textBoxCallback)
+				{
+					var changing = new TextChangingEventArgs(text, new Eto.Forms.Range<int>(entryStart, entryEnd - 1), TextChangeSource.Keyboard);
+					textBoxCallback.OnTextChanging(box, changing);
+					if (changing.Cancel)
+						return true;
+				}
+
+				// Cancellable input precedes any selection or overwrite deletion.
+				var args = new TextInputEventArgs(text);
+				callback.OnTextInput(owner, args);
+				if (args.Cancel)
+					return true;
+			}
+
+			if (entry != null)
+			{
+				// Editable signals would raise the cancellable callbacks again for a TextBox.
+				_ = entry.Buffer.DeleteText((uint)entryStart, entryEnd - entryStart);
+				entry.Position = entryStart + (int)entry.Buffer.InsertText((uint)entryStart, text, -1);
+				return true;
+			}
+
+			var view = (Gtk.TextView)widget;
+			var buffer = view.Buffer;
+			buffer.BeginUserAction();
+
+			try
+			{
+				var selected = buffer.GetSelectionBounds(out _, out _);
+				_ = buffer.DeleteSelection(true, view.Editable);
+
+				if (!selected && view.Overwrite && text != "\n")
+				{
+					var start = buffer.GetIterAtMark(buffer.InsertMark);
+					var end = start;
+
+					if (!start.EndsLine() && end.ForwardCursorPosition())
+						_ = buffer.DeleteInteractive(ref start, ref end, view.Editable);
+				}
+
+				_ = buffer.InsertInteractiveAtCursor(text, view.Editable);
+			}
+			finally
+			{
+				buffer.EndUserAction();
+			}
+
+			view.ScrollMarkOnscreen(buffer.InsertMark);
+			return true;
 		}
 
 		private void SendGtkKey(nint targetWindow, bool down, uint vk, uint sc, bool isModifier)
@@ -722,14 +825,15 @@ namespace Keysharp.Internals.Input.Linux
 
 			var modifiersLR = targetHeldModifiersLR | targetSentModifiersLR;
 			var group = (int)KeyCodes.GetActiveLayoutGroup();
-			script.InvokeOnUIThread(() =>
+			var textKey = targetTextKey;
+			script.PostToUIThread(() =>
 			{
 				var keymap = Gdk.Keymap.GetForDisplay(Gdk.Display.Default);
 				var state = GdkModifierState(keymap, group, modifiersLR);
 
 				//GDK derives the key's symbol from its keycode and modifiers, as for a key typed on the keyboard.
 				if (keymap.TranslateKeyboardState(keycode, state, group, out var keyval, out _, out _, out _))
-					SendGtkKeyEvent(targetWindow, down, keyval, keycode, group, state, isModifier);
+					SendGtkKeyEvent(targetWindow, down, keyval, keycode, group, state, isModifier, textKey);
 			});
 		}
 
@@ -758,18 +862,101 @@ namespace Keysharp.Internals.Input.Linux
 			return state;
 		}
 
-		/// <summary>
-		/// Gives a key event to the GTK widget of one of the script's own windows or controls, as the toolkit would give
-		/// it a key typed there; a window passes it on to its focused control. Must run on the UI thread.
-		/// </summary>
-		private static void SendGtkKeyEvent(nint targetWindow, bool down, uint keyval, uint keycode, int group, Gdk.ModifierType state, bool isModifier)
+		private static Gtk.Widget GetGtkTarget(nint targetWindow, out Control owner)
 		{
-			if (Control.FromHandle(targetWindow)?.ControlObject is not Gtk.Widget widget)
-				return;
+			owner = Control.FromHandle(targetWindow);
+			if (owner?.ControlObject is not Gtk.Widget widget)
+				return null;
+
+			//Use the focused child's GDK window for synthetic keys, including while its top-level window is inactive.
+			if (widget is Gtk.Window { Focus: Gtk.Widget focused })
+			{
+				widget = focused;
+				for (var ancestor = focused; ancestor != null; ancestor = ancestor.Parent)
+				{
+					if (Control.FromHandle(ancestor.Handle) is Control focusedOwner)
+					{
+						owner = focusedOwner;
+						break;
+					}
+				}
+			}
 
 			//An editable GTK combo box takes typing in its entry, as a Win32 ComboBox passes it to its edit.
 			if (widget is Gtk.ComboBox { HasEntry: true, Child: Gtk.Widget entry })
 				widget = entry;
+
+			return widget;
+		}
+
+		private static readonly object GtkInputContextKey = new();
+
+		private static Gtk.IMContextSimple GetGtkInputContext(Gtk.Widget widget, Control owner)
+		{
+			return owner.Properties.Create(GtkInputContextKey, () =>
+			{
+				var context = new Gtk.IMContextSimple { UsePreedit = false };
+				context.Commit += (_, args) =>
+				{
+					if (!string.IsNullOrEmpty(args.Str))
+						_ = TryCommitGtkText(widget, args.Str, owner);
+				};
+				widget.Destroyed += (_, _) =>
+				{
+					owner.Properties.Remove(GtkInputContextKey);
+					context.Dispose();
+				};
+				return context;
+			});
+		}
+
+		private static bool SendGtkEditKey(Gtk.Widget widget, Control owner, Gdk.EventKey key, KeyEventArgs args, bool textKey)
+		{
+			var down = key.Type == Gdk.EventType.KeyPress;
+			if (args != null && owner is Eto.ICallbackSource { Callback: Control.ICallback callback })
+			{
+				if (down)
+					callback.OnKeyDown(owner, args);
+				else
+					callback.OnKeyUp(owner, args);
+				if (args.Handled)
+					return true;
+			}
+
+			var editable = widget is Gtk.Entry { IsEditable: true } or Gtk.TextView { Editable: true };
+			if (textKey || !editable)
+				owner.Properties.Get<Gtk.IMContextSimple>(GtkInputContextKey)?.Reset();
+			else if (GetGtkInputContext(widget, owner).FilterKeypress(key))
+				return true;
+
+			if (Gtk.Bindings.ActivateEvent(widget, key))
+				return true;
+
+			if (!down)
+				return false;
+
+			if (widget is Gtk.TextView view && key.KeyValue is (uint)Gdk.Key.Return or (uint)Gdk.Key.KP_Enter or (uint)Gdk.Key.ISO_Enter)
+				return TryCommitGtkText(view, "\n", owner);
+			else if (key.KeyValue is (uint)Gdk.Key.Tab or (uint)Gdk.Key.KP_Tab or (uint)Gdk.Key.ISO_Left_Tab)
+			{
+				if (widget is Gtk.TextView { AcceptsTab: true, Editable: true } area && (key.State & Gdk.ModifierType.ControlMask) == 0)
+					_ = TryCommitGtkText(area, "\t", owner);
+				else
+					_ = GLib.Signal.Emit(widget, "move-focus", (key.State & Gdk.ModifierType.ShiftMask) != 0 ? Gtk.DirectionType.TabBackward : Gtk.DirectionType.TabForward);
+				return true;
+			}
+
+			return false;
+		}
+
+		/// <summary>
+		/// Delivers a key to one of the script's own GTK windows or controls. Must run on the UI thread.
+		/// </summary>
+		private static void SendGtkKeyEvent(nint targetWindow, bool down, uint keyval, uint keycode, int group, Gdk.ModifierType state, bool isModifier, bool textKey = false)
+		{
+			var windowOwner = Control.FromHandle(targetWindow) as Eto.Forms.Window;
+			if (GetGtkTarget(targetWindow, out var owner) is not Gtk.Widget widget)
+				return;
 
 			if (!widget.IsRealized)
 				widget.Realize();
@@ -798,7 +985,39 @@ namespace Keysharp.Internals.Input.Linux
 				if (widget.Display.DefaultSeat?.Keyboard is Gdk.Device keyboard)
 					gdk_event_set_device(ev, keyboard.Handle);
 
-				_ = widget.ProcessEvent(new Gdk.Event(ev));
+				if (widget is Gtk.Entry or Gtk.TextView)
+				{
+					// A system input method can defer a command past a later literal commit, including in inactive edits.
+					// Synthetic edits use Eto callbacks and GTK actions; custom native key signal observers are not invoked.
+					var key = new Gdk.EventKey(ev);
+					var args = Eto.GtkSharp.GtkConversions.ToEto(key);
+					var window = windowOwner?.ControlObject as Gtk.Window;
+					var windowCallback = (windowOwner as Eto.ICallbackSource)?.Callback as Eto.Forms.Window.ICallback;
+					if (args != null && windowCallback != null)
+					{
+						var monitor = new KeyMonitorEventArgs(args.KeyData, down ? KeyEventType.KeyDown : KeyEventType.KeyUp);
+						if (down)
+							windowCallback.OnPreviewKeyDown(windowOwner, monitor);
+						else
+							windowCallback.OnPreviewKeyUp(windowOwner, monitor);
+					}
+
+					if (down && window?.ActivateKey(key) == true)
+						return;
+
+					if (!SendGtkEditKey(widget, owner, key, args, textKey)
+							&& window != null && !Gtk.Bindings.ActivateEvent(window, key)
+							&& args != null && windowCallback != null)
+					{
+						if (down)
+							windowCallback.OnKeyDown(windowOwner, args);
+						else
+							windowCallback.OnKeyUp(windowOwner, args);
+					}
+					return;
+				}
+
+				_ = (windowOwner?.ControlObject as Gtk.Widget ?? widget).ProcessEvent(new Gdk.Event(ev));
 			}
 			finally
 			{
@@ -808,6 +1027,7 @@ namespace Keysharp.Internals.Input.Linux
 
 		private uint targetHeldModifiersLR, targetSentModifiersLR;
 		private char targetHighSurrogate;
+		private bool targetTextKey;
 
 		[StructLayout(LayoutKind.Sequential)]
 		private struct GdkEventKey

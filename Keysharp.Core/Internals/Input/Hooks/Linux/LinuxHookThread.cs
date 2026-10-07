@@ -212,6 +212,9 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 				return false;
 			}
 
+			// Prepare the desktop keymap before callbacks can translate keys or send text.
+			_ = script.LinuxServices.KeyboardState.Get();
+
 			WaitForDisplayServerBeforeGrab();
 
 			if (TryChangeSubscribedKinds(wantedHooks))

@@ -656,10 +656,7 @@ namespace Keysharp.Builtins
 				var bmp = ImageHelper.NewArgbCanvas(pw, ph);
 
 				if (((uint)bg >> 24) != 0)
-				{
-					using var g = ImageHelper.MakeGraphics(bmp, highQuality: false);
-					g.Clear(ImageHelper.ArgbToColor(bg));
-				}
+					ImageHelper.ClearInPlace(bmp, bg, new PixelRect(0, 0, pw, ph));
 
 				var wrapped = Wrap(bmp);
 
@@ -905,10 +902,7 @@ namespace Keysharp.Builtins
 					var dst = ImageHelper.NewArgbCanvas(b.Width, b.Height);
 
 					if (((uint)argb >> 24) != 0)
-					{
-						using var g = ImageHelper.MakeGraphics(dst, highQuality: false);
-						g.Clear(ImageHelper.ArgbToColor(argb));
-					}
+						ImageHelper.ClearInPlace(dst, argb, new PixelRect(0, 0, dst.Width, dst.Height));
 
 					return dst;
 				});

@@ -3,6 +3,7 @@ using Assert = NUnit.Framework.Legacy.ClassicAssert;
 using Keysharp.Internals;
 using Keysharp.Internals.Images;
 #if LINUX
+using Keysharp.Internals.Window;
 using Keysharp.Internals.Window.Linux.Wayland;
 #endif
 #if OSX
@@ -465,6 +466,81 @@ namespace Keysharp.Tests
 			});
 		}
 
+		[Test, Category("Gui"), Category("Internal")]
+		public void WaylandOwnEventsPreserveIdentityThroughCloseAndRemap()
+		{
+			SkipIfUiInitializationBlocked("Own-window lifecycle tracking requires GTK.");
+			s.InvokeOnUIThread(() =>
+			{
+				using var first = new Eto.Forms.Form { Content = new PixelLayout(), ClientSize = new Size(200, 100) };
+				using var second = new Eto.Forms.Form { Content = new PixelLayout(), ClientSize = new Size(200, 100) };
+				var firstHandle = EtoExtensions.GetHandle(first);
+				var secondHandle = EtoExtensions.GetHandle(second);
+				var firstState = TrackOwnToplevel(first, firstHandle);
+				var secondState = TrackOwnToplevel(second, secondHandle);
+				var claim = typeof(WaylandOwnToplevels).GetMethod("Claim", BindingFlags.NonPublic | BindingFlags.Static);
+				var unmap = typeof(WaylandOwnToplevels).GetMethod("OnUnmapped", BindingFlags.NonPublic | BindingFlags.Static);
+				WaylandWindowInfo Bind(object state, string id, ulong serviceHandle)
+				{
+					SetOwnToplevelField(state, "Mapped", true);
+					SetOwnToplevelField(state, "MapGeneration", 1);
+					var window = new WaylandWindowInfo(42, id, pid: Environment.ProcessId,
+						frameGeometry: new Rectangle(10, 20, 200, 100), serviceHandle: serviceHandle);
+					Assert.AreSame(window, claim.Invoke(null, [state, 1, window]));
+					return window;
+				}
+
+				var original = Bind(firstState, "event-first-map", 4200);
+				var source = new ListingBackend(false);
+				using var adapter = new WaylandWindowEventBackend(s, source);
+				using var entered = new ManualResetEventSlim();
+				using var release = new ManualResetEventSlim();
+				using var delivered = new ManualResetEventSlim();
+				var events = new ConcurrentQueue<WindowEventRaw>();
+				adapter.Sink = raw =>
+				{
+					events.Enqueue(raw);
+					if (raw.Type == WindowEventType.TitleChange && raw.Hwnd == firstHandle)
+					{
+						entered.Set();
+						release.Wait(2000);
+					}
+					else delivered.Set();
+				};
+				adapter.Start(WindowEventMask.TitleChange | WindowEventMask.Close);
+				try
+				{
+					source.EventSink(new(WaylandWindowEventKind.TitleChanged, 42));
+					Assert.IsTrue(entered.Wait(2000));
+					unmap.Invoke(null, [firstState]);
+					Assert.AreEqual((nint)0, OwnToplevelField<nint>(firstState, "CompositorHandle"));
+					source.EventSink(new(WaylandWindowEventKind.Closed, 42));
+					WaylandOwnToplevels.RetireEventAlias(original);
+					var remapped = Bind(secondState, "event-second-map", 4201);
+					WaylandOwnToplevels.RetireEventAlias(original);
+					Assert.AreEqual(secondHandle, WaylandOwnToplevels.ResolveEventHandle(42));
+					release.Set();
+					Assert.IsTrue(delivered.Wait(2000));
+					Assert.AreEqual(new[] { firstHandle, firstHandle }, events.Select(item => item.Hwnd).ToArray());
+					Assert.IsTrue(events.Last().DestroyConfirmed);
+
+					adapter.Stop(WindowEventMask.Close);
+					delivered.Reset();
+					source.EventSink(new(WaylandWindowEventKind.Closed, 42));
+					WaylandOwnToplevels.RetireEventAlias(remapped);
+					source.EventSink(new(WaylandWindowEventKind.TitleChanged, 99));
+					Assert.IsTrue(delivered.Wait(2000));
+					Assert.AreEqual(3, events.Count, "a masked close must still retire the alias");
+					Assert.AreEqual((nint)99, events.Last().Hwnd);
+					Assert.AreEqual((nint)42, WaylandOwnToplevels.ResolveEventHandle(42));
+					Bind(secondState, "event-after-close", 4202);
+					WaylandOwnToplevels.Reset();
+					Assert.AreEqual((nint)42, WaylandOwnToplevels.ResolveEventHandle(42));
+				}
+				finally { release.Set(); }
+			});
+		}
+
 		// An explicit query can retry a listed miss before the background retry delay ends.
 		[Test, Category("Gui")]
 		public void WaylandCorrelationFailsOnlyOnAListWithoutTheWindow()
@@ -544,14 +620,22 @@ namespace Keysharp.Tests
 		private static void SetOwnToplevelField(object state, string name, object value)
 			=> state.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance).SetValue(state, value);
 
-		// A compositor that can only list its windows, and either lists none or cannot list at all.
-		private sealed class ListingBackend(bool lists) : IWaylandBackend
+		// A controllable window list and event source for compositor contracts.
+		private sealed class ListingBackend(bool lists) : IWaylandBackend, IDisposable
 		{
 			public string BackendKey => "test";
 			public string Name => "test";
 			internal IReadOnlyList<WaylandWindowInfo> Windows { get; init; } = [];
 			internal Func<int, IReadOnlyList<WaylandWindowInfo>> WindowsOnList { get; init; }
 			internal int ListCalls { get; private set; }
+			internal Action<WaylandWindowEvent> EventSink;
+			public bool SupportsWindowEvents => true;
+			public IDisposable SubscribeWindowEvents(Action<WaylandWindowEvent> sink)
+			{
+				EventSink = sink;
+				return this;
+			}
+			public void Dispose() => EventSink = null;
 
 			public bool TryGetCursorPos(out int x, out int y)
 			{
@@ -2453,7 +2537,7 @@ namespace Keysharp.Tests
 								Assert.AreNotEqual(lightText, EtoExtensions.GetForeColor(controls[0].Ctrl), "the theme must change the text color");
 
 							Assert.AreEqual(Colors.Black, EtoExtensions.GetForeColor(explicitBlack.Ctrl));
-							Assert.AreEqual(pinnedColor.ToArgb(), EtoExtensions.GetForeColor(pinnedByOpt.Ctrl).ToArgb(), "Opt must pin a color even when it matches the current theme");
+							Assert.AreEqual(pinnedColor.ToHex(false), EtoExtensions.GetForeColor(pinnedByOpt.Ctrl).ToHex(false), "Opt must pin a color even when it matches the current theme");
 							Assert.AreEqual(Colors.Red, EtoExtensions.GetForeColor(inheritedRed.Ctrl));
 						}
 						finally

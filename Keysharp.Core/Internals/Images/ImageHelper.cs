@@ -794,8 +794,8 @@ namespace Keysharp.Internals.Images
 
 		/// <summary>
 		/// Restores the background in <paramref name="region"/> without replacing the bitmap. Pixels outside
-		/// the region must already have <paramref name="argb"/>. Windows transparent clears wipe just these rows;
-		/// other paths can clear the full bitmap with the same result.
+		/// the region must already have <paramref name="argb"/>. On straight-alpha storage, direct pixel writes
+		/// preserve colours without rounding them through the drawing backend's premultiplied storage.
 		/// </summary>
 		internal static void ClearInPlace(Bitmap bmp, int argb, PixelRect region)
 		{
@@ -830,6 +830,23 @@ namespace Keysharp.Internals.Images
 				return;
 			}
 
+#elif LINUX
+			using (var data = bmp.Lock())
+			{
+				if (data.BytesPerPixel == 4)
+				{
+					unsafe
+					{
+						var pixel = (uint)data.TranslateArgbToData(argb);
+						var start = (byte*)data.Data + (long)region.Y * data.ScanWidth + region.X * 4;
+
+						for (var row = 0; row < region.Height; row++)
+							new Span<uint>(start + (long)row * data.ScanWidth, region.Width).Fill(pixel);
+					}
+
+					return;
+				}
+			}
 #endif
 			using var g = MakeGraphics(bmp, highQuality: false);
 			// Outside region the pixels already have this color; a full clear is equivalent.

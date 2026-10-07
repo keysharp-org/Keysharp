@@ -446,6 +446,7 @@ namespace Keysharp.Internals.Linux
 			Action<WaylandWindowEventKind, WaylandWindowInfo> handler)
 		{
 			if (window == null || kind < 4 || kind > 11) return;
+			if (kind == 5 && previous != null) window = previous;
 			WaylandWindowEventKind? primary = kind switch
 			{
 				4 => WaylandWindowEventKind.Created, 5 => WaylandWindowEventKind.Closed,

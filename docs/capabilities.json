@@ -4385,8 +4385,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The ControlSend and ControlSendText functions send simulated keystrokes or text to a window or control.",
-                     "tested-by":  "ControlTests/control_send.ahk"
+                     "notes":  "Sends simulated keystrokes to a window or control. Linux supports the script's own GTK windows and controls only; a window forwards input to its focused control. Input is posted asynchronously, with modifiers carried in the target events rather than changing global keyboard state.",
+                     "tested-by":  "ControlTests/control_send.ahk; window-functions.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -4396,8 +4396,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The ControlSend and ControlSendText functions send simulated keystrokes or text to a window or control.",
-                     "tested-by":  "ControlTests/control_send.ahk"
+                     "notes":  "Sends literal text to a window or control. Linux supports the script's own GTK windows and controls only; text and edit keys are posted in order to the UI thread and respect read-only controls and text-input cancellation.",
+                     "tested-by":  "ControlTests/control_send.ahk; window-functions.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",

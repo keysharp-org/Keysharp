@@ -450,18 +450,34 @@ namespace Keysharp.Internals.Os.Unix
 			if (!WindowSearch.TrySearchControl(ctrl, title, text, excludeTitle, excludeText, out var item, out var target, true) || item == null)
 				return;
 
+			var setPos = x != int.MinValue || y != int.MinValue;
+			var setSize = width != int.MinValue || height != int.MinValue;
+
 			if (Control.FromHandle(item.Handle) is Control control)
 			{
-				var origin = WindowSearch.GetControlReferenceWindow(item, target).ClientToScreen();
-				var parentOrigin = control.Parent?.ScreenOrigin(true) ?? PointF.Empty;
-				var location = control is Forms.Window window ? window.Location : control.GetLocation();
-				control.SetLocation(new Point(x == int.MinValue ? location.X : x + origin.X - Convert.ToInt32(parentOrigin.X),
-					y == int.MinValue ? location.Y : y + origin.Y - Convert.ToInt32(parentOrigin.Y)));
-				control.Size = new Size(width == int.MinValue ? control.Size.Width : width, height == int.MinValue ? control.Size.Height : height);
+				var origin = setPos ? WindowSearch.GetControlReferenceWindow(item, target).ClientToScreen() : default;
+#if LINUX
+				// Wayland placement goes through the compositor; omitted axes stay in its screen coordinates.
+				if (control is Form && WaylandOwnToplevels.IsSupported)
+					_ = Platform.Window.TryMoveResize(item.Handle,
+						new Rectangle(x == int.MinValue ? x : x + origin.X, y == int.MinValue ? y : y + origin.Y, width, height), setPos, setSize);
+				else
+#endif
+				{
+					if (setPos)
+					{
+						var parentOrigin = control.Parent?.ScreenOrigin(true) ?? PointF.Empty;
+						var location = control is Forms.Window window ? window.Location : control.GetLocation();
+						control.SetLocation(new Point(x == int.MinValue ? location.X : x + origin.X - Convert.ToInt32(parentOrigin.X),
+							y == int.MinValue ? location.Y : y + origin.Y - Convert.ToInt32(parentOrigin.Y)));
+					}
+
+					if (setSize)
+						control.Size = new Size(width == int.MinValue ? control.Size.Width : width, height == int.MinValue ? control.Size.Height : height);
+				}
 			}
 			else
-				_ = Platform.Window.TryMoveResize(item.Handle, new Rectangle(x, y, width, height),
-					x != int.MinValue || y != int.MinValue, width != int.MinValue || height != int.MinValue);
+				_ = Platform.Window.TryMoveResize(item.Handle, new Rectangle(x, y, width, height), setPos, setSize);
 
 			WindowInfoBase.DoControlDelay();
 		}

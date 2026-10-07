@@ -385,10 +385,10 @@ namespace Keysharp.Tests
 			var program = ScriptExecutionState.Assembly.GetType("Keysharp.CompiledMain.Program");
 			Assert.IsNotNull(program);
 			// Force the script singleton to exist before invoking the hoisted registration method directly.
-			_ = program.GetField("MainScript", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
-			program.GetMethod("AutoExecSection").Invoke(null, null);
-			s = Script.TheScript;
-			hsm = s.HotstringManager;
+			InvokeCompiledScript(() => {
+				_ = program.GetField("MainScript", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+				program.GetMethod("AutoExecSection").Invoke(null, null);
+			});
 			Assert.IsTrue(s.FlowData.suspended);
 			Assert.AreEqual(6, s.HotkeyData.shk.Length);
 			Assert.AreEqual("F1", s.HotkeyData.shk[0].Name);
@@ -452,8 +452,10 @@ namespace Keysharp.Tests
 			ScriptExecutionState.Assembly = Assembly.Load(assemblyBytes);
 			var program = ScriptExecutionState.Assembly.GetType("Keysharp.CompiledMain.Program");
 			Assert.IsNotNull(program);
-			_ = program.GetField("MainScript", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
-			program.GetMethod("AutoExecSection").Invoke(null, null);
+			InvokeCompiledScript(() => {
+				_ = program.GetField("MainScript", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+				program.GetMethod("AutoExecSection").Invoke(null, null);
+			});
 			var hotkeys = Script.TheScript.HotkeyData.shk;
 			Assert.AreEqual(4, hotkeys.Length);
 			var exemptByName = hotkeys.ToDictionary(hotkey => hotkey.Name, hotkey => hotkey.firstVariant.suspendExempt);

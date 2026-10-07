@@ -303,7 +303,7 @@ namespace Keysharp.Internals
 		public override nint GetForegroundHandle()
 		{
 			if (Wayland?.TryGetActiveWindow(out var active) == true)
-				return AsOwn(active).Handle;
+				return AsOwn(active, correlate: true).Handle;
 
 			return 0;
 		}
@@ -530,16 +530,22 @@ namespace Keysharp.Internals
 		/// under its own handle, but a script only ever holds the Eto one (that is what <c>Gui.Hwnd</c> returns),
 		/// so anything a script can compare against <c>Gui.Hwnd</c> - or hand to <c>Control.FromHandle</c>, which
 		/// is how MouseGetPos finds the control under the cursor - has to be re-homed onto that handle first.
-		/// Leaves a foreign window, and one of ours that has not been correlated yet, exactly as it came.
+		/// Explicit window queries correlate registered forms when needed; pointer and event paths use cached bindings.
 		/// </summary>
-		private static WindowInfoBase AsOwn(WindowInfoBase window)
-			=> window != null && WaylandOwnToplevels.TryGetFormHandle(window.Handle, out var own)
-			   ? new WindowInfo(own)
-			   : window;
+		private static WindowInfoBase AsOwn(WindowInfoBase window, bool correlate = false)
+		{
+			if (window == null)
+				return null;
+
+			var found = correlate && window is WaylandWindowInfo info
+				? WaylandOwnToplevels.TryResolveFormHandle(info, out var own)
+				: WaylandOwnToplevels.TryGetFormHandle(window.Handle, out own);
+			return found ? new WindowInfo(own) : window;
+		}
 
 		public override WindowInfoBase ActiveWindow()
 		{
-			if (Wayland?.TryGetActiveWindow(out var active) == true) return AsOwn(active);
+			if (Wayland?.TryGetActiveWindow(out var active) == true) return AsOwn(active, correlate: true);
 			return new WindowInfo(0);
 		}
 
@@ -549,7 +555,7 @@ namespace Keysharp.Internals
 			if (Wayland?.TryListWindows(includeHidden, out var backendWindows) == true)
 			{
 				foreach (var w in backendWindows)
-					list.Add(AsOwn(w));
+					list.Add(AsOwn(w, correlate: true));
 			}
 
 			list.Reverse();

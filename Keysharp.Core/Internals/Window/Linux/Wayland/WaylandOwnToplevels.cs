@@ -88,6 +88,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private static readonly object sync = new();
 		private static readonly Dictionary<nint, FormState> states = new();
 		private static readonly HashSet<string> claimedIds = new();
+		private readonly record struct EventAlias(nint FormHandle, ulong ServiceHandle, string CompositorId);
+		private static readonly Dictionary<nint, EventAlias> eventAliases = new();
 		//The app_id a form is being correlated under, while that is in flight. See CurrentAppId.
 		private static readonly Dictionary<nint, string> correlationAppIds = new();
 		//Forms with a reservation the compositor accepted and Correlate has not yet resolved, with the tick it
@@ -132,6 +134,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				claimedIds.Clear();
 				correlationAppIds.Clear();
 				pendingReservations.Clear();
+				eventAliases.Clear();
 			}
 		}
 
@@ -267,11 +270,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			var asserts = x != WindowInfoBase.Unchanged || y != WindowInfoBase.Unchanged
 						  || removeBorder || keepAbove || skipTaskbar;
 
-			// A plain Show only refreshes what correlation matches on: mapping the window is what reconciles it.
-			lock (sync)
-				if (!asserts && !states.ContainsKey(formHandle))
-					return;
-
+			// Registration is local; a plain Show starts no compositor work until an explicit query needs it.
 			var state = Track(form, formHandle, title, matchW, matchH);
 
 			if (!asserts)
@@ -319,9 +318,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					if (state.CompositorHandle != compositorHandle)
 						continue;
 
-					//A form whose window is gone (disposed, or never realized) would otherwise resolve to a
-					//handle that answers nothing, which is worse than reporting the compositor's own.
-					if (state.Form is not { IsDisposed: false } || state.FormHandle == 0)
+					if (!IsCurrentLocked(state) || !state.Mapped || state.FormHandle == 0)
 						return false;
 
 					formHandle = state.FormHandle;
@@ -330,6 +327,74 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 
 			return false;
+		}
+
+		internal static bool TryResolveFormHandle(WaylandWindowInfo window, out nint formHandle)
+		{
+			if (TryGetFormHandle(window.Handle, out formHandle))
+				return true;
+
+			if (Keysharp.Internals.Input.Hooks.HookThread.InHookCallback || window.PID != Environment.ProcessId || !IsSupported)
+				return false;
+
+			var app = Eto.Forms.Application.Instance;
+			if (app == null)
+				return false;
+
+			formHandle = app.IsUIThread ? ResolveFormHandle(window) : app.Invoke(() => ResolveFormHandle(window));
+			return formHandle != 0;
+		}
+
+		internal static nint ResolveEventHandle(nint compositorHandle)
+		{
+			lock (sync)
+				return eventAliases.TryGetValue(compositorHandle, out var alias) ? alias.FormHandle : compositorHandle;
+		}
+
+		internal static nint ResolveEventHandle(WaylandWindowInfo window)
+		{
+			bool Matches(EventAlias alias) => alias.ServiceHandle == window.ServiceHandle
+				&& (!window.HasKnownField(WaylandWindowFields.CompositorId) || alias.CompositorId == window.CompositorId);
+
+			lock (sync)
+			{
+				if (eventAliases.TryGetValue(window.Handle, out var current) && Matches(current))
+					return current.FormHandle;
+
+				// Snapshot queries can prune a closed window's synthetic handle before its event reaches us.
+				foreach (var alias in eventAliases.Values)
+					if (Matches(alias)) return alias.FormHandle;
+			}
+
+			return window.Handle;
+		}
+
+		internal static void RetireEventAlias(WaylandWindowInfo window)
+		{
+			lock (sync)
+				foreach (var handle in eventAliases.Where(pair => pair.Value.ServiceHandle == window.ServiceHandle
+					&& pair.Value.CompositorId == window.CompositorId).Select(pair => pair.Key).ToArray())
+					eventAliases.Remove(handle);
+		}
+
+		private static nint ResolveFormHandle(WaylandWindowInfo window)
+		{
+			if (TryGetFormHandle(window.Handle, out var formHandle))
+				return formHandle;
+
+			FormState[] pending;
+			lock (sync)
+				pending = states.Values.Where(state => IsCurrentLocked(state) && state.Mapped && state.CompositorHandle == 0).ToArray();
+
+			foreach (var state in pending)
+			{
+				var form = state.Form;
+				if (form is { IsDisposed: false, Visible: true }
+					&& TryGetOwnWindow(form, out var own) && own.Handle == window.Handle)
+					return TryGetFormHandle(window.Handle, out formHandle) ? formHandle : 0;
+			}
+
+			return 0;
 		}
 
 		//The window can be dragged, tiled or maximized at any moment and a Wayland client is never told, so the
@@ -1323,6 +1388,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 				state.CompositorHandle = pick.Handle;
 				state.CompositorId = pick.CompositorId;
+				eventAliases[pick.Handle] = new(state.FormHandle, pick.ServiceHandle, pick.CompositorId);
 				SetSurfaceOriginLocked(state, pick);
 				_ = claimedIds.Add(pick.CompositorId);
 				return pick;

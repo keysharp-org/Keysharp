@@ -16,6 +16,13 @@ button := g.AddButton("x30 y40 w100 h30", "Coordinates")
 g.Show("NoActivate x120 y130 w260 h180")
 Sleep 50
 
+; Finish compositor placement before comparing consecutive screen-coordinate queries.
+try {
+    WinGetPos(, , , , g)
+    WinMove(120, 130, , , g)
+} catch UnsupportedError {
+}
+
 ; The menu's height belongs outside the content origin used for control coordinates.
 g.GetClientPos(&clientX, &clientY)
 WinGetPos(&screenX, &screenY, &width, &height, button)
@@ -51,15 +58,32 @@ AssertEq(targetX, windowX, A_LineNumber)
 AssertEq(targetY, windowY, A_LineNumber)
 AssertEq(targetWidth, windowWidth, A_LineNumber)
 AssertEq(targetHeight, windowHeight, A_LineNumber)
-WinGetPos(, &windowY, &windowWidth, &windowHeight, g)
-g.GetClientPos(&clientX, &clientY)
-ControlMove(12, , , , g)
-Sleep 50
-WinGetPos(&movedX, &movedY, &movedWidth, &movedHeight, g)
-AssertEq(movedX, clientX + 12, A_LineNumber)
-AssertEq(movedY, windowY, A_LineNumber)
-AssertEq(movedWidth, windowWidth, A_LineNumber)
-AssertEq(movedHeight, windowHeight, A_LineNumber)
+frameGeometryAvailable := true
+try WinGetPos(, &windowY, &windowWidth, &windowHeight, g)
+catch UnsupportedError
+    frameGeometryAvailable := false
+
+; A compositor without frame geometry cannot preserve a top-level window's omitted axis.
+if frameGeometryAvailable {
+    g.GetClientPos(&clientX, &clientY)
+    ControlMove(12, , , , g)
+    Sleep 50
+    WinGetPos(&movedX, &movedY, &movedWidth, &movedHeight, g)
+    AssertEq(movedX, clientX + 12, A_LineNumber)
+    AssertEq(movedY, windowY, A_LineNumber)
+    AssertEq(movedWidth, windowWidth, A_LineNumber)
+    AssertEq(movedHeight, windowHeight, A_LineNumber)
+
+    windowX := movedX
+    g.GetClientPos(&clientX, &clientY)
+    ControlMove(, 14, , , g)
+    Sleep 50
+    WinGetPos(&movedX, &movedY, &movedWidth, &movedHeight, g)
+    AssertEq(movedX, windowX, A_LineNumber)
+    AssertEq(movedY, clientY + 14, A_LineNumber)
+    AssertEq(movedWidth, windowWidth, A_LineNumber)
+    AssertEq(movedHeight, windowHeight, A_LineNumber)
+}
 
 g.Destroy()
 FileAppend "pass", "*"

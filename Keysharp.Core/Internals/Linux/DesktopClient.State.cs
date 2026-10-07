@@ -245,9 +245,10 @@ namespace Keysharp.Internals.Linux
 					if (message.Kind == 1) awaitingSnapshot.Remove(message.Domain);
 					else if (awaitingSnapshot.Contains(message.Domain)) return;
 				}
+				IReadOnlyList<DesktopWindowMirror.SnapshotChange> snapshotChanges = [];
 				if (message.Domain == 1)
 				{
-					if (!Windows.Apply(message.Kind, message.Epoch, message.Sequence, message.Window, out var previous))
+					if (!Windows.Apply(message.Kind, message.Epoch, message.Sequence, message.Window, out var previous, out snapshotChanges))
 					{
 						Resynchronize(1);
 						return;
@@ -288,7 +289,14 @@ namespace Keysharp.Internals.Linux
 				if (message.Domain == 4) LinuxDisplayChanges.Raise();
 				StateSubscription[] current;
 				lock (sync) current = observers.ToArray();
+				foreach (var change in snapshotChanges)
+				{
+					foreach (var observer in current)
+						observer.Deliver(message with { Kind = change.Kind, Window = change.Window, PreviousWindow = change.Previous });
+					if (change.Kind == 5) WaylandOwnToplevels.RetireEventAlias(change.Window);
+				}
 				foreach (var observer in current) observer.Deliver(message);
+				if (message.Domain == 1 && message.Kind == 5) WaylandOwnToplevels.RetireEventAlias(message.PreviousWindow ?? message.Window);
 			}
 
 			private bool Permits(uint domain)

@@ -350,5 +350,46 @@ AssertEq(sink.log.Length, 0, A_LineNumber)
 
 win.Destroy()
 #endif
+
+#if LINUX
+; Plain windows keep their Gui handles when queried by the compositor, including after a remap.
+if EnvGet("XDG_SESSION_TYPE") == "wayland" && WinGetList().Length {
+	queryTitle := "Plain own windows " A_TickCount
+	firstQueryGui := Gui(, queryTitle)
+	secondQueryGui := Gui(, queryTitle)
+	try {
+		firstQueryGui.Show("NoActivate w200 h100")
+		secondQueryGui.Show("NoActivate w200 h100")
+		queryHandles := _OwnWindowHandles(queryTitle, 2)
+		AssertEq(queryHandles.Length, 2, A_LineNumber)
+		Assert((queryHandles[1] == firstQueryGui.Hwnd && queryHandles[2] == secondQueryGui.Hwnd)
+			|| (queryHandles[2] == firstQueryGui.Hwnd && queryHandles[1] == secondQueryGui.Hwnd), A_LineNumber)
+
+		firstQueryGui.Hide()
+		queryHandles := _OwnWindowHandles(queryTitle, 1)
+		AssertEq(queryHandles.Length, 1, A_LineNumber)
+		AssertEq(queryHandles[1], secondQueryGui.Hwnd, A_LineNumber)
+		firstQueryGui.Show("NoActivate w200 h100")
+		queryHandles := _OwnWindowHandles(queryTitle, 2)
+		AssertEq(queryHandles.Length, 2, A_LineNumber)
+		Assert((queryHandles[1] == firstQueryGui.Hwnd && queryHandles[2] == secondQueryGui.Hwnd)
+			|| (queryHandles[2] == firstQueryGui.Hwnd && queryHandles[1] == secondQueryGui.Hwnd), A_LineNumber)
+		firstQueryGui.Destroy()
+		queryHandles := _OwnWindowHandles(queryTitle, 1)
+		AssertEq(queryHandles.Length, 1, A_LineNumber)
+		AssertEq(queryHandles[1], secondQueryGui.Hwnd, A_LineNumber)
+	} finally {
+		firstQueryGui.Destroy()
+		secondQueryGui.Destroy()
+	}
+}
+
+_OwnWindowHandles(Title, Count) {
+	start := A_TickCount
+	while (handles := WinGetList(Title)).Length != Count && A_TickCount - start < 3000
+		Sleep 10
+	return handles
+}
+#endif
 FileAppend "pass", "*"
 ExitApp()

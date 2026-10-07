@@ -92,7 +92,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				parentHandle: (nint)Number(item, "parent"),
 				topLevelHandle: (nint)Number(item, "topLevel"),
 				captureId: Has(fields, WaylandWindowFields.CaptureId) ? Text(item, "captureId") : "",
-				knownFields: fields);
+				knownFields: fields,
+				serviceHandle: ulong.TryParse(id, NumberStyles.None, CultureInfo.InvariantCulture, out var serviceHandle) ? serviceHandle : 0);
 		}
 
 		internal static bool TryParse(JsonElement item, Func<string, nint> resolve, out WaylandWindowInfo window)

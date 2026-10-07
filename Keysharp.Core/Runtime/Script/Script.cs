@@ -1036,14 +1036,10 @@ namespace Keysharp.Runtime
 
 			app.AsyncInvoke(() => {
 				var current = SynchronizationContext.Current;
+				UIThreadContext = new EtoSynchronizationContext(app);
 
 				if (current == null || current.GetType() == typeof(SynchronizationContext))
-				{
-					current = new EtoSynchronizationContext(Application.Instance);
-					SynchronizationContext.SetSynchronizationContext(current);
-				}
-
-				UIThreadContext = current;
+					SynchronizationContext.SetSynchronizationContext(UIThreadContext);
 			});
 #endif
 		}
