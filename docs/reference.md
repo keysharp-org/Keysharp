@@ -134,7 +134,7 @@ keysharp-input probe
 keysharp-desktop probe
 ```
 
-Each command reports service readiness and available operations. On GNOME and Cinnamon, enable the installed Shell extension after installation; this may require logging out and back in.
+Each command reports service readiness and available operations. The session service enables the GNOME or Cinnamon extension once per user and desktop, preserving later manual disables. For repair, run `keysharp-desktop enable-extension` as your graphical user and log out and back in if requested.
 
 #### Uninstalling
 

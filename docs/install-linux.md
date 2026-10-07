@@ -51,6 +51,11 @@ channel. A healthy compatible component also keeps its existing channel, so its
 channel can differ from Keysharp's. Setup prints the selected Keysharp channel and
 the detected channel for each component.
 
+Setup configures the desktop extension once per user and desktop and preserves
+later manual disables. If an older compatible `keysharp-desktop` does not support
+automatic extension setup, its settings stay unchanged; run
+`keysharp-desktop enable-extension` as yourself to explicitly enable it.
+
 ## Update, repair or customize
 
 For PPA installations, update through apt:

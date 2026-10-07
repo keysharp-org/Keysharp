@@ -333,15 +333,8 @@ release_asset() {
     fi
 }
 
-# Turns on the keysharp-desktop shell extension for the user running sudo.
-#
-# The tarball channel gets this from keysharp-desktop's own installer, but the
-# deb channel ends at apt-get, and its maintainer scripts deliberately do not
-# touch a user's dconf. Neither runs at all when the installed keysharp-desktop
-# is already compatible -- which is exactly the state of someone rerunning this
-# to fix a session whose backend reports None because the extension was never
-# enabled. So this runs regardless of channel, and regardless of whether
-# keysharp-desktop was installed just now.
+# Setup also runs for an existing compatible component. Automatic activation
+# preserves its per-user completion markers and later manual disables.
 #
 # Advisory throughout. The extension is per-user and per-desktop: a KWin or X11
 # machine has nothing to enable, and nothing here may fail the setup.
@@ -391,12 +384,17 @@ enable_desktop_extension() {
             LOGNAME="$extension_name" LANG=C PATH=/usr/bin:/bin \
             XDG_RUNTIME_DIR="$extension_runtime" \
             DBUS_SESSION_BUS_ADDRESS="unix:path=$extension_runtime/bus" \
-            "$extension_binary" enable-extension >/dev/null 2>&1 \
+            "$extension_binary" enable-extension --automatic >/dev/null 2>&1 \
             || extension_status=$?
         case "$extension_status" in
             0) return 0 ;;
+            2) printf '%s\n' \
+                "Installed keysharp-desktop does not support automatic extension setup; existing settings were preserved." \
+                "To enable the extension explicitly, run this as yourself:" \
+                "  keysharp-desktop enable-extension" ;;
             3) printf '%s\n' \
-                "keysharp-desktop shell extension enabled. Log out and back in to load it." ;;
+                "keysharp-desktop shell extension setup needs attention. Run this as yourself for details:" \
+                "  keysharp-desktop enable-extension" ;;
             *) printf '%s\n' \
                 "Could not enable the keysharp-desktop shell extension. On GNOME or Cinnamon, run this as yourself:" \
                 "  keysharp-desktop enable-extension" ;;
