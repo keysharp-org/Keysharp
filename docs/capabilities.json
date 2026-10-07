@@ -8078,8 +8078,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Adds standard tray menu items.",
-                     "tested-by":  "ScriptingComponentTests.InspectorProcess"
+                     "notes":  "Adds standard tray items. OnMessage intercepts A_TrayMenu actions; other menus retain their callbacks.",
+                     "tested-by":  "ScriptingComponentTests.InspectorProcess; BuiltInVarsTests.PropsMenuCommands; props-menu-commands.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -9104,13 +9104,13 @@
                  {
                      "category":  "Core Language",
                      "feature":  "OnMessage()",
-                     "syntax":  "",
+                     "syntax":  "OnMessage(MsgNumber, Callback [, MaxThreads])",
                      "windows":  "full",
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "The OnMessage function registers a function to be called automatically whenever the script receives the specified message. The first callback to return a non-empty value claims it; 0 claims with reply 0, while blank, an error or Exit continues the chain. Off Windows there is no native message queue, so the input messages are synthesized from the toolkit events raised by the script\u0027s own GUI: WM_MOUSEMOVE, the L/R/M button down, up and double-click messages, WM_MOUSEWHEEL, WM_KEYDOWN/UP, WM_SYSKEYDOWN/UP and WM_CHAR. As on Windows, the callback receives the CONTROL\u0027s handle and its thread\u0027s last-found window is the GUI the control belongs to. Anything outside that set is never delivered, and messages to windows the script does not own cannot be seen at all. Clicks on a single-line Edit are also missed, because GTK\u0027s entry consumes the button press before the toolkit raises its own event, and a press on a window\u0027s own background is delivered twice by the native event dispatch and de-duplicated here. Verified on X11 and Wayland; the macOS path shares the code but is untested.",
-                     "tested-by":  "MessageFilterTests.cs; external-onmessage.ahk"
+                     "notes":  "Windows monitors the hidden main window, GUIs, controls and tray events. Linux/macOS synthesize toolkit messages; menu interception verified on Linux X11, unverified on Wayland/macOS.",
+                     "tested-by":  "MessageFilterTests.cs; ExternalTests.OnMessage; external-onmessage.ahk; BuiltInVarsTests.PropsMenuCommands; props-menu-commands.ahk; MessageFilterTests.TrayNotifications; MessageFilterTests.TrayActivations"
                  },
                  {
                      "category":  "Core Language",
@@ -10806,8 +10806,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Tray icon, its menu and TrayTip notifications. On Linux the tray depends on the desktop providing a StatusNotifier/AppIndicator host - some environments need an extension before an icon appears at all - and notifications go through the desktop notification service. macOS uses a status item in the menu bar.",
-                     "tested-by":  "docs/linux-cosmic.md (native tray smoke check)"
+                     "notes":  "Linux requires a StatusNotifier/AppIndicator host and exposes no activation events. Eto activation cannot cancel menu opening; macOS activation is unverified.",
+                     "tested-by":  "docs/linux-cosmic.md (native tray smoke check); BuiltInVarsTests.PropsMenuCommands; props-menu-commands.ahk; MessageFilterTests.TrayNotifications; MessageFilterTests.TrayActivations"
                  },
                  {
                      "category":  "Core Language",

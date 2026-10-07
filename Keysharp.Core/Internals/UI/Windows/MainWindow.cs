@@ -193,16 +193,38 @@ namespace Keysharp.Internals.UI.Windows
 			}
 
 			var systemCommand = m.Msg == WindowsAPI.WM_SYSCOMMAND ? m.WParam.ToInt64() & 0xFFF0 : 0;
+			var menuCommand = (MenuCommand)(m.WParam.ToInt64() & 0xFFFF);
+			var isMenuCommand = m.Msg == WindowsAPI.WM_COMMAND && m.LParam == 0
+				&& (m.WParam.ToInt64() >> 16 & 0xFFFF) <= 1 && Enum.IsDefined(menuCommand);
 
 			// These messages are handled here without reaching KeysharpForm.WndProc. A queued message has
 			// already visited the filter; a synchronous one still needs its OnMessage callbacks.
 			if ((m.Msg == WindowsAPI.WM_CLOSE || m.Msg == WmQueryEndSession || m.Msg == WindowsAPI.WM_ENDSESSION
-					|| systemCommand == WindowsAPI.SC_CLOSE)
-					&& MessageClaimedByOnMessage(ref m))
+					|| systemCommand == WindowsAPI.SC_CLOSE || isMenuCommand || m.Msg == (int)UserMessages.AHK_NOTIFYICON)
+					&& OwnerScript.msgFilter?.MessageClaimed(ref m) == true)
 				return;
+
+			if ((isMenuCommand || m.Msg == (int)UserMessages.AHK_NOTIFYICON)
+				&& (OwnerScript.IsDisposed || OwnerScript.hasExited))
+			{
+				m.Result = 0;
+				return;
+			}
+
+			if (isMenuCommand)
+			{
+				HandleMenuCommand(menuCommand);
+				m.Result = 0;
+				return;
+			}
 
 			switch (m.Msg)
 			{
+				case (int)UserMessages.AHK_NOTIFYICON:
+					OwnerScript.trayMessageWindow?.DispatchNotification(m.LParam);
+					m.Result = 0;
+					return;
+
 				case WindowsAPI.WM_CLIPBOARDUPDATE:
 					if (clipSuccess)
 						ClipboardUpdate?.Invoke(null);
@@ -258,20 +280,60 @@ namespace Keysharp.Internals.UI.Windows
 			base.WndProc(ref m);
 		}
 
-		private bool MessageClaimedByOnMessage(ref Message m)
+		private void SendMenuCommand(MenuCommand command) =>
+			WindowsAPI.SendMessage(Handle, WindowsAPI.WM_COMMAND, (nint)command, 0);
+
+		private void HandleMenuCommand(MenuCommand command)
 		{
-			var filter = OwnerScript.msgFilter;
+			if (command >= MenuCommand.TrayOpen && command <= MenuCommand.TrayAccessibilitySpy
+				&& OwnerScript.trayMenu?.InvokeStandardCommand(command) == true)
+				return;
 
-			if (filter?.handledMsg == m)
+			switch (command)
 			{
-				filter.handledMsg = null;
-				return false;
-			}
+				case MenuCommand.TrayOpen:
+					if (A_AllowMainWindow.Ab())
+					{
+						AllowShowDisplay = true;
+						WindowState = lastWindowState == FormWindowState.Minimized ? FormWindowState.Normal : lastWindowState;
+						Show();
+						BringToFront();
+						Focus();
+						RefreshSelectedTab();
+					}
+					break;
 
-			return filter != null && filter.CallEventHandlers(ref m);
+				case MenuCommand.TrayReload:
+				case MenuCommand.FileReload: Keysharp.Builtins.Flow.Reload(); break;
+				case MenuCommand.TrayEdit:
+				case MenuCommand.FileEdit: Builtins.Debug.Edit(); break;
+				case MenuCommand.TrayWindowSpy:
+				case MenuCommand.FileWindowSpy: LaunchWindowSpy(); break;
+				case MenuCommand.TrayPause:
+				case MenuCommand.FilePause: OwnerScript.LaunchTogglePause(); break;
+				case MenuCommand.TraySuspend:
+				case MenuCommand.FileSuspend: Script.SuspendHotkeys(); break;
+				case MenuCommand.TrayExit:
+				case MenuCommand.FileExit:
+					_ = Keysharp.Internals.Flow.ExitAppInternal(OwnerScript, Keysharp.Builtins.Flow.ExitReasons.Menu, null, false);
+					break;
+
+				case MenuCommand.ViewVariables: ShowInternalVars(true); break;
+				case MenuCommand.ViewHotkeys: ListHotkeys(); break;
+				case MenuCommand.ViewKeyHistory: ShowHistory(); break;
+				case MenuCommand.ViewRefresh: RefreshSelectedTab(); break;
+				case MenuCommand.ViewClearDebugLog: OwnerScript.DebugOutput.Clear(); break;
+				case MenuCommand.TrayHelp:
+				case MenuCommand.HelpWebsite: Processes.Run("https://github.com/keysharp-org/Keysharp"); break;
+				case MenuCommand.HelpUserManual: Dialogs.MsgBox("This feature is not implemented"); break;
+				case MenuCommand.HelpAbout: ShowAbout(); break;
+			}
 		}
 
 		private void aboutToolStripMenuItem_Click(object sender, EventArgs e)
+			=> SendMenuCommand(MenuCommand.HelpAbout);
+
+		private void ShowAbout()
 		{
 			if (about == null)
 			{
@@ -282,11 +344,11 @@ namespace Keysharp.Internals.UI.Windows
 			about.Show();
 		}
 
-		private void clearDebugLogToolStripMenuItem_Click(object sender, EventArgs e) => OwnerScript.DebugOutput.Clear();
+		private void clearDebugLogToolStripMenuItem_Click(object sender, EventArgs e) => SendMenuCommand(MenuCommand.ViewClearDebugLog);
 
-		private void editScriptToolStripMenuItem_Click(object sender, EventArgs e) => Builtins.Debug.Edit();
+		private void editScriptToolStripMenuItem_Click(object sender, EventArgs e) => SendMenuCommand(MenuCommand.FileEdit);
 
-		private void exitToolStripMenuItem_Click(object sender, EventArgs e) => _ = Keysharp.Internals.Flow.ExitAppInternal(OwnerScript, Keysharp.Builtins.Flow.ExitReasons.Menu, null, false);
+		private void exitToolStripMenuItem_Click(object sender, EventArgs e) => SendMenuCommand(MenuCommand.FileExit);
 
 		private MainFocusedTab GetFocusedTab(TabPage page)
 		{
@@ -323,9 +385,9 @@ namespace Keysharp.Internals.UI.Windows
 			};
 		}
 
-		private void hotkeysAndTheirMethodsToolStripMenuItem_Click(object sender, EventArgs e) => ListHotkeys();
+		private void hotkeysAndTheirMethodsToolStripMenuItem_Click(object sender, EventArgs e) => SendMenuCommand(MenuCommand.ViewHotkeys);
 
-		private void keyHistoryAndScriptInfoToolStripMenuItem_Click(object sender, EventArgs e) => ShowHistory();
+		private void keyHistoryAndScriptInfoToolStripMenuItem_Click(object sender, EventArgs e) => SendMenuCommand(MenuCommand.ViewKeyHistory);
 
 		/// <summary>
 		/// This will get called if the user manually closes the main window,
@@ -377,11 +439,11 @@ namespace Keysharp.Internals.UI.Windows
 				lastWindowState = WindowState;
 		}
 
-		private void pauseScriptToolStripMenuItem_Click(object sender, EventArgs e) => OwnerScript.LaunchTogglePause();
+		private void pauseScriptToolStripMenuItem_Click(object sender, EventArgs e) => SendMenuCommand(MenuCommand.FilePause);
 
-		private void refreshToolStripMenuItem_Click(object sender, EventArgs e) => RefreshSelectedTab();
+		private void refreshToolStripMenuItem_Click(object sender, EventArgs e) => SendMenuCommand(MenuCommand.ViewRefresh);
 
-		private void reloadScriptToolStripMenuItem_Click(object sender, EventArgs e) => Keysharp.Builtins.Flow.Reload();
+		private void reloadScriptToolStripMenuItem_Click(object sender, EventArgs e) => SendMenuCommand(MenuCommand.FileReload);
 
 		private void SetTextInternal(string text, MainFocusedTab tab, TextBox txt, bool focus)
 		{
@@ -415,16 +477,17 @@ namespace Keysharp.Internals.UI.Windows
 			}
 		}
 
-		private void suspendHotkeysToolStripMenuItem_Click(object sender, EventArgs e) => Script.SuspendHotkeys();
+		private void suspendHotkeysToolStripMenuItem_Click(object sender, EventArgs e) => SendMenuCommand(MenuCommand.FileSuspend);
 
 		private void userManualToolStripMenuItem_Click(object sender, EventArgs e)
-		{
-			_ = Dialogs.MsgBox("This feature is not implemented");
-		}
+			=> SendMenuCommand(MenuCommand.HelpUserManual);
 
-		private void variablesAndTheirContentsToolStripMenuItem_Click(object sender, EventArgs e) => ShowInternalVars(true);
+		private void variablesAndTheirContentsToolStripMenuItem_Click(object sender, EventArgs e) => SendMenuCommand(MenuCommand.ViewVariables);
 
 		private void windowSpyToolStripMenuItem_Click(object sender, EventArgs e)
+			=> SendMenuCommand(MenuCommand.FileWindowSpy);
+
+		private void LaunchWindowSpy()
 		{
 			var path = Path.GetDirectoryName(A_AhkPath);
 			var exe = path + "/Keysharp.exe";

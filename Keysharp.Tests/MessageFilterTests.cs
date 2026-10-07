@@ -15,6 +15,180 @@ namespace Keysharp.Tests
 		}
 
 #if WINDOWS
+		// An invisible WinForms icon exercises notification routing without publishing a shell icon.
+		[TestCase(1L, WindowsAPI.WM_LBUTTONDOWN, false), TestCase(1L, WindowsAPI.WM_LBUTTONDOWN, true)]
+		[TestCase(1L, WindowsAPI.WM_LBUTTONDBLCLK, false), TestCase(1L, WindowsAPI.WM_LBUTTONDBLCLK, true)]
+		[TestCase(2L, WindowsAPI.WM_LBUTTONDBLCLK, false), TestCase(2L, WindowsAPI.WM_LBUTTONDBLCLK, true)]
+		[Category("Threading"), Apartment(ApartmentState.STA)]
+		public void TrayNotifications(long clickCount, int notification, bool winFormsCallback)
+		{
+			var context = UseQueuedMainContext();
+			var hwnd = s.MainWindowHandle;
+			var calls = new List<object[]>();
+			var claimed = true;
+			var selected = 0;
+			var menu = new Keysharp.Builtins.Menu();
+			_ = menu.Add("Choose", new KeysharpFunc((Func<object, object, object, object>)((_, _, _) =>
+			{
+				selected++;
+				return "";
+			})));
+			menu.Default = "Choose";
+			menu.ClickCount = clickCount;
+			var icon = new NotifyIcon { Tag = menu, ContextMenuStrip = menu.MenuItem };
+			s.Tray = icon;
+			s.trayMessageWindow = new TrayMessageWindow(s, icon);
+			icon.MouseDown += s.TrayIcon_MouseDown;
+			const int messageId = (int)UserMessages.AHK_NOTIFYICON;
+			var nativeHandle = winFormsCallback ? s.trayMessageWindow.Handle : hwnd;
+			var nativeMessage = winFormsCallback ? 0x800U : (uint)messageId;
+			_ = Keysharp.Builtins.Flow.OnMessage(messageId, new KeysharpFunc((Func<object, object, object, object, object>)((wParam, lParam, msg, handle) =>
+			{
+				calls.Add([wParam, lParam, msg, handle]);
+				return claimed ? 0L : "";
+			})));
+
+			try
+			{
+				Assert.IsFalse(s.mainWindow.Visible);
+				Assert.IsFalse(icon.Visible);
+				_ = WindowsAPI.SendMessage(nativeHandle, nativeMessage, messageId, notification);
+				context.DrainAll();
+				CheckNotification(1, notification);
+				Assert.AreEqual(0, selected, "a zero return must suppress the default tray callback");
+
+				claimed = false;
+				_ = WindowsAPI.SendMessage(nativeHandle, nativeMessage, messageId, notification);
+				context.DrainAll();
+				CheckNotification(2, notification);
+				Assert.AreEqual(1, selected, "a blank return must allow the default callback once");
+
+				claimed = true;
+				Assert.IsTrue(WindowsAPI.PostMessage(nativeHandle, nativeMessage, messageId, notification));
+				Application.DoEvents();
+				context.DrainAll();
+				CheckNotification(3, notification);
+				Assert.AreEqual(1, selected, "a posted notification must also respect suppression");
+
+				claimed = false;
+				Assert.IsTrue(WindowsAPI.PostMessage(nativeHandle, nativeMessage, messageId, notification));
+				Application.DoEvents();
+				context.DrainAll();
+				CheckNotification(4, notification);
+				Assert.AreEqual(2, selected, "a posted notification must invoke the default callback once");
+
+				claimed = true;
+				_ = WindowsAPI.SendMessage(nativeHandle, nativeMessage, messageId, WindowsAPI.WM_RBUTTONUP);
+				context.DrainAll();
+				CheckNotification(5, WindowsAPI.WM_RBUTTONUP);
+				Assert.IsFalse(menu.MenuItem.Visible, "a claimed right-click must not open the tray menu");
+
+				claimed = false;
+				var count = 5;
+				foreach (var inert in new[] { 0x0200, 0x0202, 0x0402, 0x0403, 0x0404, 0x0405,
+					clickCount == 1 ? WindowsAPI.WM_LBUTTONUP : WindowsAPI.WM_LBUTTONDOWN })
+				{
+					_ = WindowsAPI.SendMessage(nativeHandle, nativeMessage, messageId, inert);
+					context.DrainAll();
+					CheckNotification(++count, inert);
+					Assert.AreEqual(2, selected, "other mouse and balloon notifications must not choose the default item");
+				}
+				Assert.IsFalse(s.mainWindow.Visible);
+			}
+			finally
+			{
+				s.trayMessageWindow.ReleaseHandle();
+				s.trayMessageWindow = null;
+				icon.Dispose();
+				s.Tray = null;
+				menu.MenuItem.Dispose();
+			}
+
+			void CheckNotification(int count, int expectedNotification)
+			{
+				Assert.AreEqual(count, calls.Count);
+				Assert.That(calls[^1], Is.EqualTo(new object[] { (long)messageId, (long)expectedNotification, (long)messageId, hwnd.ToInt64() }));
+			}
+		}
+
+#else
+		[TestCase(1L), TestCase(2L)]
+		[Category("Threading")]
+		public void TrayActivations(long clickCount)
+		{
+			SkipIfUiInitializationBlocked("Tray activation needs a usable UI toolkit.");
+			s.mainWindow = new Keysharp.Internals.UI.Unix.MainWindow(s);
+			s.mainWindow.InitializeHidden();
+			var hwnd = s.MainWindowHandle;
+			var context = UseQueuedMainContext();
+			var calls = new List<object[]>();
+			var claimed = true;
+			var selected = 0;
+			var menu = new Keysharp.Builtins.Menu();
+			_ = menu.Add("Choose", new KeysharpFunc((Func<object, object, object, object>)((_, _, _) =>
+			{
+				selected++;
+				return "";
+			})));
+			menu.Default = "Choose";
+			menu.ClickCount = clickCount;
+			var icon = new NotifyIcon { Tag = menu, ContextMenuStrip = menu.MenuItem };
+			s.Tray = icon;
+			icon.MouseClick += s.TrayIcon_MouseClick;
+			icon.MouseDoubleClick += s.TrayIcon_MouseDoubleClick;
+			const int messageId = (int)UserMessages.AHK_NOTIFYICON;
+			_ = Keysharp.Builtins.Flow.OnMessage(messageId, new KeysharpFunc((Func<object, object, object, object, object>)((wParam, lParam, msg, handle) =>
+			{
+				calls.Add([wParam, lParam, msg, handle]);
+				return claimed ? 0L : "";
+			})));
+			// Eto's backend callback needs no shell icon; the wrapper does not expose its indicator.
+			var indicator = (Eto.Forms.TrayIndicator)typeof(NotifyIcon).GetField("indicator", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(icon);
+			var activationTime = typeof(NotifyIcon).GetField("lastActivationTime", BindingFlags.Instance | BindingFlags.NonPublic);
+			var callback = (Eto.Forms.TrayIndicator.ICallback)((Eto.ICallbackSource)indicator).Callback;
+
+			try
+			{
+				Assert.IsFalse(icon.Visible);
+				Assert.IsFalse(s.mainWindow.Visible);
+				Activate(false);
+				Activate(true);
+				context.DrainAll();
+				CheckNotifications(2);
+				Assert.AreEqual(0, selected, "a zero return must suppress both activation callbacks");
+
+				claimed = false;
+				Activate(false);
+				Activate(true);
+				context.DrainAll();
+				CheckNotifications(4);
+				Assert.AreEqual(clickCount == 1 ? 2 : 1, selected, "each activation must choose the default at most once");
+				Assert.IsFalse(icon.Visible);
+				Assert.IsFalse(s.mainWindow.Visible);
+			}
+			finally
+			{
+				icon.Dispose();
+				s.Tray = null;
+				menu.MenuItem.Dispose();
+			}
+
+			void Activate(bool doubleClick)
+			{
+				activationTime.SetValue(icon, doubleClick ? Environment.TickCount64 : 0L);
+				callback.OnActivated(indicator, EventArgs.Empty);
+			}
+
+			void CheckNotifications(int count)
+			{
+				Assert.AreEqual(count, calls.Count);
+				Assert.That(calls[^2], Is.EqualTo(new object[] { (long)messageId, 0x202L, (long)messageId, hwnd.ToInt64() }));
+				Assert.That(calls[^1], Is.EqualTo(new object[] { (long)messageId, 0x203L, (long)messageId, hwnd.ToInt64() }));
+			}
+		}
+#endif
+
+#if WINDOWS
 		// Only the Windows pre-filter buffers: a monitor off Windows runs inline, so it can claim the message.
 		[Test, Category("Threading")]
 		public void OnMessageBuffered()

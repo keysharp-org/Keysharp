@@ -1,4 +1,6 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 #Include <assert>
 #import KS { RealThread, Await }
 

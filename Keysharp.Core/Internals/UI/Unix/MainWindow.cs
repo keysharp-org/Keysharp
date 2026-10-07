@@ -1,5 +1,6 @@
 using Keysharp.Builtins;
 #if !WINDOWS
+using Keysharp.Internals.Os.Windows;
 namespace Keysharp.Internals.UI.Unix
 {
 	public class MainWindow : KeysharpForm
@@ -107,6 +108,7 @@ namespace Keysharp.Internals.UI.Unix
 			// The toggle runs in a thread launched for it, which updates the checkmark through the stub once it has.
 			pauseScriptMenuItem.Click += (_, _) =>
 			{
+				pauseScriptMenuItem.Checked = pauseScriptToolStripMenuItem.Checked;
 				pauseScriptToolStripMenuItem_Click(this, EventArgs.Empty);
 				pauseScriptMenuItem.Checked = pauseScriptToolStripMenuItem.Checked;
 			};
@@ -117,6 +119,7 @@ namespace Keysharp.Internals.UI.Unix
 			};
 			suspendHotkeysMenuItem.Click += (_, _) =>
 			{
+				suspendHotkeysMenuItem.Checked = suspendHotkeysToolStripMenuItem.Checked;
 				suspendHotkeysToolStripMenuItem_Click(this, EventArgs.Empty);
 				suspendHotkeysMenuItem.Checked = suspendHotkeysToolStripMenuItem.Checked;
 			};
@@ -177,6 +180,9 @@ namespace Keysharp.Internals.UI.Unix
 		}
 
 		private void aboutToolStripMenuItem_Click(object sender, EventArgs e)
+			=> RunMenuCommand(MenuCommand.HelpAbout, ShowAbout);
+
+		private void ShowAbout()
 		{
 			if (about == null)
 			{
@@ -316,11 +322,20 @@ namespace Keysharp.Internals.UI.Unix
 			}
 		}
 
-		private void clearDebugLogToolStripMenuItem_Click(object sender, EventArgs e) => OwnerScript.DebugOutput.Clear();
+		private void RunMenuCommand(MenuCommand command, Action action)
+		{
+			if (!OwnerScript.MainMessageClaimed(WindowsAPI.WM_COMMAND, (nint)command, 0))
+				action();
+		}
 
-		private void editScriptToolStripMenuItem_Click(object sender, EventArgs e) => Builtins.Debug.Edit();
+		private void clearDebugLogToolStripMenuItem_Click(object sender, EventArgs e)
+			=> RunMenuCommand(MenuCommand.ViewClearDebugLog, OwnerScript.DebugOutput.Clear);
 
-		private void exitToolStripMenuItem_Click(object sender, EventArgs e) => _ = Keysharp.Internals.Flow.ExitAppInternal(OwnerScript, Keysharp.Builtins.Flow.ExitReasons.Menu, null, false);
+		private void editScriptToolStripMenuItem_Click(object sender, EventArgs e)
+			=> RunMenuCommand(MenuCommand.FileEdit, () => Builtins.Debug.Edit());
+
+		private void exitToolStripMenuItem_Click(object sender, EventArgs e)
+			=> RunMenuCommand(MenuCommand.FileExit, () => Keysharp.Internals.Flow.ExitAppInternal(OwnerScript, Keysharp.Builtins.Flow.ExitReasons.Menu, null, false));
 
 		private MainFocusedTab GetFocusedTab(TabPage page)
 		{
@@ -357,9 +372,11 @@ namespace Keysharp.Internals.UI.Unix
 			};
 		}
 
-		private void hotkeysAndTheirMethodsToolStripMenuItem_Click(object sender, EventArgs e) => ListHotkeys();
+		private void hotkeysAndTheirMethodsToolStripMenuItem_Click(object sender, EventArgs e)
+			=> RunMenuCommand(MenuCommand.ViewHotkeys, () => ListHotkeys());
 
-		private void keyHistoryAndScriptInfoToolStripMenuItem_Click(object sender, EventArgs e) => ShowHistory();
+		private void keyHistoryAndScriptInfoToolStripMenuItem_Click(object sender, EventArgs e)
+			=> RunMenuCommand(MenuCommand.ViewKeyHistory, () => ShowHistory());
 
 		private void Clipboard_Changed(object sender, EventArgs e) => ClipboardUpdate?.Invoke(null);
 
@@ -430,11 +447,14 @@ namespace Keysharp.Internals.UI.Unix
 			about?.Close();
 		}
 
-		private void pauseScriptToolStripMenuItem_Click(object sender, EventArgs e) => OwnerScript.LaunchTogglePause();
+		private void pauseScriptToolStripMenuItem_Click(object sender, EventArgs e)
+			=> RunMenuCommand(MenuCommand.FilePause, OwnerScript.LaunchTogglePause);
 
-		private void refreshToolStripMenuItem_Click(object sender, EventArgs e) => RefreshSelectedTab();
+		private void refreshToolStripMenuItem_Click(object sender, EventArgs e)
+			=> RunMenuCommand(MenuCommand.ViewRefresh, RefreshSelectedTab);
 
-		private void reloadScriptToolStripMenuItem_Click(object sender, EventArgs e) => Keysharp.Builtins.Flow.Reload();
+		private void reloadScriptToolStripMenuItem_Click(object sender, EventArgs e)
+			=> RunMenuCommand(MenuCommand.FileReload, () => Keysharp.Builtins.Flow.Reload());
 
 		private void ShowIfNeeded()
 		{
@@ -451,7 +471,8 @@ namespace Keysharp.Internals.UI.Unix
 			}
 		}
 
-		private void suspendHotkeysToolStripMenuItem_Click(object sender, EventArgs e) => Script.SuspendHotkeys();
+		private void suspendHotkeysToolStripMenuItem_Click(object sender, EventArgs e)
+			=> RunMenuCommand(MenuCommand.FileSuspend, Script.SuspendHotkeys);
 
 		private bool QueueUiUpdate(Action action)
 		{
@@ -479,13 +500,15 @@ namespace Keysharp.Internals.UI.Unix
 		}
 
 		private void userManualToolStripMenuItem_Click(object sender, EventArgs e)
-		{
-			_ = Dialogs.MsgBox("This feature is not implemented");
-		}
+			=> RunMenuCommand(MenuCommand.HelpUserManual, () => Dialogs.MsgBox("This feature is not implemented"));
 
-		private void variablesAndTheirContentsToolStripMenuItem_Click(object sender, EventArgs e) => ShowInternalVars(true);
+		private void variablesAndTheirContentsToolStripMenuItem_Click(object sender, EventArgs e)
+			=> RunMenuCommand(MenuCommand.ViewVariables, () => ShowInternalVars(true));
 
 		private void windowSpyToolStripMenuItem_Click(object sender, EventArgs e)
+			=> RunMenuCommand(MenuCommand.FileWindowSpy, LaunchWindowSpy);
+
+		private void LaunchWindowSpy()
 		{
 			var path = Path.GetDirectoryName(A_AhkPath);
 			var exe = path + "/Keysharp";

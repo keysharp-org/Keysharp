@@ -1,4 +1,5 @@
 using Keysharp.Runtime;
+using Keysharp.Internals.Os.Windows;
 
 namespace Keysharp.Builtins
 {
@@ -885,12 +886,55 @@ namespace Keysharp.Builtins
 
 			if (sender is ToolStripMenuItem tsmi)
 			{
-				if (clickHandlers.TryGetValue(tsmi, out var handler))
+				var script = Script.TheScript;
+				if (this == script.trayMenu && GetStandardCommand(tsmi) is { } command)
 				{
-					var index = GetIndex(tsmi);
-					handler.InvokeEventHandlers(tsmi.Text, ++index, this);
+#if WINDOWS
+					_ = WindowsAPI.SendMessage(script.MainWindowHandle, WindowsAPI.WM_COMMAND, (nint)command, 0);
+					return;
+#else
+					if (script.MainMessageClaimed(WindowsAPI.WM_COMMAND, (nint)command, 0))
+						return;
+#endif
 				}
+				InvokeClickHandler(tsmi);
 			}
+		}
+
+		private void InvokeClickHandler(ToolStripMenuItem tsmi)
+		{
+			if (clickHandlers.TryGetValue(tsmi, out var handler))
+			{
+				var index = GetIndex(tsmi);
+				handler.InvokeEventHandlers(tsmi.Text, ++index, this);
+			}
+		}
+
+		internal static MenuCommand? GetStandardCommand(ToolStripItem item) =>
+			(item.Tag as MenuItemPresentation)?.StandardId switch
+			{
+				"&Open" => MenuCommand.TrayOpen,
+				"&Help" => MenuCommand.TrayHelp,
+				"&Window Spy" => MenuCommand.TrayWindowSpy,
+				"&Accessibility Spy" => MenuCommand.TrayAccessibilitySpy,
+				"&Reload Script" => MenuCommand.TrayReload,
+				"&Edit Script" => MenuCommand.TrayEdit,
+				"&Suspend Hotkeys" => MenuCommand.TraySuspend,
+				"&Pause Script" => MenuCommand.TrayPause,
+				"E&xit" => MenuCommand.TrayExit,
+				_ => null
+			};
+
+		internal bool InvokeStandardCommand(MenuCommand command)
+		{
+			foreach (ToolStripItem item in GetMenu().Items)
+				if (item is ToolStripMenuItem menuItem && GetStandardCommand(item) == command)
+				{
+					InvokeClickHandler(menuItem);
+					return true;
+				}
+
+			return false;
 		}
 
 		protected internal virtual ToolStrip GetMenu() => submenuOf ?? MenuItem;

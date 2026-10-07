@@ -13,6 +13,15 @@ namespace Keysharp.Internals.Window.Windows
 
 		internal bool CallEventHandlers(ref Message m, bool buffered = false)
 		{
+			if (script.trayMessageWindow is { } trayWindow && trayWindow.IsTrayMessage(m))
+			{
+				var forwarded = Message.Create(script.MainWindowHandle, (int)UserMessages.AHK_NOTIFYICON,
+					(nint)UserMessages.AHK_NOTIFYICON, m.LParam);
+				var claimed = CallEventHandlers(ref forwarded, buffered);
+				m.Result = forwarded.Result;
+				return claimed || trayWindow.Handle == 0 || script.IsDisposed || script.hasExited;
+			}
+
 			if (script.IsDisposed)
 				return false;
 
@@ -37,16 +46,29 @@ namespace Keysharp.Internals.Window.Windows
 			return false;
 		}
 
-		public bool PreFilterMessage(ref Message m)
+		internal bool MessageClaimed(ref Message m, bool invokeHandlers = true)
 		{
-			// Most messages have no monitor, which is cheaper to rule out than the window's ownership.
-			if (!script.GuiData.onMessageHandlers.ContainsKey(m.Msg))
+			if (handledMsg == m)
 			{
 				handledMsg = null;
 				return false;
 			}
 
-			if (m.HWnd != 0)
+			return invokeHandlers && CallEventHandlers(ref m);
+		}
+
+		public bool PreFilterMessage(ref Message m)
+		{
+			var isTrayMessage = script.trayMessageWindow?.IsTrayMessage(m) == true;
+
+			// Most messages have no monitor, which is cheaper to rule out than the window's ownership.
+			if (!isTrayMessage && !script.GuiData.onMessageHandlers.ContainsKey(m.Msg))
+			{
+				handledMsg = null;
+				return false;
+			}
+
+			if (m.HWnd != 0 && !isTrayMessage)
 			{
 				// Ignore IME windows and other helper forms
 				var ctl = Control.FromHandle(m.HWnd);
@@ -56,10 +78,50 @@ namespace Keysharp.Internals.Window.Windows
 			}
 
 			var claimed = CallEventHandlers(ref m, true);
-			// Stash a message about to be dispatched so KeysharpForm.WndProc knows it was handled here. Like AHK's flag
+			// Stash a message about to be dispatched so its window procedure knows it was handled here. Like AHK's flag
 			// around DispatchMessage it is set after the callbacks, which may pump or send messages of their own.
 			handledMsg = claimed ? null : m;
 			return claimed;
+		}
+	}
+
+	internal sealed class TrayMessageWindow : NativeWindow
+	{
+		private const int NotifyIconMessage = 0x0800;
+		// NotifyIcon is sealed and exposes no HWND or message hook. Its window stays alive until disposal.
+		private static readonly FieldInfo windowField = typeof(NotifyIcon).GetField("_window", BindingFlags.Instance | BindingFlags.NonPublic);
+		private readonly Script script;
+
+		internal TrayMessageWindow(Script script, NotifyIcon icon)
+		{
+			this.script = script;
+			if (windowField?.GetValue(icon) is not NativeWindow window)
+				throw new InvalidOperationException("Cannot access the WinForms tray notification window.");
+
+			if (window.Handle == 0)
+				window.CreateHandle(new CreateParams());
+
+			AssignHandle(window.Handle);
+		}
+
+		internal bool IsTrayMessage(Message message) => Handle != 0 && message.Msg == NotifyIconMessage && message.HWnd == Handle;
+
+		internal void DispatchNotification(nint notification)
+		{
+			if (Handle == 0 || script.IsDisposed || script.hasExited)
+				return;
+
+			var message = Message.Create(Handle, NotifyIconMessage, (nint)UserMessages.AHK_NOTIFYICON, notification);
+			base.WndProc(ref message);
+		}
+
+		protected override void WndProc(ref Message message)
+		{
+			if (IsTrayMessage(message)
+				&& (script.msgFilter.MessageClaimed(ref message) || Handle == 0 || script.IsDisposed || script.hasExited))
+				return;
+
+			base.WndProc(ref message);
 		}
 	}
 }

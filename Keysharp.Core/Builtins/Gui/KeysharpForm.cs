@@ -152,32 +152,26 @@ namespace Keysharp.Builtins
 
 		protected override void WndProc(ref Message m)
 		{
-			// In Windows queued messages (eg sent with PostMessage) arrive in the message queue and
-			// are read with GetMessage, then when DispatchMessage is called (after TranslateMessage)
-			// WndProc is called with the translated message. Non-queued message (eg sent with SendMessage)
-			// arrive directly in WndProc, but also some queued messages such as from a modal message loop.
-			// In C# MessageFilter processes the message after GetMessage has received it, and if let through
-			// then TranslateMessage and DispatchMessage are called, which then in turn call WndProc.
-			// The problem is how to determine whether a message has already been processed in MessageFilter to
-			// avoid double-handing. AutoHotkey uses a global variable before DispatchMessage and nulls it
-			// afterwards, and we use a similar approach here. MessageFilter stashes the handled
-			// message (only messages which target a KeysharpForm) and then we compare here for
-			// equality. A simple boolean like isHandled wouldn't be enough because for example
-			// WM_KEYDOWN will get translated to WM_CHAR and the user may want to capture that as well.
-			// Additionally if any messages get lost for some reason or another message arrives here
-			// before the MessageFilter processed message has had time to arrive then we'd confuse the two.
+			// On Windows, queued messages (e.g. PostMessage) are retrieved with GetMessage or PeekMessage.
+			// In the WinForms loop, MessageFilter runs before TranslateMessage and DispatchMessage; WndProc
+			// then receives messages not consumed by filtering or preprocessing. TranslateMessage can post
+			// a separate WM_CHAR message for a WM_KEYDOWN; it does not replace the original message.
+			// Non-queued messages (e.g. SendMessage) arrive directly in WndProc. Some native modal loops
+			// also dispatch queued messages without passing through the WinForms filter.
+			// Global OnMessage monitors therefore have entry points in both MessageFilter and WndProc,
+			// so we must distinguish a filtered message from one whose monitors have not yet run.
+			// MessageFilter records the unclaimed message after invoking callbacks, since callbacks can
+			// pump or send other messages. MessageClaimed consumes a matching record instead of invoking
+			// the monitors again; it also serves the main and tray notification windows.
+			// Comparing the full message instead of a Boolean flag avoids confusing a WM_CHAR or another
+			// intervening message with the message already handled by the filter.
 			var msgFilter = OwnerScript.msgFilter;
 
 			if (m.Msg == WindowsAPI.WM_COMMNOTIFY)
 				_ = Dialogs.HandleDialogNotification((uint)m.WParam.ToInt64(), m.LParam);
 
-			if (msgFilter != null)
-			{
-				if (msgFilter.handledMsg == m)
-					msgFilter.handledMsg = null;
-				else if (beenConstructed && msgFilter.CallEventHandlers(ref m))
-					return;
-			}
+			if (msgFilter?.MessageClaimed(ref m, beenConstructed) == true)
+				return;
 
 			//GuiObj.OnMessage() monitors run ahead of default processing, the same way AHK's GuiWindowProc
 			//consults its message monitors before handing off to DefDlgProc.

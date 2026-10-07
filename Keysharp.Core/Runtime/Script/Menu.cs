@@ -1,4 +1,7 @@
 using Keysharp.Builtins;
+#if !WINDOWS
+using Keysharp.Internals.Os.Windows;
+#endif
 namespace Keysharp.Runtime
 {
 	public partial class Script
@@ -7,6 +10,9 @@ namespace Keysharp.Runtime
 		internal ToolStripMenuItem suspendMenuItem;
 		internal ToolStripMenuItem pauseMenuItem;
 		internal NotifyIcon Tray;
+#if WINDOWS
+		internal TrayMessageWindow trayMessageWindow;
+#endif
 		internal Keysharp.Builtins.Menu trayMenu;
 
 		/// <summary>
@@ -110,6 +116,18 @@ namespace Keysharp.Runtime
 			try
 			{
 				trayIcon = Tray = new NotifyIcon { ContextMenuStrip = trayMenu.MenuItem, Text = TrayTip };
+#if WINDOWS
+				try
+				{
+					trayMessageWindow = new TrayMessageWindow(this, trayIcon);
+				}
+				catch
+				{
+					Tray = null;
+					trayIcon.Dispose();
+					throw;
+				}
+#endif
 			}
 			catch (DllNotFoundException ex)
 			{
@@ -132,8 +150,12 @@ namespace Keysharp.Runtime
 			}
 
 			trayIcon.Tag = trayMenu;
+#if WINDOWS
+			trayIcon.MouseDown += TrayIcon_MouseDown;
+#else
 			trayIcon.MouseClick += TrayIcon_MouseClick;
 			trayIcon.MouseDoubleClick += TrayIcon_MouseDoubleClick;
+#endif
 
 			if (trayDefaultIcon is Icon icon)
 			{
@@ -141,6 +163,20 @@ namespace Keysharp.Runtime
 				trayIcon.Visible = true;
 			}
 		}
+
+#if WINDOWS
+		internal void TrayIcon_MouseDown(object sender, MouseEventArgs e)
+		{
+			if (e.Button == Forms.MouseButtons.Left && sender is NotifyIcon { Tag: Keysharp.Builtins.Menu menu }
+				&& (menu.ClickCount == 1 || e.Clicks == 2) && menu.defaultItem is ToolStripItem item)
+			{
+				if (Keysharp.Builtins.Menu.GetStandardCommand(item) is { } command)
+					_ = WindowsAPI.PostMessage(MainWindowHandle, WindowsAPI.WM_COMMAND, (nint)command, 0);
+				else
+					menu.Tsmi_Click(item, EventArgs.Empty);
+			}
+		}
+#endif
 
 		internal void SetSuspended(bool suspended)
 		{
@@ -232,34 +268,36 @@ namespace Keysharp.Runtime
 				ApplyTrayIcon();
 		}
 
-		/// <summary>
-		/// Whether a tray mouse event came from the primary (left) button.
-		/// Only the left button activates the default menu item: the right button just displays the
-		/// tray menu (which the underlying icon does on its own) and the middle button does nothing.
-		/// This matters because the platform raises MouseClick/MouseDoubleClick for every button,
-		/// so without this test a right-click would pop the menu *and* run the default item.
-		/// </summary>
+#if !WINDOWS
+		internal bool MainMessageClaimed(int message, nint wParam, nint lParam)
+		{
+			if (IsDisposed || hasExited)
+				return true;
+
+			var msg = new Message { HWnd = MainWindowHandle, Msg = message, WParam = wParam, LParam = lParam };
+			return msgFilter?.CallEventHandlers(ref msg) == true || IsDisposed || hasExited;
+		}
+
 		private static bool IsPrimaryClick(MouseEventArgs e) =>
-#if WINDOWS
-			e.Button == Forms.MouseButtons.Left;
-#else
 			(e.Buttons & Forms.MouseButtons.Primary) != 0;
+
+		internal void TrayIcon_MouseClick(object sender, MouseEventArgs e) => TrayIcon_Activated(sender, e, false);
+
+		internal void TrayIcon_MouseDoubleClick(object sender, MouseEventArgs e) => TrayIcon_Activated(sender, e, true);
+
+		private void TrayIcon_Activated(object sender, MouseEventArgs e, bool doubleClick)
+		{
+			if (!IsPrimaryClick(e) || sender is not NotifyIcon { Tag: Keysharp.Builtins.Menu menu })
+				return;
+
+			// Eto exposes activation without native button details or cancellable menu opening.
+			if (MainMessageClaimed((int)UserMessages.AHK_NOTIFYICON, (nint)UserMessages.AHK_NOTIFYICON,
+				(nint)(doubleClick ? WindowsAPI.WM_LBUTTONDBLCLK : WindowsAPI.WM_LBUTTONUP)))
+				return;
+
+			if ((menu.ClickCount == 1 || doubleClick) && menu.defaultItem is ToolStripItem item)
+				menu.Tsmi_Click(item, EventArgs.Empty);
+		}
 #endif
-
-		private static void TrayIcon_MouseClick(object sender, MouseEventArgs e)
-		{
-			if (IsPrimaryClick(e) && sender is NotifyIcon ni && ni.Tag is Keysharp.Builtins.Menu mnu)
-				if (mnu.ClickCount == 1)
-					if (mnu.defaultItem is ToolStripItem tsi)
-						mnu.Tsmi_Click(tsi, new EventArgs());
-		}
-
-		private static void TrayIcon_MouseDoubleClick(object sender, MouseEventArgs e)
-		{
-			if (IsPrimaryClick(e) && sender is NotifyIcon ni && ni.Tag is Keysharp.Builtins.Menu mnu)
-				if (mnu.ClickCount > 1)
-					if (mnu.defaultItem is ToolStripItem tsi)
-						mnu.Tsmi_Click(tsi, new EventArgs());
-		}
 	}
 }

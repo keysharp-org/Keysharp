@@ -7,7 +7,7 @@ namespace Keysharp.Internals.Window.Unix
 		private const int DoubleClickThresholdMs = 400;
 		private readonly TrayIndicator indicator = new TrayIndicator();
 		private bool disposed;
-		private long lastClickTicks;
+		private long lastActivationTime;
 		private ContextMenuStrip contextMenuStrip;
 		private string text = "";
 		private Image icon;
@@ -121,19 +121,21 @@ namespace Keysharp.Internals.Window.Unix
 
 		private void Indicator_Activated(object sender, EventArgs e)
 		{
-			var now = DateTime.UtcNow.Ticks;
+			if (disposed)
+				return;
+
+			var now = Environment.TickCount64;
 			var args = new MouseEventArgs(Eto.Forms.MouseButtons.Primary, Eto.Forms.Keys.None, new PointF(0, 0), null, 0f);
 
-			MouseClick?.Invoke(this, args);
-
-			if (lastClickTicks != 0 && (now - lastClickTicks) <= TimeSpan.FromMilliseconds(DoubleClickThresholdMs).Ticks)
+			if (lastActivationTime != 0 && (now - lastActivationTime) <= DoubleClickThresholdMs)
 			{
-				lastClickTicks = 0;
+				lastActivationTime = 0;
 				MouseDoubleClick?.Invoke(this, args);
 				return;
 			}
 
-			lastClickTicks = now;
+			lastActivationTime = now;
+			MouseClick?.Invoke(this, args);
 		}
 	}
 }

@@ -49,6 +49,13 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("BuiltInVars")]
+		public void PropsMenuCommands()
+		{
+			SkipIfUiInitializationBlocked("Interception of default menu actions needs a usable UI toolkit.");
+			Assert.IsTrue(TestScript("props-menu-commands", false));
+		}
+
+		[Test, Category("BuiltInVars")]
 		public void PropsSpecialChars() => Assert.IsTrue(TestScript("props-special-chars", true));
 	}
 }

@@ -1714,8 +1714,14 @@ namespace Keysharp.Runtime
 
 			try
 			{
+#if WINDOWS
+				tray.MouseDown -= TrayIcon_MouseDown;
+				trayMessageWindow?.ReleaseHandle();
+				trayMessageWindow = null;
+#else
 				tray.MouseClick -= TrayIcon_MouseClick;
 				tray.MouseDoubleClick -= TrayIcon_MouseDoubleClick;
+#endif
 				tray.Tag = null;
 				tray.Dispose();
 			}
