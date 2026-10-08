@@ -761,33 +761,6 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 
 		internal override bool IsHookThreadRunning() => thread != null && !thread.IsDisposed();
 
-		internal override bool IsHotstringWordChar(char ch)
-		// Returns true if aChar would be part of a word if followed by a word char.
-		// aChar itself may be a word char or a nonspacing mark which combines with
-		// the next character (the first character of a potential hotstring match).
-		{
-			// IsCharAlphaNumeric is used for simplicity and to preserve old behavior
-			// (with the only exception being the one added below), in case it's what
-			// users have come to expect.  Note that checking for C1_ALPHA or C3_ALPHA
-			// and C1_DIGIT is not equivalent: Michael S. Kaplan wrote that the real
-			// conditions are "(C1_ALPHA && ! (C3_HIRAGANA | C3_KATAKANA) || C1_DIGIT)" -- https://web.archive.org/web/20130627015450/http://blogs.msdn.com/b/michkap/archive/2007/06/19/3396819.aspx
-			if (IsCharAlphaNumeric(ch))
-				return true;
-
-			var char_type = new ushort[1];
-
-			if (GetStringTypeEx(0, CT_CTYPE3, ch.ToString(), 1, char_type))//Ignore locale for unicode by passing 0.
-			{
-				// Nonspacing marks combine with the following character, so would visually
-				// appear to be part of the word.  This should fix detection of words beginning
-				// with or containing Arabic nonspacing diacritics, for example.
-				if ((char_type[0] & C3_NONSPACING) != 0)
-					return true;
-			}
-
-			return false;
-		}
-
 		internal override bool IsKeyToggledOn(uint vk) => (GetKeyState((int)vk) & 0x01) != 0;
 
 		internal static bool IsKeybdEventArtificial(uint flags) => (flags & LLKHF_INJECTED) != 0 || (flags & LLKHF_LOWER_IL_INJECTED) != 0;

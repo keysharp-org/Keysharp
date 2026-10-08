@@ -2034,7 +2034,7 @@ namespace Keysharp.Internals.Input.Keyboard
 								// in the wrong state (e.g. Send +{F1}{ControlDown}).  Since modifiers can sometimes affect
 								// each other, make sure they're in the state intended by the user before beginning:
 								SetModifierLRState(persistentModifiersForThisSendKeys
-												   , sendMode == SendModes.Event ? eventModifiersLR : GetModifierLRState()
+												   , sendMode != SendModes.Event ? eventModifiersLR : GetModifierLRState()
 												   , targetWindow, false, false); // It also does DoKeyDelay(g->PressDuration).
 
 								for (var ii = 0L; ii < repeatCount; ++ii)

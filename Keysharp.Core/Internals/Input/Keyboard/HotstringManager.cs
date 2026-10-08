@@ -1,15 +1,20 @@
 using Keysharp.Builtins;
-using System.Diagnostics.CodeAnalysis;
 
 namespace Keysharp.Internals.Input.Keyboard
 {
 	[PublicHiddenFromUser]
 	internal class HotstringManager
 	{
+		// AutoHotkey's buffer size, which allows for its 40-character abbreviation limit.
+		internal const int DefaultHotstringBufferLimit = 2 * 40 + 10;
+		// Candidates beyond this many are collected into a pooled array instead.
+		private const int StackCandidates = 16;
 		private readonly Script script;
 		internal string defEndChars = "-()[]{}:;'\"/\\,.?!\r\n \t";
 		internal uint enabledCount;      // Keep in sync with the above.
 		internal List<char> hsBuf = new (256);
+		// Raised under registryLock and read under bufLock by TrimHotstringBuffer, where a stale value only shifts one trim.
+		private int hotstringBufferLimit = DefaultHotstringBufferLimit;
 		internal bool hsCaseSensitive;
 		internal bool hsConformToCase = true;
 		internal bool hsDetectWhenInsideWord;
@@ -25,11 +30,14 @@ namespace Keysharp.Internals.Input.Keyboard
 		internal SendModes hsSendMode = SendModes.Input;
 		internal SendRawModes hsSendRaw = SendRawModes.NotRaw;
 		internal bool hsSuspendExempt;
-		private readonly Dictionary<char, List<HotstringDefinition>> shsDkt = new (new CharNoCaseEqualityComp());
-		// The hook reads these without a lock while the script adds hotstrings, so a hotstring is stored before the
-		// count which covers it, and a larger array is published before the count passes the old one's length.
+		// Readers such as SuspendAll don't take registryLock, so a hotstring is stored before the count which covers it,
+		// and a larger array is published before the count passes the old one's length.
 		private HotstringDefinition[] hotstrings = new HotstringDefinition[256];
 		private int hotstringCount;
+		// Serializes additions, which several threads can make, and guards the index. Matching holds it only while
+		// collecting candidates, never while a criterion runs.
+		private readonly Lock registryLock = new ();
+		private readonly HotstringIndex index = new ();
 		// Guards hsBuf, which the hook and the script both change.
 		internal readonly Lock bufLock = new ();
 
@@ -65,122 +73,194 @@ namespace Keysharp.Internals.Input.Keyboard
 				return DefaultObject;
 
 			Add(hs);
-			shsDkt.GetOrAdd(_hotstring[0]).Add(hs);
 			return hs;
 		}
 
 		/// <summary>Appends a hotstring after those defined before it, which take precedence over it.</summary>
 		internal void Add(HotstringDefinition hs)
 		{
-			var array = hotstrings;
-			var count = hotstringCount;
-
-			if (count == array.Length)
+			lock (registryLock)
 			{
-				System.Array.Resize(ref array, count * 2);
-				Volatile.Write(ref hotstrings, array);
+				var array = hotstrings;
+				var count = hotstringCount;
+
+				if (count == array.Length)
+				{
+					System.Array.Resize(ref array, count * 2);
+					Volatile.Write(ref hotstrings, array);
+				}
+
+				array[count] = hs;
+
+				if (!string.IsNullOrEmpty(hs.str))
+				{
+					index.Add(hs.str, count);
+					hotstringBufferLimit = Math.Max(hotstringBufferLimit, HotstringBufferLimitFor(hs.str.Length));
+				}
+
+				Volatile.Write(ref hotstringCount, count + 1);
 			}
-
-			array[count] = hs;
-			Volatile.Write(ref hotstringCount, count + 1);
-		}
-
-		public void AddChars(string s)
-		{
-			lock (bufLock)
-				hsBuf.AddRange(s);
 		}
 
 		public void ClearHotstrings()
 		{
 			ClearBuf();
-			var count = hotstringCount;
-			Volatile.Write(ref hotstringCount, 0);
-			// Emptied in place, since a hook which read the old count still indexes this array.
-			System.Array.Clear(hotstrings, 0, count);
-			shsDkt.Clear();
+
+			lock (registryLock)
+			{
+				var count = hotstringCount;
+				Volatile.Write(ref hotstringCount, 0);
+				// Emptied in place, since a hook which read the old count still indexes this array.
+				System.Array.Clear(hotstrings, 0, count);
+				index.Clear();
+				hotstringBufferLimit = DefaultHotstringBufferLimit;
+			}
+		}
+
+		// AutoHotkey's buffer formula, applied to an abbreviation which may be longer than its 40 characters.
+		private static int HotstringBufferLimitFor(int abbreviationLength) => 2 * abbreviationLength + 10;
+
+		/// <summary>Drops the older half of hsBuf once it is longer than the limit. The caller holds bufLock.</summary>
+		internal void TrimHotstringBuffer()
+		{
+			var limit = hotstringBufferLimit;
+
+			if (hsBuf.Count > limit)
+				hsBuf.RemoveRange(0, limit / 2);
 		}
 
 		/// <summary>
-		/// Returns the first eligible hotstring which the typed text ends with.
+		/// Whether a trigger ends the typed text, or ends just before its last character when that is an ending character.
+		/// The hook calls it under bufLock, where waiting could let a nested hook callback change the buffer, so while
+		/// registryLock is held elsewhere it answers true and the full match decides.
 		/// </summary>
-		public HotstringDefinition MatchHotstring(ReadOnlySpan<char> hsBufSpan)
+		internal bool MayMatch(ReadOnlySpan<char> typed)
 		{
-			if (hsBufSpan.Length == 0)
+			if (typed.IsEmpty)
+				return false;
+
+			if (!registryLock.TryEnter())
+				return true;
+
+			try
+			{
+				return index.HasMatch(typed, defEndChars.Contains(typed[^1]));
+			}
+			finally
+			{
+				registryLock.Exit();
+			}
+		}
+
+		/// <summary>
+		/// Returns the first eligible hotstring which the typed text ends with, and whether the match included an ending
+		/// character. Options can change after matching, so callers apply the match by that value.
+		/// </summary>
+		public HotstringDefinition MatchHotstring(ReadOnlySpan<char> typed, out bool endCharTyped)
+		{
+			endCharTyped = false;
+
+			if (typed.Length == 0)
 				return null;
 
-			var hasEndChar = defEndChars.Contains(hsBufSpan[^1]);
-			var ht = script.HookThread;
+			var hasEndChar = defEndChars.Contains(typed[^1]);
+			// A criterion can change options, so a candidate may end at either position, whatever it requires now.
+			using var candidates = FindCandidates(typed, hasEndChar, stackalloc int[StackCandidates]);
 
-			// Searching through the hot strings in the original, physical order is the documented
-			// way in which precedence is determined, i.e. the first match is the only one that will
-			// be triggered.
-			foreach (var hs in Hotstrings)
+			// Declaration order is the documented precedence: only the first eligible match fires. Unlike hotkeys,
+			// variants aren't grouped under a parent, so an earlier global hotstring beats a later #HotIf one.
+			foreach (var registrationIndex in candidates.RegistrationIndices)
 			{
-				if (hs == null || hs.suspended != 0) // Null only while ClearHotstrings runs on the script thread.
-					continue;
+				var hs = candidates.Definitions[registrationIndex];
 
-				int cpbuf;
-
-				if (hs.endCharRequired)
-				{
-					if (!hasEndChar || hsBufSpan.Length <= hs.str.Length) // Ensure the string is long enough for loop below.
-						continue;
-
-					cpbuf = hsBufSpan.Length - 2;// Init once for both loops. -2 to omit end-char.
-				}
-				else // No ending char required.
-				{
-					if (hsBufSpan.Length < hs.str.Length) // Ensure the string is long enough for loop below.
-						continue;
-
-					cpbuf = hsBufSpan.Length - 1;// Init once for both loops.
-				}
-
-				var cphs = hs.str.Length - 1; // Init once for both loops.
-
-				// Check if this item is a match:
-				if (hs.caseSensitive)
-				{
-					for (; cphs >= 0; --cpbuf, --cphs)
-						if (hsBufSpan[cpbuf] != hs.str[cphs])
-							break;
-				}
-				else // case insensitive
-				{
-					for (; cphs >= 0; --cpbuf, --cphs)
-						if (char.ToLower(hsBufSpan[cpbuf]) != char.ToLower(hs.str[cphs]))
-							break;
-				}
-
-				// Check if one of the loops above found a matching hotstring (relies heavily on
-				// short-circuit boolean order):
-				if (cphs >= 0 // One of the loops above stopped early due discovering "no match"...
-						// ... or it did but the "?" option is not present to protect from the fact that
-						// what lies to the left of this hotstring abbreviation is an alphanumeric character:
-						|| (!hs.detectWhenInsideWord && cpbuf >= 0 && ht.IsHotstringWordChar(hsBufSpan[cpbuf]))
-						// ... v1.0.41: Or it's a perfect match but the right window isn't active or doesn't exist.
-						// In that case, continue searching for other matches in case the script contains
-						// hotstrings that would trigger simultaneously were it not for the "only one" rule.
-						|| (HotkeyDefinition.HotCriterionAllowsFiring(script, hs.hotCriterion, hs.Name) == 0L)
-				   )
-					continue; // No match or not eligible to fire.
-
-				// v1.0.42: The following scenario defeats the ability to give criterion hotstrings
-				// precedence over non-criterion:
-				// A global/non-criterion hotstring is higher up in the file than some criterion hotstring,
-				// but both are eligible to fire at the same instant.  In v1.0.41, the global one would
-				// take precedence because it's higher up (and this behavior is preserved not just for
-				// backward compatibility, but also because it might be more flexible -- this is because
-				// unlike hotkeys, variants aren't stored under a parent hotstring, so we don't know which
-				// ones are exact dupes of each other (same options+abbreviation).  Thus, it would take
-				// extra code to determine this at runtime; and even if it were added, it might be
-				// more flexible not to do it; instead, to let the script determine (even by resorting to
-				// #HotIf NOT WinActive()) what precedence hotstrings have with respect to each other.
-				return hs;
+				// A match whose criterion rules it out lets the search continue, in case the script contains hotstrings
+				// that would trigger simultaneously were it not for the "only one" rule.
+				if (IsMatch(hs, typed, hasEndChar, out endCharTyped)
+						&& HotkeyDefinition.HotCriterionAllowsFiring(script, hs.hotCriterion, hs.Name) != 0L)
+					return hs;
 			}
 
+			endCharTyped = false;
 			return null;
+		}
+
+		private static bool IsMatch(HotstringDefinition hs, ReadOnlySpan<char> typed, bool hasEndChar, out bool endCharTyped)
+		{
+			endCharTyped = false;
+
+			if (hs == null || hs.suspended != 0) // Null only while ClearHotstrings runs.
+				return false;
+
+			// Read once, since another thread can change it.
+			endCharTyped = hs.endCharRequired;
+			var start = typed.Length - hs.str.Length - (endCharTyped ? 1 : 0);
+
+			if (start < 0 || endCharTyped && !hasEndChar)
+				return false;
+
+			var abbreviation = typed.Slice(start, hs.str.Length);
+
+			if (!(hs.caseSensitive ? abbreviation.SequenceEqual(hs.str) : HotstringIndex.FoldedEquals(abbreviation, hs.str)))
+				return false;
+
+			// Unless the ? option is present, what lies left of the abbreviation must not continue a word.
+			return hs.detectWhenInsideWord || start == 0 || !EndsInWord(typed[..start]);
+		}
+
+		/// <summary>
+		/// Whether the last character of text continues a word: a letter, digit or letter number, or a combining mark.
+		/// AutoHotkey's IsHotstringWordChar asks Windows' character tables one UTF-16 unit at a time; Unicode
+		/// categories of the whole character give the same answer on every platform, outside the BMP too.
+		/// </summary>
+		internal static bool EndsInWord(ReadOnlySpan<char> text)
+		{
+			_ = Rune.DecodeLastFromUtf16(text, out var rune, out _);
+			return Rune.IsLetterOrDigit(rune) || Rune.GetUnicodeCategory(rune) is UnicodeCategory.LetterNumber
+				or UnicodeCategory.NonSpacingMark or UnicodeCategory.SpacingCombiningMark or UnicodeCategory.EnclosingMark;
+		}
+
+		/// <summary>The index's candidates for text, distinct and in declaration order; registrationIndices is the storage when they fit.</summary>
+		private Candidates FindCandidates(ReadOnlySpan<char> text, bool beforeLast, Span<int> registrationIndices)
+		{
+			int[] rented = null;
+			ReadOnlySpan<HotstringDefinition> definitions;
+
+			lock (registryLock)
+			{
+				var count = index.Find(text, beforeLast, registrationIndices);
+
+				if (count > registrationIndices.Length)
+				{
+					rented = ArrayPool<int>.Shared.Rent(count);
+					registrationIndices = rented;
+					count = index.Find(text, beforeLast, registrationIndices);
+				}
+
+				registrationIndices = registrationIndices[..count];
+				definitions = Hotstrings;
+			}
+
+			// A definition found at both positions appears twice.
+			registrationIndices.Sort();
+			var distinct = 0;
+
+			foreach (var registrationIndex in registrationIndices)
+				if (distinct == 0 || registrationIndices[distinct - 1] != registrationIndex)
+					registrationIndices[distinct++] = registrationIndex;
+
+			return new (registrationIndices[..distinct], definitions, rented);
+		}
+
+		private readonly ref struct Candidates(ReadOnlySpan<int> registrationIndices, ReadOnlySpan<HotstringDefinition> definitions, int[] rented)
+		{
+			internal readonly ReadOnlySpan<int> RegistrationIndices = registrationIndices;
+			internal readonly ReadOnlySpan<HotstringDefinition> Definitions = definitions;
+
+			public void Dispose()
+			{
+				if (rented != null)
+					ArrayPool<int>.Shared.Return(rented);
+			}
 		}
 
 		public void RestoreDefaults(bool doNonPositional = false)
@@ -227,12 +307,13 @@ namespace Keysharp.Internals.Input.Keyboard
 			}
 		}
 
-		internal HotstringDefinition FindHotstring(string _hotstring, bool _caseSensitive, bool _detectWhenInsideWord, object _hotCriterion)
+		internal HotstringDefinition FindHotstring(ReadOnlySpan<char> _hotstring, bool _caseSensitive, bool _detectWhenInsideWord, object _hotCriterion)
 		{
-			if (shsDkt.TryGetValue(_hotstring[0], out var possibleHotstrings))
-				foreach (var hs in possibleHotstrings)
-					if (hs.CompareHotstring(_hotstring, _caseSensitive, _detectWhenInsideWord, _hotCriterion))
-						return hs;
+			using var candidates = FindCandidates(_hotstring, beforeLast: false, stackalloc int[StackCandidates]);
+
+			foreach (var registrationIndex in candidates.RegistrationIndices)
+				if (candidates.Definitions[registrationIndex] is HotstringDefinition hs && hs.CompareHotstring(_hotstring, _caseSensitive, _detectWhenInsideWord, _hotCriterion))
+					return hs;
 
 			return null;
 		}
@@ -315,12 +396,5 @@ namespace Keysharp.Internals.Input.Keyboard
 
 			return changed;
 		}
-	}
-
-	internal class CharNoCaseEqualityComp : IEqualityComparer<char>
-	{
-		public bool Equals(char x, char y) => char.ToLower(x) == char.ToLower(y);
-
-		public int GetHashCode([System.Diagnostics.CodeAnalysis.DisallowNull] char obj) => char.ToLower(obj).GetHashCode();
 	}
 }

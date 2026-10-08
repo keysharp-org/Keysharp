@@ -657,24 +657,6 @@ namespace Keysharp.Internals.Os.Windows
 		public const int THREAD_PRIORITY_IDLE = THREAD_BASE_PRIORITY_IDLE;
 		public const int THREAD_MODE_BACKGROUND_BEGIN = 0x00010000;
 		public const int THREAD_MODE_BACKGROUND_END = 0x00020000;
-		public const int CT_CTYPE1 = 0x00000001;  // ctype 1 information
-		public const int CT_CTYPE2 = 0x00000002;  // ctype 2 information
-		public const int CT_CTYPE3 = 0x00000004;  // ctype 3 information
-		public const int C3_NONSPACING = 0x0001;// nonspacing character
-		public const int C3_DIACRITIC = 0x0002;// diacritic mark
-		public const int C3_VOWELMARK = 0x0004;// vowel mark
-		public const int C3_SYMBOL = 0x0008;// symbols
-		public const int C3_KATAKANA = 0x0010;// katakana character
-		public const int C3_HIRAGANA = 0x0020;// hiragana character
-		public const int C3_HALFWIDTH = 0x0040;// half width character
-		public const int C3_FULLWIDTH = 0x0080;// full width character
-		public const int C3_IDEOGRAPH = 0x0100;// ideographic character
-		public const int C3_KASHIDA = 0x0200;// Arabic kashida character
-		public const int C3_LEXICAL = 0x0400;// lexical character
-		public const int C3_HIGHSURROGATE = 0x0800;// high surrogate code unit
-		public const int C3_LOWSURROGATE = 0x1000;// low surrogate code unit
-		public const int C3_ALPHA = 0x8000;// any linguistic char (C1_ALPHA)
-		public const int C3_NOTAPPLICABLE = 0x0000;// ctype 3 is not applicable
 
 		public const int WH_MIN = -1;
 		public const int WH_MSGFILTER = -1;

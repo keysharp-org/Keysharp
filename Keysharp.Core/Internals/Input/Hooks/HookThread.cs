@@ -1078,12 +1078,9 @@ namespace Keysharp.Internals.Input.Hooks
 		internal virtual bool CollectHotstring(ulong extraInfo, ReadOnlySpan<char> ch, int charCount, nint activeWindow,
 											  KeyHistoryItem keyHistoryCurr, ref HotstringDefinition hsOut, ref CaseConformModes caseConformMode, ref char endChar, ref int skipChars)
 		{
-			var suppressHotstringFinalChar = false; // Set default.
 			var hm = script.HotstringManager;
-			// A copy of the typed text, which the trimming below keeps shorter than this, is matched outside the lock: matching
-			// can wait on a #HotIf, which must not hold up the script, and a callback nested in that wait may change the buffer.
-			Span<char> typed = stackalloc char[HotstringDefinition.MAX_HOTSTRING_LENGTH * 3];
-			int typedLength;
+			scoped Span<char> typed;
+			char[] rented = null;
 
 			lock (hm.bufLock)
 			{
@@ -1095,8 +1092,8 @@ namespace Keysharp.Internals.Input.Hooks
 					hsHwnd = activeWindow;
 					hm.hsBuf.Clear();
 				}
-				else if (hm.hsBuf.Count > 90)
-					hm.hsBuf.RemoveRange(0, 45);
+				else
+					hm.TrimHotstringBuffer();
 
 				hm.hsBuf.Add(ch[0]);
 
@@ -1105,20 +1102,48 @@ namespace Keysharp.Internals.Input.Hooks
 					// keyboard layout cannot be composed with the specified virtual key to form a single character."
 					hm.hsBuf.Add(ch[1]);
 
-				var buffer = (ReadOnlySpan<char>)CollectionsMarshal.AsSpan(hm.hsBuf);
-				buffer = buffer[Math.Max(0, buffer.Length - typed.Length)..];
+				var buffer = CollectionsMarshal.AsSpan(hm.hsBuf);
+
+				// Most keystrokes end no trigger, and skip the copy and the match.
+				if (!hm.MayMatch(buffer))
+					return true;
+
+				// A copy is matched outside the lock: matching can wait on a #HotIf, which must not hold up the script, and a
+				// callback nested in that wait may change the buffer. It fits on the stack unless a long abbreviation has
+				// raised the buffer's limit.
+				typed = buffer.Length <= HotstringManager.DefaultHotstringBufferLimit + 2 ? stackalloc char[buffer.Length]
+					: (rented = ArrayPool<char>.Shared.Rent(buffer.Length)).AsSpan(0, buffer.Length);
 				buffer.CopyTo(typed);
-				typedLength = buffer.Length;
 			}
 
-			var hsBufSpan = (ReadOnlySpan<char>)typed[..typedLength];
+			try
+			{
+				var hs = hm.MatchHotstring(typed, out var endCharTyped);
+				return ProcessHotstringMatch(extraInfo, typed, keyHistoryCurr, hs, endCharTyped, ref hsOut, ref caseConformMode, ref endChar, ref skipChars);
+			}
+			finally
+			{
+				if (rented != null)
+					ArrayPool<char>.Shared.Return(rented);
+			}
+		}
 
-			if (hm.MatchHotstring(hsBufSpan) is HotstringDefinition hs)
+		/// <summary>
+		/// Applies the match, if there is one, which included an ending character when endCharTyped is set. Returns whether
+		/// the final keystroke stays visible.
+		/// </summary>
+		private bool ProcessHotstringMatch(ulong extraInfo, ReadOnlySpan<char> typed, KeyHistoryItem keyHistoryCurr,
+			HotstringDefinition hs, bool endCharTyped, ref HotstringDefinition hsOut, ref CaseConformModes caseConformMode, ref char endChar, ref int skipChars)
+		{
+			var suppressHotstringFinalChar = false; // Set default.
+			var hm = script.HotstringManager;
+
+			if (hs != null)
 			{
 				int cpcaseStart, cpcaseEnd;
 				int caseCapableCharacters;
 				bool firstCharWithCaseIsUpper, firstCharWithCaseHasGoneBy;
-				var hsLength = hsBufSpan.Length;
+				var hsLength = typed.Length;
 				var hsBufCountm1 = hsLength - 1;
 
 				if (HotInputLevelAllowsFiring(hs.inputLevel, extraInfo, ref keyHistoryCurr.eventType))
@@ -1140,7 +1165,7 @@ namespace Keysharp.Internals.Input.Hooks
 						// replacement produced in similar case:
 						cpcaseEnd = hsLength;
 
-						if (hs.endCharRequired)
+						if (endCharTyped)
 							--cpcaseEnd;
 
 						// Bug-fix for v1.0.19: First find out how many of the characters in the abbreviation
@@ -1149,7 +1174,7 @@ namespace Keysharp.Internals.Input.Hooks
 								, cpcaseStart = cpcaseEnd - hs.str.Length
 								; cpcaseStart < cpcaseEnd; ++cpcaseStart)
 						{
-							char chStart = hsBufSpan[cpcaseStart];
+							char chStart = typed[cpcaseStart];
 
 							if (char.IsLower(chStart) || char.IsUpper(chStart)) // A case-capable char.
 							{
@@ -1187,7 +1212,7 @@ namespace Keysharp.Internals.Input.Hooks
 								// caseless characters such as the @ symbol do not disqualify an abbreviation
 								// from being considered "all uppercase":
 								for (cpcaseStart = cpcaseEnd - hs.str.Length; cpcaseStart < cpcaseEnd; ++cpcaseStart)
-									if (char.IsLower(hsBufSpan[cpcaseStart])) // Use IsCharLower to better support chars from non-English languages.
+									if (char.IsLower(typed[cpcaseStart])) // Use IsCharLower to better support chars from non-English languages.
 										break; // Any lowercase char disqualifies CASE_CONFORM_ALL_CAPS.
 
 								if (cpcaseStart == cpcaseEnd) // All case-possible characters are uppercase.
@@ -1198,7 +1223,7 @@ namespace Keysharp.Internals.Input.Hooks
 						}
 					}
 
-					if (hs.doBackspace || hs.omitEndChar && hs.endCharRequired) // Fix for v1.0.37.07: Added hs.mOmitEndChar so that B0+O will omit the ending character.
+					if (hs.doBackspace || hs.omitEndChar && endCharTyped) // Fix for v1.0.37.07: Added hs.mOmitEndChar so that B0+O will omit the ending character.
 					{
 						// Have caller suppress this final key pressed by the user, since it would have
 						// to be backspaced over anyway.  Even if there is a visible Input command in
@@ -1221,7 +1246,7 @@ namespace Keysharp.Internals.Input.Hooks
 						suppressHotstringFinalChar = true;
 					}
 
-					skipChars = hs.ComputeReplacementSkipChars(hsBufSpan, suppressHotstringFinalChar, ref caseConformMode);
+					skipChars = hs.ComputeReplacementSkipChars(typed, endCharTyped, suppressHotstringFinalChar, ref caseConformMode);
 
 					// Post the message rather than sending it, because Send would need
 					// SendMessageTimeout(), which is undesirable because the whole point of
@@ -1244,7 +1269,7 @@ namespace Keysharp.Internals.Input.Hooks
 					// 2) Two ending characters would appear in pre-1.0.43 versions: one where the user typed
 					//    it and one at the end, which is clearly incorrect.
 					hsOut = hs;
-					endChar = hs.endCharRequired ? hsBufSpan[hsBufCountm1] : (char)0;
+					endChar = endCharTyped ? typed[hsBufCountm1] : (char)0;
 
 					// Clean up.
 					// The keystrokes to be sent by the other thread upon receiving the message prepared above
@@ -1266,7 +1291,7 @@ namespace Keysharp.Internals.Input.Hooks
 						// of another hot string adjacent to the one just typed).  The end-char
 						// sent by DoReplace() won't be captured (since it's "ignored input", which
 						// is why it's put into the buffer manually here):
-						if (hs.endCharRequired)
+						if (endCharTyped)
 							hm.hsBuf.RemoveRange(0, Math.Max(0, hm.hsBuf.Count - 1));
 						else
 							hm.hsBuf.Clear();
@@ -1279,7 +1304,7 @@ namespace Keysharp.Internals.Input.Hooks
 						// active window.  A simpler way to understand is to realize that the buffer now
 						// contains (for recognition purposes, in its right side) the hotstring and its
 						// end char (if applicable), so remove both:
-						var typedCount = Math.Min(hm.hsBuf.Count, hs.str.Length + (hs.endCharRequired ? 1 : 0));
+						var typedCount = Math.Min(hm.hsBuf.Count, hs.str.Length + (endCharTyped ? 1 : 0));
 						hm.hsBuf.RemoveRange(hm.hsBuf.Count - typedCount, typedCount);
 					}
 
@@ -1293,9 +1318,9 @@ namespace Keysharp.Internals.Input.Hooks
 					// There are probably many other uses for the reset option (albeit obscure, but they have
 					// been brought up in the forum at least twice).
 					if (hs.doReset)
-						hm.hsBuf.Clear(); // Further below, the buffer will be terminated to reflect this change.
-				}//for each hotstring for this letter.
-			}//if hotstring buffer not empty.
+						hm.hsBuf.Clear();
+				}
+			}
 
 			return !suppressHotstringFinalChar;
 		}
@@ -1852,8 +1877,6 @@ namespace Keysharp.Internals.Input.Hooks
 		#endregion
 
 		internal virtual object Invoke(Func<object> f) => f();
-
-		internal virtual bool IsHotstringWordChar(char ch) => char.IsLetterOrDigit(ch) ? true : !char.IsWhiteSpace(ch);
 
 
 		#region Composite prefixes which carry modifiers

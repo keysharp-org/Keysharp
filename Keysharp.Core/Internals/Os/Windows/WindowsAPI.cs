@@ -1575,10 +1575,6 @@ namespace Keysharp.Internals.Os.Windows
 		[return: MarshalAs(UnmanagedType.Bool)]
 		internal static partial bool UnregisterHotKey(nint hWnd, uint id);
 
-		[LibraryImport(user32, EntryPoint = "IsCharAlphaNumericW")]
-		[return: MarshalAs(UnmanagedType.Bool)]
-		internal static partial bool IsCharAlphaNumeric([MarshalAs(UnmanagedType.U2)] char ch);
-
 		/// <summary>
 		/// Returns the first ancestor of aWnd that isn't itself a child.  aWnd itself is returned if
 		/// it is not a child.  Returns NULL only if aWnd is NULL.  Also, it should always succeed
@@ -1683,10 +1679,6 @@ namespace Keysharp.Internals.Os.Windows
 
 			return true;
 		}
-
-		[LibraryImport(kernel32, EntryPoint = "GetStringTypeExW", StringMarshalling = StringMarshalling.Utf16)]
-		[return: MarshalAs(UnmanagedType.Bool)]
-		internal static partial bool GetStringTypeEx(uint Locale, uint dwInfoType, string lpSrcStr, int cchSrc, [Out] ushort[] lpCharType);
 
 		[LibraryImport(kernel32, EntryPoint = "GetExitCodeThread")]
 		[return: MarshalAs(UnmanagedType.Bool)]

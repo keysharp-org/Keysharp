@@ -6,15 +6,9 @@ namespace Keysharp.Internals.Input.Keyboard
 	[PublicHiddenFromUser]
 	internal class HotstringDefinition
 	{
-		internal const int HOTSTRING_BLOCK_SIZE = 1024;
-		internal const int HS_BUF_DELETE_COUNT = HS_BUF_SIZE / 2;
-		internal const int HS_BUF_SIZE = (MAX_HOTSTRING_LENGTH * 2) + 10;
-		internal const int HS_MAX_END_CHARS = 100;
 		internal const int HS_SUSPENDED = 0x01;
 		internal const int HS_TEMPORARILY_DISABLED = 0x04;
 		internal const int HS_TURNED_OFF = 0x02;
-		internal const int MAX_HOTSTRING_LENGTH = 40;
-		internal const string MAX_HOTSTRING_LENGTH_STR = "40";      // Hard to imagine a need for more than this, and most are only a few chars long.
 
 		internal bool caseSensitive, conformToCase, doBackspace, omitEndChar, endCharRequired
 		, detectWhenInsideWord, doReset, suspendExempt, constructedOK;
@@ -297,21 +291,21 @@ namespace Keysharp.Internals.Input.Keyboard
 			return hotCriterion == _hotCriterion // Same #HotIf criterion.
 				   && caseSensitive == _caseSensitive // ::BTW:: and :C:BTW:: can co-exist.
 				   && detectWhenInsideWord == _detectWhenInsideWord // :?:ion:: and ::ion:: can co-exist.
-				   && (_caseSensitive ? _hotstring.SequenceEqual(str.AsSpan()) : str.AsSpan().Equals(_hotstring, StringComparison.OrdinalIgnoreCase));// :C:BTW:: and :C:btw:: can co-exist, but not ::BTW:: and ::btw::.
+				   && (_caseSensitive ? _hotstring.SequenceEqual(str.AsSpan()) : HotstringIndex.FoldedEquals(str, _hotstring));// :C:BTW:: and :C:btw:: can co-exist, but not ::BTW:: and ::btw::.
 		}
 
-		internal int ComputeReplacementSkipChars(ReadOnlySpan<char> hsBufSpan, bool finalCharSuppressed, ref CaseConformModes caseMode)
+		internal int ComputeReplacementSkipChars(ReadOnlySpan<char> typed, bool endCharTyped, bool finalCharSuppressed, ref CaseConformModes caseMode)
 		{
 			if (!doBackspace || string.IsNullOrEmpty(replacement) || string.IsNullOrEmpty(str))
 				return 0;
 
 			var triggerLength = str.Length;
-			var typedStart = hsBufSpan.Length - triggerLength - (endCharRequired ? 1 : 0);
+			var typedStart = typed.Length - triggerLength - (endCharTyped ? 1 : 0);
 
 			if (typedStart < 0)
 				return 0;
 
-			var finalTriggerCharSuppressed = finalCharSuppressed && !endCharRequired;
+			var finalTriggerCharSuppressed = finalCharSuppressed && !endCharTyped;
 			var maxSkip = Math.Max(0, triggerLength - (finalTriggerCharSuppressed ? 1 : 0));
 			var firstCharWithCase = -1;
 
@@ -321,7 +315,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 				for (var i = typedStart; i < typedEnd; i++)
 				{
-					var c = hsBufSpan[i];
+					var c = typed[i];
 
 					if (char.IsLower(c) || char.IsUpper(c))
 					{
@@ -340,20 +334,20 @@ namespace Keysharp.Internals.Input.Keyboard
 				if (sendRaw == SendRawModes.NotRaw && "^+!#{}".Contains(replacementChar))
 					break;
 
-				var typedChar = hsBufSpan[typedStart + skipChars];
+				var typedChar = typed[typedStart + skipChars];
 				var isPair = char.IsHighSurrogate(replacementChar)
 							 && skipChars + 1 < replacement.Length
 							 && skipChars + 1 < maxSkip
-							 && typedStart + skipChars + 1 < hsBufSpan.Length
+							 && typedStart + skipChars + 1 < typed.Length
 							 && char.IsLowSurrogate(replacement[skipChars + 1])
 							 && char.IsHighSurrogate(typedChar)
-							 && char.IsLowSurrogate(hsBufSpan[typedStart + skipChars + 1]);
+							 && char.IsLowSurrogate(typed[typedStart + skipChars + 1]);
 
 				if (isPair)
 				{
 					// Match surrogate pairs atomically; case folding on astral characters
 					// isn't attempted here (rare for hotstring replacements).
-					if (typedChar != replacementChar || hsBufSpan[typedStart + skipChars + 1] != replacement[skipChars + 1])
+					if (typedChar != replacementChar || typed[typedStart + skipChars + 1] != replacement[skipChars + 1])
 						break;
 
 					skipChars += 2;
@@ -388,7 +382,6 @@ namespace Keysharp.Internals.Input.Keyboard
 		{
 			var sb = new StringBuilder();//This might be able to be done more efficiently, but use sb unless performance issues show up.
 			var startOfReplacement = 0;
-			string sendBuf;
 			var ht = script.HookThread;
 			var kbdMouseSender = ht.kbdMsSender;
 			var triggerLength = str?.Length ?? 0;
@@ -396,7 +389,8 @@ namespace Keysharp.Internals.Input.Keyboard
 
 			if (doBackspace)
 			{
-				var backspaceCount = ComputeReplacementBackspaceCount(skipChars);
+				// endChar is set exactly when the match included an ending character, whatever the option is now.
+				var backspaceCount = ComputeReplacementBackspaceCount(skipChars, endChar != 0);
 
 				for (var i = 0; i < backspaceCount; ++i)
 				{
@@ -408,33 +402,16 @@ namespace Keysharp.Internals.Input.Keyboard
 			if (!string.IsNullOrEmpty(replacement))
 			{
 				if (skipChars < replacement.Length)
-					_ = sb.Append(replacement, skipChars, replacement.Length - skipChars);
-
-				if (caseMode == CaseConformModes.AllCaps)
 				{
-					sendBuf = sb.ToString().ToUpper();
-					_ = sb.Clear();
-					_ = sb.Append(sendBuf);
+					if (caseMode == CaseConformModes.AllCaps)
+						_ = sb.Append(string.Create(replacement.Length - skipChars, (replacement, skipChars),
+							static (dest, state) => state.replacement.AsSpan(state.skipChars).ToUpper(dest, CultureInfo.CurrentCulture)));
+					else
+						_ = sb.Append(replacement, skipChars, replacement.Length - skipChars);
 				}
-				else if (caseMode == CaseConformModes.FirstCap)
-				{
-					var b = false;
-					sendBuf = sb.ToString();
-					_ = sb.Clear();
 
-					for (var i = 0; i < sendBuf.Length; i++)
-					{
-						if (i < startOfReplacement)
-							_ = sb.Append(sendBuf[i]);
-						else if (b)
-							_ = sb.Append(sendBuf[i]);
-						else if (!b)
-						{
-							_ = sb.Append(char.ToUpper(sendBuf[i]));
-							b = true;
-						}
-					}
-				}
+				if (caseMode == CaseConformModes.FirstCap && startOfReplacement < sb.Length)
+					sb[startOfReplacement] = char.ToUpper(sb[startOfReplacement]);
 
 				if (!omitEndChar) // The ending character (if present) needs to be sent too.
 				{
@@ -443,19 +420,19 @@ namespace Keysharp.Internals.Input.Keyboard
 					// 1) It defeats the uninterruptibility of the hotstring's replacement by allowing the user's
 					//    buffered keystrokes to take effect in between the two calls to SendKeys.
 					// 2) Performance: Avoids having to install the playback hook twice, etc.
-					if (endCharRequired && endChar != 0) // Must now check mEndCharRequired because LOWORD has been overloaded with context-sensitive meanings.
+					if (endChar != 0)
 					{
 						// v1.0.43.02: Don't send "{Raw}" if already in raw mode!
 						// v1.1.27: Avoid adding {Raw} if it gets switched on within the replacement text.
 						if (sendRaw != 0 || replacement.Contains("{Raw}", StringComparison.OrdinalIgnoreCase) || replacement.Contains("{Text}", StringComparison.OrdinalIgnoreCase))
 							_ = sb.Append(endChar);
 						else
-							_ = sb.Append(string.Format("{0}{1}", "{Raw}", endChar));
+							_ = sb.Append("{Raw}").Append(endChar);
 					}
 				}
 			}
 
-			sendBuf = sb.ToString();
+			var sendBuf = sb.ToString();
 
 			if (sendBuf.Length == 0) // No keys to send.
 				return;
@@ -496,7 +473,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			tv.sendLevel = oldSendLevel;
 		}
 
-		internal int ComputeReplacementBackspaceCount(int skipChars)
+		internal int ComputeReplacementBackspaceCount(int skipChars, bool endCharTyped)
 		{
 			var trigger = str ?? "";
 			skipChars = Math.Clamp(skipChars, 0, trigger.Length);
@@ -513,7 +490,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			// match was already suppressed by the hook. If a retained prefix is followed by
 			// an astral final trigger character, the suppressed low surrogate can leave the
 			// high surrogate between that prefix and the replacement; keep one backspace for it.
-			if (!endCharRequired
+			if (!endCharTyped
 					&& !(skipChars > 0
 						 && trigger.Length >= 2
 						 && skipChars <= trigger.Length - 2
@@ -570,7 +547,7 @@ namespace Keysharp.Internals.Input.Keyboard
 					hwndCritFound = HotkeyDefinition.NormalizeCriterionFoundHwnd(definition.hotCriterion, hwndCritFound);
 
 					script.HookThread.kbdMsSender.thisHotkeyModifiersLR = 0;
-					A_EndChar = definition.endCharRequired ? endChar.ToString() : "";
+					A_EndChar = endChar != 0 ? endChar.ToString() : "";
 					script.SetHotNamesAndTimes(definition.Name);
 					_ = Interlocked.Increment(ref definition.existingThreads);
 

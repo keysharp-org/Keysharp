@@ -92,14 +92,9 @@ namespace Keysharp.Tests
 
 				hs2 = MatchHotstring(val);//Test as is.
 				AssertFires(hs1, hs2, val);
-				//
-				_ = Keyboard.Hotstring("Reset");
 				var prefixed = Guid.NewGuid() + " " + val;
 				hs2 = MatchHotstring(prefixed);//Test with text before it.
 				AssertFires(hs1, hs2, prefixed);
-				_ = Keyboard.Hotstring("Reset");
-				hs2 = MatchHotstring("");
-				Assert.AreEqual(null, hs2);
 				//Need to ensure the other tests with ? and * work.
 				var opts = split0[1..split0.IndexOf(':', 1)];
 				var newOptsName = ":*B0OSZRK123P10:" + split3;//Change options except for ? and C.
@@ -911,32 +906,21 @@ namespace Keysharp.Tests
 			foreach (var hotstring in hsm.Hotstrings)
 				hotstring.suspended = 0;
 
-			_ = Keyboard.Hotstring("Reset");
 			var hs = MatchHotstring("bitw ");
 			Assert.AreEqual(hs.Name, "::bitw");
 			Assert.AreEqual(hs.Replacement, "biggest in the world");
-			_ = Keyboard.Hotstring("Reset");
-			//
 			hs = MatchHotstring("1 ");
 			Assert.AreEqual(hs.Name, "::1");
 			Assert.AreEqual(hs.Replacement, ":2");
-			_ = Keyboard.Hotstring("Reset");
-			//
 			hs = MatchHotstring("3 ");
 			Assert.AreEqual(hs.Name, "::3");
 			Assert.AreEqual(hs.Replacement, "::4");
-			_ = Keyboard.Hotstring("Reset");
-			//
 			hs = MatchHotstring("5: ");
 			Assert.AreEqual(hs.Name, "::5:");
 			Assert.AreEqual(hs.Replacement, "6");
-			_ = Keyboard.Hotstring("Reset");
-			//
 			hs = MatchHotstring("7: ");
 			Assert.AreEqual(hs.Name, "::7:");
 			Assert.AreEqual(hs.Replacement, ":8");
-			_ = Keyboard.Hotstring("Reset");
-			//
 			var val = "Any text between the top and bottom parentheses is treated literally.\nBy default" +
 					  ", the hard carriage return (Enter) between the previous line and this one is als" +
 					  "o preserved.\n    By default, the indentation (tab) to the left of this line is " +
@@ -944,47 +928,30 @@ namespace Keysharp.Tests
 			hs = MatchHotstring("text1 ");
 			Assert.AreEqual(hs.Name, "::text1");
 			Assert.AreEqual(hs.Replacement, val);
-			//
-			_ = Keyboard.Hotstring("Reset");
 			hs = MatchHotstring("mf1 ");
 			Assert.AreEqual(hs.Name, ":X:mf1");
 			Assert.AreEqual(hs.Replacement, null);
-			//
-			_ = Keyboard.Hotstring("Reset");
 			hs = MatchHotstring("mf2 ");
 			Assert.AreEqual(hs.Name, ":X:mf2");
 			Assert.AreEqual(hs.Replacement, null);
-			//
-			_ = Keyboard.Hotstring("Reset");
 			hs = MatchHotstring("mf3 ");
 			Assert.AreEqual(hs.Name, ":X:mf3");
 			Assert.AreEqual(hs.Replacement, null);
-			//
-			_ = Keyboard.Hotstring("Reset");
 			hs = MatchHotstring("mf4 ");
 			Assert.AreEqual(hs.Name, "::mf4");
 			Assert.AreEqual(hs.Replacement, null);
-			//
-			_ = Keyboard.Hotstring("Reset");
 			hs = MatchHotstring("mf5 ");
 			Assert.AreEqual(hs.Name, "::mf5");
 			Assert.AreEqual(hs.Replacement, null);
-			//
-			_ = Keyboard.Hotstring("Reset");
 			hs = MatchHotstring("mf6 ");
 			Assert.AreEqual(hs.Name, "::mf6");
 			Assert.AreEqual(hs.Replacement, null);
-			//
-			_ = Keyboard.Hotstring("Reset");
 			hs = MatchHotstring("mf7 ");
 			Assert.AreEqual(hs.Name, ":X:mf7");
 			Assert.AreEqual(hs.Replacement, null);
-			//
-			_ = Keyboard.Hotstring("Reset");
 			hs = MatchHotstring("mf8 ");
 			Assert.AreEqual(hs.Name, "::mf8");
 			Assert.AreEqual(hs.Replacement, null);
-			//
 			// An abbreviation and its replacement are raw text, so a quote is an ordinary character rather than a
 			// string opener, and a ';' is a comment only when whitespace precedes it.
 			AssertHotstring("arn't ", "::arn't", "aren't");
@@ -1004,7 +971,6 @@ namespace Keysharp.Tests
 
 			void AssertHotstring(string typed, string name, string replacement)
 			{
-				_ = Keyboard.Hotstring("Reset");
 				var hs = MatchHotstring(typed);
 				Assert.IsNotNull(hs, $"nothing matched after typing \"{typed}\"");
 				Assert.AreEqual(name, hs.Name);
@@ -1042,15 +1008,22 @@ namespace Keysharp.Tests
 #endif
 		}
 
-		[Test, Category("Hotstring"), NonParallelizable]
+		[Test, Category("Hotstring"), Category("Internal"), NonParallelizable]
 		public void ResetInputBuffer()
 		{
-			hsm.AddChars("asdf");
+			var btw = AddHotstringForMatchTest("", "btw");
+			Assert.IsNull(TypeHotstringText("asdf").Definition);
 			Assert.AreEqual("asdf", Keyboard.Hotstring("Reset"));
 			Assert.AreEqual("", Keyboard.Hotstring("Reset"));
+
+			// As in AutoHotkey, enough is kept that backspacing over a word leaves the text before it.
+			Assert.IsNull(TypeHotstringText(new string('x', 200) + " helloworld").Definition);
+			hsm.hsBuf.RemoveRange(hsm.hsBuf.Count - "world".Length, "world".Length);
+			Assert.IsNull(TypeHotstringText("btw ").Definition);
+			Assert.AreSame(btw, TypeHotstringText(" btw ").Definition);
 		}
 
-		[Test, Category("Hotstring"), NonParallelizable]
+		[Test, Category("Hotstring"), Category("Internal"), NonParallelizable]
 		public void FirstDefinedHotstringWins()
 		{
 			// As in AutoHotkey, the first hotstring defined fires when several match, not the longest one.
@@ -1059,7 +1032,91 @@ namespace Keysharp.Tests
 			var first = hsm.AddHotstring(":*?:bc", null, "*?", "bc", "Y", false);
 			_ = hsm.AddHotstring(":*:abc", null, "*", "abc", "X", false);
 			Assert.AreSame(first, MatchHotstring("abc"));
-			_ = Keyboard.Hotstring("Reset");
+		}
+
+		[Test, Category("Hotstring"), Category("Internal"), NonParallelizable]
+		public void CriterionChangesOptions()
+		{
+			// Candidates are collected at both positions whatever their options, since a criterion can change them
+			// mid-search. This one makes the next hotstring immediate, which then matches the whole text.
+			var enabling = AddHotstringForMatchTest("?:", "bc");
+			var later = AddHotstringForMatchTest("", "abc ");
+			enabling.hotCriterion = new KeysharpFunc((Func<object, object>)(_ =>
+			{
+				later.ParseOptions("*");
+				return 0L;
+			}));
+			Assert.AreSame(later, MatchHotstring("abc "));
+
+			// A hotstring is applied by the options it matched with, even when its criterion changes them.
+			ResetHotstringMatchState();
+			var flipping = AddHotstringForMatchTest("*:", "abc");
+			flipping.hotCriterion = new KeysharpFunc((Func<object, object>)(_ =>
+			{
+				flipping.ParseOptions("*0");
+				return 1L;
+			}));
+			var flipped = TypeHotstringText("abc");
+			Assert.AreSame(flipping, flipped.Definition);
+			Assert.AreEqual('\0', flipped.EndChar);
+		}
+
+		[TestCase(128, true), TestCase(2048, false)]
+		[Category("Hotstring"), Category("Internal"), NonParallelizable]
+		public void LongAbbreviations(int length, bool immediate)
+		{
+			var trigger = new string('a', length - 1) + "z";
+			var definition = AddHotstringForMatchTest(immediate ? "*:" : "", trigger);
+			var ending = immediate ? "" : " ";
+			var result = TypeHotstringText(new string('q', length * 3) + " " + trigger.ToUpperInvariant() + ending);
+			Assert.AreSame(definition, result.Definition);
+			Assert.AreEqual(CaseConformModes.AllCaps, result.CaseMode);
+			// The character before the abbreviation is kept, and here it continues a word.
+			Assert.IsNull(TypeHotstringText(new string('q', length * 3) + "x" + trigger + ending).Definition);
+		}
+
+		[Test, Category("Hotstring"), Category("Internal"), NonParallelizable]
+		public void MatchingEquivalence()
+		{
+			// The index only narrows the search, so matching agrees with a scan of every hotstring in order, and MayMatch never rules out a match.
+			var random = new Random(71203);
+			const string alphabet = "abcXYZIi\u0130\u0131\u03a3\u03c3\u03c2\u00df\u1e9e\u212a., ";
+			var definitions = new List<HotstringDefinition>();
+
+			for (var i = 0; i < 480; i++)
+			{
+				var trigger = i % 7 == 0 && i > 0 ? definitions[random.Next(definitions.Count)].str
+					: new string(Enumerable.Range(0, random.Next(1, 13)).Select(_ => alphabet[random.Next(alphabet.Length)]).ToArray());
+				definitions.Add(AddHotstringForMatchTest((i % 2 == 0 ? "*" : "") + (i % 3 == 0 ? "?" : "") + (i % 5 == 0 ? "C" : "") + ":", trigger));
+			}
+
+			// Longest first, so the first-declared match is collected after more candidates than the stack holds.
+			for (var length = 40; length > 0; length--)
+				definitions.Add(AddHotstringForMatchTest("*?:", new string('q', length)));
+
+			for (var i = 0; i < definitions.Count; i++)
+			{
+				var definition = definitions[i];
+
+				// The index ignores options, so toggling them, C included, must keep both searches in agreement.
+				if (i % 11 == 0)
+					definition.SetSuspended(definition.suspended ^ HotstringDefinition.HS_TURNED_OFF);
+
+				if (i % 13 == 0)
+					definition.ParseOptions(definition.endCharRequired ? "*" : "*0");
+
+				if (i % 17 == 0)
+					definition.ParseOptions(definition.caseSensitive ? "C0" : "C");
+
+				var text = i % 4 == 0 ? definition.str.ToUpperInvariant() : definition.str;
+
+				foreach (var sample in new[] { text, " " + text + " ", "x" + text + "\t", "prefix " + text + "." })
+				{
+					var expected = LinearMatch(sample);
+					Assert.AreSame(expected, MatchHotstring(sample), $"definition {i}, input {sample}");
+					Assert.IsTrue(expected == null || hsm.MayMatch(sample), $"MayMatch, definition {i}, input {sample}");
+				}
+			}
 		}
 
 		[Test, Category("Hotstring"), NonParallelizable]
@@ -1087,7 +1144,6 @@ namespace Keysharp.Tests
 			ResetHotstringMatchState();
 			var endChar = AddHotstringForMatchTest("", "ksend");
 			Assert.IsNull(MatchHotstring("ksend"));
-			_ = Keyboard.Hotstring("Reset");
 			Assert.AreEqual(endChar, MatchHotstring("ksend "));
 		}
 
@@ -1107,8 +1163,14 @@ namespace Keysharp.Tests
 		public void InsideWordMatching()
 		{
 			ResetHotstringMatchState();
-			AddHotstringForMatchTest("", "ksword");
+			var plain = AddHotstringForMatchTest("", "ksword");
 			Assert.IsNull(MatchHotstring("prefixksword "));
+			// Punctuation does not continue a word. Letters of any script, those outside the BMP included, and combining
+			// marks do.
+			Assert.AreSame(plain, MatchHotstring("(ksword "));
+
+			foreach (var before in new[] { "\u3042", "\U0001D431", "e\u0301", "\u0915\u093E" })
+				Assert.IsNull(MatchHotstring(before + "ksword "), before);
 
 			ResetHotstringMatchState();
 			var insideWord = AddHotstringForMatchTest("?:", "ksword");
@@ -1122,8 +1184,12 @@ namespace Keysharp.Tests
 			var caseSensitive = AddHotstringForMatchTest("C:", "AbC");
 			Assert.AreEqual(caseSensitive, MatchHotstring("AbC "));
 
-			_ = Keyboard.Hotstring("Reset");
 			Assert.IsNull(MatchHotstring("abc "));
+
+			// Hotstring() finds an existing hotstring by the folding matching uses, so final sigma is another letter.
+			var sigma = AddHotstringForMatchTest("", "\u03a3x");
+			Assert.AreSame(sigma, hsm.FindHotstring("\u03c3X", false, false, null));
+			Assert.IsNull(hsm.FindHotstring("\u03c2x", false, false, null));
 		}
 
 		[SetUp, Category("Hotstring")]
@@ -1162,10 +1228,47 @@ namespace Keysharp.Tests
 			return (HotstringDefinition)Keysharp.Runtime.Keyboard.HotstringManager.AddHotstring(name, null, options, trigger, trigger.ToUpperInvariant(), false);
 		}
 
-		private HotstringDefinition MatchHotstring(string typed)
+		// Every hotstring in declaration order, as AutoHotkey searches.
+		private HotstringDefinition LinearMatch(string typed)
 		{
-			hsm.AddChars(typed);
-			return hsm.MatchHotstring(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(hsm.hsBuf));
+			var hasEndChar = typed.Length > 0 && hsm.defEndChars.Contains(typed[^1]);
+
+			foreach (var hs in hsm.Hotstrings)
+			{
+				var start = typed.Length - hs.str.Length - (hs.endCharRequired ? 1 : 0);
+
+				if (hs.suspended != 0 || hs.endCharRequired && !hasEndChar || start < 0)
+					continue;
+
+				var abbreviation = typed.Substring(start, hs.str.Length);
+
+				if ((hs.caseSensitive ? abbreviation == hs.str : abbreviation.ToLowerInvariant() == hs.str.ToLowerInvariant())
+						&& (hs.detectWhenInsideWord || start == 0 || !HotstringManager.EndsInWord(typed.AsSpan(0, start))))
+					return hs;
+			}
+
+			return null;
 		}
+
+		// Types text into the hook's recognizer one character at a time, returning what the last one matched.
+		private (HotstringDefinition Definition, CaseConformModes CaseMode, char EndChar) TypeHotstringText(string text)
+		{
+			HotstringDefinition definition = null;
+			var caseMode = CaseConformModes.None;
+			var endChar = '\0';
+
+			foreach (var ch in text)
+			{
+				definition = null;
+				caseMode = CaseConformModes.None;
+				endChar = '\0';
+				var skipChars = 0;
+				_ = s.HookThread.CollectHotstring(0, [ch], 1, 1, new KeyHistoryItem(), ref definition, ref caseMode, ref endChar, ref skipChars);
+			}
+
+			return (definition, caseMode, endChar);
+		}
+
+		private HotstringDefinition MatchHotstring(string typed) => hsm.MatchHotstring(typed, out _);
 	}
 }

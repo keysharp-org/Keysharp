@@ -409,7 +409,7 @@ break_twice:;
 			}
 
 			// Parse the hotstring name.
-			var hotstringStart = "";
+			ReadOnlySpan<char> hotstringStart = "";
 			ReadOnlySpan<char> hotstringOptions = ""; // Set default as "no options were specified for this hotstring".
 
 			if (name.Length > 1 && name[0] == ':')
@@ -421,11 +421,11 @@ break_twice:;
 					var tempindex = hotstringOptions.IndexOf(':');
 
 					if (tempindex != -1)
-						hotstringStart = hotstringOptions.Slice(tempindex + 1).ToString(); // Points to the hotstring itself.
+						hotstringStart = hotstringOptions.Slice(tempindex + 1); // Points to the hotstring itself.
 				}
 				else // Double-colon, so it's a hotstring if there's more after this (but this means no options are present).
 					if (name.Length > 2)
-						hotstringStart = name.Substring(2);
+						hotstringStart = name.AsSpan(2);
 
 				//else it's just a naked "::", which is invalid.
 			}
@@ -529,7 +529,7 @@ break_twice:;
 				if (A_IsSuspended)
 					initialSuspendState |= HotstringDefinition.HS_SUSPENDED;
 
-				var addResult = hm.AddHotstring(name, ifunc, hotstringOptions, hotstringStart, action, false, initialSuspendState);
+				var addResult = hm.AddHotstring(name, ifunc, hotstringOptions, hotstringStart.ToString(), action, false, initialSuspendState);
 				if (addResult is not HotstringDefinition added)
 					return addResult;
 
