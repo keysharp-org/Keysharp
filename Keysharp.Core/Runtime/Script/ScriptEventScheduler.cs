@@ -281,7 +281,6 @@ namespace Keysharp.Runtime
 		private bool blockedQueuedWork;
 		private bool pumpScheduled;
 		private bool timerCheckPending;
-		private int pumpDepth;
 		private readonly bool isUiScheduler;
 		private readonly int ownerManagedThreadId;
 		private readonly Script script;
@@ -745,11 +744,10 @@ internal bool HasBlockedQueuedWork
 
 		private bool TryBeginPump()
 		{
+			// Nested passes do their own bookkeeping: the pass beneath one is parked in a callback, which may be a
+			// dialog's message loop that only a posted wake reaches.
 			lock (gate)
 			{
-				if (pumpDepth++ != 0)
-					return true;
-
 				blockedQueuedWork = false;
 				pumpScheduled = false;
 				return true;
@@ -762,11 +760,6 @@ internal bool HasBlockedQueuedWork
 
 			lock (gate)
 			{
-				pumpDepth--;
-
-				if (pumpDepth != 0)
-					return;
-
 				blockedQueuedWork = blocked;
 				checkTimers = timerCheckPending;
 			}
@@ -922,7 +915,7 @@ internal bool HasBlockedQueuedWork
 		private bool TryMarkPumpScheduledUnsafe(bool requireQueued = true)
 		{
 			// requireQueued:false is the timer-waker path — wake to run the due-check even with an empty queue.
-			if ((requireQueued && !HasQueuedEventsUnsafe()) || pumpScheduled || pumpDepth != 0)
+			if ((requireQueued && !HasQueuedEventsUnsafe()) || pumpScheduled)
 				return false;
 
 			pumpScheduled = true;

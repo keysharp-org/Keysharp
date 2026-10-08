@@ -82,12 +82,6 @@ namespace Keysharp.Builtins
 		private static nint GetDialogOwnerHandle(Form owner)
 			=> owner is { IsDisposed: false, IsHandleCreated: true } && WindowsAPI.IsWindow(owner.Handle) ? owner.Handle : 0;
 
-		private sealed class MsgBoxOwner(nint handle) : IWin32Window
-		{
-			// A non-null wrapper with a zero handle prevents WinForms from choosing the active window.
-			public nint Handle { get; } = handle;
-		}
-
 		internal static int MergeMsgBoxOptions(int current, int options)
 		{
 			ReadOnlySpan<int> masks = [0xF, 0xF0, 0xF00, 0x3000];
@@ -153,6 +147,11 @@ namespace Keysharp.Builtins
 					_ = WindowsAPI.SetTimer(dialogHwnd, unchecked((nuint)System.Threading.Interlocked.Increment(ref nextMsgBoxTimerId)), request.TimeoutMs, msgBoxTimeoutProc);
 				}
 			}
+
+			// The dialog loop shows the box at its first idle, but completing the show below releases held launches
+			// ahead of that, and one which runs long would keep the box hidden. AutoHotkey defers its timer check here.
+			if (!WindowsAPI.IsWindowVisible(dialogHwnd))
+				_ = WindowsAPI.ShowWindow(dialogHwnd, WindowsAPI.SW_NORMAL);
 
 			_ = Platform.Window.TryActivate(dialogHwnd);
 			CompletePendingWindowsMsgBoxShow(request);
@@ -237,7 +236,7 @@ namespace Keysharp.Builtins
 			owner.ScheduleBlockedEventSchedulers();
 		}
 
-		private static (DialogResult Result, bool TimedOut, int Error) ShowWindowsMsgBox(Script script, IWin32Window ownerWindow, string txt, string caption, MessageBoxButtons buttons, MessageBoxIcon icon, MessageBoxDefaultButton defaultbutton, MessageBoxOptions mbopts, uint timeoutMs)
+		private static (DialogResult Result, bool TimedOut, int Error) ShowWindowsMsgBox(Script script, nint ownerHandle, string txt, string caption, MessageBoxButtons buttons, MessageBoxIcon icon, MessageBoxDefaultButton defaultbutton, MessageBoxOptions mbopts, uint timeoutMs)
 		{
 			var request = new WindowsMsgBoxRequest()
 			{
@@ -256,11 +255,11 @@ namespace Keysharp.Builtins
 
 				_ = WindowsAPI.PostMessage(script.MainWindowHandle, (uint)WindowsAPI.WM_COMMNOTIFY, (nint)(uint)UserMessages.AHK_DIALOG, (nint)request.RequestId);
 
-				// Pass the complete style through options so Windows, rather than WinForms' enum checks, decides validity.
-				var style = mbopts | (MessageBoxOptions)((int)buttons | (int)icon | (int)defaultbutton);
-				WindowsAPI.SetLastError(0);
-				var ret = MessageBox.Show(ownerWindow, txt, caption, MessageBoxButtons.OK, MessageBoxIcon.None, MessageBoxDefaultButton.Button1, style);
-				var error = ret == DialogResult.None && !request.TimedOut ? (int)WindowsAPI.GetLastError() : 0;
+				// Called directly, as AutoHotkey does: WinForms' MessageBox.Show disables every other window of the
+				// thread for the duration, which includes an interrupted thread's MsgBox and the script's GUIs.
+				var style = (uint)mbopts | (uint)buttons | (uint)icon | (uint)defaultbutton;
+				var ret = (DialogResult)WindowsAPI.MessageBoxW(ownerHandle, txt, caption, style);
+				var error = ret == DialogResult.None && !request.TimedOut ? Marshal.GetLastPInvokeError() : 0;
 				return (ret, request.TimedOut, error);
 			}
 			finally
@@ -1042,52 +1041,37 @@ namespace Keysharp.Builtins
 				txt = "Press OK to continue.";
 
 #if WINDOWS
-			try
+			var result = RunInterruptibleUIDialog(() =>
 			{
-				var result = RunInterruptibleUIDialog(() =>
+				script.nMessageBoxes++;
+
+				try
 				{
-					script.nMessageBoxes++;
-
-					try
-					{
-						var ownerWindow = ownerHandle == 0 && (mbopts & (MessageBoxOptions.ServiceNotification | MessageBoxOptions.DefaultDesktopOnly)) != 0
-							? null : new MsgBoxOwner(ownerHandle);
-						var timeoutMs = timeout != 0 ? (uint)Math.Clamp((long)Math.Round(timeout * 1000.0), 1L, int.MaxValue) : 0;
-						return ShowWindowsMsgBox(script, ownerWindow, txt, caption, buttons, icon, defaultbutton, mbopts, timeoutMs);
-					}
-					finally
-					{
-						script.nMessageBoxes--;
-					}
-				});
-
-				if (result.TimedOut)
-					return "Timeout";
-
-				if (result.Result == DialogResult.None)
-				{
-					if (result.Error == 1438 || (int)buttons > 6) // ERROR_INVALID_MSGBOX_STYLE
-						_ = Errors.InvalidParameterErrorOccurred(3, "MsgBox", options);
-					else if (result.Error != 0)
-						_ = Errors.OSErrorOccurred(result.Error);
-					else
-						_ = Errors.OSErrorOccurredWithMessage("The message box could not be displayed.");
-
-					return "";
+					var timeoutMs = timeout != 0 ? (uint)Math.Clamp((long)Math.Round(timeout * 1000.0), 1L, int.MaxValue) : 0;
+					return ShowWindowsMsgBox(script, ownerHandle, txt, caption, buttons, icon, defaultbutton, mbopts, timeoutMs);
 				}
+				finally
+				{
+					script.nMessageBoxes--;
+				}
+			});
 
-				return MessageBoxResultName(result.Result);
-			}
-			catch (ArgumentException)
+			if (result.TimedOut)
+				return "Timeout";
+
+			if (result.Result == DialogResult.None)
 			{
-				_ = Errors.InvalidParameterErrorOccurred(3, "MsgBox", options);
+				if (result.Error == 1438) // ERROR_INVALID_MSGBOX_STYLE
+					_ = Errors.InvalidParameterErrorOccurred(3, "MsgBox", options);
+				else if (result.Error != 0)
+					_ = Errors.OSErrorOccurred(result.Error);
+				else
+					_ = Errors.OSErrorOccurredWithMessage("The message box could not be displayed.");
+
 				return "";
 			}
-			catch (Win32Exception ex)
-			{
-				_ = Errors.OSErrorOccurred(ex);
-				return "";
-			}
+
+			return MessageBoxResultName(result.Result);
 #else
 			return RunInterruptibleDialog(() =>
 			{

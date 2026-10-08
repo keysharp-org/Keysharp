@@ -247,7 +247,7 @@ namespace Keysharp.Runtime
 
 		internal int nMessageBoxes;
 #if WINDOWS
-		/// <summary>MessageBox.Show calls of this script's that have not yet reported their dialog window.
+		/// <summary>MsgBox calls of this script's that have not yet reported their dialog window.
 		/// Read by every scheduler pump, so it is a counter rather than a scan of the pending-request map.</summary>
 		internal int pendingMsgBoxShows;
 #endif

@@ -1571,6 +1571,9 @@ namespace Keysharp.Internals.Os.Windows
 		[return: MarshalAs(UnmanagedType.Bool)]
 		internal static partial bool EndDialog(nint hDlg, nint nResult);
 
+		[LibraryImport(user32, EntryPoint = "MessageBoxW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+		internal static partial int MessageBoxW(nint hWnd, string lpText, string lpCaption, uint uType);
+
 		[LibraryImport(user32, EntryPoint = "UnregisterHotKey")]
 		[return: MarshalAs(UnmanagedType.Bool)]
 		internal static partial bool UnregisterHotKey(nint hWnd, uint id);
