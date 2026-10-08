@@ -376,13 +376,9 @@ namespace Keysharp.Builtins.COM
 			type &= ~VarEnum.VT_BYREF;
 			if (!TryToTypedVariant(value, type, out var replacement)) return;
 			var previous = ReadStorage(variant.ptrVal, type);
-			var hr = VariantClear(ref previous);
-			if (hr < 0)
-			{
-				_ = VariantClear(ref replacement);
-				_ = Errors.OSErrorOccurredForHR(hr);
-				return;
-			}
+			// The old value is overwritten even when it cannot be cleared, as AutoHotkey's TokenToVarType does: memory
+			// reused as a VARIANT can hold another type's bytes where the type field is.
+			_ = VariantClear(ref previous);
 			WriteStorage(variant.ptrVal, type, in replacement);
 		}
 

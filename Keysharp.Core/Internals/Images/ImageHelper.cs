@@ -374,7 +374,7 @@ namespace Keysharp.Internals.Images
 					//The decoded file keeps the file locked, so a bitmap that is not resized from it is copied.
 					using var file = (Bitmap)Image.FromFile(filename);
 					var resized = ResizeBitmap(file, w, h, exactPixels);
-					bmp = ReferenceEquals(resized, file) ? new Bitmap(file) : resized;
+					bmp = ReferenceEquals(resized, file) ? CopyBitmap(file) : resized;
 				}
 			}
 			catch (Exception)
@@ -509,7 +509,7 @@ namespace Keysharp.Internals.Images
 
 			// If same size, return a copy so callers can safely dispose the original
 			if (src.Width == width && src.Height == height)
-				return new Bitmap(src);
+				return CopyBitmap(src);
 
 #if WINDOWS
 			// Use premultiplied ARGB for best compositing behavior
@@ -793,6 +793,35 @@ namespace Keysharp.Internals.Images
 		}
 
 		/// <summary>
+		/// Returns an independent copy of <paramref name="src"/> with its pixels unchanged. On Windows the Bitmap copy
+		/// constructor draws the source instead, which rounds translucent pixels through premultiplied alpha, and Clone
+		/// keeps a decoded file locked, so GDI+ reads the pixels straight into a new canvas.
+		/// </summary>
+		internal static Bitmap CopyBitmap(Bitmap src)
+		{
+#if WINDOWS
+			var copy = NewArgbCanvas(src.Width, src.Height);
+			var rect = new Rectangle(0, 0, src.Width, src.Height);
+			var locked = copy.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+
+			try
+			{
+				var buffer = new BitmapData { Width = locked.Width, Height = locked.Height, Stride = locked.Stride, PixelFormat = locked.PixelFormat, Scan0 = locked.Scan0 };
+				_ = src.LockBits(rect, ImageLockMode.ReadOnly | ImageLockMode.UserInputBuffer, PixelFormat.Format32bppArgb, buffer);
+				src.UnlockBits(buffer);
+			}
+			finally
+			{
+				copy.UnlockBits(locked);
+			}
+
+			return copy;
+#else
+			return new Bitmap(src);
+#endif
+		}
+
+		/// <summary>
 		/// Restores the background in <paramref name="region"/> without replacing the bitmap. Pixels outside
 		/// the region must already have <paramref name="argb"/>. On straight-alpha storage, direct pixel writes
 		/// preserve colours without rounding them through the drawing backend's premultiplied storage.
@@ -964,7 +993,7 @@ namespace Keysharp.Internals.Images
 			var norm = ((angleDegrees % 360) + 360) % 360;
 
 			if (norm == 0)
-				return new Bitmap(bmp);
+				return CopyBitmap(bmp);
 
 			int srcW = bmp.Width, srcH = bmp.Height;
 			var rad = norm * Math.PI / 180.0;

@@ -1563,7 +1563,7 @@ namespace Keysharp.Builtins
 				// The draw-unit scales are carried over so a copy of a scaled Create() canvas keeps drawing logical
 				// coordinates at the right physical scale. `eagerDraw` is deliberately not copied: a copy is an
 				// independent lazy image, not another live drawing surface aliasing the same pixels.
-				var copy = new KeysharpImage { baseBitmap = new Bitmap(src), scaleX = scaleX, scaleY = scaleY,
+				var copy = new KeysharpImage { baseBitmap = ImageHelper.CopyBitmap(src), scaleX = scaleX, scaleY = scaleY,
 					originX = originX, originY = originY, originValid = originValid, scaleValid = scaleValid,
 					drawScaleX = drawScaleX, drawScaleY = drawScaleY };
 				copy.SyncGcPressure();
@@ -2429,7 +2429,7 @@ namespace Keysharp.Builtins
 				if (source is KeysharpImage img)
 				{
 					var b = img.PrepareForRead();
-					return (b == null ? null : new Bitmap(b), img.scaleX, img.scaleY);
+					return (b == null ? null : ImageHelper.CopyBitmap(b), img.scaleX, img.scaleY);
 				}
 
 				if (source is string s)

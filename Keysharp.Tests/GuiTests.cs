@@ -1919,13 +1919,12 @@ namespace Keysharp.Tests
 				Assert.IsFalse(((FlowLayoutSettings)plainMenu.MenuItem.LayoutSettings).WrapContents);
 				Assert.Greater(plainSecond.Bounds.Top, plainFirst.Bounds.Top, "A normal popup menu should remain vertical.");
 
-				// Right is a menu-bar-only option in AHK (MENU_TYPE_BAR); popups must ignore it.
+				// Right is a menu-bar-only option in AHK (MENU_TYPE_BAR), so a popup reports it as an invalid option.
 				var right = (ToolStripMenuItem)menuBar.Add("Right", callback, "Right");
 				Assert.AreEqual(ToolStripItemAlignment.Right, right.Alignment);
 				Assert.IsTrue(Keysharp.Builtins.Menu.GetPresentation(right).Right);
-				var notRight = (ToolStripMenuItem)plainMenu.Add("NotRight", callback, "Right");
-				Assert.AreEqual(ToolStripItemAlignment.Left, notRight.Alignment);
-				Assert.IsFalse(Keysharp.Builtins.Menu.GetPresentation(notRight).Right);
+				var notRight = Assert.Throws<KeysharpException>(() => plainMenu.Add("NotRight", callback, "Right"));
+				Assert.IsInstanceOf<ValueError>(notRight.UserError);
 
 				// A submenu's drop-down is created on demand and must still get the Keysharp renderer. It reports
 				// its owner's renderer rather than its own, so it also must not be mistaken for an already

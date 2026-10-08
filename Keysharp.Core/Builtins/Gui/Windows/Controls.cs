@@ -896,6 +896,27 @@ namespace Keysharp.Builtins
 		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
 		internal CharacterCasing CharacterCasing { get; set; } = CharacterCasing.Normal;
 
+		// The rich edit control ignores ES_UPPERCASE and ES_LOWERCASE, so KeyPress converts typed characters and these
+		// setters convert the text a script assigns.
+		public override string Text
+		{
+			get => base.Text;
+			set => base.Text = ApplyCasing(value);
+		}
+
+		public override string SelectedText
+		{
+			get => base.SelectedText;
+			set => base.SelectedText = ApplyCasing(value);
+		}
+
+		private string ApplyCasing(string text) => CharacterCasing switch
+		{
+			CharacterCasing.Upper => text?.ToUpperInvariant(),
+			CharacterCasing.Lower => text?.ToLowerInvariant(),
+			_ => text
+		};
+
 		protected override CreateParams CreateParams
 		{
 			get
