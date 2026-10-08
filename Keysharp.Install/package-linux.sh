@@ -134,7 +134,8 @@ normalize_app_permissions() {
 
 verify_no_local_paths() {
   local patterns=() pattern
-  for pattern in "${ROOT}" "${HOME:-}" "${ETO_DIR}"; do
+  # Upstream DLLs may embed their own runner home; the checkout roots identify this build.
+  for pattern in "${ROOT}" "${ETO_DIR}"; do
     [[ -n "${pattern}" && "${pattern}" != / ]] && patterns+=(-e "${pattern}")
   done
   if grep -rlaF "${patterns[@]}" -- "${APP_DIR}"; then

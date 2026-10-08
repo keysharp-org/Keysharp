@@ -6,7 +6,7 @@
 
        Invoked as:
          dotnet build Keysharp.Install/windows/wix/Keysharp.Installer.wixproj -c Release -p:Platform=x64 \
-           -p:PayloadDir=<abs path to ...\Keysharp-win-x64\app> -p:KeysharpVersion=0.0.0.16 -->
+           -p:PayloadDir=<abs path to ...\Keysharp-win-x64\app> -p:KeysharpVersion=0.0.0.17 -->
 
   <PropertyGroup>
     <OutputType>Package</OutputType>

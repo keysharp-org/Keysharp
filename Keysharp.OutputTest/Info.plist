@@ -5,9 +5,9 @@
 	<key>CFBundleIdentifier</key>
 	<string>org.keysharp.outputtest</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.0.0.16</string>
+	<string>0.0.0.17</string>
 	<key>CFBundleVersion</key>
-	<string>0.0.0.16</string>
+	<string>0.0.0.17</string>
 	<key>CFBundleIconFile</key>
 	<string>Icon.icns</string>
 	<key>LSUIElement</key>

@@ -256,30 +256,53 @@ DrawHeader(img, m, hov) {
         img.DrawImage(LogoPath, Pad, 15, 34, 34)
         TitleX := Pad + 46
     }
+    ; macOS uses different text metrics from the Windows and Linux drawing backends.
+#if OSX
     img.DrawText("Keysharp", TitleX, 10, ClrText, "s17 bold", FontUi)
     img.DrawText("v" A_KsVersion "   |   Desktop automation and scripting", TitleX, 39, ClrDim, "s9", FontUi)
+#else
+    img.DrawText("Keysharp", TitleX, 12, ClrText, "s15 bold", FontUi)
+    img.DrawText("v" A_KsVersion "   |   Desktop automation and scripting", TitleX, 40, ClrDim, "s8", FontUi)
+#endif
     img.DrawLine(Pad, m.Height, m.Width - Pad, m.Height, ClrEdge, 1)
 }
 
 DrawPrimary(glyph, label, sub, img, m, hov) {
     img.FillRoundRect(m.X, m.Y, m.Width, m.Height, 10, hov ? ClrPrimHov : ClrPrim)
     img.DrawRoundRect(m.X, m.Y, m.Width, m.Height, 10, hov ? ClrAccent : "0xFF33415F", 1)
+#if OSX
     img.DrawText(glyph, m.X + 16, m.Y + 17, ClrAccent, "s17 bold", FontUi)
     img.DrawText(label, m.X + 46, m.Y + 9, ClrText, "s13 bold", FontUi)
     img.DrawText(sub, m.X + 46, m.Y + 33, ClrDim, "s9", FontUi)
+#else
+    img.DrawText(glyph, m.X + 16, m.Y + 14, ClrAccent, "s15 bold", FontUi)
+    img.DrawText(label, m.X + 46, m.Y + 9, ClrText, "s11 bold", FontUi)
+    img.DrawText(sub, m.X + 46, m.Y + 31, ClrDim, "s8", FontUi)
+#endif
 }
 
 DrawTool(tool, img, m, hov) {
     img.FillRoundRect(m.X, m.Y, m.Width, m.Height, 9, hov ? ClrCardHov : ClrCard)
+#if OSX
     img.DrawText(tool.glyph, m.X + 14, m.Y + 11, ClrDim, "s13", FontGlyph)
     img.DrawText(tool.label, m.X + 44, m.Y + 12, hov ? ClrText : ClrDim, "s12", FontUi)
+#else
+    img.DrawText(tool.glyph, m.X + 14, m.Y + 9, ClrDim, "s11", FontGlyph)
+    img.DrawText(tool.label, m.X + 44, m.Y + 10, hov ? ClrText : ClrDim, "s10", FontUi)
+#endif
 }
 
 DrawFooter(img, m, hov) {
-    img.DrawText(StatusMsg, Pad, m.Y + 8, ClrFaint, "s9", FontUi)
     Hint := "Turn everyday tasks into simple scripts."
+#if OSX
+    img.DrawText(StatusMsg, Pad, m.Y + 8, ClrFaint, "s9", FontUi)
     Hw := img.MeasureText(Hint, "s9", FontUi).Width
     img.DrawText(Hint, m.Width - Pad - Hw, m.Y + 8, ClrFaint, "s9", FontUi)
+#else
+    img.DrawText(StatusMsg, Pad, m.Y + 6, ClrFaint, "s8", FontUi)
+    Hw := img.MeasureText(Hint, "s8", FontUi).Width
+    img.DrawText(Hint, m.Width - Pad - Hw, m.Y + 6, ClrFaint, "s8", FontUi)
+#endif
 }
 
 ; ---------------------------------------------------------------------------
