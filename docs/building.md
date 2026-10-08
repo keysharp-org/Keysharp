@@ -29,6 +29,36 @@ Run the packaging script on the target operating system and architecture:
 Windows packaging restores WiX from NuGet. On Linux, generating the Debian package
 requires `dpkg-dev`; the Launchpad source uploads are described in
 [Keysharp.Install/ppa/README.md](../Keysharp.Install/ppa/README.md).
+
+macOS packaging uses Apple's `pkgbuild`, `productbuild` and `hdiutil`. The PKG
+installs the apps for all users or only the current user, and its optional
+terminal-command, VS Code and launch choices are payload-free packages whose
+postinstall runs `Keysharp.Install/macos/install.sh`. The DMG holds the PKG and
+`uninstall.sh` as **Uninstall Keysharp.command**; the same uninstaller is also
+in `Keysharp.app/Contents/Resources` for the dashboard. See
+[macOS installation](reference.md#installing-on-macos).
+
+For local macOS builds, the script reuses a `Keysharp` signing identity when it
+exists. Create one with `bash Keysharp.Install/macos/create-signing-cert.sh`;
+`APP_CERT` selects another identity, `AUTO_SIGN=false` disables automatic selection,
+`ADHOC_SIGN=true` requests ad-hoc signing, and `SKIP_SIGN=true` skips signing. A
+stable self-signed identity helps keep the app's permission identity across local
+updates. Local self-signed, ad-hoc-signed, and unsigned builds are not notarized and
+can still be blocked by Gatekeeper.
+
+Public notarized distribution requires a **Developer ID Application** certificate
+for all apps and the DMG, a **Developer ID Installer** certificate for the PKG,
+and Apple notarization credentials. `APP_CERT`, `INSTALLER_CERT`, and
+`NOTARY_PROFILE` select these; successful notarization also requires valid
+signatures, hardened runtime, and secure timestamps. See
+[Apple's notarization requirements](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution).
+The existing Keysharp and Keyview bundle layout mixes managed files and resources
+in `Contents/MacOS` and uses `codesign --deep` when signing. This route has not been
+validated for Developer ID notarization; certificate settings alone do not prove
+that a package is ready for public distribution. Apple recommends separating
+code from resources and signing nested code individually, from the inside out:
+[macOS Code Signing In Depth](https://developer.apple.com/library/archive/technotes/tn2206/_index.html).
+
 See [the reference](reference.md) for platform-specific prerequisites and packaging
 options. Use the individual scripts' `--help` (or PowerShell parameter help) for flags.
 

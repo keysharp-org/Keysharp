@@ -220,18 +220,26 @@ For foreign windows on macOS, `WinHide()`/`WinShow()` hide/unhide the owning app
 
 macOS 15 or later is required. Separate `osx-arm64` assets for Apple Silicon and `osx-x64` assets for Intel Macs are available on the [Releases](https://github.com/keysharp-org/Keysharp/releases) page.
 
-#### DMG — graphical setup
+#### DMG and PKG — Apple Installer
 
-Open the DMG and double-click **Keysharp Setup.app**. The native SwiftUI setup app runs without .NET, shows installation progress and logs, and uses macOS's administrator dialog to install the bundled package. It installs `Keysharp.app`, `Keyview.app`, and `Keysharp Setup.app` in `/Applications`. The package installs the .NET 10 runtime if it is missing, which requires an internet connection.
+Open the DMG and double-click **Install Keysharp**, or open the standalone `.pkg`; both run the same installer. Apple's Installer lets you install `Keysharp.app` and `Keyview.app` for all users in `/Applications`, which needs an administrator password, or only for yourself in `~/Applications`, which does not. An all-users installation can also be run from Terminal:
+```sh
+sudo installer -pkg Keysharp-osx-<architecture>.pkg -target /
+```
 
-Select any optional integrations before clicking **Install Keysharp**:
+If the .NET 10 runtime is missing, the installer downloads it, which needs an internet connection. An all-users installation uses `/usr/local/share/dotnet` (its `x64` subfolder for the x64 package on Apple Silicon). A per-user installation cannot write there, so it uses `~/.dotnet` (`~/.dotnet/x64` for the x64 package), which the apps look for before the global location.
 
-- The `keysharp` and `keyview` terminal commands in `/usr/local/bin`.
-- The VS Code AutoHotkey v2 extension compatibility shim at `~/.local/bin/AutoHotkey.exe`.
+Under **Customize** you can choose:
 
-If Keysharp is already installed, the DMG setup app offers **Update Keysharp**. Installation and updates stop running Keysharp scripts and Keyview before replacing the apps. The installed setup app offers **Apply options** to add integrations later; leaving an option unchecked preserves any existing integration. Its **Download update** button opens the releases page so you can download and run a newer DMG. It does not retain the installation package.
+- **Terminal commands** (selected by default): `keysharp`, `keyview` and `keysharp-uninstall` in `/usr/local/bin`, or in `~/.local/bin` for a per-user installation. The installer adds `~/.local/bin` to your login shell's `PATH` with a line marked `# Added by Keysharp`; open a new Terminal window to use the commands.
+- **VS Code AutoHotkey v2 support**: `~/.local/bin/AutoHotkey.exe`, which runs the installed Keysharp.
+- **Open Keysharp when done** (selected by default): opens the dashboard.
 
-**Gatekeeper** — a local self-signed, ad-hoc-signed, or unsigned build is not notarized, so macOS may block it. After trying to open setup, use **System Settings → Privacy & Security → Open Anyway**, following [Apple's instructions](https://support.apple.com/en-us/102445). For a trusted download whose quarantine flag prevents opening, clear it before mounting the DMG:
+Installing prepares the .NET runtime before stopping Keysharp scripts and Keyview running from the chosen destination and replacing the apps. A runtime download failure leaves the existing apps in place. To update, or to add an option later, run a newer installer and choose the same destination.
+
+#### Gatekeeper
+
+A local self-signed, ad-hoc-signed, or unsigned build is not notarized, so macOS may block it. After trying to open the installer, use **System Settings → Privacy & Security → Open Anyway**, following [Apple's instructions](https://support.apple.com/en-us/102445). For a trusted download whose quarantine flag prevents opening, clear it before mounting the DMG:
 
 ```sh
 xattr -dr com.apple.quarantine ~/Downloads/Keysharp-osx-*.dmg
@@ -242,31 +250,21 @@ The same command can be used with the downloaded `.pkg` path. If installed apps 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Keysharp.app
 xattr -dr com.apple.quarantine /Applications/Keyview.app
-xattr -dr com.apple.quarantine "/Applications/Keysharp Setup.app"
 ```
 
-The equivalent manual setup for the terminal commands is:
+For a per-user installation, use `"$HOME/Applications"` in place of `/Applications`.
+
+The equivalent manual setup for the all-users terminal commands is:
 ```sh
 sudo ln -sf /Applications/Keysharp.app/Contents/MacOS/Keysharp /usr/local/bin/keysharp
 sudo ln -sf /Applications/Keyview.app/Contents/MacOS/Keyview /usr/local/bin/keyview
 ```
 
-Without terminal commands, use `Keyview.app` to write and run scripts. Keyview finds the sibling `Keysharp` binary automatically. Source-built app bundles can also run from a folder of your choice, such as `~/Applications/`, when the .NET 10 runtime is available.
+Without terminal commands, use `Keyview.app` to write and run scripts. Keyview finds the sibling `Keysharp` binary automatically. The app bundles can also run from any folder without the installer when a .NET 10 runtime is installed globally or supplied through `DOTNET_ROOT`.
 
-For thqby's **AutoHotkey v2 Language Support** VS Code extension, select the compatibility shim in setup. It creates `~/.local/bin/AutoHotkey.exe`; then use `/Users/YOUR_USERNAME/.local/bin/AutoHotkey.exe` as the interpreter path in the extension.
+For thqby's **AutoHotkey v2 Language Support** VS Code extension, select **VS Code AutoHotkey v2 support** under **Customize** in Apple's Installer. It creates `~/.local/bin/AutoHotkey.exe`; then use `/Users/YOUR_USERNAME/.local/bin/AutoHotkey.exe` as the interpreter path in the extension.
 
 The extension is designed for AutoHotkey on Windows, so static language features and running scripts are the most compatible features; Windows-specific debugging, help, and compiler integration will not work.
-
-#### PKG — Apple Installer
-
-The standalone `.pkg` installs the same applications and .NET runtime as the DMG setup app. It uses Apple's Installer and requires an administrator password. Open `/Applications/Keysharp Setup.app` after installation, select any terminal commands or VS Code shim you want, and click **Apply options**.
-
-Install from Finder by double-clicking the `.pkg` and following the installer prompts (you will be asked for your administrator password), or from Terminal:
-```sh
-sudo installer -pkg Keysharp-osx-<architecture>.pkg -target /
-```
-
-The Gatekeeper instructions above also apply to the standalone package and installed apps.
 
 #### macOS permissions
 
@@ -285,17 +283,18 @@ Grant each permission in **System Settings → Privacy & Security** when prompte
 
 #### Uninstalling
 
-Open **Keysharp Setup.app** from `/Applications` or the DMG, then click **Uninstall Keysharp**. It removes Keysharp and Keyview, the terminal commands and VS Code shim, and the package receipt. Running Keysharp scripts and Keyview are stopped before removal. **Keep my settings** is selected by default; clear it to also remove Keysharp's Application Support, preferences, and cache data for your account. The shared .NET runtime is kept.
+Click **Uninstall Keysharp** in Keysharp's dashboard, double-click **Uninstall Keysharp** on the DMG, or run `keysharp-uninstall`. The dashboard and installed terminal command remove the installation they belong to, in `/Applications` or `~/Applications`; the copy on the DMG removes every installation it finds. Use `--scope system` or `--scope user` to select an installation explicitly. Removing the all-users installation asks for an administrator password.
 
-The setup utility remains in `/Applications` after uninstall so you can still open the download page. Quit it, then move **Keysharp Setup.app** to the Trash if you want to remove the utility as well.
+The uninstaller unregisters the removed apps from Launch Services and stops running Keysharp scripts and Keyview before removing the apps, the terminal commands, the VS Code shim and `PATH` line the installer added, and the package receipts. It also cleans up leftover installer-created commands after apps were removed by hand, even when their package receipts are gone.
 
-The terminal uninstaller keeps its existing default of removing stored settings and cache data:
+Both terminal prompts default to Yes, and the dialog defaults to **Uninstall and Delete Settings**, which also removes your settings, preferences and caches. To keep them, choose **Uninstall** in the dialog, answer no to deleting settings, or pass `--keep-settings`. Noninteractive terminal invocations proceed without requiring `--yes`. The .NET runtime is kept.
 
 ```sh
-sudo keysharp-uninstall
+keysharp-uninstall                     # prompts default to Yes
+keysharp-uninstall --scope user        # only ~/Applications
+keysharp-uninstall --yes               # remove apps and settings without prompting
+keysharp-uninstall --keep-settings     # remove apps and keep settings
 ```
-
-To keep settings, run `sudo keysharp-uninstall --keep-settings`. With `sudo`, the uninstaller uses the invoking user's account for per-user files; `--user USERNAME` selects a different account explicitly.
 
 If you removed the apps by hand instead and `.ks`/`.ahk` files still open in Keysharp, the apps are most likely still sitting in the Trash — empty it, since Launch Services can launch apps from there even though Spotlight does not index it.
 
@@ -311,7 +310,7 @@ tccutil reset All org.keysharp.keyview
 ### Building from source on macOS
 
 * Install the [.NET 10 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.0).
-* Install Xcode Command Line Tools (`xcode-select --install`) for the Swift compiler and macOS SDK used to build the native setup app.
+* Install Xcode Command Line Tools (`xcode-select --install`) for Apple's packaging tools.
 * In the same parent folder as `keysharp`, clone the Keysharp branch of [the Keysharp fork of Eto](https://github.com/keysharp-org/Eto/tree/Keysharp). If `keysharp` is at `foo/keysharp`, clone Eto to `foo/Eto`:
   ```sh
   git clone -b Keysharp https://github.com/keysharp-org/Eto.git
@@ -321,7 +320,7 @@ tccutil reset All org.keysharp.keyview
   bash ./Keysharp.Install/package-macos.sh
   ```
   The script selects `osx-arm64` or `osx-x64` from the host architecture. Set `RID` explicitly to cross-publish, for example `RID=osx-x64 bash ./Keysharp.Install/package-macos.sh`. Output is written to `dist/`:
-  - `Keysharp-<rid>.dmg` — graphical setup with an embedded package
+  - `Keysharp-<rid>.dmg` — the installer package and an uninstaller
   - `Keysharp-<rid>.pkg` — the same payload through Apple's Installer
 * For a quick debug run without packaging, build and run directly:
   ```sh

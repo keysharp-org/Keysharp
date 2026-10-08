@@ -49,8 +49,7 @@ ADHOC_SIGN="${ADHOC_SIGN:-false}"
 AUTO_SIGN="${AUTO_SIGN:-true}"
 AUTO_SIGN_IDENTITY="${AUTO_SIGN_IDENTITY:-Keysharp}"
 PKG_IDENTIFIER="${PKG_IDENTIFIER:-org.keysharp.pkg}"
-UNINSTALL_SCRIPT="${ROOT}/Keysharp.Install/macos/uninstall.sh"
-INSTALL_SCRIPT="${ROOT}/Keysharp.Install/macos/install.command"
+MACOS_DIR="${ROOT}/Keysharp.Install/macos"
 
 log() {
   printf '%s\n' "$*"
@@ -112,6 +111,7 @@ validate_inputs() {
   [[ -n "${VERSION}" ]] || die "Unable to determine package version. Set VERSION explicitly."
   require_tool dotnet
   require_tool pkgbuild
+  require_tool productbuild
   require_tool plutil
   require_tool rsync
   require_tool file
@@ -130,9 +130,6 @@ validate_inputs() {
     die "Entitlements file not found: ${ENTITLEMENTS}"
   fi
 
-  [[ -f "${UNINSTALL_SCRIPT}" ]] || die "Uninstall script not found: ${UNINSTALL_SCRIPT}"
-  [[ -f "${INSTALL_SCRIPT}" ]] || die "Install script not found: ${INSTALL_SCRIPT}"
-
   if ! is_true "${SKIP_NOTARIZE}" && [[ -n "${NOTARY_PROFILE}" && -z "${INSTALLER_CERT}" ]]; then
     die "NOTARY_PROFILE requires INSTALLER_CERT so the .pkg can be signed before notarization."
   fi
@@ -149,6 +146,10 @@ publish_projects() {
   fi
 
   log "Publishing Keysharp and Keyview (CONFIG=${CONFIG}, RID=${RID})..."
+  # A per-user install in ~/Applications cannot write the global .NET location, so its runtime goes
+  # in ~/.dotnet (install.sh), which the apphost finds four levels above Contents/MacOS.
+  local APPHOST_DOTNET=../../../../.dotnet
+  [[ "${RID}" == osx-arm64 ]] || APPHOST_DOTNET="${APPHOST_DOTNET}/x64"
   # Keysharp builds its scripting components through an MSBuild task rather than a project reference,
   # so its own restore never reaches them.
   dotnet restore "${ROOT}/Keysharp.Components/Scripting/Compiler/Keysharp.Components.Scripting.Compiler.csproj" --nologo
@@ -159,6 +160,8 @@ publish_projects() {
       -p:KeysharpVersion="${VERSION}" \
       -p:Deterministic=true \
       -p:ContinuousIntegrationBuild=true \
+      '-p:AppHostDotNetSearch="AppRelative;EnvironmentVariable;Global"' \
+      -p:AppHostRelativeDotNet="${APPHOST_DOTNET}" \
       -p:PathMap="${PATH_MAP}"
   done
 
@@ -319,145 +322,18 @@ clean_app_bundle() {
   find "${macos_dir}" -type f \( -name 'Keysharp' -o -name 'Keyview' -o -name '*.dylib' \) -exec chmod 0755 {} +
 }
 
-write_install_scripts() {
-  mkdir -p "${SCRIPTS_DIR}"
-
-  cat > "${SCRIPTS_DIR}/preinstall" <<'EOF'
-#!/bin/sh
-
-# Stop ALL running Keysharp/Keyview instances (the compile daemon AND any running scripts) before the
-# bundle is replaced, not just the daemon: a lingering old-build instance keeps holding the global input
-# hook and its granted permissions, so newly-launched scripts misbehave until it is killed. preinstall runs
-# as root, so pkill -f reaches the desktop user's processes too (killall is a name-based fallback).
-pkill -f 'Keysharp.app/Contents/MacOS/Keysharp' 2>/dev/null || true
-pkill -f 'Keyview.app/Contents/MacOS/Keyview' 2>/dev/null || true
-killall Keysharp Keyview 2>/dev/null || true
-
-# Unregister any stale LaunchServices entries (dev builds, old installs) so that
-# the installer's bundle-relocation search cannot redirect files into non-standard
-# locations such as a developer's build output directory.
-LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-if [ -x "${LSREGISTER}" ]; then
-  for bundle in \
-    /Applications/Keysharp.app \
-    /Applications/Keyview.app \
-    /usr/local/lib/Keysharp.app \
-    /usr/local/lib/Keyview.app; do
-    "${LSREGISTER}" -u "${bundle}" 2>/dev/null || true
+# Writes a package scripts folder whose preinstall/postinstall run the given install.sh actions.
+write_package_scripts() {
+  local dir="$1" phase action
+  shift
+  rm -rf "${dir}"
+  mkdir -p "${dir}"
+  install -m 0644 "${MACOS_DIR}/install.sh" "${dir}/"
+  for phase in "$@"; do
+    action="${phase#*=}"
+    printf '#!/bin/bash\nexec /bin/bash "${0%%/*}/install.sh" %s %s "$2"\n' "${action}" "${RID#osx-}" > "${dir}/${phase%%=*}"
+    chmod 0755 "${dir}/${phase%%=*}"
   done
-  # Purge any remaining registrations by bundle ID so dev-build paths are cleared.
-  "${LSREGISTER}" -kill -seed 2>/dev/null || true
-fi
-
-rm -rf /Applications/Keysharp.app /Applications/Keyview.app
-exit 0
-EOF
-  chmod 0755 "${SCRIPTS_DIR}/preinstall"
-
-  cat > "${SCRIPTS_DIR}/postinstall" <<'EOF'
-#!/bin/sh
-set -e
-
-mkdir -p /usr/local/bin
-
-has_dotnet10() {
-  command -v dotnet >/dev/null 2>&1 && dotnet --list-runtimes 2>/dev/null | grep -q 'Microsoft.NETCore.App 10\.'
-}
-
-install_dotnet10() {
-  echo "Keysharp requires the .NET 10 runtime; installing it now..."
-
-  local arch
-  case "$(uname -m)" in
-    arm64) arch="arm64" ;;
-    x86_64) arch="x64" ;;
-    *)
-      echo "Warning: unrecognized architecture $(uname -m); cannot auto-install the .NET 10 runtime." >&2
-      return 1
-      ;;
-  esac
-
-  local script="/tmp/dotnet-install-$$.sh"
-  if ! curl -fsSL https://dot.net/v1/dotnet-install.sh -o "${script}"; then
-    return 1
-  fi
-  chmod +x "${script}"
-  "${script}" --channel 10.0 --runtime dotnet --architecture "${arch}" --install-dir /usr/local/share/dotnet
-  local result=$?
-  rm -f "${script}"
-  [ ${result} -eq 0 ] || return 1
-
-  ln -sf /usr/local/share/dotnet/dotnet /usr/local/bin/dotnet
-}
-
-if ! has_dotnet10; then
-  install_dotnet10 || echo "Warning: could not auto-install the .NET 10 runtime. Install it manually from https://dotnet.microsoft.com/en-us/download/dotnet/10.0" >&2
-fi
-
-LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
-if [ -x "${LSREGISTER}" ]; then
-  "${LSREGISTER}" -f /Applications/Keysharp.app /Applications/Keyview.app >/dev/null 2>&1 || true
-fi
-
-# Offer optional extras via GUI prompts shown to the logged-in user, since
-# this script runs as root with no terminal attached.
-CONSOLE_USER="$(stat -f%Su /dev/console 2>/dev/null || true)"
-if [ -n "${CONSOLE_USER}" ] && [ "${CONSOLE_USER}" != "root" ]; then
-  CONSOLE_UID="$(id -u "${CONSOLE_USER}" 2>/dev/null || echo 0)"
-  CONSOLE_HOME="$(dscl . -read "/Users/${CONSOLE_USER}" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"
-
-  # Launch Services registrations describe which applications can open a document, but registering
-  # Keysharp and Keyview together does not reliably select the Owner over the Alternate after an upgrade.
-  # Record an explicit per-user default after registration so reinstall order cannot make Keyview the
-  # default for Keysharp scripts. Keep Keyview registered above so it remains available in Open With.
-  launchctl asuser "${CONSOLE_UID}" sudo -u "${CONSOLE_USER}" \
-    defaults write com.apple.LaunchServices/com.apple.launchservices.secure LSHandlers -array-add \
-    '{ LSHandlerContentType = "org.keysharp.script"; LSHandlerRoleAll = "org.keysharp.keysharp"; }' \
-    >/dev/null 2>&1 || echo "Warning: could not set Keysharp as the default script handler for ${CONSOLE_USER}." >&2
-
-  # Remove TCC permission entries created under an incorrectly-cased bundle id (org.keysharp.Keysharp /
-  # org.keysharp.Keyview) by earlier or ad-hoc-signed builds. The canonical ids are all-lowercase; the
-  # mis-cased duplicates otherwise split the app's permissions across two identities (e.g. Input Monitoring
-  # granted to one but read from the other). TCC is per-user, so reset as the console user. Harmless if the
-  # entries don't exist.
-  for badid in org.keysharp.Keysharp org.keysharp.Keyview; do
-    launchctl asuser "${CONSOLE_UID}" sudo -u "${CONSOLE_USER}" tccutil reset All "${badid}" >/dev/null 2>&1 || true
-  done
-
-  # No one may be watching an install driven by MDM, ssh or a script, and `display dialog` waits
-  # for a click forever, so the installer's 600s script timeout kills the whole install rather than
-  # just the prompt. `giving up after` returns an empty button, which falls through to No below.
-  ask_yes_no() {
-    local prompt="$1"
-    local result
-    result="$(launchctl asuser "${CONSOLE_UID}" sudo -u "${CONSOLE_USER}" osascript -e "display dialog \"${prompt}\" buttons {\"No\", \"Yes\"} default button \"Yes\" with title \"Keysharp\" giving up after 60" 2>/dev/null || echo "button returned:No")"
-    case "${result}" in *"Yes"*) return 0 ;; *) return 1 ;; esac
-  }
-
-  if ask_yes_no "Install the keysharp and keyview terminal commands in /usr/local/bin?"; then
-    mkdir -p /usr/local/bin
-    printf '#!/bin/sh\nexec "/Applications/Keysharp.app/Contents/MacOS/Keysharp" "$@"\n' > /usr/local/bin/keysharp
-    printf '#!/bin/sh\nexec "/Applications/Keyview.app/Contents/MacOS/Keyview" "$@"\n' > /usr/local/bin/keyview
-    chmod 0755 /usr/local/bin/keysharp /usr/local/bin/keyview
-  fi
-
-  if [ -n "${CONSOLE_HOME}" ] && ask_yes_no "Install the VS Code AutoHotkey v2 extension compatibility shim (~/.local/bin/AutoHotkey.exe)?"; then
-    DEST="${CONSOLE_HOME}/.local/bin/AutoHotkey.exe"
-    # An optional per-user shim must not fail the install: under `set -e` an unwritable home
-    # (network account, full disk) would abort postinstall after the payload is already placed.
-    if launchctl asuser "${CONSOLE_UID}" sudo -u "${CONSOLE_USER}" mkdir -p "$(dirname "${DEST}")" &&
-       printf '#!/bin/sh\nexec "/Applications/Keysharp.app/Contents/MacOS/Keysharp" "$@"\n' > "${DEST}"; then
-      chown "${CONSOLE_USER}" "${DEST}"
-      chmod 0755 "${DEST}"
-    else
-      echo "Warning: could not install ${DEST}." >&2
-    fi
-  fi
-fi
-
-exit 0
-EOF
-  chmod 0755 "${SCRIPTS_DIR}/postinstall"
 }
 
 relocate_library_scripts() {
@@ -498,8 +374,8 @@ stage_payload() {
   keyview_app_source="$(resolve_app_source Keyview)"
 
   log "Staging package payload at ${PKG_ROOT}..."
-  rm -rf "${PKG_ROOT}" "${SCRIPTS_DIR}"
-  mkdir -p "${PKG_ROOT}/Applications" "${PKG_ROOT}/usr/local/bin"
+  rm -rf "${PKG_ROOT}"
+  mkdir -p "${PKG_ROOT}/Applications"
 
   rsync -a "${keysharp_app_source}" "${PKG_ROOT}/Applications/"
   rsync -a "${keyview_app_source}" "${PKG_ROOT}/Applications/"
@@ -515,8 +391,7 @@ stage_payload() {
   clean_app_bundle "${PKG_ROOT}/Applications/Keysharp.app"
   clean_app_bundle "${PKG_ROOT}/Applications/Keyview.app"
 
-  install -m 0755 "${UNINSTALL_SCRIPT}" "${PKG_ROOT}/usr/local/bin/keysharp-uninstall"
-  write_install_scripts
+  install -m 0644 "${MACOS_DIR}/uninstall.sh" "${PKG_ROOT}/Applications/Keysharp.app/Contents/Resources/"
 }
 
 sign_macho_files() {
@@ -555,10 +430,10 @@ sign_app_bundle() {
   # DLLs, *.json, Eto.xml, Icon.icns, plus Lib/Scripts/refs). Since Command Line Tools 26.5, codesign
   # treats every loose non-Mach-O file in Contents/MacOS as an unsigned nested "subcomponent" and refuses
   # the whole bundle ("code object is not signed at all / In subcomponent: ..."); --deep seals them instead.
-  # NB: Apple's notary service rejects --deep, so a future Developer ID + notarization path must relocate
-  # the payload out of Contents/MacOS (or sign each nested item individually) rather than rely on this.
+  # Apple discourages --deep for signing. Review the managed payload layout and inside-out signing
+  # before relying on this path for Developer ID distribution.
   codesign --force --deep --timestamp --options runtime "${entitlements_arg[@]}" --sign "${sign_identity}" "${app}"
-  codesign --verify --deep --strict --verbose=2 "${app}"
+  codesign --verify --deep --strict "${app}"
 }
 
 # Prefer a stable local self-signed identity over ad-hoc/unsigned when no cert was requested, so a plain
@@ -633,23 +508,62 @@ EOF
 build_pkg() {
   local component_plist
   component_plist="$(write_component_plist)"
-
-  local pkgbuild_args=(
-    --root "${PKG_ROOT}"
-    --component-plist "${component_plist}"
-    --identifier "${PKG_IDENTIFIER}"
-    --version "${VERSION}"
-    --install-location /
-    --scripts "${SCRIPTS_DIR}"
-  )
-
-  if [[ -n "${INSTALLER_CERT}" ]]; then
-    pkgbuild_args+=(--sign "${INSTALLER_CERT}" --timestamp)
-  fi
+  local distribution="${STAGING_DIR}/${PKG_NAME}-distribution.xml"
+  local host_architecture=arm64
+  [[ "${RID}" == osx-arm64 ]] || host_architecture=x86_64
 
   log "Creating package ${PKG_OUT}..."
   rm -f "${PKG_OUT}"
-  pkgbuild "${pkgbuild_args[@]}" "${PKG_OUT}"
+  write_package_scripts "${SCRIPTS_DIR}" preinstall=preinstall postinstall=postinstall
+  pkgbuild --root "${PKG_ROOT}" --component-plist "${component_plist}" --identifier "${PKG_IDENTIFIER}" \
+    --version "${VERSION}" --install-location / --scripts "${SCRIPTS_DIR}" "${STAGING_DIR}/${PKG_NAME}-app.pkg"
+  # Installer can only make a choice optional by giving it its own package, so each option is a
+  # payload-free package whose postinstall applies it.
+  local option
+  for option in terminal vscode launch; do
+    write_package_scripts "${STAGING_DIR}/${PKG_NAME}-${option}-scripts" "postinstall=${option}"
+    pkgbuild --nopayload --identifier "${PKG_IDENTIFIER}.${option}" --version "${VERSION}" \
+      --scripts "${STAGING_DIR}/${PKG_NAME}-${option}-scripts" "${STAGING_DIR}/${PKG_NAME}-${option}.pkg"
+  done
+
+  cat > "${distribution}" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<installer-gui-script minSpecVersion="2">
+  <title>Keysharp</title>
+  <conclusion file="Conclusion.html" mime-type="text/html"/>
+  <options customize="always" require-scripts="true" hostArchitectures="${host_architecture}"/>
+  <domains enable_anywhere="false" enable_currentUserHome="true" enable_localSystem="true"/>
+  <volume-check><allowed-os-versions><os-version min="15.0"/></allowed-os-versions></volume-check>
+  <choices-outline>
+    <line choice="app"/><line choice="terminal"/><line choice="vscode"/><line choice="launch"/>
+  </choices-outline>
+  <choice id="app" title="Keysharp and Keyview" enabled="false">
+    <pkg-ref id="${PKG_IDENTIFIER}"/>
+  </choice>
+  <choice id="terminal" title="Terminal commands" description="keysharp, keyview and keysharp-uninstall in /usr/local/bin, or in ~/.local/bin (added to your PATH) when installing only for you.">
+    <pkg-ref id="${PKG_IDENTIFIER}.terminal"/>
+  </choice>
+  <choice id="vscode" title="VS Code AutoHotkey v2 support" description="~/.local/bin/AutoHotkey.exe, to set as the extension's interpreter path." start_selected="false">
+    <pkg-ref id="${PKG_IDENTIFIER}.vscode"/>
+  </choice>
+  <choice id="launch" title="Open Keysharp when done">
+    <pkg-ref id="${PKG_IDENTIFIER}.launch"/>
+  </choice>
+  <pkg-ref id="${PKG_IDENTIFIER}" version="${VERSION}" onConclusion="None">${PKG_NAME}-app.pkg</pkg-ref>
+  <pkg-ref id="${PKG_IDENTIFIER}.terminal" version="${VERSION}" onConclusion="None">${PKG_NAME}-terminal.pkg</pkg-ref>
+  <pkg-ref id="${PKG_IDENTIFIER}.vscode" version="${VERSION}" onConclusion="None">${PKG_NAME}-vscode.pkg</pkg-ref>
+  <pkg-ref id="${PKG_IDENTIFIER}.launch" version="${VERSION}" onConclusion="None">${PKG_NAME}-launch.pkg</pkg-ref>
+</installer-gui-script>
+EOF
+  local productbuild_args=(
+    --distribution "${distribution}"
+    --resources "${MACOS_DIR}/installer-resources"
+    --package-path "${STAGING_DIR}"
+  )
+  if [[ -n "${INSTALLER_CERT}" ]]; then
+    productbuild_args+=(--sign "${INSTALLER_CERT}" --timestamp)
+  fi
+  productbuild "${productbuild_args[@]}" "${PKG_OUT}"
 
   if [[ -n "${INSTALLER_CERT}" ]]; then
     pkgutil --check-signature "${PKG_OUT}"
@@ -663,23 +577,13 @@ build_dmg() {
   rm -rf "${DMG_STAGING_DIR}"
   mkdir -p "${DMG_STAGING_DIR}"
 
-  # Reuse the already-staged (and signed) app bundles from the .pkg payload.
-  rsync -a "${PKG_ROOT}/Applications/Keysharp.app" "${DMG_STAGING_DIR}/"
-  rsync -a "${PKG_ROOT}/Applications/Keyview.app" "${DMG_STAGING_DIR}/"
-
-  # Standard "drag to Applications folder" symlink shown in every Mac DMG.
-  ln -s /Applications "${DMG_STAGING_DIR}/Applications"
-
-  # Double-clickable installer/uninstaller for users who install via drag-and-drop (no
-  # terminal commands available to them otherwise).
-  install -m 0755 "${INSTALL_SCRIPT}" "${DMG_STAGING_DIR}/Install.command"
-  install -m 0755 "${UNINSTALL_SCRIPT}" "${DMG_STAGING_DIR}/Uninstall.command"
+  install -m 0644 "${PKG_OUT}" "${DMG_STAGING_DIR}/Install Keysharp.pkg"
+  install -m 0755 "${MACOS_DIR}/uninstall.sh" "${DMG_STAGING_DIR}/Uninstall Keysharp.command"
 
   rm -f "${DMG_OUT}"
   hdiutil create \
     -volname "Keysharp ${VERSION}" \
     -srcfolder "${DMG_STAGING_DIR}" \
-    -ov \
     -format UDZO \
     "${DMG_OUT}"
 
@@ -696,6 +600,7 @@ build_dmg() {
 }
 
 notarize_if_requested() {
+  local artifact="$1"
   if is_true "${SKIP_NOTARIZE}"; then
     log "Skipping notarization because SKIP_NOTARIZE=${SKIP_NOTARIZE}."
     return
@@ -706,12 +611,10 @@ notarize_if_requested() {
     return
   fi
 
-  for artifact in "${PKG_OUT}" "${DMG_OUT}"; do
-    log "Submitting ${artifact} for notarization..."
-    xcrun notarytool submit "${artifact}" --keychain-profile "${NOTARY_PROFILE}" --wait
-    xcrun stapler staple "${artifact}"
-    xcrun stapler validate "${artifact}"
-  done
+  log "Submitting ${artifact} for notarization..."
+  xcrun notarytool submit "${artifact}" --keychain-profile "${NOTARY_PROFILE}" --wait
+  xcrun stapler staple "${artifact}"
+  xcrun stapler validate "${artifact}"
 }
 
 run_step "selecting the signing identity" auto_select_app_cert
@@ -720,10 +623,11 @@ run_step "publishing Keysharp and Keyview" publish_projects
 run_step "staging the package payload" stage_payload
 run_step "signing the app bundles" sign_apps_if_requested
 run_step "building the .pkg" build_pkg
+run_step "notarizing the .pkg" notarize_if_requested "${PKG_OUT}"
 run_step "building the .dmg" build_dmg
-run_step "notarizing" notarize_if_requested
+run_step "notarizing the .dmg" notarize_if_requested "${DMG_OUT}"
 
 log ""
 log "macOS packages ready:"
-log "  System install (root):  ${PKG_OUT}"
-log "  User install  (no root): ${DMG_OUT}"
+log "  Installer package:     ${PKG_OUT}"
+log "  Installer disk image:  ${DMG_OUT}"

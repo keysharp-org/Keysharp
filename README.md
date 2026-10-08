@@ -84,21 +84,24 @@ configure NixOS services.
 ### macOS
 
 - **Requirements:** macOS 15 or later. Download `osx-arm64` for Apple Silicon or `osx-x64` for an Intel Mac.
-- **Install:** Keysharp is not signed or notarized, so macOS Gatekeeper blocks the download — the DMG may refuse to open and the apps may report that the file **"is damaged and can't be opened"** (it isn't). Clear the download's quarantine flag first, then install:
+- **Install:** open the **DMG** and double-click **Install Keysharp** (or run the standalone **PKG**). Apple's Installer lets you install for all users in `/Applications` (administrator password) or only for yourself in `~/Applications`. It downloads the .NET 10 runtime if needed. Under **Customize**, terminal commands and opening Keysharp afterwards are selected by default and the VS Code shim is optional. Per-user terminal commands go in `~/.local/bin`, which is added to your login shell's `PATH`; open a new Terminal window to use them.
+- **Gatekeeper:** local self-signed, ad-hoc-signed, and unsigned builds are not notarized. If macOS blocks setup, try opening it and then choose **System Settings → Privacy & Security → Open Anyway**, following [Apple's instructions](https://support.apple.com/en-us/102445). For a trusted download whose quarantine flag prevents opening, clear that flag:
 
   ```bash
   # Use the actual file you downloaded (the .pkg works the same way).
   xattr -dr com.apple.quarantine ~/Downloads/keysharp-*-osx-*.dmg
   ```
 
-  Then open the **DMG** and double-click `Install.command` (copies the apps and optionally adds the `keysharp`/`keyview` terminal commands and VS Code shim), or run the **PKG** for a system-wide install. If an installed app still won't launch, clear it there too:
+  If an installed app is blocked for the same reason, clear its quarantine flag:
 
   ```bash
   xattr -dr com.apple.quarantine /Applications/Keysharp.app /Applications/Keyview.app
   ```
+
+  For a per-user installation, replace `/Applications` with `"$HOME/Applications"`.
 - **Run:** `keysharp hello.ks`, or use `Keyview.app`. Keysharp requests **Input Monitoring**, **Accessibility**, and **Screen Recording** permissions as features need them — grant them in System Settings → Privacy & Security.
-- **Uninstall:** double-click `Uninstall.command` in the DMG, or run `sudo keysharp-uninstall` for a PKG install.
-- **VS Code:** answer "Yes" to the shim prompt during install, then use `~/.local/bin/AutoHotkey.exe` as the interpreter path.
+- **Uninstall:** click **Uninstall Keysharp** in Keysharp's dashboard, double-click **Uninstall Keysharp** in the DMG, or run `keysharp-uninstall`. Both terminal prompts default to Yes, and the dialog defaults to **Uninstall and Delete Settings**. To keep settings, choose **Uninstall** in the dialog, answer no to deleting settings, or pass `--keep-settings` in the terminal. The .NET runtime and macOS privacy permissions are kept.
+- **VS Code:** select the compatibility shim under **Customize** during installation. Use `/Users/YOUR_USERNAME/.local/bin/AutoHotkey.exe` as the interpreter path.
 - **GUI editing shortcuts:** GUIs are automatically given a minimal macOS menu bar (an App menu plus the standard Edit menu), so ⌘C/⌘V/⌘X/⌘A/⌘Z work in their text controls. Add the `-AppMenu` option (e.g. `MyGui := Gui("-AppMenu")`) to opt out; it has no effect on Windows/Linux.
 
 > thqby's VS Code extension targets AutoHotkey on Windows: editing and running scripts work cross-platform, but Windows-specific debugging, help, and compiler integration do not. See the [full setup guide](docs/reference.md) for portable runs, permissions, and platform details.

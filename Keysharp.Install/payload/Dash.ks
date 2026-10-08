@@ -55,7 +55,7 @@ FindKeyview() {
     if FileExist(sibling)
         return sibling
 #if OSX
-    for candidate in ["/Applications/Keyview.app/Contents/MacOS/Keyview", "/usr/local/bin/keyview"]
+    for candidate in [ExeDir "/../../../Keyview.app/Contents/MacOS/Keyview", "/Applications/Keyview.app/Contents/MacOS/Keyview", "/usr/local/bin/keyview"]
         if FileExist(candidate)
             return candidate
 #endif
@@ -83,6 +83,11 @@ GithubUrl := "https://github.com/keysharp-org/Keysharp"
 Sep := A_DirSeparator
 ExeDir := ""
 SplitPath(A_AhkPath, , &ExeDir)
+#if OSX
+; Only the installer puts the uninstaller in the bundle, so builds run in place show no button.
+UninstallScript := ExeDir "/../Resources/uninstall.sh"
+UninstallPid := 0
+#endif
 KeyviewPath := FindKeyview()
 WindowSpyPath := FileExist(ExeDir Sep "Scripts" Sep "WindowSpy.cks") ? ExeDir Sep "Scripts" Sep "WindowSpy.cks"
     : FileExist(ExeDir Sep "Scripts" Sep "WindowSpy.ks") ? ExeDir Sep "Scripts" Sep "WindowSpy.ks" : ""
@@ -175,6 +180,14 @@ StandaloneTools := DemoPackagePair > 0 ? DemoPackagePair - 1 : Tools.Length
 StandaloneRows := (StandaloneTools + 1) // 2
 ToolRows := StandaloneRows + (DemoPackagePair > 0 ? 1 : 0)
 ToolsBottom := ToolY + ToolRows * ToolH + (ToolRows - 1) * 10
+#if OSX
+UninstallTool := ""
+if FileExist(UninstallScript) {
+    UninstallTool := {glyph: Chr(0x1F5D1), label: "Uninstall Keysharp", cb: UninstallKeysharp}
+    UninstallY := ToolsBottom + 16
+    ToolsBottom := UninstallY + ToolH
+}
+#endif
 FooterY := ToolsBottom + 16
 H := FooterY + 30
 
@@ -195,6 +208,10 @@ for i, T in Tools {
     Ty := ToolY + Row * (ToolH + 10)
     Add("tool" i, Tx, Ty, Wide ? InnerW : PrimW, ToolH, DrawTool.Bind(T), T.cb)
 }
+#if OSX
+if IsObject(UninstallTool)
+    Add("uninstall", Pad, UninstallY, InnerW, ToolH, DrawTool.Bind(UninstallTool), UninstallTool.cb)
+#endif
 Add("footer", 0, FooterY, W, 30, DrawFooter)
 
 ; ---------------------------------------------------------------------------
@@ -405,6 +422,16 @@ LaunchScript(ScriptPath) {
     ; part of the target command line by Run().
     return Run(A_AhkPath, , , , '"' ScriptPath '"')
 }
+
+#if OSX
+UninstallKeysharp(*) {
+    global UninstallPid
+    if UninstallPid && ProcessExist(UninstallPid)
+        return
+    ; The uninstaller asks for confirmation and removes the installation it is part of.
+    Run("/bin/bash", , , &UninstallPid, '"' UninstallScript '" --gui')
+}
+#endif
 
 LaunchPackageManager(*) {
     if WinExist("Keysharp Package Manager") {

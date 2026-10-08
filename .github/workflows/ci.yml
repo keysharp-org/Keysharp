@@ -188,6 +188,14 @@ jobs:
 
           Write-Host "Verified macOS $actualVersion on $actualArch."
 
+      - name: Check macOS installer scripts
+        if: ${{ matrix.platform == 'macos' }}
+        shell: bash
+        run: |
+          for script in Keysharp.Install/package-macos.sh Keysharp.Install/macos/*.sh; do
+            bash -n "$script"
+          done
+
       - name: Check Linux package lifecycle scripts
         if: ${{ matrix.platform == 'linux' }}
         shell: bash
