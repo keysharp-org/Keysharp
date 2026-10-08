@@ -772,7 +772,8 @@ namespace Keysharp.Builtins
 
 				case Keyword_Edit:
 				{
-					var ml = opts.multiline.IsTrue() || opts.rows > 1 || opts.height != int.MinValue;
+					var ml = !opts.multiline.IsFalse() && (opts.multiline.IsTrue() || opts.rows > 1.5 || textStr?.Contains('\n') == true
+						|| opts.height > 0 && opts.height * dpiscale > 1.5 * GetFontPixels(form.Font) + 8 * dpiscale);
 #if WINDOWS
 
 					if (opts.number.IsTrue())
@@ -783,6 +784,7 @@ namespace Keysharp.Builtins
 
 					var txt = new KeysharpTextBox(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 					{
+						AutoSize = opts.height == int.MinValue && opts.hp == int.MinValue,
 						AcceptsTab = opts.wanttab ?? false,
 						AcceptsReturn = opts.wantreturn ?? false,
 						Multiline = ml,
@@ -2079,6 +2081,9 @@ namespace Keysharp.Builtins
 
 								if (hasW && !hasH)
 								{
+									// Keep an unbroken caption on one line when its height is automatic.
+									if (textStr.AsSpan().IndexOfAny(" \t\r\n".AsSpan()) < 0)
+										finalWidth = Math.Max(finalWidth, Convert.ToInt32(scaledPref));
 									ctrl.MinimumSize = new Size(finalWidth, 0);
 									ctrl.MaximumSize = new Size(finalWidth, int.MaxValue);
 									lbl.AutoSize = true;
@@ -2135,6 +2140,8 @@ namespace Keysharp.Builtins
 			}
 
 		heightdone:
+			if (ctrl is KeysharpButton && (opts.width == int.MinValue || widthAuto) && opts.wp == int.MinValue)
+				finalHeight = Math.Max(finalHeight, ctrl.PreferredSize.Height + ctrl.Margin.Top);
 #if LINUX
 			//Several GTK widgets refuse to render below an intrinsic minimum (a single text row plus chrome):
 			//entries, spin buttons and date pickers. When a smaller height was requested explicitly - e.g. an

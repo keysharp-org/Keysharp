@@ -410,7 +410,6 @@ namespace Keysharp.Builtins
 					return DefaultObject;
 
 				var scale = ((Gui)Gui).DpiScale;
-				var hasScrollBars = _control is KeysharpTextBox || _control is KeysharpRichEdit;//Reflections.SafeHasProperty(_control, "ScrollBars") || Reflections.SafeHasProperty(_control, "HorizontalScrollbar") || Reflections.SafeHasProperty(_control, "Scrollable")
 				Point offset = Parent == null || Parent.GetControl() is Form ? Point.Empty : Parent.GetControl().GetLocationRelativeToForm();
 
 				if (_x != long.MinValue)
@@ -419,11 +418,11 @@ namespace Keysharp.Builtins
 				if (_y != long.MinValue)
 					_control.Top = Convert.ToInt32(_y * scale - offset.Y);
 
-				if (w != long.MinValue)//Add extra if the control has scrollbars, even if they are not visible.
-					_control.Width = Convert.ToInt32(w * scale) - (hasScrollBars ? SystemInformation.VerticalScrollBarWidth : 0);
+				if (w != long.MinValue)
+					_control.Width = Convert.ToInt32(w * scale);
 
-				if (h != long.MinValue)//Unsure if it's needed here too.
-					_control.Height = Convert.ToInt32(h * scale) - (hasScrollBars ? SystemInformation.HorizontalScrollBarHeight : 0);
+				if (h != long.MinValue)
+					_control.Height = Convert.ToInt32(h * scale);
 
 				return DefaultObject;
 			}
