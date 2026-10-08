@@ -40,8 +40,17 @@ namespace Keysharp.Builtins
 			public static object staticCall(object @this, object value)
 			{
 				var t = FromAwaitable(value);
-				return t == null ? Errors.TypeErrorOccurred(value, typeof(KeysharpTask)) : Wrap(t);
+				return t == null ? NotAwaitableErrorOccurred(value) : Wrap(t);
 			}
+
+			/// <summary>
+			/// Reports <paramref name="value"/> as not awaitable. A RealThread is named apart because it has two
+			/// completions to choose between, so the message says which.
+			/// </summary>
+			internal static object NotAwaitableErrorOccurred(object value)
+				=> value is Ks.RealThread
+					? Errors.TypeErrorOccurred("Expected a Task but got a RealThread. Await its Task for the result of its function, or its Terminated for the thread ending.")
+					: Errors.TypeErrorOccurred(value, typeof(KeysharpTask));
 
 			/// <summary>Returns the one wrapper for <paramref name="t"/>, creating it on first crossing.</summary>
 			internal static KeysharpTask Wrap(Task t)
@@ -667,7 +676,7 @@ namespace Keysharp.Builtins
 
 					if (underlying == null)
 					{
-						_ = Errors.TypeErrorOccurred(value, typeof(KeysharpTask));
+						_ = NotAwaitableErrorOccurred(value);
 						return null;
 					}
 

@@ -7,8 +7,8 @@ namespace Keysharp.Builtins
 		/// <para>
 		/// This is Keysharp's <c>await</c>. It does not suspend the script thread the way C#'s <c>await</c>
 		/// suspends a method — a Keysharp pseudo-thread runs to completion on its own frame — so it blocks the
-		/// calling thread and pumps everything else, exactly as <c>Sleep</c>, <c>WinWait</c> and
-		/// <c>RealThread.Wait</c> do. Timers, hotkeys and the GUI stay alive throughout.</para>
+		/// calling thread and pumps everything else, exactly as <c>Sleep</c> and <c>WinWait</c> do. Timers, hotkeys
+		/// and the GUI stay alive throughout.</para>
 		/// <para>
 		/// Because it pumps, it is an interruption point: another pseudo-thread can start while it waits, as it
 		/// can inside <c>Sleep</c>. That matters most around <c>Ks.Lock</c>, whose ownership is per real thread
@@ -31,7 +31,7 @@ namespace Keysharp.Builtins
 			var task = KeysharpTask.FromAwaitable(value);
 
 			if (task == null)
-				return Errors.TypeErrorOccurred(value, typeof(KeysharpTask));
+				return KeysharpTask.NotAwaitableErrorOccurred(value);
 
 			// Waiting on the entry task of the worker this call is running inside can never finish: that task is
 			// settled by the very body doing the waiting.

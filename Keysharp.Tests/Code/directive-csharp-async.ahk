@@ -443,7 +443,7 @@ Assert(cancellable.IsCanceled, A_LineNumber)
 
 ; --- a RealThread is NOT awaitable; its two completions have to be named apart ------------------
 AssertEq(Await(RealThread(() => 77).Task), 77, A_LineNumber)
-Throws(() => Await(RealThread(() => 77)), A_LineNumber, TypeError)
+AssertError(() => Await(RealThread(() => 77)), "TypeError: Expected a Task but got a RealThread. Await its Task for the result of its function, or its Terminated for the thread ending. []", A_LineNumber)
 Throws(() => Await(RealThread.Main.Task), A_LineNumber, TargetError)
 
 ; --- a script Task goes back into a CLR API which expects a .NET one ----------------------------
