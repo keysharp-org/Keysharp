@@ -5203,13 +5203,13 @@
                  {
                      "category":  "FileSystem",
                      "feature":  "FileExist()",
-                     "syntax":  "FileExist(./path/*.txt\")",
+                     "syntax":  "FileExist(\"*.txt\")",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Checks for the existence of a file or folder and returns its attributes.",
-                     "tested-by":  "assign-multiline.ahk"
+                     "notes":  "Checks for the existence of a file or folder and returns its attributes. Bare filenames and wildcard patterns resolve against A_WorkingDir.",
+                     "tested-by":  "file-fileexist.ahk"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",

@@ -1,3 +1,6 @@
+#ErrorStdOut
+#Warn All, StdOut
+#Warn LocalSameAsGlobal, Off
 #NoTrayIcon
 
 #import __Main
@@ -300,4 +303,16 @@ val := foclass.stestmemberfunc.Call(foclass)
 
 AssertEq(val, 789, A_LineNumber)
 
-FileAppend "pass", "*"
+; The final pass comes from __Delete to verify that shutdown invokes the callback defined in static __New.
+staticDeleteObject := {name: "staticDeleteObject"}
+
+class StaticDeleteCallback
+{
+	static __New()
+	{
+		staticDeleteObject.DefineProp("__Delete", {Call: (this, *) => (
+			AssertEq(this.name, "staticDeleteObject", A_LineNumber),
+			FileAppend("pass", "*")
+		)})
+	}
+}
