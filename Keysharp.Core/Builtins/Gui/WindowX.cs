@@ -734,7 +734,7 @@ namespace Keysharp.Builtins
 
 		// A process the window search could not query only fails to match there, but reading its name raises. The search
 		// may have read the name already, so the lookup is repeated for its error.
-		private static string ProcessImageOrError(WindowInfoBase win, bool nameOnly)
+		internal static string ProcessImageOrError(WindowInfoBase win, bool nameOnly)
 		{
 			var image = nameOnly ? win.ProcessName : win.Path;
 
@@ -745,7 +745,8 @@ namespace Keysharp.Builtins
 			_ = Processes.GetProcessImage((uint)win.PID, nameOnly);
 			return (string)Errors.OSErrorOccurred(new Win32Exception(Marshal.GetLastWin32Error()), "", "");
 #else
-			return (string)Errors.OSErrorOccurredWithMessage($"Could not read the executable of process {win.PID}.", "");
+			// A PID of 0 means the backend does not report the owner, as with foreign Wayland toplevels, so there is no image to read.
+			return win.PID <= 0 ? "" : (string)Errors.OSErrorOccurredWithMessage($"Could not read the executable of process {win.PID}.", "");
 #endif
 		}
 

@@ -165,8 +165,7 @@ MyGui.MenuBar := MyMenuBar
 ; ┌──────────────┐
 ; │  Status Bar  │
 ; └──────────────┘
-; Keep the verdict color demonstration readable with either desktop theme.
-MySB := MyGui.Add("StatusBar", "h36 cBlack BackgroundWhite", "                       ")
+MySB := MyGui.Add("StatusBar", "h36", "                       ")
 
 ; ┌─────────────┐
 ; │  Start TAB  │
@@ -2389,7 +2388,7 @@ ListBoxClicked(*) {
 	;MySB.SetIcon("Shell32.dll", 2)
 	; MsgBox("Icon lives at " . A_KsCorePath)
 	MySB.SetIcon(A_KsCorePath, "Keysharp.ico")
-	MySB.SetFont("Norm cBlack")   ; clear any leftover green/red bold from a PASS/FAIL verdict
+	MySB.SetFont("Norm cDefault")   ; clear any leftover green/red bold from a PASS/FAIL verdict
 	MySB.SetText(MyListBox.Text . " selected in ListBox")
 }
 

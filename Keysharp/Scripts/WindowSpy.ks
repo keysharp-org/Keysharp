@@ -178,9 +178,10 @@ TryUpdate() {
     }
 
     UpdateText("Ctrl_Ctrl", cText)
-    wX := "", wY := "", wW := "", wH := ""
-    WinGetPos &wX, &wY, &wW, &wH, "ahk_id " curWin
-    WinGetClientPos(&wcX, &wcY, &wcW, &wcH, "ahk_id " curWin)
+    wX := "Unavailable", wY := "Unavailable", wW := "Unavailable", wH := "Unavailable"
+    wcX := "Unavailable", wcY := "Unavailable", wcW := "Unavailable", wcH := "Unavailable"
+    Try WinGetPos &wX, &wY, &wW, &wH, "ahk_id " curWin
+    Try WinGetClientPos(&wcX, &wcY, &wcW, &wcH, "ahk_id " curWin)
 
     wText := "Screen:`tx: " wX "`ty: " wY "`tw: " wW "`th: " wH "`n"
            . "Client:`tx: " wcX "`ty: " wcY "`tw: " wcW "`th: " wcH

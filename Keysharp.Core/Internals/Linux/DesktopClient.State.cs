@@ -219,7 +219,11 @@ namespace Keysharp.Internals.Linux
 				try
 				{
 					EnsureDomains(domain);
-					if ((domains & domain) == 0) throw new NotSupportedException("The desktop state domain is unavailable.");
+					if ((domains & domain) == 0)
+					{
+						observer.Dispose();
+						return null;
+					}
 					if (domain is 2 or 4 && TryReadData(domain, out _))
 						connection.Owner.Invoke(() =>
 						{

@@ -56,7 +56,7 @@ keysharp-input probe
 keysharp-desktop probe
 ```
 
-The first command prints the version without a dialog. Keysharp requires client ABI 1.x for both helpers, with desktop protocol 3. The first permission-scoped action may prompt for authorization.
+The first command prints the version without a dialog. Keysharp requires client ABI 1.x for both helpers (`libkeysharp-input.so.1` and `libkeysharp-desktop.so.1`); the desktop helper uses protocol 3. Update all three flake inputs together when replacing an older installation. The first permission-scoped action may prompt for authorization.
 
 ## Update
 

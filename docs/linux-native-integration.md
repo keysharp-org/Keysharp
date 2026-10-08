@@ -9,8 +9,8 @@ foreign window, capture, pointer and keyboard queries use the component librarie
 
 | Component | Responsibility |
 | --- | --- |
-| `keysharp-input` (client ABI 1.x) | Suppressible hooks, passive observers, synthesis, state/idle queries, device metadata and raw device observation |
-| `keysharp-desktop` (client ABI 1.x, protocol 3) | Window queries/actions/events, capture, pointer positioning, display topology, keyboard keymaps and compositor integration |
+| `keysharp-input` (client ABI 1.x, SONAME 1) | Suppressible hooks, passive observers, synthesis, state/idle queries, device metadata and raw device observation |
+| `keysharp-desktop` (client ABI 1.x, SONAME 1, protocol 3) | Window queries/actions/events, capture, pointer positioning, display topology, keyboard keymaps and compositor integration |
 | `keysharp-permissions` | Shared source library for identity and durable grants; bundled into the two services |
 
 On GNOME, the desktop extension also consumes the standard Unity
