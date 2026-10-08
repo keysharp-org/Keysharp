@@ -214,6 +214,8 @@ macOS support is in active development. The following table summarises what work
 
 Permissions are requested automatically when first needed, or up front with `#Requires capability` (see [Additions and Improvements](#additions-and-improvements) below). Grant them in **System Settings → Privacy & Security**.
 
+On macOS, every top-level window uses its window-server ID (`CGWindowID`) as its Keysharp handle. `Gui.Hwnd`, `WinActive()`, `WinExist()`, `WinGetID()`, `WinGetList()`, point queries, and `WinEvent` callbacks agree on that ID. Own GUI IDs are validated against CoreGraphics at creation and remain unchanged through hiding, showing, minimizing, and restoring. `Gui.Hwnd` is not an `NSWindow` pointer; native AppKit access goes through the backing form returned by `Gui.ToClr()`.
+
 For foreign windows on macOS, `WinHide()`/`WinShow()` hide/unhide the owning application. `WinMaximize()` uses fullscreen; minimizing leaves fullscreen, and the same script's `WinRestore()` or `WinActivate()` restores it. Foreign title changes require writable `AXTitle`. Foreign level, opacity, enabled state, frame style, lowering and redraw are unsupported.
 
 ### Installing on macOS
@@ -758,7 +760,7 @@ Controlling another application needs **Automation** permission, granted per tar
 * New string functions:
 	+ `ReplaceLineEndings(Str, EndOfLine?) => String`: Makes all line endings in a string (CR LF, CR, LF, form feed, NEL, U+2028 and U+2029) match `EndOfLine`, which defaults to `` `n `` on every platform.
 * Window functions:
-	+ `WinFromPoint(X, Y)`: Gets the window at a specific screen position. On macOS, its return value and the window output from `MouseGetPos()` match `Gui.Hwnd` for a GUI owned by this script; windows owned by other processes use their window-server ID (`CGWindowID`).
+	+ `WinFromPoint(X, Y)`: Gets the window at a specific screen position. On macOS, all top-level windows use window-server IDs (`CGWindowID`); its return value and the window output from `MouseGetPos()` match `Gui.Hwnd` for a GUI owned by this script.
 	+ `WinMinimizeAllUndo()`: Unminimizes top-level windows without clearing maximization; respects `DetectHiddenWindows`. Unlike AHK's shell undo, needs no preceding `WinMinimizeAll()` call.
 * Keysharp-only members on AutoHotkey classes:
 	+ They need no `#Import`, but AutoHotkey v2.1 does not define them, so a script using one is not portable to AutoHotkey.

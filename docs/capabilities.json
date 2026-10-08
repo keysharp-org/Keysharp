@@ -6287,8 +6287,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Native window handle of the GUI.",
-                     "tested-by":  "Gui/guitest.ks"
+                     "notes":  "Native window handle of the GUI. On macOS this is the window-server ID (CGWindowID), validated against CoreGraphics at creation and retained while hidden or minimized; window queries, point queries and WinEvent callbacks use the same ID.",
+                     "tested-by":  "gui-window-from-point.ahk; Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11152,8 +11152,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinActive function checks if the specified window is active and returns its unique ID (HWND).",
-                     "tested-by":  "Gui/guitest.ks"
+                     "notes":  "The WinActive function checks if the specified window is active and returns its unique ID (HWND). On macOS it returns the same window-server ID (CGWindowID) as Gui.Hwnd for a script-owned GUI, whether addressed by object, ID or title.",
+                     "tested-by":  "gui-window-from-point.ahk; Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11185,7 +11185,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Returns the window handle at screen coordinates and requires WindowMonitoring. Omitting the coordinates uses the current cursor position, which is not separately permission-gated. On macOS, the handle for a GUI owned by this script matches Gui.Hwnd; windows owned by other processes use their window-server ID (CGWindowID).",
+                     "notes":  "Returns the window handle at screen coordinates and requires WindowMonitoring. Omitting the coordinates uses the current cursor position, which is not separately permission-gated. On macOS all top-level windows use window-server IDs (CGWindowID), matching Gui.Hwnd for script-owned GUIs.",
                      "tested-by":  "DesktopBrokerTests.WindowAtPreference; DesktopBrokerTests.WindowAtExclusions; GuiTests.OwnWindowFromPoint"
                  },
                  {
@@ -11278,7 +11278,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinGetID function returns the unique ID (HWND) of the specified window. Wayland foreign windows receive positive process-local synthetic handles which can be reused with ahk_id and other window functions."
+                     "notes":  "The WinGetID function returns the unique ID (HWND) of the specified window. On macOS all top-level windows use window-server IDs (CGWindowID), matching Gui.Hwnd for script-owned GUIs. Wayland foreign windows receive positive process-local synthetic handles which can be reused with ahk_id and other window functions."
                  },
                  {
                      "category":  "Windowing/GUI",

@@ -18,7 +18,7 @@ namespace Keysharp.Internals
 
 		private static bool TryItem(nint h, out MacWindowInfo item, bool includeTextMetadata = false)
 		{
-			if (MacNativeWindows.TryGetWindowInfo(h, out var native, includeTextMetadata))
+			if (!TryOwnControl(h, out _) && MacNativeWindows.TryGetWindowInfo(h, out var native, includeTextMetadata))
 			{
 				item = new MacWindowInfo(native, includeTextMetadata);
 				return true;
@@ -27,14 +27,6 @@ namespace Keysharp.Internals
 			item = null;
 			return false;
 		}
-
-		// The window-server descriptor for a handle, accepting either a CGWindowID or one of our own Eto
-		// window handles (an NSWindow pointer). Used by the action verbs whose native implementation is
-		// own-process only, so that a script-created GUI reaches it instead of falling through to the
-		// toolkit no-op in WindowBase.
-		private static bool TryNative(nint h, out MacNativeWindow native)
-			=> MacNativeWindows.TryGetWindowInfo(h, out native)
-			   || MacNativeWindows.TryGetOwnWindowInfo(h, out native);
 
 		// macOS off-process titles come from the kCGWindow batch (unavailable when re-queried by handle), so a
 		// by-handle MacWindowInfo lazily fetches its descriptor once; enumerate seeds each from the batch.
@@ -68,7 +60,7 @@ namespace Keysharp.Internals
 		public override long GetExStyle(nint h)
 			=> TryItem(h, out var item) ? item.ExStyle : TryOwnControl(h, out _) ? base.GetExStyle(h) : Item(h).ExStyle;
 		public override bool GetActive(nint h)
-			=> TryItem(h, out var item) ? item.Active : TryOwnControl(h, out _) ? base.GetActive(h) : Item(h).Active;
+			=> h > 0 && (ulong)h <= uint.MaxValue ? GetForegroundHandle() == h : TryOwnControl(h, out _) && base.GetActive(h);
 		public override bool GetVisible(nint h)
 			=> TryItem(h, out var item) ? item.Visible : TryOwnControl(h, out _) ? base.GetVisible(h) : Item(h).Visible;
 		public override bool GetEnabled(nint h)
@@ -82,7 +74,7 @@ namespace Keysharp.Internals
 		public override bool GetAlwaysOnTop(nint h)
 			=> TryItem(h, out var item) ? item.AlwaysOnTop : TryOwnControl(h, out _) ? base.GetAlwaysOnTop(h) : Item(h).AlwaysOnTop;
 		public override object GetTransparency(nint h)
-			=> TryItem(h, out var item) ? item.Transparency : TryOwnControl(h, out _) ? base.GetTransparency(h) : Item(h).Transparency;
+			=> Item(h).Transparency;
 		public override object GetTransparentColor(nint h)
 			=> TryItem(h, out var item) ? item.TransparentColor : TryOwnControl(h, out _) ? base.GetTransparentColor(h) : Item(h).TransparentColor;
 		public override POINT ClientToScreen(nint h)
@@ -153,7 +145,7 @@ namespace Keysharp.Internals
 		// --- control: fetch the descriptor by handle and drive MacAccessibility/MacNativeWindows directly ---
 		public override bool TrySetAlwaysOnTop(nint h, bool onTop)
 		{
-			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
+			if (TryOwnControl(h, out _) || !MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TrySetAlwaysOnTop(h, onTop);
 
 			if (native.OwnerPid != Environment.ProcessId)
@@ -173,7 +165,7 @@ namespace Keysharp.Internals
 
 		public override bool TryMoveResize(nint h, Rectangle bounds, bool setPos, bool setSize)
 		{
-			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
+			if (TryOwnControl(h, out _) || !MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TryMoveResize(h, bounds, setPos, setSize);
 
 			var rect = native.Bounds;
@@ -195,7 +187,7 @@ namespace Keysharp.Internals
 			if (TryOwnControl(h, out _))
 				return base.TryUnminimize(h);
 
-			if (!TryNative(h, out var native))
+			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return false;
 
 			using var window = MacAccessibility.ResolveWindowElement(native, "unminimize window", waitForWindow: true);
@@ -208,7 +200,7 @@ namespace Keysharp.Internals
 
 		public override bool TrySetState(nint h, FormWindowState state)
 		{
-			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
+			if (TryOwnControl(h, out _) || !MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TrySetState(h, state);
 
 			using var window = MacAccessibility.ResolveWindowElement(native, "set window state", waitForWindow: true);
@@ -217,7 +209,7 @@ namespace Keysharp.Internals
 
 		public override bool TrySetStyle(nint h, long style)
 		{
-			if (!TryNative(h, out var native))
+			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TrySetStyle(h, style);
 
 			if (native.OwnerPid != Environment.ProcessId)
@@ -245,7 +237,7 @@ namespace Keysharp.Internals
 
 		public override bool TrySetTransparency(nint h, object alpha)
 		{
-			if (!TryNative(h, out var native))
+			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TrySetTransparency(h, alpha);
 
 			if (native.OwnerPid != Environment.ProcessId)
@@ -274,7 +266,7 @@ namespace Keysharp.Internals
 
 		public override bool TryActivate(nint h)
 		{
-			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
+			if (TryOwnControl(h, out _) || !MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TryActivate(h);
 
 			using var window = MacAccessibility.ResolveWindowElement(native, "activate window", waitForWindow: true);
@@ -284,7 +276,7 @@ namespace Keysharp.Internals
 
 		public override bool TrySetZOrder(nint h, ZOrder z)
 		{
-			if (!TryNative(h, out var native))
+			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TrySetZOrder(h, z);
 
 			if (z != ZOrder.Bottom)   // raise to top
@@ -302,7 +294,7 @@ namespace Keysharp.Internals
 
 		public override bool TryClose(nint h)
 		{
-			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
+			if (TryOwnControl(h, out _) || !MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TryClose(h);
 
 			using var window = MacAccessibility.ResolveWindowElement(native, "close window");
@@ -311,7 +303,7 @@ namespace Keysharp.Internals
 
 		public override bool TryKill(nint h)
 		{
-			if (!MacNativeWindows.TryGetWindowInfo(h, out _, includeTextMetadata: false))
+			if (TryOwnControl(h, out _) || !MacNativeWindows.TryGetWindowInfo(h, out _, includeTextMetadata: false))
 				return base.TryKill(h);
 
 			_ = TryClose(h);
@@ -339,7 +331,7 @@ namespace Keysharp.Internals
 
 		public override bool TryHide(nint h)
 		{
-			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
+			if (TryOwnControl(h, out _) || !MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TryHide(h);
 
 			return native.OwnerPid == Environment.ProcessId
@@ -349,7 +341,7 @@ namespace Keysharp.Internals
 
 		public override bool TryShow(nint h)
 		{
-			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
+			if (TryOwnControl(h, out _) || !MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TryShow(h);
 
 			var restored = native.OwnerPid == Environment.ProcessId
@@ -366,12 +358,12 @@ namespace Keysharp.Internals
 
 		// Public AppKit invalidation requires a window owned by this process.
 		public override bool TryRedraw(nint h)
-			=> base.TryRedraw(h) || (TryNative(h, out var native) && native.OwnerPid == Environment.ProcessId
+			=> base.TryRedraw(h) || (MacNativeWindows.TryGetWindowInfo(h, out var native) && native.OwnerPid == Environment.ProcessId
 				&& MacNativeWindows.TryRedrawOwnWindow(native.WindowNumber));
 
 		public override bool TryClick(nint h, Point at, uint button, int count)
 		{
-			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
+			if (TryOwnControl(h, out _) || !MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TryClick(h, at, button, count);
 
 			using var window = MacAccessibility.ResolveWindowElement(native, "post mouse click");
@@ -384,7 +376,7 @@ namespace Keysharp.Internals
 
 		public override bool TrySetTitle(nint h, string title)
 		{
-			if (!MacNativeWindows.TryGetWindowInfo(h, out var native))
+			if (TryOwnControl(h, out _) || !MacNativeWindows.TryGetWindowInfo(h, out var native))
 				return base.TrySetTitle(h, title);
 
 			bool ok;
@@ -440,8 +432,10 @@ namespace Keysharp.Internals
 			{
 				var info = wins[i];
 
-				if (includeHidden || info.Visible)
-					list.Add(new MacWindowInfo(info, includesTextMetadata: true));   // seeded from the batch
+				var window = TryOwnControl((nint)info.WindowNumber, out _)
+					? base.CreateWindow((nint)info.WindowNumber) : new MacWindowInfo(info, includesTextMetadata: true);
+				if (includeHidden || window.Visible)
+					list.Add(window);
 			}
 
 			return list;
@@ -451,11 +445,7 @@ namespace Keysharp.Internals
 		{
 			if (MacNativeWindows.TryGetWindowAtPoint(new POINT(x, y), out var native))
 			{
-				// Own GUIs must compare equal to Gui.Hwnd and keep their toolkit client geometry.
-				child = native.OwnerPid == Environment.ProcessId
-					&& MacNativeWindows.TryGetOwnWindowHandle(native.WindowNumber, out var ownHandle)
-					&& TryOwnControl(ownHandle, out _)
-					? ownHandle : (nint)native.WindowNumber;
+				child = (nint)native.WindowNumber;
 				return true;
 			}
 

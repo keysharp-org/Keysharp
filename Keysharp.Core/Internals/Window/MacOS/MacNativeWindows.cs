@@ -177,13 +177,13 @@ namespace Keysharp.Internals.Window.MacOS
 
 		internal static bool TryGetWindowInfo(nint handle, out MacNativeWindow info, bool includeTextMetadata)
 		{
-			if (handle == 0)
+			if (handle <= 0 || (ulong)handle > uint.MaxValue)
 			{
 				info = default;
 				return false;
 			}
 
-			var id = unchecked((uint)handle.ToInt64());
+			var id = (uint)handle.ToInt64();
 			// CGWindowListCreateDescriptionFromArray takes raw IDs, not CFNumber objects.
 			var ids = CFArrayCreate(0, [(nint)id], 1, 0);
 			if (ids != 0)
@@ -206,10 +206,7 @@ namespace Keysharp.Internals.Window.MacOS
 				finally { CFRelease(ids); }
 			}
 
-			// A window we ordered out via TryHideOwnWindow() drops out of the window server's
-			// list entirely (its NSWindow.WindowNumber even becomes -1), so it can no longer be
-			// found above. Fall back to the info captured at hide time so WinExist (with
-			// DetectHiddenWindows on) and WinShow can still find and restore it.
+			// Keep explicitly hidden own windows discoverable if the server omits their descriptions.
 			lock (hiddenOwnWindowsLock)
 			{
 				if (hiddenOwnWindowInfo.TryGetValue(id, out var hiddenInfo))
@@ -492,15 +489,13 @@ namespace Keysharp.Internals.Window.MacOS
 			}
 		}
 
-		// Windows we own that have been hidden via TryHideOwnWindow(), keyed by the window number
-		// they had at the time they were ordered out (NSWindow.WindowNumber becomes -1 once a
-		// window is off the window server's list, so it can't be used to find it again).
+		// Explicitly hidden own windows, retained until they are shown or closed.
 		private static readonly object hiddenOwnWindowsLock = new();
 		private static readonly Dictionary<uint, NSWindow> hiddenOwnWindows = new();
 		private static readonly Dictionary<uint, MacNativeWindow> hiddenOwnWindowInfo = new();
 
 		// Hides a single window we own without affecting any other window of this process, by
-		// ordering it out of the window server entirely (true hide, not minimize). The window's
+		// ordering it out of the screen list. The window's
 		// last-known info is cached so WinExist (DetectHiddenWindows) and WinShow can still find
 		// and restore it afterwards. Also re-evaluates the Dock icon, which is hidden automatically
 		// once no user-facing window remains visible (see RequestActivationPolicyUpdate).
@@ -635,7 +630,7 @@ namespace Keysharp.Internals.Window.MacOS
 		}
 
 		// Finds the NSWindow for one of our own windows by its window number, including windows
-		// currently hidden via TryHideOwnWindow() (whose NSWindow.WindowNumber is no longer valid).
+		// currently hidden via TryHideOwnWindow().
 		private static NSWindow FindOwnWindow(uint windowNumber)
 		{
 			lock (hiddenOwnWindowsLock)
@@ -643,6 +638,9 @@ namespace Keysharp.Internals.Window.MacOS
 				if (hiddenOwnWindows.TryGetValue(windowNumber, out var hidden))
 					return hidden;
 			}
+
+			if (Eto.Forms.Control.FromHandle((nint)windowNumber)?.ControlObject is NSWindow own)
+				return own;
 
 			var app = Eto.Forms.Application.Instance;
 
@@ -654,79 +652,6 @@ namespace Keysharp.Internals.Window.MacOS
 					return native;
 
 			return null;
-		}
-
-		internal static bool TryGetOwnWindowHandle(uint windowNumber, out nint handle)
-		{
-			handle = Application.Instance?.Invoke(() => FindOwnWindow(windowNumber)?.Handle ?? 0) ?? 0;
-			return handle != 0;
-		}
-
-		// Eto hands out the raw NSWindow pointer as a window's handle (MacView.NativeHandle => Control.Handle),
-		// but every window-server API in this file is keyed by CGWindowID. Nothing bridged the two, so a
-		// script-created GUI missed TryGetWindowInfo() and every own-window native path below was unreachable
-		// for it. Translate one of our own handles to its window number to close that gap.
-		internal static bool TryGetOwnWindowNumber(nint handle, out uint windowNumber)
-		{
-			windowNumber = 0;
-
-			if (handle == 0)
-				return false;
-
-			var app = Eto.Forms.Application.Instance;
-
-			if (app == null)
-				return false;
-
-			try
-			{
-				foreach (var window in app.Windows)
-				{
-					// Compare native handles rather than the managed wrappers: MonoMac can hand back distinct
-					// wrapper instances for the same underlying NSWindow* (see IsUserFacingWindow).
-					if (window.ControlObject is not NSWindow native || native.Handle != handle)
-						continue;
-
-					var number = native.WindowNumber;
-
-					if (number > 0)
-					{
-						windowNumber = (uint)number;
-						return true;
-					}
-
-					// WindowNumber goes negative once a window is ordered out (TryHideOwnWindow), so recover
-					// the number it was hidden under — otherwise a hidden own window stops resolving.
-					lock (hiddenOwnWindowsLock)
-					{
-						foreach (var kv in hiddenOwnWindows)
-						{
-							if (kv.Value.Handle == native.Handle)
-							{
-								windowNumber = kv.Key;
-								return true;
-							}
-						}
-					}
-
-					return false;
-				}
-			}
-			catch
-			{
-			}
-
-			return false;
-		}
-
-		// TryGetWindowInfo() for a handle that is one of our own Eto windows rather than a CGWindowID.
-		internal static bool TryGetOwnWindowInfo(nint handle, out MacNativeWindow info, bool includeTextMetadata = false)
-		{
-			if (TryGetOwnWindowNumber(handle, out var number))
-				return TryGetWindowInfo((nint)number, out info, includeTextMetadata);
-
-			info = default;
-			return false;
 		}
 
 		// Sets/clears "always on top" for one of our own windows by adjusting its NSWindow level.

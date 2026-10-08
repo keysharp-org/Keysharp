@@ -377,6 +377,28 @@ namespace Eto.Forms
 
         internal static nint GetHandle(Eto.Widget widget)
         {
+#if OSX
+            if (widget is Window window)
+            {
+                if (window.Properties.TryGetValue("Keysharp.WindowId", out var cached))
+                    return (nint)cached;
+
+                return Application.Instance.Invoke(() =>
+                {
+                    // AppKit's number must identify this process's window in CoreGraphics.
+                    var number = (nint)((MonoMac.AppKit.NSWindow)window.ControlObject).WindowNumber;
+                    if (!Keysharp.Internals.Window.MacOS.MacNativeWindows.TryGetWindowInfo(number, out var info, false)
+                        || info.OwnerPid != Environment.ProcessId)
+                    {
+                        _ = Errors.OSErrorOccurred("The macOS window has no matching window-server ID.");
+                        return (nint)0;
+                    }
+
+                    window.Properties["Keysharp.WindowId"] = number;
+                    return number;
+                });
+            }
+#endif
 #if LINUX
             // X11 only: on Wayland the GdkWindow is not a GdkX11Window, so gdk_x11_window_get_xid
             // asserts (a Gdk-CRITICAL per call) and returns 0 anyway. Skipping it on Wayland avoids

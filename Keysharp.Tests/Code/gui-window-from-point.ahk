@@ -1,11 +1,22 @@
 #ErrorStdOut
 #Warn All, StdOut
 #NoTrayIcon
-#Import Ks { Image, WinFromPoint }
+#Import Ks { Image, WinFromPoint, WinEvent }
 #Include <assert>
 
 Target := Gui("+AlwaysOnTop", "Window point target")
 Cover := Gui("+AlwaysOnTop", "Window point cover")
+#if OSX
+TargetHandle := Target.Hwnd
+Assert(TargetHandle > 0 && TargetHandle <= 0xFFFFFFFF, A_LineNumber)
+AssertEq(WinExist(TargetHandle), TargetHandle, A_LineNumber)
+AssertEq(GuiFromHwnd(TargetHandle), Target, A_LineNumber)
+Cover.Opt("+Owner" TargetHandle)
+Events := []
+Hook := WinEvent(TargetHandle)
+Hook.OnActive := (Hook, Hwnd, Time) => Events.Push(Hwnd)
+Hook.Start()
+#endif
 try {
     Target.Show("x40 y80 w240 h180 NA")
     AssertEq(WindowAtCenter(Target), Target.Hwnd, A_LineNumber)
@@ -36,7 +47,53 @@ try {
 
     Cover.Hide()
     AssertEq(WindowAt(PointX, PointY, Target.Hwnd), Target.Hwnd, A_LineNumber)
+#if OSX
+    AssertEq(Target.Hwnd, TargetHandle, A_LineNumber)
+    AssertEq(WinGetID(Target.Title), TargetHandle, A_LineNumber)
+    AssertEq(WinGetList(Target.Title)[1], TargetHandle, A_LineNumber)
+    WinActivate(TargetHandle)
+    AssertEq(WinWaitActive(TargetHandle, , 2), TargetHandle, A_LineNumber)
+    AssertEq(WinActive(Target), TargetHandle, A_LineNumber)
+    AssertEq(WinActive("ahk_id " TargetHandle), TargetHandle, A_LineNumber)
+    AssertEq(WinActive(Target.Title), TargetHandle, A_LineNumber)
+    AssertEq(WinActive("A"), TargetHandle, A_LineNumber)
+    WinExist(Target)
+    AssertEq(WinActive(), TargetHandle, A_LineNumber)
+    Loop 100 {
+        if Events.Length
+            break
+        Sleep(10)
+    }
+    Assert(Events.Length > 0, A_LineNumber)
+    for EventHandle in Events
+        AssertEq(EventHandle, TargetHandle, A_LineNumber)
+
+    Target.Hide()
+    AssertEq(Target.Hwnd, TargetHandle, A_LineNumber)
+    AssertEq(WinActive(TargetHandle), 0, A_LineNumber)
+    AssertEq(WinExist(TargetHandle), TargetHandle, A_LineNumber)
+    AssertEq(WinExist(Target.Title), 0, A_LineNumber)
+    DetectHiddenWindows(true)
+    AssertEq(WinExist(Target.Title), TargetHandle, A_LineNumber)
+    DetectHiddenWindows(false)
+    WinShow(TargetHandle)
+    WinActivate(TargetHandle)
+    AssertEq(WinWaitActive(TargetHandle, , 2), TargetHandle, A_LineNumber)
+    WinHide(TargetHandle)
+    AssertEq(WinExist(TargetHandle), TargetHandle, A_LineNumber)
+    AssertEq(WinExist(Target.Title), 0, A_LineNumber)
+    WinShow(TargetHandle)
+    WinMinimize(TargetHandle)
+    AssertEq(Target.Hwnd, TargetHandle, A_LineNumber)
+    AssertEq(WinGetMinMax(TargetHandle), -1, A_LineNumber)
+    WinRestore(TargetHandle)
+    AssertEq(Target.Hwnd, TargetHandle, A_LineNumber)
+    AssertEq(WinGetMinMax(TargetHandle), 0, A_LineNumber)
+#endif
 } finally {
+#if OSX
+    Hook.Stop()
+#endif
     Cover.Destroy()
     Target.Destroy()
 }
