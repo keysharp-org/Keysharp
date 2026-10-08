@@ -6,7 +6,7 @@ Keysharp is a cross-platform C# implementation of [AutoHotkey v2](https://www.au
 
 > **Status:** under active development and not yet recommended for production. Windows has the broadest compatibility; Linux and macOS support continues to improve.
 
-Most scripts run unmodified on Windows. Across platforms, anything using **DllCall, COM, or the registry will not work** on Linux and macOS.
+Most scripts run unmodified on Windows. On Linux and macOS, calls to Windows DLLs, registry functions and native COM interfaces need platform-specific replacements. `DllCall` can call each platform's native libraries, and `ComObject` uses D-Bus on Linux and Apple Events on macOS; see the [platform details](docs/reference.md#comobject-off-windows).
 
 - [Download a release](https://github.com/keysharp-org/Keysharp/releases)
 - [Platform compatibility](#platform-compatibility)
@@ -108,7 +108,7 @@ configure NixOS services.
 
 ## Platform Compatibility
 
-`Full` means the feature is generally usable; `Partial` means known gaps remain. See the [full capability matrix](docs/capabilities.md) and [per-platform details](docs/reference.md).
+`Full` means the feature is generally usable; `Partial` means known gaps remain; `Unverified` means the backend is implemented but has not been verified on hardware. See the [full capability matrix](docs/capabilities.md) and [per-platform details](docs/reference.md).
 
 | Capability | Windows | Linux | macOS |
 |---|---|---|---|
@@ -117,7 +117,9 @@ configure NixOS services.
 | Hotkeys, hotstrings, and input | Full | Partial | Partial |
 | GUI windows and window automation | Full | Partial | Partial |
 | Screen capture and pixel functions | Full | Partial | Partial |
-| Registry and COM APIs | Full | Unsupported | Unsupported |
+| Native function calls (`DllCall`) | Full | Full | Full |
+| Registry APIs | Full | Unsupported | Unsupported |
+| COM automation (`ComObject`) | Full | Partial (D-Bus) | Unverified (Apple Events) |
 
 ## Building From Source
 

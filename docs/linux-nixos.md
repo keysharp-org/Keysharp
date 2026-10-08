@@ -56,7 +56,7 @@ keysharp-input probe
 keysharp-desktop probe
 ```
 
-The first command prints the version without a dialog. Keysharp requires input client ABI 0.4+ and desktop client ABI 0.8+. The first permission-scoped action may prompt for authorization.
+The first command prints the version without a dialog. Keysharp requires client ABI 1.x for both helpers, with desktop protocol 3. The first permission-scoped action may prompt for authorization.
 
 ## Update
 

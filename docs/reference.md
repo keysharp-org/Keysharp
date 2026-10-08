@@ -153,7 +153,7 @@ The `.deb` application under `/usr` and the root tarball application under `/usr
 
 The same rule applies to the components: a component `.deb` refuses to unpack over a tarball-installed component under `/usr/local`, whose unit files would otherwise shadow the package's. Run that component's portable uninstaller first.
 
-Until an apt repository is published, `keysharp-linux-setup.sh` is the way to install the `.deb` channel: it fetches each project's verified package directly, rather than adding an unsigned package source.
+`keysharp-linux-setup.sh` installs each project's verified release package directly and does not add an apt repository. On supported Ubuntu bases, use the PPA described above for updates through apt.
 
 #### System components
 
@@ -165,7 +165,7 @@ On X11 and Wayland, foreign-window queries/control, capture, global cursor queri
 
 [Linux native integration](linux-native-integration.md) describes the API split, permission identities, and platform limits.
 
-Both are independently versioned MIT-licensed projects with their own installation and removal lifecycle. Applications call their stable C libraries, `libkeysharp-input.so.0` and `libkeysharp-desktop.so.0`; the libraries hide the private service protocol. Both helpers pin the same `keysharp-permissions` source submodule, so the grant-store contract has one implementation without adding a third runtime package.
+Both are independently versioned MIT-licensed projects with their own installation and removal lifecycle. Applications call their stable C libraries, `libkeysharp-input.so.1` and `libkeysharp-desktop.so.1`; Keysharp requires client ABI 1.x for both helpers, with desktop protocol 3. The libraries hide the private service protocol. Both helpers pin the same `keysharp-permissions` source submodule, so the grant-store contract has one implementation without adding a third runtime package.
 
 System installations authenticate the connecting process and share permanent grants keyed by user, executable identity, and capability scope. A new scope opens a polkit prompt; a denial or cancelled prompt is not stored. A user installation of keysharp-desktop uses an Allow Always/Deny dialog and a separate private grant store; it cannot grant access to the system input service. Cursor position, display topology, keyboard layout, idle time, modifier state, and lock-toggle state are ungated. A script or DLL run by an interpreter shares that interpreter executable’s identity; scripts are not separately authenticated. Protected installed executable paths retain grants across upgrades, while changed user-writable executables require renewed authorization. Grants remain until revoked:
 
@@ -541,7 +541,7 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ AutoHotkey therefore reads `"Str"` as a 2-byte short, `"Int16"` as **eight** bytes (it searches the whole name for a `6`), and accepts abbreviations such as `"i"`, `"D"` and `"Integer"`. Keysharp raises a `ValueError` for all of these, so a type that does not name a number cannot silently read or write the wrong bytes.
 	+ The accepted names are `Int`, `UInt`, `Int64`, `UInt64`, `Short`, `UShort`, `Char`, `UChar`, `Float`, `Double`, `Ptr` and `UPtr`.
 	+ A value that does not read as a number raises a `ValueError` rather than being written as a zero. The pointer-width types additionally accept an object carrying a `Ptr`.
-* `ObjPtr()` returns an IUnknown `ComValue` with the pointer wrapped in it, whereas `ObjPtrAddRef()` returns a raw pointer.
+* On Windows, `ObjPtr()` returns an Integer containing the object's IUnknown address without adding a native reference. Keep the object alive while using this borrowed pointer. `ObjPtrAddRef()` returns the same address and adds a native reference, which must be released with `ObjRelease()`. These native reference counts apply to both COM objects and the COM wrappers of managed objects; ordinary script references are managed by .NET's garbage collector.
 * `Sleep()` works, but uses `Application.DoEvents()` internally which is not a good programming practice and can lead to hard to solve bugs.
 	+ For this reason, it's recommended that users use timers for repeated execution rather than a loop with calls to `Sleep()`.
 	+ It will not do any sleeping if shutdown has been initiated.
@@ -631,7 +631,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ Targeting an underlying pseudo-thread marks it to exit when it next resumes and reaches a cooperative event/message check (`TryDoEvents`). It does not asynchronously abort managed code.
 		+ A later request made before the target exits replaces its pending exit code.
 	+ `FileGetSize()` supports `G` and `T` for gigabytes and terabytes.
-	+ `GetKeyState()` on Linux also accepts a device ID (`A_EventInfo.DeviceId` from a hook callback) as `Mode`, reading that one device's physical state; this requires keysharp-input client ABI 0.4 or newer and InputMonitoring.
+	+ `GetKeyState()` on Linux also accepts a device ID (`A_EventInfo.DeviceId` from a hook callback) as `Mode`, reading that one device's physical state; this requires keysharp-input client ABI 1.x and InputMonitoring.
 	+ `Log(Number, Base := 10)` is by default base 10, but it can accept a double as the second parameter to specify a custom base.
 		+ In `SetTimer()`:
 			+ In the callback function, `A_EventInfo` is set to the function object used to create the timer.
@@ -1448,9 +1448,6 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ `Download()`: Supports only the `*0` option; any other numerical value raises a `ValueError`. `http`, `https` and `ftp` URLs are supported; a `gopher` URL raises. An HTTP status outside 2xx saves whatever the server sent, as in AutoHotkey. An FTP directory URL saves the server's own plain-text `LIST` output, where WinInet writes an HTML listing; a path that is neither a file nor a directory raises rather than leaving an empty file.
 	+ `ListLines()`: Non-functional because C# doesn't support it.
 	+ `FormatTime(YYYYMMDDHH24MISS?, Format?)`: The `Dn` and `Tn` options in `YYYYMMDDHH24MISS` are not supported, except for 0x80000000 to disallow user overrides. Specify a particular format or order with `Format`.
-	+ `ObjAddRef()` and `ObjPtrAddRef()` do not have an effect for non-COM objects. Instead, use the following:
-		+ `newref := theobj ; adds 1 to the reference count`
-		+ `newref := "" ; subtracts 1 from the reference count`
 	+ When passing `"Interrupt"` as the first argument to `Thread()`, the third argument for `LineCount` is not supported because Keysharp does not support line level awareness.
 	* Syntax:
 	+ The address of a variable cannot be taken using the reference operator.

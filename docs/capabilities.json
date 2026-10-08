@@ -5726,7 +5726,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns logical, physical, and toggle state. Polling an arbitrary key or mouse button requires InputMonitoring. Modifier state and CapsLock/NumLock/ScrollLock toggle state are ungated; polling whether a lock key is physically down still requires InputMonitoring. Linux uses keysharp-input without installing a hook and fails closed for arbitrary state if its authority is unavailable or revokes access; The keysharp-desktop X11 fallback is limited to ungated modifier and lock-toggle snapshots. Joystick controls (Joy1, JoyX, JoyPOV, JoyName, ...) read the winmm joystick API on Windows and keysharp-input's ungated gamepad path on Linux, which needs neither a grant nor `input` group membership; buttons are numbered as the kernel's joydev driver numbers them and controllers are ordered by device node. macOS has no joystick backend and reports every joystick control as unavailable. Mode follows AutoHotkey: it is ignored for controller controls, only its first letter (L, P or T) is significant, and anything else raises ValueError, including an explicit empty string; omitting Mode reads logical state, as L does. On Linux, Mode may instead be a device ID from a hook callback's `A_EventInfo.DeviceId`, which reads that one device's physical state through a keysharp-input client library and service of ABI 0.4 or newer, and raises ValueError with an older one; it always requires InputMonitoring, including for modifiers and lock keys, and an unknown ID reads 0. Windows and macOS raise ValueError for a device ID.",
+                     "notes":  "Returns logical, physical, and toggle state. Polling an arbitrary key or mouse button requires InputMonitoring. Modifier state and CapsLock/NumLock/ScrollLock toggle state are ungated; polling whether a lock key is physically down still requires InputMonitoring. Linux uses keysharp-input without installing a hook and fails closed for arbitrary state if its authority is unavailable or revokes access; The keysharp-desktop X11 fallback is limited to ungated modifier and lock-toggle snapshots. Joystick controls (Joy1, JoyX, JoyPOV, JoyName, ...) read the winmm joystick API on Windows and keysharp-input's ungated gamepad path on Linux, which needs neither a grant nor `input` group membership; buttons are numbered as the kernel's joydev driver numbers them and controllers are ordered by device node. macOS has no joystick backend and reports every joystick control as unavailable. Mode follows AutoHotkey: it is ignored for controller controls, only its first letter (L, P or T) is significant, and anything else raises ValueError, including an explicit empty string; omitting Mode reads logical state, as L does. On Linux, Mode may instead be a device ID from a hook callback's `A_EventInfo.DeviceId`, which reads that one device's physical state through a keysharp-input client library and service of ABI 1.x; it always requires InputMonitoring, including for modifiers and lock keys, and an unknown ID reads 0. Windows and macOS raise ValueError for a device ID.",
                      "tested-by":  "Gui/guitest.ks; misc-get-key-state-device.ahk; LinuxInputManagerTests.DeviceBitmapAliases"
                  },
                  {
@@ -8929,7 +8929,7 @@
                      "linux_x11":  "unsupported",
                      "linux_wayland":  "unsupported",
                      "macos":  "unsupported",
-                     "notes":  "Creates or retrieves an object wrapper from a raw pointer.",
+                     "notes":  "Retrieves the managed object for an IUnknown pointer, or creates a native COM wrapper which takes ownership of the supplied native reference. Returning a managed object does not consume a native reference.",
                      "tested-by":  "misc-object.ahk"
                  },
                  {
@@ -8940,7 +8940,7 @@
                      "linux_x11":  "unsupported",
                      "linux_wayland":  "unsupported",
                      "macos":  "unsupported",
-                     "notes":  "Creates/retrieves an object wrapper from a pointer and increments its reference count.",
+                     "notes":  "Retrieves the managed object for an IUnknown pointer, or creates a native COM wrapper which owns an additional native reference. Returning a managed object does not add a native reference. The caller retains ownership of any reference it supplied.",
                      "tested-by":  "misc-object.ahk"
                  },
                  {
@@ -9037,7 +9037,7 @@
                      "linux_x11":  "unsupported",
                      "linux_wayland":  "unsupported",
                      "macos":  "unsupported",
-                     "notes":  "Returns object pointer address and increments its reference count.",
+                     "notes":  "Returns an Integer containing the object's IUnknown address and adds a native reference, released with ObjRelease. This also applies to the COM wrappers of managed objects.",
                      "tested-by":  "misc-object.ahk"
                  },
                  {
