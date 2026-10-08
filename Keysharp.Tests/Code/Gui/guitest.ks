@@ -71,6 +71,7 @@ global gVcpCodeEdit := ""
 global gVcpValueEdit := ""
 global gMouseHookObj := ""
 global gMouseReverse := false
+global gMouseAbsoluteDetected := false
 global gMouseMoveBlocked := false
 global gMouseDownCount := 0
 global gMouseUpCount := 0
@@ -4994,6 +4995,7 @@ ValidateInputHookProbe() {
 
 ToggleMouseHookProbe() {
 	global gMouseHookObj, gMouseDownCount, gMouseUpCount, gMouseMoveCount, btnStartMouse
+	global gMouseAbsoluteDetected, btnReverseMouse
 
 	if (IsObject(gMouseHookObj) && gMouseHookObj.InProgress) {
 		StopMouseHookProbe()
@@ -5004,6 +5006,8 @@ ToggleMouseHookProbe() {
 		gMouseDownCount := 0
 		gMouseUpCount := 0
 		gMouseMoveCount := 0
+		gMouseAbsoluteDetected := false
+		btnReverseMouse.Enabled := true
 		; Keep input visible, ignore synthetic moves, and disable the text length limit.
 		gMouseHookObj := InputHook("V L0 I101")
 		gMouseHookObj.OnMouseDown := MouseHookDown
@@ -5024,6 +5028,7 @@ ToggleMouseHookProbe() {
 
 StopMouseHookProbe() {
 	global gMouseHookObj, gMouseReverse, gMouseMoveBlocked, btnStartMouse, btnReverseMouse
+	global gMouseAbsoluteDetected
 
 	SetTimer(UnblockMoveProbe, 0)
 	if (IsObject(gMouseHookObj) && gMouseHookObj.InProgress) {
@@ -5032,20 +5037,27 @@ StopMouseHookProbe() {
 	}
 
 	gMouseReverse := false
+	gMouseAbsoluteDetected := false
 	gMouseMoveBlocked := false
 	btnStartMouse.Text := "Start Hook"
 	btnReverseMouse.Text := "Reverse Direction"
+	btnReverseMouse.Enabled := true
 	SetStatus("input_mouse", "Mouse hook: stopped")
 	AppendLog("Mouse InputHook stopped.")
 }
 
 ToggleReverseMouseProbe() {
 	global gMouseHookObj, gMouseReverse, gMouseMoveBlocked, btnReverseMouse
+	global gMouseAbsoluteDetected
 
 	if !(IsObject(gMouseHookObj) && gMouseHookObj.InProgress)
 		ToggleMouseHookProbe()
 	if !(IsObject(gMouseHookObj) && gMouseHookObj.InProgress)
 		return
+	if gMouseAbsoluteDetected {
+		SetStatus("input_mouse", "Mouse hook: reverse direction requires relative input")
+		return
+	}
 
 	gMouseReverse := !gMouseReverse
 	gMouseHookObj.VisibleMouseMove := !(gMouseReverse || gMouseMoveBlocked)
@@ -5071,8 +5083,23 @@ MouseHookUp(hook, button, x, y) {
 
 MouseHookMove(hook, dx, dy) {
 	global gMouseMoveCount, gMouseReverse, gMouseMoveBlocked
+	global gMouseAbsoluteDetected, btnReverseMouse
 
-	if gMouseReverse && !gMouseMoveBlocked && (dx || dy) {
+	ei := A_EventInfo
+	isAbsolute := IsObject(ei) && ei.HasProp("IsAbsolute") && ei.IsAbsolute
+	; VisibleMouseMove suppresses every device, so any absolute source disables reversal for this session.
+	if isAbsolute && !gMouseAbsoluteDetected {
+		gMouseAbsoluteDetected := true
+		gMouseReverse := false
+		hook.VisibleMouseMove := !gMouseMoveBlocked
+		btnReverseMouse.Text := "Reverse Direction"
+		btnReverseMouse.Enabled := false
+		if !gMouseMoveBlocked
+			SetStatus("input_mouse", "Mouse hook: reverse direction requires relative input")
+		AppendLog("Mouse direction reversal disabled: absolute movement detected.")
+	}
+
+	if gMouseReverse && !gMouseAbsoluteDetected && !gMouseMoveBlocked && (dx || dy) {
 		SendMode("Event")
 		SetMouseDelay(-1)
 		MouseMove(-dx, -dy, 0, "R")
@@ -5082,9 +5109,8 @@ MouseHookMove(hook, dx, dy) {
 
 	; Movement fires continuously; refresh the readout only periodically so the GUI stays responsive.
 	if (Mod(gMouseMoveCount, 10) = 0) {
-		ei := A_EventInfo
 		pos := (IsObject(ei) && ei.HasProp("X")) ? "  @ " ei.X "," ei.Y : "  (no position)"
-		UpdateMouseHookReadout("Move: " dx "," dy pos)
+		UpdateMouseHookReadout("Move (" (isAbsolute ? "absolute" : "relative") "): " dx "," dy pos)
 	}
 }
 
@@ -5168,6 +5194,15 @@ IsWaylandWindowSession() {
 
 CapabilityReady(status) => status = "Granted" || status = "NotApplicable"
 
+WindowProviderCheckHint() {
+#if LINUX
+	desktop := StrLower(EnvGet("XDG_CURRENT_DESKTOP"))
+	if IsWaylandWindowSession() && (InStr(desktop, "gnome") || InStr(desktop, "cinnamon"))
+		return "Check keysharp-desktop probe. If the shell provider is unavailable, run keysharp-desktop enable-extension, then systemctl --user restart keysharp-desktop.service; log out and back in if requested."
+#endif
+	return ""
+}
+
 RunWindowSuite(mode := "full") {
 	global gWindowSuiteRunning, gWindowRunButton, gWindowEnvironment, gWindowSummary
 	global btnWindowReadSuite
@@ -5193,8 +5228,8 @@ RunWindowSuite(mode := "full") {
 		monitorReady := CapabilityReady(caps.WindowMonitoring)
 		controlReady := CapabilityReady(caps.WindowControl)
 		captureReady := CapabilityReady(caps.ScreenCapture)
-		AddWindowResult("Setup", "Capabilities", monitorReady ? "PASS" : "BLOCKED",
-			"Window monitoring available",
+		AddWindowResult("Setup", "Permissions", monitorReady ? "PASS" : "BLOCKED",
+			"WindowMonitoring granted or not applicable",
 			"monitor=" caps.WindowMonitoring ", control=" caps.WindowControl ", capture=" caps.ScreenCapture)
 
 		if monitorReady {
@@ -5252,11 +5287,13 @@ AddWindowResult(area, testName, result, expected, actual) {
 	UpdateWindowSuiteSummary()
 }
 
-AddWindowError(area, testName, err) {
+AddWindowError(area, testName, err, detail := "") {
 	message := err.Message
 	lower := StrLower(message)
 	result := IsUnsupportedDesktopError(err) ? "SKIP"
 		: (InStr(lower, "permission") || InStr(lower, "authorization") ? "BLOCKED" : "FAIL")
+	if (detail != "")
+		message .= " " detail
 	AddWindowResult(area, testName, result, "Operation succeeds", message)
 }
 
@@ -5306,10 +5343,13 @@ StartWindowFixture() {
 		; Window discovery can precede attachment of the native event observer.
 		if ok && gWindowEventSeen.Has("Exist")
 			WaitForWindow((*) => WindowEventCountAtLeast("Exist", 1), 5000, gWindowFixturePid)
+		detail := "PID=" gWindowFixturePid " alive=" ProcessExist(gWindowFixturePid)
+			. " handles=" gWindowPrimaryHwnd "/" gWindowSecondaryHwnd
+		if !ok && (hint := WindowProviderCheckHint()) != ""
+			detail .= " " hint
 		AddWindowResult("Fixture", "Launch", ok ? "PASS" : "FAIL",
 			"Two foreign windows from a live child process",
-			"PID=" gWindowFixturePid " alive=" ProcessExist(gWindowFixturePid)
-				" handles=" gWindowPrimaryHwnd "/" gWindowSecondaryHwnd)
+			detail)
 		return ok
 	} catch as err {
 		AddWindowError("Fixture", "Launch", err)
@@ -5453,7 +5493,7 @@ StartWindowSuiteEvents() {
 			if !hook.InProgress
 				throw Error("The WinEvent is not running: " hook.EndReason)
 		} catch as err
-			AddWindowError("WinEvent", "Start", err)
+			AddWindowError("WinEvent", "Start", err, WindowProviderCheckHint())
 	} finally
 		DetectHiddenWindows(oldHidden)
 }
@@ -5752,7 +5792,8 @@ RunForeignWindowMutations() {
 	WriteWindowFixtureCommand("retitle")
 	changed := WaitForWindow((*) => WinGetTitle(gWindowPrimaryHwnd) = gWindowFixturePrefix " Primary Retitled")
 	AddWindowResult("Info", "Foreign title refresh", changed ? "PASS" : "FAIL",
-		"Fixture-owned title change is observed", changed)
+		"Fixture-owned title change is observed",
+		"Title=" WinGetTitle(gWindowPrimaryHwnd) " TitleChange events=" gWindowEventSeen.Get("TitleChange", 0))
 	if changed {
 		expectedCount := Max(gWindowEventExpected.Get("TitleChange", 0), titleEventCount) + 1
 		gWindowEventExpected["TitleChange"] := expectedCount
