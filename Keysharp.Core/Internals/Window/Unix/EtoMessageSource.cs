@@ -42,6 +42,12 @@ namespace Keysharp.Internals.Window.Unix
 			control.KeyDown += OnKeyDown;
 			control.KeyUp += OnKeyUp;
 			control.TextInput += OnTextInput;
+#if OSX
+			//Windows delivers the click that activates a window to the control under it, while AppKit by default
+			//spends it on activation alone, which made a click on an inactive GUI do nothing.
+			if (control.Handler is Eto.Mac.Forms.IMacViewHandler macHandler)
+				macHandler.AcceptsFirstMouse += (_, e) => e.Handled = true;
+#endif
 			SyncMotion(control);
 		}
 

@@ -1091,6 +1091,8 @@ namespace Keyview
 		private void InitializeEditors()
 		{
 #if OSX
+			if (inputArea.ControlObject is MonoMac.AppKit.NSTextView textView)
+				textView.RichText = false;
 			var font = TryMonospaceFont(13);
 #else
 			var font = TryMonospaceFont(10);
