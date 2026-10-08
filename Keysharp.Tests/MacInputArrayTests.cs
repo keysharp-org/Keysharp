@@ -3,6 +3,7 @@ using Assert = NUnit.Framework.Legacy.ClassicAssert;
 using Keysharp.Internals.Input.Hooks.Unix;
 using Keysharp.Internals.Input.Keyboard;
 using Keysharp.Internals.Input.MacOS;
+using Keysharp.Internals.Window;
 using static Keysharp.Internals.Input.Keyboard.KeyboardMouseSender;
 using static Keysharp.Internals.Input.Keyboard.KeyboardUtils;
 using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
@@ -12,13 +13,14 @@ namespace Keysharp.Tests
 	[TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
 	public class MacInputArrayTests : TestRunner
 	{
-		private sealed class RecordingSender(Script owner, MacKeyboardState keyboardState = null)
-			: MacKeyboardMouseSender(owner, keyboardState ?? new(), new())
+		private sealed class RecordingSender(Script owner, MacKeyboardState keyboardState = null, MacMouseEventStream mouseStream = null)
+			: MacKeyboardMouseSender(owner, keyboardState ?? new(), mouseStream ?? new())
 		{
 			internal bool ThrowDuringDispatch { get; set; }
 			internal int DispatchCount { get; private set; }
 			internal string DispatchedText { get; private set; }
 			internal bool FailNextModifierQuery { get; set; }
+			internal (int X, int Y)[] DispatchedMousePositions { get; private set; }
 			internal SendModes CurrentMode => sendMode;
 			internal void SetMode(SendModes mode) => sendMode = mode;
 			internal void StartSend() => OnSendKeysStarting();
@@ -38,10 +40,47 @@ namespace Keysharp.Tests
 			{
 				DispatchCount++;
 				DispatchedText = new string(state.Events.Where(ev => ev.Type == ArrayEventType.Text).Select(ev => ev.Text).ToArray());
+				DispatchedMousePositions = state.Events.Where(ev => ev.Type is ArrayEventType.MouseMoveAbs
+					or ArrayEventType.MousePress or ArrayEventType.MouseRelease).Select(ev => (ev.X, ev.Y)).ToArray();
 
 				if (ThrowDuringDispatch)
 					throw new InvalidOperationException("deterministic dispatch failure");
 			}
+		}
+
+		private sealed class DisplayMouseSink : MacMouseEventStream.Sink
+		{
+			internal override Rectangle[] GetDisplayBounds() => [new Rectangle(0, 0, 100, 100)];
+		}
+
+		[TestCase(false)]
+		[TestCase(true)]
+		[Category("Input")]
+		public void QueuedMouseDisplayClamp(bool drag)
+		{
+			var sender = new RecordingSender(s, mouseStream: new(new DisplayMouseSink()));
+			sender.SetMode(SendModes.Input);
+			sender.InitEventArray(4, 0);
+			sender.sendInputCursorPos = new POINT(90, 50);
+			try
+			{
+				if (drag)
+					sender.MouseClickDrag(VK_LBUTTON, 20, 0, -10, 0, 0, true);
+				else
+				{
+					uint flags = 0;
+					int x = 20, y = 0;
+					sender.MouseMove(ref x, ref y, ref flags, 0, true);
+					x = -10;
+					y = 0;
+					sender.MouseMove(ref x, ref y, ref flags, 0, true);
+				}
+				var finalDelay = -1L;
+				sender.SendEventArray(ref finalDelay, 0);
+				var expected = drag ? new[] { (99, 50), (99, 50), (89, 50), (89, 50) } : new[] { (99, 50), (89, 50) };
+				CollectionAssert.AreEqual(expected, sender.DispatchedMousePositions);
+			}
+			finally { sender.AbortEventArray(); }
 		}
 
 		[Test, Category("Input")]

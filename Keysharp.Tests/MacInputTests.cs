@@ -368,6 +368,7 @@ namespace Keysharp.Tests
 		{
 			var sink = new FakeMouseEventSink();
 			var stream = new MacMouseEventStream(sink);
+			sink.Stream = stream;
 			stream.ObserveMove(100, 200, stream.SenderRevision);
 			Assert.IsTrue(stream.MoveRelative(5, -3, KeyIgnore));
 			Assert.IsTrue(stream.MoveRelative(7, 4, KeyIgnore));
@@ -380,6 +381,7 @@ namespace Keysharp.Tests
 		{
 			var sink = new FakeMouseEventSink { CursorX = 20, CursorY = 30 };
 			var stream = new MacMouseEventStream(sink: sink);
+			sink.Stream = stream;
 			stream.ObserveMove(100, 200, stream.SenderRevision);
 			stream.InvalidatePosition();
 
@@ -387,11 +389,548 @@ namespace Keysharp.Tests
 			Assert.AreEqual((25, 28), sink.Moves.Single());
 		}
 
+		[TestCase(100.6, 200.2, 100, 200)]
+		[TestCase(-100.6, -200.2, -101, -201)]
+		[Category("Input")]
+		public void MovementHold(double cursorX, double cursorY, int heldX, int heldY)
+		{
+			var sink = new FakeMouseEventSink { LocationX = cursorX, LocationY = cursorY };
+			var stream = new MacMouseEventStream(sink);
+			sink.Stream = stream;
+			var hold = MacMouseEventStream.HoldSeconds;
+
+			Assert.IsTrue(stream.SetMovementSuppressed(true));
+			Assert.IsTrue(stream.MovementSuppressed);
+			// Stepping off the whole-point cursor position and back starts the hold and realigns WindowServer's pointer.
+			CollectionAssert.AreEqual(new[] { (heldX + 1, heldY, hold), (heldX, heldY, hold) }, sink.Warps);
+			Assert.IsTrue(stream.TryGetPosition(out var position));
+			Assert.AreEqual((heldX, heldY), (position.X, position.Y));
+
+			sink.Warps.Clear();
+			stream.RefreshHold();
+			CollectionAssert.AreEqual(new[] { (heldX, heldY, hold) }, sink.Warps);
+
+			sink.Warps.Clear();
+			Assert.IsTrue(stream.SetMovementSuppressed(false));
+			Assert.IsFalse(stream.MovementSuppressed);
+			// A zero interval ends the hold at once; the interval in effect before suppression returns.
+			CollectionAssert.AreEqual(new[] { (heldX + 1, heldY, 0.0), (heldX, heldY, 0.0) }, sink.Warps);
+			Assert.AreEqual(0.25, sink.HoldInterval);
+
+			sink.Warps.Clear();
+			stream.RefreshHold();
+			Assert.IsEmpty(sink.Warps);
+		}
+
+		[Test, Category("Input")]
+		public void MovementHoldWithoutCursor()
+		{
+			var sink = new FakeMouseEventSink { FailLocation = true };
+			var stream = new MacMouseEventStream(sink);
+			sink.Stream = stream;
+			Assert.IsFalse(stream.SetMovementSuppressed(true));
+			Assert.IsFalse(stream.MovementSuppressed);
+			Assert.IsEmpty(sink.Warps);
+			Assert.AreEqual(0.25, sink.HoldInterval);
+		}
+
+		[TestCase(1, 1)]
+		[TestCase(2, 1)]
+		[TestCase(2, 2)]
+		[TestCase(2, 4)]
+		[Category("Input")]
+		public void MovementHoldWarpFailure(int failedStep, int failures)
+		{
+			var sink = new FakeMouseEventSink
+			{
+				CursorX = 50, CursorY = 60, LocationX = 50, LocationY = 60,
+				FailWarpCall = failedStep, FailedWarpCount = failures
+			};
+			var stream = new MacMouseEventStream(sink);
+			sink.Stream = stream;
+			Assert.IsFalse(stream.SetMovementSuppressed(true));
+			Assert.IsFalse(stream.MovementSuppressed);
+			Assert.AreEqual(0.25, sink.HoldInterval);
+			Assert.IsTrue(stream.TryGetPosition(out var position));
+			Assert.AreEqual(((int)sink.LocationX, (int)sink.LocationY), (position.X, position.Y),
+				"a failed warp must not record a destination the cursor did not reach");
+			Assert.IsTrue(stream.MoveRelative(-10, 0, KeyIgnore));
+			Assert.AreEqual((position.X - 10, position.Y), sink.Moves.Single());
+		}
+
+		[TestCase(250, false, 1)]
+		[TestCase(1001, false, 2)]
+		[TestCase(250, true, 2)]
+		[Category("Input")]
+		public void MovementHoldDeadline(int elapsedMilliseconds, bool force, int expectedWarps)
+		{
+			var sink = new FakeMouseEventSink { LocationX = 50, LocationY = 60 };
+			var stream = new MacMouseEventStream(sink, timestamp: () => sink.Timestamp, timestampFrequency: 1000);
+			sink.Stream = stream;
+			Assert.IsTrue(stream.SetMovementSuppressed(true));
+			sink.Warps.Clear();
+			sink.Timestamp += elapsedMilliseconds;
+			Assert.IsTrue(stream.RefreshHold(force));
+			Assert.AreEqual(expectedWarps, sink.Warps.Count,
+				"expired or forced renewal must reset WindowServer's internal pointer");
+			Assert.AreEqual((50.0, 60.0), (sink.LocationX, sink.LocationY));
+		}
+
+		[Test, Category("Input")]
+		public void SuppressedMousePosition()
+		{
+			var sink = new FakeMouseEventSink { LocationX = 100, LocationY = 200, CursorX = 7, CursorY = 8, DeferPostedLocations = true };
+			var stream = new MacMouseEventStream(sink, timestamp: () => sink.Timestamp,
+				timestampFrequency: 1000);
+			sink.Stream = stream;
+			Assert.IsTrue(stream.SetMovementSuppressed(true));
+
+			// Pending posts count before WindowServer applies them.
+			Assert.IsTrue(stream.MoveRelative(5, -3, KeyIgnore));
+			Assert.IsTrue(stream.MoveRelative(-2, 4, KeyIgnore));
+			Assert.IsTrue(stream.TryGetPosition(out var position));
+			Assert.AreEqual((103, 201), (position.X, position.Y));
+			CollectionAssert.AreEqual(new[] { (105, 197), (103, 201) }, sink.Moves);
+		}
+
+		[Test, Category("Input")]
+		public void MouseDisplayClamp()
+		{
+			var sink = new FakeMouseEventSink
+			{
+				CursorX = 90,
+				CursorY = 50,
+				DisplayBounds = [new Rectangle(-100, 0, 100, 100), new Rectangle(0, 150, 100, 100)]
+			};
+			var stream = new MacMouseEventStream(sink);
+			sink.Stream = stream;
+			stream.MoveAbsolute(30, 120, KeyIgnore);
+			Assert.AreEqual((30, 150), sink.Moves[^1]);
+			Assert.IsTrue(stream.MoveRelative(500, 0, KeyIgnore));
+			Assert.AreEqual((99, 150), sink.Moves[^1]);
+			// Past an edge, moving back starts from the edge rather than from the overshoot.
+			Assert.IsTrue(stream.MoveRelative(-10, 0, KeyIgnore));
+			Assert.AreEqual((89, 150), sink.Moves[^1]);
+			stream.MoveAbsolute(-20, 115, KeyIgnore);
+			Assert.AreEqual((-20, 99), sink.Moves[^1]);
+			stream.Button(MouseButton.Button1, true, 500, 500, KeyIgnore);
+			Assert.IsTrue(stream.TryGetPosition(out var position));
+			Assert.AreEqual((99, 249), (position.X, position.Y));
+		}
+
+		[Test, Category("Input")]
+		public void MouseRealign()
+		{
+			var sink = new FakeMouseEventSink { LocationX = 50.4, LocationY = 60.9, DisplayBounds = [new Rectangle(0, 0, 100, 100)] };
+			var stream = new MacMouseEventStream(sink);
+			sink.Stream = stream;
+
+			// Without suppression the warp must not hold physical movement afterwards.
+			stream.Realign();
+			CollectionAssert.AreEqual(new[] { (51, 60, 0.0), (50, 60, 0.0) }, sink.Warps);
+			Assert.AreEqual(0.25, sink.HoldInterval);
+
+			sink.Warps.Clear();
+			stream.Warp(99, 20);
+			CollectionAssert.AreEqual(new[] { (98, 20, 0.0), (99, 20, 0.0) }, sink.Warps);
+			Assert.IsTrue(stream.TryGetPosition(out var position));
+			Assert.AreEqual((99, 20), (position.X, position.Y));
+
+			Assert.IsTrue(stream.SetMovementSuppressed(true));
+			sink.Warps.Clear();
+			stream.Realign();
+			var hold = MacMouseEventStream.HoldSeconds;
+			CollectionAssert.AreEqual(new[] { (98, 20, hold), (99, 20, hold) }, sink.Warps);
+		}
+
+		[Test, Category("Input")]
+		public void MouseWarpDisplayClamp()
+		{
+			var sink = new FakeMouseEventSink
+			{
+				LocationX = 50,
+				LocationY = 50,
+				DisplayBounds = [new Rectangle(0, 0, 100, 100)],
+				ClampWarps = true
+			};
+			var stream = new MacMouseEventStream(sink);
+			sink.Stream = stream;
+			stream.Warp(500, 50);
+			Assert.AreEqual((99.0, 50.0), (sink.LocationX, sink.LocationY));
+			Assert.IsTrue(stream.TryGetPosition(out var position));
+			Assert.AreEqual((99, 50), (position.X, position.Y));
+			Assert.IsTrue(stream.MoveRelative(-10, 0, KeyIgnore));
+			Assert.AreEqual((89, 50), sink.Moves.Single());
+		}
+
+		[Test, Category("Input")]
+		public void RecentMousePosition()
+		{
+			var sink = new FakeMouseEventSink { LocationX = 10, LocationY = 20 };
+			var stream = new MacMouseEventStream(sink, timestamp: () => sink.Timestamp,
+				timestampFrequency: 1000);
+			sink.Stream = stream;
+			Assert.IsTrue(stream.SetMovementSuppressed(true));
+			stream.MoveAbsolute(30, 40, KeyIgnore);
+			Assert.IsTrue(stream.IsRecentPosition(30, 40));
+			Assert.IsFalse(stream.IsRecentPosition(30.5, 40));
+			Assert.IsTrue(stream.IsRecentPosition(10, 20));
+
+			sink.Timestamp += 60;
+			Assert.IsFalse(stream.IsRecentPosition(30, 40));
+			Assert.IsFalse(stream.IsRecentPosition(10, 20));
+		}
+
+		[TestCase(false)]
+		[TestCase(true)]
+		[Category("Input")]
+		public void HeldHardwareMoveAfterSyntheticMove(bool postApplied)
+		{
+			var sink = new FakeMouseEventSink { LocationX = 100, LocationY = 200, DeferPostedLocations = true };
+			var stream = new MacMouseEventStream(sink, timestamp: () => sink.Timestamp,
+				timestampFrequency: 1000);
+			sink.Stream = stream;
+			Assert.IsTrue(stream.SetMovementSuppressed(true));
+			long deltaX = 10, deltaY = -4;
+			Assert.IsTrue(stream.MeasureHardwareMove(100, 200, ref deltaX, ref deltaY));
+			Assert.AreEqual((10L, -4L), (deltaX, deltaY));
+
+			stream.MoveAbsolute(90, 210, KeyIgnore);
+			if (postApplied)
+				sink.ApplyPostedLocations();
+			deltaX = 0;
+			deltaY = 6;
+			Assert.IsTrue(stream.MeasureHardwareMove(90, 210, ref deltaX, ref deltaY));
+			Assert.AreEqual((10L, -4L), (deltaX, deltaY), "the synthetic offset must not cancel physical motion");
+			Assert.IsTrue(stream.TryGetPosition(out var position));
+			Assert.AreEqual((90, 210), (position.X, position.Y));
+
+			deltaX = 3;
+			deltaY = -2;
+			Assert.IsTrue(stream.MeasureHardwareMove(90, 210, ref deltaX, ref deltaY));
+			Assert.AreEqual((3L, -2L), (deltaX, deltaY), "a later held move has no synthetic offset");
+		}
+
+		[Test, Category("Input")]
+		public void QueuedHeldHardwareMove()
+		{
+			var sink = new FakeMouseEventSink { LocationX = 100, LocationY = 50, DeferPostedLocations = true };
+			var stream = new MacMouseEventStream(sink, timestamp: () => sink.Timestamp,
+				timestampFrequency: 1000);
+			sink.Stream = stream;
+			Assert.IsTrue(stream.SetMovementSuppressed(true));
+			stream.RecordHardwareMove(100, 50);
+			for (var i = 1; i <= 17; i++)
+				stream.MoveAbsolute(100 + i, 50, KeyIgnore);
+			sink.ApplyPostedLocations();
+			long deltaX = 10, deltaY = 0;
+			Assert.IsTrue(stream.MeasureHardwareMove(100, 50, ref deltaX, ref deltaY),
+				"a queued held move retains its origin throughout the recent-position window");
+			Assert.AreEqual((10L, 0L), (deltaX, deltaY));
+		}
+
+		[Test, Category("Input")]
+		public void FreeHardwareMoveAfterSyntheticMove()
+		{
+			var sink = new FakeMouseEventSink { LocationX = 100, LocationY = 200, DeferPostedLocations = true };
+			var stream = new MacMouseEventStream(sink, timestamp: () => sink.Timestamp,
+				timestampFrequency: 1000);
+			sink.Stream = stream;
+			long deltaX = 10, deltaY = -4;
+			Assert.IsTrue(stream.MeasureHardwareMove(100, 200, ref deltaX, ref deltaY));
+			stream.MoveAbsolute(70, 220, KeyIgnore);
+			sink.ApplyPostedLocations();
+
+			deltaX = -20;
+			deltaY = 15;
+			Assert.IsFalse(stream.MeasureHardwareMove(80, 215, ref deltaX, ref deltaY));
+			Assert.AreEqual((10L, -5L), (deltaX, deltaY), "free motion starts from the live cursor before the move");
+			stream.ObserveMove(80, 215, stream.SenderRevision);
+			Assert.IsTrue(stream.MoveRelative(1, 2, KeyIgnore));
+			Assert.AreEqual((81, 217), sink.Moves[^1]);
+		}
+
+		[TestCase(false)]
+		[TestCase(true)]
+		[Category("Input")]
+		public void FirstHardwareMove(bool resetHistory)
+		{
+			var sink = new FakeMouseEventSink { LocationX = 100, LocationY = 200 };
+			var stream = new MacMouseEventStream(sink);
+			sink.Stream = stream;
+			long deltaX = 8, deltaY = 12;
+			if (resetHistory)
+			{
+				Assert.IsTrue(stream.MeasureHardwareMove(100, 200, ref deltaX, ref deltaY));
+				stream.ForgetHardwareMoves();
+			}
+
+			sink.LocationX = 20;
+			sink.LocationY = -40;
+			deltaX = 5;
+			deltaY = -5;
+			Assert.IsFalse(stream.MeasureHardwareMove(25, -45, ref deltaX, ref deltaY));
+			Assert.AreEqual((5L, -5L), (deltaX, deltaY), "unknown hardware history must preserve the reported deltas");
+		}
+
+		[Test, Category("Input")]
+		public void HardwareMoveReturnsToPostedPosition()
+		{
+			var sink = new FakeMouseEventSink { DeferPostedLocations = true };
+			var stream = new MacMouseEventStream(sink, timestamp: () => sink.Timestamp,
+				timestampFrequency: 1000);
+			sink.Stream = stream;
+			stream.MoveAbsolute(100, 200, KeyIgnore);
+			sink.ApplyPostedLocations();
+			long deltaX = 10, deltaY = 0;
+			Assert.IsFalse(stream.MeasureHardwareMove(110, 200, ref deltaX, ref deltaY));
+			Assert.AreEqual((10L, 0L), (deltaX, deltaY));
+
+			sink.LocationX = 110;
+			deltaX = -10;
+			Assert.IsFalse(stream.MeasureHardwareMove(100, 200, ref deltaX, ref deltaY));
+			Assert.AreEqual((-10L, 0L), (deltaX, deltaY), "returning to a recent post is free motion without suppression");
+		}
+
+		[TestCase("Suppress", false)]
+		[TestCase("Refresh", true)]
+		[TestCase("Realign", false)]
+		[TestCase("Realign", true)]
+		[TestCase("Warp", false)]
+		[TestCase("Warp", true)]
+		[TestCase("Release", true)]
+		[Category("Input")]
+		public void PendingMousePostBeforeWarp(string operation, bool suppressed)
+		{
+			var sink = new FakeMouseEventSink { LocationX = 10, LocationY = 20, DeferPostedLocations = true };
+			var stream = new MacMouseEventStream(sink, timestamp: () => sink.Timestamp,
+				timestampFrequency: 1000);
+			sink.Stream = stream;
+			if (suppressed)
+				Assert.IsTrue(stream.SetMovementSuppressed(true));
+			sink.Warps.Clear();
+			sink.ReadPendingCursor = false;
+			stream.MoveAbsolute(30, 40, KeyIgnore);
+			Assert.AreEqual((10.0, 20.0), (sink.LocationX, sink.LocationY));
+
+			switch (operation)
+			{
+				case "Suppress": Assert.IsTrue(stream.SetMovementSuppressed(true)); break;
+				case "Refresh": stream.RefreshHold(); break;
+				case "Realign": stream.Realign(); break;
+				case "Warp": stream.Warp(70, 80); break;
+				case "Release": Assert.IsTrue(stream.SetMovementSuppressed(false)); break;
+			}
+
+			Assert.AreEqual(1, sink.PendingPostCount, "elapsed time does not acknowledge an asynchronous post");
+			Assert.IsFalse(sink.ReadPendingCursor, "a pending destination takes precedence over an older cursor read");
+			if (operation == "Warp")
+				Assert.IsEmpty(sink.Warps, "an explicit warp waits for the pending post's acknowledgement");
+			sink.ApplyPostedLocations();
+			var expectedX = operation == "Warp" ? 70 : 30;
+			var expectedY = operation == "Warp" ? 80 : 40;
+			var hold = operation == "Suppress" || suppressed && operation != "Release" ? MacMouseEventStream.HoldSeconds : 0.0;
+			var expectedWarps = operation == "Refresh"
+				? new[] { (expectedX, expectedY, hold) }
+				: new[] { (expectedX + 1, expectedY, hold), (expectedX, expectedY, hold) };
+			CollectionAssert.AreEqual(expectedWarps, sink.Warps);
+			Assert.IsTrue(stream.TryGetPosition(out var position));
+			Assert.AreEqual((expectedX, expectedY), (position.X, position.Y));
+		}
+
+		[TestCase(false)]
+		[TestCase(true)]
+		[Category("Input")]
+		public void DelayedMousePost(bool refresh)
+		{
+			var sink = new FakeMouseEventSink { LocationX = 10, LocationY = 20, DeferPostedLocations = true };
+			var stream = new MacMouseEventStream(sink, timestamp: () => sink.Timestamp,
+				timestampFrequency: 1000);
+			sink.Stream = stream;
+			Assert.IsTrue(stream.SetMovementSuppressed(true));
+			stream.MoveAbsolute(30, 40, KeyIgnore);
+			sink.Timestamp += 2000;
+			sink.ReadPendingCursor = false;
+			if (refresh)
+				Assert.IsTrue(stream.RefreshHold());
+			Assert.IsTrue(stream.TryGetPosition(out var position));
+			Assert.AreEqual((30, 40), (position.X, position.Y),
+				"a delayed native post must retain its predicted destination regardless of elapsed time");
+			Assert.AreEqual(1, sink.PendingPostCount);
+			Assert.IsFalse(sink.ReadPendingCursor);
+			sink.ApplyPostedLocations();
+			Assert.IsTrue(stream.TryGetPosition(out position));
+			Assert.AreEqual((30, 40), (position.X, position.Y));
+		}
+
+		[Test, Category("Input")]
+		public void WarpAfterLatestPostAcknowledgement()
+		{
+			var sink = new FakeMouseEventSink { LocationX = 10, LocationY = 20, DeferPostedLocations = true };
+			var stream = new MacMouseEventStream(sink, timestamp: () => sink.Timestamp,
+				timestampFrequency: 1000);
+			sink.Stream = stream;
+			Assert.IsTrue(stream.SetMovementSuppressed(true));
+			sink.Warps.Clear();
+			stream.MoveAbsolute(30, 40, KeyIgnore);
+			stream.MoveAbsolute(50, 60, KeyIgnore);
+			stream.Warp(70, 80);
+			Assert.IsEmpty(sink.Warps);
+			stream.SetPostObservation(true);
+			stream.AcknowledgePost(ulong.MaxValue);
+			sink.ApplyNextPostedLocation();
+			Assert.IsEmpty(sink.Warps, "an earlier post cannot complete a warp waiting for the latest post");
+			Assert.IsTrue(stream.TryGetPosition(out var position));
+			Assert.AreEqual((70, 80), (position.X, position.Y));
+			sink.ApplyNextPostedLocation();
+			Assert.AreEqual((70.0, 80.0), (sink.LocationX, sink.LocationY));
+			Assert.IsTrue(stream.TryGetPosition(out position));
+			Assert.AreEqual((70, 80), (position.X, position.Y));
+		}
+
+		[Test, Category("Input")]
+		public void RelativePostAfterDeferredWarp()
+		{
+			var sink = new FakeMouseEventSink { LocationX = 10, LocationY = 20, DeferPostedLocations = true };
+			var stream = new MacMouseEventStream(sink, timestamp: () => sink.Timestamp, timestampFrequency: 1000);
+			sink.Stream = stream;
+			Assert.IsTrue(stream.SetMovementSuppressed(true));
+			sink.Warps.Clear();
+			stream.MoveAbsolute(30, 40, KeyIgnore);
+			stream.Warp(70, 80);
+			Assert.IsTrue(stream.MoveRelative(1, -2, KeyIgnore));
+			Assert.AreEqual((71, 78), sink.Moves[^1]);
+			sink.ApplyNextPostedLocation();
+			Assert.IsEmpty(sink.Warps, "an earlier acknowledgement must not restore a superseded warp");
+			sink.ApplyNextPostedLocation();
+			Assert.IsEmpty(sink.Warps);
+			Assert.IsTrue(stream.TryGetPosition(out var position));
+			Assert.AreEqual((71, 78), (position.X, position.Y));
+		}
+
+		[TestCase(false)]
+		[TestCase(true)]
+		[Category("Input")]
+		public void FailedPostAfterPendingPost(bool deferredWarp)
+		{
+			var sink = new FakeMouseEventSink { LocationX = 10, LocationY = 20, DeferPostedLocations = true };
+			var stream = new MacMouseEventStream(sink, timestamp: () => sink.Timestamp, timestampFrequency: 1000);
+			sink.Stream = stream;
+			Assert.IsTrue(stream.SetMovementSuppressed(true));
+			stream.MoveAbsolute(30, 40, KeyIgnore);
+			if (deferredWarp)
+				stream.Warp(70, 80);
+			sink.FailMoves = 1;
+			stream.MoveAbsolute(50, 60, KeyIgnore);
+			Assert.AreEqual(1, sink.Moves.Count);
+			var expected = deferredWarp ? (70, 80) : (30, 40);
+			Assert.IsTrue(stream.TryGetPosition(out var position));
+			Assert.AreEqual(expected, (position.X, position.Y), "a failed post must preserve the earlier pending destination");
+			Assert.IsTrue(stream.RefreshHold());
+			Assert.IsTrue(stream.TryGetPosition(out position));
+			Assert.AreEqual(expected, (position.X, position.Y));
+			Assert.AreEqual((30.0, 40.0), (sink.LocationX, sink.LocationY));
+			sink.ApplyPostedLocations();
+			Assert.IsTrue(stream.TryGetPosition(out position));
+			Assert.AreEqual(expected, (position.X, position.Y), "the earlier acknowledgement must still complete its deferred warp");
+		}
+
+		[Test, Category("Input")]
+		public void LostPostAcknowledgementOnRecovery()
+		{
+			var sink = new FakeMouseEventSink
+			{
+				LocationX = 10, LocationY = 20, DeferPostedLocations = true, DropAcknowledgements = true
+			};
+			var stream = new MacMouseEventStream(sink, timestamp: () => sink.Timestamp, timestampFrequency: 1000);
+			sink.Stream = stream;
+			Assert.IsTrue(stream.SetMovementSuppressed(true));
+			stream.MoveAbsolute(30, 40, KeyIgnore);
+			stream.Warp(70, 80);
+			sink.ApplyPostedLocations();
+			Assert.AreEqual((30.0, 40.0), (sink.LocationX, sink.LocationY));
+			stream.SetPostObservation(true, reset: true);
+			Assert.AreEqual((70.0, 80.0), (sink.LocationX, sink.LocationY));
+			Assert.IsTrue(stream.TryGetPosition(out var position));
+			Assert.AreEqual((70, 80), (position.X, position.Y));
+			sink.LocationX = sink.CursorX = 80;
+			sink.LocationY = sink.CursorY = 90;
+			Assert.IsTrue(stream.TryGetPosition(out position));
+			Assert.AreEqual((80, 90), (position.X, position.Y), "recovery must retire a post whose callback was lost");
+		}
+
+		[TestCase(false)]
+		[TestCase(true)]
+		[Category("Input")]
+		public void ExternalMouseWarpWhileSuppressed(bool queryPositionFirst)
+		{
+			var sink = new FakeMouseEventSink { LocationX = 10, LocationY = 20, DeferPostedLocations = true };
+			var stream = new MacMouseEventStream(sink, timestamp: () => sink.Timestamp,
+				timestampFrequency: 1000);
+			sink.Stream = stream;
+			Assert.IsTrue(stream.SetMovementSuppressed(true));
+			stream.MoveAbsolute(30, 40, KeyIgnore);
+			Assert.IsTrue(stream.TryGetPosition(out var pendingPosition));
+			Assert.AreEqual((30, 40), (pendingPosition.X, pendingPosition.Y));
+			Assert.AreEqual((10.0, 20.0), (sink.LocationX, sink.LocationY));
+			sink.ApplyPostedLocations();
+
+			sink.LocationX = 70;
+			sink.LocationY = 80;
+			sink.CursorX = 70;
+			sink.CursorY = 80;
+			if (queryPositionFirst)
+			{
+				Assert.IsTrue(stream.TryGetPosition(out var position));
+				Assert.AreEqual((70, 80), (position.X, position.Y));
+			}
+			Assert.IsTrue(stream.MoveRelative(1, -2, KeyIgnore));
+			Assert.AreEqual((71, 78), sink.Moves[^1]);
+		}
+
+		[Test, Category("Input")]
+		public void MouseDisplayReconfiguration()
+		{
+			var sink = new FakeMouseEventSink { DisplayBounds = [new Rectangle(0, 0, 100, 100)] };
+			var stream = new MacMouseEventStream(sink, timestamp: () => sink.Timestamp,
+				timestampFrequency: 1000);
+			sink.Stream = stream;
+			stream.MoveAbsolute(50, 50, KeyIgnore);
+			Assert.AreEqual((50, 50), sink.Moves[^1]);
+
+			sink.DisplayBounds = [new Rectangle(0, 0, 100, 100), new Rectangle(200, 0, 100, 100)];
+			stream.MoveAbsolute(250, 50, KeyIgnore);
+			Assert.AreEqual((250, 50), sink.Moves[^1], "a newly attached display must be reachable immediately");
+
+			sink.DisplayBounds = [new Rectangle(0, 0, 100, 100)];
+			stream.MoveAbsolute(250, 50, KeyIgnore);
+			Assert.AreEqual((99, 50), sink.Moves[^1], "a removed display must stop accepting posted locations immediately");
+		}
+
+		[Test, Category("Input")]
+		public void PhysicalClickAfterHoldRefresh()
+		{
+			var sink = new FakeMouseEventSink { LocationX = 10, LocationY = 20 };
+			var stream = new MacMouseEventStream(sink, TimeSpan.FromMilliseconds(500),
+				timestamp: () => sink.Timestamp, timestampFrequency: 1000);
+			sink.Stream = stream;
+			Assert.IsTrue(stream.SetMovementSuppressed(true));
+			var physicalRevision = stream.SenderRevision;
+			stream.ObserveButton(MouseButton.Button1, true, 10, 20, 1, physicalRevision);
+
+			stream.RefreshHold();
+			stream.ObserveButton(MouseButton.Button1, false, 10, 20, 1, physicalRevision);
+			stream.Button(MouseButton.Button1, true, 10, 20, KeyIgnore);
+			Assert.AreEqual(2, sink.Buttons.Single().ClickCount,
+				"refreshing an unchanged cursor must preserve an overlapping physical click");
+		}
+
 		[Test, Category("Input")]
 		public void NativeDragState()
 		{
 			var sink = new FakeMouseEventSink();
 			var stream = new MacMouseEventStream(sink);
+			sink.Stream = stream;
 			var physicalRevision = stream.SenderRevision;
 			stream.ObserveButton(MouseButton.Button1, true, 10, 20, 1, physicalRevision);
 			stream.MoveAbsolute(11, 21, KeyIgnore);
@@ -411,6 +950,7 @@ namespace Keysharp.Tests
 		{
 			var sink = new FakeMouseEventSink();
 			var stream = new MacMouseEventStream(sink);
+			sink.Stream = stream;
 			stream.ResyncButtons(button => button is 0 or 3);
 			stream.MoveAbsolute(10, 20, KeyIgnore);
 			Assert.AreEqual(MouseButton.Button1, sink.DragButtons[0]);
@@ -425,6 +965,7 @@ namespace Keysharp.Tests
 		{
 			var sink = new FakeMouseEventSink();
 			var stream = new MacMouseEventStream(sink);
+			sink.Stream = stream;
 			var staleRevision = stream.SenderRevision;
 			stream.MoveAbsolute(50, 60, KeyIgnore);
 			stream.ObserveMove(1, 2, staleRevision);
@@ -483,6 +1024,7 @@ namespace Keysharp.Tests
 			long now = 100;
 			var sink = new FakeMouseEventSink();
 			var stream = new MacMouseEventStream(sink, TimeSpan.FromMilliseconds(500), 4, () => now, 1000);
+			sink.Stream = stream;
 			stream.Button(MouseButton.Button1, true, 10, 20, KeyIgnore);
 			stream.Button(MouseButton.Button1, false, 10, 20, KeyIgnore);
 			now += 499;
@@ -508,6 +1050,7 @@ namespace Keysharp.Tests
 			long now = 100;
 			var sink = new FakeMouseEventSink();
 			var stream = new MacMouseEventStream(sink, TimeSpan.FromMilliseconds(500), 4, () => now, 1000);
+			sink.Stream = stream;
 			stream.Button(MouseButton.Button1, false, 10, 20, KeyIgnore);
 			stream.Button(MouseButton.Button1, true, 10, 20, KeyIgnore);
 			stream.Button(MouseButton.Button1, false, 10, 20, KeyIgnore);
@@ -525,6 +1068,7 @@ namespace Keysharp.Tests
 		{
 			var sink = new FakeMouseEventSink { CursorX = 10, CursorY = 20, FailMoves = 1, FailButtons = 1 };
 			var stream = new MacMouseEventStream(sink);
+			sink.Stream = stream;
 			Assert.IsFalse(stream.MoveRelative(5, 5, KeyIgnore));
 			Assert.IsTrue(stream.MoveRelative(1, 1, KeyIgnore));
 			Assert.AreEqual((11, 21), sink.Moves.Single());
@@ -542,6 +1086,7 @@ namespace Keysharp.Tests
 			long now = 100;
 			var sink = new FakeMouseEventSink();
 			var stream = new MacMouseEventStream(sink, TimeSpan.FromMilliseconds(500), 4, () => now, 1000);
+			sink.Stream = stream;
 			stream.ObserveButton(MouseButton.Button1, false, 10, 20, 1, stream.SenderRevision);
 			now += 100;
 			stream.Button(MouseButton.Button1, true, 10, 20, KeyIgnore);
@@ -634,6 +1179,61 @@ namespace Keysharp.Tests
 		}
 
 		[Test, Category("Input")]
+		public void DisabledTapStartup()
+		{
+			var driver = new FakeEventTapDriver { Enabled = false };
+			using var tap = new MacNativeEventTap(script, 1, (_, _) => false, () => { }, (_, _) => { }, driver);
+			Assert.IsFalse(tap.Start(1000));
+			StringAssert.Contains("not enabled", tap.StartupFailure);
+			Assert.IsTrue(tap.Stop());
+			Assert.AreEqual(2, driver.ReleaseCount);
+		}
+
+		[Test, Category("Input")]
+		public void WatchdogEnableFailure()
+		{
+			var driver = new FakeEventTapDriver();
+			var resyncCount = 0;
+			using var tap = new MacNativeEventTap(script, 1, (_, _) => false,
+				() => Interlocked.Increment(ref resyncCount), (_, _) => { }, driver);
+			Assert.IsTrue(tap.Start(1000));
+			Assert.IsTrue(driver.RunEntered.Wait(1000));
+			driver.Enabled = false;
+			driver.FailEnable = true;
+			Assert.AreEqual((nint)123, driver.Callback(nint.Zero,
+				MacNativeInput.kCGEventTapDisabledByTimeout, (nint)123, nint.Zero));
+			Assert.AreEqual(1, driver.EnableCount);
+			Assert.AreEqual(0, resyncCount, "a failed native enable must not report successful recovery");
+			Assert.IsTrue(tap.Stop());
+		}
+
+		[Test, Category("Input")]
+		public void EventTapMaintenance()
+		{
+			var driver = new FakeEventTapDriver();
+			for (var i = 0; i < 3; i++)
+			{
+				driver.RunResults.Enqueue(3);
+				driver.RunAdvanceMilliseconds.Enqueue(100);
+			}
+			using var maintained = new ManualResetEventSlim(false);
+			long maintainedAt = -1;
+			var maintainedThread = 0;
+			using var tap = new MacNativeEventTap(script, 1, (_, _) => false, () => { }, (_, _) => { }, driver,
+				() =>
+				{
+					maintainedAt = driver.TimestampMilliseconds();
+					maintainedThread = Environment.CurrentManagedThreadId;
+					maintained.Set();
+				});
+			Assert.IsTrue(tap.Start(1000));
+			Assert.IsTrue(maintained.Wait(1000));
+			Assert.AreEqual(300L, maintainedAt, "maintenance runs when its deadline passes despite earlier run-loop returns");
+			Assert.AreEqual(driver.RunThread, maintainedThread, "maintenance must run on the event-tap thread");
+			Assert.IsTrue(tap.Stop());
+		}
+
+		[Test, Category("Input")]
 		public void StoppedWatchdog()
 		{
 			var driver = new FakeEventTapDriver { RunResult = 2 };
@@ -664,11 +1264,16 @@ namespace Keysharp.Tests
 			internal readonly ManualResetEventSlim RunEntered = new(false);
 			internal readonly ManualResetEventSlim ReleaseRun = new(false);
 			internal readonly ConcurrentQueue<int> RunResults = new();
+			internal readonly ConcurrentQueue<int> RunAdvanceMilliseconds = new();
 			internal int RunResult { get; init; } = 3;
 			internal int ReleaseCount;
 			internal int EnableCount;
 			internal int CreateCount;
 			internal bool BlockAddSource;
+			internal volatile bool Enabled = true;
+			internal volatile bool FailEnable;
+			internal int RunThread;
+			private long timestampMilliseconds;
 			internal MacNativeInput.CGEventTapCallBack Callback;
 			private volatile bool valid = true;
 
@@ -690,16 +1295,26 @@ namespace Keysharp.Tests
 			internal override void EnableTap(nint tap, bool enable)
 			{
 				if (enable)
+				{
 					Interlocked.Increment(ref EnableCount);
+					Enabled = !FailEnable;
+				}
 				else
-					valid = false;
+					Enabled = false;
 			}
 			internal override bool IsTapValid(nint tap) => valid;
+			internal override bool IsTapEnabled(nint tap) => Enabled;
+			internal override long TimestampMilliseconds() => Volatile.Read(ref timestampMilliseconds);
 			internal override int RunInDefaultMode(double seconds)
 			{
+				RunThread = Environment.CurrentManagedThreadId;
 				RunEntered.Set();
 				if (RunResults.TryDequeue(out var result))
+				{
+					if (RunAdvanceMilliseconds.TryDequeue(out var advance))
+						Interlocked.Add(ref timestampMilliseconds, advance);
 					return result;
+				}
 				ReleaseRun.Wait();
 				return RunResult;
 			}
@@ -712,30 +1327,100 @@ namespace Keysharp.Tests
 			internal readonly List<(MouseButton Button, bool Down, int ClickCount, long EventNumber)> Buttons = new();
 			internal readonly List<(int X, int Y)> Moves = new();
 			internal readonly List<MouseButton> DragButtons = new();
+			internal readonly List<(int X, int Y, double Interval)> Warps = new();
+			internal bool ReadPendingCursor;
+			private readonly Queue<(int X, int Y, ulong Stamp)> pendingLocations = new();
+			internal MacMouseEventStream Stream;
+			internal long Timestamp = 1000;
+			internal bool DeferPostedLocations;
+			internal bool DropAcknowledgements;
+			internal int PendingPostCount => pendingLocations.Count;
 			internal int CursorX;
 			internal int CursorY;
+			internal double LocationX;
+			internal double LocationY;
+			internal bool FailLocation;
+			internal bool ClampWarps;
+			internal int FailWarpCall;
+			internal int FailedWarpCount = 1;
+			private int warpCalls;
+			internal double HoldInterval = 0.25;
+			internal Rectangle[] DisplayBounds = [];
 			internal int FailMoves;
 			internal int FailButtons;
+			internal void ApplyPostedLocations()
+			{
+				while (pendingLocations.TryDequeue(out var location))
+					ApplyPostedLocation(location.X, location.Y, location.Stamp);
+			}
+			internal void ApplyNextPostedLocation()
+			{
+				if (pendingLocations.TryDequeue(out var location))
+					ApplyPostedLocation(location.X, location.Y, location.Stamp);
+			}
+			private void ApplyPostedLocation(int x, int y, ulong stamp)
+			{
+				CursorX = x;
+				CursorY = y;
+				LocationX = x;
+				LocationY = y;
+				if (!DropAcknowledgements)
+					Stream?.AcknowledgePost(stamp);
+			}
 			internal override bool TryGetCursorPosition(out int x, out int y)
 			{
 				x = CursorX;
 				y = CursorY;
 				return true;
 			}
-			internal override bool PostMove(int x, int y, long extraInfo, MouseButton draggingButton)
+			internal override bool TryGetCursorLocation(out double x, out double y)
+			{
+				ReadPendingCursor |= pendingLocations.Count > 0;
+				x = LocationX;
+				y = LocationY;
+				return !FailLocation;
+			}
+			internal override bool WarpCursor(int x, int y)
+			{
+				Warps.Add((x, y, HoldInterval));
+				if (++warpCalls >= FailWarpCall && warpCalls < FailWarpCall + FailedWarpCount)
+					return false;
+				if (ClampWarps)
+				{
+					x = Math.Clamp(x, DisplayBounds[0].Left, DisplayBounds[0].Right - 1);
+					y = Math.Clamp(y, DisplayBounds[0].Top, DisplayBounds[0].Bottom - 1);
+				}
+				CursorX = x;
+				CursorY = y;
+				LocationX = x;
+				LocationY = y;
+				return true;
+			}
+			internal override double GetHoldInterval() => HoldInterval;
+			internal override void SetHoldInterval(double seconds) => HoldInterval = seconds;
+			internal override Rectangle[] GetDisplayBounds() => DisplayBounds;
+			internal override bool PostMove(int x, int y, long extraInfo, MouseButton draggingButton, ulong postTimestamp)
 			{
 				if (FailMoves-- > 0)
 					return false;
 				Moves.Add((x, y));
 				DragButtons.Add(draggingButton);
+				if (DeferPostedLocations)
+					pendingLocations.Enqueue((x, y, postTimestamp));
+				else
+					ApplyPostedLocation(x, y, postTimestamp);
 				return true;
 			}
 			internal override bool PostButton(MouseButton button, bool down, int x, int y, long extraInfo,
-				int clickCount, long eventNumber)
+				int clickCount, long eventNumber, ulong postTimestamp)
 			{
 				if (FailButtons-- > 0)
 					return false;
 				Buttons.Add((button, down, clickCount, eventNumber));
+				if (DeferPostedLocations)
+					pendingLocations.Enqueue((x, y, postTimestamp));
+				else
+					ApplyPostedLocation(x, y, postTimestamp);
 				return true;
 			}
 		}

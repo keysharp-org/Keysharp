@@ -70,6 +70,8 @@ global gBrightnessLastSet := -1       ; last value written, to skip a redundant 
 global gVcpCodeEdit := ""
 global gVcpValueEdit := ""
 global gMouseHookObj := ""
+global gMouseReverse := false
+global gMouseMoveBlocked := false
 global gMouseDownCount := 0
 global gMouseUpCount := 0
 global gMouseMoveCount := 0
@@ -4057,13 +4059,13 @@ Tab.UseTab("Send && Hotkey")
 sendGroup.GetPos(&_sgX, &_sgY, &_sgW, &_sgH)
 mouseGroup := MyGui.AddGroupBox("xc+10 yc+" (10 + _sgH + 10) " w500", "Mouse InputHook (OnMouseDown / OnMouseUp / OnMouseMove)")
 MyGui.UseGroup(mouseGroup)
-btnStartMouse := MyGui.AddButton("xc+16 yc+24 w104 h26", "Start Mouse")
-btnStartMouse.OnEvent("Click", (*) => StartMouseHookProbe())
-btnStopMouse := MyGui.AddButton("x+8 yp w70 h26", "Stop")
-btnStopMouse.OnEvent("Click", (*) => StopMouseHookProbe())
-btnBlockMove := MyGui.AddButton("x+8 yp w120 h26", "Block Move (2s)")
+btnStartMouse := MyGui.AddButton("xc+16 yc+24 w96 h26", "Start Hook")
+btnStartMouse.OnEvent("Click", (*) => ToggleMouseHookProbe())
+btnReverseMouse := MyGui.AddButton("x+8 yp w136 h26", "Reverse Direction")
+btnReverseMouse.OnEvent("Click", (*) => ToggleReverseMouseProbe())
+btnBlockMove := MyGui.AddButton("x+8 yp w108 h26", "Block Move (2s)")
 btnBlockMove.OnEvent("Click", (*) => TestBlockMoveProbe())
-btnBlockMButton := MyGui.AddButton("x+8 yp w160 h26", "Toggle Block MButton")
+btnBlockMButton := MyGui.AddButton("x+8 yp w104 h26", "Block MButton")
 btnBlockMButton.OnEvent("Click", (*) => ToggleBlockMButton())
 mouseReadout := MyGui.AddEdit("xc+16 y+10 w468 h22 ReadOnly -Wrap", "Start, then click / wheel / move the mouse to see the last event and live counts.")
 gStatus["input_mouse_readout"] := mouseReadout
@@ -4990,22 +4992,27 @@ ValidateInputHookProbe() {
 	}
 }
 
-StartMouseHookProbe() {
-	global gMouseHookObj, gMouseDownCount, gMouseUpCount, gMouseMoveCount
+ToggleMouseHookProbe() {
+	global gMouseHookObj, gMouseDownCount, gMouseUpCount, gMouseMoveCount, btnStartMouse
+
+	if (IsObject(gMouseHookObj) && gMouseHookObj.InProgress) {
+		StopMouseHookProbe()
+		return
+	}
 
 	try {
-		if (IsObject(gMouseHookObj) && gMouseHookObj.InProgress)
-			gMouseHookObj.Stop()
-
 		gMouseDownCount := 0
 		gMouseUpCount := 0
 		gMouseMoveCount := 0
-		; "V" keeps keystrokes/clicks visible (non-suppressing) so the harness stays usable.
-		gMouseHookObj := InputHook("V")
+		; Keep input visible, ignore synthetic moves, and disable the text length limit.
+		gMouseHookObj := InputHook("V L0 I101")
 		gMouseHookObj.OnMouseDown := MouseHookDown
 		gMouseHookObj.OnMouseUp := MouseHookUp
 		gMouseHookObj.OnMouseMove := MouseHookMove
 		gMouseHookObj.Start()
+		if !gMouseHookObj.InProgress
+			return
+		btnStartMouse.Text := "Stop Hook"
 		UpdateMouseHookReadout("(waiting for mouse activity)")
 		SetStatus("input_mouse", "Mouse hook: capturing. Click, wheel, and move the mouse.")
 		AppendLog("Mouse InputHook started.")
@@ -5016,15 +5023,36 @@ StartMouseHookProbe() {
 }
 
 StopMouseHookProbe() {
-	global gMouseHookObj
+	global gMouseHookObj, gMouseReverse, gMouseMoveBlocked, btnStartMouse, btnReverseMouse
 
+	SetTimer(UnblockMoveProbe, 0)
 	if (IsObject(gMouseHookObj) && gMouseHookObj.InProgress) {
 		gMouseHookObj.VisibleMouseMove := true ; Make sure movement is restored on stop.
 		gMouseHookObj.Stop()
 	}
 
+	gMouseReverse := false
+	gMouseMoveBlocked := false
+	btnStartMouse.Text := "Start Hook"
+	btnReverseMouse.Text := "Reverse Direction"
 	SetStatus("input_mouse", "Mouse hook: stopped")
 	AppendLog("Mouse InputHook stopped.")
+}
+
+ToggleReverseMouseProbe() {
+	global gMouseHookObj, gMouseReverse, gMouseMoveBlocked, btnReverseMouse
+
+	if !(IsObject(gMouseHookObj) && gMouseHookObj.InProgress)
+		ToggleMouseHookProbe()
+	if !(IsObject(gMouseHookObj) && gMouseHookObj.InProgress)
+		return
+
+	gMouseReverse := !gMouseReverse
+	gMouseHookObj.VisibleMouseMove := !(gMouseReverse || gMouseMoveBlocked)
+	btnReverseMouse.Text := gMouseReverse ? "Normal Direction" : "Reverse Direction"
+	if !gMouseMoveBlocked
+		SetStatus("input_mouse", "Mouse hook: " (gMouseReverse ? "direction reversed" : "normal movement"))
+	AppendLog("Mouse direction " (gMouseReverse ? "reversed." : "restored."))
 }
 
 MouseHookDown(hook, button, x, y) {
@@ -5042,7 +5070,13 @@ MouseHookUp(hook, button, x, y) {
 }
 
 MouseHookMove(hook, dx, dy) {
-	global gMouseMoveCount
+	global gMouseMoveCount, gMouseReverse, gMouseMoveBlocked
+
+	if gMouseReverse && !gMouseMoveBlocked && (dx || dy) {
+		SendMode("Event")
+		SetMouseDelay(-1)
+		MouseMove(-dx, -dy, 0, "R")
+	}
 
 	gMouseMoveCount++
 
@@ -5061,13 +5095,14 @@ UpdateMouseHookReadout(lastEvent) {
 }
 
 TestBlockMoveProbe() {
-	global gMouseHookObj
+	global gMouseHookObj, gMouseMoveBlocked
 
 	if !(IsObject(gMouseHookObj) && gMouseHookObj.InProgress) {
 		SetStatus("input_mouse", "Mouse hook: start it first")
 		return
 	}
 
+	gMouseMoveBlocked := true
 	gMouseHookObj.VisibleMouseMove := false
 	SetStatus("input_mouse", "Mouse hook: movement BLOCKED for 2s (cursor should freeze, then recover).")
 	AppendLog("Mouse movement suppression engaged (VisibleMouseMove:=false) for 2s.")
@@ -5075,13 +5110,17 @@ TestBlockMoveProbe() {
 }
 
 UnblockMoveProbe() {
-	global gMouseHookObj
+	global gMouseHookObj, gMouseReverse, gMouseMoveBlocked
 
-	if (IsObject(gMouseHookObj) && gMouseHookObj.InProgress)
-		gMouseHookObj.VisibleMouseMove := true
+	if !gMouseMoveBlocked
+		return
+	gMouseMoveBlocked := false
+	if !(IsObject(gMouseHookObj) && gMouseHookObj.InProgress)
+		return
+	gMouseHookObj.VisibleMouseMove := !gMouseReverse
 
-	SetStatus("input_mouse", "Mouse hook: movement restored")
-	AppendLog("Mouse movement suppression released (VisibleMouseMove:=true).")
+	SetStatus("input_mouse", "Mouse hook: " (gMouseReverse ? "direction reversed" : "movement restored"))
+	AppendLog("Mouse movement freeze ended.")
 }
 
 ToggleBlockMButton() {

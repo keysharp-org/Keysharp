@@ -1,6 +1,5 @@
 using Keysharp.Builtins;
 #if OSX
-using System.Runtime.InteropServices;
 using Keysharp.Internals.Input.Keyboard;
 using Keysharp.Internals.Input.MacOS;
 using static Keysharp.Internals.Input.Keyboard.KeyboardMouseSender;
@@ -17,12 +16,9 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 
 		private const int HookStartTimeoutMs = 3000;
 		private MacNativeEventTap nativeEventTap;
+		private bool nativeTapStopping;
 		private readonly MacKeyboardState keyboardState = new();
-		private readonly MacMouseEventStream mouseStream = new();
-		private volatile bool cursorDisassociated;
-
-		[DllImport("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")]
-		private static extern int CGAssociateMouseAndMouseCursorPosition(int connected);
+		private readonly MacMouseEventStream mouseStream = new(observePosts: false);
 
 		protected override bool CanClipCursor(out string reason)
 		{
@@ -31,54 +27,62 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 			return active;
 		}
 
-		protected override void MoveCursorForClip(int x, int y)
-		{
-			lock (moveSuppressionLock)
-			{
-				_ = MacNativeInput.CGWarpMouseCursorPosition(new MacNativeInput.CGPoint(x, y));
+		protected override void MoveCursorForClip(int x, int y) => mouseStream.Warp(x, y);
 
-				if (!cursorDisassociated)
-					_ = CGAssociateMouseAndMouseCursorPosition(1);
-			}
-		}
-
-		// Freeze/unfreeze physical cursor movement for BlockInput's mouse-move block and an InputHook with
-		// VisibleMouseMove := false. The session event tap is downstream of the OS
-		// cursor mover, so setting SuppressEvent on a move only hides it from applications -- the visible
-		// cursor has already moved. Disassociating the cursor from the mouse is what actually stops it;
-		// move events keep flowing to the tap (so callbacks still fire and we can re-associate on release).
-		// macOS restores the association automatically when the process exits, and DeregisterHooks resets
-		// it, so a decoupled cursor can't outlive the script.
+		// BlockInput's mouse-move block and an InputHook with VisibleMouseMove := false hold physical
+		// movement at the cursor. The native tap's run loop renews the hold.
 		protected override bool OnMoveSuppressionChanged(bool active)
 		{
-			if (!active && !cursorDisassociated)
-				return true;
-
-			var error = CGAssociateMouseAndMouseCursorPosition(active ? 0 : 1);
-			if (error == 0)
+			if (!mouseStream.SetMovementSuppressed(active))
 			{
-				cursorDisassociated = active;
-				return true;
+				Diagnostics.Debug.WriteLine("macOS movement suppression could not update the cursor hold.");
+				return !active;
 			}
-
-			Diagnostics.Debug.WriteLine($"macOS cursor {(active ? "disassociation" : "reassociation")} failed with CGError {error}.");
-			return false;
+			return true;
 		}
 
 		internal override void RefreshPlatformKeyGrabs()
 		{
-			if (!HasMouseHook())
+			lock (moveSuppressionLock)
 			{
-				SetMoveSuppression(false);
-				return;
+				if (nativeTapStopping || !mouseEnabled || !HasMouseHook() || nativeEventTap is not { IsRunning: true })
+				{
+					SetMoveSuppression(false);
+					return;
+				}
+
+				var suppress = script.KeyboardData.blockMouseMove || script.KeyboardData.blockInput;
+
+				for (var input = script.input; !suppress && input != null; input = input.prev)
+					suppress = input.InProgress() && !input.visibleMouseMove;
+
+				SetMoveSuppression(suppress);
 			}
+		}
 
-			var suppress = script.KeyboardData.blockMouseMove || script.KeyboardData.blockInput;
+		internal void OnNativeTapMaintenance()
+		{
+			lock (moveSuppressionLock)
+			{
+				RefreshPlatformKeyGrabs();
+				if (!mouseStream.RefreshHold())
+					SetMoveSuppression(false);
+			}
+		}
 
-			for (var input = script.input; !suppress && input != null; input = input.prev)
-				suppress = input.InProgress() && !input.visibleMouseMove;
-
-			SetMoveSuppression(suppress);
+		protected override void OnPlatformHookStateCommitted(HookType activeHooks)
+		{
+			lock (moveSuppressionLock)
+			{
+				nativeTapStopping = false;
+				var observe = (activeHooks & HookType.Mouse) != 0 && nativeEventTap is { IsRunning: true };
+				if (!observe)
+					SetMoveSuppression(false);
+				mouseStream.SetPostObservation(observe);
+				if ((activeHooks & HookType.Mouse) == 0)
+					mouseStream.ForgetHardwareMoves();
+				RefreshPlatformKeyGrabs();
+			}
 		}
 
 		protected override KeyboardMouseSender CreateKbdMsSender()
@@ -246,7 +250,10 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 			if (!MacNativeInput.IsMouseEvent(type))
 				return false;
 			if (!mouseEnabled)
+			{
+				mouseStream.ForgetHardwareMoves();
 				return false;
+			}
 
 			var streamRevision = mouseStream.SenderRevision;
 
@@ -261,30 +268,36 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 			var origin = MacNativeInput.ClassifyEventOrigin(cgEvent, hasMetadata);
 			var isInjected = origin is MacKeyboardState.Origin.KeysharpSynthetic or MacKeyboardState.Origin.ForeignSynthetic;
 
+			if (origin == MacKeyboardState.Origin.KeysharpSynthetic && type != MacNativeInput.kCGEventScrollWheel
+				&& MacNativeInput.CGEventGetIntegerValueField(cgEvent, MacNativeInput.kCGEventSourceUnixProcessID) == Environment.ProcessId)
+				mouseStream.AcknowledgePost(MacNativeInput.CGEventGetTimestamp(cgEvent));
+
 			var loc = MacNativeInput.CGEventGetLocation(cgEvent);
 			var x = (int)Math.Round(loc.X);
 			var y = (int)Math.Round(loc.Y);
-			var wasCursorDisassociated = cursorDisassociated;
-			var wantsMove = isMoveEvent && script.input != null;
-			long rawDeltaX = 0, rawDeltaY = 0;
-
-			if (wantsMove)
-			{
-				rawDeltaX = MacNativeInput.CGEventGetIntegerValueField(cgEvent, MacNativeInput.kCGMouseEventDeltaX);
-				rawDeltaY = MacNativeInput.CGEventGetIntegerValueField(cgEvent, MacNativeInput.kCGMouseEventDeltaY);
-			}
 
 			if (isMoveEvent)
 			{
+				long deltaX, deltaY;
+				var held = false;
+
+				deltaX = MacNativeInput.CGEventGetIntegerValueField(cgEvent, MacNativeInput.kCGMouseEventDeltaX);
+				deltaY = MacNativeInput.CGEventGetIntegerValueField(cgEvent, MacNativeInput.kCGMouseEventDeltaY);
+
 				var suppressMove = !isInjected
 					&& (script.KeyboardData.blockMouseMove || script.KeyboardData.blockInput);
 
-				if (wantsMove)
+				if (!isInjected)
 				{
-					if (!CollectMouseMove(rawDeltaX, rawDeltaY, extraInfo, isInjected,
-							DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), new POINT(x, y)))
-						suppressMove = true;
+					if (script.input != null || suppressMove || mouseStream.MovementSuppressed)
+						held = mouseStream.MeasureHardwareMove(loc.X, loc.Y, ref deltaX, ref deltaY);
+					else
+						mouseStream.RecordHardwareMove(loc.X, loc.Y);
 				}
+
+				if (script.input != null && !CollectMouseMove(deltaX, deltaY, extraInfo, isInjected,
+						DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), new POINT(x, y)))
+					suppressMove = true;
 
 				if (!isInjected)
 				{
@@ -297,21 +310,20 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 
 						if (ClampToCursorClip(ref cx, ref cy))
 						{
-							mouseStream.InvalidatePosition();
 							MoveCursorForClip(cx, cy);
 							return true;
 						}
 					}
+
+					// A dropped move which was not held has still advanced WindowServer's pointer.
+					if (suppressMove && !held)
+						mouseStream.Realign();
 				}
 
-				if (suppressMove || wasCursorDisassociated)
-					mouseStream.InvalidatePosition();
-				else if (origin != MacKeyboardState.Origin.KeysharpSynthetic)
-						// The sender records its own destination before asynchronously posting the event;
-						// observing that event later could roll a newer prediction backward. Only accepted
-						// physical/foreign moves refresh the baseline here. Committing after suppression
-						// has been decided prevents a blocked event from becoming the baseline.
-						mouseStream.ObserveMove(x, y, streamRevision);
+				// A posted move places the cursor as it is posted, whether or not a tap drops it. The sender
+				// records its own destinations, and observing them later could roll a newer one back.
+				if (origin == MacKeyboardState.Origin.ForeignSynthetic || (!isInjected && !suppressMove))
+					mouseStream.ObserveMove(x, y, streamRevision);
 
 				return suppressMove;
 			}
@@ -423,41 +435,50 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 		{
 			keyboardState.Resync();
 			mouseStream.ResyncButtons();
+			mouseStream.ForgetHardwareMoves();
+			lock (moveSuppressionLock)
+			{
+				mouseStream.SetPostObservation(!nativeTapStopping && mouseEnabled && HasMouseHook(), reset: true);
+				RefreshPlatformKeyGrabs();
+				if (!mouseStream.RefreshHold(force: true))
+					SetMoveSuppression(false);
+			}
 		}
 
 		internal void OnNativeTapTerminated(MacNativeEventTap failedTap, string reason)
 		{
-			lock (hookStateLock)
+			// Hook teardown holds hookStateLock while joining the native thread.
+			ThreadPool.QueueUserWorkItem(_ =>
 			{
-				if (!ReferenceEquals(nativeEventTap, failedTap) || (!keyboardEnabled && !mouseEnabled))
-					return;
-			}
-			DisableHooksAfterTapLoss(reason);
+				try { DisableHooksAfterTapLoss(failedTap, reason); }
+				catch (Exception ex) { Diagnostics.Debug.WriteLine($"macOS event-tap failure cleanup failed: {ex}"); }
+			});
 		}
 
-		private void DisableHooksAfterTapLoss(string reason)
+		private void DisableHooksAfterTapLoss(MacNativeEventTap failedTap, string reason)
 		{
 			var message = $"macOS event tap was lost repeatedly; global hooks disabled: {reason}";
 			lock (hookStateLock)
 			{
+				if (!ReferenceEquals(nativeEventTap, failedTap) || (!keyboardEnabled && !mouseEnabled))
+					return;
 				keyboardEnabled = false;
 				mouseEnabled = false;
 				kbdHook = 0;
 				mouseHook = 0;
 				lastHookActivationFailure = message;
+				if (CursorClipActive)
+					ClearCursorClip();
+				SetMoveSuppression(false);
+				mouseStream.SetPostObservation(false);
+				mouseStream.ResetObservedButtons();
 			}
 
-			if (CursorClipActive)
-				ClearCursorClip();
-			SetMoveSuppression(false);
-			mouseStream.ResetObservedButtons();
 			SyncHookMutexes(changeIsTemporary: false);
 			Diagnostics.Debug.WriteLine(message);
 		}
 
 		protected override string PlatformHookDisabledMessage => "macOS hook disabled via KEYSHARP_DISABLE_HOOK=1.";
-
-		protected override void OnPlatformHookStartFailed(string message) => SetMoveSuppression(false);
 
 		protected override bool StartPlatformHookCore(bool wantKeyboard, bool wantMouse, out string message)
 		{
@@ -498,6 +519,7 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 			KeyCodes.PrepareForInputHook(script);
 			keyboardState.Resync();
 			mouseStream.ResyncButtons();
+			mouseStream.ForgetHardwareMoves();
 			nativeEventTap = new MacNativeEventTap(this, requestedMask);
 
 			if (nativeEventTap.Start(HookStartTimeoutMs))
@@ -517,6 +539,7 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 			if (nativeEventTap == null)
 				return true;
 
+			PrepareNativeTapStop();
 			try
 			{
 				nativeEventTap.Dispose();
@@ -537,6 +560,7 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 			if (!dispose)
 				return;
 
+			PrepareNativeTapStop();
 			try
 			{
 				nativeEventTap?.Dispose();
@@ -544,10 +568,21 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 			}
 			finally
 			{
-				// Always restore cursor association and the base hook state, even if a native
+				// Always release the movement hold and restore the base hook state, even if a native
 				// tap thread refuses to terminate and its ownership must be retained.
 				mouseStream.ResetObservedButtons();
+				mouseStream.ForgetHardwareMoves();
 				base.StopPlatformHookCore(dispose);
+			}
+		}
+
+		private void PrepareNativeTapStop()
+		{
+			lock (moveSuppressionLock)
+			{
+				nativeTapStopping = true;
+				SetMoveSuppression(false);
+				mouseStream.SetPostObservation(false);
 			}
 		}
 

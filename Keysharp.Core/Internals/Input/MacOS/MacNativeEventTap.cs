@@ -30,6 +30,8 @@ namespace Keysharp.Internals.Input.MacOS
 			=> MacNativeInput.CFRunLoopRemoveSource(runLoop, source, MacNativeInput.RunLoopDefaultMode);
 		internal virtual void EnableTap(nint tap, bool enable) => MacNativeInput.CGEventTapEnable(tap, enable);
 		internal virtual bool IsTapValid(nint tap) => MacNativeInput.CFMachPortIsValid(tap);
+		internal virtual bool IsTapEnabled(nint tap) => MacNativeInput.CGEventTapIsEnabled(tap);
+		internal virtual long TimestampMilliseconds() => Environment.TickCount64;
 		internal virtual int RunInDefaultMode(double seconds)
 			=> MacNativeInput.CFRunLoopRunInMode(MacNativeInput.RunLoopDefaultMode, seconds, false);
 		internal virtual void StopRunLoop(nint runLoop) => MacNativeInput.CFRunLoopStop(runLoop);
@@ -41,12 +43,13 @@ namespace Keysharp.Internals.Input.MacOS
 		private const int StopTimeoutMs = 3000;
 		private const int MaxRecoveryAttempts = 3;
 		private const long RecoveryWindowMs = 5000;
-		private const double RunLoopPollSeconds = 0.5;
+		private const long MaintenanceIntervalMs = 250;
 		private const int RunLoopFinished = 1;
 		private const int RunLoopStopped = 2;
 		private readonly Script owner;
 		private readonly Func<uint, nint, bool> processEvent;
 		private readonly Action tapReenabled;
+		private readonly Action maintenance;
 		private readonly Action<MacNativeEventTap, string> tapTerminated;
 		private readonly MacEventTapDriver driver;
 		private readonly MacNativeInput.CGEventTapCallBack callback;
@@ -65,17 +68,20 @@ namespace Keysharp.Internals.Input.MacOS
 			: this(owner.script, eventMask,
 				(type, cgEvent) => owner.ProcessNativeKeyboardEvent(type, cgEvent)
 					|| owner.ProcessNativeMouseEvent(type, cgEvent),
-				owner.OnNativeTapReenabled, owner.OnNativeTapTerminated, MacEventTapDriver.Native)
+				owner.OnNativeTapReenabled, owner.OnNativeTapTerminated, MacEventTapDriver.Native,
+				owner.OnNativeTapMaintenance)
 		{
 		}
 
 		internal MacNativeEventTap(Script owner, ulong eventMask, Func<uint, nint, bool> processEvent,
-			Action tapReenabled, Action<MacNativeEventTap, string> tapTerminated, MacEventTapDriver driver)
+			Action tapReenabled, Action<MacNativeEventTap, string> tapTerminated, MacEventTapDriver driver,
+			Action maintenance = null)
 		{
 			this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
 			this.eventMask = eventMask;
 			this.processEvent = processEvent ?? throw new ArgumentNullException(nameof(processEvent));
 			this.tapReenabled = tapReenabled ?? throw new ArgumentNullException(nameof(tapReenabled));
+			this.maintenance = maintenance;
 			this.tapTerminated = tapTerminated ?? throw new ArgumentNullException(nameof(tapTerminated));
 			this.driver = driver ?? throw new ArgumentNullException(nameof(driver));
 			callback = OnEvent;
@@ -232,6 +238,8 @@ namespace Keysharp.Internals.Input.MacOS
 				}
 				if (State == MacEventTapState.Stopping)
 					return null;
+				if (!driver.IsTapEnabled(tap))
+					return "the event tap was not enabled after creation";
 
 				driver.AddSource(runLoop, source);
 				lock (lifecycleLock)
@@ -247,11 +255,21 @@ namespace Keysharp.Internals.Input.MacOS
 					try { tapReenabled(); }
 					catch (Exception ex) { Diagnostics.Debug.WriteLine($"macOS event-tap state resync failed: {ex}"); }
 				}
+				var nextMaintenanceAt = driver.TimestampMilliseconds() + MaintenanceIntervalMs;
 				while (State == MacEventTapState.Running)
 				{
 					if (!driver.IsTapValid(tap))
 						return "the event-tap Mach port became invalid";
-					var result = driver.RunInDefaultMode(RunLoopPollSeconds);
+					if (!driver.IsTapEnabled(tap))
+						return "the event tap became disabled";
+					var now = driver.TimestampMilliseconds();
+					if (now >= nextMaintenanceAt)
+					{
+						maintenance?.Invoke();
+						now = driver.TimestampMilliseconds();
+						nextMaintenanceAt = now + MaintenanceIntervalMs;
+					}
+					var result = driver.RunInDefaultMode((nextMaintenanceAt - now) / 1000.0);
 					if (State == MacEventTapState.Running && result is RunLoopFinished or RunLoopStopped)
 						return $"the event-tap run loop exited unexpectedly (result {result})";
 				}
@@ -298,7 +316,7 @@ namespace Keysharp.Internals.Input.MacOS
 							if (State == MacEventTapState.Running && tap != nint.Zero)
 							{
 								driver.EnableTap(tap, true);
-								reenabled = true;
+								reenabled = driver.IsTapEnabled(tap);
 							}
 						}
 					}

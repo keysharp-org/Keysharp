@@ -338,7 +338,7 @@ namespace Keysharp.Internals.Input.MacOS
 				{
 					if (sendInputCursorPos.X == CoordUnspecified)
 					{
-						if (GetCursorPos(out sendInputCursorPos))
+						if (GetMoveOrigin(out sendInputCursorPos))
 						{
 							x += sendInputCursorPos.X;
 							y += sendInputCursorPos.Y;
@@ -350,7 +350,7 @@ namespace Keysharp.Internals.Input.MacOS
 						y += sendInputCursorPos.Y;
 					}
 				}
-				else if (GetCursorPos(out POINT pos))
+				else if (GetMoveOrigin(out POINT pos))
 				{
 					x += pos.X;
 					y += pos.Y;
@@ -363,6 +363,7 @@ namespace Keysharp.Internals.Input.MacOS
 
 			if (sendMode == SendModes.Input)
 			{
+				mouseStream.ClampToDisplays(ref x, ref y);
 				sendInputCursorPos.X = x;
 				sendInputCursorPos.Y = y;
 				AddArrayEvent(ArrayEvent.MouseMoveAbs(x, y));
@@ -375,7 +376,7 @@ namespace Keysharp.Internals.Input.MacOS
 			else if (speed > MaxMouseSpeed)
 				speed = MaxMouseSpeed;
 
-			if (speed == 0 || !GetCursorPos(out POINT cursorPos))
+			if (speed == 0 || !GetMoveOrigin(out POINT cursorPos))
 			{
 				mouseStream.MoveAbsolute(x, y, KeyIgnoreLevel(ThreadAccessors.A_SendLevel));
 				DoMouseDelay();
@@ -410,6 +411,10 @@ namespace Keysharp.Internals.Input.MacOS
 				DoMouseDelay();
 			}
 		}
+
+		// The stream preserves pending posts, then reads the cursor to account for other applications' warps.
+		private bool GetMoveOrigin(out POINT position)
+			=> mouseStream.MovementSuppressed ? mouseStream.TryGetPosition(out position) : GetCursorPos(out position);
 
 		private void ReplayMacMouseEvent(uint eventFlags, uint data, int x, int y, long extraInfo)
 		{

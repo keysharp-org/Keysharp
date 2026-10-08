@@ -15,12 +15,25 @@ namespace Keysharp.Internals.Input.MacOS
 		{
 			internal static readonly Sink Native = new();
 			internal virtual bool TryGetCursorPosition(out int x, out int y) => Platform.Mouse.TryGetCursorPos(out x, out y);
-			internal virtual bool PostMove(int x, int y, long extraInfo, MouseButton draggingButton)
-				=> MacNativeInput.PostMouseMove(x, y, extraInfo, draggingButton);
-			internal virtual bool PostButton(MouseButton button, bool down, int x, int y, long extraInfo, int clickCount, long eventNumber)
-				=> MacNativeInput.PostMouseButton(button, down, x, y, extraInfo, clickCount, eventNumber);
+			internal virtual bool TryGetCursorLocation(out double x, out double y) => MacNativeInput.TryGetCursorLocation(out x, out y);
+			internal virtual bool WarpCursor(int x, int y)
+			{
+				var error = MacNativeInput.CGWarpMouseCursorPosition(new MacNativeInput.CGPoint(x, y));
+				if (error != 0)
+					Diagnostics.Debug.WriteLine($"macOS cursor warp failed with CGError {error}.");
+				return error == 0;
+			}
+			internal virtual double GetHoldInterval() => MacNativeInput.GetWarpHoldInterval();
+			internal virtual void SetHoldInterval(double seconds) => MacNativeInput.SetWarpHoldInterval(seconds);
+			internal virtual Rectangle[] GetDisplayBounds() => MacNativeInput.GetDisplayBounds();
+			internal virtual bool PostMove(int x, int y, long extraInfo, MouseButton draggingButton, ulong postTimestamp)
+				=> MacNativeInput.PostMouseMove(x, y, extraInfo, draggingButton, postTimestamp);
+			internal virtual bool PostButton(MouseButton button, bool down, int x, int y, long extraInfo, int clickCount, long eventNumber, ulong postTimestamp)
+				=> MacNativeInput.PostMouseButton(button, down, x, y, extraInfo, clickCount, eventNumber, postTimestamp);
 		}
 
+		// Each warp holds hardware motion for this long; RefreshHold renews the hold well within it.
+		internal const double HoldSeconds = 1.0;
 		private static long nextEventNumber;
 		private readonly Lock sendLock = new();
 		private readonly Lock streamLock = new();
@@ -28,6 +41,7 @@ namespace Keysharp.Internals.Input.MacOS
 		private readonly int[] activeClickCounts = new int[6];
 		private readonly Sink sink;
 		private readonly Func<long> timestamp;
+		private readonly long frequency;
 		private readonly long clickIntervalTicks;
 		private readonly int clickTolerance;
 		private uint syntheticButtons;
@@ -44,18 +58,383 @@ namespace Keysharp.Internals.Input.MacOS
 		private int lastClickX;
 		private int lastClickY;
 		private int lastClickCount;
+		private volatile bool movementSuppressed;
+		private double savedHoldInterval;
+		private long lastHoldAt;
+		private readonly Queue<(int X, int Y, long At)> recentPositions = new();
+		private bool observePosts;
+		private ulong nextPostTimestamp;
+		private ulong lastPostedTimestamp;
+		private ulong acknowledgedTimestamp;
+		private int postedX, postedY;
+		private (int X, int Y)? deferredWarp;
+		private readonly record struct PendingPost(ulong Stamp, ulong Previous, int X, int Y, (int X, int Y)? Warp);
+		private bool hasPreviousHardwareMove;
+		private double previousHardwareMoveX;
+		private double previousHardwareMoveY;
 
 		internal MacMouseEventStream(Sink sink = null, TimeSpan? clickInterval = null,
-			int clickTolerance = 4, Func<long> timestamp = null, long timestampFrequency = 0)
+			int clickTolerance = 4, Func<long> timestamp = null, long timestampFrequency = 0,
+			bool observePosts = true)
 		{
 			this.sink = sink ?? Sink.Native;
 			this.timestamp = timestamp ?? Stopwatch.GetTimestamp;
-			var frequency = timestampFrequency > 0 ? timestampFrequency : Stopwatch.Frequency;
+			frequency = timestampFrequency > 0 ? timestampFrequency : Stopwatch.Frequency;
 			clickIntervalTicks = (long)(GetClickInterval(clickInterval).TotalSeconds * frequency);
 			this.clickTolerance = Math.Max(0, clickTolerance);
+			this.observePosts = observePosts;
 		}
 
 		internal long SenderRevision { get { lock (streamLock) return senderRevision; } }
+
+		internal bool MovementSuppressed => movementSuppressed;
+
+		// WindowServer advances its internal pointer before any event tap sees hardware motion. Dropping
+		// the event cannot reliably stop the visible cursor, and a background process cannot dissociate
+		// the mouse. A warp, made by any process,
+		// instead holds hardware motion at the cursor for that process's hold interval while the moves
+		// still reach the tap with their deltas. Suppression keeps such a hold in place, and a warp made
+		// with a zero interval ends it at once.
+		internal bool SetMovementSuppressed(bool active)
+		{
+			lock (sendLock)
+			{
+				if (active == movementSuppressed)
+					return true;
+
+				if (active)
+				{
+					if (!TryGetWarpOrigin(out var cursorX, out var cursorY))
+						return false;
+					savedHoldInterval = sink.GetHoldInterval();
+					sink.SetHoldInterval(HoldSeconds);
+					if (!WarpAround(cursorX, cursorY))
+					{
+						sink.SetHoldInterval(0);
+						try { WarpAround(cursorX, cursorY); }
+						finally { sink.SetHoldInterval(savedHoldInterval); }
+						return false;
+					}
+					lastHoldAt = timestamp();
+					movementSuppressed = true;
+					return true;
+				}
+
+				movementSuppressed = false;
+				sink.SetHoldInterval(0);
+				try
+				{
+					return TryGetWarpOrigin(out var cursorX, out var cursorY) && WarpAround(cursorX, cursorY);
+				}
+				finally { sink.SetHoldInterval(savedHoldInterval); }
+			}
+		}
+
+		internal bool RefreshHold(bool force = false)
+		{
+			lock (sendLock)
+			{
+				if (!movementSuppressed)
+					return true;
+				if (!TryGetWarpOrigin(out var cursorX, out var cursorY))
+					return false;
+				var warpX = (int)Math.Floor(cursorX);
+				var warpY = (int)Math.Floor(cursorY);
+				if (force || timestamp() - lastHoldAt >= HoldSeconds * frequency)
+				{
+					if (!WarpAround(warpX, warpY))
+						return false;
+				}
+				else
+				{
+					ClampToDisplays(ref warpX, ref warpY);
+					if (!sink.WarpCursor(warpX, warpY))
+						return false;
+					if (deferredWarp == null)
+						Rebase(warpX, warpY);
+				}
+				lastHoldAt = timestamp();
+				return true;
+			}
+		}
+
+		// A dropped move can advance WindowServer's pointer before the callback's cursor read.
+		internal void Realign()
+		{
+			lock (sendLock)
+				if (TryGetWarpOrigin(out var cursorX, out var cursorY))
+					MoveCursor(cursorX, cursorY);
+		}
+
+		internal void Warp(int destinationX, int destinationY)
+		{
+			lock (sendLock)
+			{
+				if (HasPendingPosts)
+				{
+					ClampToDisplays(ref destinationX, ref destinationY);
+					deferredWarp = (destinationX, destinationY);
+					Rebase(destinationX, destinationY);
+					return;
+				}
+				deferredWarp = null;
+				MoveCursor(destinationX, destinationY);
+			}
+		}
+
+		private void MoveCursor(double destinationX, double destinationY)
+		{
+			if (movementSuppressed)
+			{
+				WarpAround(destinationX, destinationY);
+				return;
+			}
+
+			var interval = sink.GetHoldInterval();
+			sink.SetHoldInterval(0);
+			try { WarpAround(destinationX, destinationY); }
+			finally { sink.SetHoldInterval(interval); }
+		}
+
+		// A changed-position warp realigns WindowServer's pointer; a no-op warp only renews the hold.
+		private bool WarpAround(double destinationX, double destinationY)
+		{
+			var warpX = (int)Math.Floor(destinationX);
+			var warpY = (int)Math.Floor(destinationY);
+			var displays = sink.GetDisplayBounds();
+			ClampToDisplays(ref warpX, ref warpY, displays);
+			var awayX = IsOnDisplay(warpX + 1, warpY, displays) ? warpX + 1 : warpX - 1;
+			var success = sink.WarpCursor(awayX, warpY) && sink.WarpCursor(warpX, warpY);
+			// A failed second warp can leave the cursor at the adjacent point.
+			if (!success && !sink.WarpCursor(warpX, warpY))
+			{
+				InvalidatePosition();
+				return false;
+			}
+			if (deferredWarp == null)
+				Rebase(warpX, warpY);
+			if (success && movementSuppressed)
+				lastHoldAt = timestamp();
+			return success;
+		}
+
+		private void Rebase(int positionX, int positionY)
+		{
+			lock (streamLock)
+			{
+				if (!positionKnown || x != positionX || y != positionY)
+				{
+					senderRevision++;
+					nativeRevision++;
+				}
+				x = positionX;
+				y = positionY;
+				positionKnown = true;
+				Remember(positionX, positionY);
+			}
+		}
+
+		private bool HasPendingPosts { get { lock (streamLock) return lastPostedTimestamp > acknowledgedTimestamp; } }
+
+		internal void SetPostObservation(bool active, bool reset = false)
+		{
+			lock (sendLock)
+			{
+				if (!reset && active == observePosts)
+					return;
+				observePosts = active;
+				lock (streamLock)
+					acknowledgedTimestamp = lastPostedTimestamp;
+				var destination = deferredWarp;
+				deferredWarp = null;
+				if (active && reset && destination is { } warp)
+					MoveCursor(warp.X, warp.Y);
+			}
+		}
+
+		// Posted locations commit before reaching the tap. Stamps distinguish repeated locations.
+		internal void AcknowledgePost(ulong postTimestamp)
+		{
+			lock (streamLock)
+			{
+				if (postTimestamp == 0 || postTimestamp > lastPostedTimestamp)
+					return;
+				acknowledgedTimestamp = Math.Max(acknowledgedTimestamp, postTimestamp);
+			}
+			lock (sendLock)
+			{
+				if (HasPendingPosts || deferredWarp is not { } destination)
+					return;
+				deferredWarp = null;
+				MoveCursor(destination.X, destination.Y);
+			}
+		}
+
+		private bool TryGetWarpOrigin(out double cursorX, out double cursorY)
+		{
+			lock (streamLock)
+			{
+				if (lastPostedTimestamp > acknowledgedTimestamp)
+				{
+					cursorX = postedX;
+					cursorY = postedY;
+					return true;
+				}
+			}
+			return sink.TryGetCursorLocation(out cursorX, out cursorY);
+		}
+
+		private PendingPost BeginPost(int positionX, int positionY)
+		{
+			// Quartz timestamps are monotonic nanoseconds. Posts within one clock tick still need distinct stamps.
+			nextPostTimestamp = Math.Max(nextPostTimestamp + 1, (ulong)(timestamp() * (1_000_000_000.0 / frequency)));
+			lock (streamLock)
+			{
+				var previous = new PendingPost(nextPostTimestamp, lastPostedTimestamp, postedX, postedY, deferredWarp);
+				deferredWarp = null;
+				if (observePosts)
+					lastPostedTimestamp = nextPostTimestamp;
+				postedX = positionX;
+				postedY = positionY;
+				return previous;
+			}
+		}
+
+		private void CancelPost(PendingPost post)
+		{
+			lock (streamLock)
+			{
+				lastPostedTimestamp = post.Previous;
+				postedX = post.X;
+				postedY = post.Y;
+				deferredWarp = post.Warp;
+			}
+		}
+
+		private void Posted(int positionX, int positionY)
+		{
+			lock (streamLock)
+				Remember(positionX, positionY);
+		}
+
+		private void Remember(int positionX, int positionY)
+		{
+			var now = timestamp();
+			PrunePositions(now);
+			recentPositions.Enqueue((positionX, positionY, now));
+		}
+
+		private void PrunePositions(long now)
+		{
+			while (recentPositions.TryPeek(out var position) && now - position.At > frequency / 20)
+				recentPositions.Dequeue();
+		}
+
+		// Quartz measures a hardware move's delta from the previous hardware move's location, so a cursor
+		// change made in between, by a synthetic move or a warp, is added to it: a callback reversing each
+		// move would cancel the next one. This measures from where the move started instead, and returns
+		// whether the move was held at the cursor.
+		internal bool MeasureHardwareMove(double locationX, double locationY, ref long deltaX, ref long deltaY)
+		{
+			// The cursor read here does not include this move yet, so a move located at it was held there.
+			// One arriving as a synthetic move lands is held where the stream put the cursor moments earlier.
+			var cursorKnown = sink.TryGetCursorLocation(out var cursorX, out var cursorY);
+			var held = (cursorKnown && cursorX == locationX && cursorY == locationY)
+				|| (movementSuppressed && IsRecentPosition(locationX, locationY));
+
+			lock (streamLock)
+			{
+				if (hasPreviousHardwareMove && (held || cursorKnown))
+				{
+					deltaX = HardwareMoveDelta(deltaX, held ? locationX : cursorX, previousHardwareMoveX);
+					deltaY = HardwareMoveDelta(deltaY, held ? locationY : cursorY, previousHardwareMoveY);
+				}
+				RecordHardwareMove(locationX, locationY);
+			}
+			return held;
+		}
+
+		internal void RecordHardwareMove(double locationX, double locationY)
+		{
+			lock (streamLock)
+			{
+				hasPreviousHardwareMove = true;
+				previousHardwareMoveX = locationX;
+				previousHardwareMoveY = locationY;
+			}
+		}
+
+		// Moves which reach WindowServer while no tap sees them leave the previous location unknown.
+		internal void ForgetHardwareMoves()
+		{
+			lock (streamLock)
+				hasPreviousHardwareMove = false;
+		}
+
+		internal static long HardwareMoveDelta(long reportedDelta, double start, double previousLocation)
+			=> reportedDelta - (long)Math.Round(start - previousLocation);
+
+		internal bool IsRecentPosition(double positionX, double positionY)
+		{
+			lock (streamLock)
+			{
+				var now = timestamp();
+				PrunePositions(now);
+				foreach (var position in recentPositions)
+					if (position.At <= now && position.X == positionX && position.Y == positionY)
+						return true;
+				return false;
+			}
+		}
+
+		internal bool TryGetPosition(out POINT position)
+		{
+			lock (sendLock)
+			{
+				position = default;
+				if (!EnsurePosition())
+					return false;
+				lock (streamLock)
+					position = new POINT(x, y);
+				return true;
+			}
+		}
+
+		// Quartz accepts posted locations beyond every display, leaving the cursor at an off-screen
+		// position which later motion must first undo. Keep destinations on a display, as warps are.
+		internal void ClampToDisplays(ref int destinationX, ref int destinationY, Rectangle[] displays = null)
+		{
+			displays ??= sink.GetDisplayBounds();
+			var nearestDistance = double.MaxValue;
+			var clampedX = destinationX;
+			var clampedY = destinationY;
+			foreach (var bounds in displays)
+			{
+				if (bounds.Contains(destinationX, destinationY))
+					return;
+				var candidateX = Math.Clamp(destinationX, bounds.Left, bounds.Right - 1);
+				var candidateY = Math.Clamp(destinationY, bounds.Top, bounds.Bottom - 1);
+				var offsetX = (double)destinationX - candidateX;
+				var offsetY = (double)destinationY - candidateY;
+				var distance = offsetX * offsetX + offsetY * offsetY;
+				if (distance < nearestDistance)
+				{
+					nearestDistance = distance;
+					clampedX = candidateX;
+					clampedY = candidateY;
+				}
+			}
+			destinationX = clampedX;
+			destinationY = clampedY;
+		}
+
+		private static bool IsOnDisplay(int positionX, int positionY, Rectangle[] displays)
+		{
+			foreach (var bounds in displays)
+				if (bounds.Contains(positionX, positionY))
+					return true;
+			return displays.Length == 0;
+		}
 
 		internal void ResyncButtons(Func<uint, bool> query = null)
 		{
@@ -80,10 +459,11 @@ namespace Keysharp.Internals.Input.MacOS
 			}
 		}
 
-		internal void MoveAbsolute(int destinationX, int destinationY, long extraInfo)
+		internal bool MoveAbsolute(int destinationX, int destinationY, long extraInfo)
 		{
 			lock (sendLock)
 			{
+				ClampToDisplays(ref destinationX, ref destinationY);
 				MouseButton draggingButton;
 				long nativeBefore;
 				lock (streamLock)
@@ -95,8 +475,16 @@ namespace Keysharp.Internals.Input.MacOS
 					senderRevision++;
 					nativeBefore = nativeRevision;
 				}
-				if (!sink.PostMove(destinationX, destinationY, extraInfo, draggingButton))
+				var post = BeginPost(destinationX, destinationY);
+				var posted = sink.PostMove(destinationX, destinationY, extraInfo, draggingButton, post.Stamp);
+				if (posted)
+					Posted(destinationX, destinationY);
+				else
+				{
+					CancelPost(post);
 					InvalidateFailedPost(nativeBefore);
+				}
+				return posted;
 			}
 		}
 
@@ -108,22 +496,12 @@ namespace Keysharp.Internals.Input.MacOS
 					return false;
 
 				int destinationX, destinationY;
-				MouseButton draggingButton;
-				long nativeBefore;
 				lock (streamLock)
 				{
 					destinationX = (int)Math.Clamp((long)x + deltaX, int.MinValue, int.MaxValue);
 					destinationY = (int)Math.Clamp((long)y + deltaY, int.MinValue, int.MaxValue);
-					draggingButton = FirstPressedButton(syntheticButtons | observedButtons);
-					x = destinationX;
-					y = destinationY;
-					senderRevision++;
-					nativeBefore = nativeRevision;
 				}
-				var posted = sink.PostMove(destinationX, destinationY, extraInfo, draggingButton);
-				if (!posted)
-					InvalidateFailedPost(nativeBefore);
-				return posted;
+				return MoveAbsolute(destinationX, destinationY, extraInfo);
 			}
 		}
 
@@ -131,8 +509,14 @@ namespace Keysharp.Internals.Input.MacOS
 		{
 			lock (streamLock)
 			{
-				if (nativeRevision == nativeBefore)
-					positionKnown = false;
+				if (nativeRevision != nativeBefore)
+					return;
+				positionKnown = deferredWarp != null || lastPostedTimestamp > acknowledgedTimestamp;
+				if (positionKnown)
+				{
+					x = deferredWarp?.X ?? postedX;
+					y = deferredWarp?.Y ?? postedY;
+				}
 			}
 		}
 
@@ -144,6 +528,7 @@ namespace Keysharp.Internals.Input.MacOS
 					return;
 
 				ResolvePosition(ref eventX, ref eventY);
+				ClampToDisplays(ref eventX, ref eventY);
 				var index = (int)button;
 				long eventNumber;
 				int clickCount;
@@ -185,8 +570,13 @@ namespace Keysharp.Internals.Input.MacOS
 					senderRevision++;
 				}
 
-				if (sink.PostButton(button, down, eventX, eventY, extraInfo, clickCount, eventNumber))
+				var post = BeginPost(eventX, eventY);
+				if (sink.PostButton(button, down, eventX, eventY, extraInfo, clickCount, eventNumber, post.Stamp))
+				{
+					Posted(eventX, eventY);
 					return;
+				}
+				CancelPost(post);
 				lock (streamLock)
 				{
 					syntheticButtons = syntheticBefore;
@@ -195,9 +585,9 @@ namespace Keysharp.Internals.Input.MacOS
 					if (nativeRevision == nativeBefore)
 					{
 						(lastClickButton, lastClickAt, lastClickX, lastClickY, lastClickCount) = clickBefore;
-						positionKnown = false;
 					}
 				}
+				InvalidateFailedPost(nativeBefore);
 			}
 		}
 
@@ -277,6 +667,13 @@ namespace Keysharp.Internals.Input.MacOS
 
 		private bool EnsurePosition()
 		{
+			if (movementSuppressed && deferredWarp == null && !HasPendingPosts
+				&& sink.TryGetCursorLocation(out var cursorX, out var cursorY))
+			{
+				Rebase((int)Math.Round(cursorX), (int)Math.Round(cursorY));
+				return true;
+			}
+
 			lock (streamLock)
 			{
 				if (positionKnown)

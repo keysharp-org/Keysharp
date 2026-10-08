@@ -93,6 +93,21 @@ namespace Keysharp.Internals.Input.MacOS
 			public CGPoint(double x, double y) { X = x; Y = y; }
 		}
 
+		[StructLayout(LayoutKind.Sequential)]
+		private struct CGRect
+		{
+			internal double X;
+			internal double Y;
+			internal double Width;
+			internal double Height;
+		}
+
+		[LibraryImport(ApplicationServices)]
+		private static unsafe partial int CGGetActiveDisplayList(uint maxDisplays, uint* displays, out uint count);
+
+		[LibraryImport(ApplicationServices)]
+		private static partial CGRect CGDisplayBounds(uint display);
+
 		internal delegate nint CGEventTapCallBack(nint proxy, uint type, nint cgEvent, nint userInfo);
 
 		[LibraryImport(ApplicationServices)]
@@ -106,6 +121,15 @@ namespace Keysharp.Internals.Input.MacOS
 
 		[LibraryImport(ApplicationServices)]
 		internal static partial nint CGEventSourceCreate(uint stateId);
+
+		[LibraryImport(ApplicationServices)]
+		private static partial double CGEventSourceGetLocalEventsSuppressionInterval(nint source);
+
+		[LibraryImport(ApplicationServices)]
+		private static partial void CGEventSourceSetLocalEventsSuppressionInterval(nint source, double seconds);
+
+		[LibraryImport(ApplicationServices)]
+		private static partial nint CGEventCreate(nint source);
 
 		[LibraryImport(ApplicationServices)]
 		internal static partial void CGEventPost(uint tap, nint cgEvent);
@@ -175,6 +199,16 @@ namespace Keysharp.Internals.Input.MacOS
 
 		[LibraryImport(ApplicationServices)]
 		internal static partial void CGEventTapEnable(nint tap, [MarshalAs(UnmanagedType.I1)] bool enable);
+
+		[LibraryImport(ApplicationServices)]
+		[return: MarshalAs(UnmanagedType.I1)]
+		internal static partial bool CGEventTapIsEnabled(nint tap);
+
+		[LibraryImport(ApplicationServices)]
+		internal static partial ulong CGEventGetTimestamp(nint cgEvent);
+
+		[LibraryImport(ApplicationServices)]
+		internal static partial void CGEventSetTimestamp(nint cgEvent, ulong timestamp);
 
 		[LibraryImport(CoreFoundation)]
 		internal static partial nint CFMachPortCreateRunLoopSource(nint allocator, nint port, nint order);
@@ -294,6 +328,50 @@ namespace Keysharp.Internals.Input.MacOS
 			=> LazyInitializer.EnsureInitialized(
 				ref sharedEventSource, ref sharedEventSourceInitialized, ref sharedEventSourceLock,
 				static () => CGEventSourceCreate(kCGEventSourceStateCombinedSessionState));
+
+		// The suppression interval of a combined-session source is process-wide. It is how long each
+		// CGWarpMouseCursorPosition made by this process holds hardware pointer motion at the cursor.
+		internal static double GetWarpHoldInterval()
+			=> CGEventSourceGetLocalEventsSuppressionInterval(SharedEventSource());
+
+		internal static void SetWarpHoldInterval(double seconds)
+			=> CGEventSourceSetLocalEventsSuppressionInterval(SharedEventSource(), seconds);
+
+		// The session cursor in global display coordinates, the space event locations use. Unlike
+		// AppKit's mouse location it can be read from any thread.
+		internal static bool TryGetCursorLocation(out double x, out double y)
+		{
+			var ev = CGEventCreate(nint.Zero);
+			if (ev == nint.Zero)
+			{
+				x = y = 0;
+				return false;
+			}
+
+			var location = CGEventGetLocation(ev);
+			CFRelease(ev);
+			x = location.X;
+			y = location.Y;
+			return true;
+		}
+
+		internal static unsafe Rectangle[] GetDisplayBounds()
+		{
+			const int maxDisplays = 32;
+			var displays = stackalloc uint[maxDisplays];
+			if (CGGetActiveDisplayList(maxDisplays, displays, out var count) != 0)
+				return [];
+			var bounds = new List<Rectangle>((int)Math.Min(count, maxDisplays));
+			for (var i = 0; i < Math.Min(count, maxDisplays); i++)
+			{
+				var display = CGDisplayBounds(displays[i]);
+				var rectangle = new Rectangle((int)Math.Round(display.X), (int)Math.Round(display.Y),
+					(int)Math.Round(display.Width), (int)Math.Round(display.Height));
+				if (rectangle.Width > 0 && rectangle.Height > 0)
+					bounds.Add(rectangle);
+			}
+			return bounds.ToArray();
+		}
 
 		// Queried from WindowServer's own event counters, so unlike CGEventTap this needs no
 		// Accessibility/Input Monitoring permission and reflects physical + synthetic input alike.
@@ -428,10 +506,10 @@ namespace Keysharp.Internals.Input.MacOS
 			return ev;
 		}
 
-		internal static bool PostMouseMove(int x, int y, long extraInfo, MouseButton draggingButton = MouseButton.NoButton)
-			=> PostMouseEvent(MouseMoveType(draggingButton), new CGPoint(x, y), ToCGMouseButtonOrZero(draggingButton), extraInfo);
+		internal static bool PostMouseMove(int x, int y, long extraInfo, MouseButton draggingButton = MouseButton.NoButton, ulong timestamp = 0)
+			=> PostMouseEvent(MouseMoveType(draggingButton), new CGPoint(x, y), ToCGMouseButtonOrZero(draggingButton), extraInfo, timestamp: timestamp);
 
-		internal static bool PostMouseButton(MouseButton button, bool down, int x, int y, long extraInfo, int clickCount = 1, long eventNumber = 0)
+		internal static bool PostMouseButton(MouseButton button, bool down, int x, int y, long extraInfo, int clickCount = 1, long eventNumber = 0, ulong timestamp = 0)
 		{
 			var cgButton = ToCGMouseButton(button);
 			if (cgButton == uint.MaxValue)
@@ -447,7 +525,7 @@ namespace Keysharp.Internals.Input.MacOS
 				_ => kCGEventOtherMouseUp
 			};
 
-			return PostMouseEvent(type, new CGPoint(x, y), cgButton, extraInfo, Math.Max(1, clickCount), eventNumber);
+			return PostMouseEvent(type, new CGPoint(x, y), cgButton, extraInfo, Math.Max(1, clickCount), eventNumber, timestamp);
 		}
 
 		internal static void PostMouseWheel(short delta, MouseWheelScrollDirection direction, long extraInfo)
@@ -511,8 +589,13 @@ namespace Keysharp.Internals.Input.MacOS
 			return ev;
 		}
 
-		private static bool PostMouseEvent(uint type, CGPoint point, uint button, long extraInfo, int clickCount = 0, long eventNumber = 0)
-			=> PostAndRelease(CreateMouseEvent(type, point, button, extraInfo, clickCount, eventNumber));
+		private static bool PostMouseEvent(uint type, CGPoint point, uint button, long extraInfo, int clickCount = 0, long eventNumber = 0, ulong timestamp = 0)
+		{
+			var ev = CreateMouseEvent(type, point, button, extraInfo, clickCount, eventNumber);
+			if (ev != nint.Zero && timestamp != 0)
+				CGEventSetTimestamp(ev, timestamp);
+			return PostAndRelease(ev);
+		}
 
 		private static bool PostAndRelease(nint ev)
 		{

@@ -3471,7 +3471,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Disables or enables physical keyboard and mouse input while allowing synthetic input. Full On blocking requires InputControl; movement-only blocking uses an observing and suppressing hook, so it requires both InputMonitoring and InputControl. Off and teardown never request permission. Linux uses keysharp-input and fails closed if that authority is unavailable or revokes access. macOS uses event taps."
+                     "notes":  "Disables or enables physical keyboard and mouse input while allowing synthetic input. Full On blocking requires InputControl; movement-only blocking uses an observing and suppressing hook, so it requires both InputMonitoring and InputControl. Off and teardown never request permission. Linux uses keysharp-input and fails closed if that authority is unavailable or revokes access. macOS uses event taps. macOS computes physical pointer motion ahead of event taps and honors mouse and cursor dissociation only for the frontmost application, so movement blocking uses a one-second cursor hold renewed on the event-tap thread; it applies whichever application is active and ends when blocking stops. A process pause longer than the hold can allow physical movement through until renewal resumes.",
+                     "tested-by":  "MacInputTests.MovementHold; MacInputTests.MovementHoldWithoutCursor; MacInputTests.MovementHoldWarpFailure; MacInputTests.MovementHoldDeadline; MacInputTests.EventTapMaintenance; MacInputTests.MouseRealign; MacInputTests.PendingMousePostBeforeWarp"
                  },
                  {
                      "category":  "Core Language",
@@ -7092,7 +7093,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "OnMouseMove(hook, dx, dy) queues every move report, including (0, 0). Windows derives deltas from desktop-clamped hook positions, so outward movement at an edge can be zero; macOS uses Quartz deltas. Linux requires keysharp-input plus InputMonitoring and InputControl for the suppression-capable callback stream. Relative values are raw device-specific evdev counts, while physical absolute values are changes in normalized [0,65535] axes. Linux A_EventInfo includes DeviceId (0 synthetic, positive physical) and IsAbsolute; synthetic absolute deltas are zero because no relative sample exists. Windows and macOS instead provide global-screen X/Y when available and omit DeviceId; X/Y need not equal the prior position plus dx/dy, and macOS reports the frozen cursor position while movement is suppressed."
+                     "notes":  "OnMouseMove(hook, dx, dy) queues every move report, including (0, 0). Windows derives deltas from desktop-clamped hook positions, so outward movement at an edge can be zero; macOS uses Quartz deltas, corrected so that cursor moves made between two physical moves, such as a relative MouseMove from the callback, do not count as physical motion. Linux requires keysharp-input plus InputMonitoring and InputControl for the suppression-capable callback stream. Relative values are raw device-specific evdev counts, while physical absolute values are changes in normalized [0,65535] axes. Linux A_EventInfo includes DeviceId (0 synthetic, positive physical) and IsAbsolute; synthetic absolute deltas are zero because no relative sample exists. Windows and macOS instead provide global-screen X/Y when available and omit DeviceId; X/Y need not equal the prior position plus dx/dy, and macOS reports the held cursor position while movement is suppressed.",
+                     "tested-by":  "MacInputTests.HeldHardwareMoveAfterSyntheticMove; MacInputTests.FreeHardwareMoveAfterSyntheticMove; MacInputTests.FirstHardwareMove; MacInputTests.HardwareMoveReturnsToPostedPosition"
                  },
                  {
                      "category":  "Input/Automation",
@@ -7163,7 +7165,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Whether mouse movement remains visible while capture is active."
+                     "notes":  "Whether mouse movement remains visible while capture is active. On macOS, false holds the cursor in place against physical movement in every application while OnMouseMove still receives the physical deltas; synthetic movement, including a relative MouseMove from the callback, still moves the cursor.",
+                     "tested-by":  "MacInputTests.MovementHold; MacInputTests.SuppressedMousePosition; MacInputTests.ExternalMouseWarpWhileSuppressed; MacInputTests.DelayedMousePost; MacInputTests.QueuedHeldHardwareMove; MacInputTests.MouseRealign"
                  },
                  {
                      "category":  "Input/Automation",
