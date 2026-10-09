@@ -26,7 +26,7 @@ public class HotCriterionTests : TestRunner
 		using var entered = new CountdownEvent(3);
 		var blocked = new TestCriterion(() =>
 		{
-			entered.Signal();
+			_ = entered.Signal();
 			release.Wait();
 			return 1L;
 		});

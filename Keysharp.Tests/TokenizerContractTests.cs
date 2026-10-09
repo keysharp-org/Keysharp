@@ -1,7 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using CollectionAssert = NUnit.Framework.CollectionAssert;
-using StringAssert = NUnit.Framework.StringAssert;
-
 namespace Keysharp.Tests;
 
 /// <summary>

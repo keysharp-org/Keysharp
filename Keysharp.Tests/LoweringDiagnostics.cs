@@ -1,5 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 internal static class LoweringDiagnostics

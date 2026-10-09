@@ -1,5 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 [Category("Internal")]
@@ -1958,7 +1956,7 @@ public class GuiTests : TestRunner
 		try
 		{
 			A_DetectHiddenWindows = true;
-			WindowX.WinSetStyle(newStyle, $"ahk_id {handle.ToInt64()}");
+			_ = WindowX.WinSetStyle(newStyle, $"ahk_id {handle.ToInt64()}");
 
 			Assert.AreEqual(newStyle, WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_STYLE).ToInt64());
 			Assert.AreEqual(originalExStyle, WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_EXSTYLE).ToInt64());
@@ -1985,7 +1983,7 @@ public class GuiTests : TestRunner
 		try
 		{
 			A_DetectHiddenWindows = true;
-			WindowX.WinSetExStyle(newExStyle, $"ahk_id {handle.ToInt64()}");
+			_ = WindowX.WinSetExStyle(newExStyle, $"ahk_id {handle.ToInt64()}");
 
 			Assert.AreEqual(originalStyle, WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_STYLE).ToInt64());
 			Assert.AreEqual(newExStyle, WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_EXSTYLE).ToInt64());

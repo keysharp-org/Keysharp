@@ -1,7 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using CollectionAssert = NUnit.Framework.CollectionAssert;
-using StringAssert = NUnit.Framework.StringAssert;
-
 namespace Keysharp.Tests;
 
 [TestFixture, Category("Internal"), Category("Curated")]
@@ -109,7 +105,7 @@ public class AppManifestTests : TestRunner
 	{
 		var previous = Script.TheScript;
 		var programType = BuildAssemblyWithManifest("{").GetType("AppManifestMarker", throwOnError: true);
-		Assert.Throws<InvalidDataException>(() => new Script(programType));
+		_ = Assert.Throws<InvalidDataException>(() => new Script(programType));
 		Assert.AreSame(previous, Script.TheScript);
 	}
 

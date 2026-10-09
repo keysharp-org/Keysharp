@@ -1,5 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 [TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
@@ -198,7 +196,7 @@ public class SchedulerTests : TestRunner
 		s.Dispose();
 
 		context.Post(_ => called = true, null);
-		Assert.Throws<ObjectDisposedException>(() => context.Send(_ => called = true, null));
+		_ = Assert.Throws<ObjectDisposedException>(() => context.Send(_ => called = true, null));
 		Assert.IsFalse(called);
 	}
 
@@ -301,7 +299,7 @@ public class SchedulerTests : TestRunner
 	{
 		var context = UseQueuedMainContext();
 		var scheduler = s.EventScheduler;
-		Assert.Throws<Keysharp.Builtins.Flow.UserRequestedExitException>(() =>
+		_ = Assert.Throws<Keysharp.Builtins.Flow.UserRequestedExitException>(() =>
 			scheduler.TryExecuteThreadLaunch(0, false, false, threadVariables =>
 			{
 				Assert.IsTrue(scheduler.EnqueueCallback(() => _ = Keysharp.Builtins.Flow.Exit(7), ScriptEventQueue.Normal, false));
@@ -331,17 +329,17 @@ public class SchedulerTests : TestRunner
 		var scheduler = s.EventScheduler;
 		var order = new List<string>();
 
-		scheduler.EnqueueCallback(() =>
+		_ = scheduler.EnqueueCallback(() =>
 		{
 			order.Add("H1");
-			scheduler.EnqueueCallback(() => order.Add("H3"), ScriptEventQueue.Interactive, false);
-			scheduler.EnqueueCallback(() => order.Add("H4"), ScriptEventQueue.Interactive, false);
-			scheduler.EnqueueCallback(() => order.Add("N3"), ScriptEventQueue.Normal, false);
-			scheduler.EnqueueCallback(() => order.Add("N4"), ScriptEventQueue.Normal, false);
+			_ = scheduler.EnqueueCallback(() => order.Add("H3"), ScriptEventQueue.Interactive, false);
+			_ = scheduler.EnqueueCallback(() => order.Add("H4"), ScriptEventQueue.Interactive, false);
+			_ = scheduler.EnqueueCallback(() => order.Add("N3"), ScriptEventQueue.Normal, false);
+			_ = scheduler.EnqueueCallback(() => order.Add("N4"), ScriptEventQueue.Normal, false);
 		}, ScriptEventQueue.Interactive, false);
-		scheduler.EnqueueCallback(() => order.Add("H2"), ScriptEventQueue.Interactive, false);
-		scheduler.EnqueueCallback(() => order.Add("N1"), ScriptEventQueue.Normal, false);
-		scheduler.EnqueueCallback(() => order.Add("N2"), ScriptEventQueue.Normal, false);
+		_ = scheduler.EnqueueCallback(() => order.Add("H2"), ScriptEventQueue.Interactive, false);
+		_ = scheduler.EnqueueCallback(() => order.Add("N1"), ScriptEventQueue.Normal, false);
+		_ = scheduler.EnqueueCallback(() => order.Add("N2"), ScriptEventQueue.Normal, false);
 
 		Assert.AreEqual(1, context.PendingCount);
 
@@ -362,7 +360,7 @@ public class SchedulerTests : TestRunner
 		var order = new List<string>();
 		var interactiveBlocked = true;
 
-		scheduler.Enqueue(ScriptEventQueue.Interactive, 0, () =>
+		_ = scheduler.Enqueue(ScriptEventQueue.Interactive, 0, () =>
 		{
 			if (interactiveBlocked)
 				return ScriptEventExecutionResult.GlobalBlocked;
@@ -370,7 +368,7 @@ public class SchedulerTests : TestRunner
 			order.Add("H1");
 			return ScriptEventExecutionResult.Executed;
 		});
-		scheduler.EnqueueCallback(() => order.Add("N1"), ScriptEventQueue.Normal, false);
+		_ = scheduler.EnqueueCallback(() => order.Add("N1"), ScriptEventQueue.Normal, false);
 
 		context.DrainAll();
 
@@ -408,12 +406,12 @@ public class SchedulerTests : TestRunner
 			return ScriptEventExecutionResult.Executed;
 		}
 
-		scheduler.Enqueue(ScriptEventQueue.Interactive, 0, () => TryEntry("hotkey"));
-		scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => TryEntry("timer1"));
-		scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => TryEntry("timer2"));
+		_ = scheduler.Enqueue(ScriptEventQueue.Interactive, 0, () => TryEntry("hotkey"));
+		_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => TryEntry("timer1"));
+		_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => TryEntry("timer2"));
 
 		if (includeDispatch)
-			scheduler.EnqueueCallback(() => order.Add("dispatch"), ScriptEventQueue.Normal, false);
+			_ = scheduler.EnqueueCallback(() => order.Add("dispatch"), ScriptEventQueue.Normal, false);
 
 		// Pump directly so an assertion inside an entry escapes the UI exception boundary.
 		scheduler.PumpThreadQueuedEventsCore();
@@ -439,7 +437,7 @@ public class SchedulerTests : TestRunner
 		var order = new List<string>();
 		var launchBlocked = true;
 
-		scheduler.Enqueue(ScriptEventQueue.Normal, 0, () =>
+		_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () =>
 		{
 			if (launchBlocked)
 				return ScriptEventExecutionResult.GlobalBlocked;
@@ -447,7 +445,7 @@ public class SchedulerTests : TestRunner
 			order.Add("launch");
 			return ScriptEventExecutionResult.Executed;
 		});
-		scheduler.EnqueueCallback(() => order.Add("dispatch"), ScriptEventQueue.Normal, false);
+		_ = scheduler.EnqueueCallback(() => order.Add("dispatch"), ScriptEventQueue.Normal, false);
 
 		context.DrainAll();
 
@@ -471,12 +469,12 @@ public class SchedulerTests : TestRunner
 
 		// A producer bug: work labelled dispatch which reports a launch block. Parking it re-labelled is what
 		// stops the skip-walk from refetching and re-running it for the rest of the pass.
-		scheduler.Enqueue(ScriptEventQueue.Normal, 0, () =>
+		_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () =>
 		{
 			attempts++;
 			return ScriptEventExecutionResult.GlobalBlocked;
 		}, launchesThread: false);
-		scheduler.EnqueueCallback(() => order.Add("N1"), ScriptEventQueue.Normal, false);
+		_ = scheduler.EnqueueCallback(() => order.Add("N1"), ScriptEventQueue.Normal, false);
 
 		context.DrainAll();
 
@@ -493,7 +491,7 @@ public class SchedulerTests : TestRunner
 		var order = new List<string>();
 		var normalBlocked = true;
 
-		scheduler.Enqueue(ScriptEventQueue.Normal, 0, () =>
+		_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () =>
 		{
 			if (normalBlocked)
 				return ScriptEventExecutionResult.GlobalBlocked;
@@ -506,7 +504,7 @@ public class SchedulerTests : TestRunner
 
 		Assert.IsEmpty(order);
 
-		scheduler.EnqueueCallback(() => order.Add("H1"), ScriptEventQueue.Interactive, false);
+		_ = scheduler.EnqueueCallback(() => order.Add("H1"), ScriptEventQueue.Interactive, false);
 		context.DrainAll();
 
 		Assert.That(order, Is.EqualTo(new[] { "H1" }));

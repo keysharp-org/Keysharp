@@ -1,5 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 /// <summary>
@@ -185,10 +183,7 @@ public class IconInternals : TestRunner
 	/// A Taskbar with no window to decorate is a programming mistake, not a silent no-op.
 	/// </summary>
 	[Test, Category("Gui"), Category("Curated")]
-	public void TaskbarRejectsAnEmptyHandle()
-	{
-		_ = Assert.Throws<Keysharp.Builtins.KeysharpException>(() => new Ks.KeysharpTaskbar([0L]));
-	}
+	public void TaskbarRejectsAnEmptyHandle() => _ = Assert.Throws<Keysharp.Builtins.KeysharpException>(() => new Ks.KeysharpTaskbar([0L]));
 
 	/// <summary>
 	/// The same surface as a script sees it. Everything above calls C# directly, which skips the binder --

@@ -1,5 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 /// <summary>
@@ -404,7 +402,7 @@ public class EventHookTests : TestRunner
 		try
 		{
 			restarter.Start();
-			SpinWait.SpinUntil(() => Volatile.Read(ref rounds) >= 10, TimeSpan.FromSeconds(10));
+			_ = SpinWait.SpinUntil(() => Volatile.Read(ref rounds) >= 10, TimeSpan.FromSeconds(10));
 			_ = we.Stop();
 			Assert.IsTrue(restarter.Join(TimeSpan.FromSeconds(30)), "The restarts finish.");
 

@@ -1,5 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 // The defaulting conversion is an internal API; script string arguments use the strict conversion.
@@ -54,7 +52,7 @@ public class StringConversionInternalsTests : TestRunner
 			WithToString(() => Errors.ValueErrorOccurred("conversion failed")).CoerceString(out _));
 		Assert.IsInstanceOf<ValueError>(failure.UserError);
 		Assert.AreEqual("conversion failed", failure.Message);
-		Assert.Throws<InvalidOperationException>(() => new ThrowingClrValue().CoerceString(out _));
+		_ = Assert.Throws<InvalidOperationException>(() => new ThrowingClrValue().CoerceString(out _));
 	}
 
 	[Test, Category("Internal"), Category("Curated")]
@@ -71,7 +69,7 @@ public class StringConversionInternalsTests : TestRunner
 	[Test, Category("Internal"), Category("Curated")]
 	public void DefaultingPreservesScriptExit()
 	{
-		Assert.Throws<Keysharp.Builtins.Flow.UserRequestedExitException>(() =>
+		_ = Assert.Throws<Keysharp.Builtins.Flow.UserRequestedExitException>(() =>
 			WithToString(() => throw new Keysharp.Builtins.Flow.UserRequestedExitException()).TryCoerceString(out _));
 	}
 
@@ -95,8 +93,8 @@ public class StringConversionInternalsTests : TestRunner
 		value.SetBaseInternal(prototype);
 		using var scope = Keysharp.Runtime.Flow.EnterTry();
 		Assert.AreEqual("Object", Errors.Describe(value));
-		Assert.Throws<KeysharpException>(() => Errors.MissingPropertyErrorOccurred(value, "missing"));
-		Assert.Throws<KeysharpException>(() => Errors.MissingMethodErrorOccurred(value, "missing"));
+		_ = Assert.Throws<KeysharpException>(() => Errors.MissingPropertyErrorOccurred(value, "missing"));
+		_ = Assert.Throws<KeysharpException>(() => Errors.MissingMethodErrorOccurred(value, "missing"));
 		Assert.AreEqual(0, calls);
 	}
 
@@ -133,8 +131,8 @@ public class StringConversionInternalsTests : TestRunner
 		Assert.IsFalse(new ScriptErrorClrValue().TryCoerceDouble(out _));
 		Assert.AreEqual(0, calls);
 
-		Assert.Throws<Keysharp.Builtins.Flow.UserRequestedExitException>(() => new ExitingClrValue().TryCoerceLong(out _));
-		Assert.Throws<Keysharp.Builtins.Flow.UserRequestedExitException>(() => new ExitingClrValue().TryCoerceDouble(out _));
+		_ = Assert.Throws<Keysharp.Builtins.Flow.UserRequestedExitException>(() => new ExitingClrValue().TryCoerceLong(out _));
+		_ = Assert.Throws<Keysharp.Builtins.Flow.UserRequestedExitException>(() => new ExitingClrValue().TryCoerceDouble(out _));
 	}
 
 	private static string Lenient(object value, string def = "")

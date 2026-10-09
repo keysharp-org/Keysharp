@@ -1,5 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 public partial class MiscTests : TestRunner
@@ -49,10 +47,7 @@ public partial class MiscTests : TestRunner
 	public void InputHookOptions() => Assert.IsTrue(TestScript("misc-input-hook", true));
 
 	[Test, Category("Misc"), NonParallelizable]
-	public void MiscTimer()
-	{
-		Assert.IsTrue(TestScript("misc-timer", false));
-	}
+	public void MiscTimer() => Assert.IsTrue(TestScript("misc-timer", false));
 
 	[Test, Category("Misc"), NonParallelizable]
 	public void SimplePass() => Assert.IsTrue(TestScript("misc-pass", false));

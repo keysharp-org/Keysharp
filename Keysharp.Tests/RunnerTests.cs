@@ -1,5 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 public class RunnerTests : TestRunner
@@ -98,7 +96,7 @@ public class RunnerTests : TestRunner
 			Assert.AreEqual(1, Runner.Message("source routing", true, errorStdOut: true));
 			Assert.IsTrue(output.ToString().Contains("source routing", StringComparison.Ordinal));
 
-			output.GetStringBuilder().Clear();
+			_ = output.GetStringBuilder().Clear();
 			s.KeysharpArgs = ["--errorstdout"];
 			Assert.AreEqual(1, Runner.Message("command-line routing", true, errorStdOut: false));
 			Assert.IsTrue(output.ToString().Contains("command-line routing", StringComparison.Ordinal));

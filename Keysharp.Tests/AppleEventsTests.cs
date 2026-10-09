@@ -91,11 +91,9 @@ public class AppleEventsTests : TestRunner
 	}
 
 	[Test]
-	public void FourCharCodesPackBigEndian()
-	{
+	public void FourCharCodesPackBigEndian() =>
 		// 'long' is 0x6C6F6E67: the first character occupies the most significant byte.
 		Assert.That(AEFourCharCode.Pack("long"), Is.EqualTo(0x6C6F6E67u));
-	}
 
 	[Test]
 	public void FourCharCodesRejectWrongLength()

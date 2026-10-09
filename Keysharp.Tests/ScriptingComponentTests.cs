@@ -1,7 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using CollectionAssert = NUnit.Framework.CollectionAssert;
-using StringAssert = NUnit.Framework.StringAssert;
-
 namespace Keysharp.Tests;
 
 [TestFixture, Category("Internal"), Category("Curated")]
@@ -87,8 +83,8 @@ public class ScriptingComponentTests : TestRunner
 	public void SourceSelection()
 	{
 		var compiler = new CompilerComponent();
-		Assert.Throws<ArgumentException>(() => compiler.Compile(new ScriptCompileRequest()));
-		Assert.Throws<ArgumentException>(() => compiler.Compile(new ScriptCompileRequest
+		_ = Assert.Throws<ArgumentException>(() => compiler.Compile(new ScriptCompileRequest()));
+		_ = Assert.Throws<ArgumentException>(() => compiler.Compile(new ScriptCompileRequest
 		{
 			SourceText = "x := 1",
 			ScriptPath = "script.ks",
@@ -116,7 +112,7 @@ public class ScriptingComponentTests : TestRunner
 	public void ErrorStdOutIncludes()
 	{
 		var root = NewComponentRoot();
-		Directory.CreateDirectory(root);
+		_ = Directory.CreateDirectory(root);
 		var dependency = Path.Combine(root, "Routing.ahk");
 		var parser = new ParserComponent();
 
@@ -249,12 +245,12 @@ public class ScriptingComponentTests : TestRunner
 	public void ComponentPolicy()
 	{
 		var compiler = new CompilerComponent();
-		Assert.Throws<ArgumentException>(() => compiler.Compile(new ScriptCompileRequest
+		_ = Assert.Throws<ArgumentException>(() => compiler.Compile(new ScriptCompileRequest
 		{
 			SourceText = "x := 1",
 			AdditionalComponents = ["typo"],
 		}));
-		Assert.Throws<ArgumentException>(() => compiler.Compile(new ScriptCompileRequest
+		_ = Assert.Throws<ArgumentException>(() => compiler.Compile(new ScriptCompileRequest
 		{
 			SourceText = "x := 1",
 			AdditionalComponents = [ScriptingComponentIds.Compiler],
@@ -270,7 +266,7 @@ public class ScriptingComponentTests : TestRunner
 		try
 		{
 			var malformed = ComponentDirectory(root, "parser");
-			Directory.CreateDirectory(malformed);
+			_ = Directory.CreateDirectory(malformed);
 			File.WriteAllText(Path.Combine(malformed, "component.json"), "{not-json");
 			ScriptingComponentRegistry.SetSearchRootsForTests(root);
 			Assert.IsFalse(ScriptingComponentRegistry.IsAvailable(ScriptingCapability.SyntaxValidation));
@@ -278,7 +274,7 @@ public class ScriptingComponentTests : TestRunner
 			StringAssert.Contains("No installed 'parser' scripting component", failure);
 
 			Directory.Delete(malformed, true);
-			Directory.CreateDirectory(malformed);
+			_ = Directory.CreateDirectory(malformed);
 			File.WriteAllText(Path.Combine(malformed, "component.json"),
 				// Declares the parser's full capability set on purpose: anything else is rejected as an
 				// incomplete descriptor, and this fixture is meant to fail on its missing assembly instead.
@@ -336,7 +332,7 @@ public class ScriptingComponentTests : TestRunner
 		try
 		{
 			var broken = ComponentDirectory(brokenRoot, "parser");
-			Directory.CreateDirectory(broken);
+			_ = Directory.CreateDirectory(broken);
 			File.WriteAllText(Path.Combine(broken, "component.json"),
 				// Declares the parser's full capability set on purpose: anything else is rejected as an
 				// incomplete descriptor, and this fixture is meant to fail on its missing assembly instead.
@@ -500,7 +496,7 @@ public class ScriptingComponentTests : TestRunner
 			extractedRoot = CompiledScriptingComponentManifest.GetCacheDirectory(assembly, ScriptingCapability.Compilation);
 			extractedRootExisted = Directory.Exists(extractedRoot);
 			staleRoot = Path.Combine(Path.GetDirectoryName(extractedRoot), "stale-test-" + Guid.NewGuid().ToString("N"));
-			Directory.CreateDirectory(staleRoot);
+			_ = Directory.CreateDirectory(staleRoot);
 			Directory.SetLastWriteTimeUtc(staleRoot, DateTime.UtcNow.AddDays(-31));
 			ScriptingComponentRegistry.ResetForTests();
 			Assert.IsTrue(CompiledScriptingComponentManifest.TryPrepare(assembly, ScriptingCapability.Compilation, out var failure), failure);
@@ -577,7 +573,7 @@ public class ScriptingComponentTests : TestRunner
 	public void InspectorProcess(string host)
 	{
 		var root = Path.Combine(Path.GetTempPath(), "ks-inspector-" + Guid.NewGuid().ToString("N"));
-		Directory.CreateDirectory(root);
+		_ = Directory.CreateDirectory(root);
 
 		try
 		{
@@ -642,7 +638,7 @@ public class ScriptingComponentTests : TestRunner
 	public void EmbeddedCompilerProcess()
 	{
 		var root = Path.Combine(Path.GetTempPath(), "ks-component-minimal-" + Guid.NewGuid().ToString("N"));
-		Directory.CreateDirectory(root);
+		_ = Directory.CreateDirectory(root);
 
 		try
 		{
@@ -681,7 +677,7 @@ public class ScriptingComponentTests : TestRunner
 	{
 		var (target, hostRoot) = cksTarget.Value;
 		var root = Path.Combine(Path.GetTempPath(), "ks-component-runscript-cks-" + Guid.NewGuid().ToString("N"));
-		Directory.CreateDirectory(root);
+		_ = Directory.CreateDirectory(root);
 
 		try
 		{
@@ -710,7 +706,7 @@ public class ScriptingComponentTests : TestRunner
 	public void StdoutSidecar()
 	{
 		var root = Path.Combine(Path.GetTempPath(), "ks-component-stdout-" + Guid.NewGuid().ToString("N"));
-		Directory.CreateDirectory(root);
+		_ = Directory.CreateDirectory(root);
 
 		try
 		{
@@ -738,7 +734,7 @@ public class ScriptingComponentTests : TestRunner
 	private string BuildLeanExecutable()
 	{
 		var root = Path.Combine(sharedRoot, "lean");
-		Directory.CreateDirectory(root);
+		_ = Directory.CreateDirectory(root);
 		var script = Path.Combine(root, "lean.ks");
 		File.WriteAllText(script, leanBody);
 		var executable = BuildExecutable(script);
@@ -760,8 +756,8 @@ public class ScriptingComponentTests : TestRunner
 		var root = Path.Combine(sharedRoot, "cks");
 		var artifactRoot = Path.Combine(root, "artifact");
 		var hostRoot = Path.Combine(root, "host");
-		Directory.CreateDirectory(artifactRoot);
-		Directory.CreateDirectory(hostRoot);
+		_ = Directory.CreateDirectory(artifactRoot);
+		_ = Directory.CreateDirectory(hostRoot);
 
 		var targetSource = Path.Combine(root, "target.ks");
 		var target = Path.Combine(artifactRoot, "target.cks");
@@ -850,7 +846,7 @@ public class ScriptingComponentTests : TestRunner
 		foreach (var argument in arguments)
 			process.StartInfo.ArgumentList.Add(argument);
 
-		process.Start();
+		_ = process.Start();
 		var output = process.StandardOutput.ReadToEndAsync();
 		var error = process.StandardError.ReadToEndAsync();
 		if (!process.WaitForExit(240000))
@@ -871,10 +867,9 @@ public class ScriptingComponentTests : TestRunner
 
 	private static string PipeContent(Task<string> pipe) => pipe.IsCompletedSuccessfully ? pipe.Result.Trim() : "<still open>";
 
-	private static string SurvivingProcesses()
-	{
+	private static string SurvivingProcesses() =>
 #if WINDOWS
-		return "<not captured on Windows>";
+		"<not captured on Windows>";
 #else
 		try
 		{
@@ -893,7 +888,7 @@ public class ScriptingComponentTests : TestRunner
 			return $"<ps failed: {ex.Message}>";
 		}
 #endif
-	}
+
 
 	private static string NewComponentRoot() => Path.Combine(Path.GetTempPath(), "ks-components-" + Guid.NewGuid().ToString("N"));
 
@@ -905,11 +900,11 @@ public class ScriptingComponentTests : TestRunner
 		var source = Path.Combine(AppContext.BaseDirectory, "components", "scripting", name);
 		Assert.IsTrue(Directory.Exists(source), $"canonical {name} payload is missing at {source}");
 		var destination = ComponentDirectory(root, name);
-		Directory.CreateDirectory(destination);
+		_ = Directory.CreateDirectory(destination);
 		foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
 		{
 			var copy = Path.Combine(destination, Path.GetRelativePath(source, file));
-			Directory.CreateDirectory(Path.GetDirectoryName(copy));
+			_ = Directory.CreateDirectory(Path.GetDirectoryName(copy));
 			File.Copy(file, copy, true);
 		}
 	}

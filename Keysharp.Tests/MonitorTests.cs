@@ -1,8 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using DisplayInfo = Keysharp.Internals.DisplayInfo;
-using MonitorEventManager = Keysharp.Internals.Window.MonitorEventManager;
-using ScreenRect = Keysharp.Internals.ScreenRect;
-
 namespace Keysharp.Tests;
 
 public partial class MonitorTests : TestRunner

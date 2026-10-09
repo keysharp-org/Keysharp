@@ -1,5 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 public partial class ScreenTests
@@ -311,7 +309,7 @@ public partial class ScreenTests
 			var active = Interlocked.Increment(ref activeCalls);
 			InterlockedExtensions.Max(ref maxConcurrentCalls, active);
 			FirstShowEntered.Set();
-			ReleaseShows.Wait(TimeSpan.FromSeconds(2));
+			_ = ReleaseShows.Wait(TimeSpan.FromSeconds(2));
 			_ = Interlocked.Decrement(ref activeCalls);
 			return ShowResult;
 		}

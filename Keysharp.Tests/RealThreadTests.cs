@@ -1,5 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 [TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
@@ -104,10 +102,9 @@ public class RealThreadTests : TestRunner
 		}
 	}
 
-	private static Message CreateMessage(int msgId)
-	{
+	private static Message CreateMessage(int msgId) =>
 #if WINDOWS
-		return Message.Create(IntPtr.Zero, msgId, IntPtr.Zero, IntPtr.Zero);
+		Message.Create(IntPtr.Zero, msgId, IntPtr.Zero, IntPtr.Zero);
 #else
 		return new Message
 		{
@@ -118,7 +115,7 @@ public class RealThreadTests : TestRunner
 			Result = 0
 		};
 #endif
-	}
+
 
 	private static Error AssertScriptError(Action action) => Assert.Throws<KeysharpException>(action).UserError;
 
@@ -226,7 +223,7 @@ public class RealThreadTests : TestRunner
 					})));
 
 						form.closedHandlers ??= new();
-					form.closedHandlers.ModifyEventHandlers(new KeysharpFunc((Func<object, object>)(_ => probe.Record("gui"))), 1);
+					_ = form.closedHandlers.ModifyEventHandlers(new KeysharpFunc((Func<object, object>)(_ => probe.Record("gui"))), 1);
 
 					registrations.Overlay = new Ks.KeysharpOverlay();
 					_ = registrations.Overlay.__New(0L, 0L, 10L, 10L);
@@ -331,7 +328,7 @@ public class RealThreadTests : TestRunner
 
 			var result = worker.Send(new KeysharpFunc((Func<object>)(() =>
 			{
-				s.UIEventScheduler.EnqueueCallback(() => uiRan.Set(), ScriptEventQueue.Normal, false);
+				_ = s.UIEventScheduler.EnqueueCallback(() => uiRan.Set(), ScriptEventQueue.Normal, false);
 				Assert.IsTrue(uiRan.Wait(1000), "Worker never observed the callback queued back to the main scheduler.");
 				return "ok";
 			})));
@@ -402,15 +399,16 @@ public class RealThreadTests : TestRunner
 			});
 
 			Assert.IsTrue(WaitWithUiPump(() => ready.IsSet), "Worker did not become ready.");
-			Assert.Throws<Keysharp.Builtins.Flow.UserRequestedExitException>(() =>
+			_ = Assert.Throws<Keysharp.Builtins.Flow.UserRequestedExitException>(() =>
 				s.EventScheduler.TryExecuteThreadLaunch(0, false, false, tv =>
 				{
 					targetThread = s.Threads.CurrentThreadObject;
 					_ = worker.Send(new KeysharpFunc((Func<object>)(() =>
 					{
-						s.UIEventScheduler.EnqueueCallback(() =>
+						_ = s.UIEventScheduler.EnqueueCallback(() =>
 						{
-							try { _ = targetThread.Exit(8); }
+							try
+							{ _ = targetThread.Exit(8); }
 							finally { exitRequested.Set(); }
 						}, ScriptEventQueue.Normal, false);
 						Assert.IsTrue(exitRequested.Wait(1000), "Main scheduler did not process the exit request.");

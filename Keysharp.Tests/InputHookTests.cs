@@ -1,7 +1,3 @@
-using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using Keyboard = Keysharp.Builtins.Keyboard;
-
 namespace Keysharp.Tests;
 
 [TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
@@ -46,7 +42,7 @@ public class InputHookTests : TestRunner
 		})
 		{
 			var io = (InputHook)new InputHook("V");
-			io.KeyOpt(keys, "S");
+			_ = io.KeyOpt(keys, "S");
 
 			foreach (var key in expected)
 			{
@@ -57,7 +53,7 @@ public class InputHookTests : TestRunner
 		}
 
 		var named = (InputHook)new InputHook("V");
-		named.KeyOpt("{Delete}{Home}{End}", "S");
+		_ = named.KeyOpt("{Delete}{Home}{End}", "S");
 
 		foreach (var key in new[] { "Delete", "Home", "End" })
 		{
@@ -82,7 +78,7 @@ public class InputHookTests : TestRunner
 		})
 		{
 			var io = (InputHook)new InputHook("V");
-			io.KeyOpt(keys, "S");
+			_ = io.KeyOpt(keys, "S");
 			var keyboardFlags = keyboard ? HookThread.INPUT_KEY_SUPPRESS : 0u;
 			var mouseFlags = mouse ? HookThread.INPUT_KEY_SUPPRESS : 0u;
 			Assert.AreEqual(keyboardFlags, io.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_SUPPRESS, keys);
@@ -95,16 +91,16 @@ public class InputHookTests : TestRunner
 		}
 
 		var mixed = (InputHook)new InputHook("V");
-		mixed.KeyOpt("a{Mouse}", "S");
+		_ = mixed.KeyOpt("a{Mouse}", "S");
 		Assert.AreEqual(HookThread.INPUT_KEY_SUPPRESS, mixed.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_SUPPRESS);
 		Assert.AreEqual(HookThread.INPUT_KEY_SUPPRESS, mixed.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_SUPPRESS);
-		mixed.KeyOpt("{All}", "Z");
+		_ = mixed.KeyOpt("{All}", "Z");
 		Assert.AreEqual(0u, mixed.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_SUPPRESS);
 		Assert.AreEqual(HookThread.INPUT_KEY_SUPPRESS, mixed.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_SUPPRESS);
-		mixed.KeyOpt("{Mouse}", "E+V");
+		_ = mixed.KeyOpt("{Mouse}", "E+V");
 		Assert.AreEqual(HookThread.END_KEY_ENABLED, mixed.input.keyVK[VK_LBUTTON] & HookThread.END_KEY_ENABLED);
 		Assert.AreEqual(HookThread.INPUT_KEY_VISIBLE, mixed.input.keyVK[VK_WHEEL_UP] & HookThread.INPUT_KEY_VISIBILITY_MASK);
-		mixed.KeyOpt("{Mouse}", "Z");
+		_ = mixed.KeyOpt("{Mouse}", "Z");
 		Assert.AreEqual(0u, mixed.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_OPTION_MASK);
 
 		foreach (var option in new[] { "I", "-N" })
@@ -126,7 +122,7 @@ public class InputHookTests : TestRunner
 			io.VisibleNonText = false;
 
 			if (option.Length != 0)
-				io.KeyOpt("{Mouse}", option);
+				_ = io.KeyOpt("{Mouse}", option);
 
 			var previous = s.input;
 			io.input.Start();
@@ -163,7 +159,7 @@ public class InputHookTests : TestRunner
 			Assert.AreEqual(expected, endKeys.input.endChars, $"{keys}: end characters");
 
 			var io = (InputHook)new InputHook("V");
-			io.KeyOpt(keys, "S");
+			_ = io.KeyOpt(keys, "S");
 
 			foreach (var key in expected)
 			{
@@ -195,7 +191,7 @@ public class InputHookTests : TestRunner
 
 		var io2 = (InputHook)new InputHook("");
 		Assert.IsFalse(io2.input.MouseIsNeeded);
-		io2.KeyOpt("{LButton}", "+E");              // LButton as an end key also needs the mouse hook
+		_ = io2.KeyOpt("{LButton}", "+E");              // LButton as an end key also needs the mouse hook
 		Assert.IsTrue(io2.input.MouseIsNeeded);
 	}
 

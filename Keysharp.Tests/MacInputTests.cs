@@ -1,8 +1,4 @@
 #if OSX
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using static Keysharp.Internals.Input.Keyboard.KeyboardMouseSender;
-using static Keysharp.Internals.Input.Keyboard.KeyboardUtils;
-using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
 
 namespace Keysharp.Tests;
 

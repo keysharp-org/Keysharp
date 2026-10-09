@@ -1,5 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 /// <summary>
@@ -664,7 +662,7 @@ public partial class AudioInternalsTests
 		public bool IsDeviceLost => DeviceLost?.Invoke() ?? false;
 		public void Start() => Interlocked.Increment(ref Starts);
 		public void Stop() { if (StopError != null) throw StopError; }
-		public void Dispose() { Interlocked.Increment(ref Disposals); OnDispose?.Invoke(); }
+		public void Dispose() { _ = Interlocked.Increment(ref Disposals); OnDispose?.Invoke(); }
 	}
 
 	[TestCase(false), TestCase(true)]
@@ -888,7 +886,7 @@ public partial class AudioInternalsTests
 		Assert.IsNotNull(core, error);
 		Assert.IsTrue(SpinWait.SpinUntil(() => Volatile.Read(ref backend.Opened.StopCount) > 0, 6000), "idle output stops its native stream");
 		var starts = backend.Opened.StartCount;
-		PlayTemporaryClip(core, false);
+		_ = PlayTemporaryClip(core, false);
 		Assert.AreEqual(starts + 1, backend.Opened.StartCount);
 		Assert.IsFalse(core.Mixer.IsIdle, "queued commands prevent suspension before admission");
 		core.Mixer.Fill(new float[1024]);
@@ -899,7 +897,7 @@ public partial class AudioInternalsTests
 	private static WeakReference StartTemporaryMeter(AudioService service)
 	{
 		var meter = new Ks.Audio.Meter((object[])null) { service = service, targetId = "test:Output" };
-		meter.Start();
+		_ = meter.Start();
 		return new WeakReference(meter);
 	}
 
@@ -955,7 +953,7 @@ public partial class AudioInternalsTests
 			{
 				if (Volatile.Read(ref stopping) != 0) return;
 				mixer.Fill(new float[1]);
-				rendered.Set();
+				_ = rendered.Set();
 			}
 		}) { IsBackground = true };
 		worker.Start();
@@ -968,7 +966,7 @@ public partial class AudioInternalsTests
 				var voice = Voice(8, 1);
 				Assert.IsTrue(voice.SetLoop(true));
 				Assert.IsTrue(mixer.TrySubmit(voice, 0));
-				requested.Set();
+				_ = requested.Set();
 				Assert.IsTrue(SpinWait.SpinUntil(() =>
 				{
 					Assert.IsFalse(mixer.IsIdle, "a command transferring into a voice must keep the output awake");
@@ -980,7 +978,7 @@ public partial class AudioInternalsTests
 		finally
 		{
 			Volatile.Write(ref stopping, 1);
-			requested.Set();
+			_ = requested.Set();
 			Assert.IsTrue(worker.Join(5000), "the renderer stopped");
 		}
 	}

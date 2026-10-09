@@ -1,5 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 public partial class ProcessTests : TestRunner
@@ -59,8 +57,5 @@ public partial class ProcessTests : TestRunner
 	public void ProcessGetParent() => Assert.IsTrue(TestScript("process-get-parent", false));
 
 	[Test, Category("Process")]
-	public void ProcessRunScript()
-	{
-		Assert.IsTrue(TestScript("process-runscript", false));
-	}
+	public void ProcessRunScript() => Assert.IsTrue(TestScript("process-runscript", false));
 }

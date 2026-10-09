@@ -1,5 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 [TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
@@ -76,7 +74,7 @@ public class InputSchedulerTests : TestRunner
 		hs.priority = 0;
 
 		_ = hs.PerformInNewThreadMadeByCaller(0, CaseConformModes.None, ' ', 0, false);
-		s.EventScheduler.EnqueueCallback(() => normalCalls++, ScriptEventQueue.Normal, false);
+		_ = s.EventScheduler.EnqueueCallback(() => normalCalls++, ScriptEventQueue.Normal, false);
 
 		context.DrainAll();
 
@@ -89,7 +87,7 @@ public class InputSchedulerTests : TestRunner
 	{
 		_ = UseQueuedMainContext();
 		var calls = 0;
-		s.EventScheduler.EnqueueCallback(() => calls++, ScriptEventQueue.Normal, false);
+		_ = s.EventScheduler.EnqueueCallback(() => calls++, ScriptEventQueue.Normal, false);
 		Keysharp.Internals.Flow.SleepWithoutInterruption();
 		Assert.AreEqual(1, calls, "an uninterruptible wait with no interval must still pump once");
 	}
@@ -105,7 +103,7 @@ public class InputSchedulerTests : TestRunner
 		var variant = CreateHotkeyVariant(() => hotkeyCalls++, existingThreads: 1, maxThreadsBuffer: true);
 
 		hk.PerformInNewThreadMadeByCallerAsync(variant, 0, 0);
-		s.EventScheduler.EnqueueCallback(() => normalCalls++, ScriptEventQueue.Normal, false);
+		_ = s.EventScheduler.EnqueueCallback(() => normalCalls++, ScriptEventQueue.Normal, false);
 
 		context.DrainAll();
 
@@ -161,10 +159,10 @@ public class InputSchedulerTests : TestRunner
 			priority = 0
 		};
 
-		s.EventScheduler.EnqueueCallback(() => order.Add("normal-1"), ScriptEventQueue.Normal, false);
+		_ = s.EventScheduler.EnqueueCallback(() => order.Add("normal-1"), ScriptEventQueue.Normal, false);
 		hk.PerformInNewThreadMadeByCallerAsync(variant, 0, 0);
 		_ = hs.PerformInNewThreadMadeByCaller(0, CaseConformModes.None, ' ', 0, false);
-		s.EventScheduler.EnqueueCallback(() => order.Add("normal-2"), ScriptEventQueue.Normal, false);
+		_ = s.EventScheduler.EnqueueCallback(() => order.Add("normal-2"), ScriptEventQueue.Normal, false);
 
 		context.DrainAll();
 

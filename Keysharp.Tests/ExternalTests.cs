@@ -1,7 +1,3 @@
-using static Keysharp.Builtins.External;
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using ComTypes = System.Runtime.InteropServices.ComTypes;
-
 namespace Keysharp.Tests;
 
 public partial class ExternalTests : TestRunner
@@ -103,7 +99,7 @@ public partial class ExternalTests : TestRunner
 		}
 		finally { _ = OleAuto.SafeArrayUnlock(pointer); }
 		using var caught = Keysharp.Runtime.Flow.EnterTry();
-		Assert.Throws<KeysharpException>(() => outer.GetElementAtIndices([1]));
+		_ = Assert.Throws<KeysharpException>(() => outer.GetElementAtIndices([1]));
 		outer.Dispose();
 		Assert.IsNull(outer.Ptr);
 	}

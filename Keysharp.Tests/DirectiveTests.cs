@@ -1,5 +1,3 @@
-﻿using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 public class DirectiveTests : TestRunner
@@ -452,7 +450,7 @@ public class DirectiveTests : TestRunner
 		Assert.IsNotNull(program);
 		InvokeCompiledScript(() => {
 			_ = program.GetField("MainScript", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
-			program.GetMethod("AutoExecSection").Invoke(null, null);
+			_ = program.GetMethod("AutoExecSection").Invoke(null, null);
 		});
 		var hotkeys = Script.TheScript.HotkeyData.shk;
 		Assert.AreEqual(4, hotkeys.Length);
@@ -1239,7 +1237,7 @@ public class DirectiveTests : TestRunner
 			{
 				RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true
 			});
-			proc.WaitForExit(120000);
+			_ = proc.WaitForExit(120000);
 			Assert.AreEqual(0, proc.ExitCode, proc.StandardError.ReadToEnd());
 			Assert.IsTrue(File.Exists(Path.Combine(dir, "t.cs")), "the lowered tree's .cs must be written");
 			var inline = Path.Combine(dir, "t.inline.cs");

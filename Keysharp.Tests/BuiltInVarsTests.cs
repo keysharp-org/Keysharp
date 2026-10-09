@@ -1,5 +1,3 @@
-﻿using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 public class BuiltInVarsTests : TestRunner
@@ -11,10 +9,7 @@ public class BuiltInVarsTests : TestRunner
 	public void PropsScriptProperties() => Assert.IsTrue(TestScript("props-script-properties", false));
 
 	[Test, Category("BuiltInVars"), NonParallelizable]
-	public void PropsLineFile()
-	{
-		Assert.IsTrue(TestScript("props-linefile", false));
-	}
+	public void PropsLineFile() => Assert.IsTrue(TestScript("props-linefile", false));
 
 	[Test, Category("BuiltInVars"), NonParallelizable]
 	public void PropsScriptName()
@@ -36,10 +31,7 @@ public class BuiltInVarsTests : TestRunner
 	}
 
 	[Test, Category("BuiltInVars"), NonParallelizable]
-	public void PropsScriptSettings()
-	{
-		Assert.IsTrue(TestScript("props-script-settings", false));
-	}
+	public void PropsScriptSettings() => Assert.IsTrue(TestScript("props-script-settings", false));
 
 	[Test, Category("BuiltInVars"), NonParallelizable]
 	public void PropsTrayMenuWithoutIcon()

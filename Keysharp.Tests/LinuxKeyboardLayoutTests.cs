@@ -1,9 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
-#if LINUX
-using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
-#endif
-
 namespace Keysharp.Tests;
 
 [TestFixture, Category("Internal"), Category("Curated")]

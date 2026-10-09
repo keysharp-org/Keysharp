@@ -67,7 +67,6 @@ global using global::Keysharp.Runtime;
 	global using global::Keysharp.Internals.Os.Windows;
 	global using global::Keysharp.Internals.Window.Windows;
 	global using global::Keysharp.Main;
-	global using MessageFilter = Keysharp.Internals.Window.Windows.MessageFilter;
 #else
 	global using global::Keysharp.Internals.Input.Hooks.Unix;
 	global using global::Keysharp.Internals.Input.Unix;
@@ -77,17 +76,16 @@ global using global::Keysharp.Runtime;
 #if OSX
 	global using global::Keysharp.Internals.Input.MacOS;
 	global using global::Keysharp.Internals.Window.MacOS;
-	global using AppKit = MonoMac.AppKit;
 #elif LINUX
+	global using global::Keysharp.Internals.DBus;
 	global using global::Keysharp.Internals.Input.Hooks.Linux;
 	global using global::Keysharp.Internals.Input.Linux;
 	global using global::Keysharp.Internals.Linux;
 	global using global::Keysharp.Internals.Window.Linux.Wayland;
 	global using global::Keysharp.Internals.Window.Linux.X11;
-	global using global::Keysharp.Internals.DBus;
 #endif
 
-//Third party.
+//Third party
 global using global::Microsoft.CodeAnalysis;
 global using global::Microsoft.CodeAnalysis.CSharp.Syntax;
 global using global::NUnit.Framework;
@@ -98,8 +96,32 @@ global using global::NUnit.Framework;
 
 //Static
 global using static global::Keysharp.Builtins.Accessors;
+global using static global::Keysharp.Builtins.External;
 global using static global::Keysharp.Builtins.Ks;
+global using static global::Keysharp.Builtins.Network;
+global using static global::Keysharp.Internals.Input.Keyboard.KeyboardMouseSender;
+global using static global::Keysharp.Internals.Input.Keyboard.KeyboardUtils;
+global using static global::Keysharp.Internals.Input.Keyboard.VirtualKeys;
 global using static global::Keysharp.Language.Keywords;
 
 //Aliases
+//Ours
+global using Array = Keysharp.Builtins.Array;
+global using DisplayInfo = Keysharp.Internals.DisplayInfo;
+global using ComTypes = System.Runtime.InteropServices.ComTypes;
+global using Keyboard = Keysharp.Builtins.Keyboard;
+global using MonitorEventManager = Keysharp.Internals.Window.MonitorEventManager;
 global using Platform = Keysharp.Internals.Platform;
+global using ScreenRect = Keysharp.Internals.ScreenRect;
+
+#if WINDOWS
+	global using MessageFilter = Keysharp.Internals.Window.Windows.MessageFilter;
+#endif
+
+//Third party
+#if LINUX
+	global using DBusMessage = Tmds.DBus.Protocol.Message;
+	global using FormWindowState = Eto.Forms.WindowState;
+#elif OSX
+	global using AppKit = MonoMac.AppKit;
+#endif

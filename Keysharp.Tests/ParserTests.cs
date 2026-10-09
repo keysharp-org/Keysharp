@@ -1,7 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using StringAssert = NUnit.Framework.StringAssert;
-using CollectionAssert = NUnit.Framework.CollectionAssert;
-
 namespace Keysharp.Tests;
 
 public class ParserTests : TestRunner

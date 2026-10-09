@@ -1,6 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using StringAssert = NUnit.Framework.StringAssert;
-
 namespace Keysharp.Tests;
 
 public partial class FlowTests : TestRunner

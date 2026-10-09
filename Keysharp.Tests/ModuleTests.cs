@@ -1,6 +1,3 @@
-using static Keysharp.Builtins.External;
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 public partial class ModuleTests : TestRunner
@@ -115,7 +112,7 @@ public partial class ModuleTests : TestRunner
 			foreach (var (name, source) in files)
 			{
 				var file = Path.Combine(root, name);
-				Directory.CreateDirectory(Path.GetDirectoryName(file));
+				_ = Directory.CreateDirectory(Path.GetDirectoryName(file));
 				File.WriteAllText(file, source);
 			}
 			var output = RunScript(Path.Combine(root, "main.ahk"), "module_file_identity", true, false);

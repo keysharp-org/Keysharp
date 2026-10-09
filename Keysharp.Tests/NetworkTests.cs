@@ -1,6 +1,3 @@
-using static Keysharp.Builtins.Network;
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 public partial class NetworkTests : TestRunner

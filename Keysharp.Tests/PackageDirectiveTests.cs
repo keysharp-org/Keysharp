@@ -1,6 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using StringAssert = NUnit.Framework.StringAssert;
-using CollectionAssert = NUnit.Framework.CollectionAssert;
 using KP = Keysharp.Parsing.Syntax;
 using KC = Keysharp.Compilation.Syntax;
 
@@ -333,7 +330,7 @@ public class PackageDirectiveTests : TestRunner
 		Assert.IsTrue(Keysharp.Internals.Os.PackageProviderRegistry.TryGet("nuget", out var provider, out var failure), failure);
 		var root = Path.Combine(Path.GetTempPath(), "keysharp-provider-cache-" + Guid.NewGuid().ToString("N"));
 		var cache = Path.Combine(root, "cache");
-		Directory.CreateDirectory(root);
+		_ = Directory.CreateDirectory(root);
 		var config = Path.Combine(root, "NuGet.Config");
 		File.WriteAllText(config, "<configuration><packageSources><add key=\"nuget.org\" value=\"https://api.nuget.org/v3/index.json\" /></packageSources></configuration>");
 
@@ -376,7 +373,7 @@ public class PackageDirectiveTests : TestRunner
 		Assert.IsTrue(Keysharp.Internals.Os.PackageProviderRegistry.TryGet("nuget", out var provider, out var failure), failure);
 		var root = Path.Combine(Path.GetTempPath(), "keysharp-provider-lock-" + Guid.NewGuid().ToString("N"));
 		var cache = Path.Combine(root, "cache");
-		Directory.CreateDirectory(cache);
+		_ = Directory.CreateDirectory(cache);
 
 		try
 		{
@@ -387,7 +384,7 @@ public class PackageDirectiveTests : TestRunner
 				Keysharp.Internals.Os.PackageResolver.TargetFramework, Keysharp.Internals.Os.PackageResolver.RuntimeId,
 				true, TimeSpan.FromMinutes(3), "lock test");
 
-			await Assert.CatchAsync<OperationCanceledException>(async () => await provider.ResolveAsync(context,
+			_ = await Assert.CatchAsync<OperationCanceledException>(async () => await provider.ResolveAsync(context,
 				[new Keysharp.Components.Packages.PackageRequest("Newtonsoft.Json", "[13.0.3]")], timeout.Token));
 		}
 		finally

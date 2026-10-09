@@ -1,8 +1,3 @@
-using static Keysharp.Internals.Input.Keyboard.KeyboardUtils;
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using CollectionAssert = NUnit.Framework.CollectionAssert;
-using Keyboard = Keysharp.Builtins.Keyboard;
-
 namespace Keysharp.Tests;
 
 /// <summary>
@@ -625,11 +620,11 @@ public partial class HotstringTests : TestRunner
 				escaped = i == 0 && ch == '`';
 
 				if (!escaped)
-					sb.Append(ch);
+					_ = sb.Append(ch);
 			}
 
 			if (escaped)
-				sb.Append(ch);
+				_ = sb.Append(ch);
 
 			return sb.ToString();
 		}

@@ -1,5 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 /// <summary>The Ks.Json class, exercised through real dynamic dispatch by json-class.ahk.</summary>

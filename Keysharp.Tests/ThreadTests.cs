@@ -1,5 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 [TestFixture, NonParallelizable, Category("Internal"), Category("Curated")]
@@ -76,7 +74,7 @@ public class ThreadTests : TestRunner
 		var calls = 0;
 		s.Threads.CurrentThread.priority = 1;
 
-		s.EventScheduler.EnqueueThreadLaunch(0, false, false, () => calls++, false);
+		_ = s.EventScheduler.EnqueueThreadLaunch(0, false, false, () => calls++, false);
 		context.DrainAll();
 
 		Assert.AreEqual(0, calls);

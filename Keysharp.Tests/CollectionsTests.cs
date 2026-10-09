@@ -1,5 +1,3 @@
-using Assert = NUnit.Framework.Legacy.ClassicAssert;
-
 namespace Keysharp.Tests;
 
 public class CollectionsTests : TestRunner
@@ -11,17 +9,11 @@ public class CollectionsTests : TestRunner
 	public void Map() => Assert.IsTrue(TestScript("collections-map", true));
 
 	[Test, Category("Collections")]
-	public void HashMap()
-	{
-		Assert.IsTrue(TestScript("collections-hashmap", false));
-	}
+	public void HashMap() => Assert.IsTrue(TestScript("collections-hashmap", false));
 
 	[Test, Category("Collections")]
 	public void Buffer() => Assert.IsTrue(TestScript("collections-buffer", true));
 
 	[Test, Category("Collections")]
-	public void Object()
-	{
-		Assert.IsTrue(TestScript("collections-object", false));
-	}
+	public void Object() => Assert.IsTrue(TestScript("collections-object", false));
 }
