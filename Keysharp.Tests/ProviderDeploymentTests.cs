@@ -21,17 +21,20 @@ public class ProviderDeploymentTests : TestRunner
 			Assert.IsTrue(Keysharp.Internals.Os.CompiledPackageProviderManifest.TryBuild(["fake"], out var manifest, out var buildError), buildError);
 			Assert.IsNull(manifest.CopyTo(destination));
 			var deployedRoot = Path.Combine(destination, "components", "packages", "fake");
-			Assert.AreEqual("provider-binary", File.ReadAllText(Path.Combine(deployedRoot, "fake.dll")));
-			Assert.AreEqual("nested-payload", File.ReadAllText(Path.Combine(deployedRoot, "data", "payload.bin")));
-			Assert.AreEqual(File.ReadAllText(Path.Combine(providerRoot, "provider.json")),
-				File.ReadAllText(Path.Combine(deployedRoot, "provider.json")));
-			Assert.IsFalse(Directory.Exists(Path.Combine(destination, "providers")),
+			Assert.That(File.ReadAllText(Path.Combine(deployedRoot, "fake.dll")), Is.EqualTo("provider-binary"));
+			Assert.That(File.ReadAllText(Path.Combine(deployedRoot, "data", "payload.bin")), Is.EqualTo("nested-payload"));
+			Assert.That(File.ReadAllText(Path.Combine(deployedRoot, "provider.json")),
+				Is.EqualTo(File.ReadAllText(Path.Combine(providerRoot, "provider.json"))));
+			Assert.That(Directory.Exists(Path.Combine(destination, "providers")),
+				Is.False,
 				"component deployment must not recreate the legacy providers subtree");
 
 			var declarativeOnly = Path.Combine(destination, "declarative-only");
-			Assert.IsFalse(Directory.Exists(Path.Combine(declarativeOnly, "components", "packages")),
+			Assert.That(Directory.Exists(Path.Combine(declarativeOnly, "components", "packages")),
+				Is.False,
 				"a compilation without imperative provider metadata must not deploy a provider");
-			Assert.IsFalse(Directory.Exists(Path.Combine(declarativeOnly, "providers")),
+			Assert.That(Directory.Exists(Path.Combine(declarativeOnly, "providers")),
+				Is.False,
 				"a compilation without imperative provider metadata must not deploy a legacy provider subtree");
 		}
 		finally
@@ -55,19 +58,20 @@ public class ProviderDeploymentTests : TestRunner
 		{
 			Keysharp.Internals.Os.PackageProviderRegistry.AddSearchRoot(root);
 			var (bytes, error, compilation) = new CompilerHelper().CompileCodeToByteArray(script, "providerembed", minimalexeout: true);
-			Assert.IsNotNull(bytes, error);
-			CollectionAssert.Contains(compilation.RequiredProviders, "fake");
+			Assert.That(bytes, Is.Not.Null, error);
+			Assert.That(compilation.RequiredProviders, Has.Member("fake"));
 
 			var assembly = Assembly.Load(bytes);
 			var manifest = Keysharp.Internals.Os.CompiledPackageProviderManifest.FromAssembly(assembly);
-			Assert.IsNotNull(manifest, "a minimal artifact with Clr.LoadPackage must carry its provider manifest");
-			Assert.AreEqual(3, manifest.Assets.Count(), "descriptor, provider assembly, and nested payload must all be embedded");
+			Assert.That(manifest, Is.Not.Null, "a minimal artifact with Clr.LoadPackage must carry its provider manifest");
+			Assert.That(manifest.Assets.Count(), Is.EqualTo(3), "descriptor, provider assembly, and nested payload must all be embedded");
 			Assert.IsTrue(manifest.Assets.All(asset =>
 				assembly.GetManifestResourceNames().Contains(Keysharp.Internals.Os.CompiledPackageProviderManifest.AssetResourceName(asset))));
 
 			using (var stream = assembly.GetManifestResourceStream(Keysharp.Internals.Os.CompiledPackageProviderManifest.ResourceName))
 			using (var reader = new StreamReader(stream))
-				Assert.IsFalse(reader.ReadToEnd().Contains(root, StringComparison.OrdinalIgnoreCase),
+				Assert.That(reader.ReadToEnd().Contains(root, StringComparison.OrdinalIgnoreCase),
+					Is.False,
 					"the build machine's provider path must not be serialized into the artifact");
 
 			Keysharp.Internals.Os.PackageProviderRegistry.ResetForTests();
@@ -77,7 +81,8 @@ public class ProviderDeploymentTests : TestRunner
 			var expectedProviderRoot = Path.Combine(extractedRoot, "components", "packages", "fake");
 			Assert.IsTrue(payload.Root.Equals(expectedProviderRoot, StringComparison.OrdinalIgnoreCase),
 				"embedded providers must retain the components/packages/<name> hierarchy in the per-user component cache");
-			Assert.IsFalse(Directory.Exists(Path.Combine(extractedRoot, "providers")),
+			Assert.That(Directory.Exists(Path.Combine(extractedRoot, "providers")),
+				Is.False,
 				"embedded extraction must not recreate the legacy providers subtree");
 
 			var nested = Path.Combine(payload.Root, "data", "payload.bin");
@@ -85,7 +90,7 @@ public class ProviderDeploymentTests : TestRunner
 			File.WriteAllText(nested, "tampered");
 			File.WriteAllText(descriptor, "tampered");
 			Assert.IsTrue(Keysharp.Internals.Os.CompiledPackageProviderManifest.TryPrepare(assembly, "fake", out failure), failure);
-			Assert.AreEqual("nested-payload", File.ReadAllText(nested), "an existing cache file must be hash-checked and repaired");
+			Assert.That(File.ReadAllText(nested), Is.EqualTo("nested-payload"), "an existing cache file must be hash-checked and repaired");
 			Assert.IsTrue(File.ReadAllText(descriptor).Contains("\"name\":\"fake\""),
 				"provider.json is part of the authenticated payload, not trusted as ambient cache state");
 		}
@@ -102,17 +107,19 @@ public class ProviderDeploymentTests : TestRunner
 	{
 		Assert.IsTrue(Keysharp.Internals.Os.PackageProviderRegistry.TryGetPayload("nuget", out var payload),
 			"the test host must ship the NuGet provider under components/packages/nuget");
-		Assert.AreEqual(16, payload.Files.Count,
+		Assert.That(payload.Files.Count, Is.EqualTo(16),
 			"provider.json plus its explicit 15-file payload should be the complete provider directory");
 		Assert.IsTrue(payload.Files.Any(path => Path.GetFileName(path).Equals("NuGet.Commands.dll", StringComparison.OrdinalIgnoreCase)));
 		Assert.IsTrue(payload.Files.Any(path => Path.GetFileName(path).Equals("NuGet.Credentials.dll", StringComparison.OrdinalIgnoreCase)));
 		Assert.IsTrue(payload.Files.Any(path => Path.GetFileName(path).Equals("Keysharp.Components.Packages.NuGet.deps.json", StringComparison.OrdinalIgnoreCase)));
 
 		var forbidden = new[] { "Keysharp.Core", "Microsoft.CodeAnalysis", "PCRE", "BitFaster", "Semver", "System.Management" };
-		Assert.IsFalse(payload.Files.Any(path => forbidden.Any(name =>
+		Assert.That(payload.Files.Any(path => forbidden.Any(name =>
 			Path.GetFileName(path).Contains(name, StringComparison.OrdinalIgnoreCase))),
+			Is.False,
 			"the provider payload must not absorb Core's runtime/compiler dependency graph");
-		Assert.IsFalse(Directory.GetFiles(AppContext.BaseDirectory, "NuGet*.dll", SearchOption.TopDirectoryOnly).Any(),
+		Assert.That(Directory.GetFiles(AppContext.BaseDirectory, "NuGet*.dll", SearchOption.TopDirectoryOnly).Any(),
+			Is.False,
 			"NuGet implementation DLLs must remain under components/packages/nuget rather than entering the host root");
 	}
 
@@ -167,8 +174,8 @@ public class ProviderDeploymentTests : TestRunner
 				+ "FileAppend \"pass\", \"*\"\n#Module Typed\n#CSharp\n"
 				+ "[UserDeclaredName(Fake.Names.Field)] public static long RawField = 1;\n"
 				+ "public static long ReadRaw() => RawField;\n#EndCSharp\n");
-			Assert.AreEqual("pass", RunScript(script, "package_names", true, false).Trim());
-			Assert.AreEqual(1, Keysharp.Internals.Os.PackageResolver.ResolveCount,
+			Assert.That(RunScript(script, "package_names", true, false).Trim(), Is.EqualTo("pass"));
+			Assert.That(Keysharp.Internals.Os.PackageResolver.ResolveCount, Is.EqualTo(1),
 				"declaration binding and final compilation must share the one resolved package manifest");
 		}
 		finally

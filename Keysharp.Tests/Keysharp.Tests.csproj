@@ -45,7 +45,7 @@
 		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Windows'))">DEBUG;LEGACY;WINDOWS</DefineConstants>
 		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('Linux'))">DEBUG;LEGACY;LINUX</DefineConstants>
 		<DefineConstants Condition="$([MSBuild]::IsOSPlatform('OSX'))">DEBUG;LEGACY;OSX</DefineConstants>
-		<NoWarn>1701;1702;8981;0164;8974</NoWarn>
+        <NoWarn>1701;1702;8981;0164;8974</NoWarn>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)'=='Release'">
@@ -62,8 +62,12 @@
 
 	<ItemGroup>
 		<PackageReference Include="NUnit" Version="5.0.0" />
+		<PackageReference Include="NUnit.Analyzers" Version="4.15.0">
+		  <PrivateAssets>all</PrivateAssets>
+		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
 		<PackageReference Include="NUnit3TestAdapter" Version="6.3.0" />
-		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
 	</ItemGroup>
 
 	<ItemGroup>

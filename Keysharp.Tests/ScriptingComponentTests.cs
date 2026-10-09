@@ -34,17 +34,19 @@ public class ScriptingComponentTests : TestRunner
 	public void RoslynIsolation()
 	{
 		var coreReferences = typeof(Script).Assembly.GetReferencedAssemblies().Select(reference => reference.Name).ToArray();
-		Assert.IsFalse(coreReferences.Any(name => name.StartsWith("Microsoft.CodeAnalysis", StringComparison.Ordinal)),
+		Assert.That(coreReferences.Any(name => name.StartsWith("Microsoft.CodeAnalysis", StringComparison.Ordinal)),
+			Is.False,
 			"Keysharp.Core must remain runnable without Roslyn.");
 
 		Assert.IsTrue(ScriptingComponentRegistry.TryGetSyntaxValidator(out var parser, out var failure), failure);
-		Assert.AreEqual(ScriptingComponentIds.Parser, parser.Id);
+		Assert.That(parser.Id, Is.EqualTo(ScriptingComponentIds.Parser));
 		var parserReferences = parser.GetType().Assembly.GetReferencedAssemblies().Select(reference => reference.Name).ToArray();
-		Assert.IsFalse(parserReferences.Any(name => name.StartsWith("Microsoft.CodeAnalysis", StringComparison.Ordinal)),
+		Assert.That(parserReferences.Any(name => name.StartsWith("Microsoft.CodeAnalysis", StringComparison.Ordinal)),
+			Is.False,
 			"the parser component must support validation without Roslyn.");
 
 		Assert.IsTrue(ScriptingComponentRegistry.TryGetCompiler(out var compiler, out failure), failure);
-		Assert.AreEqual(ScriptingComponentIds.Compiler, compiler.Id);
+		Assert.That(compiler.Id, Is.EqualTo(ScriptingComponentIds.Compiler));
 		Assert.IsTrue((compiler.Capabilities & ScriptingCapability.Compilation) != 0);
 	}
 
@@ -55,13 +57,13 @@ public class ScriptingComponentTests : TestRunner
 		Assert.IsTrue(parser.ValidateSyntax(new ScriptSyntaxValidationRequest { SourceText = "x := 1" }).Success);
 		var scriptPath = Path.GetFullPath(Path.Combine("component-tests", "invalid.ahk"));
 		var invalid = parser.ValidateSyntax(new ScriptSyntaxValidationRequest { SourceText = "x := (", ScriptPath = scriptPath });
-		Assert.IsFalse(invalid.Success);
+		Assert.That(invalid.Success, Is.False);
 		Assert.IsNotEmpty(invalid.Diagnostics);
 		Assert.IsTrue(invalid.Diagnostics.All(diagnostic => diagnostic.FilePath == scriptPath),
 			"parser diagnostics should retain the caller's complete script path");
 
 		var routed = parser.ValidateSyntax(new ScriptSyntaxValidationRequest { SourceText = "#ErrorStdOut\nx := (" });
-		Assert.IsFalse(routed.Success);
+		Assert.That(routed.Success, Is.False);
 		Assert.IsTrue(routed.ErrorStdOut);
 	}
 
@@ -73,10 +75,10 @@ public class ScriptingComponentTests : TestRunner
 			Diagnostics = [new("warning", ScriptDiagnosticSeverity.Warning)]
 		};
 		Assert.IsTrue(warning.Success);
-		Assert.IsFalse(new ScriptSyntaxValidationResult
+		Assert.That(new ScriptSyntaxValidationResult
 		{
 			Diagnostics = [new("error", ScriptDiagnosticSeverity.Error)]
-		}.Success);
+		}.Success, Is.False);
 	}
 
 	[Test]
@@ -104,8 +106,8 @@ public class ScriptingComponentTests : TestRunner
 	public void ErrorStdOutOrder(string source, bool expected)
 	{
 		var result = new ParserComponent().ValidateSyntax(new ScriptSyntaxValidationRequest { SourceText = source });
-		Assert.IsFalse(result.Success);
-		Assert.AreEqual(expected, result.ErrorStdOut);
+		Assert.That(result.Success, Is.False);
+		Assert.That(result.ErrorStdOut, Is.EqualTo(expected));
 	}
 
 	[Test]
@@ -126,13 +128,13 @@ public class ScriptingComponentTests : TestRunner
 			});
 
 			Assert.IsTrue(Validate("#ErrorStdOut\n#Include \"missing.ahk\"\n").ErrorStdOut);
-			Assert.IsFalse(Validate("#Include \"missing.ahk\"\n#ErrorStdOut\n").ErrorStdOut);
+			Assert.That(Validate("#Include \"missing.ahk\"\n#ErrorStdOut\n").ErrorStdOut, Is.False);
 
 			foreach (var body in new[] { "#ErrorStdOut\n#EndIf\n", "#ErrorStdOut\nx := \"unterminated\n" })
 			{
 				File.WriteAllText(dependency, body);
 				var included = Validate("#Include \"Routing.ahk\"\nx := 1\n");
-				Assert.IsFalse(included.Success);
+				Assert.That(included.Success, Is.False);
 				Assert.IsTrue(included.ErrorStdOut);
 			}
 
@@ -146,13 +148,13 @@ public class ScriptingComponentTests : TestRunner
 
 			File.WriteAllText(dependency, "#ErrorStdOut\nvalue := (\n");
 			var imported = CompileImport("#Import \"Routing\"\nvalue := 1\n");
-			Assert.IsFalse(imported.Success);
+			Assert.That(imported.Success, Is.False);
 			Assert.IsTrue(imported.ErrorStdOut);
-			StringAssert.Contains("Routing.ahk", imported.ErrorText);
+			Assert.That(imported.ErrorText, Does.Contain("Routing.ahk"));
 
 			File.WriteAllText(dependency, "value := (\n");
 			Assert.IsTrue(CompileImport("#ErrorStdOut\n#Import \"Routing\"\n").ErrorStdOut);
-			Assert.IsFalse(CompileImport("#Import \"Routing\"\n#ErrorStdOut\n").ErrorStdOut);
+			Assert.That(CompileImport("#Import \"Routing\"\n#ErrorStdOut\n").ErrorStdOut, Is.False);
 		}
 		finally
 		{
@@ -172,9 +174,10 @@ public class ScriptingComponentTests : TestRunner
 			CompilationName = "routing-error",
 			Output = ScriptCompilationOutput.InMemory,
 		});
-		Assert.IsFalse(result.Success);
-		Assert.AreEqual(expected, result.ErrorStdOut);
-		if (diagnostic != null) StringAssert.Contains(diagnostic, result.ErrorText);
+		Assert.That(result.Success, Is.False);
+		Assert.That(result.ErrorStdOut, Is.EqualTo(expected));
+		if (diagnostic != null)
+			Assert.That(result.ErrorText, Does.Contain(diagnostic));
 	}
 
 	[Test]
@@ -190,8 +193,8 @@ public class ScriptingComponentTests : TestRunner
 		});
 
 		Assert.IsTrue(result.Success, result.ErrorText);
-		Assert.AreSame(s, Script.TheScript);
-		Assert.AreEqual(hostTheme, s.AccessorData.guiTheme);
+		Assert.That(Script.TheScript, Is.SameAs(s));
+		Assert.That(s.AccessorData.guiTheme, Is.EqualTo(hostTheme));
 	}
 
 	// Keyview's full view shows the code as compiled, while the readable lowering, which --transpile prints, leaves the
@@ -209,9 +212,9 @@ public class ScriptingComponentTests : TestRunner
 		});
 
 		Assert.IsTrue(result.Success, result.ErrorText);
-		StringAssert.Contains("KS_line", result.CompiledCode);
-		StringAssert.DoesNotContain("KS_line", result.GeneratedCode);
-		StringAssert.Contains(".SwitchCase(", result.GeneratedCode);
+		Assert.That(result.CompiledCode, Does.Contain("KS_line"));
+		Assert.That(result.GeneratedCode, Does.Not.Contain("KS_line"));
+		Assert.That(result.GeneratedCode, Does.Contain(".SwitchCase("));
 		var errors = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(result.GeneratedCode).GetDiagnostics()
 			.Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error).ToList();
 		Assert.IsEmpty(errors, string.Join("\n", errors));
@@ -269,9 +272,9 @@ public class ScriptingComponentTests : TestRunner
 			_ = Directory.CreateDirectory(malformed);
 			File.WriteAllText(Path.Combine(malformed, "component.json"), "{not-json");
 			ScriptingComponentRegistry.SetSearchRootsForTests(root);
-			Assert.IsFalse(ScriptingComponentRegistry.IsAvailable(ScriptingCapability.SyntaxValidation));
-			Assert.IsFalse(ScriptingComponentRegistry.TryGetSyntaxValidator(out _, out var failure));
-			StringAssert.Contains("No installed 'parser' scripting component", failure);
+			Assert.That(ScriptingComponentRegistry.IsAvailable(ScriptingCapability.SyntaxValidation), Is.False);
+			Assert.That(ScriptingComponentRegistry.TryGetSyntaxValidator(out _, out var failure), Is.False);
+			Assert.That(failure, Does.Contain("No installed 'parser' scripting component"));
 
 			Directory.Delete(malformed, true);
 			_ = Directory.CreateDirectory(malformed);
@@ -280,9 +283,9 @@ public class ScriptingComponentTests : TestRunner
 				// incomplete descriptor, and this fixture is meant to fail on its missing assembly instead.
 				"{\"schemaVersion\":1,\"contractVersion\":1,\"id\":\"parser\",\"version\":\"1.0.0\",\"assembly\":\"missing.dll\",\"type\":\"Missing.Parser\",\"capabilities\":[\"SyntaxValidation\",\"Tokenization\"],\"files\":[\"missing.dll\"]}");
 			ScriptingComponentRegistry.SetSearchRootsForTests(root);
-			Assert.IsFalse(ScriptingComponentRegistry.IsAvailable(ScriptingCapability.SyntaxValidation));
-			Assert.IsFalse(ScriptingComponentRegistry.TryGetSyntaxValidator(out _, out failure));
-			StringAssert.Contains("missing", failure.ToLowerInvariant());
+			Assert.That(ScriptingComponentRegistry.IsAvailable(ScriptingCapability.SyntaxValidation), Is.False);
+			Assert.That(ScriptingComponentRegistry.TryGetSyntaxValidator(out _, out failure), Is.False);
+			Assert.That(failure.ToLowerInvariant(), Does.Contain("missing"));
 
 			Directory.Delete(malformed, true);
 			CopyComponentPayload(typeof(Keysharp.Components.Scripting.Parser.ParserComponent).Assembly, root, "parser");
@@ -291,9 +294,9 @@ public class ScriptingComponentTests : TestRunner
 				"Keysharp.Components.Scripting.Parser.ParserComponent", "System.String", StringComparison.Ordinal);
 			File.WriteAllText(descriptorPath, descriptor);
 			ScriptingComponentRegistry.SetSearchRootsForTests(root);
-			Assert.IsFalse(ScriptingComponentRegistry.IsAvailable(ScriptingCapability.SyntaxValidation));
-			Assert.IsFalse(ScriptingComponentRegistry.TryGetSyntaxValidator(out _, out failure));
-			StringAssert.Contains("System.String", failure);
+			Assert.That(ScriptingComponentRegistry.IsAvailable(ScriptingCapability.SyntaxValidation), Is.False);
+			Assert.That(ScriptingComponentRegistry.TryGetSyntaxValidator(out _, out failure), Is.False);
+			Assert.That(failure, Does.Contain("System.String"));
 		}
 		finally
 		{
@@ -313,9 +316,9 @@ public class ScriptingComponentTests : TestRunner
 			File.WriteAllText(descriptorPath, File.ReadAllText(descriptorPath)
 				.Replace("\"contractVersion\":1", "\"contractVersion\":2", StringComparison.Ordinal));
 			ScriptingComponentRegistry.SetSearchRootsForTests(root);
-			Assert.IsFalse(ScriptingComponentRegistry.IsAvailable(ScriptingCapability.SyntaxValidation));
-			Assert.IsFalse(ScriptingComponentRegistry.TryGetSyntaxValidator(out _, out var failure));
-			StringAssert.Contains("No installed 'parser' scripting component", failure);
+			Assert.That(ScriptingComponentRegistry.IsAvailable(ScriptingCapability.SyntaxValidation), Is.False);
+			Assert.That(ScriptingComponentRegistry.TryGetSyntaxValidator(out _, out var failure), Is.False);
+			Assert.That(failure, Does.Contain("No installed 'parser' scripting component"));
 		}
 		finally
 		{
@@ -342,7 +345,7 @@ public class ScriptingComponentTests : TestRunner
 
 			Assert.IsTrue(ScriptingComponentRegistry.IsAvailable(ScriptingCapability.SyntaxValidation));
 			Assert.IsTrue(ScriptingComponentRegistry.TryGetSyntaxValidator(out var parser, out var failure), failure);
-			Assert.AreEqual(ScriptingComponentIds.Parser, parser.Id);
+			Assert.That(parser.Id, Is.EqualTo(ScriptingComponentIds.Parser));
 		}
 		finally
 		{
@@ -361,9 +364,9 @@ public class ScriptingComponentTests : TestRunner
 			CopyComponentPayload(typeof(CompilerComponent).Assembly, root, "compiler");
 			ScriptingComponentRegistry.SetSearchRootsForTests(root);
 			Assert.IsTrue(ScriptingComponentRegistry.TryGetCompiler(out _, out var failure), failure);
-			Assert.IsFalse(ScriptingComponentRegistry.TryGetSyntaxValidator(out _, out failure));
-			Assert.IsFalse(ScriptingComponentRegistry.IsAvailable(ScriptingCapability.SyntaxValidation));
-			StringAssert.Contains("parser", failure.ToLowerInvariant());
+			Assert.That(ScriptingComponentRegistry.TryGetSyntaxValidator(out _, out failure), Is.False);
+			Assert.That(ScriptingComponentRegistry.IsAvailable(ScriptingCapability.SyntaxValidation), Is.False);
+			Assert.That(failure.ToLowerInvariant(), Does.Contain("parser"));
 		}
 		finally
 		{
@@ -379,13 +382,13 @@ public class ScriptingComponentTests : TestRunner
 		Assert.IsTrue(syntax.SyntaxOnly);
 
 		var policy = Runner.Parse(["--compile", "asm", "--with-parser", "--without-compiler", script]);
-		CollectionAssert.Contains(policy.IncludeComponents, "parser");
-		CollectionAssert.Contains(policy.ExcludeComponents, "compiler");
+		Assert.That(policy.IncludeComponents, Has.Member("parser"));
+		Assert.That(policy.ExcludeComponents, Has.Member("compiler"));
 
 		var conflict = Runner.Parse(["--with-compiler", "--without-compiler", script]);
-		Assert.AreEqual(CliCommandKind.Error, conflict.Kind);
+		Assert.That(conflict.Kind, Is.EqualTo(CliCommandKind.Error));
 
-		Assert.AreEqual(CliCommandKind.Error, Runner.Parse(["--with-component", "parsing", script]).Kind,
+		Assert.That(Runner.Parse(["--with-component", "parsing", script]).Kind, Is.EqualTo(CliCommandKind.Error),
 			"deployment policy accepts fixed unit IDs, not capability aliases");
 		Assert.IsTrue((bool)Ks.IsComponentAvailable("parser"));
 		Assert.IsTrue((bool)Ks.IsComponentAvailable("parsing"));
@@ -411,13 +414,13 @@ public class ScriptingComponentTests : TestRunner
 				Output = ScriptCompilationOutput.Assembly,
 			});
 			Assert.IsTrue(automatic.Success, automatic.ErrorText);
-			CollectionAssert.Contains(automatic.RequiredComponents, "compiler", automatic.GeneratedCode);
+			Assert.That(automatic.RequiredComponents, Has.Member("compiler"), automatic.GeneratedCode);
 			Assert.IsNull(compiler.DeploySupportFiles(automatic, automaticRoot));
 			Assert.IsTrue(File.Exists(Path.Combine(automaticRoot, "components", "scripting", "compiler", "Microsoft.CodeAnalysis.CSharp.dll")));
 			ScriptingComponentRegistry.ResetForTests();
 			ScriptingComponentRegistry.AddSearchRoot(automaticRoot);
 			Assert.IsTrue(ScriptingComponentRegistry.TryGetCompiler(out var deployedCompiler, out var loadFailure), loadFailure);
-			Assert.AreEqual(ScriptingComponentIds.Compiler, deployedCompiler.Id);
+			Assert.That(deployedCompiler.Id, Is.EqualTo(ScriptingComponentIds.Compiler));
 
 			var parserOnly = compiler.Compile(new ScriptCompileRequest
 			{
@@ -428,10 +431,10 @@ public class ScriptingComponentTests : TestRunner
 				Output = ScriptCompilationOutput.Assembly,
 			});
 			Assert.IsTrue(parserOnly.Success, parserOnly.ErrorText);
-			CollectionAssert.AreEquivalent(new[] { "parser" }, parserOnly.RequiredComponents);
+			Assert.That(parserOnly.RequiredComponents, Is.EquivalentTo(new[] { "parser" }));
 			Assert.IsNull(compiler.DeploySupportFiles(parserOnly, parserRoot));
 			Assert.IsTrue(File.Exists(Path.Combine(parserRoot, "components", "scripting", "parser", "Keysharp.Components.Scripting.Parser.dll")));
-			Assert.IsFalse(Directory.GetFiles(parserRoot, "Microsoft.CodeAnalysis*.dll", SearchOption.AllDirectories).Any());
+			Assert.That(Directory.GetFiles(parserRoot, "Microsoft.CodeAnalysis*.dll", SearchOption.AllDirectories).Any(), Is.False);
 			ScriptingComponentRegistry.ResetForTests();
 			ScriptingComponentRegistry.AddSearchRoot(parserRoot);
 			Assert.IsTrue(ScriptingComponentRegistry.TryGetSyntaxValidator(out var deployedParser, out loadFailure), loadFailure);
@@ -457,7 +460,7 @@ public class ScriptingComponentTests : TestRunner
 				Output = ScriptCompilationOutput.Assembly,
 			});
 			Assert.IsTrue(compileScript.Success, compileScript.ErrorText);
-			CollectionAssert.Contains(compileScript.RequiredComponents, "compiler");
+			Assert.That(compileScript.RequiredComponents, Has.Member("compiler"));
 
 			var validateScript = compiler.Compile(new ScriptCompileRequest
 			{
@@ -467,7 +470,7 @@ public class ScriptingComponentTests : TestRunner
 				Output = ScriptCompilationOutput.Assembly,
 			});
 			Assert.IsTrue(validateScript.Success, validateScript.ErrorText);
-			CollectionAssert.Contains(validateScript.RequiredComponents, "parser");
+			Assert.That(validateScript.RequiredComponents, Has.Member("parser"));
 		}
 		finally
 		{
@@ -487,10 +490,11 @@ public class ScriptingComponentTests : TestRunner
 			Assert.IsTrue(result.Success, result.ErrorText);
 			var assembly = Assembly.Load(result.AssemblyBytes);
 			Assert.IsTrue(CompiledScriptingComponentManifest.HasCapability(assembly, ScriptingCapability.Compilation));
-			Assert.IsFalse(assembly.GetManifestResourceNames().Any(name =>
+			Assert.That(assembly.GetManifestResourceNames().Any(name =>
 				name.Equals("Deps.Keysharp.Components.Scripting.Compiler.dll", StringComparison.OrdinalIgnoreCase)
 				|| name.Equals("Deps.Keysharp.Components.Scripting.Parser.dll", StringComparison.OrdinalIgnoreCase)
 				|| name.StartsWith("Deps.Microsoft.CodeAnalysis", StringComparison.OrdinalIgnoreCase)),
+				Is.False,
 				"optional implementation assemblies must be component assets, not unconditional runtime dependencies");
 
 			extractedRoot = CompiledScriptingComponentManifest.GetCacheDirectory(assembly, ScriptingCapability.Compilation);
@@ -501,8 +505,8 @@ public class ScriptingComponentTests : TestRunner
 			ScriptingComponentRegistry.ResetForTests();
 			Assert.IsTrue(CompiledScriptingComponentManifest.TryPrepare(assembly, ScriptingCapability.Compilation, out var failure), failure);
 			Assert.IsTrue(ScriptingComponentRegistry.TryGetCompiler(out var compiler, out failure), failure);
-			Assert.AreEqual(ScriptingComponentIds.Compiler, compiler.Id);
-			Assert.IsFalse(Directory.Exists(staleRoot), "stale component cache generations should be pruned");
+			Assert.That(compiler.Id, Is.EqualTo(ScriptingComponentIds.Compiler));
+			Assert.That(Directory.Exists(staleRoot), Is.False, "stale component cache generations should be pruned");
 		}
 		finally
 		{
@@ -520,10 +524,10 @@ public class ScriptingComponentTests : TestRunner
 		Assert.IsTrue(second.Success, second.ErrorText);
 		var firstAssembly = Assembly.Load(first.AssemblyBytes);
 		var secondAssembly = Assembly.Load(second.AssemblyBytes);
-		Assert.AreNotEqual(firstAssembly.ManifestModule.ModuleVersionId, secondAssembly.ManifestModule.ModuleVersionId);
-		Assert.AreEqual(
-			CompiledScriptingComponentManifest.GetCacheDirectory(firstAssembly, ScriptingCapability.Compilation),
-			CompiledScriptingComponentManifest.GetCacheDirectory(secondAssembly, ScriptingCapability.Compilation));
+		Assert.That(secondAssembly.ManifestModule.ModuleVersionId, Is.Not.EqualTo(firstAssembly.ManifestModule.ModuleVersionId));
+		Assert.That(
+			CompiledScriptingComponentManifest.GetCacheDirectory(secondAssembly, ScriptingCapability.Compilation),
+			Is.EqualTo(CompiledScriptingComponentManifest.GetCacheDirectory(firstAssembly, ScriptingCapability.Compilation)));
 	}
 
 	[Test, NonParallelizable]
@@ -531,8 +535,8 @@ public class ScriptingComponentTests : TestRunner
 	{
 		// BuildLeanExecutable asserts the build carries no scripting components.
 		var run = RunProcess(leanExecutable.Value, []);
-		Assert.AreEqual(0, run.ExitCode, run.StdErr);
-		Assert.AreEqual("lean-pass", run.StdOut.Trim(), run.StdErr);
+		Assert.That(run.ExitCode, Is.EqualTo(0), run.StdErr);
+		Assert.That(run.StdOut.Trim(), Is.EqualTo("lean-pass"), run.StdErr);
 	}
 
 	/// <summary>
@@ -555,13 +559,13 @@ public class ScriptingComponentTests : TestRunner
 			File.WriteAllText(consoleScript, "#App { ConsoleApp: true }\n" + leanBody);
 			var consoleExe = BuildExecutable(consoleScript);
 #if WINDOWS
-			Assert.AreEqual(3, PeSubsystem(consoleExe), "#App { ConsoleApp: true } must produce a console-subsystem executable");
-			Assert.AreEqual(2, PeSubsystem(leanExecutable.Value), "without the directive the executable must stay a GUI one");
+			Assert.That(PeSubsystem(consoleExe), Is.EqualTo(3), "#App { ConsoleApp: true } must produce a console-subsystem executable");
+			Assert.That(PeSubsystem(leanExecutable.Value), Is.EqualTo(2), "without the directive the executable must stay a GUI one");
 #endif
 			// The stamped host still has to run: a subsystem edit that corrupted it would fail only here.
 			var run = RunProcess(consoleExe, []);
-			Assert.AreEqual(0, run.ExitCode, run.StdErr);
-			Assert.AreEqual("lean-pass", run.StdOut.Trim(), run.StdErr);
+			Assert.That(run.ExitCode, Is.EqualTo(0), run.StdErr);
+			Assert.That(run.StdOut.Trim(), Is.EqualTo("lean-pass"), run.StdErr);
 		}
 		finally
 		{
@@ -581,7 +585,7 @@ public class ScriptingComponentTests : TestRunner
 			File.WriteAllText(helper, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n"
 				+ "FileAppend('helper-pass:' A_Args.Length, '*')\nExitApp()\n");
 			var compile = RunLauncher(["--errorstdout", "--compile", "asm", helper]);
-			Assert.AreEqual(0, compile.ExitCode, compile.StdErr);
+			Assert.That(compile.ExitCode, Is.EqualTo(0), compile.StdErr);
 			var parent = Path.Combine(root, "inspector parent.ks");
 			File.WriteAllText(parent, """
 				#NoTrayIcon
@@ -615,7 +619,7 @@ public class ScriptingComponentTests : TestRunner
 			if (host == "compiled")
 			{
 				compile = RunLauncher(["--errorstdout", "--compile", "exe-min", "--with-compiler", parent]);
-				Assert.AreEqual(0, compile.ExitCode, compile.StdErr);
+				Assert.That(compile.ExitCode, Is.EqualTo(0), compile.StdErr);
 				executable = Path.ChangeExtension(parent, OperatingSystem.IsWindows() ? ".exe" : null);
 			}
 
@@ -624,8 +628,8 @@ public class ScriptingComponentTests : TestRunner
 				string[] arguments = host == "compiled" ? [target, "parent-only"] : [parent, target, "parent-only"];
 				var run = host == "dotnet"
 					? RunLauncher(arguments) : RunProcess(executable, arguments);
-				Assert.AreEqual(0, run.ExitCode, run.StdErr);
-				Assert.AreEqual("helper-pass:0", run.StdOut.Trim(), target + ": " + run.StdErr);
+				Assert.That(run.ExitCode, Is.EqualTo(0), run.StdErr);
+				Assert.That(run.StdOut.Trim(), Is.EqualTo("helper-pass:0"), target + ": " + run.StdErr);
 			}
 		}
 		finally
@@ -649,12 +653,13 @@ public class ScriptingComponentTests : TestRunner
 				+ "FileAppend(info.ExitCode ':' info.StdOut.Read(64), '*')\nExitApp()\n");
 
 			var executable = BuildExecutable(script);
-			Assert.IsFalse(Directory.Exists(Path.Combine(root, "components", "scripting")),
+			Assert.That(Directory.Exists(Path.Combine(root, "components", "scripting")),
+				Is.False,
 				"a minimal executable must carry components as integrity-checked embedded assets");
 
 			var run = RunProcess(executable, []);
-			Assert.AreEqual(0, run.ExitCode, run.StdErr);
-			Assert.AreEqual("0:nested-pass", run.StdOut.Trim(), run.StdErr);
+			Assert.That(run.ExitCode, Is.EqualTo(0), run.StdErr);
+			Assert.That(run.StdOut.Trim(), Is.EqualTo("0:nested-pass"), run.StdErr);
 		}
 		finally
 		{
@@ -668,8 +673,8 @@ public class ScriptingComponentTests : TestRunner
 		// BuildCksTarget asserts the sidecar compiler was deployed and the host carries none of its own.
 		var (target, hostRoot) = cksTarget.Value;
 		var run = RunProcess("dotnet", [Path.Combine(hostRoot, "Keysharp.dll"), "--errorstdout", target]);
-		Assert.AreEqual(0, run.ExitCode, run.StdErr);
-		Assert.AreEqual($"{target}:0:nested-pass", run.StdOut.Trim(), run.StdErr);
+		Assert.That(run.ExitCode, Is.EqualTo(0), run.StdErr);
+		Assert.That(run.StdOut.Trim(), Is.EqualTo($"{target}:0:nested-pass"), run.StdErr);
 	}
 
 	[Test, NonParallelizable]
@@ -688,13 +693,14 @@ public class ScriptingComponentTests : TestRunner
 				+ $"info := RunScript('{target.Replace("'", "''")}')\n"
 				+ "FileAppend(info.ExitCode ':' info.StdOut.Read(512), '*')\nExitApp()\n");
 			var outerCompile = RunLauncher(["--errorstdout", "--compile", "asm", "--without-compiler", "--dest", outer, outerSource]);
-			Assert.AreEqual(0, outerCompile.ExitCode, "outer compile failed: " + outerCompile.StdErr);
-			Assert.IsFalse(Directory.Exists(Path.Combine(root, "components", "scripting")),
+			Assert.That(outerCompile.ExitCode, Is.EqualTo(0), "outer compile failed: " + outerCompile.StdErr);
+			Assert.That(Directory.Exists(Path.Combine(root, "components", "scripting")),
+				Is.False,
 				"the outer artifact must not carry its own compiler");
 
 			var run = RunProcess("dotnet", [Path.Combine(hostRoot, "Keysharp.dll"), "--errorstdout", outer]);
-			Assert.AreEqual(0, run.ExitCode, run.StdErr);
-			Assert.AreEqual($"0:{target}:0:nested-pass", run.StdOut.Trim(), run.StdErr);
+			Assert.That(run.ExitCode, Is.EqualTo(0), run.StdErr);
+			Assert.That(run.StdOut.Trim(), Is.EqualTo($"0:{target}:0:nested-pass"), run.StdErr);
 		}
 		finally
 		{
@@ -713,7 +719,7 @@ public class ScriptingComponentTests : TestRunner
 			var script = Path.Combine(root, "stdout.ks");
 			File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\nx := 1\n");
 			var result = RunLauncher(["--errorstdout", "--compile", "asm", "--with-compiler", "--dest", "*", script]);
-			Assert.AreNotEqual(0, result.ExitCode);
+			Assert.That(result.ExitCode, Is.Not.EqualTo(0));
 			Assert.IsTrue((result.StdOut + result.StdErr).Contains("requires sidecar scripting components", StringComparison.Ordinal),
 				result.StdErr);
 		}
@@ -739,11 +745,11 @@ public class ScriptingComponentTests : TestRunner
 		File.WriteAllText(script, leanBody);
 		var executable = BuildExecutable(script);
 		// Checked before any test runs it, so the lean shape cannot depend on test order.
-		Assert.IsFalse(Directory.Exists(Path.Combine(root, "components", "scripting")));
-		Assert.IsFalse(Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Any(file =>
+		Assert.That(Directory.Exists(Path.Combine(root, "components", "scripting")), Is.False);
+		Assert.That(Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories).Any(file =>
 			Path.GetFileName(file).StartsWith("Keysharp.Components.Scripting.Parser", StringComparison.OrdinalIgnoreCase)
 			|| Path.GetFileName(file).StartsWith("Keysharp.Components.Scripting.Compiler", StringComparison.OrdinalIgnoreCase)
-			|| Path.GetFileName(file).StartsWith("Microsoft.CodeAnalysis", StringComparison.OrdinalIgnoreCase)));
+			|| Path.GetFileName(file).StartsWith("Microsoft.CodeAnalysis", StringComparison.OrdinalIgnoreCase)), Is.False);
 		return executable;
 	}
 
@@ -767,13 +773,13 @@ public class ScriptingComponentTests : TestRunner
 			+ "info := RunScript(\"#NoTrayIcon`n#ErrorStdOut`nFileAppend('nested-pass', '*')`nExitApp(0)\")\n"
 			+ "FileAppend(ownPath ':' info.ExitCode ':' info.StdOut.Read(64), '*')\nExitApp()\n");
 		var targetCompile = RunLauncher(["--errorstdout", "--compile", "asm", "--with-compiler", "--dest", target, targetSource]);
-		Assert.AreEqual(0, targetCompile.ExitCode, "target compile failed: " + targetCompile.StdErr);
+		Assert.That(targetCompile.ExitCode, Is.EqualTo(0), "target compile failed: " + targetCompile.StdErr);
 		Assert.IsTrue(File.Exists(target));
 		Assert.IsTrue(File.Exists(Path.Combine(artifactRoot, "components", "scripting", "compiler", "component.json")));
 
 		CopyLeanHost(hostRoot);
-		Assert.IsFalse(Directory.Exists(Path.Combine(hostRoot, "components", "scripting")));
-		Assert.IsFalse(Directory.GetFiles(hostRoot, "Microsoft.CodeAnalysis*.dll", SearchOption.AllDirectories).Any());
+		Assert.That(Directory.Exists(Path.Combine(hostRoot, "components", "scripting")), Is.False);
+		Assert.That(Directory.GetFiles(hostRoot, "Microsoft.CodeAnalysis*.dll", SearchOption.AllDirectories).Any(), Is.False);
 		return (target, hostRoot);
 	}
 
@@ -806,7 +812,7 @@ public class ScriptingComponentTests : TestRunner
 	private static string BuildExecutable(string script)
 	{
 		var compile = RunLauncher(["--errorstdout", "--compile", "exe-min", script]);
-		Assert.AreEqual(0, compile.ExitCode, "compile failed: " + compile.StdErr);
+		Assert.That(compile.ExitCode, Is.EqualTo(0), "compile failed: " + compile.StdErr);
 #if WINDOWS
 		var executable = Path.ChangeExtension(script, ".exe");
 #else

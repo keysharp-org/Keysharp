@@ -85,21 +85,21 @@ public class EventHookTests : TestRunner
 	private static object Get(object hook, string name)
 	{
 		var prop = hook.GetType().GetProperty(name);
-		Assert.IsNotNull(prop, $"{hook.GetType().Name} is missing the {name} member.");
+		Assert.That(prop, Is.Not.Null, $"{hook.GetType().Name} is missing the {name} member.");
 		return prop.GetValue(hook);
 	}
 
 	private static void Call(object hook, string name)
 	{
 		var method = hook.GetType().GetMethod(name, Type.EmptyTypes);
-		Assert.IsNotNull(method, $"{hook.GetType().Name} is missing the {name}() member.");
+		Assert.That(method, Is.Not.Null, $"{hook.GetType().Name} is missing the {name}() member.");
 		_ = method.Invoke(hook, null);
 	}
 
 	private static void AssertState(string name, object hook, bool inProgress, string endReason, string what)
 	{
-		Assert.AreEqual(inProgress, Get(hook, "InProgress"), $"{name}: InProgress {what}.");
-		Assert.AreEqual(endReason, Get(hook, "EndReason"), $"{name}: EndReason {what}.");
+		Assert.That(Get(hook, "InProgress"), Is.EqualTo(inProgress), $"{name}: InProgress {what}.");
+		Assert.That(Get(hook, "EndReason"), Is.EqualTo(endReason), $"{name}: EndReason {what}.");
 	}
 
 	/// <summary>
@@ -119,7 +119,7 @@ public class EventHookTests : TestRunner
 
 		// A restart registers for real, so a host without this event source ends the new run Failed.
 		Call(hook, "Start");
-		Assert.AreEqual(description, Description(hook), $"{name}: a restart keeps the hook's description.");
+		Assert.That(Description(hook), Is.EqualTo(description), $"{name}: a restart keeps the hook's description.");
 		var restarted = (string)Get(hook, "EndReason");
 		Assert.IsTrue(restarted is "" or "Failed", $"{name}: EndReason after Start is {restarted}.");
 		AssertState(name, hook, restarted == "", restarted, "after Start: a stopped hook begins a fresh run");
@@ -149,7 +149,7 @@ public class EventHookTests : TestRunner
 				Assert.IsNull(type.GetProperty(gone), $"{name} still exposes {gone}.");
 
 			Assert.IsNull(type.GetMethod("Pause"), $"{name} still exposes Pause, which is cut.");
-			Assert.AreEqual(typeof(Any), type.GetMethod("__Delete").DeclaringType,
+			Assert.That(type.GetMethod("__Delete").DeclaringType, Is.EqualTo(typeof(Any)),
 				$"{name} overrides __Delete: garbage collection must never cancel a subscription.");
 		}
 
@@ -206,21 +206,21 @@ public class EventHookTests : TestRunner
 		Assert.IsTrue(moved.InProgress && exists.InProgress);
 
 		var listed = (Keysharp.Builtins.Array)Ks.WinEvent.staticget_Hooks(null);
-		Assert.AreEqual(2L, listed.Length, "Hooks lists every live subscription.");
-		Assert.AreSame(moved, listed[1], "Hooks hands back the very objects the factories returned, in start order.");
-		Assert.AreSame(exists, listed[2]);
+		Assert.That(listed.Length, Is.EqualTo(2L), "Hooks lists every live subscription.");
+		Assert.That(listed[1], Is.SameAs(moved), "Hooks hands back the very objects the factories returned, in start order.");
+		Assert.That(listed[2], Is.SameAs(exists));
 
 		_ = moved.Stop();
-		Assert.AreEqual("Stopped", moved.EndReason);
+		Assert.That(moved.EndReason, Is.EqualTo("Stopped"));
 		Assert.IsTrue(exists.InProgress, "Stopping one subscription leaves the others registered.");
-		Assert.AreEqual(1L, ((Keysharp.Builtins.Array)Ks.WinEvent.staticget_Hooks(null)).Length,
+		Assert.That(((Keysharp.Builtins.Array)Ks.WinEvent.staticget_Hooks(null)).Length, Is.EqualTo(1L),
 			"A stopped hook leaves the list, while the array already handed out is unaffected.");
-		Assert.AreEqual(2L, listed.Length);
+		Assert.That(listed.Length, Is.EqualTo(2L));
 
 		Assert.IsTrue(manager.RemoveOwned(scheduler), "The surviving subscription is swept by its owner.");
-		Assert.AreEqual("Exit", exists.EndReason, "A teardown ends a hook with Exit, not Stopped.");
-		Assert.AreEqual("Stopped", moved.EndReason, "A later teardown does not overwrite the first reason.");
-		Assert.IsFalse(manager.RemoveOwned(scheduler), "A second sweep finds nothing.");
+		Assert.That(exists.EndReason, Is.EqualTo("Exit"), "A teardown ends a hook with Exit, not Stopped.");
+		Assert.That(moved.EndReason, Is.EqualTo("Stopped"), "A later teardown does not overwrite the first reason.");
+		Assert.That(manager.RemoveOwned(scheduler), Is.False, "A second sweep finds nothing.");
 	}
 
 	/// <summary>
@@ -250,23 +250,23 @@ public class EventHookTests : TestRunner
 		{
 			script.ClipboardEventManager.Dispatch(1L);
 			Drain();
-			Assert.AreEqual(1, calls, "An event on a running hook is delivered.");
+			Assert.That(calls, Is.EqualTo(1), "An event on a running hook is delivered.");
 
 			script.ClipboardEventManager.Dispatch(1L);
 			_ = hook.Stop();
 			Drain();
-			Assert.AreEqual(1, calls, "An event queued before Stop is discarded.");
+			Assert.That(calls, Is.EqualTo(1), "An event queued before Stop is discarded.");
 
 			// The ended run's queued callbacks hold its registration, so a restart does not revive them.
 			script.ClipboardEventManager.Dispatch(1L);
 			_ = hook.Stop();
 			_ = hook.Start();
 			Drain();
-			Assert.AreEqual(1, calls, "An event queued before Stop is discarded even after a restart.");
+			Assert.That(calls, Is.EqualTo(1), "An event queued before Stop is discarded even after a restart.");
 
 			script.ClipboardEventManager.Dispatch(1L);
 			Drain();
-			Assert.AreEqual(2, calls, "The restarted hook receives new events.");
+			Assert.That(calls, Is.EqualTo(2), "The restarted hook receives new events.");
 		}
 		finally
 		{
@@ -282,8 +282,8 @@ public class EventHookTests : TestRunner
 		var script = Script.TheScript;
 		Assert.IsTrue(script.WinEventManager.KeepsScriptRunning);
 		Assert.IsTrue(script.ClipboardEventManager.KeepsScriptRunning);
-		Assert.IsFalse(script.MonitorEventManager.KeepsScriptRunning);
-		Assert.IsFalse(script.AudioEventManager.KeepsScriptRunning);
+		Assert.That(script.MonitorEventManager.KeepsScriptRunning, Is.False);
+		Assert.That(script.AudioEventManager.KeepsScriptRunning, Is.False);
 
 		// The script's own answer is checked too, where nothing else in this host already keeps it running: that is
 		// what the exit check reads, through the family's manager.
@@ -306,10 +306,10 @@ public class EventHookTests : TestRunner
 				Assert.IsTrue(script.AnyPersistent(includeWindows: false), "The exit check sees the running clipboard hook.");
 
 			_ = hook.Stop();
-			Assert.IsFalse(script.ClipboardEventManager.IsKeepingScriptRunning, "A stopped one does not.");
+			Assert.That(script.ClipboardEventManager.IsKeepingScriptRunning, Is.False, "A stopped one does not.");
 
 			if (idle)
-				Assert.IsFalse(script.AnyPersistent(includeWindows: false), "Nor does the exit check once it stops.");
+				Assert.That(script.AnyPersistent(includeWindows: false), Is.False, "Nor does the exit check once it stops.");
 
 			_ = hook.Start();
 			Assert.IsTrue(script.ClipboardEventManager.IsKeepingScriptRunning, "A restarted one does again.");
@@ -324,10 +324,10 @@ public class EventHookTests : TestRunner
 
 		try
 		{
-			Assert.IsFalse(script.MonitorEventManager.IsKeepingScriptRunning, "A running display-change hook does not.");
+			Assert.That(script.MonitorEventManager.IsKeepingScriptRunning, Is.False, "A running display-change hook does not.");
 
 			if (idle)
-				Assert.IsFalse(script.AnyPersistent(includeWindows: false), "Nor does the exit check.");
+				Assert.That(script.AnyPersistent(includeWindows: false), Is.False, "Nor does the exit check.");
 		}
 		finally
 		{
@@ -347,10 +347,10 @@ public class EventHookTests : TestRunner
 		try
 		{
 			Assert.IsTrue(old.End(EventSubscriptionBase.EndReasonStopped), "A Stop elsewhere records the end first.");
-			Assert.IsFalse(hook.InProgress, "The ended run reads as over while it is still listed.");
+			Assert.That(hook.InProgress, Is.False, "The ended run reads as over while it is still listed.");
 			_ = hook.Start();
 			Assert.IsTrue(hook.InProgress, "Start begins a new run.");
-			Assert.AreNotSame(old, hook.sub);
+			Assert.That(hook.sub, Is.Not.SameAs(old));
 		}
 		finally
 		{
@@ -369,11 +369,11 @@ public class EventHookTests : TestRunner
 		var run = new InstallFailingManager.Run(script.EventScheduler, manager);
 		run.Register();
 
-		Assert.AreEqual("Failed", run.EndReason);
-		Assert.IsFalse(run.IsActive, "The failed run holds no root.");
-		Assert.IsFalse(manager.HasSubscriptions, "The failed run is not left listed.");
-		Assert.IsFalse(manager.IsKeepingScriptRunning, "The failed run does not keep the script running.");
-		Assert.AreEqual(2, manager.syncs, "The source is synced again once the run is removed.");
+		Assert.That(run.EndReason, Is.EqualTo("Failed"));
+		Assert.That(run.IsActive, Is.False, "The failed run holds no root.");
+		Assert.That(manager.HasSubscriptions, Is.False, "The failed run is not left listed.");
+		Assert.That(manager.IsKeepingScriptRunning, Is.False, "The failed run does not keep the script running.");
+		Assert.That(manager.syncs, Is.EqualTo(2), "The source is synced again once the run is removed.");
 	}
 
 	/// <summary>Slot assignments restarting a WinEvent on one thread while another stops it leave it stopped with
@@ -406,10 +406,10 @@ public class EventHookTests : TestRunner
 			_ = we.Stop();
 			Assert.IsTrue(restarter.Join(TimeSpan.FromSeconds(30)), "The restarts finish.");
 
-			Assert.IsFalse(we.InProgress, "The hook stays stopped.");
-			Assert.AreEqual("Stopped", we.EndReason);
-			Assert.AreEqual(0L, ((Keysharp.Builtins.Array)Ks.WinEvent.staticget_Hooks(null)).Length, "No run is left listed.");
-			Assert.IsFalse(Script.TheScript.WinEventManager.IsKeepingScriptRunning);
+			Assert.That(we.InProgress, Is.False, "The hook stays stopped.");
+			Assert.That(we.EndReason, Is.EqualTo("Stopped"));
+			Assert.That(((Keysharp.Builtins.Array)Ks.WinEvent.staticget_Hooks(null)).Length, Is.EqualTo(0L), "No run is left listed.");
+			Assert.That(Script.TheScript.WinEventManager.IsKeepingScriptRunning, Is.False);
 		}
 		finally
 		{
@@ -459,7 +459,7 @@ public class EventHookTests : TestRunner
 		var needsThreeThenAny = new KeysharpFunc((Func<object, object, object, object[], object>)((a, b, c, rest) => ""));
 		Assert.IsTrue(needsThreeThenAny.IsVariadic);
 		Assert.IsInstanceOf<ValueError>(Assert.Throws<KeysharpException>(() => Ks.KeysharpClipboard.OnChange(null, needsThreeThenAny)).UserError);
-		Assert.AreEqual(0L, ((Keysharp.Builtins.Array)Ks.KeysharpClipboard.staticget_Hooks(null)).Length,
+		Assert.That(((Keysharp.Builtins.Array)Ks.KeysharpClipboard.staticget_Hooks(null)).Length, Is.EqualTo(0L),
 			"A refused callback leaves no hook behind.");
 	}
 
@@ -472,9 +472,9 @@ public class EventHookTests : TestRunner
 	public void WinEventIsConstructedIdleAndStarted()
 	{
 		var we = new Ks.WinEvent("ahk_class NoSuchWindowClassForThisTest");
-		Assert.IsFalse(we.InProgress);
-		Assert.AreEqual("Stopped", we.EndReason, "An idle hook reads Stopped, as an unstarted AHK InputHook does.");
-		Assert.AreEqual("ahk_class NoSuchWindowClassForThisTest", we.WinTitle);
+		Assert.That(we.InProgress, Is.False);
+		Assert.That(we.EndReason, Is.EqualTo("Stopped"), "An idle hook reads Stopped, as an unstarted AHK InputHook does.");
+		Assert.That(we.WinTitle, Is.EqualTo("ahk_class NoSuchWindowClassForThisTest"));
 
 		var cb = new KeysharpFunc((Func<object, object, object, object>)((hook, hwnd, time) => ""));
 		_ = Assert.Throws<KeysharpException>(() => we.OnMove = "not a function");
@@ -482,10 +482,10 @@ public class EventHookTests : TestRunner
 		Assert.IsNotInstanceOf<KeysharpFunc>(we.OnMove, "A refused callback leaves the slot empty.");
 
 		_ = we.Start();
-		Assert.IsFalse(we.InProgress, "Start() with no slot set does nothing, as such a run could never report.");
+		Assert.That(we.InProgress, Is.False, "Start() with no slot set does nothing, as such a run could never report.");
 
 		we.OnExist = cb;
-		Assert.AreSame(cb, we.OnExist);
+		Assert.That(we.OnExist, Is.SameAs(cb));
 		_ = we.Start();
 
 		try
@@ -500,31 +500,31 @@ public class EventHookTests : TestRunner
 
 			var other = new KeysharpFunc((Func<object, object, object, object>)((hook, hwnd, time) => ""));
 			we.OnExist = other;
-			Assert.AreSame(run, we.sub, "A new callback for a set slot keeps the run.");
-			Assert.AreSame(other, ((WinEventRegistration)we.sub).callbacks[(int)WindowEventType.Exist], "The running run calls the new callback.");
+			Assert.That(we.sub, Is.SameAs(run), "A new callback for a set slot keeps the run.");
+			Assert.That(((WinEventRegistration)we.sub).callbacks[(int)WindowEventType.Exist], Is.SameAs(other), "The running run calls the new callback.");
 
 			we.OnNotExist = cb;
 			Assert.IsTrue(we.InProgress, "Setting an empty slot while running restarts the hook.");
-			Assert.AreNotSame(run, we.sub, "The restart is a fresh run.");
-			Assert.AreSame(owner, we.sub.OwnerScheduler, "The restart stays on the thread that started the hook.");
-			Assert.IsFalse(run.IsActive, "The old run ended, so its queued callbacks are discarded.");
-			Assert.AreEqual(1L, ((Keysharp.Builtins.Array)Ks.WinEvent.staticget_Hooks(null)).Length, "One object is listed once.");
+			Assert.That(we.sub, Is.Not.SameAs(run), "The restart is a fresh run.");
+			Assert.That(we.sub.OwnerScheduler, Is.SameAs(owner), "The restart stays on the thread that started the hook.");
+			Assert.That(run.IsActive, Is.False, "The old run ended, so its queued callbacks are discarded.");
+			Assert.That(((Keysharp.Builtins.Array)Ks.WinEvent.staticget_Hooks(null)).Length, Is.EqualTo(1L), "One object is listed once.");
 
 			we.OnExist = "";
 			Assert.IsNotInstanceOf<KeysharpFunc>(we.OnExist, "An empty string clears a slot.");
 			Assert.IsTrue(we.InProgress, "A slot is still set, so the hook runs on.");
 
 			we.OnNotExist = "";
-			Assert.IsFalse(we.InProgress, "Clearing the last slot stops the hook.");
-			Assert.AreEqual("Stopped", we.EndReason);
+			Assert.That(we.InProgress, Is.False, "Clearing the last slot stops the hook.");
+			Assert.That(we.EndReason, Is.EqualTo("Stopped"));
 		}
 		finally
 		{
 			_ = we.Stop();
 		}
 
-		Assert.AreEqual("Stopped", we.EndReason);
-		Assert.IsFalse(Script.TheScript.WinEventManager.IsKeepingScriptRunning);
+		Assert.That(we.EndReason, Is.EqualTo("Stopped"));
+		Assert.That(Script.TheScript.WinEventManager.IsKeepingScriptRunning, Is.False);
 	}
 
 	/// <summary>
@@ -616,12 +616,12 @@ public class EventHookTests : TestRunner
 		using var manager = new WinEventManager(Script.TheScript, () => 0x1110, () => backend);
 
 		manager.SetForegroundTracking(true);
-		Assert.AreEqual(WindowEventMask.Active | WindowEventMask.Close, stopped,
+		Assert.That(stopped, Is.EqualTo(WindowEventMask.Active | WindowEventMask.Close),
 			"A failed startup rolls back its partially installed hooks.");
 		manager.SetForegroundTracking(true);
-		Assert.AreEqual(2, starts, "A later attempt must install the native source again.");
+		Assert.That(starts, Is.EqualTo(2), "A later attempt must install the native source again.");
 		backend.Sink(new WindowEventRaw(WindowEventType.Active, 0x2220, 0));
-		Assert.AreEqual((nint)0x2220, manager.ForegroundWindowHandle);
+		Assert.That(manager.ForegroundWindowHandle, Is.EqualTo((nint)0x2220));
 	}
 
 	[TestCase(0), TestCase(0x1110)]
@@ -636,11 +636,11 @@ public class EventHookTests : TestRunner
 		backend.Starting = () => duringStartup = manager.ForegroundWindowHandle;
 
 		manager.SetForegroundTracking(true);
-		Assert.AreEqual((nint)initial, duringStartup, "Reads during backend startup use the live foreground.");
-		Assert.AreEqual(2, queries, "The startup read and initial snapshot both query the foreground.");
+		Assert.That(duringStartup, Is.EqualTo((nint)initial), "Reads during backend startup use the live foreground.");
+		Assert.That(queries, Is.EqualTo(2), "The startup read and initial snapshot both query the foreground.");
 		foreground = 0x2220;
-		Assert.AreEqual((nint)initial, manager.ForegroundWindowHandle, "A seeded zero is also a valid cached foreground.");
-		Assert.AreEqual(2, queries, "A seeded cache avoids live queries.");
+		Assert.That(manager.ForegroundWindowHandle, Is.EqualTo((nint)initial), "A seeded zero is also a valid cached foreground.");
+		Assert.That(queries, Is.EqualTo(2), "A seeded cache avoids live queries.");
 
 		manager.SetForegroundTracking(false);
 		backend.Starting = () =>
@@ -649,9 +649,9 @@ public class EventHookTests : TestRunner
 			backend.Sink(new WindowEventRaw(WindowEventType.Active, 0, 0));
 		};
 		manager.SetForegroundTracking(true);
-		Assert.AreEqual((nint)0x2220, duringStartup, "Restarting tracking does not expose the previous cache.");
-		Assert.AreEqual((nint)0, manager.ForegroundWindowHandle, "A native event wins over the startup snapshot.");
-		Assert.AreEqual(4, queries, "An authoritative native zero does not cause another live query.");
+		Assert.That(duringStartup, Is.EqualTo((nint)0x2220), "Restarting tracking does not expose the previous cache.");
+		Assert.That(manager.ForegroundWindowHandle, Is.EqualTo((nint)0), "A native event wins over the startup snapshot.");
+		Assert.That(queries, Is.EqualTo(4), "An authoritative native zero does not cause another live query.");
 	}
 
 	[TestCase((int)WindowEventType.Close), TestCase((int)WindowEventType.Deactivate)]
@@ -671,15 +671,15 @@ public class EventHookTests : TestRunner
 		}, () => backend);
 
 		manager.SetForegroundTracking(true);
-		Assert.AreEqual(1, queries);
-		Assert.AreEqual((nint)0, manager.ForegroundWindowHandle, "The removed window cannot become the cached foreground.");
-		Assert.AreEqual(2, queries, "An invalidated seed falls back to a fresh foreground query.");
-		Assert.AreEqual((nint)0, manager.ForegroundWindowHandle);
-		Assert.AreEqual(3, queries, "A removal does not establish an authoritative zero foreground.");
+		Assert.That(queries, Is.EqualTo(1));
+		Assert.That(manager.ForegroundWindowHandle, Is.EqualTo((nint)0), "The removed window cannot become the cached foreground.");
+		Assert.That(queries, Is.EqualTo(2), "An invalidated seed falls back to a fresh foreground query.");
+		Assert.That(manager.ForegroundWindowHandle, Is.EqualTo((nint)0));
+		Assert.That(queries, Is.EqualTo(3), "A removal does not establish an authoritative zero foreground.");
 
 		backend.Sink(new WindowEventRaw(WindowEventType.Active, 0, 0));
-		Assert.AreEqual((nint)0, manager.ForegroundWindowHandle);
-		Assert.AreEqual(3, queries, "An authoritative native zero finishes cache initialization.");
+		Assert.That(manager.ForegroundWindowHandle, Is.EqualTo((nint)0));
+		Assert.That(queries, Is.EqualTo(3), "An authoritative native zero finishes cache initialization.");
 	}
 
 	/// <summary>A deactivation clears the tracked foreground only when it names that window, so focus moving to no
@@ -699,9 +699,9 @@ public class EventHookTests : TestRunner
 
 		try
 		{
-			Assert.AreEqual((nint)0x1110, Send(WindowEventType.Active, 0x1110));
-			Assert.AreEqual((nint)0x1110, Send(WindowEventType.Deactivate, 0x2220), "Another window's deactivation is ignored.");
-			Assert.AreEqual((nint)0, Send(WindowEventType.Deactivate, 0x1110), "The foreground window's deactivation clears it.");
+			Assert.That(Send(WindowEventType.Active, 0x1110), Is.EqualTo((nint)0x1110));
+			Assert.That(Send(WindowEventType.Deactivate, 0x2220), Is.EqualTo((nint)0x1110), "Another window's deactivation is ignored.");
+			Assert.That(Send(WindowEventType.Deactivate, 0x1110), Is.EqualTo((nint)0), "The foreground window's deactivation clears it.");
 		}
 		finally
 		{

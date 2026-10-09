@@ -15,32 +15,32 @@ public class InvocationPackingTests : TestRunner
 			object[] supplied = ["head", ..tail];
 			var original = (object[])supplied.Clone();
 			var first = (object[])method.CallInst(receiver, supplied);
-			Assert.AreEqual(tail, first);
-			Assert.AreEqual(original, supplied);
-			Assert.AreEqual(tail, method.CallInst(receiver, supplied));
-			Assert.AreEqual(tail, function.Call(supplied));
-			Assert.AreEqual(original, supplied);
+			Assert.That(first, Is.EqualTo(tail));
+			Assert.That(supplied, Is.EqualTo(original));
+			Assert.That(method.CallInst(receiver, supplied), Is.EqualTo(tail));
+			Assert.That(function.Call(supplied), Is.EqualTo(tail));
+			Assert.That(supplied, Is.EqualTo(original));
 			if (first.Length > 0)
 			{
 				first[0] = "changed";
-				Assert.AreEqual(original, supplied);
+				Assert.That(supplied, Is.EqualTo(original));
 			}
 		}
 
 		object[] packed = [1L, 2L];
-		Assert.AreSame(packed, function.Call("head", (object)packed));
-		Assert.AreSame(packed, method.CallInst(receiver, "head", (object)packed));
+		Assert.That(function.Call("head", (object)packed), Is.SameAs(packed));
+		Assert.That(method.CallInst(receiver, "head", (object)packed), Is.SameAs(packed));
 		var all = Functions.Closure((Func<object[], object>)Fixture.All);
-		Assert.AreSame(packed, all.Call(packed));
-		Assert.AreEqual(new object[] { receiver, 1L, 2L }, all.CallInst(receiver, packed));
-		Assert.AreEqual(new object[] { 1L, 2L }, packed);
+		Assert.That(all.Call(packed), Is.SameAs(packed));
+		Assert.That(all.CallInst(receiver, packed), Is.EqualTo(new object[] { receiver, 1L, 2L }));
+		Assert.That(packed, Is.EqualTo(new object[] { 1L, 2L }));
 
 		var instance = new Fixture();
 		var native = Functions.Closure((Func<object[], object>)instance.InstanceAll);
-		Assert.AreSame(packed, native.Call(packed));
+		Assert.That(native.Call(packed), Is.SameAs(packed));
 		var unbound = new KeysharpFunc(typeof(Fixture).GetMethod(nameof(Fixture.InstanceAll)));
-		Assert.AreSame(packed, unbound.Call(instance, (object)packed));
-		Assert.AreEqual(packed, unbound.Call(instance, 1L, 2L));
+		Assert.That(unbound.Call(instance, (object)packed), Is.SameAs(packed));
+		Assert.That(unbound.Call(instance, 1L, 2L), Is.EqualTo(packed));
 	}
 
 	[Test]
@@ -53,16 +53,16 @@ public class InvocationPackingTests : TestRunner
 			object[] supplied = [..keys, 42L];
 			var original = (object[])supplied.Clone();
 			var result = (object[])setter.CallInst(receiver, supplied);
-			Assert.AreEqual(keys, result[0]);
-			Assert.AreEqual(42L, result[1]);
-			Assert.AreEqual(original, supplied);
+			Assert.That(result[0], Is.EqualTo(keys));
+			Assert.That(result[1], Is.EqualTo(42L));
+			Assert.That(supplied, Is.EqualTo(original));
 		}
 		var fixedSetter = Functions.Closure((Func<object, object, object>)Fixture.set_Item);
-		Assert.AreEqual(42L, fixedSetter.Call("key", 42L, null));
+		Assert.That(fixedSetter.Call("key", 42L, null), Is.EqualTo(42L));
 		var keysSetter = Functions.Closure((Func<object[], object, object>)Fixture.set_Item);
 		var receiverValue = (object[])keysSetter.CallInst(receiver);
 		Assert.IsEmpty((object[])receiverValue[0]);
-		Assert.AreSame(receiver, receiverValue[1]);
+		Assert.That(receiverValue[1], Is.SameAs(receiver));
 	}
 
 	private class Fixture

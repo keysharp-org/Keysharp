@@ -11,46 +11,46 @@ public class DirectiveTests : TestRunner
 		Assert.IsTrue(File.Exists(exepath));
 		var asm = Assembly.LoadFrom(exepath);
 		var title = asm.GetCustomAttribute<AssemblyTitleAttribute>();
-		Assert.IsNotNull(title);
-		Assert.AreEqual(title.Title, "This is a title!");
+		Assert.That(title, Is.Not.Null);
+		Assert.That(title.Title, Is.EqualTo("This is a title!"));
 		//
 		var desc = asm.GetCustomAttribute<AssemblyDescriptionAttribute>();
-		Assert.IsNotNull(desc);
-		Assert.AreEqual(desc.Description, "This is a description!");
+		Assert.That(desc, Is.Not.Null);
+		Assert.That(desc.Description, Is.EqualTo("This is a description!"));
 		//
 		var config = asm.GetCustomAttribute<AssemblyConfigurationAttribute>();
-		Assert.IsNotNull(config);
-		Assert.AreEqual(config.Configuration, "This is a config!");
+		Assert.That(config, Is.Not.Null);
+		Assert.That(config.Configuration, Is.EqualTo("This is a config!"));
 		//
 		var comp = asm.GetCustomAttribute<AssemblyCompanyAttribute>();
-		Assert.IsNotNull(comp);
-		Assert.AreEqual(comp.Company, "This is a company!");
+		Assert.That(comp, Is.Not.Null);
+		Assert.That(comp.Company, Is.EqualTo("This is a company!"));
 		//
 		var prod = asm.GetCustomAttribute<AssemblyProductAttribute>();
-		Assert.IsNotNull(prod);
-		Assert.AreEqual(prod.Product, "This is a product!");
+		Assert.That(prod, Is.Not.Null);
+		Assert.That(prod.Product, Is.EqualTo("This is a product!"));
 		//
 		var copy = asm.GetCustomAttribute<AssemblyCopyrightAttribute>();
-		Assert.IsNotNull(copy);
-		Assert.AreEqual(copy.Copyright, "This is a copyright!");
+		Assert.That(copy, Is.Not.Null);
+		Assert.That(copy.Copyright, Is.EqualTo("This is a copyright!"));
 		//
 		var tm = asm.GetCustomAttribute<AssemblyTrademarkAttribute>();
-		Assert.IsNotNull(tm);
-		Assert.AreEqual(tm.Trademark, "This is a trademark!");
+		Assert.That(tm, Is.Not.Null);
+		Assert.That(tm.Trademark, Is.EqualTo("This is a trademark!"));
 		//
 		var ver = asm.GetCustomAttribute<AssemblyFileVersionAttribute>();
-		Assert.IsNotNull(ver);
-		Assert.AreEqual(ver.Version, "9.8.7.6");
-		Assert.AreEqual(new Version(9, 8, 7, 6), asm.GetName().Version);
+		Assert.That(ver, Is.Not.Null);
+		Assert.That(ver.Version, Is.EqualTo("9.8.7.6"));
+		Assert.That(asm.GetName().Version, Is.EqualTo(new Version(9, 8, 7, 6)));
 		//
 		// `#App { Name: ... }` sets the assembly's identity rather than an attribute, so it is read from the
 		// name and not via GetCustomAttribute. It overrides the name derived from the script file.
-		Assert.AreEqual("ThisIsAnAsmName", asm.GetName().Name);
+		Assert.That(asm.GetName().Name, Is.EqualTo("ThisIsAnAsmName"));
 		//
 		// The whole manifest also rides in the assembly as a JSON resource, readable without executing it.
 		using (var res = asm.GetManifestResourceStream("Keysharp.App.json"))
 		{
-			Assert.IsNotNull(res, "the #App manifest must be embedded as a resource");
+			Assert.That(res, Is.Not.Null, "the #App manifest must be embedded as a resource");
 			var json = new StreamReader(res).ReadToEnd();
 			Assert.IsTrue(json.Contains("ThisIsAnAsmName"), "the embedded manifest should carry the declared keys; got: " + json);
 		}
@@ -164,11 +164,11 @@ public class DirectiveTests : TestRunner
 
 		// Tray suppression is explicit in the startup manifest and independent of a custom tray source.
 		var (arrMani, codeMani, _) = ch.CompileCodeToByteArray("#NoTrayIcon\nx := 1\n", "app-mani", null, false, true);
-		Assert.IsNotNull(arrMani, codeMani);
+		Assert.That(arrMani, Is.Not.Null, codeMani);
 		var asm = Assembly.Load(arrMani);
 		using (var res = asm.GetManifestResourceStream("Keysharp.App.json"))
 		{
-			Assert.IsNotNull(res, "canonical directives alone must still produce the manifest resource");
+			Assert.That(res, Is.Not.Null, "canonical directives alone must still produce the manifest resource");
 			var json = new StreamReader(res).ReadToEnd();
 			Assert.IsTrue(json.Contains("\"noTrayIcon\":true"), json);
 		}
@@ -180,21 +180,21 @@ public class DirectiveTests : TestRunner
 		var (arrIcon, codeIcon, _) = ch.CompileCodeToByteArray(
 			$"#App {{ Icon: \"{iconRelative}\" }}\n#TrayIcon \"{iconRelative}\", 1\nx := 1\n",
 			"app-icon", null, false, true, includeDirOverride: path);
-		Assert.IsNotNull(arrIcon, codeIcon);
+		Assert.That(arrIcon, Is.Not.Null, codeIcon);
 		var iconAsm = Assembly.Load(arrIcon);
 		using var iconRes = iconAsm.GetManifestResourceStream("Keysharp.App.ico");
-		Assert.IsNotNull(iconRes, "the #App icon must be embedded as a managed resource");
-		Assert.AreEqual(new FileInfo(icon).Length, iconRes.Length, "the embedded icon must be the declared file");
+		Assert.That(iconRes, Is.Not.Null, "the #App icon must be embedded as a managed resource");
+		Assert.That(iconRes.Length, Is.EqualTo(new FileInfo(icon).Length), "the embedded icon must be the declared file");
 		using var trayRes = iconAsm.GetManifestResourceStream("Keysharp.App.Tray.ico");
-		Assert.IsNotNull(trayRes, "the #TrayIcon payload must be embedded as its own managed resource");
+		Assert.That(trayRes, Is.Not.Null, "the #TrayIcon payload must be embedded as its own managed resource");
 		using (var iconManifest = iconAsm.GetManifestResourceStream("Keysharp.App.json"))
 		{
-			Assert.IsNotNull(iconManifest);
+			Assert.That(iconManifest, Is.Not.Null);
 			var json = new StreamReader(iconManifest).ReadToEnd();
 			Assert.IsTrue(json.Contains("\"icon\":\"Gui/monkey.ico\"")
 				&& json.Contains("\"trayIcon\":\"Gui/monkey.ico\"")
 				&& json.Contains("\"trayIconNumber\":1"), json);
-			Assert.IsFalse(json.Contains(Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase), json);
+			Assert.That(json.Contains(Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase), Is.False, json);
 		}
 
 		// Blocks and duplicate keys are applied in source order. Files: [] clears an earlier payload, while scalar
@@ -205,23 +205,23 @@ public class DirectiveTests : TestRunner
 			+ "x := 1\n";
 		var (arrLast, codeLast, lastCompilation) = ch.CompileCodeToByteArray(lastWinsSource, "app-last",
 			emitCode: true, output: ScriptCompilationOutput.Executable, includeDirOverride: path);
-		Assert.IsNotNull(arrLast, codeLast);
+		Assert.That(arrLast, Is.Not.Null, codeLast);
 		Assert.IsEmpty(lastCompilation.Manifest.FileSources);
-		Assert.AreEqual("example.product", lastCompilation.Manifest.DesktopEntry);
+		Assert.That(lastCompilation.Manifest.DesktopEntry, Is.EqualTo("example.product"));
 		var lastAsm = Assembly.Load(arrLast);
-		Assert.IsFalse(lastAsm.GetManifestResourceNames().Any(n => n.StartsWith(AppManifest.FileResourcePrefix, StringComparison.Ordinal)));
+		Assert.That(lastAsm.GetManifestResourceNames().Any(n => n.StartsWith(AppManifest.FileResourcePrefix, StringComparison.Ordinal)), Is.False);
 		using (var lastManifest = lastAsm.GetManifestResourceStream("Keysharp.App.json"))
 		{
 			var json = new StreamReader(lastManifest).ReadToEnd();
 			Assert.IsTrue(json.Contains("\"title\":\"10-2\"")
 				&& json.Contains("\"desktopEntry\":\"example.product\"")
 				&& json.Contains("\"files\":[]"), json);
-			Assert.IsFalse(json.Contains("trayIcon", StringComparison.OrdinalIgnoreCase), json);
+			Assert.That(json.Contains("trayIcon", StringComparison.OrdinalIgnoreCase), Is.False, json);
 		}
 
 		// A script with no manifest keys or canonical manifest directives embeds no manifest at all.
 		var (arrNone, codeNone, _) = ch.CompileCodeToByteArray("x := 1\n", "app-none", null, false, true);
-		Assert.IsNotNull(arrNone, codeNone);
+		Assert.That(arrNone, Is.Not.Null, codeNone);
 		Assert.IsNull(Assembly.Load(arrNone).GetManifestResourceStream("Keysharp.App.json"),
 			"a manifest-less script must not carry an empty manifest resource");
 	}
@@ -264,13 +264,13 @@ public class DirectiveTests : TestRunner
 			File.Copy(Path.GetFullPath(string.Concat(path, "Gui/monkey.ico")), Path.Combine(root, logicalIcon));
 
 			var ordinal = Accepts($"#TrayIcon \"{logicalIcon}\", 2\nx := 1\n", root).Manifest;
-			Assert.AreEqual(logicalIcon, ordinal.TrayIcon);
-			Assert.AreEqual(2L, ordinal.TrayIconNumber);
+			Assert.That(ordinal.TrayIcon, Is.EqualTo(logicalIcon));
+			Assert.That(ordinal.TrayIconNumber, Is.EqualTo(2L));
 			Assert.IsNull(ordinal.TrayIconResource);
 			Assert.IsNotEmpty(ordinal.TrayIconBytes);
 
 			var resourceId = Accepts($"#TrayIcon \"{logicalIcon}\", -14\nx := 1\n", root).Manifest;
-			Assert.AreEqual(-14L, resourceId.TrayIconNumber);
+			Assert.That(resourceId.TrayIconNumber, Is.EqualTo(-14L));
 
 			// Build a real managed-resource DLL so this exercises the string selector rather than assuming one of
 			// Keysharp's implementation assemblies happens to expose a particular .resx key.
@@ -302,7 +302,7 @@ public class DirectiveTests : TestRunner
 			}
 
 			var managed = Accepts("#TrayIcon \"managed-icons.dll\", \"ApplicationIcon\"\nx := 1\n", root).Manifest;
-			Assert.AreEqual("ApplicationIcon", managed.TrayIconResource);
+			Assert.That(managed.TrayIconResource, Is.EqualTo("ApplicationIcon"));
 			Assert.IsNull(managed.TrayIconNumber);
 
 			var restoredFromSuppressed = Accepts("#NoTrayIcon\n#TrayIcon\nx := 1\n", root).Manifest;
@@ -311,11 +311,11 @@ public class DirectiveTests : TestRunner
 			Assert.IsNull(restoredFromSuppressed.TrayIconBytes);
 
 			var suppressedLast = Accepts("#TrayIcon\n#NoTrayIcon\nx := 1\n", root).Manifest;
-			Assert.AreEqual(true, suppressedLast.NoTrayIcon);
+			Assert.That(suppressedLast.NoTrayIcon, Is.EqualTo(true));
 			Assert.IsNull(suppressedLast.TrayIcon);
 
 			var customLast = Accepts($"#NoTrayIcon\n#TrayIcon \"{logicalIcon}\"\nx := 1\n", root).Manifest;
-			Assert.AreEqual(logicalIcon, customLast.TrayIcon);
+			Assert.That(customLast.TrayIcon, Is.EqualTo(logicalIcon));
 			Assert.IsNull(customLast.NoTrayIcon);
 
 			var restoredLast = Accepts($"#TrayIcon \"{logicalIcon}\", 1\n#TrayIcon\nx := 1\n", root).Manifest;
@@ -334,16 +334,16 @@ public class DirectiveTests : TestRunner
 			Directory.CreateDirectory(includeDirectory);
 			File.WriteAllText(Path.Combine(includeDirectory, "tray.ahk"), $"#TrayIcon \"{logicalIcon}\"\n");
 			var included = Accepts("#Include \"included/tray.ahk\"\nx := 1\n", root).Manifest;
-			Assert.AreEqual(logicalIcon, included.TrayIcon);
+			Assert.That(included.TrayIcon, Is.EqualTo(logicalIcon));
 			Assert.IsNotEmpty(included.TrayIconBytes);
 
 #if WINDOWS
 			// Exercise the selector against real native module resources rather than merely retaining it beside an .ico.
 			var nativeOrdinal = Accepts("#TrayIcon \"shell32.dll\", 2\nx := 1\n", Environment.SystemDirectory).Manifest;
-			Assert.AreEqual(2L, nativeOrdinal.TrayIconNumber);
+			Assert.That(nativeOrdinal.TrayIconNumber, Is.EqualTo(2L));
 			Assert.IsNotEmpty(nativeOrdinal.TrayIconBytes);
 			var nativeResource = Accepts("#TrayIcon \"user32.dll\", -32512\nx := 1\n", Environment.SystemDirectory).Manifest;
-			Assert.AreEqual(-32512L, nativeResource.TrayIconNumber);
+			Assert.That(nativeResource.TrayIconNumber, Is.EqualTo(-32512L));
 			Assert.IsNotEmpty(nativeResource.TrayIconBytes);
 #endif
 
@@ -376,56 +376,56 @@ public class DirectiveTests : TestRunner
 		var compiler = new CompilerHelper();
 		var (assemblyBytes, diagnostics, _) = compiler.CompileCodeToByteArray(File.ReadAllText(scriptPath),
 			"directive-misc-suspend-exempt", defines: ["SUSPENDEXEMPT_INSPECT"], includeDirOverride: path);
-		Assert.IsNotNull(assemblyBytes, diagnostics);
+		Assert.That(assemblyBytes, Is.Not.Null, diagnostics);
 		ScriptExecutionState.Assembly = Assembly.Load(assemblyBytes);
 		var program = ScriptExecutionState.Assembly.GetType("Keysharp.CompiledMain.Program");
-		Assert.IsNotNull(program);
+		Assert.That(program, Is.Not.Null);
 		// Force the script singleton to exist before invoking the hoisted registration method directly.
 		InvokeCompiledScript(() => {
 			_ = program.GetField("MainScript", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
 			program.GetMethod("AutoExecSection").Invoke(null, null);
 		});
 		Assert.IsTrue(s.FlowData.suspended);
-		Assert.AreEqual(6, s.HotkeyData.shk.Length);
-		Assert.AreEqual("F1", s.HotkeyData.shk[0].Name);
-		Assert.AreEqual("F2", s.HotkeyData.shk[1].Name);
-		Assert.AreEqual("F3", s.HotkeyData.shk[2].Name);
-		Assert.AreEqual("F4", s.HotkeyData.shk[3].Name);
-		Assert.AreEqual("F6", s.HotkeyData.shk[4].Name);
-		Assert.AreEqual("F5", s.HotkeyData.shk[5].Name);
+		Assert.That(s.HotkeyData.shk.Length, Is.EqualTo(6));
+		Assert.That(s.HotkeyData.shk[0].Name, Is.EqualTo("F1"));
+		Assert.That(s.HotkeyData.shk[1].Name, Is.EqualTo("F2"));
+		Assert.That(s.HotkeyData.shk[2].Name, Is.EqualTo("F3"));
+		Assert.That(s.HotkeyData.shk[3].Name, Is.EqualTo("F4"));
+		Assert.That(s.HotkeyData.shk[4].Name, Is.EqualTo("F6"));
+		Assert.That(s.HotkeyData.shk[5].Name, Is.EqualTo("F5"));
 		Assert.IsTrue(s.HotkeyData.shk[0].firstVariant.suspendExempt);
 		Assert.IsTrue(s.HotkeyData.shk[1].firstVariant.suspendExempt);
-		Assert.IsFalse(s.HotkeyData.shk[2].firstVariant.suspendExempt);
+		Assert.That(s.HotkeyData.shk[2].firstVariant.suspendExempt, Is.False);
 		Assert.IsTrue(s.HotkeyData.shk[3].firstVariant.suspendExempt);
 		Assert.IsTrue(s.HotkeyData.shk[4].firstVariant.suspendExempt);
-		Assert.IsFalse(s.HotkeyData.shk[5].firstVariant.suspendExempt);
-		Assert.AreEqual(50, s.HotkeyData.shk[5].firstVariant.inputLevel);
-		Assert.AreEqual(0, hsm.Hotstrings[0].inputLevel);
-		Assert.AreEqual(50, hsm.Hotstrings[7].inputLevel);
+		Assert.That(s.HotkeyData.shk[5].firstVariant.suspendExempt, Is.False);
+		Assert.That(s.HotkeyData.shk[5].firstVariant.inputLevel, Is.EqualTo(50));
+		Assert.That(hsm.Hotstrings[0].inputLevel, Is.EqualTo(0));
+		Assert.That(hsm.Hotstrings[7].inputLevel, Is.EqualTo(50));
 		// While suspended, exactly the exempt hotstrings stay enabled.
 		bool[] exempt = [true, true, false, false, true, true, true, false, true, false];
-		Assert.AreEqual(exempt.Length, hsm.Hotstrings.Length);
+		Assert.That(hsm.Hotstrings.Length, Is.EqualTo(exempt.Length));
 
 		for (var i = 0; i < exempt.Length; i++)
 		{
-			Assert.AreEqual(exempt[i], hsm.Hotstrings[i].SuspendExempt, $"hotstring {i}");
-			Assert.AreEqual(exempt[i], hsm.Hotstrings[i].suspended == 0, $"hotstring {i}");
+			Assert.That(hsm.Hotstrings[i].SuspendExempt, Is.EqualTo(exempt[i]), $"hotstring {i}");
+			Assert.That(hsm.Hotstrings[i].suspended == 0, Is.EqualTo(exempt[i]), $"hotstring {i}");
 		}
 
-		Assert.AreEqual(6, hsm.enabledCount);
+		Assert.That(hsm.enabledCount, Is.EqualTo(6));
 		Keysharp.Builtins.Keyboard.Hotstring(":S:dynamic");
-		Assert.AreEqual(0, hsm.Hotstrings[7].suspended);
-		Assert.AreEqual(7, hsm.enabledCount);
+		Assert.That(hsm.Hotstrings[7].suspended, Is.EqualTo(0));
+		Assert.That(hsm.enabledCount, Is.EqualTo(7));
 		Keysharp.Builtins.Keyboard.Hotstring(":S0:dynamic");
-		Assert.AreNotEqual(0, hsm.Hotstrings[7].suspended);
-		Assert.AreEqual(6, hsm.enabledCount);
+		Assert.That(hsm.Hotstrings[7].suspended, Is.Not.EqualTo(0));
+		Assert.That(hsm.enabledCount, Is.EqualTo(6));
 #if WINDOWS
 		using var suspendItem = new ToolStripMenuItem();
 		s.suspendMenuItem = suspendItem;
 		try
 		{
 			Keysharp.Builtins.Flow.Suspend(0);
-			Assert.IsFalse(suspendItem.Checked);
+			Assert.That(suspendItem.Checked, Is.False);
 			Keysharp.Builtins.Flow.Suspend(1);
 			Assert.IsTrue(suspendItem.Checked);
 		}
@@ -444,21 +444,21 @@ public class DirectiveTests : TestRunner
 		var compiler = new CompilerHelper();
 		var (assemblyBytes, diagnostics, _) = compiler.CompileCodeToByteArray(source,
 			"directive-suspend-exempt-modules", includeDirOverride: path);
-		Assert.IsNotNull(assemblyBytes, diagnostics);
+		Assert.That(assemblyBytes, Is.Not.Null, diagnostics);
 		ScriptExecutionState.Assembly = Assembly.Load(assemblyBytes);
 		var program = ScriptExecutionState.Assembly.GetType("Keysharp.CompiledMain.Program");
-		Assert.IsNotNull(program);
+		Assert.That(program, Is.Not.Null);
 		InvokeCompiledScript(() => {
 			_ = program.GetField("MainScript", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
 			_ = program.GetMethod("AutoExecSection").Invoke(null, null);
 		});
 		var hotkeys = Script.TheScript.HotkeyData.shk;
-		Assert.AreEqual(4, hotkeys.Length);
+		Assert.That(hotkeys.Length, Is.EqualTo(4));
 		var exemptByName = hotkeys.ToDictionary(hotkey => hotkey.Name, hotkey => hotkey.firstVariant.suspendExempt);
-		Assert.IsFalse(exemptByName["F1"]);
-		Assert.IsFalse(exemptByName["F3"]);
+		Assert.That(exemptByName["F1"], Is.False);
+		Assert.That(exemptByName["F3"], Is.False);
 		Assert.IsTrue(exemptByName["F2"]);
-		Assert.IsFalse(exemptByName["F4"]);
+		Assert.That(exemptByName["F4"], Is.False);
 	}
 
 	[Test, Category("Directives")]
@@ -526,21 +526,21 @@ public class DirectiveTests : TestRunner
 			var (program, diagnostics) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(source);
 			Assert.IsEmpty(diagnostics);
 			var lowerer = new Keysharp.Compilation.Syntax.Lowerer();
-			Assert.IsNotNull(lowerer.Build(program, "Experimental"));
+			Assert.That(lowerer.Build(program, "Experimental"), Is.Not.Null);
 			Assert.IsEmpty(lowerer.Diagnostics);
 			return lowerer.CompileWarnings.ToArray();
 		}
 
 		const string imports = "#Import Ks { Audio, Image, Monitor, Clr, Overlay }\n";
 		var warnings = Warnings("#Warn Experimental\n" + imports);
-		Assert.AreEqual(5, warnings.Length);
+		Assert.That(warnings.Length, Is.EqualTo(5));
 		foreach (var name in new[] { "Audio", "Image", "Monitor", "Clr", "Overlay" })
 			Assert.IsTrue(warnings.Any(w => w.Contains(name + " is experimental")));
 		Assert.IsEmpty(Warnings(imports));
-		Assert.AreEqual(5, Warnings("#Warn All, StdOut\n" + imports).Length);
+		Assert.That(Warnings("#Warn All, StdOut\n" + imports).Length, Is.EqualTo(5));
 		Assert.IsEmpty(Warnings(imports + "#Warn All, StdOut\n#Warn Experimental, Off\n"));
-		Assert.AreEqual(1, Warnings("#Warn Experimental\n#Import Ks { Image, Image as Picture }\n").Length);
-		Assert.AreEqual(1, Warnings("#Warn Experimental\n#Import Ks { * }\nx := Image\n").Length);
+		Assert.That(Warnings("#Warn Experimental\n#Import Ks { Image, Image as Picture }\n").Length, Is.EqualTo(1));
+		Assert.That(Warnings("#Warn Experimental\n#Import Ks { * }\nx := Image\n").Length, Is.EqualTo(1));
 		Assert.IsEmpty(Warnings("#Warn Experimental\n#Import Ks { * }\nclass Image {}\nx := Image\n"));
 	}
 
@@ -558,32 +558,32 @@ public class DirectiveTests : TestRunner
 		}
 
 		var w = Lower("#Warning untested on macOS\nx := 1\n");
-		Assert.IsNotNull(w.unit, "#Warning must not abort the compile");
+		Assert.That(w.unit, Is.Not.Null, "#Warning must not abort the compile");
 		Assert.IsEmpty(w.diags, "#Warning must not produce an error");
-		Assert.AreEqual(1, w.warns.Length, "expected exactly one warning");
+		Assert.That(w.warns.Length, Is.EqualTo(1), "expected exactly one warning");
 		// Positioned like any other diagnostic, so it points at the directive rather than the top of the script.
-		Assert.AreEqual("1:1: untested on macOS", w.warns[0]);
-		Assert.AreEqual("3:1: on line three", Lower("x := 1\ny := 2\n#Warning on line three\n").warns[0]);
+		Assert.That(w.warns[0], Is.EqualTo("1:1: untested on macOS"));
+		Assert.That(Lower("x := 1\ny := 2\n#Warning on line three\n").warns[0], Is.EqualTo("3:1: on line three"));
 
 		// The message is free-form English text, captured verbatim: commas do not separate arguments, and an
 		// apostrophe or a brace is literal. Lexed as code instead, "don't" is an unterminated string and a lone
 		// "{" swallows every following line — silently, since #Warning does not fail the build.
-		Assert.AreEqual("1:1: a, b, c", Lower("#Warning a, b, c\n").warns[0]);
-		Assert.AreEqual("1:1: don't use this", Lower("#Warning don't use this\nx := 1\n").warns[0]);
+		Assert.That(Lower("#Warning a, b, c\n").warns[0], Is.EqualTo("1:1: a, b, c"));
+		Assert.That(Lower("#Warning don't use this\nx := 1\n").warns[0], Is.EqualTo("1:1: don't use this"));
 
 		var brace = Lower("#Warning fix the { in ParseFoo\nx := 1\ny := 2\n");
-		Assert.AreEqual("1:1: fix the { in ParseFoo", brace.warns[0]);
+		Assert.That(brace.warns[0], Is.EqualTo("1:1: fix the { in ParseFoo"));
 		Assert.IsEmpty(brace.diags, "a brace in the message must not consume the rest of the script");
 
 		// A bare #Warning still says something rather than emitting an empty line.
-		Assert.AreEqual("1:1: #Warning directive", Lower("#Warning\n").warns[0]);
+		Assert.That(Lower("#Warning\n").warns[0], Is.EqualTo("1:1: #Warning directive"));
 
 		// Conditional compilation applies: a warning in a dead branch never fires. The symbol has to be one no
 		// host ever defines — a platform symbol is live when the suite runs on that platform, so the branch is
 		// only dead on the other ones. KEYSHARP is the control: always defined, so that branch must still warn.
 		Assert.IsEmpty(Lower("#if KEYSHARP_NO_SUCH_SYMBOL\n#Warning dead\n#endif\nx := 1\n").warns,
 			"a #Warning inside an excluded branch must not be reported");
-		Assert.AreEqual("2:1: live", Lower("#if KEYSHARP\n#Warning live\n#endif\nx := 1\n").warns[0]);
+		Assert.That(Lower("#if KEYSHARP\n#Warning live\n#endif\nx := 1\n").warns[0], Is.EqualTo("2:1: live"));
 
 		// Control: #Error remains fatal, and does not land in Warnings.
 		var e = Lower("#Error nope\nx := 1\n");
@@ -610,10 +610,10 @@ public class DirectiveTests : TestRunner
 				return diags.Count > 0;
 			}
 
-			Assert.IsFalse(BranchTaken("FEATURE_X"), "an undefined symbol should be false");
+			Assert.That(BranchTaken("FEATURE_X"), Is.False, "an undefined symbol should be false");
 			Assert.IsTrue(BranchTaken("FEATURE_X", "FEATURE_X"), "a supplied symbol should be true");
 			Assert.IsTrue(BranchTaken("feature_x", "FEATURE_X"), "symbols are case-insensitive, like #Define");
-			Assert.IsFalse(BranchTaken("FEATURE_Y", "FEATURE_X"), "only the supplied symbol should be defined");
+			Assert.That(BranchTaken("FEATURE_Y", "FEATURE_X"), Is.False, "only the supplied symbol should be defined");
 
 			// The switch itself: accepted forms, comma lists, and rejection of a value-looking argument. The
 			// parsed symbols ride on the command, like every other switch — nothing is published process-wide.
@@ -657,7 +657,7 @@ public class DirectiveTests : TestRunner
 			foreach (var bad in new[] { "--define:FOO=1", "--define:9BAD", "--define:has space", "--define:a-b", "--define" })
 			{
 				var cmd = Keysharp.Internals.Scripting.Runner.Parse([bad, script]);
-				Assert.IsNotNull(cmd.ErrorText, $"{bad} should be rejected");
+				Assert.That(cmd.ErrorText, Is.Not.Null, $"{bad} should be rejected");
 				Assert.IsTrue(cmd.ErrorText.Contains("--define", StringComparison.Ordinal), $"{bad} should name the switch; got: {cmd.ErrorText}");
 			}
 		}
@@ -677,7 +677,7 @@ public class DirectiveTests : TestRunner
 		static string Compile(string src)
 		{
 			var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(src, "hotiftest", null, false, true, ScriptCompilationOutput.InMemory);
-			Assert.IsNotNull(arr, code);
+			Assert.That(arr, Is.Not.Null, code);
 			return code;
 		}
 
@@ -691,11 +691,13 @@ public class DirectiveTests : TestRunner
 		// A class static is read, not invoked.
 		Assert.IsTrue(code.Contains("GetPropertyValue(probe, \"Running\")"),
 					  "a `Class.Prop` criterion must read the property; generated:\n" + code);
-		Assert.IsFalse(code.Contains("Invoke(probe, \"Running\")"),
+		Assert.That(code.Contains("Invoke(probe, \"Running\")"),
+					   Is.False,
 					   "a `Class.Prop` criterion must not be invoked as a method; generated:\n" + code);
 		// A plain variable is its own value, not something to call. A call lowers to the call form, which
 		// names no member (see Script.InvokeOrNull).
-		Assert.IsFalse(code.Contains("Invoke(myflag, null)"),
+		Assert.That(code.Contains("Invoke(myflag, null)"),
+					   Is.False,
 					   "a bare-variable criterion must not be called; generated:\n" + code);
 		// A criterion that really is a call still is one.
 		Assert.IsTrue(code.Contains("Invoke(ison, null)"),
@@ -711,7 +713,7 @@ public class DirectiveTests : TestRunner
 		static string Compile(string src, params string[] defines)
 		{
 			var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(src, "definetest", null, false, true, ScriptCompilationOutput.InMemory, defines);
-			Assert.IsNotNull(arr, code);
+			Assert.That(arr, Is.Not.Null, code);
 			return code;
 		}
 
@@ -738,10 +740,10 @@ public class DirectiveTests : TestRunner
 
 		var included = Split("--include", "lib.ahk", "--force");
 		Assert.IsNull(included.error);
-		Assert.AreEqual(Path.GetFullPath("lib.ahk"), included.includeFile, "--include takes the next argument, resolved against the working folder");
-		NUnit.Framework.CollectionAssert.AreEqual(new[] { "--force" }, included.rest);
-		Assert.IsNotNull(Split("--include", "a.ahk", "--include", "b.ahk").error, "only one file can be given with --include");
-		Assert.IsNotNull(Split("--include").error, "--include needs a file");
+		Assert.That(included.includeFile, Is.EqualTo(Path.GetFullPath("lib.ahk")), "--include takes the next argument, resolved against the working folder");
+		Assert.That(included.rest, Is.EqualTo(new[] { "--force" }).AsCollection);
+		Assert.That(Split("--include", "a.ahk", "--include", "b.ahk").error, Is.Not.Null, "only one file can be given with --include");
+		Assert.That(Split("--include").error, Is.Not.Null, "--include needs a file");
 
 		// SplitCompileSwitches has to agree with Runner.Parse about what is a switch at all, so the slash form is
 		// extracted only where Parse would also have accepted it — on Windows. Elsewhere "/define:A,B" is an
@@ -749,8 +751,8 @@ public class DirectiveTests : TestRunner
 		var mixed = Split("--define:FEATURE_X", "--force", "/define:A,B", "--errorstdout");
 		Assert.IsNull(mixed.error);
 #if WINDOWS
-		NUnit.Framework.CollectionAssert.AreEqual(new[] { "FEATURE_X", "A", "B" }, mixed.defines, "every --define form should be extracted");
-		NUnit.Framework.CollectionAssert.AreEqual(new[] { "--force", "--errorstdout" }, mixed.rest, "other switches must be forwarded untouched");
+		Assert.That(mixed.defines, Is.EqualTo(new[] { "FEATURE_X", "A", "B" }).AsCollection, "every --define form should be extracted");
+		Assert.That(mixed.rest, Is.EqualTo(new[] { "--force", "--errorstdout" }).AsCollection, "other switches must be forwarded untouched");
 #else
 		NUnit.Framework.CollectionAssert.AreEqual(new[] { "FEATURE_X" }, mixed.defines, "only the dash forms are switches here");
 		NUnit.Framework.CollectionAssert.AreEqual(new[] { "--force", "/define:A,B", "--errorstdout" }, mixed.rest, "a path-shaped argument must be forwarded untouched");
@@ -759,10 +761,10 @@ public class DirectiveTests : TestRunner
 		// Nothing to extract: the whole command line is forwarded.
 		var none = Split("--force", "--restart");
 		Assert.IsEmpty(none.defines);
-		NUnit.Framework.CollectionAssert.AreEqual(new[] { "--force", "--restart" }, none.rest);
+		Assert.That(none.rest, Is.EqualTo(new[] { "--force", "--restart" }).AsCollection);
 
 		// A bad symbol is reported rather than forwarded as if it were an ordinary switch.
-		Assert.IsNotNull(Split("--define:FOO=1").error, "an invalid symbol name should be rejected");
+		Assert.That(Split("--define:FOO=1").error, Is.Not.Null, "an invalid symbol name should be rejected");
 
 		// The string form of RunScript's Options: double quotes group and are removed, so a switch value containing
 		// spaces survives as ONE argument. Split on whitespace alone, `--include "My include.ahk"` becomes
@@ -775,22 +777,22 @@ public class DirectiveTests : TestRunner
 			return (List<string>)parameters[1];
 		}
 
-		NUnit.Framework.CollectionAssert.AreEqual(
-			new[] { "--define:FEATURE_X", "--include", "My include.ahk", "--force" },
+		Assert.That(
 			Args(@"--define:FEATURE_X --include ""My include.ahk"" --force"),
+			Is.EqualTo(new[] { "--define:FEATURE_X", "--include", "My include.ahk", "--force" }).AsCollection,
 			"a quoted argument containing spaces must stay a single argument");
 
 		// Quotes group anywhere in an argument, not just around the whole of it.
-		NUnit.Framework.CollectionAssert.AreEqual(new[] { "--include=My include.ahk" }, Args(@"--include=""My include.ahk"""));
+		Assert.That(Args(@"--include=""My include.ahk"""), Is.EqualTo(new[] { "--include=My include.ahk" }).AsCollection);
 		// A deliberate empty argument survives, so the arguments after it keep their positions.
-		NUnit.Framework.CollectionAssert.AreEqual(new[] { "--a", "", "--b" }, Args(@"--a """" --b"));
+		Assert.That(Args(@"--a """" --b"), Is.EqualTo(new[] { "--a", "", "--b" }).AsCollection);
 		// Tabs and runs of spaces separate exactly like single spaces.
-		NUnit.Framework.CollectionAssert.AreEqual(new[] { "--a", "--b" }, Args("  --a \t\t --b  "));
+		Assert.That(Args("  --a \t\t --b  "), Is.EqualTo(new[] { "--a", "--b" }).AsCollection);
 		// An unterminated quote takes the rest of the line rather than dropping it.
-		NUnit.Framework.CollectionAssert.AreEqual(new[] { "--include", "My include.ahk" }, Args(@"--include ""My include.ahk"));
+		Assert.That(Args(@"--include ""My include.ahk"), Is.EqualTo(new[] { "--include", "My include.ahk" }).AsCollection);
 		// An Array element is already one argument, so it needs no quoting even with spaces in it.
-		NUnit.Framework.CollectionAssert.AreEqual(new[] { "--include", "My include.ahk" },
-			Args(new Keysharp.Builtins.Array(["--include", "My include.ahk"])));
+		Assert.That(Args(new Keysharp.Builtins.Array(["--include", "My include.ahk"])),
+			Is.EqualTo(new[] { "--include", "My include.ahk" }).AsCollection);
 	}
 
 	[Test, Category("Directives")]
@@ -812,7 +814,7 @@ public class DirectiveTests : TestRunner
 			string Compile(params string[] defines)
 			{
 				var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(main, "defmain", null, false, true, ScriptCompilationOutput.InMemory, defines);
-				Assert.IsNotNull(arr, code);
+				Assert.That(arr, Is.Not.Null, code);
 				return code;
 			}
 
@@ -840,7 +842,7 @@ public class DirectiveTests : TestRunner
 		var (arr, code, _) = ch.CompileCodeToByteArray(
 			"#Requires AutoHotkey v2.0\n#Requires capability ScreenCapture, InputMonitoring\nx := 1\n",
 			"reqcap-emit", null, false, true);
-		Assert.IsNotNull(arr, code);
+		Assert.That(arr, Is.Not.Null, code);
 		Assert.IsTrue(code.Contains("RequireCapabilities(\"ScreenCapture, InputMonitoring\")"),
 			"the capability directive should emit a RequireCapabilities call; generated:\n" + code);
 		Assert.That(code.IndexOf("RequireCapabilities(\"ScreenCapture, InputMonitoring\")", StringComparison.Ordinal),
@@ -851,15 +853,16 @@ public class DirectiveTests : TestRunner
 		var (arrPl, codePl, _) = ch.CompileCodeToByteArray(
 			"#Requires AutoHotkey v2.0\n#Requires capabilities InputMonitoring\nx := 1\n",
 			"reqcap-plural", null, false, true);
-		Assert.IsNotNull(arrPl, codePl);
+		Assert.That(arrPl, Is.Not.Null, codePl);
 		Assert.IsTrue(codePl.Contains("RequireCapabilities(\"InputMonitoring\")"),
 			"the plural `#Requires capabilities` alias should emit a RequireCapabilities call");
 
 		// Control: a version-only #Requires must NOT emit a capability request.
 		var (arrNone, codeNone, _) = ch.CompileCodeToByteArray(
 			"#Requires AutoHotkey v2.0\nx := 1\n", "reqcap-none", null, false, true);
-		Assert.IsNotNull(arrNone, codeNone);
-		Assert.IsFalse(codeNone.Contains("RequireCapabilities"),
+		Assert.That(arrNone, Is.Not.Null, codeNone);
+		Assert.That(codeNone.Contains("RequireCapabilities"),
+			Is.False,
 			"a version-only #Requires must not emit RequireCapabilities");
 	}
 
@@ -883,7 +886,7 @@ public class DirectiveTests : TestRunner
 			File.WriteAllText(mainPath, $"#Warn All, MsgBox\n#include \"{incPath}\"\nMainWarnHelper() {{\n\treturn zzUnsetInMain\n}}\n");
 
 			var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(mainPath, "warn-main", null, false, true);
-			Assert.IsNotNull(arr, code);
+			Assert.That(arr, Is.Not.Null, code);
 
 			// The included file's warnings quote ITS text at ITS line numbers, and name it.
 			Assert.IsTrue(code.Contains("In warn-inc.ks:"), "an included file's warning should name the file; generated:\n" + code);
@@ -892,13 +895,15 @@ public class DirectiveTests : TestRunner
 			Assert.IsTrue(code.Contains("4: zzNeverRuns := 2"),
 				"the Unreachable excerpt should quote the include's own line 4; generated:\n" + code);
 			// The regression: the main script's line 3 must never be quoted for a warning raised in the include.
-			Assert.IsFalse(code.Contains("3: MainWarnHelper"),
+			Assert.That(code.Contains("3: MainWarnHelper"),
+				Is.False,
 				"an included file's warning must not quote the main script at the same line number; generated:\n" + code);
 
 			// A main-script warning is unchanged: its own text, no file header.
 			Assert.IsTrue(code.Contains("4: return zzUnsetInMain"),
 				"a main-script warning should still quote the main script; generated:\n" + code);
-			Assert.IsFalse(code.Contains("In warn-main.ks:"),
+			Assert.That(code.Contains("In warn-main.ks:"),
+				Is.False,
 				"a main-script warning should not be prefixed with a file name; generated:\n" + code);
 		}
 		finally
@@ -915,7 +920,7 @@ public class DirectiveTests : TestRunner
 		static string Compiled(string source)
 		{
 			var (bytes, code, _) = new CompilerHelper().CompileCodeToByteArray("#Warn VarUnset, StdOut\n" + source, "warn-declared-global", null, false, true);
-			Assert.IsNotNull(bytes, code);
+			Assert.That(bytes, Is.Not.Null, code);
 			return code;
 		}
 
@@ -923,20 +928,20 @@ public class DirectiveTests : TestRunner
 
 		Assert.IsTrue(Warns("F() {\n\tglobal declaredOnly\n}\nx := declaredOnly\n"));
 		Assert.IsTrue(Warns("F() {\n\tglobal declaredOnly\n}\nG() => declaredOnly\n"));
-		Assert.IsFalse(Warns("F() {\n\tglobal declaredOnly := 1\n}\nx := declaredOnly\n"));
-		Assert.IsFalse(Warns("x := declaredOnly\nF() {\n\tglobal declaredOnly\n\tdeclaredOnly := 1\n}\n"));
-		Assert.IsFalse(Warns("x := declaredOnly\nF() {\n\tglobal declaredOnly\n\tG() => declaredOnly := 1\n}\n"));
-		Assert.IsFalse(Warns("x := declaredOnly\nF() {\n\tglobal\n\tG() {\n\t\tdeclaredOnly := 1\n\t}\n}\n"));
+		Assert.That(Warns("F() {\n\tglobal declaredOnly := 1\n}\nx := declaredOnly\n"), Is.False);
+		Assert.That(Warns("x := declaredOnly\nF() {\n\tglobal declaredOnly\n\tdeclaredOnly := 1\n}\n"), Is.False);
+		Assert.That(Warns("x := declaredOnly\nF() {\n\tglobal declaredOnly\n\tG() => declaredOnly := 1\n}\n"), Is.False);
+		Assert.That(Warns("x := declaredOnly\nF() {\n\tglobal\n\tG() {\n\t\tdeclaredOnly := 1\n\t}\n}\n"), Is.False);
 		// A parameter or local of an assume-global function is none of its globals.
 		Assert.IsTrue(Warns("x := declaredOnly\nF(declaredOnly) {\n\tglobal\n\tdeclaredOnly := 1\n}\n"));
 		Assert.IsTrue(Warns("x := declaredOnly\nF() {\n\tglobal\n\tlocal declaredOnly := 1\n}\n"));
 		// The top level assigns a global in any form, and a function's own variable is warned about as a local.
-		Assert.IsFalse(Warns("declaredOnly ??= 3\nx := declaredOnly\n"));
-		Assert.IsFalse(Warns("declaredOnly += 1\nx := declaredOnly\nF() => declaredOnly\n"));
+		Assert.That(Warns("declaredOnly ??= 3\nx := declaredOnly\n"), Is.False);
+		Assert.That(Warns("declaredOnly += 1\nx := declaredOnly\nF() => declaredOnly\n"), Is.False);
 		Assert.IsTrue(Compiled("F() {\n\tglobal declaredOnly\n}\nG() {\n\tdeclaredOnly += 1\n}\n")
 			.Contains("This local variable appears to never be assigned a value: declaredOnly."));
 		// A function reading a global only an assume-global function assigns reads an assigned global.
-		Assert.IsFalse(Warns("F() {\n\tglobal\n\tdeclaredOnly := 1\n}\nG() {\n\treturn declaredOnly\n}\n"));
+		Assert.That(Warns("F() {\n\tglobal\n\tdeclaredOnly := 1\n}\nG() {\n\treturn declaredOnly\n}\n"), Is.False);
 	}
 
 	[Test, Category("Directives")]
@@ -952,15 +957,15 @@ public class DirectiveTests : TestRunner
 			var source = "#ErrorStdOut\n#Warn All, StdOut\nReadShared() => sharedValue\n"
 				+ trigger + "\n" + (named ? $"Handler({parameter})\n" : "") + "{\n" + body + "\n}\n";
 			var (bytes, code, _) = new CompilerHelper().CompileCodeToByteArray(source, "warn-hot-callbacks", null, false, true);
-			Assert.IsNotNull(bytes, code);
+			Assert.That(bytes, Is.Not.Null, code);
 			return code;
 		}
 
 		// Compile only: registering these callbacks would install input hooks.
-		Assert.IsFalse(Compiled($"global sharedValue := {parameter}\nNested() => sharedValue . {parameter}")
-			.Contains("Warning:"));
-		Assert.IsFalse(Compiled($"global\nNested() => sharedValue := {parameter}")
-			.Contains("Warning:"));
+		Assert.That(Compiled($"global sharedValue := {parameter}\nNested() => sharedValue . {parameter}")
+			.Contains("Warning:"), Is.False);
+		Assert.That(Compiled($"global\nNested() => sharedValue := {parameter}")
+			.Contains("Warning:"), Is.False);
 		Assert.IsTrue(Compiled("global sharedValue")
 			.Contains("appears to never be assigned a value: sharedValue."));
 		Assert.IsTrue(Compiled($"sharedValue := {parameter}")
@@ -980,15 +985,15 @@ public class DirectiveTests : TestRunner
 		{
 			var (bytes, code, _) = new CompilerHelper().CompileCodeToByteArray(
 				$"#ErrorStdOut\n#Warn All, {mode}\n" + source, "warn-hot-expressions", null, false, true);
-			Assert.IsNotNull(bytes, code);
+			Assert.That(bytes, Is.Not.Null, code);
 			return code;
 		}
 
 		var warned = Compiled("StdOut");
 		Assert.IsTrue(warned.Contains("This local variable appears to never be assigned a value: missingValue."));
-		Assert.IsFalse(warned.Contains("appears to never be assigned a value: ThisHotkey."));
-		Assert.IsFalse(warned.Contains("appears to never be assigned a value: KeyName."));
-		Assert.IsFalse(Compiled("Off").Contains("Warning:"));
+		Assert.That(warned.Contains("appears to never be assigned a value: ThisHotkey."), Is.False);
+		Assert.That(warned.Contains("appears to never be assigned a value: KeyName."), Is.False);
+		Assert.That(Compiled("Off").Contains("Warning:"), Is.False);
 	}
 
 	// As in AutoHotkey, only an undeclared local is compared against the globals, which include the module's functions and
@@ -999,7 +1004,7 @@ public class DirectiveTests : TestRunner
 		static bool Warns(string source, string name = "g")
 		{
 			var (bytes, code, _) = new CompilerHelper().CompileCodeToByteArray("#Warn LocalSameAsGlobal, StdOut\ng := 1\n" + source, "warn-local-same-as-global", null, false, true);
-			Assert.IsNotNull(bytes, code);
+			Assert.That(bytes, Is.Not.Null, code);
 			return code.Contains($"same name as a global variable: {name}.");
 		}
 
@@ -1007,18 +1012,18 @@ public class DirectiveTests : TestRunner
 		Assert.IsTrue(Warns("class UserCls {\n}\nF() {\n\tusercls := 1\n}\n", "usercls"));
 		Assert.IsTrue(Warns("F() {\n\tsort := 1\n}\n", "sort"));
 		Assert.IsTrue(Warns("F() {\n\tmap := 1\n}\n", "map"));
-		Assert.IsFalse(Warns("F() {\n\tunrelated := 1\n}\n", "unrelated"));
+		Assert.That(Warns("F() {\n\tunrelated := 1\n}\n", "unrelated"), Is.False);
 
 		Assert.IsTrue(Warns("F() {\n\tg := 2\n}\n"));
 		Assert.IsTrue(Warns("F() {\n\tg += 1\n}\n"));
 		Assert.IsTrue(Warns("F() {\n\tfor g in [1]\n\t\treturn\n}\n"));
 		Assert.IsTrue(Warns("F() {\n\tstatic\n\tg := 2\n}\n"));
-		Assert.IsFalse(Warns("F(g) => g\n"));
-		Assert.IsFalse(Warns("F() => (g) => g\n"));
-		Assert.IsFalse(Warns("F() {\n\tg() => 1\n}\n"));
-		Assert.IsFalse(Warns("F() => IsSet(g)\n"));
-		Assert.IsFalse(Warns("F() {\n\tlocal g := 2\n}\n"));
-		Assert.IsFalse(Warns("F() {\n\tstatic g := 2\n}\n"));
+		Assert.That(Warns("F(g) => g\n"), Is.False);
+		Assert.That(Warns("F() => (g) => g\n"), Is.False);
+		Assert.That(Warns("F() {\n\tg() => 1\n}\n"), Is.False);
+		Assert.That(Warns("F() => IsSet(g)\n"), Is.False);
+		Assert.That(Warns("F() {\n\tlocal g := 2\n}\n"), Is.False);
+		Assert.That(Warns("F() {\n\tstatic g := 2\n}\n"), Is.False);
 	}
 
 	[Test, Category("Directives"), NonParallelizable]
@@ -1056,7 +1061,7 @@ public class DirectiveTests : TestRunner
 				File.WriteAllText(p, "#NoTrayIcon\n#CSharp\n" + body + "\n#EndCSharp\nx := Pick()\n");
 				var ch = new CompilerHelper();
 				var (arr, code, compilation) = ch.CompileCodeToByteArray(p, name, defines: defines);
-				Assert.IsNotNull(arr, "compile failed:\n" + code);
+				Assert.That(arr, Is.Not.Null, "compile failed:\n" + code);
 				return compilation.InlineCode;
 			}
 
@@ -1091,7 +1096,7 @@ public class DirectiveTests : TestRunner
 
 			// A block after an in-file `#Module` belongs to THAT module's class, not to __Main.
 			var mod = Compile("#NoTrayIcon\nx := 1\n#Module Helper\n#CSharp\npublic static long Only() => 7;\n#EndCSharp\n", "mod");
-			Assert.IsNotNull(mod.Arr, "a #CSharp block inside a #Module must compile:\n" + mod.Code);
+			Assert.That(mod.Arr, Is.Not.Null, "a #CSharp block inside a #Module must compile:\n" + mod.Code);
 			var helperClass = mod.Inline.IndexOf("class Helper", StringComparison.Ordinal);
 			var onlyDecl = mod.Inline.IndexOf("Only()", StringComparison.Ordinal);
 			Assert.Greater(helperClass, -1, "the module's partial class must be emitted:\n" + mod.Inline);
@@ -1099,7 +1104,7 @@ public class DirectiveTests : TestRunner
 
 			// A block in a class body belongs to THAT class, the same way the module case above does.
 			var cls = Compile("#NoTrayIcon\nclass Holder {\n#CSharp\npublic static object Who(object @this) => \"e\";\n#EndCSharp\n}\n", "cls");
-			Assert.IsNotNull(cls.Arr, "a #CSharp block in a class body must compile:\n" + cls.Code);
+			Assert.That(cls.Arr, Is.Not.Null, "a #CSharp block in a class body must compile:\n" + cls.Code);
 			var holderClass = cls.Inline.IndexOf("class Holder", StringComparison.Ordinal);
 			var whoDecl = cls.Inline.IndexOf("Who(", StringComparison.Ordinal);
 			Assert.Greater(holderClass, -1, "the class's partial must be emitted:\n" + cls.Inline);
@@ -1238,7 +1243,7 @@ public class DirectiveTests : TestRunner
 				RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true
 			});
 			_ = proc.WaitForExit(120000);
-			Assert.AreEqual(0, proc.ExitCode, proc.StandardError.ReadToEnd());
+			Assert.That(proc.ExitCode, Is.EqualTo(0), proc.StandardError.ReadToEnd());
 			Assert.IsTrue(File.Exists(Path.Combine(dir, "t.cs")), "the lowered tree's .cs must be written");
 			var inline = Path.Combine(dir, "t.inline.cs");
 			Assert.IsTrue(File.Exists(inline), "the inline C# must be written to its own .inline.cs");
@@ -1248,7 +1253,8 @@ public class DirectiveTests : TestRunner
 			// generated file reads like code rather than a paste at column zero.
 			Assert.IsTrue(text.Contains("\t\t\tpublic static object Marker"),
 						  "the member must be indented to its scope depth:\n" + text);
-			Assert.IsFalse(File.ReadAllText(Path.Combine(dir, "t.cs")).Contains("Marker()"),
+			Assert.That(File.ReadAllText(Path.Combine(dir, "t.cs")).Contains("Marker()"),
+						   Is.False,
 						   "the user's C# must not leak into the lowered tree's file");
 		}
 		finally
@@ -1281,17 +1287,17 @@ public class DirectiveTests : TestRunner
 							  + "caught := \"\"\ntry\n\tC.Boom()\ncatch\n\tcaught := \"caught\"\n"
 							  + "FileAppend(Marker() \"-\" C.Tag() \"-\" caught, \"*\")\nExitApp()\n");
 			var (compileExit, _, compileErr) = Run(launcher, $"--errorstdout --compile exe \"{script}\"");
-			Assert.AreEqual(0, compileExit, "compile failed: " + compileErr);
+			Assert.That(compileExit, Is.EqualTo(0), "compile failed: " + compileErr);
 			var exe = Path.ChangeExtension(script, OperatingSystem.IsWindows() ? ".exe" : null);
 			Assert.IsTrue(File.Exists(exe), $"compile produced no exe at {exe}");
 #if LINUX
 			Assert.IsTrue(File.Exists(Path.Combine(dir, "Eto.Gtk.dll")), "the executable must carry its GUI backend");
 			Assert.IsTrue(File.Exists(Path.Combine(dir, "GtkSharp.dll")), "the backend's runtime dependencies must be deployed");
 #endif
-			Assert.IsFalse(Directory.Exists(Path.Combine(dir, "components", "scripting")), "this script needs no parser or compiler");
+			Assert.That(Directory.Exists(Path.Combine(dir, "components", "scripting")), Is.False, "this script needs no parser or compiler");
 			var (runExit, stdout, stderr) = Run(exe, "");
-			Assert.AreEqual(0, runExit, stderr);
-			Assert.AreEqual("mod-cls-caught", stdout.Trim(),
+			Assert.That(runExit, Is.EqualTo(0), stderr);
+			Assert.That(stdout.Trim(), Is.EqualTo("mod-cls-caught"),
 							$"exit {runExit}, stderr: {stderr}");
 		}
 		finally
@@ -1314,9 +1320,10 @@ public class DirectiveTests : TestRunner
 
 			File.WriteAllText(inc, "#CSharp\npublic static object IncFn() => \"inc\";\n#EndCSharp\n");
 			var (arr, code, compilation) = new CompilerHelper().CompileCodeToByteArray(main, "incmain");
-			Assert.IsNotNull(arr, "a block in an included file must compile:\n" + code);
+			Assert.That(arr, Is.Not.Null, "a block in an included file must compile:\n" + code);
 			Assert.IsTrue(compilation.InlineCode.Contains("IncFn"), "the included block's member must be emitted:\n" + compilation.InlineCode);
-			Assert.IsFalse(compilation.InlineCode.Contains("#line"),
+			Assert.That(compilation.InlineCode.Contains("#line"),
+						   Is.False,
 						   "the inline unit is pretty-printed with no source mapping:\n" + compilation.InlineCode);
 
 			File.WriteAllText(inc, "#CSharp\nusing Systm.Text;\npublic static object IncFn() => \"inc\";\n#EndCSharp\n");
@@ -1347,14 +1354,14 @@ public class DirectiveTests : TestRunner
 			var bad = Path.Combine(dir, "bad.ks");
 			File.WriteAllText(bad, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#CSharp\npublic static object F() => new NoSuchType();\n#EndCSharp\nF()\n");
 			var (badExit, badOut, badErr) = Run(launcher, $"--errorstdout --validate \"{bad}\"");
-			Assert.AreNotEqual(0, badExit, "an unknown type in a #CSharp block must fail --validate");
+			Assert.That(badExit, Is.Not.EqualTo(0), "an unknown type in a #CSharp block must fail --validate");
 			Assert.IsTrue((badOut + badErr).Contains("NoSuchType"),
 						  $"the failure should name the offending code; stdout:\n{badOut}\nstderr:\n{badErr}");
 
 			var good = Path.Combine(dir, "good.ks");
 			File.WriteAllText(good, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#CSharp\npublic static object F() => 42L;\n#EndCSharp\nF()\n");
 			var (goodExit, goodOut, goodErr) = Run(launcher, $"--errorstdout --validate \"{good}\"");
-			Assert.AreEqual(0, goodExit, $"a valid script must pass --validate; stdout:\n{goodOut}\nstderr:\n{goodErr}");
+			Assert.That(goodExit, Is.EqualTo(0), $"a valid script must pass --validate; stdout:\n{goodOut}\nstderr:\n{goodErr}");
 		}
 		finally
 		{
@@ -1399,7 +1406,8 @@ public class DirectiveTests : TestRunner
 			Assert.IsTrue(code.Contains("#CSharp:"), "the failure should be reported as a #CSharp diagnostic; got:\n" + code);
 			Assert.IsTrue(code.Contains("broken.ks 3:"),
 						  "the diagnostic should point at line 3, the `using` with no semicolon; got:\n" + code);
-			Assert.IsFalse(code.Contains("is a statement"),
+			Assert.That(code.Contains("is a statement"),
+						   Is.False,
 						   "a block that does not parse must report its syntax error, not be blamed on a statement; got:\n" + code);
 		}
 		finally
@@ -1434,7 +1442,8 @@ public class DirectiveTests : TestRunner
 						  "the diagnostic should point at line 4, the statement; got:\n" + one);
 			Assert.IsTrue(one.Contains("`System.Console.WriteLine(1);` is a statement"),
 						  "the message should quote the offending statement; got:\n" + one);
-			Assert.IsFalse(one.Contains("in a member declaration"),
+			Assert.That(one.Contains("in a member declaration"),
+						   Is.False,
 						   "the cascading parser errors should be replaced by it, not joined by it; got:\n" + one);
 			// A modifier-less field is a declaration to the script parser too, so the statement below it is
 			// what gets named -- the assumption the whole detection rests on.
@@ -1524,7 +1533,7 @@ public class DirectiveTests : TestRunner
 			})
 			{
 				var (arr, code) = Compile(ok, "recvok");
-				Assert.IsNotNull(arr, $"this member can receive its receiver and must compile: {ok}\n{code}");
+				Assert.That(arr, Is.Not.Null, $"this member can receive its receiver and must compile: {ok}\n{code}");
 			}
 		}
 		finally
@@ -1554,7 +1563,7 @@ public class DirectiveTests : TestRunner
 			var s1 = Path.Combine(root, "s1.ks");
 			File.WriteAllText(s1, "#NoTrayIcon\nclass C {\n#CSharp \"vec.cs\"\n}\nx := C.Tag()\n");
 			var (arr1, code1, compilation1) = new CompilerHelper().CompileCodeToByteArray(s1, "s1");
-			Assert.IsNotNull(arr1, "a class-body file form must compile:\n" + code1);
+			Assert.That(arr1, Is.Not.Null, "a class-body file form must compile:\n" + code1);
 			Assert.IsTrue(compilation1.InlineCode.Contains("cls-file"), "the file's member must be emitted:\n" + compilation1.InlineCode);
 
 			File.WriteAllText(Path.Combine(mods, "Fast.ahk"),
@@ -1564,7 +1573,7 @@ public class DirectiveTests : TestRunner
 			File.WriteAllText(main, "#NoTrayIcon\n#import \"Fast\" { Crunch, BlockSymbol }\nx := Crunch()\ny := BlockSymbol()\n");
 			Environment.SetEnvironmentVariable("AhkImportPath", mods);
 			var (arr2, code2, compilation2) = new CompilerHelper().CompileCodeToByteArray(main, "main");
-			Assert.IsNotNull(arr2, "a module file's file form must resolve beside the module file:\n" + code2);
+			Assert.That(arr2, Is.Not.Null, "a module file's file form must resolve beside the module file:\n" + code2);
 			Assert.IsTrue(compilation2.InlineCode.Contains("file-mod"), "the module file's member must be emitted:\n" + compilation2.InlineCode);
 			Assert.IsTrue(compilation2.InlineCode.Contains("module-symbol"), "module-local symbols must reach inline C#:\n" + compilation2.InlineCode);
 
@@ -1573,10 +1582,10 @@ public class DirectiveTests : TestRunner
 				+ "#CSharp\n#nullable enable\n#EndCSharp\nclass Holder {\n#CSharp\npublic object First() => null;\n#EndCSharp\n}\n");
 			var helper = new CompilerHelper();
 			var orderedCompilation = helper.CreateCompilationUnitFromFile(ordered, "ordered");
-			Assert.IsFalse(orderedCompilation.Errors.HasErrors);
+			Assert.That(orderedCompilation.Errors.HasErrors, Is.False);
 			var (orderedDiagnostics, orderedError) = helper.DiagnoseFromTree(orderedCompilation, "ordered", root);
 			Assert.IsNull(orderedError);
-			Assert.IsFalse(orderedDiagnostics.Any(diagnostic => diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+			Assert.That(orderedDiagnostics.Any(diagnostic => diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error), Is.False);
 			Assert.IsTrue(orderedDiagnostics.Any(diagnostic => diagnostic.Id == "CS8603"),
 				"the preceding module block's nullable context must reach the class block");
 
@@ -1585,11 +1594,12 @@ public class DirectiveTests : TestRunner
 				+ "#nullable disable\n#pragma warning disable CS0162\n#EndCSharp\n}\n"
 				+ "#CSharp\npublic static object Later() { return null; return null; }\n#EndCSharp\nx := Later()\n");
 			var laterCompilation = helper.CreateCompilationUnitFromFile(ordered, "later");
-			Assert.IsFalse(laterCompilation.Errors.HasErrors);
+			Assert.That(laterCompilation.Errors.HasErrors, Is.False);
 			var (laterDiagnostics, laterError) = helper.DiagnoseFromTree(laterCompilation, "later", root);
 			Assert.IsNull(laterError);
-			Assert.IsFalse(laterDiagnostics.Any(diagnostic => diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
-			Assert.IsFalse(laterDiagnostics.Any(diagnostic => diagnostic.Id is "CS8603" or "CS0162"),
+			Assert.That(laterDiagnostics.Any(diagnostic => diagnostic.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error), Is.False);
+			Assert.That(laterDiagnostics.Any(diagnostic => diagnostic.Id is "CS8603" or "CS0162"),
+				Is.False,
 				"trailing class-block nullable and pragma directives must reach the later module block");
 		}
 		finally
@@ -1617,7 +1627,7 @@ public class DirectiveTests : TestRunner
 				"#NoTrayIcon\n#CSharp <Fast>\n#CSharp <Math_Add>\n#CSharp <My Lib>\nx := FastValue()\ny := Add(2, 3)\nz := SpacedValue()\n");
 
 			var (arr, code, compilation) = new CompilerHelper().CompileCodeToByteArray(script, "cslib");
-			Assert.IsNotNull(arr, "library and underscore-fallback C# files must compile:\n" + code);
+			Assert.That(arr, Is.Not.Null, "library and underscore-fallback C# files must compile:\n" + code);
 			Assert.IsTrue(compilation.InlineCode.Contains("FastValue") && compilation.InlineCode.Contains("Add")
 				&& compilation.InlineCode.Contains("SpacedValue"), "all library members must be emitted:\n" + compilation.InlineCode);
 
@@ -1652,11 +1662,11 @@ public class DirectiveTests : TestRunner
 
 			File.WriteAllText(Path.Combine(shared, "helper.cs"), "public static object Help() => \"shared\";");
 			var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(script, "s");
-			Assert.IsNotNull(arr, "a file on the module search path must be found:\n" + code);
+			Assert.That(arr, Is.Not.Null, "a file on the module search path must be found:\n" + code);
 
 			File.WriteAllText(Path.Combine(local, "helper.cs"), "public static object Help() => \"local\";");
 			var (arr2, code2, compilation2) = new CompilerHelper().CompileCodeToByteArray(script, "s");
-			Assert.IsNotNull(arr2, code2);
+			Assert.That(arr2, Is.Not.Null, code2);
 			Assert.IsTrue(compilation2.InlineCode.Contains("\"local\""), "the directive's own directory must win; got:\n" + compilation2.InlineCode);
 
 			File.Delete(Path.Combine(local, "helper.cs"));

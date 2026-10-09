@@ -48,7 +48,7 @@ public class PackageDirectiveTests : TestRunner
 	private static void AssertEmits(string code, string expected)
 	{
 		static string Strip(string s) => System.Text.RegularExpressions.Regex.Replace(s, @"\s+", "");
-		StringAssert.Contains(Strip(expected), Strip(code));
+		Assert.That(Strip(code), Does.Contain(Strip(expected)));
 	}
 
 	private static int CountCalls(string code) =>
@@ -68,15 +68,16 @@ public class PackageDirectiveTests : TestRunner
 
 		Assert.IsEmpty(Required("#Package Newtonsoft.Json 13.0.3\n"),
 			"declarative packages are resolved at compile time and must not deploy the resolver");
-		CollectionAssert.Contains(Required("#import Ks { Clr }\nClr.LoadPackage(\"A\",, true)\n"), "nuget");
-		CollectionAssert.Contains(Required("Ks.Clr.LoadPackage(\"A\",, true)\n"), "nuget");
-		CollectionAssert.Contains(Required("loader := Clr.LoadPackage\nloader(\"A\")\n"), "nuget",
+		Assert.That(Required("#import Ks { Clr }\nClr.LoadPackage(\"A\",, true)\n"), Has.Member("nuget"));
+		Assert.That(Required("Ks.Clr.LoadPackage(\"A\",, true)\n"), Has.Member("nuget"));
+		Assert.That(Required("loader := Clr.LoadPackage\nloader(\"A\")\n"), Has.Member("nuget"),
 			"a statically visible member reference must carry its provider even when invoked through an alias");
-		CollectionAssert.Contains(Required("Clr.LoadPackage(\"aris:dev/name\")\n"), "aris",
+		Assert.That(Required("Clr.LoadPackage(\"aris:dev/name\")\n"), Has.Member("aris"),
 			"a literal provider-qualified id makes the deployment metadata provider-specific");
-		Assert.IsFalse(Required("Clr.LoadPackage(\"aris:dev/name\")\n").Contains("nuget"),
+		Assert.That(Required("Clr.LoadPackage(\"aris:dev/name\")\n").Contains("nuget"),
+			Is.False,
 			"a known non-NuGet call should not carry an unrelated provider");
-		CollectionAssert.Contains(Required("id := \"aris:dev/name\"\nClr.LoadPackage(id)\n"), "nuget",
+		Assert.That(Required("id := \"aris:dev/name\"\nClr.LoadPackage(id)\n"), Has.Member("nuget"),
 			"computed package ids use the conservative default provider");
 	}
 
@@ -84,16 +85,16 @@ public class PackageDirectiveTests : TestRunner
 	public void MissingId()
 	{
 		var (_, diags) = Lower("#Package\n");
-		Assert.AreEqual(1, diags.Count);
-		StringAssert.Contains("expected a package name", diags[0]);
+		Assert.That(diags.Count, Is.EqualTo(1));
+		Assert.That(diags[0], Does.Contain("expected a package name"));
 	}
 
 	[Test, Category("Directives")]
 	public void InvalidId()
 	{
 		var (_, diags) = Lower("#Package Some/Bad;Id 1.0.0\n");
-		Assert.AreEqual(1, diags.Count);
-		StringAssert.Contains("is not a valid package name", diags[0]);
+		Assert.That(diags.Count, Is.EqualTo(1));
+		Assert.That(diags[0], Does.Contain("is not a valid package name"));
 	}
 
 	[Test, Category("Directives")]
@@ -101,14 +102,14 @@ public class PackageDirectiveTests : TestRunner
 	{
 		var (_, diags) = Lower("#Package nuget:Newtonsoft.Json v13.0\n");
 		Assert.IsEmpty(diags, string.Join("; ", diags));
-		Assert.AreEqual(1, lastPackages.Count);
-		Assert.AreEqual("nuget", lastPackages[0].Provider);
-		Assert.AreEqual("Newtonsoft.Json", lastPackages[0].Id);
-		Assert.AreEqual("13.0.*", lastPackages[0].Version);
+		Assert.That(lastPackages.Count, Is.EqualTo(1));
+		Assert.That(lastPackages[0].Provider, Is.EqualTo("nuget"));
+		Assert.That(lastPackages[0].Id, Is.EqualTo("Newtonsoft.Json"));
+		Assert.That(lastPackages[0].Version, Is.EqualTo("13.0.*"));
 
 		(_, diags) = Lower("#Package 9aris:dev/name\n");
-		Assert.AreEqual(1, diags.Count);
-		StringAssert.Contains("not a valid package provider name", diags[0]);
+		Assert.That(diags.Count, Is.EqualTo(1));
+		Assert.That(diags[0], Does.Contain("not a valid package provider name"));
 	}
 
 	[Test, Category("Directives")]
@@ -116,10 +117,10 @@ public class PackageDirectiveTests : TestRunner
 	{
 		var (_, diags) = Lower("#Package *i providernotinstalled:dev/name v1\n");
 		Assert.IsEmpty(diags, string.Join("; ", diags));
-		Assert.AreEqual(1, lastPackages.Count);
-		Assert.AreEqual("providernotinstalled", lastPackages[0].Provider);
-		Assert.AreEqual("dev/name", lastPackages[0].Id);
-		Assert.AreEqual("v1", lastPackages[0].Version,
+		Assert.That(lastPackages.Count, Is.EqualTo(1));
+		Assert.That(lastPackages[0].Provider, Is.EqualTo("providernotinstalled"));
+		Assert.That(lastPackages[0].Id, Is.EqualTo("dev/name"));
+		Assert.That(lastPackages[0].Version, Is.EqualTo("v1"),
 			"an absent provider owns the grammar, so its optional request must remain opaque until it is skipped");
 
 		var assemblies = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne(
@@ -140,7 +141,7 @@ public class PackageDirectiveTests : TestRunner
 		{
 			var ok = Keysharp.Internals.Os.PackageResolver.TryNormalizeVersion("nuget", written, out var range, out var err);
 			Assert.IsTrue(ok, $"'{written}' -> {err}");
-			Assert.AreEqual(expected, range, $"'{written}'");
+			Assert.That(range, Is.EqualTo(expected), $"'{written}'");
 		}
 
 		Check("", "*");                       // omitted -> newest stable
@@ -164,7 +165,7 @@ public class PackageDirectiveTests : TestRunner
 		foreach (var v in new[] { "", "13", "13.0.3", ">=13.0 <14", "<14", "v2" })
 		{
 			_ = Keysharp.Internals.Os.PackageResolver.TryNormalizeVersion("nuget", v, out var r, out _);
-			Assert.IsFalse(r.Contains('<') || r.Contains('>') || r.Contains('"') || r.Contains('&'), $"'{v}' -> '{r}'");
+			Assert.That(r.Contains('<') || r.Contains('>') || r.Contains('"') || r.Contains('&'), Is.False, $"'{v}' -> '{r}'");
 		}
 
 		Check("[13.0.3]", "[13.0.3]");        // literal exact
@@ -173,12 +174,12 @@ public class PackageDirectiveTests : TestRunner
 
 		foreach (var bad in new[] { "abc", "1.0 2.0", ">=", "1.0 >=2.0", ">=x", "1..2", "1.",
 										 "1.2.3.4.5", "1.0-", "1.0+", "1.0-beta..1" })
-			Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.TryNormalizeVersion("nuget", bad, out _, out _), bad);
+			Assert.That(Keysharp.Internals.Os.PackageResolver.TryNormalizeVersion("nuget", bad, out _, out _), Is.False, bad);
 
 		// A literal range is passed through to the provider, so a malformed one has to be caught here rather
 		// than surfacing during graph resolution — this method's whole contract is compile-time rejection.
 		foreach (var bad in new[] { "[[[", "***", "[]", "[,]", "(1.0)", "[1.0,2.0,3.0]", "[abc,)", "1.*.3", "*.1" })
-			Assert.IsFalse(Keysharp.Internals.Os.PackageResolver.TryNormalizeVersion("nuget", bad, out _, out _), bad);
+			Assert.That(Keysharp.Internals.Os.PackageResolver.TryNormalizeVersion("nuget", bad, out _, out _), Is.False, bad);
 	}
 
 	[Test, Category("Directives")]
@@ -188,7 +189,7 @@ public class PackageDirectiveTests : TestRunner
 		{
 			Assert.IsTrue(Keysharp.Internals.Os.PackageResolver.TryNormalizeVersion("NuGet", written,
 				out var normalized, out var error), error);
-			Assert.AreEqual(expected, normalized);
+			Assert.That(normalized, Is.EqualTo(expected));
 		}
 
 		Check("v1", "1.*");
@@ -211,9 +212,10 @@ public class PackageDirectiveTests : TestRunner
 		}, "1.*", false, true);
 
 		var roundTrip = Keysharp.Internals.Os.PackageManifest.Read(manifest.Write());
-		Assert.AreEqual("1.*", roundTrip.Packages[0].Requested);
-		Assert.AreEqual("[1.9.4]", roundTrip.Direct[0].Version);
-		Assert.IsFalse(roundTrip.Write().Contains("\"compile\"", StringComparison.Ordinal),
+		Assert.That(roundTrip.Packages[0].Requested, Is.EqualTo("1.*"));
+		Assert.That(roundTrip.Direct[0].Version, Is.EqualTo("[1.9.4]"));
+		Assert.That(roundTrip.Write().Contains("\"compile\"", StringComparison.Ordinal),
+			Is.False,
 			"reference assets are build-only and must not be deployed in runtime manifests");
 	}
 
@@ -234,9 +236,9 @@ public class PackageDirectiveTests : TestRunner
 			return manifest.Packages.Single().Managed.Single().Deployed;
 		}
 
-		Assert.AreNotEqual(DeployedFor("dev/name"), DeployedFor("dev_name"),
+		Assert.That(DeployedFor("dev_name"), Is.Not.EqualTo(DeployedFor("dev/name")),
 			"opaque provider ids must not collide when mapped to filesystem-safe artifact paths");
-		Assert.AreNotEqual(DeployedFor("Dev/name"), DeployedFor("dev/name"),
+		Assert.That(DeployedFor("dev/name"), Is.Not.EqualTo(DeployedFor("Dev/name")),
 			"Core must not assume an external provider's identifier is case-insensitive");
 	}
 
@@ -311,11 +313,11 @@ public class PackageDirectiveTests : TestRunner
 			Assert.IsTrue(result.Success, result.Failure);
 			var resolved = result.Packages.Single(package => package.Id.Equals("Microsoft.Web.WebView2", StringComparison.OrdinalIgnoreCase));
 			Assert.IsNotEmpty(resolved.Runtime, "no assembly was taken from the package's own build targets");
-			CollectionAssert.Contains(resolved.Runtime.Select(Path.GetFileName).ToList(), "Microsoft.Web.WebView2.WinForms.dll");
-			CollectionAssert.Contains(resolved.Compile.Select(Path.GetFileName).ToList(), "Microsoft.Web.WebView2.Core.dll");
+			Assert.That(resolved.Runtime.Select(Path.GetFileName).ToList(), Has.Member("Microsoft.Web.WebView2.WinForms.dll"));
+			Assert.That(resolved.Compile.Select(Path.GetFileName).ToList(), Has.Member("Microsoft.Web.WebView2.Core.dll"));
 			//Chosen the way a lib/ folder is chosen, not by replaying the targets' own conditions: every
 			//assembly must come from one framework-compatible directory.
-			Assert.AreEqual(1, resolved.Runtime.Select(Path.GetDirectoryName).Distinct().Count(),
+			Assert.That(resolved.Runtime.Select(Path.GetDirectoryName).Distinct().Count(), Is.EqualTo(1),
 				"assemblies were taken from more than one framework folder");
 		}
 		finally
@@ -346,11 +348,11 @@ public class PackageDirectiveTests : TestRunner
 
 			var warm = await provider.ResolveAsync(context, request, CancellationToken.None);
 			Assert.IsTrue(warm.Success, warm.Failure);
-			Assert.IsFalse(warm.RestoreAttempted, "a complete, matching lock graph should be served before RestoreRunner");
+			Assert.That(warm.RestoreAttempted, Is.False, "a complete, matching lock graph should be served before RestoreRunner");
 
 			var assetsPath = Directory.GetFiles(cache, "project.assets.json", SearchOption.AllDirectories).Single();
 			var assets = File.ReadAllText(assetsPath);
-			StringAssert.Contains("Newtonsoft.Json.dll", assets);
+			Assert.That(assets, Does.Contain("Newtonsoft.Json.dll"));
 			File.WriteAllText(assetsPath, assets.Replace("Newtonsoft.Json.dll", "Newtonsoft.Json.missing.dll", StringComparison.Ordinal));
 			var repaired = await provider.ResolveAsync(context, request, CancellationToken.None);
 			Assert.IsTrue(repaired.Success, repaired.Failure);
@@ -397,16 +399,16 @@ public class PackageDirectiveTests : TestRunner
 	public void MalformedVersion()
 	{
 		var (_, diags) = Lower("#Package Newtonsoft.Json 13.0.3 extra\n");
-		Assert.AreEqual(1, diags.Count, string.Join("; ", diags));
-		StringAssert.Contains("is not a valid version", diags[0]);
+		Assert.That(diags.Count, Is.EqualTo(1), string.Join("; ", diags));
+		Assert.That(diags[0], Does.Contain("is not a valid version"));
 	}
 
 	[Test, Category("Directives")]
 	public void VersionConflict()
 	{
 		var (_, diags) = Lower("#Package Newtonsoft.Json 13.0.3\n#Package Newtonsoft.Json 12.0.0\n");
-		Assert.AreEqual(1, diags.Count);
-		StringAssert.Contains("requested twice with different versions", diags[0]);
+		Assert.That(diags.Count, Is.EqualTo(1));
+		Assert.That(diags[0], Does.Contain("requested twice with different versions"));
 	}
 
 	[Test, Category("Directives")]
@@ -414,7 +416,7 @@ public class PackageDirectiveTests : TestRunner
 	{
 		var (code, diags) = Lower("#Package Newtonsoft.Json 13.0.3\n#Package nuget:Newtonsoft.Json 13.0.3\n");
 		Assert.IsEmpty(diags, string.Join("; ", diags));
-		Assert.AreEqual(1, lastPackages.Count, "default and explicit NuGet spellings are one provider-qualified identity");
+		Assert.That(lastPackages.Count, Is.EqualTo(1), "default and explicit NuGet spellings are one provider-qualified identity");
 		AssertEmits(Packages(), "LoadPackages((\"Newtonsoft.Json\", \"[13.0.3]\", false))");
 	}
 
@@ -435,7 +437,7 @@ public class PackageDirectiveTests : TestRunner
 		{
 			var (c, d) = Lower(other);
 			Assert.IsEmpty(d, other + " -> " + string.Join("; ", d));
-			Assert.AreEqual(0, CountCalls(c), other + " must not load a package");
+			Assert.That(CountCalls(c), Is.EqualTo(0), other + " must not load a package");
 		}
 	}
 
@@ -447,8 +449,8 @@ public class PackageDirectiveTests : TestRunner
 	public void NestedPackage()
 	{
 		var (_, diags) = Lower("f() {\n#Package Newtonsoft.Json 13.0.3\n}\nf()\n");
-		Assert.AreEqual(1, diags.Count, string.Join("; ", diags));
-		StringAssert.Contains("top level", diags[0]);
+		Assert.That(diags.Count, Is.EqualTo(1), string.Join("; ", diags));
+		Assert.That(diags[0], Does.Contain("top level"));
 	}
 
 	/// <summary>
@@ -461,8 +463,8 @@ public class PackageDirectiveTests : TestRunner
 	public void NestedDuplicate()
 	{
 		var (_, diags) = Lower("f() {\n#Package Newtonsoft.Json 13.0.3\n}\n#Package Newtonsoft.Json 13.0.3\nf()\n");
-		Assert.AreEqual(1, diags.Count, string.Join("; ", diags));
-		StringAssert.Contains("top level", diags[0]);
+		Assert.That(diags.Count, Is.EqualTo(1), string.Join("; ", diags));
+		Assert.That(diags[0], Does.Contain("top level"));
 	}
 
 	/// <summary>
@@ -478,7 +480,7 @@ public class PackageDirectiveTests : TestRunner
 	{
 		var (code, diags) = Lower("#Package Newtonsoft.Json 13.0.3\nx := 1\n#Module Helper\ny := 2\n");
 		Assert.IsEmpty(diags, string.Join("; ", diags));
-		Assert.AreEqual(1, CountCalls(code));
+		Assert.That(CountCalls(code), Is.EqualTo(1));
 		var load = code.IndexOf("LoadPackages(", StringComparison.Ordinal);
 		// Before the call that starts (and therefore JITs) the auto-exec…
 		var runWindow = code.IndexOf("RunMainWindow", StringComparison.Ordinal);
@@ -509,8 +511,8 @@ public class PackageDirectiveTests : TestRunner
 		})
 		{
 			var (_, diags) = Lower(bad);
-			Assert.AreEqual(1, diags.Count, bad + " -> " + string.Join("; ", diags));
-			StringAssert.Contains("Unrecognized directive", diags[0]);
+			Assert.That(diags.Count, Is.EqualTo(1), bad + " -> " + string.Join("; ", diags));
+			Assert.That(diags[0], Does.Contain("Unrecognized directive"));
 		}
 		Assert.IsEmpty(Lower("#sUsPeNdExEmPt false\n#sInGlEiNsTaNcE Off\n").Diags);
 	}
@@ -525,7 +527,7 @@ public class PackageDirectiveTests : TestRunner
 	{
 		var (code, diags) = Lower("#Package Newtonsoft.Json 13.0.3\n#Package *i Serilog >=4.0 <5\n#Package A.B\n");
 		Assert.IsEmpty(diags, string.Join("; ", diags));
-		Assert.AreEqual(1, CountCalls(code), "expected exactly one batched call");
+		Assert.That(CountCalls(code), Is.EqualTo(1), "expected exactly one batched call");
 		AssertEmits(Packages(), "LoadPackages((\"Newtonsoft.Json\", \"[13.0.3]\", false), (\"Serilog\", \"[4.0,5)\", true), (\"A.B\", \"*\", false))");
 	}
 
@@ -548,9 +550,9 @@ public class PackageDirectiveTests : TestRunner
 		package.Native.Add(Path.Combine(pkgDir, "runtimes", "win-x64", "native", "demo_native.dll"));
 		var manifest = new Keysharp.Internals.Os.PackageManifest();
 		manifest.Add(package, "[1.0.0]", false, true);
-		StringAssert.EndsWith(Path.Combine("managed", "lib", "net6.0", "Demo.dll"), manifest.Packages[0].Managed[0].Deployed);
-		StringAssert.EndsWith(Path.Combine("native", "runtimes", "win-x64", "native", "demo_native.dll"),
-			manifest.Packages[0].Native[0].Deployed);
+		Assert.That(manifest.Packages[0].Managed[0].Deployed, Does.EndWith(Path.Combine("managed", "lib", "net6.0", "Demo.dll")));
+		Assert.That(manifest.Packages[0].Native[0].Deployed,
+			Does.EndWith(Path.Combine("native", "runtimes", "win-x64", "native", "demo_native.dll")));
 
 		try { Directory.Delete(root, true); } catch { }
 	}
@@ -564,11 +566,11 @@ public class PackageDirectiveTests : TestRunner
 		// a hard-coded "C:\...\e_sqlite3.dll" makes GetFileName there return the whole string, not the file name.
 		var dll = Keysharp.Internals.Os.NuGetPackageLoader.NativeAliasesFor(
 			Path.Combine("p", "runtimes", "win-x64", "native", "e_sqlite3.dll"));
-		CollectionAssert.AreEquivalent(new[] { "e_sqlite3.dll", "e_sqlite3" }, dll);
+		Assert.That(dll, Is.EquivalentTo(new[] { "e_sqlite3.dll", "e_sqlite3" }));
 
 		// On Unix the "lib" prefix and the version suffix are both conventionally omitted in DllImport.
 		var so = Keysharp.Internals.Os.NuGetPackageLoader.NativeAliasesFor("/p/runtimes/linux-x64/native/libfoo.so.1");
-		CollectionAssert.AreEquivalent(new[] { "libfoo.so.1", "libfoo.so", "libfoo", "foo" }, so);
+		Assert.That(so, Is.EquivalentTo(new[] { "libfoo.so.1", "libfoo.so", "libfoo", "foo" }));
 	}
 
 	[Test, Category("Directives")]
@@ -595,8 +597,8 @@ public class PackageDirectiveTests : TestRunner
 
 			Assert.IsNull(manifest.CopyTo(output));
 			var deployed = Directory.GetFiles(output, "Shared.dll", SearchOption.AllDirectories);
-			Assert.AreEqual(2, deployed.Length, "same-named assets from different packages must not overwrite each other");
-			CollectionAssert.AreEquivalent(new[] { "first", "second" }, deployed.Select(File.ReadAllText).ToArray());
+			Assert.That(deployed.Length, Is.EqualTo(2), "same-named assets from different packages must not overwrite each other");
+			Assert.That(deployed.Select(File.ReadAllText).ToArray(), Is.EquivalentTo(new[] { "first", "second" }));
 		}
 		finally
 		{
@@ -612,9 +614,9 @@ public class PackageDirectiveTests : TestRunner
 			Keysharp.Internals.Os.PackageResolver.CacheKeyFor(
 				p.Select(x => new Keysharp.Internals.Os.PackageResolver.PackageRef(x.Item1, x.Item2, false)).ToList());
 
-		Assert.AreEqual(Key(("A", "[1.0]"), ("B", "[2.0]")), Key(("B", "[2.0]"), ("A", "[1.0]")));
-		Assert.AreNotEqual(Key(("A", "[1.0]")), Key(("A", "[1.1]")));
-		Assert.AreNotEqual(Key(("A", "[1.0]")), Key(("A", "[1.0]"), ("B", "[2.0]")));
+		Assert.That(Key(("B", "[2.0]"), ("A", "[1.0]")), Is.EqualTo(Key(("A", "[1.0]"), ("B", "[2.0]"))));
+		Assert.That(Key(("A", "[1.1]")), Is.Not.EqualTo(Key(("A", "[1.0]"))));
+		Assert.That(Key(("A", "[1.0]"), ("B", "[2.0]")), Is.Not.EqualTo(Key(("A", "[1.0]"))));
 	}
 
 	/// <summary>Win-modifier hotkeys start with '#' too; they must never be mistaken for directives.</summary>
@@ -639,7 +641,7 @@ public class PackageDirectiveTests : TestRunner
 	{
 		var pkg = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Newtonsoft.Json", "13.0.3", false, out var error);
 		Assert.IsNull(error, error);
-		Assert.IsNotNull(pkg);
+		Assert.That(pkg, Is.Not.Null);
 		Assert.IsTrue(pkg.Any(a => string.Equals(a.GetName().Name, "Newtonsoft.Json", StringComparison.OrdinalIgnoreCase)));
 
 		// Same package/version again is a no-op, not a second resolution.
@@ -648,13 +650,13 @@ public class PackageDirectiveTests : TestRunner
 		Assert.IsNull(again, again);
 		var unversioned = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Newtonsoft.Json", "", false, out var unversionedError);
 		Assert.IsNull(unversionedError, unversionedError);
-		CollectionAssert.AreEqual(pkg, unversioned);
-		Assert.AreEqual(0, Keysharp.Internals.Os.PackageResolver.ResolveCount);
+		Assert.That(unversioned, Is.EqualTo(pkg).AsCollection);
+		Assert.That(Keysharp.Internals.Os.PackageResolver.ResolveCount, Is.EqualTo(0));
 
 		// A different version for an already-requested package is reported rather than silently loading a second copy.
 		_ = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Newtonsoft.Json", "12.0.3", false, out var conflict);
-		Assert.IsNotNull(conflict);
-		StringAssert.Contains("already requested", conflict);
+		Assert.That(conflict, Is.Not.Null);
+		Assert.That(conflict, Does.Contain("already requested"));
 
 		// An unavailable optional package yields no assemblies and no error.
 		var opt = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Keysharp.No.Such.Package.XYZ", "1.0.0", true, out var optErr);
@@ -672,16 +674,17 @@ public class PackageDirectiveTests : TestRunner
 	{
 		var missing = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Keysharp.No.Such.Package.XYZ", "1.0.0", false, out var error);
 		Assert.IsNull(missing);
-		Assert.IsNotNull(error, "a required package that cannot be resolved must be reported");
-		StringAssert.Contains("Keysharp.No.Such.Package.XYZ", error);
-		StringAssert.Contains("Clr.LoadPackage", error);   // not "#Package": this script contains no directive
-		Assert.IsFalse(error.Contains("dotnet.microsoft.com"),
+		Assert.That(error, Is.Not.Null, "a required package that cannot be resolved must be reported");
+		Assert.That(error, Does.Contain("Keysharp.No.Such.Package.XYZ"));
+		Assert.That(error, Does.Contain("Clr.LoadPackage"));   // not "#Package": this script contains no directive
+		Assert.That(error.Contains("dotnet.microsoft.com"),
+					   Is.False,
 					   "a package that does not exist is not an SDK problem; error was:\n" + error);
 
 		// Rolled back, so the next request resolves on its own merits rather than dragging the bad id along.
 		var good = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Newtonsoft.Json", "13.0.3", false, out var goodErr);
 		Assert.IsNull(goodErr, goodErr);
-		Assert.IsNotNull(good);
+		Assert.That(good, Is.Not.Null);
 	}
 
 	/// <summary>
@@ -703,8 +706,8 @@ public class PackageDirectiveTests : TestRunner
 			var script = Path.Combine(dir, "batch.ks");
 			File.WriteAllText(script, "#NoTrayIcon\n#Package Newtonsoft.Json 13.0.3\n#Package Serilog 4.0.0\nx := 1\n");
 			var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(script, "batch");
-			Assert.IsNotNull(arr, "compile failed:\n" + code);
-			Assert.AreEqual(1, Keysharp.Internals.Os.PackageResolver.ResolveCount,
+			Assert.That(arr, Is.Not.Null, "compile failed:\n" + code);
+			Assert.That(Keysharp.Internals.Os.PackageResolver.ResolveCount, Is.EqualTo(1),
 							"two directives in one script must resolve as one graph, not once each");
 		}
 		finally
@@ -717,7 +720,7 @@ public class PackageDirectiveTests : TestRunner
 		Keysharp.Internals.Os.NuGetPackageLoader.ResetForTests();
 		_ = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Newtonsoft.Json", "13.0.3", false, out _);
 		_ = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Serilog", "4.0.0", false, out _);
-		Assert.AreEqual(2, Keysharp.Internals.Os.PackageResolver.ResolveCount);
+		Assert.That(Keysharp.Internals.Os.PackageResolver.ResolveCount, Is.EqualTo(2));
 	}
 
 	/// <summary>
@@ -735,7 +738,7 @@ public class PackageDirectiveTests : TestRunner
 		// cache this test exists to pin. Only the network/restore step may be skipped.
 		Keysharp.Internals.Os.PackageResolver.ResetCounters();
 		Assert.IsTrue(Keysharp.Internals.Os.PackageResolver.TryResolve(pkgs, true, "#Package", out _, out err), err);
-		Assert.AreEqual(0, Keysharp.Internals.Os.PackageResolver.RestoreCount,
+		Assert.That(Keysharp.Internals.Os.PackageResolver.RestoreCount, Is.EqualTo(0),
 						"a package set already resolved on this machine must not invoke the provider restore again");
 	}
 
@@ -743,10 +746,10 @@ public class PackageDirectiveTests : TestRunner
 	public void LoadPackageValidation()
 	{
 		_ = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Some/Bad;Id", "", false, out var e1);
-		StringAssert.Contains("not a valid package name", e1);
+		Assert.That(e1, Does.Contain("not a valid package name"));
 
 		_ = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Newtonsoft.Json", "not a version", false, out var e2);
-		StringAssert.Contains("not a valid version", e2);
+		Assert.That(e2, Does.Contain("not a valid version"));
 	}
 
 	/// <summary>
@@ -761,10 +764,10 @@ public class PackageDirectiveTests : TestRunner
 		// spelling here would be reported as a version conflict with whatever ran first.
 		_ = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Newtonsoft.Json", "[13.0.3]", false, out _);
 		var loaded = Loaded("Newtonsoft.Json");
-		Assert.IsNotNull(loaded, "Newtonsoft.Json was not loaded");
-		Assert.AreEqual(new Version(13, 0, 0, 0), loaded.GetName().Version);
+		Assert.That(loaded, Is.Not.Null, "Newtonsoft.Json was not loaded");
+		Assert.That(loaded.GetName().Version, Is.EqualTo(new Version(13, 0, 0, 0)));
 		// The point of loading is that Clr can reach the types, which goes through TypeResolver's assembly index.
-		Assert.IsNotNull(loaded.GetType("Newtonsoft.Json.JsonConvert"));
+		Assert.That(loaded.GetType("Newtonsoft.Json.JsonConvert"), Is.Not.Null);
 	}
 
 	/// <summary>
@@ -786,7 +789,7 @@ public class PackageDirectiveTests : TestRunner
 		var script = Path.Combine(dir, "compiled.ks");
 		File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#Package Newtonsoft.Json 13.0.3\n#import \"Ks\" { Clr }\n"
 								  + "FileAppend(Clr.Newtonsoft.Json.JsonConvert.SerializeObject([1, 2, 3]), \"*\")\nExitApp()\n");
-		Assert.AreEqual(0, Run(launcher, $"--errorstdout --compile {mode} \"{script}\"", out _, out var cerr), "compile failed: " + cerr);
+		Assert.That(Run(launcher, $"--errorstdout --compile {mode} \"{script}\"", out _, out var cerr), Is.EqualTo(0), "compile failed: " + cerr);
 		var exe = Path.ChangeExtension(script, OperatingSystem.IsWindows() ? ".exe" : null);
 		Assert.IsTrue(File.Exists(exe), $"compile produced no exe at {exe}");
 
@@ -799,7 +802,7 @@ public class PackageDirectiveTests : TestRunner
 
 		var scriptAssembly = Assembly.Load(File.ReadAllBytes(Path.ChangeExtension(script, ".dll")));
 		var manifest = Keysharp.Internals.Os.PackageManifest.FromAssembly(scriptAssembly);
-		Assert.IsNotNull(manifest, "the generated assembly must carry its pinned package manifest");
+		Assert.That(manifest, Is.Not.Null, "the generated assembly must carry its pinned package manifest");
 		var embeddedPackages = scriptAssembly.GetManifestResourceNames()
 									 .Where(n => n.StartsWith(Keysharp.Internals.Os.PackageManifest.AssetResourcePrefix, StringComparison.Ordinal))
 									 .ToArray();
@@ -809,7 +812,7 @@ public class PackageDirectiveTests : TestRunner
 		{
 			Assert.IsEmpty(siblings, "exe-min should embed its dependencies, but these were copied alongside: " + string.Join(", ", siblings));
 			Assert.IsNotEmpty(embeddedPackages, "exe-min must embed its resolved package assets");
-			Assert.IsFalse(Directory.Exists(deployedRoot), "exe-min must not need a package sidecar directory");
+			Assert.That(Directory.Exists(deployedRoot), Is.False, "exe-min must not need a package sidecar directory");
 			Assert.IsTrue(manifest.TryLocate(scriptAssembly, out var located, out var missing), missing);
 			// The cache lives under the PER-USER profile, never the world-writable temp directory: TryExtract's
 			// pre-existing-file fast path trusts what it finds, which in a shared directory another local user
@@ -831,8 +834,8 @@ public class PackageDirectiveTests : TestRunner
 				"every manifest asset must be present at its collision-free deployed path");
 		}
 
-		Assert.AreEqual(0, Run(exe, "", out var stdout, out var stderr), stderr);
-		Assert.AreEqual("[1,2,3]", stdout.Trim(), "stderr: " + stderr);
+		Assert.That(Run(exe, "", out var stdout, out var stderr), Is.EqualTo(0), stderr);
+		Assert.That(stdout.Trim(), Is.EqualTo("[1,2,3]"), "stderr: " + stderr);
 		try { Directory.Delete(dir, true); } catch { }
 	}
 
@@ -857,13 +860,14 @@ public class PackageDirectiveTests : TestRunner
 			File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#Import Ks { Clr }\n"
 				+ "Clr.LoadPackage(\"Newtonsoft.Json\", \"v13.0.3\")\n"
 				+ "FileAppend(Clr.Newtonsoft.Json.JsonConvert.SerializeObject([4, 5]), \"*\")\nExitApp()\n");
-			Assert.AreEqual(0, Run(launcher, $"--errorstdout --compile {mode} \"{script}\"", out _, out var compileError),
+			Assert.That(Run(launcher, $"--errorstdout --compile {mode} \"{script}\"", out _, out var compileError), Is.EqualTo(0),
 				"compile failed: " + compileError);
 
 			var exe = Path.ChangeExtension(script, OperatingSystem.IsWindows() ? ".exe" : null);
 			var assembly = Assembly.Load(File.ReadAllBytes(Path.ChangeExtension(script, ".dll")));
 			var resources = assembly.GetManifestResourceNames();
-			Assert.IsFalse(Directory.GetFiles(dir, "NuGet*.dll", SearchOption.TopDirectoryOnly).Any(),
+			Assert.That(Directory.GetFiles(dir, "NuGet*.dll", SearchOption.TopDirectoryOnly).Any(),
+				Is.False,
 				"NuGet implementation assemblies belong under components/packages/nuget, never beside the application");
 
 			if (mode == "exe")
@@ -871,23 +875,26 @@ public class PackageDirectiveTests : TestRunner
 				var providerRoot = Path.Combine(dir, "components", "packages", "nuget");
 				Assert.IsTrue(File.Exists(Path.Combine(providerRoot, "provider.json")));
 				Assert.IsTrue(File.Exists(Path.Combine(providerRoot, "NuGet.Commands.dll")));
-				Assert.IsFalse(resources.Contains(Keysharp.Internals.Os.CompiledPackageProviderManifest.ResourceName),
+				Assert.That(resources.Contains(Keysharp.Internals.Os.CompiledPackageProviderManifest.ResourceName),
+					Is.False,
 					"the full form deploys its provider and must not duplicate it in the script assembly");
 			}
 			else
 			{
-				Assert.IsFalse(Directory.Exists(Path.Combine(dir, "components", "packages")),
+				Assert.That(Directory.Exists(Path.Combine(dir, "components", "packages")),
+					Is.False,
 					"exe-min must not require a provider sidecar");
 				Assert.IsTrue(resources.Contains(Keysharp.Internals.Os.CompiledPackageProviderManifest.ResourceName));
 				Assert.IsTrue(resources.Any(name => name.StartsWith(
 					Keysharp.Internals.Os.CompiledPackageProviderManifest.AssetResourcePrefix, StringComparison.Ordinal)));
 			}
 
-			Assert.IsFalse(Directory.Exists(Path.Combine(dir, "providers")),
+			Assert.That(Directory.Exists(Path.Combine(dir, "providers")),
+				Is.False,
 				"compiled artifacts must not recreate the legacy providers subtree");
 
-			Assert.AreEqual(0, Run(exe, "", out var stdout, out var stderr), stderr);
-			Assert.AreEqual("[4,5]", stdout.Trim(), "stderr: " + stderr);
+			Assert.That(Run(exe, "", out var stdout, out var stderr), Is.EqualTo(0), stderr);
+			Assert.That(stdout.Trim(), Is.EqualTo("[4,5]"), "stderr: " + stderr);
 		}
 		finally
 		{
@@ -948,15 +955,17 @@ public class PackageDirectiveTests : TestRunner
 			File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#Import Ks { Clr }\n"
 				+ "Clr.LoadPackage(\"nuget:Newtonsoft.Json\", \"v13.0.3\")\n"
 				+ "FileAppend(Clr.Newtonsoft.Json.JsonConvert.SerializeObject([6, 7]), \"*\")\nExitApp()\n");
-			Assert.AreEqual(0, Run(launcher, $"--errorstdout --compile asm \"{script}\"", out _, out var error), error);
+			Assert.That(Run(launcher, $"--errorstdout --compile asm \"{script}\"", out _, out var error), Is.EqualTo(0), error);
 			var compiled = Path.ChangeExtension(script, ".cks");
 			Assert.IsTrue(File.Exists(compiled));
-			Assert.IsFalse(Directory.Exists(Path.Combine(dir, "components", "packages")),
+			Assert.That(Directory.Exists(Path.Combine(dir, "components", "packages")),
+				Is.False,
 				"a .cks already requires the Keysharp launcher and must not duplicate its provider payload");
-			Assert.IsFalse(Directory.Exists(Path.Combine(dir, "providers")),
+			Assert.That(Directory.Exists(Path.Combine(dir, "providers")),
+				Is.False,
 				"a .cks must not recreate the legacy providers subtree");
-			Assert.AreEqual(0, Run(launcher, $"--errorstdout \"{compiled}\"", out var stdout, out error), error);
-			Assert.AreEqual("[6,7]", stdout.Trim(), "stderr: " + error);
+			Assert.That(Run(launcher, $"--errorstdout \"{compiled}\"", out var stdout, out error), Is.EqualTo(0), error);
+			Assert.That(stdout.Trim(), Is.EqualTo("[6,7]"), "stderr: " + error);
 		}
 		finally
 		{
@@ -1013,19 +1022,19 @@ public class PackageDirectiveTests : TestRunner
 		_ = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("SQLitePCLRaw.bundle_e_sqlite3", "2.1.10", false, out _);
 
 		// The requested package is loaded; its dependency is only registered by name.
-		Assert.IsNotNull(Loaded("SQLitePCLRaw.batteries_v2"), "the requested package should be loaded");
+		Assert.That(Loaded("SQLitePCLRaw.batteries_v2"), Is.Not.Null, "the requested package should be loaded");
 		Assert.IsNull(Loaded("SQLitePCLRaw.core"), "a dependency must not be loaded before it is used");
 
 		// Naming a type from it is what materializes it.
 		var t = Keysharp.Builtins.TypeResolver.Resolve("SQLitePCL.raw");
-		Assert.IsNotNull(t, "a dependency's type must still be resolvable by name");
-		Assert.IsNotNull(Loaded("SQLitePCLRaw.core"), "resolving the type should have loaded its assembly");
+		Assert.That(t, Is.Not.Null, "a dependency's type must still be resolvable by name");
+		Assert.That(Loaded("SQLitePCLRaw.core"), Is.Not.Null, "resolving the type should have loaded its assembly");
 
 		// The bundle's initialization reaches SQLitePCLRaw.provider.e_sqlite3 and then P/Invokes the selected
 		// RID-specific e_sqlite3 asset. This proves that preserving a runtimes/ folder is not enough: the provider
 		// selected the correct native file and the runtime loader registered its logical import name.
 		var batteries = Loaded("SQLitePCLRaw.batteries_v2")?.GetType("SQLitePCL.Batteries_V2");
-		Assert.IsNotNull(batteries);
+		Assert.That(batteries, Is.Not.Null);
 		Assert.DoesNotThrow(() => batteries.GetMethod("Init", BindingFlags.Public | BindingFlags.Static)?.Invoke(null, null));
 	}
 
@@ -1049,14 +1058,14 @@ public class PackageDirectiveTests : TestRunner
 							  + "public static object Ser(object o) => JsonConvert.SerializeObject(42);\n#EndCSharp\nx := Ser(1)\n");
 			var ch = new CompilerHelper();
 			var (arr, code, compilation) = ch.CompileCodeToByteArray(script, "p");
-			Assert.IsNotNull(arr, "inline C# must be able to bind a declared package's types:\n" + code);
+			Assert.That(arr, Is.Not.Null, "inline C# must be able to bind a declared package's types:\n" + code);
 
 			// The manifest is the artifact that makes the build reproducible: it records what the constraint
 			// RESOLVED to, not what the script asked for.
-			Assert.IsNotNull(compilation.Packages, "a script with #Package must carry a resolved manifest");
+			Assert.That(compilation.Packages, Is.Not.Null, "a script with #Package must carry a resolved manifest");
 			var entry = compilation.Packages.Packages.FirstOrDefault(p => p.Id.Equals("Newtonsoft.Json", StringComparison.OrdinalIgnoreCase));
-			Assert.IsNotNull(entry, "the declared package must be in the manifest");
-			Assert.AreEqual("13.0.3", entry.Resolved, "the manifest records the resolved version");
+			Assert.That(entry, Is.Not.Null, "the declared package must be in the manifest");
+			Assert.That(entry.Resolved, Is.EqualTo("13.0.3"), "the manifest records the resolved version");
 			Assert.IsNotEmpty(entry.Managed, "the manifest must record the assemblies the script was compiled against");
 			Assert.IsTrue(File.Exists(entry.Managed[0].Source), "recorded assembly paths must exist: " + entry.Managed[0].Source);
 		}
@@ -1086,28 +1095,29 @@ public class PackageDirectiveTests : TestRunner
 			File.WriteAllText(script, "#NoTrayIcon\n#Package Serilog.Sinks.Console 6.0.0\nx := 1\n");
 			var ch = new CompilerHelper();
 			var (arr, code, compilation) = ch.CompileCodeToByteArray(script, "m");
-			Assert.IsNotNull(arr, "compile failed:\n" + code);
+			Assert.That(arr, Is.Not.Null, "compile failed:\n" + code);
 
 			var direct = compilation.Packages.Packages.Where(p => p.Direct).ToList();
 			var transitive = compilation.Packages.Packages.Where(p => !p.Direct).ToList();
-			Assert.AreEqual(1, direct.Count, "only the package the script named is direct");
-			Assert.AreEqual("Serilog.Sinks.Console", direct[0].Id);
+			Assert.That(direct.Count, Is.EqualTo(1), "only the package the script named is direct");
+			Assert.That(direct[0].Id, Is.EqualTo("Serilog.Sinks.Console"));
 			Assert.IsNotEmpty(transitive, "the closure must be recorded too, so its types are still resolvable");
 			Assert.IsTrue(transitive.Any(p => p.Id.Equals("Serilog", StringComparison.OrdinalIgnoreCase)),
 						  "a transitive dependency belongs in the manifest, flagged not-direct");
 
 			// A round trip through the embedded form: this is exactly what the runtime reads back.
 			var round = Keysharp.Internals.Os.PackageManifest.Read(compilation.Packages.Write());
-			Assert.AreEqual(1, round.Direct.Count, "only direct packages are unioned into the loader's request list");
+			Assert.That(round.Direct.Count, Is.EqualTo(1), "only direct packages are unioned into the loader's request list");
 			// The CONSTRAINT survives, in its translated form — a full version means exactly that version, so the
 			// lowerer turned `6.0.0` into the NuGet range `[6.0.0]`. What must NOT appear here is a raw resolved
 			// version, which is what a transitive entry carries and what used to collide with Clr.LoadPackage.
-			Assert.AreEqual("[6.0.0]", round.Direct[0].Version, "the constraint the script wrote survives the round trip");
+			Assert.That(round.Direct[0].Version, Is.EqualTo("[6.0.0]"), "the constraint the script wrote survives the round trip");
 			Assert.IsTrue(round.TryLocate(null, out var located, out var missing), missing);
-			Assert.AreEqual(compilation.Packages.Packages.Count, located.Count, "every recorded package must be locatable");
+			Assert.That(located.Count, Is.EqualTo(compilation.Packages.Packages.Count), "every recorded package must be locatable");
 
 			// And it is embedded in the assembly the script will actually ask, rather than only living in memory.
-			Assert.IsNotNull(Keysharp.Internals.Os.PackageManifest.FromAssembly(Assembly.Load(arr)),
+			Assert.That(Keysharp.Internals.Os.PackageManifest.FromAssembly(Assembly.Load(arr)),
+							 Is.Not.Null,
 							 "the manifest must be readable from the compiled assembly itself");
 		}
 		finally
@@ -1133,10 +1143,11 @@ public class PackageDirectiveTests : TestRunner
 			File.WriteAllText(script, "#NoTrayIcon\n#Package *i Keysharp.NoSuchPackage.ForTests 9.9.9\nx := 1\n");
 			var ch = new CompilerHelper();
 			var (arr, code, compilation) = ch.CompileCodeToByteArray(script, "o");
-			Assert.IsNotNull(arr, "an unavailable *i package must not fail the build:\n" + code);
-			Assert.IsNotNull(compilation.Packages, "a script that declares any package must carry a manifest, even an empty one");
+			Assert.That(arr, Is.Not.Null, "an unavailable *i package must not fail the build:\n" + code);
+			Assert.That(compilation.Packages, Is.Not.Null, "a script that declares any package must carry a manifest, even an empty one");
 			Assert.IsEmpty(compilation.Packages.Packages, "nothing resolved, so the manifest is empty rather than absent");
-			Assert.IsNotNull(Keysharp.Internals.Os.PackageManifest.FromAssembly(Assembly.Load(arr)),
+			Assert.That(Keysharp.Internals.Os.PackageManifest.FromAssembly(Assembly.Load(arr)),
+							 Is.Not.Null,
 							 "the empty manifest must still be embedded, or the script cannot start");
 		}
 		finally
@@ -1161,7 +1172,7 @@ public class PackageDirectiveTests : TestRunner
 			File.WriteAllText(script, "#NoTrayIcon\n#Package Newtonsoft.Json 13.0.3\nx := 1\n");
 			var ch = new CompilerHelper();
 			var (arr, code, compilation) = ch.CompileCodeToByteArray(script, "c");
-			Assert.IsNotNull(arr, code);
+			Assert.That(arr, Is.Not.Null, code);
 
 			var outDir = Path.Combine(dir, "out");
 			Assert.IsNull(compilation.Packages.CopyTo(outDir));
@@ -1199,7 +1210,7 @@ public class PackageDirectiveTests : TestRunner
 			// Passed per call: there is no mode to save, restore, or leak into a concurrent compile.
 			var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(script, "off", allowPackageRestore: false);
 			Assert.IsNull(arr, "an unrestored package set must fail an offline compile rather than resolve");
-			Assert.AreEqual(0, Keysharp.Internals.Os.PackageResolver.RestoreCount,
+			Assert.That(Keysharp.Internals.Os.PackageResolver.RestoreCount, Is.EqualTo(0),
 							"an offline compile must not invoke the provider restore");
 			Assert.IsTrue(code.Contains("not been restored"), "the report should name the actual situation; got:\n" + code);
 		}

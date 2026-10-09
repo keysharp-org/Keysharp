@@ -11,7 +11,7 @@ public partial class TypeTests : TestRunner
 		Assert.IsTrue(typeof(Keysharp.Builtins.KeysharpException).IsAssignableTo(typeof(System.Exception)));
 		Assert.IsTrue(typeof(Keysharp.Builtins.ParseException).IsAssignableTo(typeof(System.Exception)));
 		// The script-visible class hierarchy and Type() results are checked in types-conversions.ahk.
-		Assert.AreEqual("unset", Keysharp.Builtins.Types.Type(null));
+		Assert.That(Keysharp.Builtins.Types.Type(null), Is.EqualTo("unset"));
 		var types = typeof(Any).Assembly.GetExportedTypes()
 					.Where(t => t.Namespace?.StartsWith("Keysharp.Builtins", StringComparison.Ordinal) == true
 						   && t.Namespace != "Keysharp.Builtins.Properties" && t.IsClass

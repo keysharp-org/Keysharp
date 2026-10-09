@@ -33,25 +33,25 @@ public class SchedulerTests : TestRunner
 		Assert.IsTrue(clipReg.IsActive);
 
 		var hs = (HotstringDefinition)s.HotstringManager.AddHotstring("::d1test", null, "", "d1test", "leak", false);
-		Assert.AreEqual(0, hs.suspended);
+		Assert.That(hs.suspended, Is.EqualTo(0));
 
 		_ = s.FlowData.timers.Upsert(new KeysharpFunc((Func<object>)(() => 0L)), s.EventScheduler, 1000L, false, 0L);
-		Assert.IsFalse(s.FlowData.timers.IsEmpty);
+		Assert.That(s.FlowData.timers.IsEmpty, Is.False);
 
 		s.Dispose();
 
 		//Every kind of registration the retired script owned is now inert, and it stayed published so late
 		//callers resolve a script whose guards answer honestly rather than a null.
-		Assert.IsFalse(clipReg.IsActive, "a clipboard registration must not survive its script");
-		Assert.AreNotEqual(0, hs.suspended & HotstringDefinition.HS_TURNED_OFF, "hotstrings must be disabled on exit");
+		Assert.That(clipReg.IsActive, Is.False, "a clipboard registration must not survive its script");
+		Assert.That(hs.suspended & HotstringDefinition.HS_TURNED_OFF, Is.Not.EqualTo(0), "hotstrings must be disabled on exit");
 		Assert.IsTrue(s.FlowData.timers.IsEmpty, "timers must be removed on exit");
 		Assert.IsTrue(s.IsDisposed);
-		Assert.AreSame(s, Script.TheScript);
+		Assert.That(Script.TheScript, Is.SameAs(s));
 
 		var replacement = new Script();
 		s = replacement;//Hand ownership to TearDown.
 		hsm = replacement.HotstringManager;
-		Assert.AreSame(replacement, Script.TheScript);
+		Assert.That(Script.TheScript, Is.SameAs(replacement));
 	}
 
 	/// <summary>
@@ -67,15 +67,15 @@ public class SchedulerTests : TestRunner
 
 		using (var named = new Script(typeof(SchedulerTests), "CustomHookMutex"))
 		{
-			Assert.AreEqual("CustomHookMutex Keybd", named.HookThread.KeybdMutexName);
-			Assert.AreEqual("CustomHookMutex Mouse", named.HookThread.MouseMutexName);
+			Assert.That(named.HookThread.KeybdMutexName, Is.EqualTo("CustomHookMutex Keybd"));
+			Assert.That(named.HookThread.MouseMutexName, Is.EqualTo("CustomHookMutex Mouse"));
 		}
 
 		var replacement = new Script();
 		s = replacement;//Hand ownership to TearDown.
 		hsm = replacement.HotstringManager;
-		Assert.AreEqual(defaultKeyboardMutex, replacement.HookThread.KeybdMutexName);
-		Assert.AreEqual(defaultMouseMutex, replacement.HookThread.MouseMutexName);
+		Assert.That(replacement.HookThread.KeybdMutexName, Is.EqualTo(defaultKeyboardMutex));
+		Assert.That(replacement.HookThread.MouseMutexName, Is.EqualTo(defaultMouseMutex));
 	}
 
 	/// <summary>
@@ -101,7 +101,7 @@ public class SchedulerTests : TestRunner
 			ownerField.SetValue(null, s);
 
 			Keysharp.Internals.Os.SoundPlayback.StopCurrent(other);
-			Assert.AreSame(s, ownerField.GetValue(null), "another script's teardown must not stop this one's playback");
+			Assert.That(ownerField.GetValue(null), Is.SameAs(s), "another script's teardown must not stop this one's playback");
 
 			Keysharp.Internals.Os.SoundPlayback.StopCurrent(s);
 			Assert.IsNull(ownerField.GetValue(null), "the owning script's teardown must stop its own playback");
@@ -120,11 +120,11 @@ public class SchedulerTests : TestRunner
 	public void DisposingOlderScriptDoesNotClearNewPublication()
 	{
 		using var replacement = new Script();
-		Assert.AreSame(replacement, Script.TheScript);
+		Assert.That(Script.TheScript, Is.SameAs(replacement));
 
 		s.Dispose();
 
-		Assert.AreSame(replacement, Script.TheScript);
+		Assert.That(Script.TheScript, Is.SameAs(replacement));
 	}
 
 	[Test, Category("Threading")]
@@ -132,11 +132,11 @@ public class SchedulerTests : TestRunner
 	{
 		var callback = new KeysharpFunc((Func<object>)(() => 0L));
 		Assert.IsTrue(s.ClipFunctions.ModifyEventHandlers(callback, 1L));
-		Assert.AreEqual(1, s.ClipFunctions.Count);
+		Assert.That(s.ClipFunctions.Count, Is.EqualTo(1));
 
 		s.Dispose();
 
-		Assert.AreEqual(0, s.ClipFunctions.Count);
+		Assert.That(s.ClipFunctions.Count, Is.EqualTo(0));
 	}
 
 	/// <summary>A callback its owner already registered is not added again and keeps its place, as AHK's OnScriptEvent
@@ -148,28 +148,28 @@ public class SchedulerTests : TestRunner
 		var callback = new KeysharpFunc((Func<object, object>)(_ => 0L));
 		Assert.IsTrue(s.ClipFunctions.ModifyEventHandlers(callback, 1L));
 		Assert.IsTrue(s.ClipFunctions.ModifyEventHandlers(callback, -1L));
-		Assert.AreEqual(1, s.ClipFunctions.Count);
+		Assert.That(s.ClipFunctions.Count, Is.EqualTo(1));
 
 		var first = new EqualsEverything();
 		var second = new EqualsEverything();
 		Assert.IsTrue(s.ClipFunctions.ModifyEventHandlers(first, 1L));
 		Assert.IsTrue(s.ClipFunctions.ModifyEventHandlers(second, 1L));
-		Assert.AreEqual(3, s.ClipFunctions.Count, "Two objects are two registrations, whatever their Equals says.");
+		Assert.That(s.ClipFunctions.Count, Is.EqualTo(3), "Two objects are two registrations, whatever their Equals says.");
 
 		Assert.IsTrue(s.ClipFunctions.ModifyEventHandlers(first, -1L));
 		var order = s.ClipFunctions.GetSnapshot();
-		Assert.AreEqual(3, order.Length);
-		Assert.AreSame(callback, order[0].Callback);
-		Assert.AreSame(first, order[1].Callback, "A callback added again keeps its place.");
-		Assert.AreSame(second, order[2].Callback);
+		Assert.That(order.Length, Is.EqualTo(3));
+		Assert.That(order[0].Callback, Is.SameAs(callback));
+		Assert.That(order[1].Callback, Is.SameAs(first), "A callback added again keeps its place.");
+		Assert.That(order[2].Callback, Is.SameAs(second));
 
 		Func<object, object> body = _ => 0L;
 		Assert.IsTrue(s.ClipFunctions.ModifyEventHandlers(Functions.Closure(body), 1L));
 		Assert.IsTrue(s.ClipFunctions.ModifyEventHandlers(Functions.Closure(body), 1L));
-		Assert.AreEqual(5, s.ClipFunctions.Count, "Each closure is a registration of its own.");
+		Assert.That(s.ClipFunctions.Count, Is.EqualTo(5), "Each closure is a registration of its own.");
 
 		Assert.IsTrue(s.ClipFunctions.ModifyEventHandlers(first, 0L));
-		Assert.AreEqual(4, s.ClipFunctions.Count, "Removal finds the object it was given.");
+		Assert.That(s.ClipFunctions.Count, Is.EqualTo(4), "Removal finds the object it was given.");
 	}
 
 	private sealed class EqualsEverything : KeysharpObject
@@ -184,8 +184,8 @@ public class SchedulerTests : TestRunner
 		var callback = new KeysharpFunc((Func<object>)(() => 0L));
 		s.EventScheduler.ShutdownForScriptDispose();
 
-		Assert.IsFalse(s.ClipFunctions.ModifyEventHandlers(callback, 1L));
-		Assert.AreEqual(0, s.ClipFunctions.Count);
+		Assert.That(s.ClipFunctions.ModifyEventHandlers(callback, 1L), Is.False);
+		Assert.That(s.ClipFunctions.Count, Is.EqualTo(0));
 	}
 
 	[Test, Category("Threading")]
@@ -197,7 +197,7 @@ public class SchedulerTests : TestRunner
 
 		context.Post(_ => called = true, null);
 		_ = Assert.Throws<ObjectDisposedException>(() => context.Send(_ => called = true, null));
-		Assert.IsFalse(called);
+		Assert.That(called, Is.False);
 	}
 
 	[Test, Category("Threading")]
@@ -206,13 +206,13 @@ public class SchedulerTests : TestRunner
 		var context = UseQueuedMainContext();
 		var probe = new DestructorProbe();
 		s.DestructorPump.Enqueue(probe);
-		Assert.AreEqual(1, context.PendingCount);
+		Assert.That(context.PendingCount, Is.EqualTo(1));
 
 		s.Dispose();
 		context.DrainAll();
 
-		Assert.AreEqual(0, probe.Deletes);
-		Assert.AreEqual(1, probe.Disposes);
+		Assert.That(probe.Deletes, Is.EqualTo(0));
+		Assert.That(probe.Disposes, Is.EqualTo(1));
 	}
 
 	[Test, Category("Threading")]
@@ -226,7 +226,7 @@ public class SchedulerTests : TestRunner
 		var hostTask = Task.FromResult(Guid.NewGuid());
 		var wrapper = Ks.KeysharpTask.Wrap(ownedTask);
 		var scheduler = s.EventScheduler;
-		Assert.AreSame(scheduler, Ks.KeysharpTask.GetUnobservedScheduler(ownedTask));
+		Assert.That(Ks.KeysharpTask.GetUnobservedScheduler(ownedTask), Is.SameAs(scheduler));
 		Assert.IsNull(Ks.KeysharpTask.GetUnobservedScheduler(hostTask));
 		var incomplete = (Script)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject(typeof(Script));
 		Script.TheScript = incomplete;
@@ -256,8 +256,8 @@ public class SchedulerTests : TestRunner
 		{
 			Assert.DoesNotThrow(() => Keysharp.Internals.Flow.TryDoEvents(scheduler, false, false, false));
 			Assert.IsTrue(scheduler.EnqueueCallback(() => ran = true));
-			Assert.IsFalse(ran);
-			Assert.AreEqual(1, context.PendingCount);
+			Assert.That(ran, Is.False);
+			Assert.That(context.PendingCount, Is.EqualTo(1));
 			Assert.DoesNotThrow(context.DrainAll);
 			Assert.IsTrue(ran);
 		}
@@ -276,11 +276,11 @@ public class SchedulerTests : TestRunner
 		var ran = false;
 
 		Assert.IsTrue(scheduler.EnqueueCallback(() => ran = true));
-		Assert.AreEqual(1, context.PendingCount);
+		Assert.That(context.PendingCount, Is.EqualTo(1));
 
 		s.Dispose();
 		Assert.DoesNotThrow(context.DrainAll);
-		Assert.IsFalse(ran);
+		Assert.That(ran, Is.False);
 	}
 
 	[Test, Category("Threading")]
@@ -318,8 +318,8 @@ public class SchedulerTests : TestRunner
 		_ = s.EventScheduler.TryExecuteThreadLaunch(0, false, false, tv => first = tv.pseudoThreadId);
 		_ = s.EventScheduler.TryExecuteThreadLaunch(0, false, false, tv => second = tv.pseudoThreadId);
 
-		Assert.AreEqual(unchecked((long)0xFFFFFFFFFFFF0000UL), first);
-		Assert.AreEqual(0x0000000000010000L, second);
+		Assert.That(first, Is.EqualTo(unchecked((long)0xFFFFFFFFFFFF0000UL)));
+		Assert.That(second, Is.EqualTo(0x0000000000010000L));
 	}
 
 	[Test, Category("Threading")]
@@ -341,7 +341,7 @@ public class SchedulerTests : TestRunner
 		_ = scheduler.EnqueueCallback(() => order.Add("N1"), ScriptEventQueue.Normal, false);
 		_ = scheduler.EnqueueCallback(() => order.Add("N2"), ScriptEventQueue.Normal, false);
 
-		Assert.AreEqual(1, context.PendingCount);
+		Assert.That(context.PendingCount, Is.EqualTo(1));
 
 		context.DrainAll();
 
@@ -375,7 +375,7 @@ public class SchedulerTests : TestRunner
 		// A refused launch parks and holds its own class, but dispatch work behind it still runs: the
 		// conditions which refuse a launch do not gate message dispatch.
 		Assert.That(order, Is.EqualTo(new[] { "N1" }));
-		Assert.AreEqual(0, context.PendingCount);
+		Assert.That(context.PendingCount, Is.EqualTo(0));
 
 		interactiveBlocked = false;
 		scheduler.SchedulePump();
@@ -425,8 +425,8 @@ public class SchedulerTests : TestRunner
 		Assert.That(order, Is.EqualTo(includeDispatch
 			? new[] { "dispatch", "hotkey", "timer1", "timer2" }
 			: new[] { "hotkey", "timer1", "timer2" }));
-		Assert.IsFalse(scheduler.HasBlockedQueuedWork);
-		Assert.AreEqual(0, context.PendingCount);
+		Assert.That(scheduler.HasBlockedQueuedWork, Is.False);
+		Assert.That(context.PendingCount, Is.EqualTo(0));
 	}
 
 	[Test, Category("Threading")]
@@ -478,7 +478,7 @@ public class SchedulerTests : TestRunner
 
 		context.DrainAll();
 
-		Assert.AreEqual(1, attempts);
+		Assert.That(attempts, Is.EqualTo(1));
 		Assert.That(order, Is.EqualTo(new[] { "N1" }));
 		Assert.IsTrue(scheduler.HasBlockedQueuedWork);
 	}

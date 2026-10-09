@@ -46,38 +46,38 @@ public class MessageFilterTests : TestRunner
 
 		try
 		{
-			Assert.IsFalse(s.mainWindow.Visible);
-			Assert.IsFalse(icon.Visible);
+			Assert.That(s.mainWindow.Visible, Is.False);
+			Assert.That(icon.Visible, Is.False);
 			_ = WindowsAPI.SendMessage(nativeHandle, nativeMessage, messageId, notification);
 			context.DrainAll();
 			CheckNotification(1, notification);
-			Assert.AreEqual(0, selected, "a zero return must suppress the default tray callback");
+			Assert.That(selected, Is.EqualTo(0), "a zero return must suppress the default tray callback");
 
 			claimed = false;
 			_ = WindowsAPI.SendMessage(nativeHandle, nativeMessage, messageId, notification);
 			context.DrainAll();
 			CheckNotification(2, notification);
-			Assert.AreEqual(1, selected, "a blank return must allow the default callback once");
+			Assert.That(selected, Is.EqualTo(1), "a blank return must allow the default callback once");
 
 			claimed = true;
 			Assert.IsTrue(WindowsAPI.PostMessage(nativeHandle, nativeMessage, messageId, notification));
 			Application.DoEvents();
 			context.DrainAll();
 			CheckNotification(3, notification);
-			Assert.AreEqual(1, selected, "a posted notification must also respect suppression");
+			Assert.That(selected, Is.EqualTo(1), "a posted notification must also respect suppression");
 
 			claimed = false;
 			Assert.IsTrue(WindowsAPI.PostMessage(nativeHandle, nativeMessage, messageId, notification));
 			Application.DoEvents();
 			context.DrainAll();
 			CheckNotification(4, notification);
-			Assert.AreEqual(2, selected, "a posted notification must invoke the default callback once");
+			Assert.That(selected, Is.EqualTo(2), "a posted notification must invoke the default callback once");
 
 			claimed = true;
 			_ = WindowsAPI.SendMessage(nativeHandle, nativeMessage, messageId, WindowsAPI.WM_RBUTTONUP);
 			context.DrainAll();
 			CheckNotification(5, WindowsAPI.WM_RBUTTONUP);
-			Assert.IsFalse(menu.MenuItem.Visible, "a claimed right-click must not open the tray menu");
+			Assert.That(menu.MenuItem.Visible, Is.False, "a claimed right-click must not open the tray menu");
 
 			claimed = false;
 			var count = 5;
@@ -87,9 +87,9 @@ public class MessageFilterTests : TestRunner
 				_ = WindowsAPI.SendMessage(nativeHandle, nativeMessage, messageId, inert);
 				context.DrainAll();
 				CheckNotification(++count, inert);
-				Assert.AreEqual(2, selected, "other mouse and balloon notifications must not choose the default item");
+				Assert.That(selected, Is.EqualTo(2), "other mouse and balloon notifications must not choose the default item");
 			}
-			Assert.IsFalse(s.mainWindow.Visible);
+			Assert.That(s.mainWindow.Visible, Is.False);
 		}
 		finally
 		{
@@ -102,7 +102,7 @@ public class MessageFilterTests : TestRunner
 
 		void CheckNotification(int count, int expectedNotification)
 		{
-			Assert.AreEqual(count, calls.Count);
+			Assert.That(calls.Count, Is.EqualTo(count));
 			Assert.That(calls[^1], Is.EqualTo(new object[] { (long)messageId, (long)expectedNotification, (long)messageId, hwnd.ToInt64() }));
 		}
 	}
@@ -209,9 +209,9 @@ public class MessageFilterTests : TestRunner
 		try
 		{
 			_ = Keysharp.Builtins.Flow.Critical();
-			Assert.IsFalse(CallBuffered(filter, ref msg));
+			Assert.That(CallBuffered(filter, ref msg), Is.False);
 			context.DrainAll();
-			Assert.AreEqual(0, calls);
+			Assert.That(calls, Is.EqualTo(0));
 		}
 		finally
 		{
@@ -221,7 +221,7 @@ public class MessageFilterTests : TestRunner
 		s.EventScheduler.SchedulePump();
 		context.DrainAll();
 
-		Assert.AreEqual(1, calls);
+		Assert.That(calls, Is.EqualTo(1));
 	}
 #endif
 
@@ -243,8 +243,8 @@ public class MessageFilterTests : TestRunner
 		var handled = filter.CallEventHandlers(ref msg);
 
 		Assert.IsTrue(handled);
-		Assert.AreEqual(1, calls);
-		Assert.AreEqual((nint)42, GetResult(msg));
+		Assert.That(calls, Is.EqualTo(1));
+		Assert.That(GetResult(msg), Is.EqualTo((nint)42));
 	}
 
 	[Test, Category("Threading")]
@@ -270,10 +270,10 @@ public class MessageFilterTests : TestRunner
 			var handled = filter.CallEventHandlers(ref msg);
 
 			Assert.IsTrue(handled);
-			Assert.AreEqual(1, calls);
-			Assert.AreEqual(2, maxThreadCount);
-			Assert.AreEqual(1, s.totalExistingThreads);
-			Assert.AreEqual((nint)73, GetResult(msg));
+			Assert.That(calls, Is.EqualTo(1));
+			Assert.That(maxThreadCount, Is.EqualTo(2));
+			Assert.That(s.totalExistingThreads, Is.EqualTo(1));
+			Assert.That(GetResult(msg), Is.EqualTo((nint)73));
 		}
 		finally
 		{
@@ -311,10 +311,10 @@ public class MessageFilterTests : TestRunner
 			var handled = filter.CallEventHandlers(ref msg);
 
 			Assert.IsTrue(handled);
-			Assert.AreEqual(Script.maxEmergencyThreads, calls);
-			Assert.AreEqual((int)s.MaxThreadsTotal + Script.maxEmergencyThreads, maxThreadCount);
-			Assert.AreEqual(1, s.totalExistingThreads);
-			Assert.AreEqual((nint)1, GetResult(msg));
+			Assert.That(calls, Is.EqualTo(Script.maxEmergencyThreads));
+			Assert.That(maxThreadCount, Is.EqualTo((int)s.MaxThreadsTotal + Script.maxEmergencyThreads));
+			Assert.That(s.totalExistingThreads, Is.EqualTo(1));
+			Assert.That(GetResult(msg), Is.EqualTo((nint)1));
 		}
 		finally
 		{
@@ -354,13 +354,13 @@ public class MessageFilterTests : TestRunner
 		var msg = CreateMessage(msgId);
 		filter.handledMsg = msg;
 
-		Assert.IsFalse(CallBuffered(filter, ref msg));
+		Assert.That(CallBuffered(filter, ref msg), Is.False);
 
 		context.DrainAll();
 		Assert.That(order, Is.EqualTo(new[] { "B" }));
 
 		registrations[1].InstanceCount = registrations[1].MaxInstances;
-		Assert.IsFalse(CallBuffered(filter, ref msg));
+		Assert.That(CallBuffered(filter, ref msg), Is.False);
 		context.DrainAll();
 		Assert.That(order, Is.EqualTo(new[] { "B" }));
 
@@ -398,7 +398,7 @@ public class MessageFilterTests : TestRunner
 		try
 		{
 			Assert.IsTrue(s.Threads.IsInterruptible());
-			Assert.IsFalse(CallBuffered(filter, ref msg));
+			Assert.That(CallBuffered(filter, ref msg), Is.False);
 			context.DrainAll();
 		}
 		finally
@@ -409,7 +409,7 @@ public class MessageFilterTests : TestRunner
 		s.EventScheduler.SchedulePump();
 		context.DrainAll();
 
-		Assert.AreEqual(0, calls);
+		Assert.That(calls, Is.EqualTo(0));
 	}
 #endif
 
@@ -442,7 +442,7 @@ public class MessageFilterTests : TestRunner
 
 		Assert.IsTrue(handled);
 		Assert.That(order, Is.EqualTo(new[] { "B" }));
-		Assert.AreEqual((nint)7, GetResult(msg));
+		Assert.That(GetResult(msg), Is.EqualTo((nint)7));
 	}
 
 	[TestCase("zero", true, 0L)]
@@ -482,8 +482,8 @@ public class MessageFilterTests : TestRunner
 		s.GuiData.onMessageHandlers[msgId] = monitor;
 		var msg = CreateMessage(msgId);
 
-		Assert.AreEqual(claims, filter.CallEventHandlers(ref msg));
-		Assert.AreEqual((nint)reply, GetResult(msg));
+		Assert.That(filter.CallEventHandlers(ref msg), Is.EqualTo(claims));
+		Assert.That(GetResult(msg), Is.EqualTo((nint)reply));
 		Assert.That(order, Is.EqualTo(claims ? new[] { "first" } : new[] { "first", "second" }));
 	}
 
@@ -497,13 +497,13 @@ public class MessageFilterTests : TestRunner
 		_ = Keysharp.Builtins.Flow.OnMessage(msgId, fn, 5L);
 		_ = Keysharp.Builtins.Flow.OnMessage(msgId, fn, 3L);
 		var monitor = s.GuiData.onMessageHandlers[msgId];
-		Assert.AreEqual(1, monitor.GetRegistrationsSnapshot().Length);
-		Assert.AreEqual(3, monitor.GetRegistrationsSnapshot()[0].MaxInstances);
+		Assert.That(monitor.GetRegistrationsSnapshot().Length, Is.EqualTo(1));
+		Assert.That(monitor.GetRegistrationsSnapshot()[0].MaxInstances, Is.EqualTo(3));
 
 		_ = Keysharp.Builtins.Flow.OnMessage(msgId, fn);
-		Assert.AreEqual(3, monitor.GetRegistrationsSnapshot()[0].MaxInstances);
+		Assert.That(monitor.GetRegistrationsSnapshot()[0].MaxInstances, Is.EqualTo(3));
 		_ = Keysharp.Builtins.Flow.OnMessage(msgId, fn, 0L);
-		Assert.IsFalse(s.GuiData.onMessageHandlers.ContainsKey(msgId));
+		Assert.That(s.GuiData.onMessageHandlers.ContainsKey(msgId), Is.False);
 		Assert.DoesNotThrow(() => Keysharp.Builtins.Flow.OnMessage(msgId, new KeysharpObject(), 0L));
 	}
 
@@ -539,7 +539,7 @@ public class MessageFilterTests : TestRunner
 			Application.DoEvents();
 
 			Assert.That(order, Is.EqualTo(claims ? new[] { "global" } : new[] { "global", "window" }));
-			Assert.AreEqual(claims ? 0 : 1, probe.Count);
+			Assert.That(probe.Count, Is.EqualTo(claims ? 0 : 1));
 		}
 		finally
 		{
@@ -575,8 +575,8 @@ public class MessageFilterTests : TestRunner
 				_ = Keysharp.Builtins.Flow.Critical();
 				Assert.IsTrue(WindowsAPI.PostMessage(gui.form.Handle, msgId, 0, 0));
 				Application.DoEvents();
-				Assert.AreEqual(1, probe.Count, "the window must get the message while no thread can start");
-				Assert.AreEqual(0, calls);
+				Assert.That(probe.Count, Is.EqualTo(1), "the window must get the message while no thread can start");
+				Assert.That(calls, Is.EqualTo(0));
 			}
 			finally
 			{
@@ -584,8 +584,8 @@ public class MessageFilterTests : TestRunner
 			}
 
 			Keysharp.Internals.Flow.TryDoEvents(s.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
-			Assert.AreEqual(1, calls, "the callback must run once a thread can start");
-			Assert.AreEqual(1, probe.Count);
+			Assert.That(calls, Is.EqualTo(1), "the callback must run once a thread can start");
+			Assert.That(probe.Count, Is.EqualTo(1));
 		}
 		finally
 		{
@@ -622,7 +622,7 @@ public class MessageFilterTests : TestRunner
 
 			Assert.IsTrue(WindowsAPI.PostMessage(handle, msgId, 0, 0));
 			Application.DoEvents();
-			Assert.AreEqual(1, calls);
+			Assert.That(calls, Is.EqualTo(1));
 		}
 		finally
 		{
@@ -645,7 +645,7 @@ public class MessageFilterTests : TestRunner
 		Assert.IsNull(filter.handledMsg);
 
 		claims = false;
-		Assert.IsFalse(filter.PreFilterMessage(ref msg));
+		Assert.That(filter.PreFilterMessage(ref msg), Is.False);
 		Assert.IsTrue(filter.handledMsg == msg);
 	}
 

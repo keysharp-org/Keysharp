@@ -248,7 +248,7 @@ public class RealThreadTests : TestRunner
 			if (workerSetupException != null)
 				Assert.Fail(workerSetupException.ToString());
 			Assert.IsTrue(worker.IsAlive, "Worker should stay alive while it owns persistent registrations.");
-			Assert.AreEqual(registrations.WorkerThreadId, worker.Id);
+			Assert.That(worker.Id, Is.EqualTo(registrations.WorkerThreadId));
 			Assert.IsTrue(registrations.WorkerHasSchedulerContext);
 
 			Assert.IsTrue(registrations.Timer.OwnerScheduler.EnqueueTimer(registrations.Timer));
@@ -274,7 +274,7 @@ public class RealThreadTests : TestRunner
 			s.ClipFunctions.InvokeEventHandlers(1L);
 			Assert.IsTrue(probe.WaitFor("clipboard"));
 
-			Assert.AreEqual(0L, Dll.DllCall((long)registrations.CallbackHolder.Ptr));
+			Assert.That(Dll.DllCall((long)registrations.CallbackHolder.Ptr), Is.EqualTo(0L));
 			Assert.IsTrue(probe.WaitFor("callbackcreate"));
 
 			_ = worker.Post(new KeysharpFunc((Func<object>)(() => probe.Record("post"))));
@@ -282,7 +282,7 @@ public class RealThreadTests : TestRunner
 
 			foreach (var name in new[] { "timer", "hotkey", "hotstring", "message", "gui", "overlay", "clipboard", "callbackcreate", "post" })
 			{
-				Assert.AreEqual(registrations.WorkerThreadId, probe.ThreadIds[name], $"{name} callback did not run on the owning worker.");
+				Assert.That(probe.ThreadIds[name], Is.EqualTo(registrations.WorkerThreadId), $"{name} callback did not run on the owning worker.");
 				Assert.IsTrue(probe.HasSchedulerContext[name], $"{name} callback did not observe the worker synchronization context.");
 			}
 		}
@@ -333,7 +333,7 @@ public class RealThreadTests : TestRunner
 				return "ok";
 			})));
 
-			Assert.AreEqual("ok", result);
+			Assert.That(result, Is.EqualTo("ok"));
 			Assert.IsTrue(uiRan.IsSet, "Main scheduler did not pump while waiting in Send.");
 		}
 		finally
@@ -369,7 +369,7 @@ public class RealThreadTests : TestRunner
 			{
 				//Reading it from here is fine; only the mutation is refused.
 				Assert.IsTrue(foreignThread.IsActive);
-				Assert.AreNotSame(foreignThread, s.Threads.CurrentThreadObject);
+				Assert.That(s.Threads.CurrentThreadObject, Is.Not.SameAs(foreignThread));
 				var error = AssertScriptError(() => _ = foreignThread.Exit(1));
 				Assert.That(error, Is.TypeOf<TargetError>());
 			});
@@ -416,7 +416,7 @@ public class RealThreadTests : TestRunner
 					})));
 				}));
 
-			Assert.AreEqual(8L, targetThread.ExitCode, "The exited thread keeps its code; the script does not exit here.");
+			Assert.That(targetThread.ExitCode, Is.EqualTo(8L), "The exited thread keeps its code; the script does not exit here.");
 		}
 		finally
 		{
@@ -433,15 +433,15 @@ public class RealThreadTests : TestRunner
 
 		WithMatchingWorkerHotkey(hk, new KeysharpFunc((Func<object, object>)(_ => probe.Record("worker"))), worker =>
 		{
-			Assert.AreEqual(1, s.HotkeyData.shk.Length, "Exact match should reuse the same hotkey definition.");
-			Assert.AreEqual(2, hk.firstVariant.BindingCount, "Exact match should attach one callback per scheduler.");
+			Assert.That(s.HotkeyData.shk.Length, Is.EqualTo(1), "Exact match should reuse the same hotkey definition.");
+			Assert.That(hk.firstVariant.BindingCount, Is.EqualTo(2), "Exact match should attach one callback per scheduler.");
 
 			hk.PerformInNewThreadMadeByCallerAsync(hk.firstVariant, 0, 0);
 
 			Assert.IsTrue(probe.WaitFor("main"));
 			Assert.IsTrue(probe.WaitFor("worker"));
-			Assert.AreEqual(worker.Id, probe.ThreadIds["worker"]);
-			Assert.AreNotEqual(probe.ThreadIds["main"], probe.ThreadIds["worker"]);
+			Assert.That(probe.ThreadIds["worker"], Is.EqualTo(worker.Id));
+			Assert.That(probe.ThreadIds["worker"], Is.Not.EqualTo(probe.ThreadIds["main"]));
 		});
 	}
 
@@ -480,7 +480,7 @@ public class RealThreadTests : TestRunner
 			}));
 
 			Assert.IsTrue(WaitWithUiPump(() => callbackRan.IsSet), "Prequalified hook hotkey did not dispatch.");
-			Assert.AreEqual(0, Volatile.Read(ref criterionCalls), "Hook hotkey dispatch should not re-evaluate its criterion on receipt.");
+			Assert.That(Volatile.Read(ref criterionCalls), Is.EqualTo(0), "Hook hotkey dispatch should not re-evaluate its criterion on receipt.");
 		}
 		finally
 		{
@@ -507,10 +507,10 @@ public class RealThreadTests : TestRunner
 			s.HotkeyData.shk = [..s.HotkeyData.shk, hk];
 
 			var buildMethod = s.HookThread.GetType().GetMethod("TryBuildHookHotkeyMessage", BindingFlags.Instance | BindingFlags.NonPublic);
-			Assert.IsNotNull(buildMethod, "Hook hotkey message builder should exist.");
+			Assert.That(buildMethod, Is.Not.Null, "Hook hotkey message builder should exist.");
 			var args = new object[] { hk.id, 0UL, null, null, null };
 			Assert.IsTrue((bool)buildMethod.Invoke(s.HookThread, args), "Hook hotkey should qualify successfully.");
-			Assert.AreEqual(1, Volatile.Read(ref criterion.calls), "Window-style criterion should be evaluated once on the hook side.");
+			Assert.That(Volatile.Read(ref criterion.calls), Is.EqualTo(1), "Window-style criterion should be evaluated once on the hook side.");
 
 			var hookMsg = (HookHotkeyMsg)args[4];
 			Assert.IsNull(hookMsg.variant, "Window-style criteria should be re-evaluated on receipt instead of dispatching the prequalified variant directly.");
@@ -525,7 +525,7 @@ public class RealThreadTests : TestRunner
 
 			Assert.IsTrue(WaitWithUiPump(() => Volatile.Read(ref criterion.calls) == 2), "Window-style criterion was not re-evaluated on receipt.");
 			Assert.IsTrue(WaitWithUiPump(() => callbackRan.IsSet, 5000), "Re-evaluated hook hotkey did not dispatch.");
-			Assert.AreEqual(2, Volatile.Read(ref criterion.calls), "Window-style criterion should be evaluated again when the message is received.");
+			Assert.That(Volatile.Read(ref criterion.calls), Is.EqualTo(2), "Window-style criterion should be evaluated again when the message is received.");
 		}
 		finally
 		{
@@ -549,7 +549,7 @@ public class RealThreadTests : TestRunner
 			_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(s);
 
 #if WINDOWS
-			Assert.AreEqual(HotkeyTypeEnum.Normal, hk.type, "A hotkey with an enabled global variant should be allowed to stay on the non-hook WM_HOTKEY path.");
+			Assert.That(hk.type, Is.EqualTo(HotkeyTypeEnum.Normal), "A hotkey with an enabled global variant should be allowed to stay on the non-hook WM_HOTKEY path.");
 #else
 			Assert.AreEqual(HotkeyTypeEnum.KeyboardHook, hk.type, "Unix platforms currently route active hotkeys through the hook path instead of a registered WM_HOTKEY-style path.");
 #endif

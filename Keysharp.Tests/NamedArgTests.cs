@@ -18,7 +18,7 @@ public class NamedArgTests : TestRunner
 	public void WarnNamedArgValid()
 	{
 		var warning = Warnings("f(alpha, beta := 2) => alpha\nx := f(1, beta: 3)\n");
-		Assert.IsFalse(warning.Contains("not a parameter"), warning);
+		Assert.That(warning.Contains("not a parameter"), Is.False, warning);
 	}
 
 	[Test, Category("Misc")]
@@ -43,7 +43,7 @@ public class NamedArgTests : TestRunner
 		var warning = Warnings("class C {\nstatic __New() {\n}\n__New(beta) {\n}\n}\nclass D {\nstatic __New() {\n}\n}\n"
 			+ "Valid() => C(beta: 1)\nTypo() => C(nosuch: 1)\nInherited() => D(anything: 1)\n");
 		Assert.IsTrue(warning.Contains("'nosuch'"), warning);
-		Assert.IsFalse(warning.Contains("'beta'") || warning.Contains("'anything'"), warning);
+		Assert.That(warning.Contains("'beta'") || warning.Contains("'anything'"), Is.False, warning);
 	}
 
 	[Test, Category("Misc")]
@@ -51,7 +51,7 @@ public class NamedArgTests : TestRunner
 	{
 		var warning = Warnings("try b := Buffer(nosuch: 1)\ntry c := Buffer(ByteCount: 4)\n");
 		Assert.IsTrue(warning.Contains("nosuch") && warning.Contains("ByteCount") && warning.Contains("FillByte"), warning);
-		Assert.IsFalse(warning.Contains("'ByteCount' is not"), warning);
+		Assert.That(warning.Contains("'ByteCount' is not"), Is.False, warning);
 	}
 
 	[Test, Category("Misc")]
@@ -74,7 +74,7 @@ class C {
 			Assert.IsTrue(warning.Contains(name), warning);
 
 		// Unimported, the name is no class, so nothing is checked against Overlay's parameters.
-		Assert.IsFalse(Warnings("#Warn VarUnset, Off\nf() => Overlay(nosuch: 1)\n").Contains("nosuch"));
+		Assert.That(Warnings("#Warn VarUnset, Off\nf() => Overlay(nosuch: 1)\n").Contains("nosuch"), Is.False);
 
 		// The call is checked against what the import binds, a function included, not the global class it shadows.
 		var shadowed = Warnings("#Import Ks { Cosh as Buffer }\nf() => Buffer(nosuch: 1)\n");
@@ -115,14 +115,14 @@ WildF(gamma) => gamma
 			Assert.IsTrue(warning.Contains(name), warning);
 
 		// A variadic function absorbs any name, as a local one does, and a declared name is no mistake.
-		Assert.IsFalse(warning.Contains("'anything'") || warning.Contains("'alpha' is not"), warning);
+		Assert.That(warning.Contains("'anything'") || warning.Contains("'alpha' is not"), Is.False, warning);
 	}
 
 	[Test, Category("Misc")]
 	public void DynamicCallWarning()
 	{
 		var warning = Warnings("f(alpha) => alpha\ng := f\nx := g(nosuch: 1)\n");
-		Assert.IsFalse(warning.Contains("not a parameter"), warning);
+		Assert.That(warning.Contains("not a parameter"), Is.False, warning);
 	}
 
 	[Test, Category("Misc"), Category("Internal")]
@@ -132,16 +132,16 @@ WildF(gamma) => gamma
 		var values = NamedArgBinder.ToComLayout(named, out var names);
 		var expected = new Dictionary<string, object> { ["Key"] = "k", ["Item"] = "v" };
 
-		Assert.AreEqual(2, names.Length);
-		Assert.AreEqual(3, values.Length);
+		Assert.That(names.Length, Is.EqualTo(2));
+		Assert.That(values.Length, Is.EqualTo(3));
 
 		for (var i = 0; i < names.Length; i++)
-			Assert.AreEqual(expected[names[i]], values[i], $"names[{i}] must name values[{i}]");
+			Assert.That(values[i], Is.EqualTo(expected[names[i]]), $"names[{i}] must name values[{i}]");
 
-		Assert.AreEqual("pos0", values[2]);
+		Assert.That(values[2], Is.EqualTo("pos0"));
 
 		var positional = new object[] { "a", "b" };
-		Assert.AreSame(positional, NamedArgBinder.ToComLayout(positional, out var none));
+		Assert.That(NamedArgBinder.ToComLayout(positional, out var none), Is.SameAs(positional));
 		Assert.IsEmpty(none);
 	}
 
@@ -152,10 +152,10 @@ WildF(gamma) => gamma
 		var values = NamedArgBinder.StripNames(named, out var names);
 		var expected = new Dictionary<string, object> { ["Key"] = "k", ["Item"] = "v" };
 
-		Assert.AreEqual(2, names.Length);
-		Assert.AreEqual("pos0", values[0]);
+		Assert.That(names.Length, Is.EqualTo(2));
+		Assert.That(values[0], Is.EqualTo("pos0"));
 
 		for (var i = 0; i < names.Length; i++)
-			Assert.AreEqual(expected[names[i]], values[1 + i], $"names[{i}] must name values[{1 + i}]");
+			Assert.That(values[1 + i], Is.EqualTo(expected[names[i]]), $"names[{i}] must name values[{1 + i}]");
 	}
 }

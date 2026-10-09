@@ -9,19 +9,19 @@ public class AppManifestTests : TestRunner
 		Assert.IsNull(AppManifest.FromAssembly(typeof(AppManifestTests).Assembly));
 
 		foreach (var json in new[] { "not-json", "[]", "{\"files\":null}", "{\"guiTheme\":\"Neon\",\"files\":[]}" })
-			StringAssert.Contains("#App manifest", Assert.Throws<InvalidDataException>(() => AppManifest.Read(json)).Message);
+			Assert.That(Assert.Throws<InvalidDataException>(() => AppManifest.Read(json)).Message, Does.Contain("#App manifest"));
 
 		foreach (var version in new[] { "1", "1.2.3.4.5", "1.65535", "1.-2" })
 		{
-			Assert.IsFalse(AppManifest.IsValidAssemblyVersion(version));
-			StringAssert.Contains("'version'", Assert.Throws<InvalidDataException>(() =>
-				AppManifest.Read($"{{\"version\":\"{version}\",\"files\":[]}}")).Message);
+			Assert.That(AppManifest.IsValidAssemblyVersion(version), Is.False);
+			Assert.That(Assert.Throws<InvalidDataException>(() =>
+				AppManifest.Read($"{{\"version\":\"{version}\",\"files\":[]}}")).Message, Does.Contain("'version'"));
 		}
 
 		foreach (var version in new[] { "0.0", "0.65534.2.3" })
 		{
 			Assert.IsTrue(AppManifest.IsValidAssemblyVersion(version));
-			Assert.AreEqual(version, AppManifest.Read($"{{\"version\":\"{version}\",\"files\":[]}}").Version);
+			Assert.That(AppManifest.Read($"{{\"version\":\"{version}\",\"files\":[]}}").Version, Is.EqualTo(version));
 		}
 
 		var invalid = new (string Json, string Message)[]
@@ -40,20 +40,20 @@ public class AppManifestTests : TestRunner
 		};
 
 		foreach (var (json, message) in invalid)
-			StringAssert.Contains(message, Assert.Throws<InvalidDataException>(() => AppManifest.Read(json)).Message);
+			Assert.That(Assert.Throws<InvalidDataException>(() => AppManifest.Read(json)).Message, Does.Contain(message));
 
 		var manifest = AppManifest.Read(
 			"{\"icon\":\"assets/app.ICO\",\"noTrayIcon\":true,\"files\":[\"assets/file.txt\"]}");
-		Assert.AreEqual("assets/app.ICO", manifest.Icon);
+		Assert.That(manifest.Icon, Is.EqualTo("assets/app.ICO"));
 		Assert.IsTrue(manifest.TrayIconSuppressed);
-		CollectionAssert.AreEqual(new[] { "assets/file.txt" }, manifest.Files);
+		Assert.That(manifest.Files, Is.EqualTo(new[] { "assets/file.txt" }).AsCollection);
 
 		var numbered = AppManifest.Read(
 			"{\"trayIcon\":\"icons/library.dll\",\"trayIconNumber\":-12,\"files\":[]}");
-		Assert.AreEqual(-12L, numbered.TrayIconNumber);
+		Assert.That(numbered.TrayIconNumber, Is.EqualTo(-12L));
 		var named = AppManifest.Read(
 			"{\"trayIcon\":\"icons/library.dll\",\"trayIconResource\":\"ApplicationIcon\",\"files\":[]}");
-		Assert.AreEqual("ApplicationIcon", named.TrayIconResource);
+		Assert.That(named.TrayIconResource, Is.EqualTo("ApplicationIcon"));
 	}
 
 	[Test]
@@ -61,20 +61,20 @@ public class AppManifestTests : TestRunner
 	{
 		var malformed = BuildAssemblyWithManifest("{");
 		var malformedError = Assert.Throws<InvalidDataException>(() => AppManifest.FromAssembly(malformed));
-		StringAssert.Contains(AppManifest.ResourceName, malformedError.Message);
-		StringAssert.Contains(malformed.GetName().Name, malformedError.Message);
+		Assert.That(malformedError.Message, Does.Contain(AppManifest.ResourceName));
+		Assert.That(malformedError.Message, Does.Contain(malformed.GetName().Name));
 
 		var invalidUtf8 = BuildAssemblyWithManifest([0xff]);
-		StringAssert.Contains("could not be read",
-			Assert.Throws<InvalidDataException>(() => AppManifest.FromAssembly(invalidUtf8)).Message);
+		Assert.That(Assert.Throws<InvalidDataException>(() => AppManifest.FromAssembly(invalidUtf8)).Message,
+			Does.Contain("could not be read"));
 
 		foreach (var json in new[]
 		{
 			"{\"trayIcon\":\"icons/library.dll\",\"trayIconNumber\":2,\"files\":[]}",
 			"{\"icon\":\"assets/app.ico\",\"files\":[]}",
 		})
-			StringAssert.Contains("payload is missing", Assert.Throws<InvalidDataException>(() =>
-				AppManifest.FromAssembly(BuildAssemblyWithManifest(json))).Message);
+			Assert.That(Assert.Throws<InvalidDataException>(() =>
+				AppManifest.FromAssembly(BuildAssemblyWithManifest(json))).Message, Does.Contain("payload is missing"));
 
 		foreach (var (json, resource) in new[]
 		{
@@ -84,8 +84,8 @@ public class AppManifestTests : TestRunner
 		{
 			var assembly = BuildAssemblyWithManifest(Encoding.UTF8.GetBytes(json),
 				(resource, new byte[] { 0, 0, 1, 0, 1, 0 }));
-			StringAssert.Contains("structurally valid ICO",
-				Assert.Throws<InvalidDataException>(() => AppManifest.FromAssembly(assembly)).Message);
+			Assert.That(Assert.Throws<InvalidDataException>(() => AppManifest.FromAssembly(assembly)).Message,
+				Does.Contain("structurally valid ICO"));
 		}
 	}
 
@@ -96,8 +96,8 @@ public class AppManifestTests : TestRunner
 		var assembly = BuildAssemblyWithManifest(Encoding.UTF8.GetBytes(json),
 			(AppManifest.TrayIconResourceName, MinimalIcon()));
 		using var script = new Script(assembly.GetType("AppManifestMarker", throwOnError: true));
-		Assert.AreEqual("", Accessors.A_IconFile);
-		Assert.AreEqual(1L, Accessors.A_IconNumber);
+		Assert.That(Accessors.A_IconFile, Is.Empty);
+		Assert.That(Accessors.A_IconNumber, Is.EqualTo(1L));
 	}
 
 	[Test]
@@ -106,7 +106,7 @@ public class AppManifestTests : TestRunner
 		var previous = Script.TheScript;
 		var programType = BuildAssemblyWithManifest("{").GetType("AppManifestMarker", throwOnError: true);
 		_ = Assert.Throws<InvalidDataException>(() => new Script(programType));
-		Assert.AreSame(previous, Script.TheScript);
+		Assert.That(Script.TheScript, Is.SameAs(previous));
 	}
 
 	[TestCase(" classic ", "Classic")]
@@ -115,8 +115,8 @@ public class AppManifestTests : TestRunner
 	public void GuiTheme(string value, string expected)
 	{
 		Assert.IsTrue(Script.TryNormalizeGuiTheme(value, out var actual));
-		Assert.AreEqual(expected, actual);
-		Assert.IsFalse(Script.TryNormalizeGuiTheme("Neon", out _));
+		Assert.That(actual, Is.EqualTo(expected));
+		Assert.That(Script.TryNormalizeGuiTheme("Neon", out _), Is.False);
 	}
 
 	private static Assembly BuildAssemblyWithManifest(string json) =>

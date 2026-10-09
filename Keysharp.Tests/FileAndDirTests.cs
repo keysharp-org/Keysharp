@@ -44,10 +44,10 @@ public class FileAndDirTests : TestRunner
 			var gzdest = Path.Combine(work, "gz-fresh", "file1.txt");//Nonexistent parent: the .gz path must create it.
 			_ = Dir.DirCopy(gz, gzdest);
 			Assert.IsTrue(File.Exists(gzdest));
-			Assert.IsFalse(Directory.Exists(gzdest));
-			Assert.AreEqual(File.ReadAllBytes(file1), File.ReadAllBytes(gzdest));
+			Assert.That(Directory.Exists(gzdest), Is.False);
+			Assert.That(File.ReadAllBytes(gzdest), Is.EqualTo(File.ReadAllBytes(file1)));
 			_ = Dir.DirCopy(gz, gzdest, true);
-			Assert.AreEqual(File.ReadAllBytes(file1), File.ReadAllBytes(gzdest));
+			Assert.That(File.ReadAllBytes(gzdest), Is.EqualTo(File.ReadAllBytes(file1)));
 			Assert.IsTrue(Throws(() => Dir.DirCopy(gz, gzdest, false)), "A plain .gz did not fail on an existing destination file with overwrite off.");
 		}
 		finally
@@ -155,34 +155,35 @@ public class FileAndDirTests : TestRunner
 		var helper = new CompilerHelper();
 		var (memoryBytes, memoryError, memoryCompilation) = helper.CompileCodeToByteArray(
 			scriptPath, "file-install-memory", output: ScriptCompilationOutput.InMemory, sourceIsFile: true);
-		Assert.IsNotNull(memoryBytes, memoryError);
-		NUnit.Framework.CollectionAssert.AreEqual(
-			new[] { "file-fileinstall.ahk", "Gui/monkey.ico" }, memoryCompilation.Manifest.Files);
+		Assert.That(memoryBytes, Is.Not.Null, memoryError);
+		Assert.That(
+			memoryCompilation.Manifest.Files, Is.EqualTo(new[] { "file-fileinstall.ahk", "Gui/monkey.ico" }).AsCollection);
 		Assert.IsEmpty(memoryCompilation.Manifest.FileSources,
 			"source execution keeps logical declarations but must not carry build-machine payload paths");
 		var memoryAssembly = Assembly.Load(memoryBytes);
-		Assert.IsFalse(memoryAssembly.GetManifestResourceNames().Any(n => n.StartsWith(resourcePrefix, StringComparison.Ordinal)));
+		Assert.That(memoryAssembly.GetManifestResourceNames().Any(n => n.StartsWith(resourcePrefix, StringComparison.Ordinal)), Is.False);
 
 		var (artifactBytes, artifactError, artifactCompilation) = helper.CompileCodeToByteArray(
 			scriptPath, "file-install-artifact", output: ScriptCompilationOutput.Assembly, sourceIsFile: true);
-		Assert.IsNotNull(artifactBytes, artifactError);
-		Assert.AreEqual(2, artifactCompilation.Manifest.FileSources.Count);
+		Assert.That(artifactBytes, Is.Not.Null, artifactError);
+		Assert.That(artifactCompilation.Manifest.FileSources.Count, Is.EqualTo(2));
 		var artifactAssembly = Assembly.Load(artifactBytes);
 		var resources = artifactAssembly.GetManifestResourceNames();
-		NUnit.Framework.CollectionAssert.IsSubsetOf(new[]
+		Assert.That(new[]
 		{
 			resourcePrefix + "file-fileinstall.ahk",
 			resourcePrefix + "Gui/monkey.ico",
-		}, resources);
-		Assert.IsFalse(resources.Any(n => n.Contains("Keysharp_clone", StringComparison.OrdinalIgnoreCase)),
+		}, Is.SubsetOf(resources));
+		Assert.That(resources.Any(n => n.Contains("Keysharp_clone", StringComparison.OrdinalIgnoreCase)),
+			Is.False,
 			"managed resource names must not expose the physical build path");
 		using (var manifestStream = artifactAssembly.GetManifestResourceStream("Keysharp.App.json"))
 		{
-			Assert.IsNotNull(manifestStream);
+			Assert.That(manifestStream, Is.Not.Null);
 			var json = new StreamReader(manifestStream).ReadToEnd();
 			var physicalPath = Path.GetFullPath(path);
-			Assert.IsFalse(json.Contains(physicalPath, StringComparison.OrdinalIgnoreCase), json);
-			Assert.IsFalse(json.Contains(physicalPath.Replace("\\", "\\\\"), StringComparison.OrdinalIgnoreCase), json);
+			Assert.That(json.Contains(physicalPath, StringComparison.OrdinalIgnoreCase), Is.False, json);
+			Assert.That(json.Contains(physicalPath.Replace("\\", "\\\\"), StringComparison.OrdinalIgnoreCase), Is.False, json);
 		}
 
 		var priorAssembly = ScriptExecutionState.Assembly;
@@ -199,7 +200,7 @@ public class FileAndDirTests : TestRunner
 			s.ProgramType = memoryAssembly.GetType("Keysharp.CompiledMain.Program");
 			var fallbackDest = Path.Combine(temp, "source.ahk");
 			_ = Files.FileInstall("file-fileinstall.ahk", fallbackDest);
-			Assert.AreEqual(File.ReadAllText(scriptPath), File.ReadAllText(fallbackDest));
+			Assert.That(File.ReadAllText(fallbackDest), Is.EqualTo(File.ReadAllText(scriptPath)));
 			_ = Files.FileInstall(scriptPath, scriptPath);
 
 			s.SetName(Path.Combine(temp, "missing-script.ahk"));
@@ -207,8 +208,8 @@ public class FileAndDirTests : TestRunner
 			s.ProgramType = artifactAssembly.GetType("Keysharp.CompiledMain.Program");
 			var iconDest = Path.Combine(temp, "icon.ico");
 			_ = Files.FileInstall(@"Gui\monkey.ico", iconDest);
-			NUnit.Framework.CollectionAssert.AreEqual(
-				File.ReadAllBytes(Path.Combine(path, "Gui", "monkey.ico")), File.ReadAllBytes(iconDest));
+			Assert.That(
+				File.ReadAllBytes(iconDest), Is.EqualTo(File.ReadAllBytes(Path.Combine(path, "Gui", "monkey.ico"))).AsCollection);
 		}
 		finally
 		{
@@ -246,21 +247,21 @@ public class FileAndDirTests : TestRunner
 	public void FixFilters()
 	{
 		var str = Dialogs.FixFilters("");
-		Assert.AreEqual("All Files (*.*)|*.*", str);
+		Assert.That(str, Is.EqualTo("All Files (*.*)|*.*"));
 		str = Dialogs.FixFilters("Text (*.txt)");
-		Assert.AreEqual("Text (*.txt)|*.txt", str);
+		Assert.That(str, Is.EqualTo("Text (*.txt)|*.txt"));
 		str = Dialogs.FixFilters("Text (*.txt)|*.txt");
-		Assert.AreEqual("Text (*.txt)|*.txt", str);
+		Assert.That(str, Is.EqualTo("Text (*.txt)|*.txt"));
 		str = Dialogs.FixFilters("Images(*.png,*.jpg)");
-		Assert.AreEqual("Images(*.png,*.jpg)|*.png;*.jpg", str);
+		Assert.That(str, Is.EqualTo("Images(*.png,*.jpg)|*.png;*.jpg"));
 		str = Dialogs.FixFilters("Images(*.png,*.jpg)|*.png;*.jpg");
-		Assert.AreEqual("Images(*.png,*.jpg)|*.png;*.jpg", str);
+		Assert.That(str, Is.EqualTo("Images(*.png,*.jpg)|*.png;*.jpg"));
 		str = Dialogs.FixFilters("Text (*.txt)|Images(*.png,*.jpg)");
-		Assert.AreEqual("Text (*.txt)|*.txt|Images(*.png,*.jpg)|*.png;*.jpg", str);
+		Assert.That(str, Is.EqualTo("Text (*.txt)|*.txt|Images(*.png,*.jpg)|*.png;*.jpg"));
 		str = Dialogs.FixFilters("Text (*.txt)|*.txt|Images(*.png,*.jpg)");
-		Assert.AreEqual("Text (*.txt)|*.txt|Images(*.png,*.jpg)|*.png;*.jpg", str);
+		Assert.That(str, Is.EqualTo("Text (*.txt)|*.txt|Images(*.png,*.jpg)|*.png;*.jpg"));
 		str = Dialogs.FixFilters("Text (*.txt)|*.txt|Images(*.png,*.jpg)|*.png;*.jpg");
-		Assert.AreEqual("Text (*.txt)|*.txt|Images(*.png,*.jpg)|*.png;*.jpg", str);
+		Assert.That(str, Is.EqualTo("Text (*.txt)|*.txt|Images(*.png,*.jpg)|*.png;*.jpg"));
 	}
 
 	[Test, Category("FileAndDir")]

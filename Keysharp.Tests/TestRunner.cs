@@ -1,6 +1,6 @@
 namespace Keysharp.Tests;
 
-public class TestRunner
+public abstract class TestRunner
 {
 	static TestRunner()
 	{

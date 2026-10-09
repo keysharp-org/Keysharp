@@ -7,9 +7,9 @@ public class EnumPolicyInternalsTests
 	public void MessageBoxResultNames()
 	{
 #if WINDOWS
-		Assert.AreEqual("OK", Dialogs.MessageBoxResultName(System.Windows.Forms.DialogResult.OK));
-		Assert.AreEqual("Cancel", Dialogs.MessageBoxResultName(System.Windows.Forms.DialogResult.Cancel));
-		Assert.AreEqual("TryAgain", Dialogs.MessageBoxResultName(System.Windows.Forms.DialogResult.TryAgain));
+		Assert.That(Dialogs.MessageBoxResultName(System.Windows.Forms.DialogResult.OK), Is.EqualTo("OK"));
+		Assert.That(Dialogs.MessageBoxResultName(System.Windows.Forms.DialogResult.Cancel), Is.EqualTo("Cancel"));
+		Assert.That(Dialogs.MessageBoxResultName(System.Windows.Forms.DialogResult.TryAgain), Is.EqualTo("TryAgain"));
 #else
 		Assert.AreEqual("OK", Dialogs.MessageBoxResultName(Eto.Forms.DialogResult.Ok));
 		Assert.AreEqual("Cancel", Dialogs.MessageBoxResultName(Eto.Forms.DialogResult.Cancel));

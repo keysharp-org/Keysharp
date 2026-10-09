@@ -39,10 +39,10 @@ public partial class ClipboardTests : TestRunner
 	{
 		RequireClipboard();
 		_ = Ks.KeysharpClipboard.staticset_Text(Clip, "Hello\nworld");
-		Assert.AreEqual("Hello\nworld", Ks.KeysharpClipboard.staticget_Text(Clip));
+		Assert.That(Ks.KeysharpClipboard.staticget_Text(Clip), Is.EqualTo("Hello\nworld"));
 		// The class and A_Clipboard are the same clipboard, deliberately.
-		Assert.AreEqual("Hello\nworld", Accessors.A_Clipboard as string);
-		Assert.IsFalse((bool)Ks.KeysharpClipboard.staticget_IsEmpty(Clip));
+		Assert.That(Accessors.A_Clipboard as string, Is.EqualTo("Hello\nworld"));
+		Assert.That((bool)Ks.KeysharpClipboard.staticget_IsEmpty(Clip), Is.False);
 		Assert.IsTrue((bool)Ks.KeysharpClipboard.Has(Clip, "Text"));
 	}
 
@@ -57,10 +57,10 @@ public partial class ClipboardTests : TestRunner
 		var hadHtml = (bool)Ks.KeysharpClipboard.Has(Clip, "Html");
 
 		_ = Ks.KeysharpClipboard.staticset_Text(Clip, "replacement");
-		Assert.AreEqual("replacement", Ks.KeysharpClipboard.staticget_Text(Clip));
+		Assert.That(Ks.KeysharpClipboard.staticget_Text(Clip), Is.EqualTo("replacement"));
 
 		if (hadHtml)
-			Assert.IsFalse((bool)Ks.KeysharpClipboard.Has(Clip, "Html"));
+			Assert.That((bool)Ks.KeysharpClipboard.Has(Clip, "Html"), Is.False);
 
 		_ = Ks.KeysharpClipboard.staticset_Text(Clip, "");
 		var formats = (Array)Ks.KeysharpClipboard.staticget_Formats(Clip);
@@ -78,9 +78,9 @@ public partial class ClipboardTests : TestRunner
 		_ = Ks.KeysharpClipboard.staticset_Text(Clip, "something");
 		_ = Ks.KeysharpClipboard.Clear(Clip);
 		Assert.IsTrue((bool)Ks.KeysharpClipboard.staticget_IsEmpty(Clip));
-		Assert.AreEqual(0, ((Array)Ks.KeysharpClipboard.staticget_Formats(Clip)).Count);
-		Assert.AreEqual(0L, Platform.Clipboard.ChangeType());
-		Assert.AreEqual("", Ks.KeysharpClipboard.staticget_Text(Clip));
+		Assert.That(((Array)Ks.KeysharpClipboard.staticget_Formats(Clip)).Count, Is.EqualTo(0));
+		Assert.That(Platform.Clipboard.ChangeType(), Is.EqualTo(0L));
+		Assert.That(Ks.KeysharpClipboard.staticget_Text(Clip), Is.Empty);
 	}
 
 	[Test, Category("Clipboard"), NonParallelizable]
@@ -113,8 +113,8 @@ public partial class ClipboardTests : TestRunner
 	{
 		RequireClipboard();
 		_ = Ks.KeysharpClipboard.Set(Clip, MakeMap("Html", "<b>rich</b>"));
-		Assert.IsFalse((bool)Ks.KeysharpClipboard.staticget_IsEmpty(Clip), "An HTML-only clipboard is not empty.");
-		Assert.AreEqual(2L, Platform.Clipboard.ChangeType(), "HTML alone is neither text nor files, so type 2.");
+		Assert.That((bool)Ks.KeysharpClipboard.staticget_IsEmpty(Clip), Is.False, "An HTML-only clipboard is not empty.");
+		Assert.That(Platform.Clipboard.ChangeType(), Is.EqualTo(2L), "HTML alone is neither text nor files, so type 2.");
 		Assert.IsTrue((bool)Ks.KeysharpClipboard.Has(Clip, "Html"));
 	}
 
@@ -130,7 +130,7 @@ public partial class ClipboardTests : TestRunner
 		const string format = "KeysharpTestPrivateFormat";
 		var payload = new byte[] { 1, 2, 3, 250, 251 };
 		_ = Ks.KeysharpClipboard.Set(Clip, MakeMap(format, new Keysharp.Builtins.Buffer(payload)));
-		Assert.IsFalse((bool)Ks.KeysharpClipboard.staticget_IsEmpty(Clip));
+		Assert.That((bool)Ks.KeysharpClipboard.staticget_IsEmpty(Clip), Is.False);
 		Assert.IsTrue((bool)Ks.KeysharpClipboard.Has(Clip, format));
 
 		if (Ks.KeysharpClipboard.GetData(Clip, format) is not Keysharp.Builtins.Buffer buf)
@@ -141,7 +141,7 @@ public partial class ClipboardTests : TestRunner
 
 		var got = buf.ToByteArray();
 		Assert.IsTrue(got.Length >= payload.Length, "The payload came back short.");
-		CollectionAssert.AreEqual(payload, got[..payload.Length]);
+		Assert.That(got[..payload.Length], Is.EqualTo(payload).AsCollection);
 	}
 
 	[Test, Category("Clipboard"), NonParallelizable]
@@ -159,7 +159,7 @@ public partial class ClipboardTests : TestRunner
 			Assert.Ignore("This environment's clipboard does not carry file lists.");
 
 		// A file copy is "text" for AHK's purposes: CF_NATIVETEXT || CF_HDROP. This used to report 2 off Windows.
-		Assert.AreEqual(1L, Platform.Clipboard.ChangeType());
+		Assert.That(Platform.Clipboard.ChangeType(), Is.EqualTo(1L));
 
 		if (Ks.KeysharpClipboard.staticget_Files(Clip) is not Array files)
 		{
@@ -167,7 +167,7 @@ public partial class ClipboardTests : TestRunner
 			return;
 		}
 
-		Assert.AreEqual(2, files.Count);
+		Assert.That(files.Count, Is.EqualTo(2));
 		// Path case can differ from what was written (some backends round-trip through a file:// URI).
 		Assert.IsTrue(string.Equals(a, files[1L] as string, StringComparison.OrdinalIgnoreCase), $"{a} != {files[1L]}");
 		Assert.IsTrue(string.Equals(b, files[2L] as string, StringComparison.OrdinalIgnoreCase), $"{b} != {files[2L]}");
@@ -182,7 +182,7 @@ public partial class ClipboardTests : TestRunner
 		RequireClipboard();
 		const string fragment = "<b>Hello</b> <i>wörld</i>";
 		_ = Ks.KeysharpClipboard.staticset_Html(Clip, fragment);
-		Assert.AreEqual(fragment, Ks.KeysharpClipboard.staticget_Html(Clip));
+		Assert.That(Ks.KeysharpClipboard.staticget_Html(Clip), Is.EqualTo(fragment));
 #if WINDOWS
 		// And the raw escape hatch really does see the CF_HTML envelope the property hides.
 		if (Ks.KeysharpClipboard.GetData(Clip, "HTML Format") is Keysharp.Builtins.Buffer raw)
@@ -207,13 +207,13 @@ public partial class ClipboardTests : TestRunner
 		// The Wayland shell-extension backend can advertise only one representation; there it degrades to text.
 		if (!(bool)Ks.KeysharpClipboard.Has(Clip, "Html"))
 		{
-			Assert.AreEqual("Hello", Ks.KeysharpClipboard.staticget_Text(Clip));
+			Assert.That(Ks.KeysharpClipboard.staticget_Text(Clip), Is.EqualTo("Hello"));
 			Assert.Ignore("This backend publishes a single representation; the degraded text path was verified.");
 		}
 
-		Assert.AreEqual("Hello", Ks.KeysharpClipboard.staticget_Text(Clip));
-		Assert.AreEqual("<b>Hello</b>", Ks.KeysharpClipboard.staticget_Html(Clip));
-		Assert.AreEqual(1L, Platform.Clipboard.ChangeType(), "Text is present, so the change type is 1.");
+		Assert.That(Ks.KeysharpClipboard.staticget_Text(Clip), Is.EqualTo("Hello"));
+		Assert.That(Ks.KeysharpClipboard.staticget_Html(Clip), Is.EqualTo("<b>Hello</b>"));
+		Assert.That(Platform.Clipboard.ChangeType(), Is.EqualTo(1L), "Text is present, so the change type is 1.");
 	}
 
 	[Test, Category("Clipboard"), NonParallelizable]
@@ -234,7 +234,7 @@ public partial class ClipboardTests : TestRunner
 		if (!(bool)Ks.KeysharpClipboard.Has(Clip, "Image"))
 			Assert.Ignore("This environment's clipboard does not carry images.");
 
-		Assert.IsFalse((bool)Ks.KeysharpClipboard.Has(Clip, "Text"));
+		Assert.That((bool)Ks.KeysharpClipboard.Has(Clip, "Text"), Is.False);
 		var read = Ks.KeysharpClipboard.staticget_Image(Clip);
 
 		// Under Xvfb, Eto's GTK handler advertises the image targets but its retrieval callback fails
@@ -252,14 +252,14 @@ public partial class ClipboardTests : TestRunner
 
 		using (img)
 		{
-			Assert.AreEqual(32L, img.Width);
-			Assert.AreEqual(24L, img.Height);
+			Assert.That(img.Width, Is.EqualTo(32L));
+			Assert.That(img.Height, Is.EqualTo(24L));
 		}
 
 		// Image.FromClipboard is a documented alias of the same getter, so it must agree.
 		if (Ks.KeysharpImage.FromClipboard(null) is Ks.KeysharpImage alias)
 			using (alias)
-				Assert.AreEqual(32L, alias.Width);
+				Assert.That(alias.Width, Is.EqualTo(32L));
 	}
 
 	[Test, Category("Clipboard"), NonParallelizable]
@@ -273,9 +273,9 @@ public partial class ClipboardTests : TestRunner
 		var saved = Ks.KeysharpClipboard.staticget_All(Clip);
 		Assert.IsInstanceOf<ClipboardAll>(saved);
 		_ = Ks.KeysharpClipboard.staticset_Text(Clip, "temporary");
-		Assert.AreEqual("temporary", Ks.KeysharpClipboard.staticget_Text(Clip));
+		Assert.That(Ks.KeysharpClipboard.staticget_Text(Clip), Is.EqualTo("temporary"));
 		_ = Ks.KeysharpClipboard.staticset_All(Clip, saved);
-		Assert.AreEqual("saved", Ks.KeysharpClipboard.staticget_Text(Clip));
+		Assert.That(Ks.KeysharpClipboard.staticget_Text(Clip), Is.EqualTo("saved"));
 	}
 
 	/// <summary>Has() takes a kind name OR a native format name; an unknown kind name falls through to the
@@ -289,8 +289,8 @@ public partial class ClipboardTests : TestRunner
 		RequireClipboard();
 		_ = Ks.KeysharpClipboard.staticset_Text(Clip, "probe");
 		Assert.IsTrue((bool)Ks.KeysharpClipboard.Has(Clip, "text"));      // case-insensitive kind
-		Assert.IsFalse((bool)Ks.KeysharpClipboard.Has(Clip, "Image"));
-		Assert.IsFalse((bool)Ks.KeysharpClipboard.Has(Clip, "NoSuchFormatAnywhere"));
+		Assert.That((bool)Ks.KeysharpClipboard.Has(Clip, "Image"), Is.False);
+		Assert.That((bool)Ks.KeysharpClipboard.Has(Clip, "NoSuchFormatAnywhere"), Is.False);
 		// The native probe is fed what the clipboard actually advertises, not KindFormats, which is a
 		// recognition list whose entries need not be present: the Eto backend lists the freedesktop and the
 		// Cocoa name for one kind together, so on macOS its first text entry is a GTK name the pasteboard
@@ -313,11 +313,11 @@ public partial class ClipboardTests : TestRunner
 	{
 		RequireClipboard();
 		_ = Ks.KeysharpClipboard.staticset_Text(Clip, "text only");
-		Assert.AreEqual("", Ks.KeysharpClipboard.staticget_Image(Clip));
-		Assert.AreEqual("", Ks.KeysharpClipboard.staticget_Files(Clip));
-		Assert.AreEqual("", Ks.KeysharpClipboard.staticget_Html(Clip));
-		Assert.AreEqual("", Ks.KeysharpClipboard.staticget_Rtf(Clip));
-		Assert.AreEqual("", Ks.KeysharpClipboard.GetData(Clip, "NoSuchFormatAnywhere"));
+		Assert.That(Ks.KeysharpClipboard.staticget_Image(Clip), Is.Empty);
+		Assert.That(Ks.KeysharpClipboard.staticget_Files(Clip), Is.Empty);
+		Assert.That(Ks.KeysharpClipboard.staticget_Html(Clip), Is.Empty);
+		Assert.That(Ks.KeysharpClipboard.staticget_Rtf(Clip), Is.Empty);
+		Assert.That(Ks.KeysharpClipboard.GetData(Clip, "NoSuchFormatAnywhere"), Is.Empty);
 	}
 
 	/// <summary>The CF_HTML codec, tested without a clipboard: the offsets are BYTE counts into the payload, so
@@ -329,12 +329,12 @@ public partial class ClipboardTests : TestRunner
 		{
 			var wrapped = ClipboardHtml.Wrap(fragment);
 			Assert.IsTrue(wrapped.StartsWith("Version:0.9", StringComparison.Ordinal));
-			Assert.AreEqual(fragment, ClipboardHtml.Unwrap(Encoding.UTF8.GetBytes(wrapped)), $"Round trip failed for: {fragment}");
+			Assert.That(ClipboardHtml.Unwrap(Encoding.UTF8.GetBytes(wrapped)), Is.EqualTo(fragment), $"Round trip failed for: {fragment}");
 		}
 
 		// Bare markup (what every non-Windows platform stores) passes through untouched.
-		Assert.AreEqual("<i>bare</i>", ClipboardHtml.Unwrap(Encoding.UTF8.GetBytes("<i>bare</i>")));
-		Assert.AreEqual("", ClipboardHtml.Unwrap(null));
+		Assert.That(ClipboardHtml.Unwrap(Encoding.UTF8.GetBytes("<i>bare</i>")), Is.EqualTo("<i>bare</i>"));
+		Assert.That(ClipboardHtml.Unwrap(null), Is.Empty);
 	}
 
 	/// <summary>The declared byte offsets must actually point at the fragment, not merely round-trip through our
@@ -347,8 +347,8 @@ public partial class ClipboardTests : TestRunner
 		var header = Encoding.UTF8.GetString(bytes);
 		var start = ReadOffset(header, "StartFragment:");
 		var end = ReadOffset(header, "EndFragment:");
-		Assert.AreEqual(fragment, Encoding.UTF8.GetString(bytes, start, end - start));
-		Assert.AreEqual(bytes.Length, ReadOffset(header, "EndHTML:"));
+		Assert.That(Encoding.UTF8.GetString(bytes, start, end - start), Is.EqualTo(fragment));
+		Assert.That(ReadOffset(header, "EndHTML:"), Is.EqualTo(bytes.Length));
 		Assert.IsTrue(Encoding.UTF8.GetString(bytes, ReadOffset(header, "StartHTML:"), 6).StartsWith("<html>", StringComparison.Ordinal));
 
 		static int ReadOffset(string h, string key)
@@ -377,11 +377,11 @@ public partial class ClipboardTests : TestRunner
 						 + new Uri(Path.GetFullPath("./testfile1.txt")).AbsoluteUri + "\r\n"
 						 + "https://example.com/not-a-file\r\n"
 						 + "/tmp/bare/path\r\n");
-		Assert.AreEqual(2, parsed.Length);
+		Assert.That(parsed.Length, Is.EqualTo(2));
 		Assert.IsTrue(parsed[0].EndsWith("testfile1.txt", StringComparison.OrdinalIgnoreCase), parsed[0]);
-		Assert.AreEqual("/tmp/bare/path", parsed[1]);
-		Assert.AreEqual(0, ClipboardBase.ParseUriList("").Length);
-		Assert.AreEqual(0, ClipboardBase.ParseUriList(null).Length);
+		Assert.That(parsed[1], Is.EqualTo("/tmp/bare/path"));
+		Assert.That(ClipboardBase.ParseUriList("").Length, Is.EqualTo(0));
+		Assert.That(ClipboardBase.ParseUriList(null).Length, Is.EqualTo(0));
 	}
 
 	[Test, Category("Clipboard"), NonParallelizable]
@@ -396,7 +396,7 @@ public partial class ClipboardTests : TestRunner
 		Assert.IsTrue((bool)Ks.KeysharpClipboard.Wait(Clip, 1, "Any"));
 		Assert.IsTrue((bool)Ks.KeysharpClipboard.Wait(Clip, 1, "Text"));
 		// A kind that is not present must time out rather than match anything.
-		Assert.IsFalse((bool)Ks.KeysharpClipboard.Wait(Clip, 0.3, "Image"));
+		Assert.That((bool)Ks.KeysharpClipboard.Wait(Clip, 0.3, "Image"), Is.False);
 		// The numeric forms are unchanged.
 		Assert.IsTrue((bool)Ks.KeysharpClipboard.Wait(Clip, 1, 0));
 		Assert.IsTrue((bool)Ks.KeysharpClipboard.Wait(Clip, 1, 1));
@@ -432,31 +432,31 @@ public partial class ClipboardTests : TestRunner
 		try
 		{
 			Assert.IsTrue(hook.InProgress);
-			Assert.AreEqual("", hook.EndReason);
+			Assert.That(hook.EndReason, Is.Empty);
 			DispatchClipboardChange(1L);
-			Assert.AreEqual(1, calls.Count);
-			Assert.AreSame(hook, calls[0][0], "The callback receives the hook as its first argument.");
-			Assert.AreEqual(1L, calls[0][1]);
+			Assert.That(calls.Count, Is.EqualTo(1));
+			Assert.That(calls[0][0], Is.SameAs(hook), "The callback receives the hook as its first argument.");
+			Assert.That(calls[0][1], Is.EqualTo(1L));
 			DispatchClipboardChange(0L);
-			Assert.AreEqual(0L, calls[1][1]);
+			Assert.That(calls[1][1], Is.EqualTo(0L));
 			DispatchClipboardChange(2L);
-			Assert.AreEqual(2L, calls[2][1]);
-			Assert.AreEqual(0L, calls[2][3], "The change type is an argument, and A_EventInfo has its default value.");
+			Assert.That(calls[2][1], Is.EqualTo(2L));
+			Assert.That(calls[2][3], Is.EqualTo(0L), "The change type is an argument, and A_EventInfo has its default value.");
 
 			var ownerThread = Environment.CurrentManagedThreadId;
 			var script = Script.TheScript;
 			var dispatch = System.Threading.Tasks.Task.Run(() => script.ClipboardEventManager.Dispatch(0L));
 			Assert.IsTrue(dispatch.Wait(TimeSpan.FromSeconds(5)), "The native producer only queues the notification.");
-			Assert.AreEqual(3, calls.Count, "The callback waits for its owning thread.");
+			Assert.That(calls.Count, Is.EqualTo(3), "The callback waits for its owning thread.");
 			Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
-			Assert.AreEqual(4, calls.Count);
-			Assert.AreEqual(0L, calls[3][1]);
-			Assert.AreEqual(ownerThread, calls[3][2]);
+			Assert.That(calls.Count, Is.EqualTo(4));
+			Assert.That(calls[3][1], Is.EqualTo(0L));
+			Assert.That(calls[3][2], Is.EqualTo(ownerThread));
 
 			_ = hook.Stop();
-			Assert.AreEqual("Stopped", hook.EndReason);
+			Assert.That(hook.EndReason, Is.EqualTo("Stopped"));
 			DispatchClipboardChange(1L);
-			Assert.AreEqual(4, calls.Count, "A stopped hook must not fire.");
+			Assert.That(calls.Count, Is.EqualTo(4), "A stopped hook must not fire.");
 		}
 		finally
 		{
@@ -489,8 +489,8 @@ public partial class ClipboardTests : TestRunner
 			script.ClipboardEventManager.Dispatch(1L);
 			script.ClipboardEventManager.Dispatch(1L);
 			Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
-			Assert.AreEqual(1, calls, "Both changes were queued before the first ran, and the second is discarded.");
-			Assert.AreEqual("Stopped", hook.EndReason);
+			Assert.That(calls, Is.EqualTo(1), "Both changes were queued before the first ran, and the second is discarded.");
+			Assert.That(hook.EndReason, Is.EqualTo("Stopped"));
 		}
 		finally
 		{
@@ -527,8 +527,8 @@ public partial class ClipboardTests : TestRunner
 				Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
 			}
 
-			CollectionAssert.AreEqual(new[] { 0L, 1L, 2L }, chainValues, "The chain receives numeric types regardless of what a hook returns.");
-			CollectionAssert.AreEqual(new[] { 0L, 1L, 2L }, hookValues, "The hook receives the same numeric types.");
+			Assert.That(chainValues, Is.EqualTo(new[] { 0L, 1L, 2L }).AsCollection, "The chain receives numeric types regardless of what a hook returns.");
+			Assert.That(hookValues, Is.EqualTo(new[] { 0L, 1L, 2L }).AsCollection, "The hook receives the same numeric types.");
 		}
 		finally
 		{

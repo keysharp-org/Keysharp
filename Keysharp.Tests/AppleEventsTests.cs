@@ -173,17 +173,17 @@ public class AppleEventsTests : TestRunner
 	{
 		var dict = Fixture();
 		var name = dict.FindProperty("window", "name");
-		Assert.Multiple(() =>
+		using (Assert.EnterMultipleScope())
 		{
 			Assert.That(name.CanRead, Is.True);
 			Assert.That(name.CanWrite, Is.True);
-		});
+		}
 		var path = dict.FindProperty("window", "filename");
-		Assert.Multiple(() =>
+		using (Assert.EnterMultipleScope())
 		{
 			Assert.That(path.CanRead, Is.True);
 			Assert.That(path.CanWrite, Is.False);
-		});
+		}
 	}
 
 	[Test]
@@ -337,11 +337,11 @@ public class AppleEventsTests : TestRunner
 		var dict = AESdef.Parse(sdef);
 		var open = dict.CommandsByKey["open"];
 		Assert.That(open.Count, Is.EqualTo(1), "the same event under one name is one command");
-		Assert.Multiple(() =>
+		using (Assert.EnterMultipleScope())
 		{
 			Assert.That(open[0].HasDirectParameter, Is.True);
 			Assert.That(open[0].TryGetParameter("reading", out _), Is.True);
-		});
+		}
 	}
 
 	[Test]
@@ -364,14 +364,14 @@ public class AppleEventsTests : TestRunner
 			</dictionary>
 			""";
 		var dict = AESdef.Parse(sdef);
-		Assert.Multiple(() =>
+		using (Assert.EnterMultipleScope())
 		{
 			Assert.That(dict.CommandsByKey.ContainsKey("good"), Is.True);
 			Assert.That(dict.CommandsByKey.ContainsKey("shortcode"), Is.False);
 			Assert.That(dict.CommandsByKey.ContainsKey("widechar"), Is.False);
 			Assert.That(dict.FindProperty("thing", "fine"), Is.Not.Null);
 			Assert.That(dict.FindProperty("thing", "broken"), Is.Null);
-		});
+		}
 	}
 
 	[Test]

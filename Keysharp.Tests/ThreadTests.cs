@@ -6,12 +6,12 @@ public class ThreadTests : TestRunner
 	[Test, Category("Threading")]
 	public void NoTimersLocal()
 	{
-		Assert.AreEqual(true, ((KeysharpThread)Ks.A_Thread).AllowTimers);
+		Assert.That(((KeysharpThread)Ks.A_Thread).AllowTimers, Is.EqualTo(true));
 		Assert.IsTrue(s.AccessorData.threadConfigDataPrototype.allowTimers);
 
 		_ = Keysharp.Builtins.KeysharpThread.staticCall(null, "NoTimers", true);
 
-		Assert.AreEqual(false, ((KeysharpThread)Ks.A_Thread).AllowTimers);
+		Assert.That(((KeysharpThread)Ks.A_Thread).AllowTimers, Is.EqualTo(false));
 		Assert.IsTrue(s.AccessorData.threadConfigDataPrototype.allowTimers);
 	}
 
@@ -23,7 +23,7 @@ public class ThreadTests : TestRunner
 
 		try
 		{
-			Assert.IsFalse(btv.configData.allowTimers);
+			Assert.That(btv.configData.allowTimers, Is.False);
 		}
 		finally
 		{
@@ -35,13 +35,13 @@ public class ThreadTests : TestRunner
 	public void InterruptDuration()
 	{
 		_ = Keysharp.Builtins.KeysharpThread.staticCall(null, "Interrupt", 42, 1);
-		Assert.AreEqual(42, s.uninterruptibleTime);
+		Assert.That(s.uninterruptibleTime, Is.EqualTo(42));
 
 		Assert.IsTrue(s.Threads.TryBeginThread(out var btv));
 
 		try
 		{
-			Assert.AreEqual(42, btv.UninterruptibleDuration);
+			Assert.That(btv.UninterruptibleDuration, Is.EqualTo(42));
 		}
 		finally
 		{
@@ -59,7 +59,7 @@ public class ThreadTests : TestRunner
 		try
 		{
 			Assert.IsTrue(btv.isCritical);
-			Assert.IsFalse(btv.allowThreadToBeInterrupted);
+			Assert.That(btv.allowThreadToBeInterrupted, Is.False);
 		}
 		finally
 		{
@@ -77,13 +77,13 @@ public class ThreadTests : TestRunner
 		_ = s.EventScheduler.EnqueueThreadLaunch(0, false, false, () => calls++, false);
 		context.DrainAll();
 
-		Assert.AreEqual(0, calls);
+		Assert.That(calls, Is.EqualTo(0));
 
 		s.Threads.CurrentThread.priority = 0;
 		s.EventScheduler.SchedulePump();
 		context.DrainAll();
 
-		Assert.AreEqual(0, calls);
+		Assert.That(calls, Is.EqualTo(0));
 	}
 
 	[Test, Category("Threading")]
@@ -94,12 +94,12 @@ public class ThreadTests : TestRunner
 		try
 		{
 			_ = Keysharp.Builtins.Flow.Critical();
-			Assert.IsFalse(s.Threads.IsInterruptible());
+			Assert.That(s.Threads.IsInterruptible(), Is.False);
 
 			using (Keysharp.Internals.Flow.BeginDialogInterruptibilityScope())
 				Assert.IsTrue(s.Threads.IsInterruptible());
 
-			Assert.IsFalse(s.Threads.IsInterruptible());
+			Assert.That(s.Threads.IsInterruptible(), Is.False);
 		}
 		finally
 		{
@@ -120,7 +120,7 @@ public class ThreadTests : TestRunner
 			try
 			{
 				using (Keysharp.Internals.Flow.BeginDialogInterruptibilityScope())
-					Assert.IsFalse(s.Threads.IsInterruptible());
+					Assert.That(s.Threads.IsInterruptible(), Is.False);
 			}
 			finally
 			{
@@ -141,21 +141,21 @@ public class ThreadTests : TestRunner
 		try
 		{
 			_ = Keysharp.Builtins.Flow.Critical(50);
-			Assert.AreEqual(50L, Ks.A_PeekFrequency);
+			Assert.That(Ks.A_PeekFrequency, Is.EqualTo(50L));
 			Ks.A_PeekFrequency = 40;
-			Assert.AreEqual(40L, Ks.A_PeekFrequency);
+			Assert.That(Ks.A_PeekFrequency, Is.EqualTo(40L));
 			Ks.A_PeekFrequency = 50;
 			s.RecordMessageCheck();
 
-			Assert.IsFalse(s.IsCurrentThreadPreemptiveCheckDue());
+			Assert.That(s.IsCurrentThreadPreemptiveCheckDue(), Is.False);
 			Assert.IsTrue(Keysharp.Runtime.Flow.IsTrueAndRunning(true));
-			Assert.IsFalse(s.IsCurrentThreadPreemptiveCheckDue());
+			Assert.That(s.IsCurrentThreadPreemptiveCheckDue(), Is.False);
 
 			s.Threads.CurrentThread.lastPeekTick = unchecked(Environment.TickCount - 60);
 			Assert.IsTrue(s.IsCurrentThreadPreemptiveCheckDue());
 
 			Assert.IsTrue(Keysharp.Runtime.Flow.IsTrueAndRunning(true));
-			Assert.IsFalse(s.IsCurrentThreadPreemptiveCheckDue());
+			Assert.That(s.IsCurrentThreadPreemptiveCheckDue(), Is.False);
 		}
 		finally
 		{
@@ -174,8 +174,8 @@ public class ThreadTests : TestRunner
 			s.Threads.CurrentThread.lastPeekTick = 0;
 
 			Assert.IsTrue(Keysharp.Runtime.Flow.IsTrueAndRunning(true));
-			Assert.IsFalse(s.IsCurrentThreadPreemptiveCheckDue());
-			Assert.AreEqual(-1, s.GetPeekFrequency());
+			Assert.That(s.IsCurrentThreadPreemptiveCheckDue(), Is.False);
+			Assert.That(s.GetPeekFrequency(), Is.EqualTo(-1));
 		}
 		finally
 		{

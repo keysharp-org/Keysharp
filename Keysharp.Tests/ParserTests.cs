@@ -17,7 +17,7 @@ public class ParserTests : TestRunner
 	{
 		var (bytes, error) = Compile(source);
 		Assert.IsNull(bytes, "Expected compilation to fail.");
-		StringAssert.Contains(expected, error);
+		Assert.That(error, Does.Contain(expected));
 	}
 
 	private static void AssertCompiles(params string[] sources)
@@ -25,7 +25,7 @@ public class ParserTests : TestRunner
 		foreach (var source in sources)
 		{
 			var (bytes, error) = Compile(source);
-			Assert.IsNotNull(bytes, error);
+			Assert.That(bytes, Is.Not.Null, error);
 		}
 	}
 
@@ -91,14 +91,14 @@ public class ParserTests : TestRunner
 
 	private static void AssertIncluded((byte[] Bytes, string Text) emitted)
 	{
-		Assert.IsNotNull(emitted.Bytes, emitted.Text);
-		StringAssert.Contains("class Included", emitted.Text);
+		Assert.That(emitted.Bytes, Is.Not.Null, emitted.Text);
+		Assert.That(emitted.Text, Does.Contain("class Included"));
 	}
 
 	private static void AssertIncludeNotFound((byte[] Bytes, string Text) emitted)
 	{
 		Assert.IsNull(emitted.Bytes, "A missing #Include must fail loudly, not be skipped.");
-		StringAssert.Contains("#Include file not found", emitted.Text);
+		Assert.That(emitted.Text, Does.Contain("#Include file not found"));
 	}
 
 	[Test, Category("Parser"), Category("Internal")]
@@ -134,7 +134,7 @@ public class ParserTests : TestRunner
 			AssertIncluded(EmitWithInclude(source, includeFile: include));
 			var missing = EmitWithInclude("x := 1\n", includeFile: Path.Combine(dir, "Missing.ks"));
 			Assert.IsNull(missing.Bytes);
-			StringAssert.Contains("--include file not found", missing.Text);
+			Assert.That(missing.Text, Does.Contain("--include file not found"));
 		}
 		finally
 		{
@@ -163,7 +163,7 @@ public class ParserTests : TestRunner
 			var main = Path.Combine(dir, "main.ks");
 			File.WriteAllText(main, "#Include %A_ScriptName%\nclass Included {\n}\nx := Included()\n");
 			var (bytes, text, _) = new CompilerHelper().CompileCodeToByteArray(main, "include_self");
-			Assert.IsNotNull(bytes, text);
+			Assert.That(bytes, Is.Not.Null, text);
 		}
 		finally
 		{
@@ -289,10 +289,10 @@ public class ParserTests : TestRunner
 			{
 				SourceText = $"#ErrorStdOut\n#Warn All, StdOut\n#InputLevel {value}\n"
 			});
-			Assert.IsFalse(result.Success, value);
-			StringAssert.Contains("#InputLevel must be an integer from 0 through 100", result.Diagnostics[0].Message);
-			Assert.AreEqual(3, result.Diagnostics[0].Line);
-			Assert.AreEqual(1, result.Diagnostics[0].Column);
+			Assert.That(result.Success, Is.False, value);
+			Assert.That(result.Diagnostics[0].Message, Does.Contain("#InputLevel must be an integer from 0 through 100"));
+			Assert.That(result.Diagnostics[0].Line, Is.EqualTo(3));
+			Assert.That(result.Diagnostics[0].Column, Is.EqualTo(1));
 		}
 
 		var valid = string.Join("\n", new[] { "", "0", "100", "+1", "-0", "0x64", "+0X01", "-0x0", "50 ; comment" }
@@ -361,9 +361,9 @@ public class ParserTests : TestRunner
 		{
 			File.WriteAllText(Path.Combine(dir, "Cont.ks"), "+ 2\ny := 10\n");
 			var emitted = EmitWithInclude("x := 1\n#include \"Cont.ks\"\n+ 3\n", dir);
-			Assert.IsNotNull(emitted.Bytes, emitted.Text);
-			StringAssert.Contains("x = 1L;", emitted.Text);
-			StringAssert.Contains("y = 10L;", emitted.Text);
+			Assert.That(emitted.Bytes, Is.Not.Null, emitted.Text);
+			Assert.That(emitted.Text, Does.Contain("x = 1L;"));
+			Assert.That(emitted.Text, Does.Contain("y = 10L;"));
 		}
 		finally
 		{
@@ -376,7 +376,7 @@ public class ParserTests : TestRunner
 	{
 		var (bytes, error, _) = new CompilerHelper().CompileCodeToByteArray(main, "sources_" + Guid.NewGuid().ToString("N"),
 			output: output, includeDirOverride: includeDir, sourceIsFile: true);
-		Assert.IsNotNull(bytes, error);
+		Assert.That(bytes, Is.Not.Null, error);
 		var assembly = Assembly.Load(bytes);
 		return (bytes, assembly, assembly.GetType(MainNamespaceName + ".Program").GetCustomAttribute<SourceFilesAttribute>().Files);
 	}
@@ -400,18 +400,18 @@ public class ParserTests : TestRunner
 			var main = Path.Combine(app, "main.ahk");
 			File.WriteAllText(main, "#ErrorStdOut\n#Warn All, StdOut\n#Include Lib\\InLib.ahk\n#Include ..\\shared\\Helper.ahk\n#Include ..\\other\\Helper.ahk\nx := InLib() Helper() OtherHelper()\nExplicitWhat() => Error(\"x\", -1)\n");
 			var (bytes, compiled, compiledFiles) = CompileFile(main, output: ScriptCompilationOutput.Executable, includeDir: app);
-			CollectionAssert.AreEqual(new[] { "./main.ahk", "./Lib/InLib.ahk", "<External>/Helper.ahk", "<External>/Helper (2).ahk" }, compiledFiles);
+			Assert.That(compiledFiles, Is.EqualTo(new[] { "./main.ahk", "./Lib/InLib.ahk", "<External>/Helper.ahk", "<External>/Helper (2).ahk" }).AsCollection);
 
 			// String literals are UTF-16 in the assembly and attribute arguments UTF-8.
 			foreach (var encoding in new[] { Encoding.UTF8, Encoding.Unicode })
-				Assert.AreEqual(-1, bytes.AsSpan().IndexOf(encoding.GetBytes(root)), encoding.EncodingName);
+				Assert.That(bytes.AsSpan().IndexOf(encoding.GetBytes(root)), Is.EqualTo(-1), encoding.EncodingName);
 
 			var program = compiled.GetType(MainNamespaceName + ".Program");
 			s.Dispose();
 			s = null;
 			System.Runtime.CompilerServices.RuntimeHelpers.RunClassConstructor(program.TypeHandle);
 			s = Script.TheScript;
-			Assert.AreEqual(program, s.ProgramType);
+			Assert.That(s.ProgramType, Is.EqualTo(program));
 			Assert.IsEmpty(s.SourceLines);
 			s.SetName(main);
 			var module = compiled.GetType(MainNamespaceName + ".Program+__Main");
@@ -419,14 +419,14 @@ public class ParserTests : TestRunner
 				.Single(method => method.GetCustomAttribute<UserDeclaredNameAttribute>()?.Name == name)).CallFunc(null, []);
 
 			foreach (var name in new[] { "InLib", "Helper", "OtherHelper" })
-				Assert.AreEqual(A_ScriptFullPath, Call(name), name);
+				Assert.That(Call(name), Is.EqualTo(A_ScriptFullPath), name);
 
 			var error = (Error)Call("ExplicitWhat");
-			StringAssert.Contains("[ExplicitWhat]", error.Stack);
-			Assert.AreEqual("-1", error.What);
+			Assert.That(error.Stack, Does.Contain("[ExplicitWhat]"));
+			Assert.That(error.What, Is.EqualTo("-1"));
 
 			var (_, running, files) = CompileFile(main, includeDir: app);
-			Assert.AreEqual(4, files.Length);
+			Assert.That(files.Length, Is.EqualTo(4));
 			Assert.That(SourceText.Lines(running), Is.EqualTo(files.Select(file => File.ReadAllText(file).Split('\n')).ToArray()));
 		}
 		finally
@@ -462,7 +462,7 @@ public class ParserTests : TestRunner
 			});
 			Assert.IsTrue(result.Success, result.ErrorText);
 			foreach (var encoding in new[] { Encoding.UTF8, Encoding.Unicode })
-				Assert.AreEqual(-1, result.AssemblyBytes.AsSpan().IndexOf(encoding.GetBytes(root)), encoding.EncodingName);
+				Assert.That(result.AssemblyBytes.AsSpan().IndexOf(encoding.GetBytes(root)), Is.EqualTo(-1), encoding.EncodingName);
 
 			var artifact = Path.Combine(output, "Showcase.cks");
 			File.WriteAllBytes(artifact, result.AssemblyBytes);
@@ -477,8 +477,8 @@ public class ParserTests : TestRunner
 			object Call(string name) => Keysharp.Internals.Invoke.MethodPropertyHolder.GetOrAdd(module.GetMethods(BindingFlags.Public | BindingFlags.Static)
 				.Single(method => method.GetCustomAttribute<UserDeclaredNameAttribute>()?.Name == name)).CallFunc(null, []);
 
-			Assert.AreEqual(included, Call("AssetPath"));
-			Assert.AreEqual("body { color: red; }", Call("AssetText"));
+			Assert.That(Call("AssetPath"), Is.EqualTo(included));
+			Assert.That(Call("AssetText"), Is.EqualTo("body { color: red; }"));
 		}
 		finally
 		{
@@ -489,6 +489,7 @@ public class ParserTests : TestRunner
 	[Test, Category("Parser")]
 	public void DistinctCaseModuleSearchDirectories()
 	{
+#if LINUX
 		if (!OperatingSystem.IsLinux())
 			Assert.Ignore("This test needs a case-sensitive filesystem.");
 
@@ -507,18 +508,20 @@ public class ParserTests : TestRunner
 			File.WriteAllText(main, "#ErrorStdOut\n#Warn All, StdOut\n#Import SearchTarget { Value }\nanswer := Value\n");
 			Environment.SetEnvironmentVariable("AhkImportPath", first + ";" + second);
 			var (_, _, files) = CompileFile(main);
-			CollectionAssert.Contains(files, module);
+			Assert.That(files, Has.Member(module));
 		}
 		finally
 		{
 			Environment.SetEnvironmentVariable("AhkImportPath", previousPath);
 			Directory.Delete(root, true);
 		}
+#endif
 	}
 
 	[Test, Category("Parser")]
 	public void DistinctCaseSourceFilesOnLinux()
 	{
+#if LINUX
 		if (!OperatingSystem.IsLinux())
 			Assert.Ignore("This test needs a case-sensitive filesystem.");
 
@@ -532,15 +535,16 @@ public class ParserTests : TestRunner
 			File.WriteAllText(main, "#Include foo.ahk\nvalue := GetValue()\n");
 			File.WriteAllText(included, "GetValue() => 42\n");
 			var (_, assembly, files) = CompileFile(main);
-			CollectionAssert.AreEqual(new[] { main, included }, files);
+			Assert.That(files, Is.EqualTo(new[] { main, included }).AsCollection);
 			var lines = SourceText.Lines(assembly);
-			Assert.AreEqual("#Include foo.ahk", lines[0][0]);
-			Assert.AreEqual("GetValue() => 42", lines[1][0]);
+			Assert.That(lines[0][0], Is.EqualTo("#Include foo.ahk"));
+			Assert.That(lines[1][0], Is.EqualTo("GetValue() => 42"));
 		}
 		finally
 		{
 			Directory.Delete(root, true);
 		}
+#endif
 	}
 
 	// A header expression that ends in `(…)` right before the body's `{` is the header, not an anonymous
@@ -561,7 +565,7 @@ public class ParserTests : TestRunner
 	public void ContinuationSections()
 	{
 		var (bytes, error) = CompileRaw("(Joinpp\nFileA\nend \"x\", \"*\"\n)\n");
-		Assert.IsNotNull(bytes, error);
+		Assert.That(bytes, Is.Not.Null, error);
 	}
 
 	[Test, Category("Parser")]

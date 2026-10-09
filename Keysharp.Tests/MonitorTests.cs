@@ -99,19 +99,19 @@ public partial class MonitorTests : TestRunner
 			new("HDMI-1", new ScreenRect(2560, 0, 1920, 1080), new ScreenRect(2560, 0, 1920, 1080), 1.0, false),
 		];
 		// Name wins over the remembered index, so a monitor stays tracked when the display order changes.
-		Assert.AreEqual(2L, Builtins.Ks.KeysharpMonitor.MatchIndex(two, "HDMI-1", 1L));
-		Assert.AreEqual(1L, Builtins.Ks.KeysharpMonitor.MatchIndex(two, "DP-1", 2L));
+		Assert.That(Builtins.Ks.KeysharpMonitor.MatchIndex(two, "HDMI-1", 1L), Is.EqualTo(2L));
+		Assert.That(Builtins.Ks.KeysharpMonitor.MatchIndex(two, "DP-1", 2L), Is.EqualTo(1L));
 
 		// No usable name (Xinerama, a toolkit fallback): the index is the fallback while it is in range.
-		Assert.AreEqual(2L, Builtins.Ks.KeysharpMonitor.MatchIndex(two, "", 2L));
-		Assert.AreEqual(0L, Builtins.Ks.KeysharpMonitor.MatchIndex(two, "", 3L));
+		Assert.That(Builtins.Ks.KeysharpMonitor.MatchIndex(two, "", 2L), Is.EqualTo(2L));
+		Assert.That(Builtins.Ks.KeysharpMonitor.MatchIndex(two, "", 3L), Is.EqualTo(0L));
 
 		// The monitor was unplugged: gone, and reported as gone rather than as some other monitor.
 		DisplayInfo[] one = [two[0]];
-		Assert.AreEqual(0L, Builtins.Ks.KeysharpMonitor.MatchIndex(one, "HDMI-1", 2L));
-		Assert.AreEqual(0L, Builtins.Ks.KeysharpMonitor.MatchIndex([], "DP-1", 1L));
+		Assert.That(Builtins.Ks.KeysharpMonitor.MatchIndex(one, "HDMI-1", 2L), Is.EqualTo(0L));
+		Assert.That(Builtins.Ks.KeysharpMonitor.MatchIndex([], "DP-1", 1L), Is.EqualTo(0L));
 		// ...but a rename that keeps the position still resolves through the index rather than dropping it.
-		Assert.AreEqual(1L, Builtins.Ks.KeysharpMonitor.MatchIndex(one, "HDMI-1", 1L));
+		Assert.That(Builtins.Ks.KeysharpMonitor.MatchIndex(one, "HDMI-1", 1L), Is.EqualTo(1L));
 	}
 
 	[Test, Category("Monitor"), Category("Internal"), Category("Curated")]
@@ -123,10 +123,10 @@ public partial class MonitorTests : TestRunner
 			"A session-local native ID is not a display change.");
 
 		DisplayInfo[] resized = [Display("DP-1", 0, 0, 1920, 1080, nativeId: 94)];
-		Assert.AreEqual("Settings", MonitorEventManager.Classify(original, resized));
+		Assert.That(MonitorEventManager.Classify(original, resized), Is.EqualTo("Settings"));
 
 		DisplayInfo[] replacement = [Display("HDMI-1", 0, 0, 2560, 1440)];
-		Assert.AreEqual("Topology", MonitorEventManager.Classify(original, replacement),
+		Assert.That(MonitorEventManager.Classify(original, replacement), Is.EqualTo("Topology"),
 			"Replacing a panel without changing the count is still a topology change.");
 
 		DisplayInfo[] duplicates =
@@ -134,7 +134,7 @@ public partial class MonitorTests : TestRunner
 			Display("DP-1", 0, 0, 1920, 1080),
 			Display("DP-1", 1920, 0, 1920, 1080, primary: false)
 		];
-		Assert.AreEqual("Topology", MonitorEventManager.Classify(duplicates, [duplicates[0]]),
+		Assert.That(MonitorEventManager.Classify(duplicates, [duplicates[0]]), Is.EqualTo("Topology"),
 			"Display names are a multiset; removing one duplicate must be detected.");
 	}
 }
@@ -196,16 +196,16 @@ public class EdidTests
 	public void ValidBlock()
 	{
 		Assert.IsTrue(Keysharp.Internals.Edid.TryParse(BuildBlock(), out var info));
-		Assert.AreEqual("DEL", info.Manufacturer);
-		Assert.AreEqual(0x41C1, info.ProductCode);
-		Assert.AreEqual(0x01020304u, info.SerialNumber);
-		Assert.AreEqual("U2720Q", info.ModelName);
-		Assert.AreEqual("ABC123", info.SerialText);
+		Assert.That(info.Manufacturer, Is.EqualTo("DEL"));
+		Assert.That(info.ProductCode, Is.EqualTo(0x41C1));
+		Assert.That(info.SerialNumber, Is.EqualTo(0x01020304u));
+		Assert.That(info.ModelName, Is.EqualTo("U2720Q"));
+		Assert.That(info.SerialText, Is.EqualTo("ABC123"));
 		// The detailed timing descriptor's millimetres win over the coarse centimetre fields (600 x 340).
-		Assert.AreEqual(597, info.WidthMm);
-		Assert.AreEqual(336, info.HeightMm);
+		Assert.That(info.WidthMm, Is.EqualTo(597));
+		Assert.That(info.HeightMm, Is.EqualTo(336));
 		// The descriptor serial string is preferred over the numeric field for the stable key.
-		Assert.AreEqual("DEL41C1-ABC123", info.Key);
+		Assert.That(info.Key, Is.EqualTo("DEL41C1-ABC123"));
 		Assert.IsTrue(info.KeyIsUnique);
 	}
 
@@ -219,8 +219,8 @@ public class EdidTests
 
 		Fix(edid);
 		Assert.IsTrue(Keysharp.Internals.Edid.TryParse(edid, out var info));
-		Assert.AreEqual("", info.SerialText);
-		Assert.AreEqual("DEL41C1-01020304", info.Key);
+		Assert.That(info.SerialText, Is.Empty);
+		Assert.That(info.Key, Is.EqualTo("DEL41C1-01020304"));
 		Assert.IsTrue(info.KeyIsUnique);
 	}
 
@@ -240,24 +240,24 @@ public class EdidTests
 		Fix(edid);
 
 		Assert.IsTrue(Keysharp.Internals.Edid.TryParse(edid, out var info));
-		Assert.AreEqual(0, info.WidthMm, "An aspect-ratio byte must not be reported as a physical width.");
-		Assert.AreEqual(0, info.HeightMm);
+		Assert.That(info.WidthMm, Is.EqualTo(0), "An aspect-ratio byte must not be reported as a physical width.");
+		Assert.That(info.HeightMm, Is.EqualTo(0));
 
 		// The portrait spelling puts the ratio in the other byte; it must be rejected the same way.
 		edid[21] = 0;
 		edid[22] = 0x4F;
 		Fix(edid);
 		Assert.IsTrue(Keysharp.Internals.Edid.TryParse(edid, out var portrait));
-		Assert.AreEqual(0, portrait.WidthMm);
-		Assert.AreEqual(0, portrait.HeightMm);
+		Assert.That(portrait.WidthMm, Is.EqualTo(0));
+		Assert.That(portrait.HeightMm, Is.EqualTo(0));
 
 		// A genuine size — both bytes set — still reads as centimetres when no detailed timing overrides it.
 		edid[21] = 60;
 		edid[22] = 34;
 		Fix(edid);
 		Assert.IsTrue(Keysharp.Internals.Edid.TryParse(edid, out var real));
-		Assert.AreEqual(600, real.WidthMm);
-		Assert.AreEqual(340, real.HeightMm);
+		Assert.That(real.WidthMm, Is.EqualTo(600));
+		Assert.That(real.HeightMm, Is.EqualTo(340));
 	}
 
 	/// <summary>A panel reporting no serial at all cannot identify one physical unit, so the caller must be
@@ -273,8 +273,8 @@ public class EdidTests
 		edid[12] = edid[13] = edid[14] = edid[15] = 0;
 		Fix(edid);
 		Assert.IsTrue(Keysharp.Internals.Edid.TryParse(edid, out var info));
-		Assert.AreEqual("DEL41C1", info.Key);
-		Assert.IsFalse(info.KeyIsUnique);
+		Assert.That(info.Key, Is.EqualTo("DEL41C1"));
+		Assert.That(info.KeyIsUnique, Is.False);
 	}
 
 	/// <summary>
@@ -294,39 +294,39 @@ public class EdidTests
 		Fix(edid);
 
 		Assert.IsTrue(Keysharp.Internals.Edid.TryParse(edid, out var info));
-		Assert.AreEqual(597, info.WidthMm, "A later detailed timing must not override the preferred one.");
-		Assert.AreEqual(336, info.HeightMm);
+		Assert.That(info.WidthMm, Is.EqualTo(597), "A later detailed timing must not override the preferred one.");
+		Assert.That(info.HeightMm, Is.EqualTo(336));
 	}
 
 	[Test, Category("Monitor")]
 	public void MalformedBlocks()
 	{
-		Assert.IsFalse(Keysharp.Internals.Edid.TryParse(new byte[64], out _), "A short buffer must not parse.");
-		Assert.IsFalse(Keysharp.Internals.Edid.TryParse(new byte[Keysharp.Internals.Edid.BlockSize], out _), "A zeroed block has no EDID header.");
+		Assert.That(Keysharp.Internals.Edid.TryParse(new byte[64], out _), Is.False, "A short buffer must not parse.");
+		Assert.That(Keysharp.Internals.Edid.TryParse(new byte[Keysharp.Internals.Edid.BlockSize], out _), Is.False, "A zeroed block has no EDID header.");
 
 		var badChecksum = BuildBlock();
 		badChecksum[127] ^= 0xFF;
-		Assert.IsFalse(Keysharp.Internals.Edid.TryParse(badChecksum, out _), "A bad checksum must not parse.");
+		Assert.That(Keysharp.Internals.Edid.TryParse(badChecksum, out _), Is.False, "A bad checksum must not parse.");
 
 		var badMagic = BuildBlock();
 		badMagic[1] = 0x00;
-		Assert.IsFalse(Keysharp.Internals.Edid.TryParse(badMagic, out _), "A bad header must not parse.");
+		Assert.That(Keysharp.Internals.Edid.TryParse(badMagic, out _), Is.False, "A bad header must not parse.");
 	}
 
 	[Test, Category("Monitor")]
 	public void ConnectorKinds()
 	{
-		Assert.AreEqual("DisplayPort", Keysharp.Internals.Edid.ConnectionFromConnectorName("DP-1"));
-		Assert.AreEqual("DisplayPort", Keysharp.Internals.Edid.ConnectionFromConnectorName("card0-DP-3"));
-		Assert.AreEqual("HDMI", Keysharp.Internals.Edid.ConnectionFromConnectorName("HDMI-A-2"));
-		Assert.AreEqual("eDP", Keysharp.Internals.Edid.ConnectionFromConnectorName("eDP-1"));
-		Assert.AreEqual("Internal", Keysharp.Internals.Edid.ConnectionFromConnectorName("LVDS-1"));
-		Assert.AreEqual("VGA", Keysharp.Internals.Edid.ConnectionFromConnectorName("VGA-1"));
-		Assert.AreEqual("", Keysharp.Internals.Edid.ConnectionFromConnectorName("\\\\.\\DISPLAY1"));
-		Assert.AreEqual("", Keysharp.Internals.Edid.ConnectionFromConnectorName(""));
+		Assert.That(Keysharp.Internals.Edid.ConnectionFromConnectorName("DP-1"), Is.EqualTo("DisplayPort"));
+		Assert.That(Keysharp.Internals.Edid.ConnectionFromConnectorName("card0-DP-3"), Is.EqualTo("DisplayPort"));
+		Assert.That(Keysharp.Internals.Edid.ConnectionFromConnectorName("HDMI-A-2"), Is.EqualTo("HDMI"));
+		Assert.That(Keysharp.Internals.Edid.ConnectionFromConnectorName("eDP-1"), Is.EqualTo("eDP"));
+		Assert.That(Keysharp.Internals.Edid.ConnectionFromConnectorName("LVDS-1"), Is.EqualTo("Internal"));
+		Assert.That(Keysharp.Internals.Edid.ConnectionFromConnectorName("VGA-1"), Is.EqualTo("VGA"));
+		Assert.That(Keysharp.Internals.Edid.ConnectionFromConnectorName("\\\\.\\DISPLAY1"), Is.Empty);
+		Assert.That(Keysharp.Internals.Edid.ConnectionFromConnectorName(""), Is.Empty);
 		Assert.IsTrue(Keysharp.Internals.Edid.IsInternalConnection("eDP"));
 		Assert.IsTrue(Keysharp.Internals.Edid.IsInternalConnection("Internal"));
-		Assert.IsFalse(Keysharp.Internals.Edid.IsInternalConnection("HDMI"));
+		Assert.That(Keysharp.Internals.Edid.IsInternalConnection("HDMI"), Is.False);
 	}
 
 	/// <summary>Recomputes the trailing checksum after a test mutates the block.</summary>

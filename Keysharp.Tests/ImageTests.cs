@@ -33,7 +33,7 @@ public class ImageTests : TestRunner
 		for (var i = 0; i < 8; i++)
 			_ = canvas.DrawImage(source, 0, 0);
 
-		Assert.AreEqual(0, canvas.PendingResourcesCount);
+		Assert.That(canvas.PendingResourcesCount, Is.EqualTo(0));
 	}
 
 	[Test, Category("Image"), Category("Internal")]
@@ -60,7 +60,7 @@ public class ImageTests : TestRunner
 	private static void AssertPreparedPixel(OverlaySurface surface, uint expected)
 	{
 		using var snapshot = new Bitmap(surface.PrepareForRead());
-		Assert.AreEqual(expected, (uint)snapshot.GetPixel(1, 1).ToArgb());
+		Assert.That((uint)snapshot.GetPixel(1, 1).ToArgb(), Is.EqualTo(expected));
 	}
 
 #if WINDOWS
@@ -89,7 +89,7 @@ public class ImageTests : TestRunner
 			biBitCount = 32,
 		};
 		var handle = WindowsAPI.CreateDIBSection(0, ref header, 0, out var bits, 0, 0);
-		Assert.AreNotEqual((nint)0, handle);
+		Assert.That(handle, Is.Not.EqualTo((nint)0));
 
 		try
 		{
@@ -104,7 +104,7 @@ public class ImageTests : TestRunner
 					if (hasAlpha)
 						expected = 0x80000000u | (expected & 0x00FFFFFFu);
 
-					Assert.AreEqual(expected, (uint)bitmap.GetPixel(x, y).ToArgb(), $"pixel ({x}, {y})");
+					Assert.That((uint)bitmap.GetPixel(x, y).ToArgb(), Is.EqualTo(expected), $"pixel ({x}, {y})");
 				}
 		}
 		finally
@@ -140,7 +140,7 @@ public class ImageTests : TestRunner
 
 			// Include surrounding pixels, row padding and allocation guards in the comparison.
 			for (var i = 0; i < actual.Length; i++)
-				Assert.AreEqual(expected[i], actual[i], $"byte {i}, stride {direction * stride}");
+				Assert.That(actual[i], Is.EqualTo(expected[i]), $"byte {i}, stride {direction * stride}");
 		}
 		finally
 		{

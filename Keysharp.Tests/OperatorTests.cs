@@ -18,11 +18,11 @@ public partial class OperatorTests : TestRunner
 	public void FailedClrCoercionDoesNotEqualScalarDefaults()
 	{
 		var value = new ClrValueWithoutText();
-		Assert.AreEqual(false, Script.ValueEquality(0L, value));
-		Assert.AreEqual(false, Script.ValueEquality(value, 0.0));
-		Assert.AreEqual(false, Script.ValueEquality("", value));
-		Assert.AreEqual(true, Script.ValueEquality(true, "1.0"));
-		Assert.AreEqual(false, Script.ValueEquality(false, "0.5"));
+		Assert.That(Script.ValueEquality(0L, value), Is.EqualTo(false));
+		Assert.That(Script.ValueEquality(value, 0.0), Is.EqualTo(false));
+		Assert.That(Script.ValueEquality("", value), Is.EqualTo(false));
+		Assert.That(Script.ValueEquality(true, "1.0"), Is.EqualTo(true));
+		Assert.That(Script.ValueEquality(false, "0.5"), Is.EqualTo(false));
 	}
 
 	private sealed class ClrValueWithoutText
@@ -38,7 +38,7 @@ public partial class OperatorTests : TestRunner
 		var manifest = new OperatorManifest(new OperatorDeclaration(typeof(ConcatFunction),
 			[new OperatorDefinition(OperatorKind.Concat, (_, right) => "func:" + right)]));
 		s.Operators.Register(manifest);
-		Assert.AreEqual("func:2", Script.Concat(new ConcatFunction(), 2L));
+		Assert.That(Script.Concat(new ConcatFunction(), 2L), Is.EqualTo("func:2"));
 	}
 
 	[Test, Category("Operator"), Category("Internal")]
@@ -49,17 +49,17 @@ public partial class OperatorTests : TestRunner
 		Assert.IsEmpty(diagnostics);
 		var generated = new Keysharp.Compilation.Syntax.Lowerer().Build(program, "Test").ToFullString();
 		Assert.IsTrue(generated.Contains("OperatorManifest"));
-		Assert.IsFalse(generated.Contains("KS_Operators"));
-		Assert.IsFalse(generated.Contains("KS_StaticOperators"));
-		Assert.IsFalse(generated.Contains("new Keysharp.Runtime.OperatorTable"));
-		Assert.IsFalse(generated.Contains("=>Program."));
+		Assert.That(generated.Contains("KS_Operators"), Is.False);
+		Assert.That(generated.Contains("KS_StaticOperators"), Is.False);
+		Assert.That(generated.Contains("new Keysharp.Runtime.OperatorTable"), Is.False);
+		Assert.That(generated.Contains("=>Program."), Is.False);
 		Assert.IsTrue(generated.Contains("KS_operatorRight"));
 
 		(program, diagnostics) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics("class Plain { }");
 		Assert.IsEmpty(diagnostics);
 		generated = new Keysharp.Compilation.Syntax.Lowerer().Build(program, "Plain").ToFullString();
-		Assert.IsFalse(generated.Contains("OperatorManifest"));
-		Assert.IsFalse(generated.Contains("Operators.Register"));
+		Assert.That(generated.Contains("OperatorManifest"), Is.False);
+		Assert.That(generated.Contains("Operators.Register"), Is.False);
 	}
 
 	[TestCase("CompiledOperators"), TestCase("Main"), TestCase("AutoExecSection")]
@@ -69,7 +69,7 @@ public partial class OperatorTests : TestRunner
 		var source = $"#Module {moduleName}\nclass ManifestValue {{ +(Right) => Right }}\n"
 			+ $"#Module {moduleName}_KS\nclass LiteralSuffixValue {{ }}";
 		var (bytes, error, _) = new CompilerHelper().CompileCodeToByteArray(source, "generated-member-module");
-		Assert.IsNotNull(bytes, error);
+		Assert.That(bytes, Is.Not.Null, error);
 	}
 
 	[Test, Category("Operator")]
@@ -118,7 +118,7 @@ public partial class OperatorTests : TestRunner
 	public void IncDec() => Assert.IsTrue(TestScript("op-inc-dec", false));
 
 	[Test, Category("Operator"), NonParallelizable]
-	public void Is() => Assert.IsTrue(TestScript("op-is", false));
+	public void Is_() => Assert.IsTrue(TestScript("op-is", false));
 
 	[Test, Category("Operator")]
 	public void LeftShift() => Assert.IsTrue(TestScript("op-lsh", true));

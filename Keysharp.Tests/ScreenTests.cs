@@ -57,7 +57,7 @@ public partial class ScreenTests : TestRunner
 		{
 			var got = finder.Find(needle, -1, kv.Key);
 			Assert.IsTrue(got.HasValue, $"Direction {kv.Key} found no match.");
-			Assert.AreEqual(kv.Value, got.Value, $"Direction {kv.Key} returned the wrong match.");
+			Assert.That(got.Value, Is.EqualTo(kv.Value), $"Direction {kv.Key} returned the wrong match.");
 		}
 	}
 #endif

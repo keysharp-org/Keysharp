@@ -20,14 +20,14 @@ public class BuiltInVarsTests : TestRunner
 		var output = RunScript(scriptPath, "not-the-script-name", true, false);
 		var lines = output.Split(["\r\n", "\n"], StringSplitOptions.None);
 
-		Assert.AreEqual(Path.GetFileName(scriptPath), lines[0]);
-		Assert.AreEqual(Path.GetFullPath(scriptPath), lines[1]);
+		Assert.That(lines[0], Is.EqualTo(Path.GetFileName(scriptPath)));
+		Assert.That(lines[1], Is.EqualTo(Path.GetFullPath(scriptPath)));
 
 		output = RunScript(@"FileAppend(A_ScriptName . ""`n"" . A_ScriptFullPath, ""*"")", "CustomScript", true, false);
 		lines = output.Split(["\r\n", "\n"], StringSplitOptions.None);
 
-		Assert.AreEqual("CustomScript", lines[0]);
-		Assert.AreEqual("*", lines[1]);
+		Assert.That(lines[0], Is.EqualTo("CustomScript"));
+		Assert.That(lines[1], Is.EqualTo("*"));
 	}
 
 	[Test, Category("BuiltInVars"), NonParallelizable]

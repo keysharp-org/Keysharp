@@ -39,12 +39,12 @@ public class InputSchedulerTests : TestRunner
 			hk.PerformInNewThreadMadeByCallerAsync(variant, 0, 0);
 			context.DrainAll();
 
-			Assert.AreEqual(0, calls);
+			Assert.That(calls, Is.EqualTo(0));
 
 			s.Threads.EndThread(occupied);
 			context.DrainAll();
 
-			Assert.AreEqual(1, calls);
+			Assert.That(calls, Is.EqualTo(1));
 		}
 		catch
 		{
@@ -78,8 +78,8 @@ public class InputSchedulerTests : TestRunner
 
 		context.DrainAll();
 
-		Assert.AreEqual(0, hotstringCalls);
-		Assert.AreEqual(1, normalCalls);
+		Assert.That(hotstringCalls, Is.EqualTo(0));
+		Assert.That(normalCalls, Is.EqualTo(1));
 	}
 
 	[Test, Category("Threading")]
@@ -89,7 +89,7 @@ public class InputSchedulerTests : TestRunner
 		var calls = 0;
 		_ = s.EventScheduler.EnqueueCallback(() => calls++, ScriptEventQueue.Normal, false);
 		Keysharp.Internals.Flow.SleepWithoutInterruption();
-		Assert.AreEqual(1, calls, "an uninterruptible wait with no interval must still pump once");
+		Assert.That(calls, Is.EqualTo(1), "an uninterruptible wait with no interval must still pump once");
 	}
 
 	[Test, Category("Threading")]
@@ -107,14 +107,14 @@ public class InputSchedulerTests : TestRunner
 
 		context.DrainAll();
 
-		Assert.AreEqual(0, hotkeyCalls);
-		Assert.AreEqual(1, normalCalls);
+		Assert.That(hotkeyCalls, Is.EqualTo(0));
+		Assert.That(normalCalls, Is.EqualTo(1));
 
 		variant.FindBinding(Script.TheScript.EventScheduler).ExistingThreads = 0;
 		s.EventScheduler.SchedulePump();
 		context.DrainAll();
 
-		Assert.AreEqual(1, hotkeyCalls);
+		Assert.That(hotkeyCalls, Is.EqualTo(1));
 	}
 
 	[Test, Category("Threading")]
@@ -130,13 +130,13 @@ public class InputSchedulerTests : TestRunner
 		hk.PerformInNewThreadMadeByCallerAsync(variant, 0, 0);
 
 		context.DrainAll();
-		Assert.AreEqual(0, hotkeyCalls);
+		Assert.That(hotkeyCalls, Is.EqualTo(0));
 
 		variant.FindBinding(Script.TheScript.EventScheduler).ExistingThreads = 0;
 		s.EventScheduler.SchedulePump();
 		context.DrainAll();
 
-		Assert.AreEqual(0, hotkeyCalls, "Unbuffered hotkey events should be dropped before entering the scheduler queue.");
+		Assert.That(hotkeyCalls, Is.EqualTo(0), "Unbuffered hotkey events should be dropped before entering the scheduler queue.");
 	}
 
 	[Test, Category("Threading")]

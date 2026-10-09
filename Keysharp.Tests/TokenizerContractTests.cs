@@ -27,7 +27,8 @@ public class TokenizerContractTests : TestRunner
 				unmapped.Add(kind.ToString());
 		}
 
-		CollectionAssert.IsEmpty(unmapped,
+		Assert.That(unmapped,
+			Is.Empty,
 			"internal TokenKind members with no ScriptTokenKind counterpart — add them to ScriptTokenKind and ParserComponent.ToKind: "
 			+ string.Join(", ", unmapped));
 	}
@@ -56,9 +57,9 @@ public class TokenizerContractTests : TestRunner
 		var src = "; line comment\nx := 1 /* block */ + 2\n";
 		var toks = Tokenizer.Tokenize(src);
 		var comments = toks.Where(t => t.Kind == ScriptTokenKind.Comment).ToList();
-		Assert.AreEqual(2, comments.Count, "both the line and the block comment should be tokens");
-		Assert.AreEqual("; line comment", src.Substring(comments[0].Offset, comments[0].Length));
-		Assert.AreEqual("/* block */", src.Substring(comments[1].Offset, comments[1].Length));
+		Assert.That(comments.Count, Is.EqualTo(2), "both the line and the block comment should be tokens");
+		Assert.That(src.Substring(comments[0].Offset, comments[0].Length), Is.EqualTo("; line comment"));
+		Assert.That(src.Substring(comments[1].Offset, comments[1].Length), Is.EqualTo("/* block */"));
 	}
 
 	/// <summary>A continuation section is one string token.</summary>
@@ -68,10 +69,11 @@ public class TokenizerContractTests : TestRunner
 		var src = "s := \"\n(\n//***** banner *****\nint x;\n)\"\nMsgBox(\"after\")\n";
 		var toks = Tokenizer.Tokenize(src);
 		var strings = toks.Where(t => t.Kind == ScriptTokenKind.String).ToList();
-		Assert.AreEqual(2, strings.Count);
-		StringAssert.Contains("//***** banner *****", src.Substring(strings[0].Offset, strings[0].Length));
-		Assert.AreEqual("\"after\"", src.Substring(strings[1].Offset, strings[1].Length));
-		Assert.IsFalse(toks.Any(t => t.Kind == ScriptTokenKind.Comment),
+		Assert.That(strings.Count, Is.EqualTo(2));
+		Assert.That(src.Substring(strings[0].Offset, strings[0].Length), Does.Contain("//***** banner *****"));
+		Assert.That(src.Substring(strings[1].Offset, strings[1].Length), Is.EqualTo("\"after\""));
+		Assert.That(toks.Any(t => t.Kind == ScriptTokenKind.Comment),
+			Is.False,
 			"the banner is inside a string; nothing here is a comment");
 	}
 
@@ -85,10 +87,10 @@ public class TokenizerContractTests : TestRunner
 		var src = "Var :=\n(\n\"Quote marks are not escaped here.\nSpecify variables as follows: \" Var \"\nA line of text.\"\n)\nMsgBox(\"after\")\n";
 		var toks = Tokenizer.Tokenize(src);
 		var strings = toks.Where(t => t.Kind == ScriptTokenKind.String).ToList();
-		Assert.AreEqual(3, strings.Count, "two strings in the section plus the one after it");
-		StringAssert.Contains("\nSpecify variables as follows: ", src.Substring(strings[0].Offset, strings[0].Length));
-		StringAssert.Contains("\nA line of text.", src.Substring(strings[1].Offset, strings[1].Length));
-		Assert.AreEqual("\"after\"", src.Substring(strings[2].Offset, strings[2].Length));
+		Assert.That(strings.Count, Is.EqualTo(3), "two strings in the section plus the one after it");
+		Assert.That(src.Substring(strings[0].Offset, strings[0].Length), Does.Contain("\nSpecify variables as follows: "));
+		Assert.That(src.Substring(strings[1].Offset, strings[1].Length), Does.Contain("\nA line of text."));
+		Assert.That(src.Substring(strings[2].Offset, strings[2].Length), Is.EqualTo("\"after\""));
 	}
 
 	/// <summary>
@@ -102,12 +104,12 @@ public class TokenizerContractTests : TestRunner
 		var src = "a :=\n(Join\nMyV\nar\n)\n";
 		var toks = Tokenizer.Tokenize(src);
 		var names = toks.Where(t => t.Kind == ScriptTokenKind.Identifier).ToList();
-		Assert.AreEqual(2, names.Count, "`a` and the merged `MyVar`");
-		Assert.AreEqual("MyV\nar", src.Substring(names[1].Offset, names[1].Length));
+		Assert.That(names.Count, Is.EqualTo(2), "`a` and the merged `MyVar`");
+		Assert.That(src.Substring(names[1].Offset, names[1].Length), Is.EqualTo("MyV\nar"));
 
 		var glued = Tokenizer.Tokenize("a :=\n(Join\nMy\n)Var\n");
 		var last = glued.Last(t => t.Kind == ScriptTokenKind.Identifier);
-		Assert.AreEqual("My\n)Var", "a :=\n(Join\nMy\n)Var\n".Substring(last.Offset, last.Length),
+		Assert.That("a :=\n(Join\nMy\n)Var\n".Substring(last.Offset, last.Length), Is.EqualTo("My\n)Var"),
 					   "the text after ')' joins on with no delimiter, so the ')' is inside the name");
 	}
 
@@ -146,8 +148,8 @@ public class TokenizerContractTests : TestRunner
 					else col++;
 				}
 
-				Assert.AreEqual(line, t.Line, $"line of {t.Kind} at offset {t.Offset} in <{src}>");
-				Assert.AreEqual(col, t.Column, $"column of {t.Kind} at offset {t.Offset} in <{src}>");
+				Assert.That(t.Line, Is.EqualTo(line), $"line of {t.Kind} at offset {t.Offset} in <{src}>");
+				Assert.That(t.Column, Is.EqualTo(col), $"column of {t.Kind} at offset {t.Offset} in <{src}>");
 			}
 		}
 	}
@@ -162,17 +164,17 @@ public class TokenizerContractTests : TestRunner
 	public void SectionCommentEndsOnlyItsOwnLine()
 	{
 		var toks = Tokenizer.Tokenize("a := Array(\n(Join,\n1 ; first\n2\n3\n)\n)\n");
-		Assert.AreEqual(3, toks.Count(t => t.Kind == ScriptTokenKind.Number), "every content line survives the comment");
-		Assert.AreEqual(1, toks.Count(t => t.Kind == ScriptTokenKind.Comment));
+		Assert.That(toks.Count(t => t.Kind == ScriptTokenKind.Number), Is.EqualTo(3), "every content line survives the comment");
+		Assert.That(toks.Count(t => t.Kind == ScriptTokenKind.Comment), Is.EqualTo(1));
 
 		var src = "s :=\n(\n\"a ; b\"\n)\n";
 		var str = Tokenizer.Tokenize(src).Single(t => t.Kind == ScriptTokenKind.String);
-		Assert.AreEqual("\"a ; b\"", src.Substring(str.Offset, str.Length), "a ';' inside a string is part of it");
+		Assert.That(src.Substring(str.Offset, str.Length), Is.EqualTo("\"a ; b\""), "a ';' inside a string is part of it");
 
 		// A line that is only a comment is not a content line, so it leaves no empty argument behind.
 		var only = Tokenizer.Tokenize("a := Array(\n(Join,\n; nothing here\n1\n2\n)\n)\n");
-		Assert.AreEqual(1, only.Count(t => t.Kind == ScriptTokenKind.Comma), "no Join for the comment-only line");
-		Assert.AreEqual(2, only.Count(t => t.Kind == ScriptTokenKind.Number));
+		Assert.That(only.Count(t => t.Kind == ScriptTokenKind.Comma), Is.EqualTo(1), "no Join for the comment-only line");
+		Assert.That(only.Count(t => t.Kind == ScriptTokenKind.Number), Is.EqualTo(2));
 	}
 
 	/// <summary>A `#CSharp` body is one embedded-code token, so a consumer knows to switch languages.</summary>
@@ -182,9 +184,9 @@ public class TokenizerContractTests : TestRunner
 		var src = "#CSharp\npublic static int F() => 1; // c# comment\n#EndCSharp\nx := 1\n";
 		var toks = Tokenizer.Tokenize(src);
 		var body = toks.Where(t => t.Kind == ScriptTokenKind.CSharpBlock).ToList();
-		Assert.AreEqual(1, body.Count);
-		StringAssert.Contains("public static int F()", src.Substring(body[0].Offset, body[0].Length));
-		Assert.AreEqual(ScriptTokenCategory.EmbeddedCode, ScriptTokenKind.CSharpBlock.Category());
+		Assert.That(body.Count, Is.EqualTo(1));
+		Assert.That(src.Substring(body[0].Offset, body[0].Length), Does.Contain("public static int F()"));
+		Assert.That(ScriptTokenKind.CSharpBlock.Category(), Is.EqualTo(ScriptTokenCategory.EmbeddedCode));
 	}
 
 	/// <summary>Highlighting runs on every keystroke, so half-typed input must not throw.</summary>

@@ -25,7 +25,7 @@ public partial class ProcessTests : TestRunner
 #endif
 		start.ArgumentList.Add("exit 0");
 		using var child = Process.Start(start);
-		Assert.IsNotNull(child);
+		Assert.That(child, Is.Not.Null);
 		Assert.IsTrue(child.WaitForExit(5000));
 		var threadId = Environment.CurrentManagedThreadId;
 		var exceptions = new List<Exception>();
@@ -48,8 +48,8 @@ public partial class ProcessTests : TestRunner
 			AppDomain.CurrentDomain.FirstChanceException -= RecordException;
 		}
 
-		Assert.AreEqual(Environment.ProcessId, currentPid);
-		Assert.AreEqual(0, exitedPid);
+		Assert.That(currentPid, Is.EqualTo(Environment.ProcessId));
+		Assert.That(exitedPid, Is.EqualTo(0));
 		Assert.IsEmpty(exceptions, "An exited PID must be an ordinary lookup miss, without a first-chance ArgumentException.");
 	}
 

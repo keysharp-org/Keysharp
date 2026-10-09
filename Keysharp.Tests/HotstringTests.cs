@@ -67,7 +67,7 @@ public partial class HotstringTests : TestRunner
 		// As in AutoHotkey, the first hotstring defined fires, so one added before this one may win if it also ends the text.
 		void AssertFires(HotstringDefinition added, HotstringDefinition fired, string typed)
 		{
-			Assert.IsNotNull(fired);
+			Assert.That(fired, Is.Not.Null);
 			var text = fired.EndCharRequired ? typed[..^1] : typed;
 			Assert.IsTrue(ReferenceEquals(fired, added) || text.EndsWith(fired.str, StringComparison.OrdinalIgnoreCase), $"{fired.Name} fired for {added.Name}");
 		}
@@ -106,15 +106,15 @@ public partial class HotstringTests : TestRunner
 				_ = Keyboard.Hotstring("C0");
 
 			var found = Keyboard.Hotstring(newOptsName) as HotstringDefinition;
-			Assert.IsNotNull(found);
-			Assert.AreEqual(found.EndCharRequired, false);
-			Assert.AreEqual(found.DoBackspace, false);
-			Assert.AreEqual(found.OmitEndChar, true);
-			Assert.AreEqual(found.SuspendExempt, true);
-			Assert.AreEqual(found.DoReset, true);
-			Assert.AreEqual(found.SendRaw, SendRawModes.Raw);
-			Assert.AreEqual(found.KeyDelay, 123L);
-			Assert.AreEqual(found.Priority, 10L);
+			Assert.That(found, Is.Not.Null);
+			Assert.That(found.EndCharRequired, Is.EqualTo(false));
+			Assert.That(found.DoBackspace, Is.EqualTo(false));
+			Assert.That(found.OmitEndChar, Is.EqualTo(true));
+			Assert.That(found.SuspendExempt, Is.EqualTo(true));
+			Assert.That(found.DoReset, Is.EqualTo(true));
+			Assert.That(found.SendRaw, Is.EqualTo(SendRawModes.Raw));
+			Assert.That(found.KeyDelay, Is.EqualTo(123L));
+			Assert.That(found.Priority, Is.EqualTo(10L));
 			_ = Keyboard.Hotstring("?0");
 			_ = Keyboard.Hotstring("C0");
 		}
@@ -127,224 +127,224 @@ public partial class HotstringTests : TestRunner
 		//End char required.
 		var newVal = false;
 		var origVal = A_DefaultHotstringEndCharRequired;
-		Assert.AreEqual(origVal, !newVal);
+		Assert.That(!newVal, Is.EqualTo(origVal));
 		var oldVal = Keyboard.Hotstring("*:");
-		Assert.AreNotEqual(origVal, A_DefaultHotstringEndCharRequired);
-		Assert.AreEqual(A_DefaultHotstringEndCharRequired, newVal);
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringEndCharRequired, Is.Not.EqualTo(origVal));
+		Assert.That(newVal, Is.EqualTo(A_DefaultHotstringEndCharRequired));
+		Assert.That(oldVal, Is.Empty);
 		//Case sensitivity.
 		newVal = true;
 		origVal = A_DefaultHotstringCaseSensitive;
-		Assert.AreEqual(origVal, !newVal);
+		Assert.That(!newVal, Is.EqualTo(origVal));
 		oldVal = Keyboard.Hotstring("C");
-		Assert.AreNotEqual(origVal, A_DefaultHotstringCaseSensitive);
-		Assert.AreEqual(A_DefaultHotstringCaseSensitive, newVal);
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringCaseSensitive, Is.Not.EqualTo(origVal));
+		Assert.That(newVal, Is.EqualTo(A_DefaultHotstringCaseSensitive));
+		Assert.That(oldVal, Is.Empty);
 		//Case sensitivity restore to default.
 		newVal = false;
 		origVal = A_DefaultHotstringCaseSensitive;
-		Assert.AreEqual(origVal, !newVal);
+		Assert.That(!newVal, Is.EqualTo(origVal));
 		oldVal = Keyboard.Hotstring("C0");
-		Assert.AreNotEqual(origVal, A_DefaultHotstringCaseSensitive);
-		Assert.AreEqual(A_DefaultHotstringCaseSensitive, newVal);
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringCaseSensitive, Is.Not.EqualTo(origVal));
+		Assert.That(newVal, Is.EqualTo(A_DefaultHotstringCaseSensitive));
+		Assert.That(oldVal, Is.Empty);
 		//Inside word.
 		newVal = true;
 		origVal = A_DefaultHotstringDetectWhenInsideWord;
-		Assert.AreEqual(origVal, !newVal);
+		Assert.That(!newVal, Is.EqualTo(origVal));
 		oldVal = Keyboard.Hotstring("?");
-		Assert.AreNotEqual(origVal, A_DefaultHotstringDetectWhenInsideWord);
-		Assert.AreEqual(A_DefaultHotstringDetectWhenInsideWord, newVal);
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringDetectWhenInsideWord, Is.Not.EqualTo(origVal));
+		Assert.That(newVal, Is.EqualTo(A_DefaultHotstringDetectWhenInsideWord));
+		Assert.That(oldVal, Is.Empty);
 		//Automatic backspacing off.
 		newVal = false;
 		origVal = A_DefaultHotstringDoBackspace;
-		Assert.AreEqual(origVal, !newVal);
+		Assert.That(!newVal, Is.EqualTo(origVal));
 		oldVal = Keyboard.Hotstring("B0");
-		Assert.AreNotEqual(origVal, A_DefaultHotstringDoBackspace);
-		Assert.AreEqual(A_DefaultHotstringDoBackspace, newVal);
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringDoBackspace, Is.Not.EqualTo(origVal));
+		Assert.That(newVal, Is.EqualTo(A_DefaultHotstringDoBackspace));
+		Assert.That(oldVal, Is.Empty);
 		//Automatic backspacing back on.
 		newVal = true;
 		origVal = A_DefaultHotstringDoBackspace;
-		Assert.AreEqual(origVal, !newVal);
+		Assert.That(!newVal, Is.EqualTo(origVal));
 		oldVal = Keyboard.Hotstring("B");
-		Assert.AreNotEqual(origVal, A_DefaultHotstringDoBackspace);
-		Assert.AreEqual(A_DefaultHotstringDoBackspace, newVal);
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringDoBackspace, Is.Not.EqualTo(origVal));
+		Assert.That(newVal, Is.EqualTo(A_DefaultHotstringDoBackspace));
+		Assert.That(oldVal, Is.Empty);
 		//Do not conform to typed case.
 		newVal = false;
 		origVal = A_DefaultHotstringConformToCase;
-		Assert.AreEqual(origVal, !newVal);
+		Assert.That(!newVal, Is.EqualTo(origVal));
 		oldVal = Keyboard.Hotstring("C1");
-		Assert.AreNotEqual(origVal, A_DefaultHotstringConformToCase);
-		Assert.AreEqual(A_DefaultHotstringConformToCase, newVal);
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringConformToCase, Is.Not.EqualTo(origVal));
+		Assert.That(newVal, Is.EqualTo(A_DefaultHotstringConformToCase));
+		Assert.That(oldVal, Is.Empty);
 		//Omit ending character.
 		newVal = true;
 		origVal = A_DefaultHotstringOmitEndChar;
-		Assert.AreEqual(origVal, !newVal);
+		Assert.That(!newVal, Is.EqualTo(origVal));
 		oldVal = Keyboard.Hotstring("O");
-		Assert.AreNotEqual(origVal, A_DefaultHotstringOmitEndChar);
-		Assert.AreEqual(A_DefaultHotstringOmitEndChar, newVal);
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringOmitEndChar, Is.Not.EqualTo(origVal));
+		Assert.That(newVal, Is.EqualTo(A_DefaultHotstringOmitEndChar));
+		Assert.That(oldVal, Is.Empty);
 		//Restore ending character.
 		newVal = false;
 		origVal = A_DefaultHotstringOmitEndChar;
-		Assert.AreEqual(origVal, !newVal);
+		Assert.That(!newVal, Is.EqualTo(origVal));
 		oldVal = Keyboard.Hotstring("O0");
-		Assert.AreNotEqual(origVal, A_DefaultHotstringOmitEndChar);
-		Assert.AreEqual(A_DefaultHotstringOmitEndChar, newVal);
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringOmitEndChar, Is.Not.EqualTo(origVal));
+		Assert.That(newVal, Is.EqualTo(A_DefaultHotstringOmitEndChar));
+		Assert.That(oldVal, Is.Empty);
 		//Exempt from suspend.
 		newVal = true;
 		origVal = hsm.hsSuspendExempt;
-		Assert.AreEqual(origVal, !newVal);
+		Assert.That(!newVal, Is.EqualTo(origVal));
 		oldVal = Keyboard.Hotstring("S");
-		Assert.AreNotEqual(origVal, hsm.hsSuspendExempt);
-		Assert.AreEqual(hsm.hsSuspendExempt, newVal);
-		Assert.AreEqual("", oldVal);
+		Assert.That(hsm.hsSuspendExempt, Is.Not.EqualTo(origVal));
+		Assert.That(newVal, Is.EqualTo(hsm.hsSuspendExempt));
+		Assert.That(oldVal, Is.Empty);
 		//Remove suspend exempt.
 		newVal = false;
 		origVal = hsm.hsSuspendExempt;
-		Assert.AreEqual(origVal, !newVal);
+		Assert.That(!newVal, Is.EqualTo(origVal));
 		oldVal = Keyboard.Hotstring("S0");
-		Assert.AreNotEqual(origVal, hsm.hsSuspendExempt);
-		Assert.AreEqual(hsm.hsSuspendExempt, newVal);
-		Assert.AreEqual("", oldVal);
+		Assert.That(hsm.hsSuspendExempt, Is.Not.EqualTo(origVal));
+		Assert.That(newVal, Is.EqualTo(hsm.hsSuspendExempt));
+		Assert.That(oldVal, Is.Empty);
 		//Reset on trigger.
 		newVal = true;
 		origVal = A_DefaultHotstringDoReset;
-		Assert.AreEqual(origVal, !newVal);
+		Assert.That(!newVal, Is.EqualTo(origVal));
 		oldVal = Keyboard.Hotstring("Z");
-		Assert.AreNotEqual(origVal, A_DefaultHotstringDoReset);
-		Assert.AreEqual(A_DefaultHotstringDoReset, newVal);
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringDoReset, Is.Not.EqualTo(origVal));
+		Assert.That(newVal, Is.EqualTo(A_DefaultHotstringDoReset));
+		Assert.That(oldVal, Is.Empty);
 		//Restore reset on trigger.
 		newVal = false;
 		origVal = A_DefaultHotstringDoReset;
-		Assert.AreEqual(origVal, !newVal);
+		Assert.That(!newVal, Is.EqualTo(origVal));
 		oldVal = Keyboard.Hotstring("Z0");
-		Assert.AreNotEqual(origVal, A_DefaultHotstringDoReset);
-		Assert.AreEqual(A_DefaultHotstringDoReset, newVal);
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringDoReset, Is.Not.EqualTo(origVal));
+		Assert.That(newVal, Is.EqualTo(A_DefaultHotstringDoReset));
+		Assert.That(oldVal, Is.Empty);
 		//Send replacement text raw.
 		var newMode = SendRawModes.Raw.ToString();
 		var origMode = A_DefaultHotstringSendRaw;
-		Assert.AreEqual(origMode, SendRawModes.NotRaw.ToString());
+		Assert.That(SendRawModes.NotRaw.ToString(), Is.EqualTo(origMode));
 		oldVal = Keyboard.Hotstring("R");
-		Assert.AreNotEqual(origMode, A_DefaultHotstringSendRaw);
-		Assert.AreEqual(A_DefaultHotstringSendRaw, newMode);
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringSendRaw, Is.Not.EqualTo(origMode));
+		Assert.That(newMode, Is.EqualTo(A_DefaultHotstringSendRaw));
+		Assert.That(oldVal, Is.Empty);
 		//Restore replacement text mode.
 		newMode = SendRawModes.NotRaw.ToString();
 		origMode = A_DefaultHotstringSendRaw;
-		Assert.AreEqual(origMode, SendRawModes.Raw.ToString());
+		Assert.That(SendRawModes.Raw.ToString(), Is.EqualTo(origMode));
 		oldVal = Keyboard.Hotstring("R0");
-		Assert.AreNotEqual(origMode, A_DefaultHotstringSendRaw);
-		Assert.AreEqual(A_DefaultHotstringSendRaw, newMode);
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringSendRaw, Is.Not.EqualTo(origMode));
+		Assert.That(newMode, Is.EqualTo(A_DefaultHotstringSendRaw));
+		Assert.That(oldVal, Is.Empty);
 		//Send replacement text mode.
 		newMode = SendRawModes.RawText.ToString();
 		origMode = A_DefaultHotstringSendRaw;
-		Assert.AreEqual(origMode, SendRawModes.NotRaw.ToString());
+		Assert.That(SendRawModes.NotRaw.ToString(), Is.EqualTo(origMode));
 		oldVal = Keyboard.Hotstring("T");
-		Assert.AreNotEqual(origMode, A_DefaultHotstringSendRaw);
-		Assert.AreEqual(A_DefaultHotstringSendRaw, newMode);
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringSendRaw, Is.Not.EqualTo(origMode));
+		Assert.That(newMode, Is.EqualTo(A_DefaultHotstringSendRaw));
+		Assert.That(oldVal, Is.Empty);
 		//Restore replacement text mode.
 		newMode = SendRawModes.NotRaw.ToString();
 		origMode = A_DefaultHotstringSendRaw;
-		Assert.AreEqual(origMode, SendRawModes.RawText.ToString());
+		Assert.That(SendRawModes.RawText.ToString(), Is.EqualTo(origMode));
 		oldVal = Keyboard.Hotstring("T0");
-		Assert.AreNotEqual(origMode, A_DefaultHotstringSendRaw);
-		Assert.AreEqual(A_DefaultHotstringSendRaw, newMode);
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringSendRaw, Is.Not.EqualTo(origMode));
+		Assert.That(newMode, Is.EqualTo(A_DefaultHotstringSendRaw));
+		Assert.That(oldVal, Is.Empty);
 		//Key delay.
 		var newInt = 42;
 		var origInt = A_DefaultHotstringKeyDelay;
-		Assert.AreEqual(origInt, 0);
+		Assert.That(origInt, Is.EqualTo(0));
 		oldVal = Keyboard.Hotstring($"K{newInt}");
-		Assert.AreNotEqual(origInt, A_DefaultHotstringKeyDelay);
-		Assert.AreEqual(A_DefaultHotstringKeyDelay, newInt);
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringKeyDelay, Is.Not.EqualTo(origInt));
+		Assert.That(newInt, Is.EqualTo(A_DefaultHotstringKeyDelay));
+		Assert.That(oldVal, Is.Empty);
 		//Priority.
 		newInt = 42;
 		origInt = A_DefaultHotstringPriority;
-		Assert.AreEqual(origInt, 0);
+		Assert.That(origInt, Is.EqualTo(0));
 		oldVal = Keyboard.Hotstring($"P{newInt}");
-		Assert.AreNotEqual(origInt, A_DefaultHotstringPriority);
-		Assert.AreEqual(A_DefaultHotstringPriority, newInt);
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringPriority, Is.Not.EqualTo(origInt));
+		Assert.That(newInt, Is.EqualTo(A_DefaultHotstringPriority));
+		Assert.That(oldVal, Is.Empty);
 		//Send mode Event.
 		var newSendMode = SendModes.Event.ToString();
 		var origSendMode = A_DefaultHotstringSendMode;
-		Assert.AreEqual(origSendMode, SendModes.Input.ToString());
+		Assert.That(SendModes.Input.ToString(), Is.EqualTo(origSendMode));
 		oldVal = Keyboard.Hotstring("SE");
-		Assert.AreNotEqual(origSendMode, A_DefaultHotstringSendMode);
-		Assert.AreEqual(A_DefaultHotstringSendMode, newSendMode);
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringSendMode, Is.Not.EqualTo(origSendMode));
+		Assert.That(newSendMode, Is.EqualTo(A_DefaultHotstringSendMode));
+		Assert.That(oldVal, Is.Empty);
 		//Send mode Play.
 		newSendMode = SendModes.Play.ToString();
 		origSendMode = A_DefaultHotstringSendMode;
-		Assert.AreEqual(origSendMode, SendModes.Event.ToString());
+		Assert.That(SendModes.Event.ToString(), Is.EqualTo(origSendMode));
 		oldVal = Keyboard.Hotstring("SP");
-		Assert.AreNotEqual(origSendMode, A_DefaultHotstringSendMode);
-		Assert.AreEqual(A_DefaultHotstringSendMode, newSendMode);
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringSendMode, Is.Not.EqualTo(origSendMode));
+		Assert.That(newSendMode, Is.EqualTo(A_DefaultHotstringSendMode));
+		Assert.That(oldVal, Is.Empty);
 		//Send mode Input.
 		newSendMode = SendModes.InputThenPlay.ToString();
 		origSendMode = A_DefaultHotstringSendMode;
-		Assert.AreEqual(origSendMode, SendModes.Play.ToString());
+		Assert.That(SendModes.Play.ToString(), Is.EqualTo(origSendMode));
 		oldVal = Keyboard.Hotstring("SI");
-		Assert.AreNotEqual(origSendMode, A_DefaultHotstringSendMode);
-		Assert.AreEqual(A_DefaultHotstringSendMode, newSendMode);//InputThenPlay gets used when Input is specified. See HotstringDefinition.ParseOptions().
-		Assert.AreEqual("", oldVal);
+		Assert.That(A_DefaultHotstringSendMode, Is.Not.EqualTo(origSendMode));
+		Assert.That(newSendMode, Is.EqualTo(A_DefaultHotstringSendMode));//InputThenPlay gets used when Input is specified. See HotstringDefinition.ParseOptions().
+		Assert.That(oldVal, Is.Empty);
 		//Try changing multiple options at once.
 		//First reset everything back to the default state.
 		_ = Keyboard.Hotstring("*0");
 		origVal = A_DefaultHotstringEndCharRequired;
-		Assert.AreEqual(origVal, true);
+		Assert.That(origVal, Is.EqualTo(true));
 		_ = Keyboard.Hotstring("C0");
 		origVal = A_DefaultHotstringCaseSensitive;
-		Assert.AreEqual(origVal, false);
+		Assert.That(origVal, Is.EqualTo(false));
 		_ = Keyboard.Hotstring("?0");
 		origVal = A_DefaultHotstringDetectWhenInsideWord;
-		Assert.AreEqual(origVal, false);
+		Assert.That(origVal, Is.EqualTo(false));
 		_ = Keyboard.Hotstring("B");
 		origVal = A_DefaultHotstringDoBackspace;
-		Assert.AreEqual(origVal, true);
+		Assert.That(origVal, Is.EqualTo(true));
 		_ = Keyboard.Hotstring("O0");
 		origVal = A_DefaultHotstringOmitEndChar;
-		Assert.AreEqual(origVal, false);
+		Assert.That(origVal, Is.EqualTo(false));
 		_ = Keyboard.Hotstring("S0");
 		origVal = hsm.hsSuspendExempt;
-		Assert.AreEqual(origVal, false);
+		Assert.That(origVal, Is.EqualTo(false));
 		_ = Keyboard.Hotstring("Z0");
 		origVal = A_DefaultHotstringDoReset;
-		Assert.AreEqual(origVal, false);
+		Assert.That(origVal, Is.EqualTo(false));
 		_ = Keyboard.Hotstring("R0");
-		Assert.AreEqual(A_DefaultHotstringSendRaw, SendRawModes.NotRaw.ToString());
+		Assert.That(SendRawModes.NotRaw.ToString(), Is.EqualTo(A_DefaultHotstringSendRaw));
 		_ = Keyboard.Hotstring("T0");
-		Assert.AreEqual(A_DefaultHotstringSendRaw, SendRawModes.NotRaw.ToString());
+		Assert.That(SendRawModes.NotRaw.ToString(), Is.EqualTo(A_DefaultHotstringSendRaw));
 		_ = Keyboard.Hotstring("K-1");
-		Assert.AreEqual(A_DefaultHotstringKeyDelay, -1L);
+		Assert.That(A_DefaultHotstringKeyDelay, Is.EqualTo(-1L));
 		_ = Keyboard.Hotstring("P-1");
-		Assert.AreEqual(A_DefaultHotstringPriority, -1L);
+		Assert.That(A_DefaultHotstringPriority, Is.EqualTo(-1L));
 		_ = Keyboard.Hotstring("SI");
-		Assert.AreEqual(A_DefaultHotstringSendMode, SendModes.InputThenPlay.ToString());
+		Assert.That(SendModes.InputThenPlay.ToString(), Is.EqualTo(A_DefaultHotstringSendMode));
 		//Now test a multi-option string.
 		_ = Keyboard.Hotstring("*?CB0OSZRK123P10");
-		Assert.AreEqual(A_DefaultHotstringEndCharRequired, false);
-		Assert.AreEqual(A_DefaultHotstringDetectWhenInsideWord, true);
-		Assert.AreEqual(A_DefaultHotstringCaseSensitive, true);
-		Assert.AreEqual(A_DefaultHotstringDoBackspace, false);
-		Assert.AreEqual(A_DefaultHotstringOmitEndChar, true);
-		Assert.AreEqual(hsm.hsSuspendExempt, true);
-		Assert.AreEqual(A_DefaultHotstringDoReset, true);
-		Assert.AreEqual(A_DefaultHotstringSendRaw, SendRawModes.Raw.ToString());
-		Assert.AreEqual(A_DefaultHotstringKeyDelay, 123L);
-		Assert.AreEqual(A_DefaultHotstringPriority, 10L);
+		Assert.That(A_DefaultHotstringEndCharRequired, Is.EqualTo(false));
+		Assert.That(A_DefaultHotstringDetectWhenInsideWord, Is.EqualTo(true));
+		Assert.That(A_DefaultHotstringCaseSensitive, Is.EqualTo(true));
+		Assert.That(A_DefaultHotstringDoBackspace, Is.EqualTo(false));
+		Assert.That(A_DefaultHotstringOmitEndChar, Is.EqualTo(true));
+		Assert.That(hsm.hsSuspendExempt, Is.EqualTo(true));
+		Assert.That(A_DefaultHotstringDoReset, Is.EqualTo(true));
+		Assert.That(SendRawModes.Raw.ToString(), Is.EqualTo(A_DefaultHotstringSendRaw));
+		Assert.That(A_DefaultHotstringKeyDelay, Is.EqualTo(123L));
+		Assert.That(A_DefaultHotstringPriority, Is.EqualTo(10L));
 	}
 
 	[Test, Category("Hotstring"), NonParallelizable]
@@ -353,11 +353,11 @@ public partial class HotstringTests : TestRunner
 		hsm.RestoreDefaults(true);
 		var newVal = "newendchars";
 		var origVal = A_DefaultHotstringEndChars;
-		Assert.AreEqual(origVal, "-()[]{}:;'\"/\\,.?!\r\n \t");
+		Assert.That(origVal, Is.EqualTo("-()[]{}:;'\"/\\,.?!\r\n \t"));
 		var oldVal = Keyboard.Hotstring("EndChars", newVal);
-		Assert.AreNotEqual(origVal, A_DefaultHotstringEndChars);
-		Assert.AreEqual(A_DefaultHotstringEndChars, newVal);
-		Assert.AreEqual(origVal, oldVal);
+		Assert.That(A_DefaultHotstringEndChars, Is.Not.EqualTo(origVal));
+		Assert.That(newVal, Is.EqualTo(A_DefaultHotstringEndChars));
+		Assert.That(oldVal, Is.EqualTo(origVal));
 	}
 
 	// RequiresHook: exercises real hotstring firing, which needs the global keyboard/mouse hook to install
@@ -374,14 +374,14 @@ public partial class HotstringTests : TestRunner
 		_ = Keyboard.Hotstring("Reset");
 		_ = Keysharp.Runtime.Keyboard.HotstringManager.AddHotstring("::btw", Functions.Func(Label_9F201721, null), ":btw", "btw", "", false);
 		_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(Script.TheScript);
-		Assert.AreEqual(1L, A_KeybdHookInstalled & 1L, "The script's keyboard hook must be installed.");
-		Assert.AreEqual(1L, A_MouseHookInstalled & 1L, "Hotstring mouse reset requires the script's mouse hook.");
+		Assert.That(A_KeybdHookInstalled & 1L, Is.EqualTo(1L), "The script's keyboard hook must be installed.");
+		Assert.That(A_MouseHookInstalled & 1L, Is.EqualTo(1L), "Hotstring mouse reset requires the script's mouse hook.");
 		SimulateKeyPress((uint)Keysharp.Builtins.Keyboard.GetKeyVK("b"));
 		SimulateKeyPress((uint)Keysharp.Builtins.Keyboard.GetKeyVK("t"));
 		SimulateKeyPress((uint)Keysharp.Builtins.Keyboard.GetKeyVK("w"));
 		SimulateKeyPress((uint)Keysharp.Builtins.Keyboard.GetKeyVK("Enter"));
 		Assert.IsTrue(WaitForCallback(btwTypedEvent), "Timed out waiting for hotstring callback.");
-		Assert.AreEqual(btwtyped, true);
+		Assert.That(btwtyped, Is.EqualTo(true));
 	}
 
 	[Test, Category("Hotstring"), NonParallelizable]
@@ -390,9 +390,9 @@ public partial class HotstringTests : TestRunner
 		var sc = Keysharp.Builtins.Keyboard.GetKeySC("Esc");
 		var vk = Keysharp.Builtins.Keyboard.GetKeyVK("Esc");
 		Assert.IsTrue(sc > 0);
-		Assert.AreEqual(27L, vk);
+		Assert.That(vk, Is.EqualTo(27L));
 		var fromSc = $"sc{sc:x}";
-		Assert.AreEqual(vk, Keysharp.Builtins.Keyboard.GetKeyVK(fromSc));
+		Assert.That(Keysharp.Builtins.Keyboard.GetKeyVK(fromSc), Is.EqualTo(vk));
 	}
 
 #if LINUX || OSX
@@ -527,9 +527,9 @@ public partial class HotstringTests : TestRunner
 	public void HotstringDirectives()
 	{
 		Assert.IsTrue(TestScript("hotstring-directives", false));
-		Assert.AreEqual(2, hsm.Hotstrings.Length);
+		Assert.That(hsm.Hotstrings.Length, Is.EqualTo(2));
 		Assert.IsTrue(hsm.Hotstrings[0].SuspendExempt);
-		Assert.IsFalse(hsm.Hotstrings[1].SuspendExempt);
+		Assert.That(hsm.Hotstrings[1].SuspendExempt, Is.False);
 	}
 
 	[Test, Category("Hotstring"), Category("Internal"), NonParallelizable]
@@ -553,30 +553,30 @@ public partial class HotstringTests : TestRunner
 		];
 
 		foreach (var (trigger, level) in levels)
-			Assert.AreEqual(level, definitions[trigger].inputLevel, trigger);
+			Assert.That(definitions[trigger].inputLevel, Is.EqualTo(level), trigger);
 
-		Assert.AreEqual(levels.Length, definitions.Count);
-		Assert.AreEqual(SendModes.InputThenPlay, definitions["directiveDefault"].SendMode);
-		Assert.AreEqual(SendRawModes.Raw, definitions["directiveDefault"].SendRaw);
-		Assert.AreEqual(SendModes.Play, definitions["explicitPlay"].SendMode);
-		Assert.AreEqual(SendModes.Event, definitions["directiveEvent"].SendMode);
+		Assert.That(definitions.Count, Is.EqualTo(levels.Length));
+		Assert.That(definitions["directiveDefault"].SendMode, Is.EqualTo(SendModes.InputThenPlay));
+		Assert.That(definitions["directiveDefault"].SendRaw, Is.EqualTo(SendRawModes.Raw));
+		Assert.That(definitions["explicitPlay"].SendMode, Is.EqualTo(SendModes.Play));
+		Assert.That(definitions["directiveEvent"].SendMode, Is.EqualTo(SendModes.Event));
 		Assert.IsTrue(definitions["explicitZero"].SuspendExempt);
-		Assert.AreEqual(SendRawModes.Raw, definitions["explicitZero"].SendRaw);
-		Assert.IsFalse(definitions["dynamicAfterFailure"].SuspendExempt);
-		Assert.AreEqual("original", definitions["dynamicInvalid"].Replacement);
+		Assert.That(definitions["explicitZero"].SendRaw, Is.EqualTo(SendRawModes.Raw));
+		Assert.That(definitions["dynamicAfterFailure"].SuspendExempt, Is.False);
+		Assert.That(definitions["dynamicInvalid"].Replacement, Is.EqualTo("original"));
 		Assert.IsTrue(definitions["dynamicInvalid"].EndCharRequired);
-		Assert.IsFalse(definitions["dynamicInvalid"].SuspendExempt);
-		Assert.AreEqual("updated", definitions["dynamicPreserved"].Replacement);
-		Assert.AreEqual(SendModes.InputThenPlay, definitions["mixInputAfter"].SendMode);
-		Assert.AreEqual(SendModes.InputThenPlay, definitions["mixInputBefore"].SendMode);
-		Assert.AreEqual(SendModes.Play, definitions["mixPlayAfter"].SendMode);
-		Assert.AreEqual(SendModes.Play, definitions["mixPlayBefore"].SendMode);
-		Assert.AreEqual(SendModes.Event, definitions["mixEventAfter"].SendMode);
-		Assert.AreEqual(SendModes.Event, definitions["mixEventBefore"].SendMode);
+		Assert.That(definitions["dynamicInvalid"].SuspendExempt, Is.False);
+		Assert.That(definitions["dynamicPreserved"].Replacement, Is.EqualTo("updated"));
+		Assert.That(definitions["mixInputAfter"].SendMode, Is.EqualTo(SendModes.InputThenPlay));
+		Assert.That(definitions["mixInputBefore"].SendMode, Is.EqualTo(SendModes.InputThenPlay));
+		Assert.That(definitions["mixPlayAfter"].SendMode, Is.EqualTo(SendModes.Play));
+		Assert.That(definitions["mixPlayBefore"].SendMode, Is.EqualTo(SendModes.Play));
+		Assert.That(definitions["mixEventAfter"].SendMode, Is.EqualTo(SendModes.Event));
+		Assert.That(definitions["mixEventBefore"].SendMode, Is.EqualTo(SendModes.Event));
 		Assert.IsTrue(definitions["mixSuspendAfter"].SuspendExempt);
 		Assert.IsTrue(definitions["mixSuspendBefore"].SuspendExempt);
-		Assert.AreEqual(SendRawModes.Raw, definitions["mixRawAfter"].SendRaw);
-		Assert.AreEqual(SendRawModes.Raw, definitions["mixRawBefore"].SendRaw);
+		Assert.That(definitions["mixRawAfter"].SendRaw, Is.EqualTo(SendRawModes.Raw));
+		Assert.That(definitions["mixRawBefore"].SendRaw, Is.EqualTo(SendRawModes.Raw));
 	}
 
 	[Test, Category("Hotstring"), NonParallelizable]
@@ -584,27 +584,27 @@ public partial class HotstringTests : TestRunner
 	{
 		var trigger = "^;";
 		var hk = EscapeHotkeyTrigger(trigger);
-		Assert.AreEqual("^;", hk);
+		Assert.That(hk, Is.EqualTo("^;"));
 		//
 		trigger = "`;";
 		hk = EscapeHotkeyTrigger(trigger);
-		Assert.AreEqual(";", hk);
+		Assert.That(hk, Is.EqualTo(";"));
 		//
 		trigger = ":";
 		hk = EscapeHotkeyTrigger(trigger);
-		Assert.AreEqual(":", hk);
+		Assert.That(hk, Is.EqualTo(":"));
 		//
 		trigger = "`";
 		hk = EscapeHotkeyTrigger(trigger);
-		Assert.AreEqual("`", hk);
+		Assert.That(hk, Is.EqualTo("`"));
 		//
 		trigger = "``";
 		hk = EscapeHotkeyTrigger(trigger);
-		Assert.AreEqual("`", hk);
+		Assert.That(hk, Is.EqualTo("`"));
 		//
 		trigger = "+`";
 		hk = EscapeHotkeyTrigger(trigger);
-		Assert.AreEqual("+`", hk);
+		Assert.That(hk, Is.EqualTo("+`"));
 		//
 		Assert.IsTrue(TestScript("hotkey-hotstring-parsing", false));
 
@@ -663,18 +663,18 @@ public partial class HotstringTests : TestRunner
 		Assert.IsTrue(generated.Contains("\"<#<+F23 & x\""), generated);
 		Assert.IsTrue(generated.Contains("\"a & <#<+F23\""), generated);
 		Assert.IsTrue(generated.Contains("\"MyCopilot\""), generated);
-		Assert.IsFalse(generated.Contains("\"Copilot\""), generated);
-		Assert.AreEqual(0L, Keyboard.GetKeyVK("Copilot"));
-		Assert.AreEqual(0L, Keyboard.GetKeySC("Copilot"));
-		Assert.AreEqual(0L, Keyboard.GetKeyVK("Office"));
-		Assert.AreEqual(0L, Keyboard.GetKeySC("Office"));
+		Assert.That(generated.Contains("\"Copilot\""), Is.False, generated);
+		Assert.That(Keyboard.GetKeyVK("Copilot"), Is.EqualTo(0L));
+		Assert.That(Keyboard.GetKeySC("Copilot"), Is.EqualTo(0L));
+		Assert.That(Keyboard.GetKeyVK("Office"), Is.EqualTo(0L));
+		Assert.That(Keyboard.GetKeySC("Office"), Is.EqualTo(0L));
 
 		// Office deliberately has no corresponding declaration/remap alias. Since it is not a real key name,
 		// an identifier in the target position remains a one-line hotkey body rather than becoming a remap.
 		(prog, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics("a::Office");
 		Assert.IsEmpty(diags, "unexpected parse diagnostics: " + string.Join("; ", diags));
 		generated = new Keysharp.Compilation.Syntax.Lowerer().Build(prog, "Test").ToFullString();
-		Assert.IsFalse(generated.Contains("__Remap_"), generated);
+		Assert.That(generated.Contains("__Remap_"), Is.False, generated);
 	}
 
 	[Test, Category("Hotstring"), Category("Internal")]
@@ -686,8 +686,8 @@ public partial class HotstringTests : TestRunner
 		Assert.IsTrue(generated.Contains("\"*<#<+F23\""), generated);
 		Assert.IsTrue(generated.Contains(RemapDown("{Blind}{LShift up}{LWin up}{RCtrl DownR}")), generated);
 		Assert.IsTrue(generated.Contains("{Blind}{RCtrl Up}"), generated);
-		Assert.IsFalse(generated.Contains("GetKeyState(\"LShift\",\"P\")"), generated);
-		Assert.IsFalse(generated.Contains("GetKeyState(\"LWin\",\"P\")"), generated);
+		Assert.That(generated.Contains("GetKeyState(\"LShift\",\"P\")"), Is.False, generated);
+		Assert.That(generated.Contains("GetKeyState(\"LWin\",\"P\")"), Is.False, generated);
 
 		// The literal chord retains ordinary generic-chord behavior, including restoring physically-held
 		// source modifiers after the remapped modifier is released.
@@ -722,7 +722,7 @@ public partial class HotstringTests : TestRunner
 		var unit = lowerer.Build(prog, "Test");
 		var generated = unit.ToFullString();
 		Assert.IsTrue(generated.Contains(RemapDown("{Blind}{RAlt up}{RCtrl DownR}")), generated);
-		Assert.IsFalse(generated.Contains(RemapDown("{Blind>!}{RCtrl DownR}")), generated);
+		Assert.That(generated.Contains(RemapDown("{Blind>!}{RCtrl DownR}")), Is.False, generated);
 		Assert.IsTrue(generated.Contains("{Blind}{RCtrl Up}"), generated);
 		Assert.IsTrue(generated.Contains("GetKeyState(\"RAlt\",\"P\")"), generated);
 		Assert.IsTrue(generated.Contains("{RAlt DownR}"), generated);
@@ -734,7 +734,7 @@ public partial class HotstringTests : TestRunner
 		var upSendCount = upCallback.DescendantNodes()
 			.OfType<Microsoft.CodeAnalysis.CSharp.Syntax.InvocationExpressionSyntax>()
 			.Count(invocation => invocation.Expression.ToString() == "Keysharp.Builtins.Keyboard.Send");
-		Assert.AreEqual(1, upSendCount, generated);
+		Assert.That(upSendCount, Is.EqualTo(1), generated);
 
 		(prog, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(">!.::b");
 		Assert.IsEmpty(diags, "unexpected parse diagnostics: " + string.Join("; ", diags));
@@ -747,7 +747,7 @@ public partial class HotstringTests : TestRunner
 		Assert.IsEmpty(diags, "unexpected parse diagnostics: " + string.Join("; ", diags));
 		generated = new Keysharp.Compilation.Syntax.Lowerer().Build(prog, "Test").ToFullString();
 		Assert.IsTrue(generated.Contains("{Blind<^>^}{LShift}"), generated);
-		Assert.IsFalse(generated.Contains("{LShift DownR}"), generated);
+		Assert.That(generated.Contains("{LShift DownR}"), Is.False, generated);
 	}
 
 	[Test, Category("Hotstring"), Category("Internal")]
@@ -763,7 +763,7 @@ public partial class HotstringTests : TestRunner
 		Assert.IsTrue(generated.Contains(RemapDown("{Blind}{LShift down}{LWin down}{F23 DownR}")), generated);
 		Assert.IsTrue(generated.Contains("{Blind}{LWin up}{LShift up}"), generated);
 		Assert.IsTrue(generated.Contains("{Blind}{F23 Up}"), generated);
-		Assert.IsFalse(generated.Contains("<#<+"), generated);
+		Assert.That(generated.Contains("<#<+"), Is.False, generated);
 
 		// A neutral destination keeps the prefix form, which Send resolves to the left-hand key.
 		(prog, diags) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics("a::#+F23");
@@ -778,55 +778,55 @@ public partial class HotstringTests : TestRunner
 		// The modifiers belong to the prefix, not the suffix: the prefix key is still just F23.
 		var combo = new HotkeyDefinition(Script.TheScript, 1100, null, (uint)HotkeyTypeEnum.Normal, "<#<+F23 & x", 0);
 		Assert.IsTrue(combo.constructedOK);
-		Assert.AreEqual(Keysharp.Internals.Input.Keyboard.VirtualKeys.VK_F23, combo.modifierVK);
-		Assert.AreEqual(
-			Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LWIN | Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LSHIFT,
-			combo.prefixModifiersLR);
+		Assert.That(combo.modifierVK, Is.EqualTo(Keysharp.Internals.Input.Keyboard.VirtualKeys.VK_F23));
+		Assert.That(
+			combo.prefixModifiersLR,
+			Is.EqualTo(Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LWIN | Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LSHIFT));
 
 		// A plain combo on the same prefix key is unconstrained, and is a different hotkey.
 		var plain = new HotkeyDefinition(Script.TheScript, 1101, null, (uint)HotkeyTypeEnum.Normal, "F23 & x", 0);
 		Assert.IsTrue(plain.constructedOK);
-		Assert.AreEqual(combo.modifierVK, plain.modifierVK);
-		Assert.AreEqual(0u, plain.prefixModifiersLR);
+		Assert.That(plain.modifierVK, Is.EqualTo(combo.modifierVK));
+		Assert.That(plain.prefixModifiersLR, Is.EqualTo(0u));
 
 		// The suffix of a composite may carry modifiers too. AutoHotkey rejects these outright, so a
 		// combination which used to be spelled with a chord key name has an equivalent again.
 		var suffix = new HotkeyDefinition(Script.TheScript, 1103, null, (uint)HotkeyTypeEnum.Normal, "a & <#<+F23", 0);
 		Assert.IsTrue(suffix.constructedOK);
-		Assert.AreEqual(Keysharp.Internals.Input.Keyboard.VirtualKeys.VK_F23, suffix.vk);
-		Assert.AreEqual(
-			Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LWIN | Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LSHIFT,
-			suffix.suffixModifiersLR);
-		Assert.AreEqual(0u, suffix.prefixModifiersLR); // The modifiers belong to the suffix, not the prefix.
+		Assert.That(suffix.vk, Is.EqualTo(Keysharp.Internals.Input.Keyboard.VirtualKeys.VK_F23));
+		Assert.That(
+			suffix.suffixModifiersLR,
+			Is.EqualTo(Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LWIN | Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LSHIFT));
+		Assert.That(suffix.prefixModifiersLR, Is.EqualTo(0u)); // The modifiers belong to the suffix, not the prefix.
 
 		// A composite with no modifiers on either side keeps ignoring the modifier state.
 		var bare = new HotkeyDefinition(Script.TheScript, 1104, null, (uint)HotkeyTypeEnum.Normal, "a & F23", 0);
 		Assert.IsTrue(bare.constructedOK);
-		Assert.AreEqual(0u, bare.suffixModifiersLR);
+		Assert.That(bare.suffixModifiersLR, Is.EqualTo(0u));
 		Assert.IsTrue(ModifiersSatisfied(0u, bare.suffixModifiers, bare.suffixModifiersLR));
 
 		// A suffix's modifiers are held when the hotkey fires, which is what modifiersConsolidatedLR
 		// describes, so they belong there. A prefix's are not: they describe the earlier moment the prefix
 		// was pressed and may already have been released, so they must stay out of it.
-		Assert.AreEqual(
-			Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LWIN | Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LSHIFT,
-			suffix.modifiersConsolidatedLR & (Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LWIN | Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LSHIFT));
-		Assert.AreEqual(0u, combo.modifiersConsolidatedLR);
+		Assert.That(
+			suffix.modifiersConsolidatedLR & (Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LWIN | Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LSHIFT),
+			Is.EqualTo(Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LWIN | Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LSHIFT));
+		Assert.That(combo.modifiersConsolidatedLR, Is.EqualTo(0u));
 
 		// Specificity orders the chain, so a bare combination cannot eclipse a modified one on the same
 		// keys regardless of which was declared first.
 		Assert.Greater(combo.CompositeSpecificity(), plain.CompositeSpecificity());
 		Assert.Greater(suffix.CompositeSpecificity(), bare.CompositeSpecificity());
-		Assert.AreEqual(0, bare.CompositeSpecificity());
+		Assert.That(bare.CompositeSpecificity(), Is.EqualTo(0));
 
 		// A neutral modifier means either side satisfies it; a sided one means that side only.
 		var neutral = new HotkeyDefinition(Script.TheScript, 1102, null, (uint)HotkeyTypeEnum.Normal, "^F23 & x", 0);
 		Assert.IsTrue(neutral.constructedOK);
 		Assert.IsTrue(ModifiersSatisfied(MOD_LCONTROL, neutral.prefixModifiers, neutral.prefixModifiersLR));
 		Assert.IsTrue(ModifiersSatisfied(MOD_RCONTROL, neutral.prefixModifiers, neutral.prefixModifiersLR));
-		Assert.IsFalse(ModifiersSatisfied(MOD_LSHIFT, neutral.prefixModifiers, neutral.prefixModifiersLR));
+		Assert.That(ModifiersSatisfied(MOD_LSHIFT, neutral.prefixModifiers, neutral.prefixModifiersLR), Is.False);
 		Assert.IsTrue(ModifiersSatisfied(MOD_LWIN | MOD_LSHIFT, combo.prefixModifiers, combo.prefixModifiersLR));
-		Assert.IsFalse(ModifiersSatisfied(MOD_RWIN | MOD_RSHIFT, combo.prefixModifiers, combo.prefixModifiersLR));
+		Assert.That(ModifiersSatisfied(MOD_RWIN | MOD_RSHIFT, combo.prefixModifiers, combo.prefixModifiersLR), Is.False);
 		Assert.IsTrue(ModifiersSatisfied(0u, plain.prefixModifiers, plain.prefixModifiersLR));
 	}
 
@@ -847,12 +847,12 @@ public partial class HotstringTests : TestRunner
 		// "not yet sampled".
 		Keysharp.Internals.Input.Hooks.HookThread.RecordKeyDownState(key, false, 0u);
 		Keysharp.Internals.Input.Hooks.HookThread.RecordKeyDownState(key, true, 0u);
-		Assert.AreEqual(0u, key.downModifiersLR);
-		Assert.IsFalse(ModifiersSatisfied(key.downModifiersLR ?? 0u, 0u, chord));
+		Assert.That(key.downModifiersLR, Is.EqualTo(0u));
+		Assert.That(ModifiersSatisfied(key.downModifiersLR ?? 0u, 0u, chord), Is.False);
 
 		// Auto-repeat must not revise it, even from that zero.
 		Keysharp.Internals.Input.Hooks.HookThread.RecordKeyDownState(key, true, chord);
-		Assert.AreEqual(0u, key.downModifiersLR, "the sample was revised while the key was still held");
+		Assert.That(key.downModifiersLR, Is.EqualTo(0u), "the sample was revised while the key was still held");
 
 		// Pressed with the modifiers held: armed.
 		Keysharp.Internals.Input.Hooks.HookThread.RecordKeyDownState(key, false, 0u);
@@ -866,7 +866,7 @@ public partial class HotstringTests : TestRunner
 
 		// Released: the press is over, so both halves of it end together.
 		Keysharp.Internals.Input.Hooks.HookThread.RecordKeyDownState(key, false, chord);
-		Assert.IsFalse(key.isDown);
+		Assert.That(key.isDown, Is.False);
 		Assert.IsNull(key.downModifiersLR);
 	}
 
@@ -902,51 +902,51 @@ public partial class HotstringTests : TestRunner
 			hotstring.suspended = 0;
 
 		var hs = MatchHotstring("bitw ");
-		Assert.AreEqual(hs.Name, "::bitw");
-		Assert.AreEqual(hs.Replacement, "biggest in the world");
+		Assert.That(hs.Name, Is.EqualTo("::bitw"));
+		Assert.That(hs.Replacement, Is.EqualTo("biggest in the world"));
 		hs = MatchHotstring("1 ");
-		Assert.AreEqual(hs.Name, "::1");
-		Assert.AreEqual(hs.Replacement, ":2");
+		Assert.That(hs.Name, Is.EqualTo("::1"));
+		Assert.That(hs.Replacement, Is.EqualTo(":2"));
 		hs = MatchHotstring("3 ");
-		Assert.AreEqual(hs.Name, "::3");
-		Assert.AreEqual(hs.Replacement, "::4");
+		Assert.That(hs.Name, Is.EqualTo("::3"));
+		Assert.That(hs.Replacement, Is.EqualTo("::4"));
 		hs = MatchHotstring("5: ");
-		Assert.AreEqual(hs.Name, "::5:");
-		Assert.AreEqual(hs.Replacement, "6");
+		Assert.That(hs.Name, Is.EqualTo("::5:"));
+		Assert.That(hs.Replacement, Is.EqualTo("6"));
 		hs = MatchHotstring("7: ");
-		Assert.AreEqual(hs.Name, "::7:");
-		Assert.AreEqual(hs.Replacement, ":8");
+		Assert.That(hs.Name, Is.EqualTo("::7:"));
+		Assert.That(hs.Replacement, Is.EqualTo(":8"));
 		var val = "Any text between the top and bottom parentheses is treated literally.\nBy default" +
 				  ", the hard carriage return (Enter) between the previous line and this one is als" +
 				  "o preserved.\n    By default, the indentation (tab) to the left of this line is " +
 				  "preserved.";
 		hs = MatchHotstring("text1 ");
-		Assert.AreEqual(hs.Name, "::text1");
-		Assert.AreEqual(hs.Replacement, val);
+		Assert.That(hs.Name, Is.EqualTo("::text1"));
+		Assert.That(hs.Replacement, Is.EqualTo(val));
 		hs = MatchHotstring("mf1 ");
-		Assert.AreEqual(hs.Name, ":X:mf1");
-		Assert.AreEqual(hs.Replacement, null);
+		Assert.That(hs.Name, Is.EqualTo(":X:mf1"));
+		Assert.That(hs.Replacement, Is.Null);
 		hs = MatchHotstring("mf2 ");
-		Assert.AreEqual(hs.Name, ":X:mf2");
-		Assert.AreEqual(hs.Replacement, null);
+		Assert.That(hs.Name, Is.EqualTo(":X:mf2"));
+		Assert.That(hs.Replacement, Is.Null);
 		hs = MatchHotstring("mf3 ");
-		Assert.AreEqual(hs.Name, ":X:mf3");
-		Assert.AreEqual(hs.Replacement, null);
+		Assert.That(hs.Name, Is.EqualTo(":X:mf3"));
+		Assert.That(hs.Replacement, Is.Null);
 		hs = MatchHotstring("mf4 ");
-		Assert.AreEqual(hs.Name, "::mf4");
-		Assert.AreEqual(hs.Replacement, null);
+		Assert.That(hs.Name, Is.EqualTo("::mf4"));
+		Assert.That(hs.Replacement, Is.Null);
 		hs = MatchHotstring("mf5 ");
-		Assert.AreEqual(hs.Name, "::mf5");
-		Assert.AreEqual(hs.Replacement, null);
+		Assert.That(hs.Name, Is.EqualTo("::mf5"));
+		Assert.That(hs.Replacement, Is.Null);
 		hs = MatchHotstring("mf6 ");
-		Assert.AreEqual(hs.Name, "::mf6");
-		Assert.AreEqual(hs.Replacement, null);
+		Assert.That(hs.Name, Is.EqualTo("::mf6"));
+		Assert.That(hs.Replacement, Is.Null);
 		hs = MatchHotstring("mf7 ");
-		Assert.AreEqual(hs.Name, ":X:mf7");
-		Assert.AreEqual(hs.Replacement, null);
+		Assert.That(hs.Name, Is.EqualTo(":X:mf7"));
+		Assert.That(hs.Replacement, Is.Null);
 		hs = MatchHotstring("mf8 ");
-		Assert.AreEqual(hs.Name, "::mf8");
-		Assert.AreEqual(hs.Replacement, null);
+		Assert.That(hs.Name, Is.EqualTo("::mf8"));
+		Assert.That(hs.Replacement, Is.Null);
 		// An abbreviation and its replacement are raw text, so a quote is an ordinary character rather than a
 		// string opener, and a ';' is a comment only when whitespace precedes it.
 		AssertHotstring("arn't ", "::arn't", "aren't");
@@ -967,9 +967,9 @@ public partial class HotstringTests : TestRunner
 		void AssertHotstring(string typed, string name, string replacement)
 		{
 			var hs = MatchHotstring(typed);
-			Assert.IsNotNull(hs, $"nothing matched after typing \"{typed}\"");
-			Assert.AreEqual(name, hs.Name);
-			Assert.AreEqual(replacement, hs.Replacement);
+			Assert.That(hs, Is.Not.Null, $"nothing matched after typing \"{typed}\"");
+			Assert.That(hs.Name, Is.EqualTo(name));
+			Assert.That(hs.Replacement, Is.EqualTo(replacement));
 		}
 	}
 
@@ -983,7 +983,7 @@ public partial class HotstringTests : TestRunner
 		// VK_RETURN is the one VK backed by two scan codes, so MapVkToSc must report a non-zero *secondary*
 		// (the NumpadEnter code); that is exactly what lets KeyOpt tell Enter apart from NumpadEnter.
 		var secondary = Keysharp.Internals.Input.Keyboard.KeyCodes.MapVkToSc(VkReturn, true);
-		Assert.AreNotEqual(0u, secondary);
+		Assert.That(secondary, Is.Not.EqualTo(0u));
 
 		// {Enter} names the MAIN Enter, so its end-key is registered at the primary scan code, not at
 		// NumpadEnter's. On Windows the primary is the secondary with its extended bit cleared; evdev/Mac
@@ -994,8 +994,8 @@ public partial class HotstringTests : TestRunner
 		var sc = Keysharp.Internals.Input.Keyboard.KeyCodes.MapVkToSc(VkReturn);
 #endif
 
-		Assert.AreEqual(Keysharp.Internals.Input.Hooks.HookThread.END_KEY_ENABLED, ih.input.keySC[sc] & Keysharp.Internals.Input.Hooks.HookThread.END_KEY_ENABLED);
-		Assert.AreEqual(0u, ih.input.keySC[secondary] & Keysharp.Internals.Input.Hooks.HookThread.END_KEY_ENABLED); // NumpadEnter is a distinct key, not this end-key.
+		Assert.That(ih.input.keySC[sc] & Keysharp.Internals.Input.Hooks.HookThread.END_KEY_ENABLED, Is.EqualTo(Keysharp.Internals.Input.Hooks.HookThread.END_KEY_ENABLED));
+		Assert.That(ih.input.keySC[secondary] & Keysharp.Internals.Input.Hooks.HookThread.END_KEY_ENABLED, Is.EqualTo(0u)); // NumpadEnter is a distinct key, not this end-key.
 
 #if LINUX
 		const uint EvdevEnter = 28u;
@@ -1008,14 +1008,14 @@ public partial class HotstringTests : TestRunner
 	{
 		var btw = AddHotstringForMatchTest("", "btw");
 		Assert.IsNull(TypeHotstringText("asdf").Definition);
-		Assert.AreEqual("asdf", Keyboard.Hotstring("Reset"));
-		Assert.AreEqual("", Keyboard.Hotstring("Reset"));
+		Assert.That(Keyboard.Hotstring("Reset"), Is.EqualTo("asdf"));
+		Assert.That(Keyboard.Hotstring("Reset"), Is.Empty);
 
 		// As in AutoHotkey, enough is kept that backspacing over a word leaves the text before it.
 		Assert.IsNull(TypeHotstringText(new string('x', 200) + " helloworld").Definition);
 		hsm.hsBuf.RemoveRange(hsm.hsBuf.Count - "world".Length, "world".Length);
 		Assert.IsNull(TypeHotstringText("btw ").Definition);
-		Assert.AreSame(btw, TypeHotstringText(" btw ").Definition);
+		Assert.That(TypeHotstringText(" btw ").Definition, Is.SameAs(btw));
 	}
 
 	[Test, Category("Hotstring"), Category("Internal"), NonParallelizable]
@@ -1026,7 +1026,7 @@ public partial class HotstringTests : TestRunner
 		hsm.RestoreDefaults(true);
 		var first = hsm.AddHotstring(":*?:bc", null, "*?", "bc", "Y", false);
 		_ = hsm.AddHotstring(":*:abc", null, "*", "abc", "X", false);
-		Assert.AreSame(first, MatchHotstring("abc"));
+		Assert.That(MatchHotstring("abc"), Is.SameAs(first));
 	}
 
 	[Test, Category("Hotstring"), Category("Internal"), NonParallelizable]
@@ -1041,7 +1041,7 @@ public partial class HotstringTests : TestRunner
 			later.ParseOptions("*");
 			return 0L;
 		}));
-		Assert.AreSame(later, MatchHotstring("abc "));
+		Assert.That(MatchHotstring("abc "), Is.SameAs(later));
 
 		// A hotstring is applied by the options it matched with, even when its criterion changes them.
 		ResetHotstringMatchState();
@@ -1052,8 +1052,8 @@ public partial class HotstringTests : TestRunner
 			return 1L;
 		}));
 		var flipped = TypeHotstringText("abc");
-		Assert.AreSame(flipping, flipped.Definition);
-		Assert.AreEqual('\0', flipped.EndChar);
+		Assert.That(flipped.Definition, Is.SameAs(flipping));
+		Assert.That(flipped.EndChar, Is.EqualTo('\0'));
 	}
 
 	[TestCase(128, true), TestCase(2048, false)]
@@ -1064,8 +1064,8 @@ public partial class HotstringTests : TestRunner
 		var definition = AddHotstringForMatchTest(immediate ? "*:" : "", trigger);
 		var ending = immediate ? "" : " ";
 		var result = TypeHotstringText(new string('q', length * 3) + " " + trigger.ToUpperInvariant() + ending);
-		Assert.AreSame(definition, result.Definition);
-		Assert.AreEqual(CaseConformModes.AllCaps, result.CaseMode);
+		Assert.That(result.Definition, Is.SameAs(definition));
+		Assert.That(result.CaseMode, Is.EqualTo(CaseConformModes.AllCaps));
 		// The character before the abbreviation is kept, and here it continues a word.
 		Assert.IsNull(TypeHotstringText(new string('q', length * 3) + "x" + trigger + ending).Definition);
 	}
@@ -1108,7 +1108,7 @@ public partial class HotstringTests : TestRunner
 			foreach (var sample in new[] { text, " " + text + " ", "x" + text + "\t", "prefix " + text + "." })
 			{
 				var expected = LinearMatch(sample);
-				Assert.AreSame(expected, MatchHotstring(sample), $"definition {i}, input {sample}");
+				Assert.That(MatchHotstring(sample), Is.SameAs(expected), $"definition {i}, input {sample}");
 				Assert.IsTrue(expected == null || hsm.MayMatch(sample), $"MayMatch, definition {i}, input {sample}");
 			}
 		}
@@ -1120,11 +1120,11 @@ public partial class HotstringTests : TestRunner
 		hsm.RestoreDefaults(true);
 		var newVal = false;
 		var origVal = A_DefaultHotstringNoMouse;
-		Assert.AreEqual(origVal, false);
+		Assert.That(origVal, Is.EqualTo(false));
 		var oldVal = Keyboard.Hotstring("MouseReset", newVal);
-		Assert.AreNotEqual(origVal, A_DefaultHotstringNoMouse);
-		Assert.AreEqual(A_DefaultHotstringNoMouse, !newVal);
-		Assert.AreEqual(origVal.Ab(), !oldVal.Ab());
+		Assert.That(A_DefaultHotstringNoMouse, Is.Not.EqualTo(origVal));
+		Assert.That(!newVal, Is.EqualTo(A_DefaultHotstringNoMouse));
+		Assert.That(!oldVal.Ab(), Is.EqualTo(origVal.Ab()));
 		//Reset to what it was for the sake of other tests in this class.
 		_ = Keyboard.Hotstring("MouseReset", true);
 	}
@@ -1134,12 +1134,12 @@ public partial class HotstringTests : TestRunner
 	{
 		ResetHotstringMatchState();
 		var immediate = AddHotstringForMatchTest("*:", "kssuite");
-		Assert.AreEqual(immediate, MatchHotstring("kssuite"));
+		Assert.That(MatchHotstring("kssuite"), Is.EqualTo(immediate));
 
 		ResetHotstringMatchState();
 		var endChar = AddHotstringForMatchTest("", "ksend");
 		Assert.IsNull(MatchHotstring("ksend"));
-		Assert.AreEqual(endChar, MatchHotstring("ksend "));
+		Assert.That(MatchHotstring("ksend "), Is.EqualTo(endChar));
 	}
 
 	[Test, Category("Hotstring"), Category("Internal"), NonParallelizable]
@@ -1147,11 +1147,11 @@ public partial class HotstringTests : TestRunner
 	{
 		ResetHotstringMatchState();
 		var periodEndChar = AddHotstringForMatchTest("", "ksdot");
-		Assert.AreEqual(periodEndChar, MatchHotstring("ksdot."));
+		Assert.That(MatchHotstring("ksdot."), Is.EqualTo(periodEndChar));
 
 		ResetHotstringMatchState();
 		var tabEndChar = AddHotstringForMatchTest("", "kstab");
-		Assert.AreEqual(tabEndChar, MatchHotstring("kstab\t"));
+		Assert.That(MatchHotstring("kstab\t"), Is.EqualTo(tabEndChar));
 	}
 
 	[Test, Category("Hotstring"), Category("Internal"), NonParallelizable]
@@ -1162,14 +1162,14 @@ public partial class HotstringTests : TestRunner
 		Assert.IsNull(MatchHotstring("prefixksword "));
 		// Punctuation does not continue a word. Letters of any script, those outside the BMP included, and combining
 		// marks do.
-		Assert.AreSame(plain, MatchHotstring("(ksword "));
+		Assert.That(MatchHotstring("(ksword "), Is.SameAs(plain));
 
 		foreach (var before in new[] { "\u3042", "\U0001D431", "e\u0301", "\u0915\u093E" })
 			Assert.IsNull(MatchHotstring(before + "ksword "), before);
 
 		ResetHotstringMatchState();
 		var insideWord = AddHotstringForMatchTest("?:", "ksword");
-		Assert.AreEqual(insideWord, MatchHotstring("prefixksword "));
+		Assert.That(MatchHotstring("prefixksword "), Is.EqualTo(insideWord));
 	}
 
 	[Test, Category("Hotstring"), Category("Internal"), NonParallelizable]
@@ -1177,13 +1177,13 @@ public partial class HotstringTests : TestRunner
 	{
 		ResetHotstringMatchState();
 		var caseSensitive = AddHotstringForMatchTest("C:", "AbC");
-		Assert.AreEqual(caseSensitive, MatchHotstring("AbC "));
+		Assert.That(MatchHotstring("AbC "), Is.EqualTo(caseSensitive));
 
 		Assert.IsNull(MatchHotstring("abc "));
 
 		// Hotstring() finds an existing hotstring by the folding matching uses, so final sigma is another letter.
 		var sigma = AddHotstringForMatchTest("", "\u03a3x");
-		Assert.AreSame(sigma, hsm.FindHotstring("\u03c3X", false, false, null));
+		Assert.That(hsm.FindHotstring("\u03c3X", false, false, null), Is.SameAs(sigma));
 		Assert.IsNull(hsm.FindHotstring("\u03c2x", false, false, null));
 	}
 

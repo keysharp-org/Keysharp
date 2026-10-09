@@ -20,11 +20,11 @@ public class RunnerTests : TestRunner
 			var previousOutput = Console.Out;
 			var output = RunScript("#ErrorStdOut\n#Warn All, StdOut\nFileAppend 'pass', '*'\n",
 				"compilation-context-lifetime", execute, false);
-			Assert.AreSame(previousOutput, Console.Out, "A script run must restore the test host's output writer.");
-			Assert.IsNotNull(compilationContext);
-			Assert.AreEqual(execute, compilationContext.IsDisposed,
+			Assert.That(Console.Out, Is.SameAs(previousOutput), "A script run must restore the test host's output writer.");
+			Assert.That(compilationContext, Is.Not.Null);
+			Assert.That(compilationContext.IsDisposed, Is.EqualTo(execute),
 				"An executing program must release its compilation context; a compile-only run still owns it.");
-			Assert.AreEqual(!execute, ReferenceEquals(compilationContext, s));
+			Assert.That(ReferenceEquals(compilationContext, s), Is.EqualTo(!execute));
 
 			if (execute)
 				Assert.IsTrue(HasPassed(output));
@@ -63,17 +63,17 @@ public class RunnerTests : TestRunner
 			};
 			var command = Runner.Parse(args);
 
-			Assert.AreEqual(CliCommandKind.RunSource, command.Kind);
-			Assert.AreEqual(Path.GetFullPath(scriptPath), command.ScriptName);
+			Assert.That(command.Kind, Is.EqualTo(CliCommandKind.RunSource));
+			Assert.That(command.ScriptName, Is.EqualTo(Path.GetFullPath(scriptPath)));
 			Assert.IsTrue(command.Validate);
-			Assert.AreEqual(65001, command.CodePage);
-			Assert.AreEqual(Path.GetFullPath(includePath), command.IncludeFile);
-			Assert.AreEqual(args.Take(args.Length - 2).ToArray(), command.KeysharpArgs);
-			Assert.AreEqual(new[] { "script-arg" }, command.ScriptArgs);
+			Assert.That(command.CodePage, Is.EqualTo(65001));
+			Assert.That(command.IncludeFile, Is.EqualTo(Path.GetFullPath(includePath)));
+			Assert.That(command.KeysharpArgs, Is.EqualTo(args.Take(args.Length - 2).ToArray()));
+			Assert.That(command.ScriptArgs, Is.EqualTo(new[] { "script-arg" }));
 
 			s.KeysharpArgs = command.KeysharpArgs;
-			Assert.AreEqual("/ErrorStdOut=UTF-8", Env.FindCommandLineArg("errorstdout"));
-			Assert.AreEqual(includePath, Env.FindCommandLineArgVal("include"));
+			Assert.That(Env.FindCommandLineArg("errorstdout"), Is.EqualTo("/ErrorStdOut=UTF-8"));
+			Assert.That(Env.FindCommandLineArgVal("include"), Is.EqualTo(includePath));
 		}
 		finally
 		{
@@ -93,12 +93,12 @@ public class RunnerTests : TestRunner
 		{
 			Console.SetError(output);
 			s.KeysharpArgs = [];
-			Assert.AreEqual(1, Runner.Message("source routing", true, errorStdOut: true));
+			Assert.That(Runner.Message("source routing", true, errorStdOut: true), Is.EqualTo(1));
 			Assert.IsTrue(output.ToString().Contains("source routing", StringComparison.Ordinal));
 
 			_ = output.GetStringBuilder().Clear();
 			s.KeysharpArgs = ["--errorstdout"];
-			Assert.AreEqual(1, Runner.Message("command-line routing", true, errorStdOut: false));
+			Assert.That(Runner.Message("command-line routing", true, errorStdOut: false), Is.EqualTo(1));
 			Assert.IsTrue(output.ToString().Contains("command-line routing", StringComparison.Ordinal));
 		}
 		finally
@@ -117,7 +117,7 @@ public class RunnerTests : TestRunner
 		{
 			var command = Runner.Parse([scriptPath]);
 
-			Assert.AreEqual(Path.GetFullPath(scriptPath), command.ScriptName);
+			Assert.That(command.ScriptName, Is.EqualTo(Path.GetFullPath(scriptPath)));
 			Assert.IsEmpty(command.KeysharpArgs);
 		}
 		finally
@@ -138,7 +138,7 @@ public class RunnerTests : TestRunner
 		var waiting = server.WaitForConnectionAsync();
 		client.Connect(2000);
 		Assert.IsTrue(waiting.Wait(2000));
-		Assert.IsFalse(CompileDaemonSecurity.IsExpectedServer(client));
+		Assert.That(CompileDaemonSecurity.IsExpectedServer(client), Is.False);
 	}
 
 	[Category("Internal")]
@@ -150,15 +150,15 @@ public class RunnerTests : TestRunner
 	[TestCase("host --daemon stop", false)]
 	[TestCase("host --daemonx", false)]
 	public void CompileDaemonArguments(string commandLine, bool expected) =>
-		Assert.AreEqual(expected, CompileDaemonSecurity.HasDaemonArguments(commandLine, "Keysharp.exe", null));
+		Assert.That(CompileDaemonSecurity.HasDaemonArguments(commandLine, "Keysharp.exe", null), Is.EqualTo(expected));
 
 	[Test, Category("Internal")]
 	public void CompileDaemonCommandLine()
 	{
 		using var process = System.Diagnostics.Process.GetCurrentProcess();
-		Assert.AreEqual(Marshal.PtrToStringUni(GetCommandLineW()), CompileDaemonSecurity.ReadCommandLine(process));
+		Assert.That(CompileDaemonSecurity.ReadCommandLine(process), Is.EqualTo(Marshal.PtrToStringUni(GetCommandLineW())));
 		Assert.IsTrue(CompileDaemonSecurity.HasDaemonArguments("dotnet \"C:\\Keysharp.dll\" --daemon", "dotnet.exe", "C:\\Keysharp.dll"));
-		Assert.IsFalse(CompileDaemonSecurity.HasDaemonArguments("dotnet \"C:\\Other.dll\" --daemon", "dotnet.exe", "C:\\Keysharp.dll"));
+		Assert.That(CompileDaemonSecurity.HasDaemonArguments("dotnet \"C:\\Other.dll\" --daemon", "dotnet.exe", "C:\\Keysharp.dll"), Is.False);
 	}
 
 	[DllImport("kernel32.dll")]

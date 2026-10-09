@@ -7,7 +7,7 @@ public class TimerSchedulerTests : TestRunner
 	public void BlockedTimer()
 	{
 		var output = RunScript(string.Concat(path, "timer-blocked-fires-once.ahk"), "timer-blocked-fires-once", true, false);
-		Assert.AreEqual("pass", output.Trim(), output);
+		Assert.That(output.Trim(), Is.EqualTo("pass"), output);
 	}
 
 	[Test, Category("Threading")]
@@ -35,8 +35,8 @@ public class TimerSchedulerTests : TestRunner
 
 		scheduler.PumpThreadQueuedEventsCore();
 		// The original post is still in the test transport; the active pass must add one follow-up.
-		Assert.AreEqual(2, context.PendingCount);
+		Assert.That(context.PendingCount, Is.EqualTo(2));
 		context.DrainAll();
-		Assert.AreEqual(0, context.PendingCount);
+		Assert.That(context.PendingCount, Is.EqualTo(0));
 	}
 }

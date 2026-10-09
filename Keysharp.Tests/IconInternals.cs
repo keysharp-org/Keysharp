@@ -19,11 +19,11 @@ public class IconInternals : TestRunner
 	public void IconSetKeepsEveryFrameWhereLoadImageDoesNot()
 	{
 		using var icon = ImageHelper.LoadIconSet(Asset("Keysharp.ico"), 0L);
-		Assert.IsNotNull(icon);
+		Assert.That(icon, Is.Not.Null);
 		Assert.Greater(FrameCount(icon), 1, "a multi-size .ico must not be collapsed to one frame");
 		var (bmp, single) = ImageHelper.LoadImage(Asset("Keysharp.ico"), 0, 0, 0L);
 		using (bmp)
-			Assert.AreEqual(1, FrameCount(single as Icon), "LoadImage collapses; that is why LoadIconSet exists");
+			Assert.That(FrameCount(single as Icon), Is.EqualTo(1), "LoadImage collapses; that is why LoadIconSet exists");
 	}
 
 	/// <summary>
@@ -35,10 +35,10 @@ public class IconInternals : TestRunner
 	{
 #if WINDOWS
 		using var icon = ImageHelper.LoadIconSet(@"C:\Windows\System32\shell32.dll", 173L, 32);
-		Assert.IsNotNull(icon);
-		Assert.AreEqual(32, icon.Width);
+		Assert.That(icon, Is.Not.Null);
+		Assert.That(icon.Width, Is.EqualTo(32));
 		using var bmp = icon.ToBitmap();//Would fail on a destroyed handle.
-		Assert.AreEqual(32, bmp.Width);
+		Assert.That(bmp.Width, Is.EqualTo(32));
 #else
 		Assert.Ignore("Addressing a module's icons by index is a Windows facility.");
 #endif
@@ -54,12 +54,12 @@ public class IconInternals : TestRunner
 	{
 		using var unsized = ImageHelper.LoadIconSet(Asset("Keysharp.ico"), 0L);
 		using var sized = ImageHelper.LoadIconSet(Asset("Keysharp.ico"), 0L, 48);
-		Assert.IsNotNull(sized);
-		Assert.AreEqual(48, sized.Width, "a size the file carries is the size given");
-		Assert.AreNotEqual(unsized.Width, sized.Width, "and it is the request that changed it, not the default");
+		Assert.That(sized, Is.Not.Null);
+		Assert.That(sized.Width, Is.EqualTo(48), "a size the file carries is the size given");
+		Assert.That(sized.Width, Is.Not.EqualTo(unsized.Width), "and it is the request that changed it, not the default");
 		using var png = ImageHelper.LoadIconSet(Asset("Keysharp.png"), 0L, 40);
-		Assert.IsNotNull(png);
-		Assert.AreEqual(40, png.Width, "a resampled source lands exactly on the request");
+		Assert.That(png, Is.Not.Null);
+		Assert.That(png.Width, Is.EqualTo(40), "a resampled source lands exactly on the request");
 	}
 
 	/// <summary>
@@ -140,7 +140,7 @@ public class IconInternals : TestRunner
 			Assert.IsInstanceOf<Ks.KeysharpImage>(second.Icon, "which the setter then accepts");
 			//"*" goes back to the shared script icon, which the window must not then treat as its own.
 			_ = first.SetIcon("*");
-			Assert.AreSame(Script.TheScript.scriptIcon, first.form.Icon);
+			Assert.That(first.form.Icon, Is.SameAs(Script.TheScript.scriptIcon));
 		}
 		finally
 		{
@@ -214,10 +214,10 @@ public class IconInternals : TestRunner
 		{
 			script.NoTrayIcon = true;
 			_ = ToolTips.TraySetIcon(Asset("Keysharp_s.ico"));
-			Assert.IsNotNull(script.customIcon, "the icon is loaded even when the tray is suppressed");
-			Assert.AreSame(script.customIcon, script.scriptIcon);
-			Assert.AreEqual(Asset("Keysharp_s.ico"), Accessors.A_IconFile);
-			Assert.AreEqual(1L, Accessors.A_IconNumber, "an omitted icon number reads back as 1, not unset");
+			Assert.That(script.customIcon, Is.Not.Null, "the icon is loaded even when the tray is suppressed");
+			Assert.That(script.scriptIcon, Is.SameAs(script.customIcon));
+			Assert.That(Accessors.A_IconFile, Is.EqualTo(Asset("Keysharp_s.ico")));
+			Assert.That(Accessors.A_IconNumber, Is.EqualTo(1L), "an omitted icon number reads back as 1, not unset");
 			_ = ToolTips.TraySetIcon("*");
 			Assert.IsNull(script.customIcon, "'*' goes back to the default icon");
 		}

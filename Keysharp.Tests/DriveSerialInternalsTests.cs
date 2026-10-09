@@ -14,13 +14,13 @@ public class DriveSerialInternalsTests : TestRunner
 		try
 		{
 			_ = Drive.DriveGetSerial(Path.GetPathRoot(Environment.SystemDirectory));
-			Assert.AreEqual(expected, GetThreadErrorMode(), "successful queries preserve the caller's flags");
+			Assert.That(GetThreadErrorMode(), Is.EqualTo(expected), "successful queries preserve the caller's flags");
 			using var scope = Keysharp.Runtime.Flow.EnterTry();
 			var missing = Path.Combine(Path.GetTempPath(), $"keysharp-missing-volume-{Guid.NewGuid():N}");
 			var failure = Assert.Throws<KeysharpException>(() => Drive.DriveGetSerial(missing)).UserError;
 			Assert.IsInstanceOf<OSError>(failure);
 			Assert.Greater(((OSError)failure).Number, 0, "restoring the error mode must not overwrite the volume query's error");
-			Assert.AreEqual(expected, GetThreadErrorMode(), "failed queries preserve the caller's flags");
+			Assert.That(GetThreadErrorMode(), Is.EqualTo(expected), "failed queries preserve the caller's flags");
 		}
 		finally
 		{

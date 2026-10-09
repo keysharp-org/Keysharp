@@ -116,7 +116,7 @@ public partial class ModuleTests : TestRunner
 				File.WriteAllText(file, source);
 			}
 			var output = RunScript(Path.Combine(root, "main.ahk"), "module_file_identity", true, false);
-			Assert.AreEqual("pass", output.Trim(), output);
+			Assert.That(output.Trim(), Is.EqualTo("pass"), output);
 		}
 		finally
 		{

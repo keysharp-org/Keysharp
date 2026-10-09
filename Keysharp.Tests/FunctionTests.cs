@@ -14,7 +14,7 @@ public class FunctionTests : TestRunner
 	// A plain call runs a Closure's function without its Call, which is right only while Closure inherits that Call.
 	[Test, Category("Function"), Category("Internal")]
 	public void ClosureCallInherited() =>
-		Assert.AreEqual(typeof(KeysharpFunc), typeof(Closure).GetMethod(nameof(KeysharpFunc.Call), [typeof(object[])]).DeclaringType);
+		Assert.That(typeof(Closure).GetMethod(nameof(KeysharpFunc.Call), [typeof(object[])]).DeclaringType, Is.EqualTo(typeof(KeysharpFunc)));
 
 	[Test, Category("Function"), Category("Internal")]
 	public void AddressTakenLocalShape()
@@ -31,23 +31,23 @@ public class FunctionTests : TestRunner
 		var plain = methods["FN_Plain"];
 		var plainLocal = plain.DescendantNodes().OfType<VariableDeclaratorSyntax>()
 			.Single(variable => variable.Identifier.ValueText == "plain");
-		Assert.AreEqual("object", ((VariableDeclarationSyntax)plainLocal.Parent).Type.ToString());
+		Assert.That(((VariableDeclarationSyntax)plainLocal.Parent).Type.ToString(), Is.EqualTo("object"));
 
 		var addressed = methods["FN_Addressed"];
 		var boxes = addressed.DescendantNodes().OfType<ObjectCreationExpressionSyntax>()
 			.Where(creation => creation.Type.ToString() == "Keysharp.Builtins.VarRef").ToArray();
-		Assert.AreEqual(1, boxes.Length);
+		Assert.That(boxes.Length, Is.EqualTo(1));
 		var boxName = boxes[0].Ancestors().OfType<VariableDeclaratorSyntax>().Single().Identifier.ValueText;
 
 		var references = addressed.DescendantNodes().OfType<InvocationExpressionSyntax>()
 			.Where(call => call.Expression is MemberAccessExpressionSyntax member && member.Name.Identifier.ValueText == "MakeVarRef")
 			.ToArray();
-		Assert.AreEqual(2, references.Length);
+		Assert.That(references.Length, Is.EqualTo(2));
 		Assert.IsTrue(references.All(reference => reference.ArgumentList.Arguments[0].Expression is IdentifierNameSyntax identifier
 			&& identifier.Identifier.ValueText == boxName));
 		Assert.IsTrue(references.All(reference => reference.ArgumentList.Arguments[1].Expression is LiteralExpressionSyntax literal
 			&& literal.Token.ValueText == "VaLuE"));
-		Assert.IsFalse(generated.ToFullString().Contains("FuncScope.Layout", StringComparison.Ordinal));
+		Assert.That(generated.ToFullString().Contains("FuncScope.Layout", StringComparison.Ordinal), Is.False);
 	}
 
 	[Test, Category("Function"), Category("Internal")]
@@ -62,14 +62,14 @@ public class FunctionTests : TestRunner
 			.ToDictionary(method => method.Identifier.ValueText);
 
 		var required = methods["FN_Required"];
-		Assert.IsFalse(required.DescendantNodes().OfType<ObjectCreationExpressionSyntax>()
-			.Any(creation => creation.Type.ToString() == "Keysharp.Builtins.VarRef"));
+		Assert.That(required.DescendantNodes().OfType<ObjectCreationExpressionSyntax>()
+			.Any(creation => creation.Type.ToString() == "Keysharp.Builtins.VarRef"), Is.False);
 		Assert.IsTrue(required.DescendantNodes().OfType<InvocationExpressionSyntax>()
 			.Any(call => call.Expression.ToString() == "Keysharp.Builtins.Refs.SetValue"));
 
 		var optionalRef = methods["FN_Optional"].DescendantNodes().OfType<ObjectCreationExpressionSyntax>()
 			.Single(creation => creation.Type.ToString() == "Keysharp.Builtins.VarRef");
-		Assert.AreEqual("null", optionalRef.ArgumentList.Arguments.Single().Expression.ToString());
+		Assert.That(optionalRef.ArgumentList.Arguments.Single().Expression.ToString(), Is.EqualTo("null"));
 	}
 
 	[Test, Category("Function"), Category("Internal")]
@@ -80,11 +80,11 @@ public class FunctionTests : TestRunner
 		var callback = new KeysharpFunc(holder);
 
 		Assert.IsTrue(callback.IsValid);
-		Assert.AreSame(callback, Functions.ToCallback(callback));
+		Assert.That(Functions.ToCallback(callback), Is.SameAs(callback));
 		Assert.IsNull(holder._callFunc);
-		Assert.AreEqual(7L, callback.Call(7L));
-		Assert.IsNotNull(holder._callFunc);
-		Assert.IsFalse(new KeysharpFunc((Keysharp.Internals.Invoke.MethodPropertyHolder)null).IsValid);
+		Assert.That(callback.Call(7L), Is.EqualTo(7L));
+		Assert.That(holder._callFunc, Is.Not.Null);
+		Assert.That(new KeysharpFunc((Keysharp.Internals.Invoke.MethodPropertyHolder)null).IsValid, Is.False);
 	}
 
 	private static object LazyCallback(object value) => value;
@@ -104,14 +104,14 @@ public class FunctionTests : TestRunner
 
 		var target = new LazyFields();
 		holder.SetProp(target, 7.9);
-		Assert.AreEqual(7L, target.Value);
+		Assert.That(target.Value, Is.EqualTo(7L));
 		var setter = holder.SetProp;
 		holder.SetProp(target, 8L);
-		Assert.AreEqual(8L, target.Value);
-		Assert.AreSame(setter, holder.SetProp);
+		Assert.That(target.Value, Is.EqualTo(8L));
+		Assert.That(holder.SetProp, Is.SameAs(setter));
 
 		var readOnly = new Keysharp.Internals.Invoke.MethodPropertyHolder(typeof(LazyFields).GetField(nameof(LazyFields.ReadOnly)));
-		Assert.IsFalse(readOnly.HasSetter);
+		Assert.That(readOnly.HasSetter, Is.False);
 		Assert.IsNull(readOnly.SetProp);
 	}
 
@@ -136,8 +136,8 @@ public class FunctionTests : TestRunner
 			GC.KeepAlive(holder.CallFunc);
 
 		var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-		Assert.AreEqual(0L, allocated);
-		Assert.AreSame(cached, holder.CallFunc);
+		Assert.That(allocated, Is.EqualTo(0L));
+		Assert.That(holder.CallFunc, Is.SameAs(cached));
 	}
 
 	[Test, Category("Function"), NonParallelizable]
@@ -163,7 +163,7 @@ public class FunctionTests : TestRunner
 		var (program, diagnostics) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(source);
 		Assert.IsEmpty(diagnostics, string.Join("; ", diagnostics));
 		var generated = new Keysharp.Compilation.Syntax.Lowerer().Build(program, "Test").ToFullString();
-		Assert.IsFalse(generated.Contains("Keysharp.Builtins.Accessors.A_ThisFunc", StringComparison.Ordinal), generated);
+		Assert.That(generated.Contains("Keysharp.Builtins.Accessors.A_ThisFunc", StringComparison.Ordinal), Is.False, generated);
 		Assert.IsTrue(generated.Contains("\"Probe\"", StringComparison.Ordinal), generated);
 		Assert.IsTrue(generated.Contains("\"C.M\"", StringComparison.Ordinal), generated);
 		Assert.IsTrue(generated.Contains("\"C.Prototype.P.Get\"", StringComparison.Ordinal), generated);
@@ -264,8 +264,8 @@ public class FunctionTests : TestRunner
 		var data = s.FunctionData;
 		var count = data.methodFunctions.Count;
 		Assert.IsNull(Functions.GetKeysharpFuncByName("NoSuchFunctionAnywhere"));
-		Assert.AreEqual(count, data.methodFunctions.Count);
-		Assert.AreSame(Functions.MethodFunction(s.ReflectionsData.flatPublicStaticMethods["MsgBox"]), Functions.GetKeysharpFuncByName("MsgBox"));
+		Assert.That(data.methodFunctions.Count, Is.EqualTo(count));
+		Assert.That(Functions.GetKeysharpFuncByName("MsgBox"), Is.SameAs(Functions.MethodFunction(s.ReflectionsData.flatPublicStaticMethods["MsgBox"])));
 	}
 
 	[Test, Category("Function"), NonParallelizable]

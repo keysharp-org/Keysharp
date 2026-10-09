@@ -17,14 +17,14 @@ public class InputHookTests : TestRunner
 	[Test, Category("InputHook")]
 	public void MatchListParsing()
 	{
-		Assert.AreEqual("", MatchListOf(""));                       // no phrases (was a spurious ",")
-		Assert.AreEqual("abc", MatchListOf("abc"));
-		Assert.AreEqual("abc|def", MatchListOf("abc,def"));
-		Assert.AreEqual("abc", MatchListOf("abc,"));               // trailing comma omitted
-		Assert.AreEqual("ab,cd", MatchListOf("ab,,cd"));           // double comma -> literal comma
-		Assert.AreEqual("single,item", MatchListOf("single,,item"));     // doc example
-		Assert.AreEqual("string1,|string2", MatchListOf("string1,,,string2")); // doc example
-		Assert.AreEqual("btw|otoh|fl", MatchListOf("btw,otoh,fl"));
+		Assert.That(MatchListOf(""), Is.Empty);                       // no phrases (was a spurious ",")
+		Assert.That(MatchListOf("abc"), Is.EqualTo("abc"));
+		Assert.That(MatchListOf("abc,def"), Is.EqualTo("abc|def"));
+		Assert.That(MatchListOf("abc,"), Is.EqualTo("abc"));               // trailing comma omitted
+		Assert.That(MatchListOf("ab,,cd"), Is.EqualTo("ab,cd"));           // double comma -> literal comma
+		Assert.That(MatchListOf("single,,item"), Is.EqualTo("single,item"));     // doc example
+		Assert.That(MatchListOf("string1,,,string2"), Is.EqualTo("string1,|string2")); // doc example
+		Assert.That(MatchListOf("btw,otoh,fl"), Is.EqualTo("btw|otoh|fl"));
 	}
 
 	[Test, Category("InputHook")]
@@ -47,8 +47,8 @@ public class InputHookTests : TestRunner
 			foreach (var key in expected)
 			{
 				var vk = (int)Keyboard.GetKeyVK(key.ToString());
-				Assert.AreNotEqual(0, vk, $"{keys}: {key} has a virtual key");
-				Assert.AreEqual(HookThread.INPUT_KEY_SUPPRESS, io.input.keyVK[vk] & HookThread.INPUT_KEY_SUPPRESS, $"{keys}: {key} is suppressed");
+				Assert.That(vk, Is.Not.EqualTo(0), $"{keys}: {key} has a virtual key");
+				Assert.That(io.input.keyVK[vk] & HookThread.INPUT_KEY_SUPPRESS, Is.EqualTo(HookThread.INPUT_KEY_SUPPRESS), $"{keys}: {key} is suppressed");
 			}
 		}
 
@@ -59,8 +59,8 @@ public class InputHookTests : TestRunner
 		{
 			var vk = (int)Keyboard.GetKeyVK(key);
 			var sc = (int)Keyboard.GetKeySC(key);
-			Assert.AreEqual(HookThread.INPUT_KEY_SUPPRESS,
-				(named.input.keyVK[vk] | named.input.keySC[sc]) & HookThread.INPUT_KEY_SUPPRESS, $"{key} is suppressed");
+			Assert.That((named.input.keyVK[vk] | named.input.keySC[sc]) & HookThread.INPUT_KEY_SUPPRESS,
+				Is.EqualTo(HookThread.INPUT_KEY_SUPPRESS), $"{key} is suppressed");
 		}
 	}
 
@@ -81,35 +81,35 @@ public class InputHookTests : TestRunner
 			_ = io.KeyOpt(keys, "S");
 			var keyboardFlags = keyboard ? HookThread.INPUT_KEY_SUPPRESS : 0u;
 			var mouseFlags = mouse ? HookThread.INPUT_KEY_SUPPRESS : 0u;
-			Assert.AreEqual(keyboardFlags, io.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_SUPPRESS, keys);
-			Assert.AreEqual(keyboardFlags, io.input.keyVK[VK_CANCEL] & HookThread.INPUT_KEY_SUPPRESS, keys);
-			Assert.AreEqual(keyboardFlags, io.input.keySC[0] & HookThread.INPUT_KEY_SUPPRESS, keys);
-			Assert.AreEqual(mouse, io.input.MouseIsNeeded, keys);
+			Assert.That(io.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_SUPPRESS, Is.EqualTo(keyboardFlags), keys);
+			Assert.That(io.input.keyVK[VK_CANCEL] & HookThread.INPUT_KEY_SUPPRESS, Is.EqualTo(keyboardFlags), keys);
+			Assert.That(io.input.keySC[0] & HookThread.INPUT_KEY_SUPPRESS, Is.EqualTo(keyboardFlags), keys);
+			Assert.That(io.input.MouseIsNeeded, Is.EqualTo(mouse), keys);
 
 			foreach (var vk in mouseVks)
-				Assert.AreEqual(mouseFlags, io.input.keyVK[vk] & HookThread.INPUT_KEY_SUPPRESS, $"{keys}: {vk:X2}");
+				Assert.That(io.input.keyVK[vk] & HookThread.INPUT_KEY_SUPPRESS, Is.EqualTo(mouseFlags), $"{keys}: {vk:X2}");
 		}
 
 		var mixed = (InputHook)new InputHook("V");
 		_ = mixed.KeyOpt("a{Mouse}", "S");
-		Assert.AreEqual(HookThread.INPUT_KEY_SUPPRESS, mixed.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_SUPPRESS);
-		Assert.AreEqual(HookThread.INPUT_KEY_SUPPRESS, mixed.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_SUPPRESS);
+		Assert.That(mixed.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_SUPPRESS, Is.EqualTo(HookThread.INPUT_KEY_SUPPRESS));
+		Assert.That(mixed.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_SUPPRESS, Is.EqualTo(HookThread.INPUT_KEY_SUPPRESS));
 		_ = mixed.KeyOpt("{All}", "Z");
-		Assert.AreEqual(0u, mixed.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_SUPPRESS);
-		Assert.AreEqual(HookThread.INPUT_KEY_SUPPRESS, mixed.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_SUPPRESS);
+		Assert.That(mixed.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_SUPPRESS, Is.EqualTo(0u));
+		Assert.That(mixed.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_SUPPRESS, Is.EqualTo(HookThread.INPUT_KEY_SUPPRESS));
 		_ = mixed.KeyOpt("{Mouse}", "E+V");
-		Assert.AreEqual(HookThread.END_KEY_ENABLED, mixed.input.keyVK[VK_LBUTTON] & HookThread.END_KEY_ENABLED);
-		Assert.AreEqual(HookThread.INPUT_KEY_VISIBLE, mixed.input.keyVK[VK_WHEEL_UP] & HookThread.INPUT_KEY_VISIBILITY_MASK);
+		Assert.That(mixed.input.keyVK[VK_LBUTTON] & HookThread.END_KEY_ENABLED, Is.EqualTo(HookThread.END_KEY_ENABLED));
+		Assert.That(mixed.input.keyVK[VK_WHEEL_UP] & HookThread.INPUT_KEY_VISIBILITY_MASK, Is.EqualTo(HookThread.INPUT_KEY_VISIBLE));
 		_ = mixed.KeyOpt("{Mouse}", "Z");
-		Assert.AreEqual(0u, mixed.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_OPTION_MASK);
+		Assert.That(mixed.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_OPTION_MASK, Is.EqualTo(0u));
 
 		foreach (var option in new[] { "I", "-N" })
 		{
 			var rejected = (InputHook)new InputHook("V");
 			var error = Assert.Throws<KeysharpException>(() => rejected.KeyOpt("a{Keyboard}{Mouse}", $"S{option}"));
 			Assert.IsInstanceOf<ValueError>(error.UserError);
-			Assert.AreEqual(0u, rejected.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_OPTION_MASK, option);
-			Assert.AreEqual(0u, rejected.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_OPTION_MASK, option);
+			Assert.That(rejected.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_OPTION_MASK, Is.EqualTo(0u), option);
+			Assert.That(rejected.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_OPTION_MASK, Is.EqualTo(0u), option);
 		}
 	}
 
@@ -131,8 +131,8 @@ public class InputHookTests : TestRunner
 
 			try
 			{
-				Assert.AreEqual(visible, s.HookThread.CollectMouseInput(0, VK_LBUTTON, false, 0, 0, null, false), $"Mouse down: {option}");
-				Assert.AreEqual(visible, s.HookThread.CollectMouseInput(0, VK_LBUTTON, true, 0, 0, null, false), $"Mouse up: {option}");
+				Assert.That(s.HookThread.CollectMouseInput(0, VK_LBUTTON, false, 0, 0, null, false), Is.EqualTo(visible), $"Mouse down: {option}");
+				Assert.That(s.HookThread.CollectMouseInput(0, VK_LBUTTON, true, 0, 0, null, false), Is.EqualTo(visible), $"Mouse up: {option}");
 			}
 			finally
 			{
@@ -156,7 +156,7 @@ public class InputHookTests : TestRunner
 		})
 		{
 			var endKeys = (InputHook)new InputHook("E", keys);
-			Assert.AreEqual(expected, endKeys.input.endChars, $"{keys}: end characters");
+			Assert.That(endKeys.input.endChars, Is.EqualTo(expected), $"{keys}: end characters");
 
 			var io = (InputHook)new InputHook("V");
 			_ = io.KeyOpt(keys, "S");
@@ -168,8 +168,8 @@ public class InputHookTests : TestRunner
 				if (vk == 0 && (key == '{' || key == '}'))
 					continue;
 
-				Assert.AreNotEqual(0, vk, $"{keys}: {key} has a virtual key");
-				Assert.AreEqual(HookThread.INPUT_KEY_SUPPRESS, io.input.keyVK[vk] & HookThread.INPUT_KEY_SUPPRESS, $"{keys}: {key} is suppressed");
+				Assert.That(vk, Is.Not.EqualTo(0), $"{keys}: {key} has a virtual key");
+				Assert.That(io.input.keyVK[vk] & HookThread.INPUT_KEY_SUPPRESS, Is.EqualTo(HookThread.INPUT_KEY_SUPPRESS), $"{keys}: {key} is suppressed");
 			}
 		}
 	}
@@ -182,15 +182,15 @@ public class InputHookTests : TestRunner
 	public void MouseHookNeed()
 	{
 		var io = (InputHook)new InputHook("");
-		Assert.AreEqual(true, io.VisibleMouseMove); // default: movement passes through
-		Assert.IsFalse(io.input.MouseIsNeeded);     // keyboard-only hook needs no mouse hook
+		Assert.That(io.VisibleMouseMove, Is.EqualTo(true)); // default: movement passes through
+		Assert.That(io.input.MouseIsNeeded, Is.False);     // keyboard-only hook needs no mouse hook
 
 		io.VisibleMouseMove = false;                // suppressing movement requires the mouse hook
-		Assert.AreEqual(false, io.VisibleMouseMove);
+		Assert.That(io.VisibleMouseMove, Is.EqualTo(false));
 		Assert.IsTrue(io.input.MouseIsNeeded);
 
 		var io2 = (InputHook)new InputHook("");
-		Assert.IsFalse(io2.input.MouseIsNeeded);
+		Assert.That(io2.input.MouseIsNeeded, Is.False);
 		_ = io2.KeyOpt("{LButton}", "+E");              // LButton as an end key also needs the mouse hook
 		Assert.IsTrue(io2.input.MouseIsNeeded);
 	}
@@ -202,14 +202,14 @@ public class InputHookTests : TestRunner
 	{
 		var def = (InputHook)new InputHook("");  // default options suppress typed text
 		Assert.IsTrue(def.input.KeyboardIsNeeded);   // ...so the keyboard hook is required
-		Assert.IsFalse(def.input.MouseIsNeeded);
+		Assert.That(def.input.MouseIsNeeded, Is.False);
 
 		var vis = (InputHook)new InputHook("V"); // visible: no text suppression
 		Assert.IsTrue(vis.input.KeyboardIsNeeded);   // still a keyboard collector (not mouse-only)
 
 		vis.VisibleMouseMove = false;                // now a pure mouse observer
 		Assert.IsTrue(vis.input.MouseIsNeeded);
-		Assert.IsFalse(vis.input.KeyboardIsNeeded);  // ...so the keyboard hook is no longer needed
+		Assert.That(vis.input.KeyboardIsNeeded, Is.False);  // ...so the keyboard hook is no longer needed
 
 		var ek = (InputHook)new InputHook("V", "{Enter}"); // visible + a keyboard end key
 		Assert.IsTrue(ek.input.KeyboardIsNeeded);    // keyboard end key keeps the keyboard hook
@@ -222,15 +222,15 @@ public class InputHookTests : TestRunner
 		s.Threads.CurrentThread.eventInfo = (Func<object>)mouse.BuildEventInfo;
 
 		var visible = ThreadAccessors.A_EventInfo;
-		Assert.AreEqual(321L, Script.GetPropertyValue(visible, "X"));
-		Assert.AreEqual(654L, Script.GetPropertyValue(visible, "Y"));
-		Assert.IsFalse(Script.GetPropertyValue(visible, "IsAutoRepeat").Ab());
+		Assert.That(Script.GetPropertyValue(visible, "X"), Is.EqualTo(321L));
+		Assert.That(Script.GetPropertyValue(visible, "Y"), Is.EqualTo(654L));
+		Assert.That(Script.GetPropertyValue(visible, "IsAutoRepeat").Ab(), Is.False);
 
 		var keyboard = new HookEventInfo(456, false, false, 0, null, 8);
 		s.Threads.CurrentThread.eventInfo = (Func<object>)keyboard.BuildEventInfo;
 		visible = ThreadAccessors.A_EventInfo;
-		Assert.AreEqual(0L, KeysharpObject.HasOwnProp(visible, "X"));
-		Assert.AreEqual(0L, KeysharpObject.HasOwnProp(visible, "Y"));
+		Assert.That(KeysharpObject.HasOwnProp(visible, "X"), Is.EqualTo(0L));
+		Assert.That(KeysharpObject.HasOwnProp(visible, "Y"), Is.EqualTo(0L));
 	}
 
 	[Test, Category("InputHook"), Category("Misc")]
@@ -261,16 +261,16 @@ public class InputHookTests : TestRunner
 			context.DrainAll();
 
 			Assert.That(calls.Select(c => (c.dx, c.dy)), Is.EqualTo(new[] { (0L, 0L), (4L, -2L), (0L, 0L) }));
-			Assert.AreEqual(20L, Script.GetPropertyValue(calls[0].info, "X"));
-			Assert.AreEqual(30L, Script.GetPropertyValue(calls[0].info, "Y"));
-			Assert.AreEqual(0L, KeysharpObject.HasOwnProp(calls[0].info, "DeviceId"));
-			Assert.AreEqual(0L, KeysharpObject.HasOwnProp(calls[0].info, "IsAbsolute"));
-			Assert.AreEqual(0L, KeysharpObject.HasOwnProp(calls[1].info, "X"));
-			Assert.AreEqual(2L, Script.GetPropertyValue(calls[1].info, "DeviceId"));
-			Assert.IsFalse(Script.GetPropertyValue(calls[1].info, "IsAbsolute").Ab());
-			Assert.AreEqual(0L, Script.GetPropertyValue(calls[2].info, "DeviceId"));
+			Assert.That(Script.GetPropertyValue(calls[0].info, "X"), Is.EqualTo(20L));
+			Assert.That(Script.GetPropertyValue(calls[0].info, "Y"), Is.EqualTo(30L));
+			Assert.That(KeysharpObject.HasOwnProp(calls[0].info, "DeviceId"), Is.EqualTo(0L));
+			Assert.That(KeysharpObject.HasOwnProp(calls[0].info, "IsAbsolute"), Is.EqualTo(0L));
+			Assert.That(KeysharpObject.HasOwnProp(calls[1].info, "X"), Is.EqualTo(0L));
+			Assert.That(Script.GetPropertyValue(calls[1].info, "DeviceId"), Is.EqualTo(2L));
+			Assert.That(Script.GetPropertyValue(calls[1].info, "IsAbsolute").Ab(), Is.False);
+			Assert.That(Script.GetPropertyValue(calls[2].info, "DeviceId"), Is.EqualTo(0L));
 			Assert.IsTrue(Script.GetPropertyValue(calls[2].info, "IsAbsolute").Ab());
-			Assert.AreEqual(12L, Script.GetPropertyValue(calls[2].info, "Timestamp"));
+			Assert.That(Script.GetPropertyValue(calls[2].info, "Timestamp"), Is.EqualTo(12L));
 			Assert.IsTrue(Script.GetPropertyValue(calls[2].info, "IsInjected").Ab());
 		}
 		finally
@@ -289,7 +289,7 @@ public class InputHookTests : TestRunner
 
 		io.input.Start();
 		Assert.IsTrue(io.InProgress);
-		Assert.AreEqual("", io.EndReason);
+		Assert.That(io.EndReason, Is.Empty);
 	}
 
 	/// <summary>
@@ -318,19 +318,19 @@ public class InputHookTests : TestRunner
 		{
 			Assert.IsTrue(s.HookThread.CollectMouseMove(1, 1, 0, true, 11, deviceId: 1, isAbsolute: false));
 			context.DrainAll();
-			Assert.AreEqual(1, calls);
+			Assert.That(calls, Is.EqualTo(1));
 
 			Assert.IsTrue(s.HookThread.CollectMouseMove(1, 1, 0, true, 12, deviceId: 1, isAbsolute: false));
 			io.input.status = InputStatusType.Off;
 			context.DrainAll();
-			Assert.AreEqual(1, calls, "A notification queued before the input ended is discarded.");
+			Assert.That(calls, Is.EqualTo(1), "A notification queued before the input ended is discarded.");
 
 			io.input.Start();
 			Assert.IsTrue(s.HookThread.CollectMouseMove(1, 1, 0, true, 13, deviceId: 1, isAbsolute: false));
 			io.input.status = InputStatusType.Off;
 			io.input.Start();
 			context.DrainAll();
-			Assert.AreEqual(2, calls, "One queued before an end is delivered if the input is started again first.");
+			Assert.That(calls, Is.EqualTo(2), "One queued before an end is delivered if the input is started again first.");
 		}
 		finally
 		{
@@ -356,12 +356,12 @@ public class InputHookTests : TestRunner
 
 		try
 		{
-			Assert.AreSame(io.input, io.input.InputUnlinkIfStopped(io.input), "A running input is found.");
-			Assert.AreSame(io.input, s.input, "A running input stays linked.");
+			Assert.That(io.input.InputUnlinkIfStopped(io.input), Is.SameAs(io.input), "A running input is found.");
+			Assert.That(s.input, Is.SameAs(io.input), "A running input stays linked.");
 
 			io.input.status = InputStatusType.Off;
-			Assert.AreSame(io.input, io.input.InputUnlinkIfStopped(io.input), "An ended input is found.");
-			Assert.AreSame(previous, s.input, "An ended input is unlinked.");
+			Assert.That(io.input.InputUnlinkIfStopped(io.input), Is.SameAs(io.input), "An ended input is found.");
+			Assert.That(s.input, Is.SameAs(previous), "An ended input is unlinked.");
 
 			Assert.IsNull(io.input.InputUnlinkIfStopped(io.input), "An input no longer in the chain is a stale end.");
 		}
@@ -398,11 +398,11 @@ public class InputHookTests : TestRunner
 		{
 			Assert.IsTrue(slot.IsActive, "Starting roots the input through its callbacks.");
 			io.input.Stop();
-			Assert.AreEqual("Stopped", io.EndReason);
+			Assert.That(io.EndReason, Is.EqualTo("Stopped"));
 			context.DrainAll();
 
-			Assert.IsFalse(slot.IsActive, "The persistence root is released with no OnEnd to run.");
-			Assert.AreNotSame(io.input, s.input, "The input is unlinked.");
+			Assert.That(slot.IsActive, Is.False, "The persistence root is released with no OnEnd to run.");
+			Assert.That(s.input, Is.Not.SameAs(io.input), "The input is unlinked.");
 		}
 		finally
 		{
@@ -437,7 +437,7 @@ public class InputHookTests : TestRunner
 			context.DrainAll();
 
 			Assert.IsTrue(slot.IsActive, "The restarted input keeps its persistence roots.");
-			Assert.AreSame(io.input, s.input, "The restarted input stays linked.");
+			Assert.That(s.input, Is.SameAs(io.input), "The restarted input stays linked.");
 		}
 		finally
 		{
@@ -469,7 +469,7 @@ public class InputHookTests : TestRunner
 		}
 
 		io.BeforeHotkeys = false;
-		Assert.IsFalse(io.input.beforeHotkeys, "An ended input takes the change.");
+		Assert.That(io.input.beforeHotkeys, Is.False, "An ended input takes the change.");
 	}
 
 	/// <summary>The first end wins, whichever thread gets there first: a later reason is ignored, one end is queued,
@@ -496,17 +496,17 @@ public class InputHookTests : TestRunner
 
 		try
 		{
-			Assert.AreEqual(places + 1, s.inputBeforeHotkeysCount, "A running before-hotkeys input takes a place.");
+			Assert.That(s.inputBeforeHotkeysCount, Is.EqualTo(places + 1), "A running before-hotkeys input takes a place.");
 			io.input.EndByTimeout();
 			io.input.Stop();
-			Assert.AreEqual("Timeout", io.EndReason, "The first reason stands.");
-			Assert.AreEqual(places, s.inputBeforeHotkeysCount, "The place is given back once.");
+			Assert.That(io.EndReason, Is.EqualTo("Timeout"), "The first reason stands.");
+			Assert.That(s.inputBeforeHotkeysCount, Is.EqualTo(places), "The place is given back once.");
 
 			// Started again before the end runs, so every queued end finds the input linked and runs OnEnd: one end
 			// runs it once, where a second would run it again.
 			Assert.IsTrue(io.input.LinkForStart(), "The ended input starts again.");
 			context.DrainAll();
-			Assert.AreEqual(1, ends, "One end is queued, so OnEnd runs once.");
+			Assert.That(ends, Is.EqualTo(1), "One end is queued, so OnEnd runs once.");
 		}
 		finally
 		{
@@ -549,11 +549,11 @@ public class InputHookTests : TestRunner
 		{
 			io.input.Stop();
 			Assert.IsTrue(io.input.LinkForStart(), "An ended input starts again.");
-			Assert.IsFalse(io.input.LinkForStart(), "A running input is not linked twice.");
+			Assert.That(io.input.LinkForStart(), Is.False, "A running input is not linked twice.");
 
 			context.DrainAll();
-			Assert.AreEqual(1, ends, "The restarted input's queued end runs OnEnd.");
-			Assert.AreSame(io.input, s.input, "The restarted input stays linked.");
+			Assert.That(ends, Is.EqualTo(1), "The restarted input's queued end runs OnEnd.");
+			Assert.That(s.input, Is.SameAs(io.input), "The restarted input stays linked.");
 		}
 		finally
 		{

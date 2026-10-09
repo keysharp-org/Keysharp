@@ -24,7 +24,7 @@ public partial class NetworkTests : TestRunner
 		Assert.IsInstanceOf<ValueError>(ScriptError(() => Download("not-a-url", filename)));
 		Assert.IsInstanceOf<ValueError>(ScriptError(() => Download("gopher://example.com/x", filename)));
 		Assert.IsInstanceOf<ValueError>(ScriptError(() => Download("*1 http://127.0.0.1/x", filename)));
-		Assert.IsFalse(File.Exists(filename));
+		Assert.That(File.Exists(filename), Is.False);
 	}
 
 	private static Error ScriptError(Action action) => Assert.Throws<KeysharpException>(action).UserError;

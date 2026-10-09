@@ -6,19 +6,19 @@ public class StringConversionInternalsTests : TestRunner
 	[Test, Category("Internal"), Category("Curated")]
 	public void DefaultsAndScalarResults()
 	{
-		Assert.AreEqual("fallback", Lenient(null, "fallback"));
-		Assert.AreEqual("", Lenient(null, null));
-		Assert.AreEqual("fallback", Lenient(new KeysharpObject(), "fallback"));
-		Assert.AreEqual("", Lenient(WithToString(() => ""), "fallback"));
-		Assert.AreEqual("fallback", Lenient(WithToString(() => null), "fallback"));
-		Assert.AreEqual("1.0", Lenient(WithToString(() => 1.0)));
-		Assert.AreEqual("1", Lenient(true));
-		Assert.AreEqual("1.234", Lenient(1.234));
+		Assert.That(Lenient(null, "fallback"), Is.EqualTo("fallback"));
+		Assert.That(Lenient(null, null), Is.Empty);
+		Assert.That(Lenient(new KeysharpObject(), "fallback"), Is.EqualTo("fallback"));
+		Assert.That(Lenient(WithToString(() => ""), "fallback"), Is.Empty);
+		Assert.That(Lenient(WithToString(() => null), "fallback"), Is.EqualTo("fallback"));
+		Assert.That(Lenient(WithToString(() => 1.0)), Is.EqualTo("1.0"));
+		Assert.That(Lenient(true), Is.EqualTo("1"));
+		Assert.That(Lenient(1.234), Is.EqualTo("1.234"));
 
 		var calls = 0;
 		var nested = WithToString(() => { calls++; return "nested"; });
-		Assert.AreEqual("fallback", Lenient(WithToString(() => nested), "fallback"));
-		Assert.AreEqual(0, calls);
+		Assert.That(Lenient(WithToString(() => nested), "fallback"), Is.EqualTo("fallback"));
+		Assert.That(calls, Is.EqualTo(0));
 	}
 
 	[Test, Category("Internal"), Category("Curated")]
@@ -31,14 +31,14 @@ public class StringConversionInternalsTests : TestRunner
 		var insideTry = tv.insideTry;
 		var caught = tv.caughtException;
 
-		Assert.AreEqual("fallback", Lenient(value, "fallback"));
-		Assert.AreEqual("fallback", Lenient(new ScriptErrorClrValue(), "fallback"));
-		Assert.IsFalse(value.TryCoerceString(out _));
-		Assert.IsFalse(new ThrowingClrValue().TryCoerceString(out _));
-		Assert.AreEqual(0, errorsSeen);
-		Assert.AreEqual(insideTry, tv.insideTry);
-		Assert.AreSame(caught, tv.caughtException);
-		Assert.AreEqual("fallback", Lenient(new ThrowingClrValue(), "fallback"));
+		Assert.That(Lenient(value, "fallback"), Is.EqualTo("fallback"));
+		Assert.That(Lenient(new ScriptErrorClrValue(), "fallback"), Is.EqualTo("fallback"));
+		Assert.That(value.TryCoerceString(out _), Is.False);
+		Assert.That(new ThrowingClrValue().TryCoerceString(out _), Is.False);
+		Assert.That(errorsSeen, Is.EqualTo(0));
+		Assert.That(tv.insideTry, Is.EqualTo(insideTry));
+		Assert.That(tv.caughtException, Is.SameAs(caught));
+		Assert.That(Lenient(new ThrowingClrValue(), "fallback"), Is.EqualTo("fallback"));
 	}
 
 	[Test, Category("Internal"), Category("Curated")]
@@ -46,12 +46,12 @@ public class StringConversionInternalsTests : TestRunner
 	{
 		using var scope = Keysharp.Runtime.Flow.EnterTry();
 		var unsupported = new KeysharpObject();
-		Assert.IsFalse(unsupported.TryCoerceString(out _));
+		Assert.That(unsupported.TryCoerceString(out _), Is.False);
 		Assert.IsInstanceOf<TypeError>(Assert.Throws<KeysharpException>(() => unsupported.CoerceString(out _)).UserError);
 		var failure = Assert.Throws<KeysharpException>(() =>
 			WithToString(() => Errors.ValueErrorOccurred("conversion failed")).CoerceString(out _));
 		Assert.IsInstanceOf<ValueError>(failure.UserError);
-		Assert.AreEqual("conversion failed", failure.Message);
+		Assert.That(failure.Message, Is.EqualTo("conversion failed"));
 		_ = Assert.Throws<InvalidOperationException>(() => new ThrowingClrValue().CoerceString(out _));
 	}
 
@@ -59,11 +59,11 @@ public class StringConversionInternalsTests : TestRunner
 	public void StrictConversionReportsAContinuedError()
 	{
 		_ = Errors.OnError(new KeysharpFunc((Func<object, object, object>)((_, _) => -1L)));
-		Assert.IsFalse(new KeysharpObject().CoerceString(out var text, "fallback"));
-		Assert.AreEqual("fallback", text);
-		Assert.IsFalse(new KeysharpObject().CoerceLong(out var number));
-		Assert.AreEqual(0L, number);
-		Assert.IsFalse(new KeysharpObject().CoerceDouble(out _));
+		Assert.That(new KeysharpObject().CoerceString(out var text, "fallback"), Is.False);
+		Assert.That(text, Is.EqualTo("fallback"));
+		Assert.That(new KeysharpObject().CoerceLong(out var number), Is.False);
+		Assert.That(number, Is.EqualTo(0L));
+		Assert.That(new KeysharpObject().CoerceDouble(out _), Is.False);
 	}
 
 	[Test, Category("Internal"), Category("Curated")]
@@ -78,37 +78,37 @@ public class StringConversionInternalsTests : TestRunner
 	{
 		var calls = 0;
 		var value = WithToString(() => { calls++; return "custom"; });
-		Assert.AreEqual("Object", Errors.Describe(value));
-		Assert.AreEqual("[Object]", Errors.Describe(new Keysharp.Builtins.Array(new object[] { value })));
-		Assert.AreEqual(0, calls);
-		Assert.AreEqual(nameof(ThrowingClrValue), Errors.Describe(new ThrowingClrValue()));
-		Assert.AreEqual(Types.Type(value), value.ToString());
-		Assert.AreEqual("Lock", new Ks.KeysharpLock().ToString());
-		Assert.AreEqual("123", Errors.Describe(123));
-		Assert.AreEqual(nameof(ThrowingClrValue), new Error(new ThrowingClrValue()).Message);
+		Assert.That(Errors.Describe(value), Is.EqualTo("Object"));
+		Assert.That(Errors.Describe(new Keysharp.Builtins.Array(new object[] { value })), Is.EqualTo("[Object]"));
+		Assert.That(calls, Is.EqualTo(0));
+		Assert.That(Errors.Describe(new ThrowingClrValue()), Is.EqualTo(nameof(ThrowingClrValue)));
+		Assert.That(value.ToString(), Is.EqualTo(Types.Type(value)));
+		Assert.That(new Ks.KeysharpLock().ToString(), Is.EqualTo("Lock"));
+		Assert.That(Errors.Describe(123), Is.EqualTo("123"));
+		Assert.That(new Error(new ThrowingClrValue()).Message, Is.EqualTo(nameof(ThrowingClrValue)));
 
 		var prototype = new KeysharpObject();
 		prototype.DefinePropInternal("__Class", new OwnPropsDesc(
 			set_Get: new KeysharpFunc((Func<object, object>)(_ => { calls++; return "custom"; }))));
 		value.SetBaseInternal(prototype);
 		using var scope = Keysharp.Runtime.Flow.EnterTry();
-		Assert.AreEqual("Object", Errors.Describe(value));
+		Assert.That(Errors.Describe(value), Is.EqualTo("Object"));
 		_ = Assert.Throws<KeysharpException>(() => Errors.MissingPropertyErrorOccurred(value, "missing"));
 		_ = Assert.Throws<KeysharpException>(() => Errors.MissingMethodErrorOccurred(value, "missing"));
-		Assert.AreEqual(0, calls);
+		Assert.That(calls, Is.EqualTo(0));
 	}
 
 	[Test, Category("Internal"), Category("Curated")]
 	public void NumericFamiliesTakeTheDefaultForNoValue()
 	{
-		Assert.IsFalse(((object)null).TryCoerceLong(out var none, 7L));
-		Assert.AreEqual(7L, none);
+		Assert.That(((object)null).TryCoerceLong(out var none, 7L), Is.False);
+		Assert.That(none, Is.EqualTo(7L));
 		Assert.IsTrue(((object)null).CoerceLong(out var omitted, 7L));
-		Assert.AreEqual(7L, omitted);
+		Assert.That(omitted, Is.EqualTo(7L));
 		Assert.IsTrue(((object)"12").CoerceInt(out var parsed));
-		Assert.AreEqual(12, parsed);
-		Assert.IsFalse(((object)"").TryCoerceDouble(out var empty, 1.5));
-		Assert.AreEqual(1.5, empty);
+		Assert.That(parsed, Is.EqualTo(12));
+		Assert.That(((object)"").TryCoerceDouble(out var empty, 1.5), Is.False);
+		Assert.That(empty, Is.EqualTo(1.5));
 
 		using var scope = Keysharp.Runtime.Flow.EnterTry();
 		Assert.IsInstanceOf<TypeError>(Assert.Throws<KeysharpException>(() => ((object)"").CoerceLong(out _)).UserError);
@@ -118,18 +118,18 @@ public class StringConversionInternalsTests : TestRunner
 	public void NumericTryCoercionContainsClrToStringErrors()
 	{
 		var value = new ThrowingClrValue();
-		Assert.IsFalse(value.TryCoerceLong(out var integer, 7L));
-		Assert.AreEqual(7L, integer);
-		Assert.IsFalse(value.TryCoerceInt(out var small, 9));
-		Assert.AreEqual(9, small);
-		Assert.IsFalse(value.TryCoerceDouble(out var floating, 1.5));
-		Assert.AreEqual(1.5, floating);
+		Assert.That(value.TryCoerceLong(out var integer, 7L), Is.False);
+		Assert.That(integer, Is.EqualTo(7L));
+		Assert.That(value.TryCoerceInt(out var small, 9), Is.False);
+		Assert.That(small, Is.EqualTo(9));
+		Assert.That(value.TryCoerceDouble(out var floating, 1.5), Is.False);
+		Assert.That(floating, Is.EqualTo(1.5));
 
 		var calls = 0;
 		_ = Errors.OnError(new KeysharpFunc((Func<object, object, object>)((_, _) => { calls++; return 0L; })));
-		Assert.IsFalse(new ScriptErrorClrValue().TryCoerceLong(out _));
-		Assert.IsFalse(new ScriptErrorClrValue().TryCoerceDouble(out _));
-		Assert.AreEqual(0, calls);
+		Assert.That(new ScriptErrorClrValue().TryCoerceLong(out _), Is.False);
+		Assert.That(new ScriptErrorClrValue().TryCoerceDouble(out _), Is.False);
+		Assert.That(calls, Is.EqualTo(0));
 
 		_ = Assert.Throws<Keysharp.Builtins.Flow.UserRequestedExitException>(() => new ExitingClrValue().TryCoerceLong(out _));
 		_ = Assert.Throws<Keysharp.Builtins.Flow.UserRequestedExitException>(() => new ExitingClrValue().TryCoerceDouble(out _));

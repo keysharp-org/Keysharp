@@ -15,13 +15,13 @@ public partial class ScreenTests
 		{
 			using var result = ScreenCaptureComposer.Compose(new ScreenRect(0, 0, 5, 1), captures);
 			Assert.NotNull(result);
-			Assert.AreEqual(8, result.Width);
+			Assert.That(result.Width, Is.EqualTo(8));
 
 			for (var x = 0; x < 5; x++)
-				Assert.AreEqual(unchecked((int)0xFFFF0000), result.GetPixel(x, 0).ToArgb());
+				Assert.That(result.GetPixel(x, 0).ToArgb(), Is.EqualTo(unchecked((int)0xFFFF0000)));
 
 			for (var x = 5; x < 8; x++)
-				Assert.AreEqual(unchecked((int)0xFF0000FF), result.GetPixel(x, 0).ToArgb());
+				Assert.That(result.GetPixel(x, 0).ToArgb(), Is.EqualTo(unchecked((int)0xFF0000FF)));
 		}
 		finally
 		{
@@ -40,8 +40,8 @@ public partial class ScreenTests
 		};
 
 		using var result = ScreenCaptureComposer.Compose(new ScreenRect(-2, 4, 2, 1), captures);
-		Assert.AreSame(source, result);
-		Assert.AreEqual(0, captures.Count, "ownership transfer must remove the returned bitmap from disposal");
+		Assert.That(result, Is.SameAs(source));
+		Assert.That(captures.Count, Is.EqualTo(0), "ownership transfer must remove the returned bitmap from disposal");
 	}
 
 	[Test, Category("Screen"), Category("Internal"), Category("Curated")]
@@ -65,7 +65,7 @@ public partial class ScreenTests
 		backing.ReleaseShows.Set();
 		Assert.IsTrue(first.GetAwaiter().GetResult());
 		Assert.IsTrue(second.GetAwaiter().GetResult());
-		Assert.AreEqual(1, backing.MaxConcurrentCalls);
+		Assert.That(backing.MaxConcurrentCalls, Is.EqualTo(1));
 	}
 
 	[Test, Category("Screen"), Category("Internal"), Category("Curated")]
@@ -76,9 +76,9 @@ public partial class ScreenTests
 		backing.ReleaseShows.Set();
 		var service = new TestOverlayService(() => backing);
 
-		Assert.IsFalse(service.TryPresentImageOverlay(7, canvas, new ScreenRect(0, 0, 1, 1), 255, true));
+		Assert.That(service.TryPresentImageOverlay(7, canvas, new ScreenRect(0, 0, 1, 1), 255, true), Is.False);
 		Assert.IsTrue(backing.Disposed);
-		Assert.AreEqual(nint.Zero, service.GetImageOverlayHandle(7));
+		Assert.That(service.GetImageOverlayHandle(7), Is.EqualTo(nint.Zero));
 	}
 
 	// Hide keeps the backing, so the next present reuses the same window and handle; an unconfirmed hide
@@ -98,19 +98,19 @@ public partial class ScreenTests
 
 		Assert.IsTrue(service.TryPresentImageOverlay(4, canvas, bounds, 255, true));
 		backing.HideResult = false;
-		Assert.IsFalse(service.TryHideImageOverlay(4));
+		Assert.That(service.TryHideImageOverlay(4), Is.False);
 		backing.HideResult = true;
 		Assert.IsTrue(service.TryHideImageOverlay(4));
-		Assert.IsFalse(backing.Disposed);
-		Assert.AreEqual((nint)123, service.GetImageOverlayHandle(4));
+		Assert.That(backing.Disposed, Is.False);
+		Assert.That(service.GetImageOverlayHandle(4), Is.EqualTo((nint)123));
 
 		Assert.IsTrue(service.TryPresentImageOverlay(4, canvas, bounds, 255, true));
-		Assert.AreEqual(1, created, "a Show after Hide must reuse the backing");
+		Assert.That(created, Is.EqualTo(1), "a Show after Hide must reuse the backing");
 
 		Assert.IsTrue(service.TryHideImageOverlay(4));
 		service.DisposeImageOverlay(4);
 		Assert.IsTrue(backing.Disposed);
-		Assert.AreEqual(nint.Zero, service.GetImageOverlayHandle(4));
+		Assert.That(service.GetImageOverlayHandle(4), Is.EqualTo(nint.Zero));
 	}
 
 	[Test, Category("Screen"), Category("Internal"), Category("Curated")]
@@ -139,9 +139,9 @@ public partial class ScreenTests
 
 			Assert.IsTrue(service.DisposeAllImageOverlays(s));
 			Assert.IsTrue(firstBacking.Disposed);
-			Assert.IsFalse(secondBacking.Disposed);
-			Assert.AreEqual(nint.Zero, service.GetImageOverlayHandle(1));
-			Assert.AreNotEqual(nint.Zero, service.GetImageOverlayHandle(2));
+			Assert.That(secondBacking.Disposed, Is.False);
+			Assert.That(service.GetImageOverlayHandle(1), Is.EqualTo(nint.Zero));
+			Assert.That(service.GetImageOverlayHandle(2), Is.Not.EqualTo(nint.Zero));
 
 			Script.TheScript = other;
 			Assert.IsTrue(service.TryPresentImageOverlay(3, secondCanvas, new ScreenRect(0, 0, 1, 1), 255, true));
@@ -177,10 +177,10 @@ public partial class ScreenTests
 			"HideAll must clear registration before waiting for an in-progress Show");
 		backing.ReleaseShows.Set();
 
-		Assert.IsFalse(showing.GetAwaiter().GetResult());
+		Assert.That(showing.GetAwaiter().GetResult(), Is.False);
 		Assert.IsTrue(hiding.GetAwaiter().GetResult());
 		Assert.IsTrue(backing.Disposed);
-		Assert.AreEqual(nint.Zero, service.GetImageOverlayHandle(3));
+		Assert.That(service.GetImageOverlayHandle(3), Is.EqualTo(nint.Zero));
 	}
 
 	// Observe HideAll's documented linearization point without adding a test-only production API.
@@ -224,19 +224,19 @@ public partial class ScreenTests
 		using var second = TestSurface(4, 4);
 
 		Assert.IsTrue(service.TryPresentImageOverlay(1, first, bounds, 255, true));
-		Assert.AreEqual(DamageKind.All, backing.LastDamage?.Kind, "a surface never presented before is all-damaged");
+		Assert.That(backing.LastDamage?.Kind, Is.EqualTo(DamageKind.All), "a surface never presented before is all-damaged");
 
 		// Same surface again, this time carrying only a small region: the backing may top up.
 		first.Damage.Reset();
 		first.Damage.Add(new PixelRect(1, 1, 2, 2));
 		Assert.IsTrue(service.TryPresentImageOverlay(1, first, bounds, 255, true));
-		Assert.AreEqual(DamageKind.Region, backing.LastDamage?.Kind, "the same surface may report a partial region");
+		Assert.That(backing.LastDamage?.Kind, Is.EqualTo(DamageKind.Region), "the same surface may report a partial region");
 
 		// A different surface with the same partial damage cannot be trusted.
 		second.Damage.Reset();
 		second.Damage.Add(new PixelRect(1, 1, 2, 2));
 		Assert.IsTrue(service.TryPresentImageOverlay(1, second, bounds, 255, true));
-		Assert.AreEqual(DamageKind.All, backing.LastDamage?.Kind,
+		Assert.That(backing.LastDamage?.Kind, Is.EqualTo(DamageKind.All),
 						"a surface this backing has not presented before must be transferred whole");
 	}
 
@@ -253,8 +253,8 @@ public partial class ScreenTests
 
 		surface.Damage.Reset();
 		surface.Damage.Add(new PixelRect(1, 1, 2, 2));
-		Assert.IsFalse(service.TryPresentImageOverlay(1, surface, bounds, 255, true));
-		Assert.AreEqual(DamageKind.Region, surface.Damage.Kind,
+		Assert.That(service.TryPresentImageOverlay(1, surface, bounds, 255, true), Is.False);
+		Assert.That(surface.Damage.Kind, Is.EqualTo(DamageKind.Region),
 						"a present that failed must not clear the damage it did not paint");
 	}
 

@@ -166,7 +166,7 @@ public partial class FlowTests : TestRunner
 			ExitApp()
 		", "flow-onexit-nested-exitapp", true, false, 0);
 		var deletes = output.Count(c => c == 'D');
-		Assert.AreEqual(1, deletes, $"__Delete ran {deletes} time(s) during teardown; expected exactly 1. Raw output: [{output}]");
+		Assert.That(deletes, Is.EqualTo(1), $"__Delete ran {deletes} time(s) during teardown; expected exactly 1. Raw output: [{output}]");
 	}
 
 // A release made inside a thread takes effect when the last thread ends, as in AHK. Only a script whose
@@ -419,18 +419,18 @@ public void FlowLoopReg() => Assert.IsTrue(TestScript("flow-loop-reg", true));
 	int Count(string marker) => shown.Split("C3D38B48-" + marker).Length - 1;
 
 	foreach (var marker in new[] { "exit-then-zero", "zero-dialog", "inner-throw", "inner-builtin", "rethrown", "dialog-at-throw" })
-		Assert.AreEqual(1, Count(marker), $"{marker} must get the dialog once. stderr:\n{shown}");
+			Assert.That(Count(marker), Is.EqualTo(1), $"{marker} must get the dialog once. stderr:\n{shown}");
 
 	foreach (var marker in new[] { "exit-then-continue", "one-silent", "thrown-negative", "outer-of-throw", "outer-of-builtin", "exitapp",
 				"removed-callback", "located-builtin", "order-", "catch-rethrow", "bare-rethrow", "other-class", "caught", "late-builtin", "nested-other-class" })
-		Assert.AreEqual(0, Count(marker), $"{marker} must get no dialog. stderr:\n{shown}");
+			Assert.That(Count(marker), Is.EqualTo(0), $"{marker} must get no dialog. stderr:\n{shown}");
 
 	var outputLines = shown.Replace("\r\n", "\n").Split('\n');
 	var dialogIndex = System.Array.FindIndex(outputLines, line => line.Contains("C3D38B48-dialog-at-throw", StringComparison.Ordinal));
 	Assert.GreaterOrEqual(dialogIndex, 0, shown);
 	var expectedFile = System.Text.RegularExpressions.Regex.Escape(Path.Combine(path, "flow-onerror.ahk"));
-	StringAssert.IsMatch($"^{expectedFile} \\(\\d+\\) : ==> C3D38B48-dialog-at-throw$", outputLines[dialogIndex]);
-	Assert.AreEqual("     Specifically: C3D38B48-extra", outputLines[dialogIndex + 1]);
+		Assert.That(outputLines[dialogIndex], Does.Match($"^{expectedFile} \\(\\d+\\) : ==> C3D38B48-dialog-at-throw$"));
+		Assert.That(outputLines[dialogIndex + 1], Is.EqualTo("     Specifically: C3D38B48-extra"));
 
 	// A throw nothing catches gets its dialog before the stack unwinds, so ahead of the finally block's line.
 	Assert.Less(shown.IndexOf("C3D38B48-dialog-at-throw"), shown.IndexOf("C3D38B48-finally-after-dialog"), $"The dialog must precede the finally block. stderr:\n{shown}");
@@ -512,13 +512,13 @@ public void FlowLoopReg() => Assert.IsTrue(TestScript("flow-loop-reg", true));
 		registry.InvokeEventHandlers(0L);
 		context.DrainAll();
 
-		Assert.IsNotNull(err);
-		Assert.AreEqual("C3D38B48-foreign", err.Message);
+		Assert.That(err, Is.Not.Null);
+		Assert.That(err.Message, Is.EqualTo("C3D38B48-foreign"));
 		Assert.IsTrue(err.What.EndsWith(nameof(ThrowForeign), StringComparison.Ordinal), err.What);
-		Assert.AreEqual(typeof(InvalidOperationException).FullName, err.Extra);
+		Assert.That(err.Extra, Is.EqualTo(typeof(InvalidOperationException).FullName));
 		Assert.IsTrue(err.Stack.StartsWith($"[{err.What}]", StringComparison.Ordinal), err.Stack);
-		Assert.IsFalse(err.Stack.Contains(typeof(InvalidOperationException).FullName, StringComparison.Ordinal), err.Stack);
-		StringAssert.Contains("> Event", err.Stack);
+		Assert.That(err.Stack.Contains(typeof(InvalidOperationException).FullName, StringComparison.Ordinal), Is.False, err.Stack);
+		Assert.That(err.Stack, Does.Contain("> Event"));
 
 		var inner = new InvalidOperationException();
 		var stack = CallStack.Current;
@@ -526,7 +526,7 @@ public void FlowLoopReg() => Assert.IsTrue(TestScript("flow-loop-reg", true));
 		CallStack.Remember(inner);
 		stack.Pop(depth);
 		CallStack.Remember(new ApplicationException("wrapper", inner));
-		StringAssert.Contains("> Origin", CallStack.Recall(inner).Stack);
+		Assert.That(CallStack.Recall(inner).Stack, Does.Contain("> Origin"));
 	}
 
 	private static object ThrowForeign(object _) => throw new InvalidOperationException("C3D38B48-foreign");
@@ -541,8 +541,8 @@ public void FlowLoopReg() => Assert.IsTrue(TestScript("flow-loop-reg", true));
 			return 1L;
 		}));
 
-		Assert.AreEqual(1L, HotkeyDefinition.EvaluateCriterion(s, criterion, HotCriterionEnum.IfCallback, "F1", null));
-		StringAssert.Contains("> #HotIf", stack);
+		Assert.That(HotkeyDefinition.EvaluateCriterion(s, criterion, HotCriterionEnum.IfCallback, "F1", null), Is.EqualTo(1L));
+		Assert.That(stack, Does.Contain("> #HotIf"));
 	}
 
 	// The error dialog quotes the two lines before the error and the two after, skipping blank and comment lines.
@@ -551,9 +551,9 @@ public void FlowLoopReg() => Assert.IsTrue(TestScript("flow-loop-reg", true));
 	{
 		var lines = "x := 1\n\n; a comment\n\ty := 2\nz := 3\nw := 4\n\nv := 5\nu := 6".Split('\n');
 		var nl = Environment.NewLine;
-		Assert.AreEqual($"\t001: x := 1{nl}\t004: y := 2{nl}▶\t005: z := 3{nl}\t006: w := 4{nl}\t008: v := 5{nl}", CallStack.Excerpt(lines, 5));
-		Assert.AreEqual($"▶\t001: x := 1{nl}\t004: y := 2{nl}\t005: z := 3{nl}", CallStack.Excerpt(lines, 1));
-		Assert.AreEqual($"\t006: w := 4{nl}\t008: v := 5{nl}▶\t009: u := 6{nl}", CallStack.Excerpt(lines, 9));
+		Assert.That(CallStack.Excerpt(lines, 5), Is.EqualTo($"\t001: x := 1{nl}\t004: y := 2{nl}▶\t005: z := 3{nl}\t006: w := 4{nl}\t008: v := 5{nl}"));
+		Assert.That(CallStack.Excerpt(lines, 1), Is.EqualTo($"▶\t001: x := 1{nl}\t004: y := 2{nl}\t005: z := 3{nl}"));
+		Assert.That(CallStack.Excerpt(lines, 9), Is.EqualTo($"\t006: w := 4{nl}\t008: v := 5{nl}▶\t009: u := 6{nl}"));
 	}
 
 	[Test, Category("Flow")]

@@ -19,7 +19,7 @@ public class WindowsOverlayTests : TestRunner
 		creator.Start();
 		Assert.IsTrue(creator.Join(TimeSpan.FromSeconds(10)), "surface creation should not block");
 		Assert.IsNull(creationError);
-		Assert.IsNotNull(surface);
+		Assert.That(surface, Is.Not.Null);
 
 		using (surface)
 		{
@@ -42,8 +42,8 @@ public class WindowsOverlayTests : TestRunner
 				surface.ReleaseSourceDC();
 			}
 
-			Assert.AreNotEqual(uint.MaxValue, pixel, "the source DC must accept reads after its creator thread exits");
-			Assert.AreEqual(0x00FF0000u, pixel & 0x00FFFFFFu);
+			Assert.That(pixel, Is.Not.EqualTo(uint.MaxValue), "the source DC must accept reads after its creator thread exits");
+			Assert.That(pixel & 0x00FFFFFFu, Is.EqualTo(0x00FF0000u));
 		}
 	}
 }
