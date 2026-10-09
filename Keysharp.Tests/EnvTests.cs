@@ -92,13 +92,13 @@ public class EnvTests : TestRunner
 #if LINUX
 		Assert.AreEqual(2, commands.Count);
 		Assert.AreEqual("dbus-update-activation-environment", commands[0].FileName);
-		CollectionAssert.AreEqual(
-			new[] { "--systemd", "KEYSHARP_ENV_DELETE=", "KEYSHARP_ENV_SET=value with spaces" },
-			commands[0].Arguments);
+        Assert.That(
+            commands[0].Arguments,
+            Is.EqualTo(["--systemd", "KEYSHARP_ENV_DELETE=", "KEYSHARP_ENV_SET=value with spaces"]).AsCollection);
 		Assert.AreEqual("systemctl", commands[1].FileName);
-		CollectionAssert.AreEqual(
-			new[] { "--user", "unset-environment", "KEYSHARP_ENV_DELETE" },
-			commands[1].Arguments);
+        Assert.That(
+            commands[1].Arguments,
+            Is.EqualTo(["--user", "unset-environment", "KEYSHARP_ENV_DELETE"]).AsCollection);
 #elif OSX
 		Assert.AreEqual(2, commands.Count);
 		Assert.AreEqual("/bin/launchctl", commands[0].FileName);

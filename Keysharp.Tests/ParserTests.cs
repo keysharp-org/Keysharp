@@ -535,7 +535,7 @@ public class ParserTests : TestRunner
 			File.WriteAllText(main, "#Include foo.ahk\nvalue := GetValue()\n");
 			File.WriteAllText(included, "GetValue() => 42\n");
 			var (_, assembly, files) = CompileFile(main);
-			Assert.That(files, Is.EqualTo(new[] { main, included }).AsCollection);
+			Assert.That(files, Is.EqualTo([main, included]).AsCollection);
 			var lines = SourceText.Lines(assembly);
 			Assert.That(lines[0][0], Is.EqualTo("#Include foo.ahk"));
 			Assert.That(lines[1][0], Is.EqualTo("GetValue() => 42"));

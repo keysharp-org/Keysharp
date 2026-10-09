@@ -125,7 +125,7 @@ global using ScreenRect = Keysharp.Internals.ScreenRect;
 //Third party
 #if LINUX
 	global using DBusMessage = Tmds.DBus.Protocol.Message;
-	//global using FormWindowState = Eto.Forms.WindowState;
+	global using FormWindowState = Eto.Forms.WindowState;
 #elif OSX
 	global using AppKit = MonoMac.AppKit;
 #endif

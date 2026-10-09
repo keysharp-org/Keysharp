@@ -756,8 +756,8 @@ public class DirectiveTests : TestRunner
 		Assert.That(mixed.defines, Is.EqualTo(["FEATURE_X", "A", "B"]).AsCollection, "every --define form should be extracted");
 		Assert.That(mixed.rest, Is.EqualTo(["--force", "--errorstdout"]).AsCollection, "other switches must be forwarded untouched");
 #else
-		NUnit.Framework.CollectionAssert.AreEqual(new[] { "FEATURE_X" }, mixed.defines, "only the dash forms are switches here");
-		NUnit.Framework.CollectionAssert.AreEqual(new[] { "--force", "/define:A,B", "--errorstdout" }, mixed.rest, "a path-shaped argument must be forwarded untouched");
+        Assert.That(mixed.defines, Is.EqualTo(["FEATURE_X"]).AsCollection, "only the dash forms are switches here");
+        Assert.That(mixed.rest, Is.EqualTo(["--force", "/define:A,B", "--errorstdout"]).AsCollection, "a path-shaped argument must be forwarded untouched");
 #endif
 
 		// Nothing to extract: the whole command line is forwarded.

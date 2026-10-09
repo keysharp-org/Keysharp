@@ -478,16 +478,16 @@ public partial class HotstringTests : TestRunner
 		static uint TwinOf(uint vk, bool numLockOn, bool shiftDown)
 			=> Keysharp.Internals.Input.Keyboard.KeyCodes.NumpadTwinVk(vk, numLockOn, shiftDown);
 
-		// The whole point of the reverse map: a key-state query must see every code that reports as the VK,
-		// not just the one MapVkToSc names.
-		CollectionAssert.AreEqual(new uint[] { 127, 139 }, CodesFor(0x5D)); // VK_APPS: KEY_COMPOSE, KEY_MENU
-		CollectionAssert.AreEqual(new uint[] { 155, 215 }, CodesFor(0xB4)); // VK_LAUNCH_MAIL: KEY_MAIL, KEY_EMAIL
-		CollectionAssert.AreEqual(new uint[] { 156, 364 }, CodesFor(0xAB)); // VK_BROWSER_FAVORITES
-		CollectionAssert.AreEqual(new uint[] { 164, 200, 201, 207 }, CodesFor(0xB3)); // VK_MEDIA_PLAY_PAUSE
-		CollectionAssert.AreEqual(new uint[] { 28, 96 }, CodesFor(0x0D)); // VK_RETURN: KEY_ENTER, KEY_KPENTER
-		CollectionAssert.AreEqual(new uint[] { 103 }, CodesFor(0x26)); // VK_UP
-		CollectionAssert.AreEqual(new uint[] { 72 }, CodesFor(0x68)); // VK_NUMPAD8
-		CollectionAssert.IsEmpty(CodesFor(0)); // no such key
+        // The whole point of the reverse map: a key-state query must see every code that reports as the VK,
+        // not just the one MapVkToSc names.
+        Assert.That(CodesFor(0x5D), Is.EqualTo(new uint[] { 127, 139 }).AsCollection); // VK_APPS: KEY_COMPOSE, KEY_MENU
+        Assert.That(CodesFor(0xB4), Is.EqualTo(new uint[] { 155, 215 }).AsCollection); // VK_LAUNCH_MAIL: KEY_MAIL, KEY_EMAIL
+        Assert.That(CodesFor(0xAB), Is.EqualTo(new uint[] { 156, 364 }).AsCollection); // VK_BROWSER_FAVORITES
+        Assert.That(CodesFor(0xB3), Is.EqualTo(new uint[] { 164, 200, 201, 207 }).AsCollection); // VK_MEDIA_PLAY_PAUSE
+        Assert.That(CodesFor(0x0D), Is.EqualTo(new uint[] { 28, 96 }).AsCollection); // VK_RETURN: KEY_ENTER, KEY_KPENTER
+        Assert.That(CodesFor(0x26), Is.EqualTo(new uint[] { 103 }).AsCollection); // VK_UP
+        Assert.That(CodesFor(0x68), Is.EqualTo(new uint[] { 72 }).AsCollection); // VK_NUMPAD8
+        Assert.That(CodesFor(0), Is.Empty); // no such key
 
 		// NumLock and Shift cancelling out is what folds KEY_KP8 into VK_UP, so that is exactly when a query
 		// about VK_UP must also consider Numpad8's code (and never the other way round).

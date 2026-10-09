@@ -70,21 +70,11 @@
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
 	</ItemGroup>
 
-
-	<ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
-		<ProjectReference Include="$(EtoRoot)/src/Eto.Gtk/Eto.Gtk.csproj" />
-		<!-- Pinned exactly: floating resolves 0.90.0, which carries advisory GHSA-xrw6-gwf8-vvr9.
-		     The Generator is build-time only (PrivateAssets), so it adds no runtime dependency. -->
-		<PackageReference Include="Tmds.DBus.Protocol" Version="0.95.1" />
-	</ItemGroup>
-
 	<ItemGroup>
-		<ProjectReference Include="..\Keysharp.Core\Keysharp.Core.csproj" />
 		<ProjectReference Include="..\Keysharp\Keysharp.csproj" Private="false" />
-		<ProjectReference Include="..\Keysharp.Components\Scripting\Contracts\Keysharp.Components.Scripting.csproj" />
-		<ProjectReference Include="..\Keysharp.Components\Scripting\Compiler\Keysharp.Components.Scripting.Compiler.csproj" />
+		<ProjectReference Include="..\Keysharp.Core\Keysharp.Core.csproj" />
 		<ProjectReference Include="..\Keysharp.Components\Scripting\Parser\Keysharp.Components.Scripting.Parser.csproj" />
-		<ProjectReference Include="..\Keysharp.Components\Packages\Contracts\Keysharp.Components.Packages.csproj" />
+		<ProjectReference Include="..\Keysharp.Components\Scripting\Compiler\Keysharp.Components.Scripting.Compiler.csproj" />
 		<ProjectReference Include="..\Keysharp.Components\Packages\NuGet\Keysharp.Components.Packages.NuGet.csproj" ReferenceOutputAssembly="false" Private="false" />
 	</ItemGroup>
 

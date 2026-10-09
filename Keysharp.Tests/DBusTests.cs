@@ -98,7 +98,7 @@ public class DBusTests : TestRunner
 		Assert.That(iface.Properties["P"].CanRead, Is.True);
 		Assert.That(iface.Properties["P"].CanWrite, Is.True);
 		Assert.That(iface.Signals["S"].Signature, Is.EqualTo("si"));
-		Assert.That(node.Children, Is.EqualTo(new[] { "child" }));
+		Assert.That(node.Children, Is.EqualTo(["child"]));
 	}
 
 	// ---- live bus ---------------------------------------------------------------------------

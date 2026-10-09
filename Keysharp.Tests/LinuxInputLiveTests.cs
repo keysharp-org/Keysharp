@@ -51,16 +51,16 @@ public class LinuxInputLiveTests
 		fixture.Sender.SendInput(KeyStroke(F13));
 
 		Assert.IsTrue(outerFinished.Wait(TestTimeout));
-		Assert.That(trace.ToArray(), Is.EqualTo(new[]
-		{
-			"outer-down-enter",
+		Assert.That(trace.ToArray(), Is.EqualTo(
+        [
+            "outer-down-enter",
 			"nested-down",
 			"nested-up",
 			"nested-send-returned",
 			"outer-down-leave",
 			"outer-up-enter",
 			"outer-up-leave",
-		}));
+		]));
 		fixture.ThrowReaderFailure();
 	}
 
@@ -103,16 +103,16 @@ public class LinuxInputLiveTests
 		Assert.IsTrue(finished.Wait(TestTimeout));
 		Assert.IsTrue(workerSend.Wait(TestTimeout));
 		fixture.ThrowReaderFailure();
-		Assert.That(trace.ToArray(), Is.EqualTo(new[]
-		{
-			"parent-down-enter",
+		Assert.That(trace.ToArray(), Is.EqualTo(
+        [
+            "parent-down-enter",
 			"worker-send-started",
 			"parent-down-decide",
 			"parent-up-enter",
 			"parent-up-decide",
 			"child-down",
 			"child-up",
-		}));
+		]));
 	}
 
 	[TestCase(false, TestName = "RecursiveMaskOvertakesBystanderQueuedParent")]
@@ -376,9 +376,9 @@ public class LinuxInputLiveTests
 			a.ThrowReaderFailure();
 			b.ThrowReaderFailure();
 			Assert.AreEqual(0, Volatile.Read(ref quarantines));
-			Assert.That(trace.ToArray(), Is.EqualTo(new[]
-			{
-				"a-parent-f13-down-enter",
+			Assert.That(trace.ToArray(), Is.EqualTo(
+            [
+                "a-parent-f13-down-enter",
 				"a-callback-f14-down",
 				"b-hook-f14-down-enter",
 				"a-callback-f15-down",
@@ -394,7 +394,7 @@ public class LinuxInputLiveTests
 				"b-parent-f13-down",
 				"a-parent-f13-up-decide",
 				"b-parent-f13-up",
-			}), "Recursive callbacks did not unwind grandchild-before-child-before-parent.");
+			]), "Recursive callbacks did not unwind grandchild-before-child-before-parent.");
 		}
 		finally
 		{
@@ -581,10 +581,10 @@ public class LinuxInputLiveTests
 
 		fixture.Sender.SendInput(KeyStroke(F13));
 		Assert.IsTrue(completed.Wait(TestTimeout));
-		Assert.That(trace.ToArray()[..3], Is.EqualTo(new[]
-		{
-			"outer-enter", "nested-mouse", "nested-returned"
-		}));
+		Assert.That(trace.ToArray()[..3], Is.EqualTo(
+        [
+            "outer-enter", "nested-mouse", "nested-returned"
+		]));
 		fixture.ThrowReaderFailure();
 	}
 
@@ -670,7 +670,7 @@ public class LinuxInputLiveTests
 		Assert.IsTrue(Task.WaitAll([first, second], TimeSpan.FromSeconds(4)));
 		Assert.IsTrue(callbacks.Wait(TestTimeout));
 		var observed = trace.ToArray();
-		Assert.That(observed, Is.EqualTo(new[] { F13, F13, F14, F14 })
+		Assert.That(observed, Is.EqualTo([F13, F13, F14, F14])
 			.Or.EqualTo(new[] { F14, F14, F13, F13 }),
 			"Callbacks from separate SendInput batches must be contiguous.");
 		fixture.ThrowReaderFailure();

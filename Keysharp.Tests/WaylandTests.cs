@@ -127,15 +127,15 @@ public class WaylandTests
 			out var legacyWindow), Is.True);
 		Assert.That(DesktopWindowParser.TrySingle(Encoding.UTF8.GetBytes(malformedFields), Resolve,
 			out var malformedWindow), Is.True);
-		Assert.Multiple(() =>
-		{
+        using (Assert.EnterMultipleScope())
+        {
 			Assert.That(explicitWindow.HasKnownField(WaylandWindowFields.Title), Is.True);
 			Assert.That(explicitWindow.HasKnownField(WaylandWindowFields.Active), Is.False);
 			Assert.That(legacyWindow.HasKnownField(WaylandWindowFields.Title), Is.True);
 			Assert.That(legacyWindow.HasKnownField(WaylandWindowFields.Active), Is.True);
 			Assert.That(malformedWindow.HasKnownField(WaylandWindowFields.Title), Is.False);
 			Assert.That(malformedWindow.HasKnownField(WaylandWindowFields.Active), Is.False);
-		});
+		}
 	}
 
 	[Test]
@@ -167,18 +167,18 @@ public class WaylandTests
 			"an unknown interval must neither emit placeholder changes nor erase the prior baseline");
 
 		tracker.Update([Parse(changed)], events.Add);
-		Assert.Multiple(() =>
-		{
-			Assert.That(events.Select(windowEvent => windowEvent.Kind), Is.EqualTo(new[]
-			{
-				WaylandWindowEventKind.TitleChanged,
+        using (Assert.EnterMultipleScope())
+        {
+			Assert.That(events.Select(windowEvent => windowEvent.Kind), Is.EqualTo(
+            [
+                WaylandWindowEventKind.TitleChanged,
 				WaylandWindowEventKind.Minimized,
 				WaylandWindowEventKind.MoveResized
-			}));
+			]));
 			Assert.That(events[^1].Bounds, Is.EqualTo(new Rectangle(15, 25, 300, 200)));
 			Assert.That(events.Any(windowEvent => windowEvent.Kind == WaylandWindowEventKind.Activated), Is.False,
 				"an unknown active field must not clear the last trustworthy active handle");
-		});
+		}
 	}
 
 	[Test]
@@ -217,7 +217,7 @@ public class WaylandTests
 		var handles = new SyntheticWindowHandleMap<string>();
 		var original = handles.GetOrCreate("opaque:7");
 
-		Assert.That(handles.Retain([]), Is.EqualTo(new[] { original }));
+		Assert.That(handles.Retain([]), Is.EqualTo([original]));
 		Assert.That(handles.Contains(original), Is.False);
 
 		var reappeared = handles.GetOrCreate("opaque:7");
@@ -321,15 +321,15 @@ public class WaylandTests
 
 		source.Start();
 
-		Assert.Multiple(() =>
-		{
+        using (Assert.EnterMultipleScope())
+        {
 			Assert.That(ownerDisposeCompleted, Is.True,
 				"the fallback factory must not run while the owner state lock is held");
 			Assert.That(ownerDisposeError, Is.Null);
 			Assert.That(fallback.Disposed, Is.True,
 				"a fallback returned after owner disposal must be retired instead of published");
 			Assert.That(source.IsPreferred, Is.False);
-		});
+		}
 	}
 
 	[Test]
@@ -360,14 +360,14 @@ public class WaylandTests
 
 		source.Start();
 
-		Assert.Multiple(() =>
-		{
+        using (Assert.EnterMultipleScope())
+        {
 			Assert.That(preferred.Disposed, Is.True);
 			Assert.That(reentryCompleted, Is.True,
 				"stale preferred cleanup must not hold the owner state lock");
 			Assert.That(reentryError, Is.Null);
 			Assert.That(source.IsPreferred, Is.False);
-		});
+		}
 	}
 
 	private static bool RunOnWorker(Action action, out Exception error)

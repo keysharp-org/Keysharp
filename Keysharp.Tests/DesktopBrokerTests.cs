@@ -50,13 +50,13 @@ public class DesktopBrokerTests
 	{
 		byte[] json = id == null ? [] : Encoding.UTF8.GetBytes(
 			$"{{\"ok\":true,\"window\":{{\"id\":\"{id}\",\"validFields\":[\"id\"]}}}}");
-		Assert.Multiple(() =>
-		{
+        using (Assert.EnterMultipleScope())
+        {
 			Assert.That(services.X11.TryReadWindow(24, json, (NativeClientStatus)status, out var window,
 				out var notFound), Is.EqualTo(found));
 			Assert.That(window != null, Is.EqualTo(found));
 			Assert.That(notFound, Is.EqualTo(gone));
-		});
+		}
 	}
 
 	[TestCase((int)NativeClientStatus.Ok, 0, false, false)]
@@ -72,11 +72,11 @@ public class DesktopBrokerTests
 		var result = new DesktopClient.CallResult((NativeClientStatus)statusCode, 0, systemError,
 			string.Empty, "test operation");
 
-		Assert.Multiple(() =>
-		{
+        using (Assert.EnterMultipleScope())
+        {
 			Assert.That(result.ShouldReconnect, Is.EqualTo(shouldReconnect));
 			Assert.That(result.IsExpectedPollTimeout, Is.EqualTo(isExpectedPollTimeout));
-		});
+		}
 	}
 
 	[Test]
@@ -93,8 +93,8 @@ public class DesktopBrokerTests
 			out var windows), Is.True);
 		Assert.That(windows, Has.Count.EqualTo(1));
 		var window = windows[0];
-		Assert.Multiple(() =>
-		{
+        using (Assert.EnterMultipleScope())
+        {
 			Assert.That(window.Handle.ToInt64(), Is.EqualTo(4026531841L));
 			Assert.That(window.CompositorId, Is.EqualTo("4026531841"));
 			Assert.That(window.Title, Is.EqualTo("Café"));
@@ -105,7 +105,7 @@ public class DesktopBrokerTests
 			Assert.That(window.Transparency, Is.EqualTo(127L));
 			Assert.That(window.PID, Is.Zero,
 				"a pid placeholder omitted from validFields must remain unknown");
-		});
+		}
 	}
 
 	[Test]
@@ -129,8 +129,8 @@ public class DesktopBrokerTests
 				out var windows), Is.True, fixture.Name);
 			Assert.That(windows, Has.Count.EqualTo(1), fixture.Name);
 			var window = windows[0];
-			Assert.Multiple(() =>
-			{
+            using (Assert.EnterMultipleScope())
+            {
 				Assert.That(window.ClientBounds, Is.EqualTo(new Rectangle(1, 2, 300, 200)), fixture.Name);
 				Assert.That(window.TryGetBounds(true, out var bounds), Is.True, fixture.Name);
 				Assert.That(bounds, Is.EqualTo(window.ClientBounds), fixture.Name);
@@ -146,7 +146,7 @@ public class DesktopBrokerTests
 				Assert.That(window.HasKnownField(WaylandWindowFields.OnCurrentWorkspace),
 					Is.EqualTo(fixture.WorkspaceKnown), fixture.Name);
 				Assert.That(window.OnCurrentWorkspace, Is.EqualTo(!fixture.WorkspaceKnown), fixture.Name);
-			});
+			}
 		}
 	}
 
@@ -168,8 +168,8 @@ public class DesktopBrokerTests
 			out var windows), Is.True);
 		Assert.That(windows, Has.Count.EqualTo(1));
 		var window = windows[0];
-		Assert.Multiple(() =>
-		{
+        using (Assert.EnterMultipleScope())
+        {
 			Assert.That(window.Title, Is.EqualTo("Editor"));
 			Assert.That(window.ClassName, Is.EqualTo("Example.Editor"));
 			Assert.That(window.PID, Is.Zero);
@@ -187,7 +187,7 @@ public class DesktopBrokerTests
 			Assert.That(window.Decorated, Is.True);
 			Assert.That(window.Transparency, Is.EqualTo(-1L));
 			Assert.That(window.OnCurrentWorkspace, Is.True);
-		});
+		}
 	}
 
 	[TestCase(true, true)]
@@ -267,13 +267,13 @@ public class DesktopBrokerTests
 		Assert.That(DesktopWindowParser.TrySingle(Encoding.UTF8.GetBytes(json),
 			id => new nint(long.Parse(id, CultureInfo.InvariantCulture)), out var window), Is.True);
 
-		Assert.Multiple(() =>
-		{
+        using (Assert.EnterMultipleScope())
+        {
 			Assert.That(window.ParentWindow, Is.SameAs(window.ParentWindow));
 			Assert.That(window.ParentWindow.Handle, Is.EqualTo(new nint(24)));
 			Assert.That(window.NonChildParentWindow, Is.SameAs(window.NonChildParentWindow));
 			Assert.That(window.NonChildParentWindow.Handle, Is.EqualTo(new nint(42)));
-		});
+		}
 	}
 
 	[Test]
@@ -288,13 +288,13 @@ public class DesktopBrokerTests
 		using var document = System.Text.Json.JsonDocument.Parse(json);
 		Assert.That(DesktopWindowParser.TryParse(document.RootElement,
 			id => new nint(long.Parse(id, CultureInfo.InvariantCulture)), out var window), Is.True);
-		Assert.Multiple(() =>
-		{
+        using (Assert.EnterMultipleScope())
+        {
 			Assert.That(window.Handle, Is.EqualTo(new nint(24)));
 			Assert.That(window.Title, Is.EqualTo("Editor"));
 			Assert.That(window.Active, Is.True);
 			Assert.That(window.Bounds, Is.EqualTo(new Rectangle(1, 2, 300, 200)));
-		});
+		}
 	}
 
 	[Test]
@@ -309,13 +309,13 @@ public class DesktopBrokerTests
 		Assert.That(backend.TryParseWindowList(Encoding.UTF8.GetBytes(json), out var windows), Is.True);
 		Assert.That(windows, Has.Count.EqualTo(1));
 		Assert.That(backend.TryGetNativeWindowId(windows[0].Handle, out var nativeId), Is.True);
-		Assert.Multiple(() =>
-		{
+        using (Assert.EnterMultipleScope())
+        {
 			Assert.That(backend.IsKnown(windows[0].Handle), Is.True);
 			Assert.That(nativeId, Is.EqualTo("ext-toplevel:editor"));
 			Assert.That(windows[0].Title, Is.EqualTo("Editor"));
 			Assert.That(windows[0].ClassName, Is.EqualTo("example.editor"));
-		});
+		}
 	}
 
 	[TestCase("generic", "c811cb87-a9bf-4207-bfd6-382d9c0b74f9")]
@@ -391,8 +391,8 @@ public class DesktopBrokerTests
 		Set("StackingOrder", 9UL);
 		var window = (WaylandWindowInfo)typeof(DesktopClient).GetMethod("ReadWindow",
 			BindingFlags.Static | BindingFlags.NonPublic).Invoke(null, [record]);
-		Assert.Multiple(() =>
-		{
+        using (Assert.EnterMultipleScope())
+        {
 			Assert.That(window.PID, Is.EqualTo(known ? 123L : 0L));
 			Assert.That(window.Active, Is.EqualTo(known));
 			Assert.That(window.Minimized, Is.EqualTo(known));
@@ -406,7 +406,7 @@ public class DesktopBrokerTests
 			Assert.That(window.SurfaceGeometry, Is.EqualTo(known ? new Rectangle(0, 0, 300, 200) : Rectangle.Empty));
 			Assert.That(window.ServiceParentHandle, Is.EqualTo(known ? 7UL : 0UL));
 			Assert.That(window.StackingOrder, Is.EqualTo(known ? 9UL : 0UL));
-		});
+		}
 	}
 
 	[Test]
@@ -422,21 +422,21 @@ public class DesktopBrokerTests
 		}
 		Assert.That(mirror.Apply(7, 1, 11, minimized, out var before), Is.True);
 		Dispatch(7, minimized, before);
-		Assert.That(events, Is.EqualTo(new[] { WaylandWindowEventKind.Hidden, WaylandWindowEventKind.Minimized }));
+		Assert.That(events, Is.EqualTo([WaylandWindowEventKind.Hidden, WaylandWindowEventKind.Minimized]));
 		var restored = Window();
 		Assert.That(mirror.Apply(6, 1, 12, restored, out before), Is.True);
 		Assert.That(before, Is.SameAs(minimized));
 		Dispatch(6, restored, before);
-		Assert.That(events, Is.EqualTo(new[] { WaylandWindowEventKind.Shown, WaylandWindowEventKind.Restored }));
+		Assert.That(events, Is.EqualTo([WaylandWindowEventKind.Shown, WaylandWindowEventKind.Restored]));
 		Dispatch(11, minimized, restored);
-		Assert.That(events, Is.EqualTo(new[] { WaylandWindowEventKind.Hidden, WaylandWindowEventKind.Minimized }));
+		Assert.That(events, Is.EqualTo([WaylandWindowEventKind.Hidden, WaylandWindowEventKind.Minimized]));
 		var moved = new WaylandWindowInfo(42, title: "edited", visible: true, active: true,
 			frameGeometry: new Rectangle(1, 2, 3, 4));
 		Dispatch(8, moved, restored);
-		Assert.That(events, Is.EqualTo(new[] { WaylandWindowEventKind.MoveResized,
-			WaylandWindowEventKind.Activated, WaylandWindowEventKind.TitleChanged }));
+		Assert.That(events, Is.EqualTo([ WaylandWindowEventKind.MoveResized,
+			WaylandWindowEventKind.Activated, WaylandWindowEventKind.TitleChanged ]));
 		Dispatch(5, restored, minimized);
-		Assert.That(events, Is.EqualTo(new[] { WaylandWindowEventKind.Closed }));
+		Assert.That(events, Is.EqualTo([WaylandWindowEventKind.Closed]));
 		Dispatch(11, minimized, new WaylandWindowInfo(42, knownFields: WaylandWindowFields.None));
 		Assert.That(events, Is.Empty, "unknown flags cannot invent a transition");
 	}
@@ -464,19 +464,19 @@ public class DesktopBrokerTests
 		Assert.That(events, Is.Empty, "an unchanged compositor refresh must stay silent");
 		var minimized = new WaylandWindowInfo(42, title: "edited", visible: true, minimized: true);
 		Refresh(minimized);
-		Assert.That(events, Is.EqualTo(new[] { WaylandWindowEventKind.TitleChanged, WaylandWindowEventKind.Minimized }));
+		Assert.That(events, Is.EqualTo([WaylandWindowEventKind.TitleChanged, WaylandWindowEventKind.Minimized]));
 		Assert.That(mirror.TryRead(out var current), Is.True);
 		Assert.That(current.Single(), Is.SameAs(minimized), "refresh events describe committed window state");
 		Refresh(minimized);
 		Assert.That(events, Is.Empty, "replaying a changed snapshot must not repeat its events");
 		Refresh(Window(title: "edited"));
-		Assert.That(events, Is.EqualTo(new[] { WaylandWindowEventKind.Restored }));
+		Assert.That(events, Is.EqualTo([WaylandWindowEventKind.Restored]));
 		Refresh(new WaylandWindowInfo(42, title: "unknown", minimized: true, knownFields: WaylandWindowFields.None));
 		Assert.That(events, Is.Empty, "unknown fields cannot invent snapshot transitions");
 		Refresh(Window(), new WaylandWindowInfo(43));
-		Assert.That(events, Is.EqualTo(new[] { WaylandWindowEventKind.Created }));
+		Assert.That(events, Is.EqualTo([WaylandWindowEventKind.Created]));
 		Refresh(Window());
-		Assert.That(events, Is.EqualTo(new[] { WaylandWindowEventKind.Closed }));
+		Assert.That(events, Is.EqualTo([WaylandWindowEventKind.Closed]));
 		mirror.Invalidate();
 		Refresh(Window(title: "recovered"));
 		Assert.That(events, Is.Empty, "a fresh stream must seed state again after invalidation");
@@ -739,7 +739,7 @@ public class DesktopBrokerTests
 		mirror.Apply(2, 1, 0, new WaylandWindowInfo(0, serviceHandle: 42, stackingOrder: 1), out _);
 		mirror.Apply(3, 1, 0, null, out _);
 		Assert.That(mirror.TryRead(out var windows), Is.True);
-		Assert.That(windows.Select(window => window.ServiceHandle), Is.EqualTo(new[] { 42UL, 0x10000002AUL }));
+		Assert.That(windows.Select(window => window.ServiceHandle), Is.EqualTo([42UL, 0x10000002AUL]));
 	}
 }
 #endif

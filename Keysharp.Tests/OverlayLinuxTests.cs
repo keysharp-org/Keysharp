@@ -70,13 +70,13 @@ public class OverlayLinuxTests
 			new(right, new ScreenRect(100, 10, 30, 40), 30, 0),
 		];
 
-		Assert.Multiple(() =>
-		{
+        using (Assert.EnterMultipleScope())
+        {
 			Assert.That(LayerImageBacking.CoversSameOutputs(resized, new uint[] { 5, 4 }), Is.True);
 			Assert.That(LayerImageBacking.CoversSameOutputs(resized, new uint[] { 4, 6 }), Is.False);
 			Assert.That(LayerImageBacking.CoversSameOutputs(resized, new uint[] { 4 }), Is.False);
 			Assert.That(LayerImageBacking.CoversSameOutputs([], System.Array.Empty<uint>()), Is.False);
-		});
+		}
 	}
 
 	[Test]
@@ -91,7 +91,7 @@ public class OverlayLinuxTests
 		};
 
 		Assert.That(LayerImageBacking.TryRetire(fragments, fragment => fragment.Dispose()), Is.False);
-		Assert.That(fragments.Keys, Is.EqualTo(new[] { 1u }));
+		Assert.That(fragments.Keys, Is.EqualTo([1u]));
 		Assert.That(LayerImageBacking.TryRetire(fragments, fragment => fragment.Dispose()), Is.True);
 		Assert.That(fragments, Is.Empty);
 		Assert.That(failed.Attempts, Is.EqualTo(2));
