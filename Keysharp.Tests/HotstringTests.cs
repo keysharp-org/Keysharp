@@ -65,7 +65,7 @@ public partial class HotstringTests : TestRunner
 		_ = Keyboard.Hotstring("Reset");
 
 		// As in AutoHotkey, the first hotstring defined fires, so one added before this one may win if it also ends the text.
-		void AssertFires(HotstringDefinition added, HotstringDefinition fired, string typed)
+		static void AssertFires(HotstringDefinition added, HotstringDefinition fired, string typed)
 		{
 			Assert.That(fired, Is.Not.Null);
 			var text = fired.EndCharRequired ? typed[..^1] : typed;
@@ -80,11 +80,7 @@ public partial class HotstringTests : TestRunner
 			hs1 = (HotstringDefinition)Keysharp.Runtime.Keyboard.HotstringManager.AddHotstring(split0, null, splits[2].Trim('"'), split3, splits[4].Trim('"'), false);
 			//System.Diagnostics.Debug.WriteLine(split0);
 
-			if (!split0.Contains('*'))
-				val = split3 + " ";
-			else
-				val = split3;
-
+			val = !split0.Contains('*') ? split3 + " " : split3;
 			hs2 = MatchHotstring(val);//Test as is.
 			AssertFires(hs1, hs2, val);
 			var prefixed = Guid.NewGuid() + " " + val;
@@ -95,15 +91,8 @@ public partial class HotstringTests : TestRunner
 			var newOptsName = ":*B0OSZRK123P10:" + split3;//Change options except for ? and C.
 
 			//Still need to do the rest of the autocorrect file here.//TODO
-			if (opts.Contains('?'))
-				_ = Keyboard.Hotstring("?");
-			else
-				_ = Keyboard.Hotstring("?0");
-
-			if (opts.Contains('C'))
-				_ = Keyboard.Hotstring("C");
-			else
-				_ = Keyboard.Hotstring("C0");
+			_ = opts.Contains('?') ? Keyboard.Hotstring("?") : Keyboard.Hotstring("?0");
+			_ = opts.Contains('C') ? Keyboard.Hotstring("C") : Keyboard.Hotstring("C0");
 
 			var found = Keyboard.Hotstring(newOptsName) as HotstringDefinition;
 			Assert.That(found, Is.Not.Null);
@@ -612,7 +601,7 @@ public partial class HotstringTests : TestRunner
 		{
 			var escaped = false;
 			var sb = new StringBuilder(s.Length);
-			char ch = (char)0;
+			var ch = (char)0;
 
 			for (var i = 0; i < s.Length; ++i)
 			{
@@ -870,7 +859,6 @@ public partial class HotstringTests : TestRunner
 		Assert.IsNull(key.downModifiersLR);
 	}
 
-
 #if OSX
 	[Test, Category("Hotstring"), Category("Internal")]
 	public void MacRemapRepeat()
@@ -1051,9 +1039,9 @@ public partial class HotstringTests : TestRunner
 			flipping.ParseOptions("*0");
 			return 1L;
 		}));
-		var flipped = TypeHotstringText("abc");
-		Assert.That(flipped.Definition, Is.SameAs(flipping));
-		Assert.That(flipped.EndChar, Is.EqualTo('\0'));
+		var (Definition, CaseMode, EndChar) = TypeHotstringText("abc");
+		Assert.That(Definition, Is.SameAs(flipping));
+		Assert.That(EndChar, Is.EqualTo('\0'));
 	}
 
 	[TestCase(128, true), TestCase(2048, false)]
@@ -1063,9 +1051,9 @@ public partial class HotstringTests : TestRunner
 		var trigger = new string('a', length - 1) + "z";
 		var definition = AddHotstringForMatchTest(immediate ? "*:" : "", trigger);
 		var ending = immediate ? "" : " ";
-		var result = TypeHotstringText(new string('q', length * 3) + " " + trigger.ToUpperInvariant() + ending);
-		Assert.That(result.Definition, Is.SameAs(definition));
-		Assert.That(result.CaseMode, Is.EqualTo(CaseConformModes.AllCaps));
+		var (Definition, CaseMode, _) = TypeHotstringText(new string('q', length * 3) + " " + trigger.ToUpperInvariant() + ending);
+		Assert.That(Definition, Is.SameAs(definition));
+		Assert.That(CaseMode, Is.EqualTo(CaseConformModes.AllCaps));
 		// The character before the abbreviation is kept, and here it continues a word.
 		Assert.IsNull(TypeHotstringText(new string('q', length * 3) + "x" + trigger + ending).Definition);
 	}
@@ -1232,7 +1220,7 @@ public partial class HotstringTests : TestRunner
 		{
 			var start = typed.Length - hs.str.Length - (hs.endCharRequired ? 1 : 0);
 
-			if (hs.suspended != 0 || hs.endCharRequired && !hasEndChar || start < 0)
+			if (hs.suspended != 0 || (hs.endCharRequired && !hasEndChar) || start < 0)
 				continue;
 
 			var abbreviation = typed.Substring(start, hs.str.Length);

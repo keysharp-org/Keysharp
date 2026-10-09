@@ -260,7 +260,7 @@ public class InputHookTests : TestRunner
 			Assert.IsEmpty(calls);
 			context.DrainAll();
 
-			Assert.That(calls.Select(c => (c.dx, c.dy)), Is.EqualTo(new[] { (0L, 0L), (4L, -2L), (0L, 0L) }));
+			Assert.That(calls.Select(c => (c.dx, c.dy)), Is.EqualTo([(0L, 0L), (4L, -2L), (0L, 0L)]));
 			Assert.That(Script.GetPropertyValue(calls[0].info, "X"), Is.EqualTo(20L));
 			Assert.That(Script.GetPropertyValue(calls[0].info, "Y"), Is.EqualTo(30L));
 			Assert.That(KeysharpObject.HasOwnProp(calls[0].info, "DeviceId"), Is.EqualTo(0L));

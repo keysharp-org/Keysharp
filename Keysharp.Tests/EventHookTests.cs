@@ -38,8 +38,11 @@ public class EventHookTests : TestRunner
 	private static object CreateWinEvent()
 	{
 		var reg = WinEventRun(WindowEventType.Active);
-		var hook = new Ks.WinEvent { OnActive = reg.callbacks[(int)WindowEventType.Active] };
-		hook.sub = reg;
+		var hook = new Ks.WinEvent
+		{
+			OnActive = reg.callbacks[(int)WindowEventType.Active],
+			sub = reg
+		};
 		reg.scriptObject = hook;
 		return hook;
 	}
@@ -381,8 +384,10 @@ public class EventHookTests : TestRunner
 	[Test, Category("Internal"), NonParallelizable]
 	public void StopRacingSlotRestartsLeavesTheHookStopped()
 	{
-		var we = new Ks.WinEvent("ahk_class NoSuchWindowClassForThisTest");
-		we.OnExist = SlotCallback();
+		var we = new Ks.WinEvent("ahk_class NoSuchWindowClassForThisTest")
+		{
+			OnExist = SlotCallback()
+		};
 		_ = we.Start();
 
 		if (we.EndReason == "Failed")

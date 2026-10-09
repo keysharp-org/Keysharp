@@ -16,7 +16,7 @@ public class TokenizerContractTests : TestRunner
 		var unmapped = new List<string>();
 
 		// The mapping is private, so check by name instead: every internal kind needs a contract counterpart.
-		foreach (TokenKind kind in Enum.GetValues<TokenKind>())
+		foreach (var kind in Enum.GetValues<TokenKind>())
 		{
 			if (kind == TokenKind.Unknown)
 				continue;

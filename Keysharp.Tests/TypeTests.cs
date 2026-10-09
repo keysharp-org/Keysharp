@@ -60,7 +60,7 @@ public partial class TypeTests : TestRunner
 
 				var declared = parameter.GetCustomAttribute<UserDeclaredNameAttribute>()?.Name;
 				var exempt = parameter.GetCustomAttribute<ParamArrayAttribute>() != null || declared is "wParam" or "lParam";
-				Assert.IsTrue(exempt || name.Length > 0 && char.IsUpper(name[0]),
+				Assert.IsTrue(exempt || (name.Length > 0 && char.IsUpper(name[0])),
 					$"Parameter {member.DeclaringType?.FullName}.{member.Name}({name}) should use PascalCase.");
 			}
 		}

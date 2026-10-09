@@ -25,8 +25,8 @@ public partial class ScreenTests
 		}
 		finally
 		{
-			foreach (var capture in captures)
-				capture.Pixels.Dispose();
+			foreach (var (Bounds, Pixels) in captures)
+				Pixels.Dispose();
 		}
 	}
 

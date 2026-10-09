@@ -132,9 +132,9 @@ public class ParserTests : TestRunner
 			// own #Include of it is skipped rather than declaring the class twice.
 			AssertIncluded(EmitWithInclude("x := Included()\n", includeFile: include));
 			AssertIncluded(EmitWithInclude(source, includeFile: include));
-			var missing = EmitWithInclude("x := 1\n", includeFile: Path.Combine(dir, "Missing.ks"));
-			Assert.IsNull(missing.Bytes);
-			Assert.That(missing.Text, Does.Contain("--include file not found"));
+			var (Bytes, Text) = EmitWithInclude("x := 1\n", includeFile: Path.Combine(dir, "Missing.ks"));
+			Assert.IsNull(Bytes);
+			Assert.That(Text, Does.Contain("--include file not found"));
 		}
 		finally
 		{
@@ -360,10 +360,10 @@ public class ParserTests : TestRunner
 		try
 		{
 			File.WriteAllText(Path.Combine(dir, "Cont.ks"), "+ 2\ny := 10\n");
-			var emitted = EmitWithInclude("x := 1\n#include \"Cont.ks\"\n+ 3\n", dir);
-			Assert.That(emitted.Bytes, Is.Not.Null, emitted.Text);
-			Assert.That(emitted.Text, Does.Contain("x = 1L;"));
-			Assert.That(emitted.Text, Does.Contain("y = 10L;"));
+			var (Bytes, Text) = EmitWithInclude("x := 1\n#include \"Cont.ks\"\n+ 3\n", dir);
+			Assert.That(Bytes, Is.Not.Null, Text);
+			Assert.That(Text, Does.Contain("x = 1L;"));
+			Assert.That(Text, Does.Contain("y = 10L;"));
 		}
 		finally
 		{
@@ -400,7 +400,7 @@ public class ParserTests : TestRunner
 			var main = Path.Combine(app, "main.ahk");
 			File.WriteAllText(main, "#ErrorStdOut\n#Warn All, StdOut\n#Include Lib\\InLib.ahk\n#Include ..\\shared\\Helper.ahk\n#Include ..\\other\\Helper.ahk\nx := InLib() Helper() OtherHelper()\nExplicitWhat() => Error(\"x\", -1)\n");
 			var (bytes, compiled, compiledFiles) = CompileFile(main, output: ScriptCompilationOutput.Executable, includeDir: app);
-			Assert.That(compiledFiles, Is.EqualTo(new[] { "./main.ahk", "./Lib/InLib.ahk", "<External>/Helper.ahk", "<External>/Helper (2).ahk" }).AsCollection);
+			Assert.That(compiledFiles, Is.EqualTo(["./main.ahk", "./Lib/InLib.ahk", "<External>/Helper.ahk", "<External>/Helper (2).ahk"]).AsCollection);
 
 			// String literals are UTF-16 in the assembly and attribute arguments UTF-8.
 			foreach (var encoding in new[] { Encoding.UTF8, Encoding.Unicode })

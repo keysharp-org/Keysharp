@@ -46,7 +46,7 @@ public class AppManifestTests : TestRunner
 			"{\"icon\":\"assets/app.ICO\",\"noTrayIcon\":true,\"files\":[\"assets/file.txt\"]}");
 		Assert.That(manifest.Icon, Is.EqualTo("assets/app.ICO"));
 		Assert.IsTrue(manifest.TrayIconSuppressed);
-		Assert.That(manifest.Files, Is.EqualTo(new[] { "assets/file.txt" }).AsCollection);
+		Assert.That(manifest.Files, Is.EqualTo(["assets/file.txt"]).AsCollection);
 
 		var numbered = AppManifest.Read(
 			"{\"trayIcon\":\"icons/library.dll\",\"trayIconNumber\":-12,\"files\":[]}");

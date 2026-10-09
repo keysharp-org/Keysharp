@@ -89,6 +89,7 @@ public class MessageFilterTests : TestRunner
 				CheckNotification(++count, inert);
 				Assert.That(selected, Is.EqualTo(2), "other mouse and balloon notifications must not choose the default item");
 			}
+
 			Assert.That(s.mainWindow.Visible, Is.False);
 		}
 		finally
@@ -357,19 +358,19 @@ public class MessageFilterTests : TestRunner
 		Assert.That(CallBuffered(filter, ref msg), Is.False);
 
 		context.DrainAll();
-		Assert.That(order, Is.EqualTo(new[] { "B" }));
+		Assert.That(order, Is.EqualTo(["B"]));
 
 		registrations[1].InstanceCount = registrations[1].MaxInstances;
 		Assert.That(CallBuffered(filter, ref msg), Is.False);
 		context.DrainAll();
-		Assert.That(order, Is.EqualTo(new[] { "B" }));
+		Assert.That(order, Is.EqualTo(["B"]));
 
 		registrations[0].InstanceCount = 0;
 		registrations[1].InstanceCount = 0;
 		s.EventScheduler.SchedulePump();
 		context.DrainAll();
 
-		Assert.That(order, Is.EqualTo(new[] { "B" }));
+		Assert.That(order, Is.EqualTo(["B"]));
 	}
 
 	/// <summary>
@@ -441,7 +442,7 @@ public class MessageFilterTests : TestRunner
 		var handled = filter.CallEventHandlers(ref msg);
 
 		Assert.IsTrue(handled);
-		Assert.That(order, Is.EqualTo(new[] { "B" }));
+		Assert.That(order, Is.EqualTo(["B"]));
 		Assert.That(GetResult(msg), Is.EqualTo((nint)7));
 	}
 
@@ -484,7 +485,7 @@ public class MessageFilterTests : TestRunner
 
 		Assert.That(filter.CallEventHandlers(ref msg), Is.EqualTo(claims));
 		Assert.That(GetResult(msg), Is.EqualTo((nint)reply));
-		Assert.That(order, Is.EqualTo(claims ? new[] { "first" } : new[] { "first", "second" }));
+		Assert.That(order, Is.EqualTo(claims ? new[] { "first" } : ["first", "second"]));
 	}
 
 	[Test, Category("Threading")]
@@ -538,7 +539,7 @@ public class MessageFilterTests : TestRunner
 			Assert.IsTrue(WindowsAPI.PostMessage(gui.form.Handle, msgId, 0, 0));
 			Application.DoEvents();
 
-			Assert.That(order, Is.EqualTo(claims ? new[] { "global" } : new[] { "global", "window" }));
+			Assert.That(order, Is.EqualTo(claims ? new[] { "global" } : ["global", "window"]));
 			Assert.That(probe.Count, Is.EqualTo(claims ? 0 : 1));
 		}
 		finally

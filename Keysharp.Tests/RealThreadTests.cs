@@ -116,7 +116,6 @@ public class RealThreadTests : TestRunner
 		};
 #endif
 
-
 	private static Error AssertScriptError(Action action) => Assert.Throws<KeysharpException>(action).UserError;
 
 	private static bool WaitWithUiPump(Func<bool> predicate, int timeout = 2000)

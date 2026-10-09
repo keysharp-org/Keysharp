@@ -29,7 +29,7 @@ public class WindowsOverlayTests : TestRunner
 				graphics.Flush();
 			}
 
-			uint pixel = uint.MaxValue;
+			var pixel = uint.MaxValue;
 			Assert.IsTrue(surface.TryAcquireSourceDC(out var dc),
 							"the source DC must remain valid after its creator thread exits");
 

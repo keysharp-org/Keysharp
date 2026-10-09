@@ -133,7 +133,7 @@ public abstract class TestRunner
 	// partway — is a failure. Matching only "pass"es would score a script that stopped halfway as passing.
 	protected static bool HasPassed(string output) => output?.Trim() == "pass";
 
-	protected string RunScript(string source, string name, bool execute, bool wrapinfunction, bool exeout, int? exitCode = null) => RunScript(WrapInFunc(File.ReadAllText(source)), name, execute, exeout, exitCode);
+	protected string RunFuncWrappedScript(string source, string name, bool execute, bool exeout, int? exitCode = null) => RunScript(WrapInFunc(File.ReadAllText(source)), name, execute, exeout, exitCode);
 
 	protected string RunScript(string source, string name, bool execute, bool exeout, int? exitCode = null)
 	{
@@ -166,28 +166,28 @@ public abstract class TestRunner
 
 		if (execute)
 		{
-			using (var writer = new StringWriter(buffer))
+			using var writer = new StringWriter(buffer);
+			var previousOutput = Console.Out;
+
+			try
 			{
-				var previousOutput = Console.Out;
-
-				try
+				object result = null;
+				InvokeCompiledScript(() =>
 				{
-					object result = null;
-					InvokeCompiledScript(() => {
-						Console.SetOut(writer);
-						// Don't let finalizers queued by the previous run's teardown overlap this one.
-						GC.WaitForPendingFinalizers();
+					Console.SetOut(writer);
+					// Don't let finalizers queued by the previous run's teardown overlap this one.
+					GC.WaitForPendingFinalizers();
 
-						if (ScriptExecutionState.Assembly == null)
-							throw new Exception("Compilation failed.");
+					if (ScriptExecutionState.Assembly == null)
+						throw new Exception("Compilation failed.");
 
-						//Environment.SetEnvironmentVariable("SCRIPT", script);
-						var program = ScriptExecutionState.Assembly.GetType($"{Keywords.MainNamespaceName}.{Keywords.MainClassName}");
-						var main = program.GetMethod("Main");
-						var temp = new string[] { };
-						Environment.ExitCode = 0;
+					//Environment.SetEnvironmentVariable("SCRIPT", script);
+					var program = ScriptExecutionState.Assembly.GetType($"{Keywords.MainNamespaceName}.{Keywords.MainClassName}");
+					var main = program.GetMethod("Main");
+					var temp = new string[] { };
+					Environment.ExitCode = 0;
 #if WINDOWS
-						result = StaTask.RunSync(() => main.Invoke(null, [temp]));
+					result = StaTask.RunSync(() => main.Invoke(null, [temp]));
 #else
 						try
 						{
@@ -197,38 +197,37 @@ public abstract class TestRunner
 						{
 						}
 #endif
-					});
+				});
 
-					//Silent on success, like the script's own assertions: the run's only "pass" is the one the script writes.
-					if (exitCode.HasValue)
-					{
-						if (!(result is int i && i == exitCode.Value))
-							Console.Write($"fail exit {result} (expected {exitCode.Value})");
-					}
-					else if (result is int i2 && i2 != 0)//This is for when an exception is thrown in the compiled program, the catch blocks make it return 1.
-						Console.Write($"fail exit {i2}");
-				}
-				catch (Exception ex)
+				//Silent on success, like the script's own assertions: the run's only "pass" is the one the script writes.
+				if (exitCode.HasValue)
 				{
-					if (ex is TargetInvocationException)
-						ex = ex.InnerException;
+					if (!(result is int i && i == exitCode.Value))
+						Console.Write($"fail exit {result} (expected {exitCode.Value})");
+				}
+				else if (result is int i2 && i2 != 0)//This is for when an exception is thrown in the compiled program, the catch blocks make it return 1.
+					Console.Write($"fail exit {i2}");
+			}
+			catch (Exception ex)
+			{
+				if (ex is TargetInvocationException)
+					ex = ex.InnerException;
 
-					var error = new StringBuilder();
-					_ = error.AppendLine("Execution error:\n");
-					_ = error.AppendLine($"{ex.GetType().Name}: {ex.Message}");
-					_ = error.AppendLine();
-					_ = error.AppendLine(ex.StackTrace);
-					var msg = error.ToString();
-					_ = Ks.OutputDebugLine(msg);
-					Console.Write("fail");
-					Assert.Fail(msg);
-				}
-				finally
-				{
-					writer.Flush();
-					output = buffer.ToString();
-					Console.SetOut(previousOutput);
-				}
+				var error = new StringBuilder();
+				_ = error.AppendLine("Execution error:\n");
+				_ = error.AppendLine($"{ex.GetType().Name}: {ex.Message}");
+				_ = error.AppendLine();
+				_ = error.AppendLine(ex.StackTrace);
+				var msg = error.ToString();
+				_ = Ks.OutputDebugLine(msg);
+				Console.Write("fail");
+				Assert.Fail(msg);
+			}
+			finally
+			{
+				writer.Flush();
+				output = buffer.ToString();
+				Console.SetOut(previousOutput);
 			}
 		}
 
@@ -257,7 +256,7 @@ public abstract class TestRunner
 		Verify(scriptPath, RunScript(scriptPath, source, true, exeout), 0);
 
 		if (testfunc)
-			Verify(scriptPath, RunScript(scriptPath, source + "_func", true, true, exeout), wrapOffset);
+			Verify(scriptPath, RunFuncWrappedScript(scriptPath, source + "_func", true, exeout), wrapOffset);
 
 		return true;
 	}

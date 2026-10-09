@@ -227,7 +227,7 @@ public class GuiTests : TestRunner
 				_ = overlay.OnEvent("Click", second);
 				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.Click, 3, 4));
 				Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
-				Assert.That(order, Is.EqualTo(secondRuns ? new[] { "first", "second 3,4" } : new[] { "first" }).AsCollection, $"Click after {what}");
+				Assert.That(order, Is.EqualTo(secondRuns ? new[] { "first", "second 3,4" } : ["first"]).AsCollection, $"Click after {what}");
 				_ = overlay.OnEvent("Click", first, 0L);
 				_ = overlay.OnEvent("Click", second, 0L);
 			}
@@ -252,7 +252,7 @@ public class GuiTests : TestRunner
 		var allowInterruption = threads.allowInterruption;
 		var handler = new KeysharpFunc((Func<object, object, object, object>)((_, x, y) => { moves.Add($"{x},{y}"); return ""; }));
 
-		void Pump() => Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+		static void Pump() => Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
 
 		try
 		{
@@ -261,11 +261,11 @@ public class GuiTests : TestRunner
 			overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 2, 2));
 			overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 3, 4));
 			Pump();
-			Assert.That(moves, Is.EqualTo(new[] { "3,4" }).AsCollection);
+			Assert.That(moves, Is.EqualTo(["3,4"]).AsCollection);
 
 			overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 5, 6));
 			Pump();
-			Assert.That(moves, Is.EqualTo(new[] { "3,4", "5,6" }).AsCollection);
+			Assert.That(moves, Is.EqualTo(["3,4", "5,6"]).AsCollection);
 
 			moves.Clear();
 			overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 7, 8));
@@ -279,7 +279,7 @@ public class GuiTests : TestRunner
 			_ = overlay.OnEvent("MouseMove", handler);
 			overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 11, 12));
 			Pump();
-			Assert.That(moves, Is.EqualTo(new[] { "11,12" }).AsCollection);
+			Assert.That(moves, Is.EqualTo(["11,12"]).AsCollection);
 
 			moves.Clear();
 			_ = overlay.OnEvent("Click", handler);
@@ -299,7 +299,7 @@ public class GuiTests : TestRunner
 			Assert.IsEmpty(moves);
 			threads.allowInterruption = allowInterruption;
 			Pump();
-			Assert.That(moves, Is.EqualTo(new[] { "17,18" }).AsCollection);
+			Assert.That(moves, Is.EqualTo(["17,18"]).AsCollection);
 
 			moves.Clear();
 			_ = overlay.OnEvent("MouseMove", handler, 0L);
@@ -326,7 +326,7 @@ public class GuiTests : TestRunner
 			Assert.IsEmpty(moves, "Owner teardown cancels queued moves while another event remains registered");
 			overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 21, 22));
 			Pump();
-			Assert.That(moves, Is.EqualTo(new[] { "21,22" }).AsCollection);
+			Assert.That(moves, Is.EqualTo(["21,22"]).AsCollection);
 		}
 		finally
 		{
@@ -990,7 +990,7 @@ public class GuiTests : TestRunner
 	{
 		foreach (var options in new[] { "-Caption +ToolWindow", "+ToolWindow -Caption" })
 		{
-			var gui = new Gui(new object[] { options });
+			var gui = new Gui([options]);
 
 			try
 			{
@@ -1062,7 +1062,6 @@ public class GuiTests : TestRunner
 		{
 			_ = gui.Destroy();
 		}
-
 	}
 
 	[Test, Category("Gui")]
@@ -1098,7 +1097,6 @@ public class GuiTests : TestRunner
 		{
 			_ = gui.Destroy();
 		}
-
 	}
 
 	[Test, Category("Gui")]
@@ -1174,7 +1172,7 @@ public class GuiTests : TestRunner
 
 			var m = Message.Create(gui.form.Handle, msgId, 0, 0);
 			Assert.That(gui.InvokeWindowMessageHandlers(ref m), Is.False, "handlers returning \"\" must not claim the message");
-			Assert.That(order, Is.EqualTo(new[] { "first", "second" }).AsCollection);
+			Assert.That(order, Is.EqualTo(["first", "second"]).AsCollection);
 
 			// A non-empty return claims the message and supplies its result, skipping later handlers.
 			order.Clear();
@@ -1183,7 +1181,7 @@ public class GuiTests : TestRunner
 			m = Message.Create(gui.form.Handle, msgId, 0, 0);
 			Assert.IsTrue(gui.InvokeWindowMessageHandlers(ref m));
 			Assert.That(m.Result.ToInt64(), Is.EqualTo(7));
-			Assert.That(order, Is.EqualTo(new[] { "claim" }).AsCollection);
+			Assert.That(order, Is.EqualTo(["claim"]).AsCollection);
 
 			// 0 unregisters.
 			order.Clear();
@@ -1204,7 +1202,7 @@ public class GuiTests : TestRunner
 				_ = gui.OnMessage(msgId, second);
 				m = Message.Create(gui.form.Handle, msgId, 0, 0);
 				Assert.That(gui.InvokeWindowMessageHandlers(ref m), Is.False, $"a return of '{inert ?? "(no return)"}' must not claim the message");
-				Assert.That(order, Is.EqualTo(new[] { "quiet", "second" }).AsCollection, "an unclaimed message must still reach later handlers");
+				Assert.That(order, Is.EqualTo(["quiet", "second"]).AsCollection, "an unclaimed message must still reach later handlers");
 				Assert.That(m.Result.ToInt64(), Is.EqualTo(0));
 				_ = gui.OnMessage(msgId, quiet, 0L);
 				_ = gui.OnMessage(msgId, second, 0L);
@@ -1219,7 +1217,7 @@ public class GuiTests : TestRunner
 			m = Message.Create(gui.form.Handle, msgId, 0, 0);
 			Assert.IsTrue(gui.InvokeWindowMessageHandlers(ref m), "an explicit 0 is non-empty and claims the message");
 			Assert.That(m.Result.ToInt64(), Is.EqualTo(0), "the claimed message replies with the returned 0");
-			Assert.That(order, Is.EqualTo(new[] { "zero" }).AsCollection, "claiming must skip the remaining handlers");
+			Assert.That(order, Is.EqualTo(["zero"]).AsCollection, "claiming must skip the remaining handlers");
 			_ = gui.OnMessage(msgId, repliesZero, 0L);
 			_ = gui.OnMessage(msgId, second, 0L);
 
@@ -1255,7 +1253,7 @@ public class GuiTests : TestRunner
 			foreach (var (firstReturns, secondRuns) in new (object, bool)[] { ("", true), (null, true), (0L, false), ("abc", false) })
 			{
 				var what = firstReturns == null ? "(no return)" : $"'{firstReturns}'";
-				var expected = secondRuns ? new[] { "first", "second" } : new[] { "first" };
+				var expected = secondRuns ? new[] { "first", "second" } : ["first"];
 				var order = new List<string>();
 
 				var firstClose = new KeysharpFunc((Func<object, object>)(_ => { order.Add("first"); return firstReturns; }));
@@ -1307,7 +1305,7 @@ public class GuiTests : TestRunner
 		{
 			foreach (var (how, secondRuns) in new (string, bool)[] { ("throws", false), ("calls Exit", true) })
 			{
-				var expected = secondRuns ? new[] { "first", "second" } : new[] { "first" };
+				var expected = secondRuns ? new[] { "first", "second" } : ["first"];
 				var order = new List<string>();
 
 				object First()
@@ -1429,19 +1427,19 @@ public class GuiTests : TestRunner
 			//The Menu key (lParam -1): IsRightClick 0, and X/Y at the control's left edge 2px below its middle, in
 			//the window's client coordinates.
 			var b = btn.Ctrl.Bounds;
-			long expectedX = b.Left, expectedY = b.Top + 2 + b.Height / 2;
+			long expectedX = b.Left, expectedY = b.Top + 2 + (b.Height / 2);
 			Send(btn.Ctrl.Handle, -1);
-			Assert.That(Pump(), Is.EqualTo(new[] { "ctrl", "gui" }).AsCollection, "the control's handler runs first, then the window's");
+			Assert.That(Pump(), Is.EqualTo(["ctrl", "gui"]).AsCollection, "the control's handler runs first, then the window's");
 			AssertArgs(calls[0].Args, [btn, 0L, 0L, expectedX, expectedY], "the control's handler");
 			AssertArgs(calls[1].Args, [gui, btn, 0L, 0L, expectedX, expectedY], "the window's handler");
 
 			//A right-click reports the supplied screen point in the same menu-free client coordinates.
 			var at = btn.Ctrl.PointToScreen(new Point(b.Width / 2, b.Height / 2));
 			Send(btn.Ctrl.Handle, ((at.Y & 0xFFFF) << 16) | (at.X & 0xFFFF));
-			Assert.That(Pump(), Is.EqualTo(new[] { "ctrl", "gui" }).AsCollection, "a right-click");
+			Assert.That(Pump(), Is.EqualTo(["ctrl", "gui"]).AsCollection, "a right-click");
 			Assert.That(calls[0].Args[2], Is.EqualTo(1L));
-			Assert.That(calls[0].Args[3], Is.EqualTo((long)(b.Left + b.Width / 2)));
-			Assert.That(calls[0].Args[4], Is.EqualTo((long)(b.Top + b.Height / 2)));
+			Assert.That(calls[0].Args[3], Is.EqualTo((long)(b.Left + (b.Width / 2))));
+			Assert.That(calls[0].Args[4], Is.EqualTo((long)(b.Top + (b.Height / 2))));
 			Assert.That(calls[1].Args[1], Is.SameAs(btn));
 			Assert.That(calls[1].Args[3], Is.EqualTo(1L));
 
@@ -1450,14 +1448,14 @@ public class GuiTests : TestRunner
 			{
 				ctrlReturns = stop;
 				Send(btn.Ctrl.Handle, -1);
-				Assert.That(Pump(), Is.EqualTo(new[] { "ctrl" }).AsCollection, $"a control handler returning '{stop}'");
+				Assert.That(Pump(), Is.EqualTo(["ctrl"]).AsCollection, $"a control handler returning '{stop}'");
 			}
 
 			ctrlReturns = "";
 
 			//On the window itself there is no control: GuiCtrlObj is "" and Item 0.
 			Send(gui.form.Handle, -1);
-			Assert.That(Pump(), Is.EqualTo(new[] { "gui" }).AsCollection, "the window itself");
+			Assert.That(Pump(), Is.EqualTo(["gui"]).AsCollection, "the window itself");
 			Assert.That(calls[0].Args[1], Is.Empty);
 			Assert.That(calls[0].Args[2], Is.EqualTo(0L));
 
@@ -1474,7 +1472,7 @@ public class GuiTests : TestRunner
 				Marshal.WriteInt32(nm, hdrSize, 1);//NMITEMACTIVATE.iItem: the second row.
 				calls.Clear();
 				_ = WindowsAPI.SendMessage(gui.form.Handle, (uint)WindowsAPI.WM_NOTIFY, (nint)0, nm);
-				Assert.That(Pump(), Is.EqualTo(new[] { "ctrl", "gui" }).AsCollection, "a ListView row");
+				Assert.That(Pump(), Is.EqualTo(["ctrl", "gui"]).AsCollection, "a ListView row");
 				Assert.That(calls[0].Args[0], Is.SameAs(lv));
 				Assert.That(calls[0].Args[1], Is.EqualTo(2L));
 				Assert.That(calls[0].Args[2], Is.EqualTo(1L));
@@ -1489,19 +1487,19 @@ public class GuiTests : TestRunner
 			//The Menu key on a ListView reports its focused row.
 			((System.Windows.Forms.ListView)lv.Ctrl).Items[1].Focused = true;
 			Send(lv.Ctrl.Handle, -1);
-			Assert.That(Pump(), Is.EqualTo(new[] { "ctrl", "gui" }).AsCollection, "the Menu key on a ListView");
+			Assert.That(Pump(), Is.EqualTo(["ctrl", "gui"]).AsCollection, "the Menu key on a ListView");
 			Assert.That(calls[0].Args[1], Is.EqualTo(2L));
 			Assert.That(calls[0].Args[2], Is.EqualTo(0L));
 			Assert.That(calls[1].Args[2], Is.EqualTo(2L));
 
 			//The Hotkey control suppresses its native edit menu, but still forwards WM_CONTEXTMENU to the Gui.
 			Send(hotkey.Ctrl.Handle, -1);
-			Assert.That(Pump(), Is.EqualTo(new[] { "ctrl", "gui" }).AsCollection, "the Menu key on a Hotkey control");
+			Assert.That(Pump(), Is.EqualTo(["ctrl", "gui"]).AsCollection, "the Menu key on a Hotkey control");
 			Assert.That(calls[0].Args[0], Is.SameAs(hotkey));
 			Assert.That(calls[0].Args[2], Is.EqualTo(0L));
 
 			Send(gui.form.ContentContainer.Handle, -1);
-			Assert.That(Pump(), Is.EqualTo(new[] { "gui" }).AsCollection, "the Menu key on the content background");
+			Assert.That(Pump(), Is.EqualTo(["gui"]).AsCollection, "the Menu key on the content background");
 			Assert.That(calls[0].Args[1], Is.Empty);
 		}
 		finally

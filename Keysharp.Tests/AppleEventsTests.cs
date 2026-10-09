@@ -178,6 +178,7 @@ public class AppleEventsTests : TestRunner
 			Assert.That(name.CanRead, Is.True);
 			Assert.That(name.CanWrite, Is.True);
 		}
+
 		var path = dict.FindProperty("window", "filename");
 		using (Assert.EnterMultipleScope())
 		{

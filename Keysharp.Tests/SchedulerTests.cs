@@ -312,8 +312,8 @@ public class SchedulerTests : TestRunner
 	public void SequenceWrap()
 	{
 		s.pseudoThreadSequence = 0x0000FFFFFFFFFFFE;
-		long first = 0L;
-		long second = 0L;
+		var first = 0L;
+		var second = 0L;
 
 		_ = s.EventScheduler.TryExecuteThreadLaunch(0, false, false, tv => first = tv.pseudoThreadId);
 		_ = s.EventScheduler.TryExecuteThreadLaunch(0, false, false, tv => second = tv.pseudoThreadId);
@@ -345,11 +345,11 @@ public class SchedulerTests : TestRunner
 
 		context.DrainAll();
 
-		Assert.That(order, Is.EqualTo(new[]
-		{
+		Assert.That(order, Is.EqualTo(
+		[
 			"H1", "H2", "H3", "H4",
 			"N1", "N2", "N3", "N4"
-		}));
+		]));
 	}
 
 	[Test, Category("Threading")]
@@ -374,14 +374,14 @@ public class SchedulerTests : TestRunner
 
 		// A refused launch parks and holds its own class, but dispatch work behind it still runs: the
 		// conditions which refuse a launch do not gate message dispatch.
-		Assert.That(order, Is.EqualTo(new[] { "N1" }));
+		Assert.That(order, Is.EqualTo(["N1"]));
 		Assert.That(context.PendingCount, Is.EqualTo(0));
 
 		interactiveBlocked = false;
 		scheduler.SchedulePump();
 		context.DrainAll();
 
-		Assert.That(order, Is.EqualTo(new[] { "N1", "H1" }));
+		Assert.That(order, Is.EqualTo(["N1", "H1"]));
 	}
 
 	[TestCase(false), Category("Threading")]
@@ -415,7 +415,7 @@ public class SchedulerTests : TestRunner
 
 		// Pump directly so an assertion inside an entry escapes the UI exception boundary.
 		scheduler.PumpThreadQueuedEventsCore();
-		Assert.That(order, Is.EqualTo(includeDispatch ? new[] { "dispatch" } : System.Array.Empty<string>()));
+		Assert.That(order, Is.EqualTo(includeDispatch ? ["dispatch"] : System.Array.Empty<string>()));
 		Assert.IsTrue(scheduler.HasBlockedQueuedWork);
 
 		blocked = false;
@@ -424,7 +424,7 @@ public class SchedulerTests : TestRunner
 
 		Assert.That(order, Is.EqualTo(includeDispatch
 			? new[] { "dispatch", "hotkey", "timer1", "timer2" }
-			: new[] { "hotkey", "timer1", "timer2" }));
+			: ["hotkey", "timer1", "timer2"]));
 		Assert.That(scheduler.HasBlockedQueuedWork, Is.False);
 		Assert.That(context.PendingCount, Is.EqualTo(0));
 	}
@@ -449,14 +449,14 @@ public class SchedulerTests : TestRunner
 
 		context.DrainAll();
 
-		Assert.That(order, Is.EqualTo(new[] { "dispatch" }));
+		Assert.That(order, Is.EqualTo(["dispatch"]));
 		Assert.IsTrue(scheduler.HasBlockedQueuedWork);
 
 		launchBlocked = false;
 		scheduler.SchedulePump();
 		context.DrainAll();
 
-		Assert.That(order, Is.EqualTo(new[] { "dispatch", "launch" }));
+		Assert.That(order, Is.EqualTo(["dispatch", "launch"]));
 	}
 
 	[Test, Category("Threading")]
@@ -479,7 +479,7 @@ public class SchedulerTests : TestRunner
 		context.DrainAll();
 
 		Assert.That(attempts, Is.EqualTo(1));
-		Assert.That(order, Is.EqualTo(new[] { "N1" }));
+		Assert.That(order, Is.EqualTo(["N1"]));
 		Assert.IsTrue(scheduler.HasBlockedQueuedWork);
 	}
 
@@ -507,12 +507,12 @@ public class SchedulerTests : TestRunner
 		_ = scheduler.EnqueueCallback(() => order.Add("H1"), ScriptEventQueue.Interactive, false);
 		context.DrainAll();
 
-		Assert.That(order, Is.EqualTo(new[] { "H1" }));
+		Assert.That(order, Is.EqualTo(["H1"]));
 
 		normalBlocked = false;
 		scheduler.SchedulePump();
 		context.DrainAll();
 
-		Assert.That(order, Is.EqualTo(new[] { "H1", "N1" }));
+		Assert.That(order, Is.EqualTo(["H1", "N1"]));
 	}
 }

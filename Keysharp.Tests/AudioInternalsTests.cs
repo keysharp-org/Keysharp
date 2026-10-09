@@ -64,7 +64,7 @@ public partial class AudioInternalsTests
 		Assert.That(samples.Length, Is.EqualTo(100));
 
 		foreach (var s in samples)
-			Assert.IsTrue(s >= -1f && s <= 1f, "every decoded sample is within -1 through 1");
+			Assert.IsTrue(s is >= -1f and <= 1f, "every decoded sample is within -1 through 1");
 
 		// Stereo interleave survives: a left-loud, right-silent image must decode that way round.
 		var st = new byte[400];
@@ -139,7 +139,7 @@ public partial class AudioInternalsTests
 		// An odd-sized unknown chunk is followed by one pad byte that belongs to no chunk.
 		w.Write("LIST"u8);
 		w.Write(3);
-		w.Write(new byte[] { 1, 2, 3 });
+		w.Write([1, 2, 3]);
 		w.Write((byte)0);
 		w.Write("fmt "u8);
 		w.Write(16);
@@ -151,10 +151,10 @@ public partial class AudioInternalsTests
 		w.Write((short)16);
 		w.Write("data"u8);
 		w.Write(2);
-		w.Write(new byte[] { 0x00, 0x40 });
+		w.Write([0x00, 0x40]);
 		w.Write("data"u8);
 		w.Write(2);
-		w.Write(new byte[] { 0x00, 0xC0 });
+		w.Write([0x00, 0xC0]);
 		w.Flush();
 		var bytes = ms.ToArray();
 		BitConverter.GetBytes(bytes.Length - 8).CopyTo(bytes, 4);
@@ -699,6 +699,7 @@ Is.EqualTo(48000).Within(1),
 			release.Set();
 			Assert.IsTrue(disposing.Wait(5000));
 		}
+
 		Assert.That(native.Disposals, Is.EqualTo(1));
 	}
 
@@ -716,8 +717,7 @@ Is.EqualTo(48000).Within(1),
 		first.DeviceLost = () =>
 		{
 			entered.Set();
-			if (!release.Wait(5000)) throw new TimeoutException("The old device-loss observation was not released.");
-			return true;
+			return !release.Wait(5000) ? throw new TimeoutException("The old device-loss observation was not released.") : true;
 		};
 		var observing = System.Threading.Tasks.Task.Run(() => core.Status);
 
@@ -756,8 +756,9 @@ Is.EqualTo(48000).Within(1),
 			OutputFactory = () =>
 			{
 				entered.Set();
-				if (!release.Wait(5000)) throw new TimeoutException("The pending open was not released.");
-				return (native, outcome == 0 ? "injected open failure" : null);
+				return !release.Wait(5000)
+					? throw new TimeoutException("The pending open was not released.")
+					: ((IAudioOutputStream Stream, string Error))(native, outcome == 0 ? "injected open failure" : null);
 			}
 		};
 		using var core = new AudioOutputCore(backend, "", 4, AudioMixer.PolicyOldest, 20);

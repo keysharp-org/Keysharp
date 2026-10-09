@@ -283,8 +283,10 @@ public class DirectiveTests : TestRunner
 					writer.AddResource("ApplicationIcon", File.ReadAllBytes(Path.Combine(root, logicalIcon)));
 					writer.Generate();
 				}
+
 				managedResources = resourceStream.ToArray();
 			}
+
 			var managedCompilation = Microsoft.CodeAnalysis.CSharp.CSharpCompilation.Create(
 				"ManagedIcons",
 				[Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText("internal sealed class IconMarker { }")],
@@ -521,7 +523,7 @@ public class DirectiveTests : TestRunner
 	[Test, Category("Directives")]
 	public void WarnExperimental()
 	{
-		string[] Warnings(string source)
+		static string[] Warnings(string source)
 		{
 			var (program, diagnostics) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(source);
 			Assert.IsEmpty(diagnostics);
@@ -738,10 +740,10 @@ public class DirectiveTests : TestRunner
 			return (d.ToArray(), include, r.ToArray(), err);
 		}
 
-		var included = Split("--include", "lib.ahk", "--force");
-		Assert.IsNull(included.error);
-		Assert.That(included.includeFile, Is.EqualTo(Path.GetFullPath("lib.ahk")), "--include takes the next argument, resolved against the working folder");
-		Assert.That(included.rest, Is.EqualTo(new[] { "--force" }).AsCollection);
+		var (defines, includeFile, rest, error) = Split("--include", "lib.ahk", "--force");
+		Assert.IsNull(error);
+		Assert.That(includeFile, Is.EqualTo(Path.GetFullPath("lib.ahk")), "--include takes the next argument, resolved against the working folder");
+		Assert.That(rest, Is.EqualTo(["--force"]).AsCollection);
 		Assert.That(Split("--include", "a.ahk", "--include", "b.ahk").error, Is.Not.Null, "only one file can be given with --include");
 		Assert.That(Split("--include").error, Is.Not.Null, "--include needs a file");
 
@@ -751,8 +753,8 @@ public class DirectiveTests : TestRunner
 		var mixed = Split("--define:FEATURE_X", "--force", "/define:A,B", "--errorstdout");
 		Assert.IsNull(mixed.error);
 #if WINDOWS
-		Assert.That(mixed.defines, Is.EqualTo(new[] { "FEATURE_X", "A", "B" }).AsCollection, "every --define form should be extracted");
-		Assert.That(mixed.rest, Is.EqualTo(new[] { "--force", "--errorstdout" }).AsCollection, "other switches must be forwarded untouched");
+		Assert.That(mixed.defines, Is.EqualTo(["FEATURE_X", "A", "B"]).AsCollection, "every --define form should be extracted");
+		Assert.That(mixed.rest, Is.EqualTo(["--force", "--errorstdout"]).AsCollection, "other switches must be forwarded untouched");
 #else
 		NUnit.Framework.CollectionAssert.AreEqual(new[] { "FEATURE_X" }, mixed.defines, "only the dash forms are switches here");
 		NUnit.Framework.CollectionAssert.AreEqual(new[] { "--force", "/define:A,B", "--errorstdout" }, mixed.rest, "a path-shaped argument must be forwarded untouched");
@@ -761,7 +763,7 @@ public class DirectiveTests : TestRunner
 		// Nothing to extract: the whole command line is forwarded.
 		var none = Split("--force", "--restart");
 		Assert.IsEmpty(none.defines);
-		Assert.That(none.rest, Is.EqualTo(new[] { "--force", "--restart" }).AsCollection);
+		Assert.That(none.rest, Is.EqualTo(["--force", "--restart"]).AsCollection);
 
 		// A bad symbol is reported rather than forwarded as if it were an ordinary switch.
 		Assert.That(Split("--define:FOO=1").error, Is.Not.Null, "an invalid symbol name should be rejected");
@@ -779,20 +781,20 @@ public class DirectiveTests : TestRunner
 
 		Assert.That(
 			Args(@"--define:FEATURE_X --include ""My include.ahk"" --force"),
-			Is.EqualTo(new[] { "--define:FEATURE_X", "--include", "My include.ahk", "--force" }).AsCollection,
+			Is.EqualTo(["--define:FEATURE_X", "--include", "My include.ahk", "--force"]).AsCollection,
 			"a quoted argument containing spaces must stay a single argument");
 
 		// Quotes group anywhere in an argument, not just around the whole of it.
-		Assert.That(Args(@"--include=""My include.ahk"""), Is.EqualTo(new[] { "--include=My include.ahk" }).AsCollection);
+		Assert.That(Args(@"--include=""My include.ahk"""), Is.EqualTo(["--include=My include.ahk"]).AsCollection);
 		// A deliberate empty argument survives, so the arguments after it keep their positions.
-		Assert.That(Args(@"--a """" --b"), Is.EqualTo(new[] { "--a", "", "--b" }).AsCollection);
+		Assert.That(Args(@"--a """" --b"), Is.EqualTo(["--a", "", "--b"]).AsCollection);
 		// Tabs and runs of spaces separate exactly like single spaces.
-		Assert.That(Args("  --a \t\t --b  "), Is.EqualTo(new[] { "--a", "--b" }).AsCollection);
+		Assert.That(Args("  --a \t\t --b  "), Is.EqualTo(["--a", "--b"]).AsCollection);
 		// An unterminated quote takes the rest of the line rather than dropping it.
-		Assert.That(Args(@"--include ""My include.ahk"), Is.EqualTo(new[] { "--include", "My include.ahk" }).AsCollection);
+		Assert.That(Args(@"--include ""My include.ahk"), Is.EqualTo(["--include", "My include.ahk"]).AsCollection);
 		// An Array element is already one argument, so it needs no quoting even with spaces in it.
 		Assert.That(Args(new Keysharp.Builtins.Array(["--include", "My include.ahk"])),
-			Is.EqualTo(new[] { "--include", "My include.ahk" }).AsCollection);
+			Is.EqualTo(["--include", "My include.ahk"]).AsCollection);
 	}
 
 	[Test, Category("Directives")]
@@ -1095,12 +1097,12 @@ public class DirectiveTests : TestRunner
 			}
 
 			// A block after an in-file `#Module` belongs to THAT module's class, not to __Main.
-			var mod = Compile("#NoTrayIcon\nx := 1\n#Module Helper\n#CSharp\npublic static long Only() => 7;\n#EndCSharp\n", "mod");
-			Assert.That(mod.Arr, Is.Not.Null, "a #CSharp block inside a #Module must compile:\n" + mod.Code);
-			var helperClass = mod.Inline.IndexOf("class Helper", StringComparison.Ordinal);
-			var onlyDecl = mod.Inline.IndexOf("Only()", StringComparison.Ordinal);
-			Assert.Greater(helperClass, -1, "the module's partial class must be emitted:\n" + mod.Inline);
-			Assert.Greater(onlyDecl, helperClass, "the member must land inside the module that declared it:\n" + mod.Inline);
+			var (Arr, Code, Inline) = Compile("#NoTrayIcon\nx := 1\n#Module Helper\n#CSharp\npublic static long Only() => 7;\n#EndCSharp\n", "mod");
+			Assert.That(Arr, Is.Not.Null, "a #CSharp block inside a #Module must compile:\n" + Code);
+			var helperClass = Inline.IndexOf("class Helper", StringComparison.Ordinal);
+			var onlyDecl = Inline.IndexOf("Only()", StringComparison.Ordinal);
+			Assert.Greater(helperClass, -1, "the module's partial class must be emitted:\n" + Inline);
+			Assert.Greater(onlyDecl, helperClass, "the member must land inside the module that declared it:\n" + Inline);
 
 			// A block in a class body belongs to THAT class, the same way the module case above does.
 			var cls = Compile("#NoTrayIcon\nclass Holder {\n#CSharp\npublic static object Who(object @this) => \"e\";\n#EndCSharp\n}\n", "cls");

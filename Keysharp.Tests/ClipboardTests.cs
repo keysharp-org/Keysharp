@@ -153,7 +153,7 @@ public partial class ClipboardTests : TestRunner
 		RequireClipboard();
 		var a = Path.GetFullPath("./testfile1.txt");
 		var b = Path.GetFullPath("./testfile2.txt");
-		_ = Ks.KeysharpClipboard.staticset_Files(Clip, new Array(new object[] { a, b }));
+		_ = Ks.KeysharpClipboard.staticset_Files(Clip, new Array([a, b]));
 
 		if (!(bool)Ks.KeysharpClipboard.Has(Clip, "Files"))
 			Assert.Ignore("This environment's clipboard does not carry file lists.");
@@ -527,8 +527,8 @@ public partial class ClipboardTests : TestRunner
 				Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
 			}
 
-			Assert.That(chainValues, Is.EqualTo(new[] { 0L, 1L, 2L }).AsCollection, "The chain receives numeric types regardless of what a hook returns.");
-			Assert.That(hookValues, Is.EqualTo(new[] { 0L, 1L, 2L }).AsCollection, "The hook receives the same numeric types.");
+			Assert.That(chainValues, Is.EqualTo([0L, 1L, 2L]).AsCollection, "The chain receives numeric types regardless of what a hook returns.");
+			Assert.That(hookValues, Is.EqualTo([0L, 1L, 2L]).AsCollection, "The hook receives the same numeric types.");
 		}
 		finally
 		{

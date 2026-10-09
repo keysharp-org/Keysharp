@@ -137,7 +137,7 @@ public class PackageDirectiveTests : TestRunner
 	[Test, Category("Directives")]
 	public void VersionRanges()
 	{
-		void Check(string written, string expected)
+		static void Check(string written, string expected)
 		{
 			var ok = Keysharp.Internals.Os.PackageResolver.TryNormalizeVersion("nuget", written, out var range, out var err);
 			Assert.IsTrue(ok, $"'{written}' -> {err}");
@@ -185,7 +185,7 @@ public class PackageDirectiveTests : TestRunner
 	[Test, Category("Directives")]
 	public void ProviderVersionNormalization()
 	{
-		void Check(string written, string expected)
+		static void Check(string written, string expected)
 		{
 			Assert.IsTrue(Keysharp.Internals.Os.PackageResolver.TryNormalizeVersion("NuGet", written,
 				out var normalized, out var error), error);
@@ -222,7 +222,7 @@ public class PackageDirectiveTests : TestRunner
 	[Test, Category("Directives")]
 	public void ProviderSpecificIdsCannotCollideInDeploymentPaths()
 	{
-		string DeployedFor(string id)
+		static string DeployedFor(string id)
 		{
 			var root = Path.Combine(Path.GetTempPath(), "keysharp-provider-path-test");
 			var source = Path.Combine(root, "lib", "Example.dll");
@@ -414,7 +414,7 @@ public class PackageDirectiveTests : TestRunner
 	[Test, Category("Directives")]
 	public void DuplicatePackage()
 	{
-		var (code, diags) = Lower("#Package Newtonsoft.Json 13.0.3\n#Package nuget:Newtonsoft.Json 13.0.3\n");
+		var (_, diags) = Lower("#Package Newtonsoft.Json 13.0.3\n#Package nuget:Newtonsoft.Json 13.0.3\n");
 		Assert.IsEmpty(diags, string.Join("; ", diags));
 		Assert.That(lastPackages.Count, Is.EqualTo(1), "default and explicit NuGet spellings are one provider-qualified identity");
 		AssertEmits(Packages(), "LoadPackages((\"Newtonsoft.Json\", \"[13.0.3]\", false))");
@@ -428,7 +428,7 @@ public class PackageDirectiveTests : TestRunner
 	[Test, Category("Directives")]
 	public void RequiresSeparation()
 	{
-		var (code, diags) = Lower("#Package Keysharp.Extensions 1.2.3\n");
+		var (_, diags) = Lower("#Package Keysharp.Extensions 1.2.3\n");
 		Assert.IsEmpty(diags, string.Join("; ", diags));
 		AssertEmits(Packages(), "LoadPackages((\"Keysharp.Extensions\", \"[1.2.3]\", false))");
 
@@ -514,6 +514,7 @@ public class PackageDirectiveTests : TestRunner
 			Assert.That(diags.Count, Is.EqualTo(1), bad + " -> " + string.Join("; ", diags));
 			Assert.That(diags[0], Does.Contain("Unrecognized directive"));
 		}
+
 		Assert.IsEmpty(Lower("#sUsPeNdExEmPt false\n#sInGlEiNsTaNcE Off\n").Diags);
 	}
 

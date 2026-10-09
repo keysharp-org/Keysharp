@@ -50,7 +50,7 @@ public partial class ExternalTests : TestRunner
 	[Test, Category("External"), Category("Internal")]
 	public void ComPackingFailure()
 	{
-		Assert.That(Marshal.SizeOf<VARIANT>(), Is.EqualTo(8 + 2 * IntPtr.Size));
+		Assert.That(Marshal.SizeOf<VARIANT>(), Is.EqualTo(8 + (2 * IntPtr.Size)));
 		using var target = (Keysharp.Builtins.COM.ComObject)Keysharp.Builtins.COM.ComObject.staticCall(null, "Scripting.Dictionary");
 		using var invalid = new Keysharp.Builtins.COM.ComValue { vt = VarEnum.VT_CY, item = 1.0e30 };
 		var pointer = (nint)(long)target.Ptr;
@@ -82,6 +82,7 @@ public partial class ExternalTests : TestRunner
 			nested = VariantHelper.ReadStorage(cell, VarEnum.VT_VARIANT).ptrVal;
 		}
 		finally { _ = OleAuto.SafeArrayUnlock(pointer); }
+
 		Assert.That(OleAuto.SafeArrayLock(nested), Is.EqualTo(0));
 		try
 		{
@@ -89,6 +90,7 @@ public partial class ExternalTests : TestRunner
 			Assert.That(hr, Is.EqualTo(unchecked((int)0x8002000D)));
 		}
 		finally { _ = OleAuto.SafeArrayUnlock(nested); }
+
 		Assert.That(OleAuto.SafeArrayLock(pointer), Is.EqualTo(0));
 		try
 		{
@@ -98,6 +100,7 @@ public partial class ExternalTests : TestRunner
 			Assert.That(outer.Ptr, Is.EqualTo((long)pointer));
 		}
 		finally { _ = OleAuto.SafeArrayUnlock(pointer); }
+
 		using var caught = Keysharp.Runtime.Flow.EnterTry();
 		_ = Assert.Throws<KeysharpException>(() => outer.GetElementAtIndices([1]));
 		outer.Dispose();

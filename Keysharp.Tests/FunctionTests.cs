@@ -192,6 +192,7 @@ public class FunctionTests : TestRunner
 			Assert.IsTrue(System.Array.Exists(diagnostics, d => d.StartsWith($"{line}:") && d.EndsWith($"This function declaration conflicts with an existing {existing}: tick")),
 				source.Replace("\n", "\\n") + ": " + string.Join("; ", diagnostics));
 		}
+
 		foreach (var source in new[]
 		{
 			"Õ() => 1\nõ() => 2\n",
@@ -301,11 +302,11 @@ public class FunctionTests : TestRunner
 	[Test, Category("Function"), NonParallelizable]
 	public void VarParamsInFunc() => Assert.IsTrue(TestScript("func-var-params", false));
 
-        [Test, Category("Function"), NonParallelizable]
-        public void FuncCallable() => Assert.IsTrue(TestScript("func-callable", false));
+		[Test, Category("Function"), NonParallelizable]
+		public void FuncCallable() => Assert.IsTrue(TestScript("func-callable", false));
 
-        [Test, Category("Function"), NonParallelizable]
-        public void FuncClosure() => Assert.IsTrue(TestScript("func-closure", false));
+		[Test, Category("Function"), NonParallelizable]
+		public void FuncClosure() => Assert.IsTrue(TestScript("func-closure", false));
 
 	[Test, Category("Function"), NonParallelizable]
 	public void FuncParamCount() => Assert.IsTrue(TestScript("func-param-count", false));

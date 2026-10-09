@@ -29,6 +29,7 @@ public class RetryGateTests
 		var gate = new RetryGate(time, 1, TimeSpan.Zero, TimeSpan.Zero);
 
 		using (gate.TryBegin()) { }
+
 		Assert.That(gate.TryBegin(), Is.Null);
 		gate.Rearm();
 

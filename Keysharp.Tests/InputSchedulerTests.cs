@@ -62,16 +62,16 @@ public class InputSchedulerTests : TestRunner
 		var normalCalls = 0;
 		var hs = new HotstringDefinition(s, "::abc", "")
 		{
-			Name = "abc"
+			Name = "abc",
+			funcObj = new KeysharpFunc((Func<object, object>)(name =>
+				{
+					hotstringCalls++;
+					return 0L;
+				})),
+			maxThreads = 1,
+			existingThreads = 1,
+			priority = 0
 		};
-		hs.funcObj = new KeysharpFunc((Func<object, object>)(name =>
-		{
-			hotstringCalls++;
-			return 0L;
-		}));
-		hs.maxThreads = 1;
-		hs.existingThreads = 1;
-		hs.priority = 0;
 
 		_ = hs.PerformInNewThreadMadeByCaller(0, CaseConformModes.None, ' ', 0, false);
 		_ = s.EventScheduler.EnqueueCallback(() => normalCalls++, ScriptEventQueue.Normal, false);
@@ -166,7 +166,7 @@ public class InputSchedulerTests : TestRunner
 
 		context.DrainAll();
 
-		Assert.That(order, Is.EqualTo(new[] { "hotkey", "hotstring", "normal-1", "normal-2" }));
+		Assert.That(order, Is.EqualTo(["hotkey", "hotstring", "normal-1", "normal-2"]));
 	}
 
 	// Error.Stack names a hotkey's or hotstring's thread by the hotkey, and an event handler's by its registry, such as

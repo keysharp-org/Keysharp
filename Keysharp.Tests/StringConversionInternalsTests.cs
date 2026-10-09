@@ -79,7 +79,7 @@ public class StringConversionInternalsTests : TestRunner
 		var calls = 0;
 		var value = WithToString(() => { calls++; return "custom"; });
 		Assert.That(Errors.Describe(value), Is.EqualTo("Object"));
-		Assert.That(Errors.Describe(new Keysharp.Builtins.Array(new object[] { value })), Is.EqualTo("[Object]"));
+		Assert.That(Errors.Describe(new Keysharp.Builtins.Array([value])), Is.EqualTo("[Object]"));
 		Assert.That(calls, Is.EqualTo(0));
 		Assert.That(Errors.Describe(new ThrowingClrValue()), Is.EqualTo(nameof(ThrowingClrValue)));
 		Assert.That(value.ToString(), Is.EqualTo(Types.Type(value)));

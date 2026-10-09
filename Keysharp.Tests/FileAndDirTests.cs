@@ -58,8 +58,8 @@ public class FileAndDirTests : TestRunner
 
 		static void GzipFile(string source, string dest)
 		{
-			using FileStream input = File.OpenRead(source);
-			using FileStream output = File.Create(dest);
+			using var input = File.OpenRead(source);
+			using var output = File.Create(dest);
 			using var compressor = new System.IO.Compression.GZipStream(output, System.IO.Compression.CompressionMode.Compress);
 			input.CopyTo(compressor);
 		}
@@ -157,7 +157,7 @@ public class FileAndDirTests : TestRunner
 			scriptPath, "file-install-memory", output: ScriptCompilationOutput.InMemory, sourceIsFile: true);
 		Assert.That(memoryBytes, Is.Not.Null, memoryError);
 		Assert.That(
-			memoryCompilation.Manifest.Files, Is.EqualTo(new[] { "file-fileinstall.ahk", "Gui/monkey.ico" }).AsCollection);
+			memoryCompilation.Manifest.Files, Is.EqualTo(["file-fileinstall.ahk", "Gui/monkey.ico"]).AsCollection);
 		Assert.IsEmpty(memoryCompilation.Manifest.FileSources,
 			"source execution keeps logical declarations but must not carry build-machine payload paths");
 		var memoryAssembly = Assembly.Load(memoryBytes);

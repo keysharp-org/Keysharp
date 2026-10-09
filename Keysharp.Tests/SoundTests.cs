@@ -39,14 +39,14 @@ public partial class SoundTests : TestRunner
 		// samples really carry the requested pitch: 440 Hz over 0.15 s is ~132 crossings.
 		static int Crossings(byte[] w, int rate, double skipSeconds, double windowSeconds)
 		{
-			var first = 44 + (int)(rate * skipSeconds) * 2;
+			var first = 44 + ((int)(rate * skipSeconds) * 2);
 			var count = (int)(rate * windowSeconds);
 			var crossings = 0;
 			var previous = BitConverter.ToInt16(w, first);
 
 			for (var i = 1; i < count; i++)
 			{
-				var sample = BitConverter.ToInt16(w, first + i * 2);
+				var sample = BitConverter.ToInt16(w, first + (i * 2));
 
 				if ((previous < 0 && sample >= 0) || (previous >= 0 && sample < 0))
 					crossings++;

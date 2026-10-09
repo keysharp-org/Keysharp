@@ -32,7 +32,7 @@ public class InvocationPackingTests : TestRunner
 		Assert.That(method.CallInst(receiver, "head", (object)packed), Is.SameAs(packed));
 		var all = Functions.Closure((Func<object[], object>)Fixture.All);
 		Assert.That(all.Call(packed), Is.SameAs(packed));
-		Assert.That(all.CallInst(receiver, packed), Is.EqualTo(new object[] { receiver, 1L, 2L }));
+		Assert.That(all.CallInst(receiver, packed), Is.EqualTo([receiver, 1L, 2L]));
 		Assert.That(packed, Is.EqualTo(new object[] { 1L, 2L }));
 
 		var instance = new Fixture();
@@ -57,6 +57,7 @@ public class InvocationPackingTests : TestRunner
 			Assert.That(result[1], Is.EqualTo(42L));
 			Assert.That(supplied, Is.EqualTo(original));
 		}
+
 		var fixedSetter = Functions.Closure((Func<object, object, object>)Fixture.set_Item);
 		Assert.That(fixedSetter.Call("key", 42L, null), Is.EqualTo(42L));
 		var keysSetter = Functions.Closure((Func<object[], object, object>)Fixture.set_Item);

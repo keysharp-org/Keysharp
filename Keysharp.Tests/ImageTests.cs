@@ -75,9 +75,9 @@ public class ImageTests : TestRunner
 		for (var y = 0; y < height; y++)
 			for (var x = 0; x < width; x++)
 			{
-				var color = colors[y * width + x];
+				var color = colors[(y * width) + x];
 				var pixel = hasAlpha ? 0x80000000u | (color & 0x00808080u) : color & 0x00FFFFFFu;
-				pixels[(topDown ? y : height - 1 - y) * width + x] = unchecked((int)pixel);
+				pixels[((topDown ? y : height - 1 - y) * width) + x] = unchecked((int)pixel);
 			}
 
 		var header = new BITMAPINFOHEADER
@@ -99,7 +99,7 @@ public class ImageTests : TestRunner
 			for (var y = 0; y < height; y++)
 				for (var x = 0; x < width; x++)
 				{
-					var expected = colors[y * width + x];
+					var expected = colors[(y * width) + x];
 
 					if (hasAlpha)
 						expected = 0x80000000u | (expected & 0x00FFFFFFu);
@@ -117,7 +117,7 @@ public class ImageTests : TestRunner
 	public void RegionalClearStride(int direction)
 	{
 		const int width = 7, height = 5, stride = 40, guard = 16;
-		var expected = Enumerable.Repeat((byte)0xA5, guard * 2 + stride * height).ToArray();
+		var expected = Enumerable.Repeat((byte)0xA5, (guard * 2) + (stride * height)).ToArray();
 		var memory = Marshal.AllocHGlobal(expected.Length);
 
 		try
@@ -132,7 +132,7 @@ public class ImageTests : TestRunner
 			for (var y = region.Y; y < region.Bottom; y++)
 			{
 				var row = direction > 0 ? y : height - 1 - y;
-				expected.AsSpan(guard + row * stride + region.X * 4, region.Width * 4).Clear();
+				expected.AsSpan(guard + (row * stride) + (region.X * 4), region.Width * 4).Clear();
 			}
 
 			var actual = new byte[expected.Length];

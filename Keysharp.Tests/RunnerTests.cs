@@ -69,7 +69,7 @@ public class RunnerTests : TestRunner
 			Assert.That(command.CodePage, Is.EqualTo(65001));
 			Assert.That(command.IncludeFile, Is.EqualTo(Path.GetFullPath(includePath)));
 			Assert.That(command.KeysharpArgs, Is.EqualTo(args.Take(args.Length - 2).ToArray()));
-			Assert.That(command.ScriptArgs, Is.EqualTo(new[] { "script-arg" }));
+			Assert.That(command.ScriptArgs, Is.EqualTo(["script-arg"]));
 
 			s.KeysharpArgs = command.KeysharpArgs;
 			Assert.That(Env.FindCommandLineArg("errorstdout"), Is.EqualTo("/ErrorStdOut=UTF-8"));

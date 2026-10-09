@@ -119,5 +119,5 @@ public class HotCriterionTests : TestRunner
 	}
 
 	private static long DeadlineAfter(int milliseconds)
-		=> Stopwatch.GetTimestamp() + Stopwatch.Frequency * milliseconds / 1000;
+		=> Stopwatch.GetTimestamp() + (Stopwatch.Frequency * milliseconds / 1000);
 }

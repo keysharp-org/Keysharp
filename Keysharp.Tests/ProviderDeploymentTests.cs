@@ -40,6 +40,7 @@ public class ProviderDeploymentTests : TestRunner
 		finally
 		{
 			try { Directory.Delete(root, true); } catch { }
+
 			try { Directory.Delete(destination, true); } catch { }
 		}
 	}
@@ -97,7 +98,9 @@ public class ProviderDeploymentTests : TestRunner
 		finally
 		{
 			try { Directory.Delete(root, true); } catch { }
+
 			try { Directory.Delete(work, true); } catch { }
+
 			try { if (extractedRoot != null) Directory.Delete(extractedRoot, true); } catch { }
 		}
 	}
@@ -167,6 +170,7 @@ public class ProviderDeploymentTests : TestRunner
 				var emitted = providerCompilation.Emit(file);
 				Assert.IsTrue(emitted.Success, string.Join("\n", emitted.Diagnostics));
 			}
+
 			Keysharp.Internals.Os.PackageProviderRegistry.AddSearchRoot(root);
 			var script = Path.Combine(root, "names.ks");
 			File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#Package fake:Names 1.0.0\n"
