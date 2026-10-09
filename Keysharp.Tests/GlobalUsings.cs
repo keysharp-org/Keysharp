@@ -67,15 +67,6 @@ global using global::Keysharp.Runtime;
 	global using global::Keysharp.Internals.Os.Windows;
 	global using global::Keysharp.Internals.Window.Windows;
 	global using global::Keysharp.Main;
-#else
-	global using global::Keysharp.Internals.Input.Hooks.Unix;
-	global using global::Keysharp.Internals.Input.Unix;
-	global using global::Keysharp.Internals.Window.Unix;
-#endif
-
-#if OSX
-	global using global::Keysharp.Internals.Input.MacOS;
-	global using global::Keysharp.Internals.Window.MacOS;
 #elif LINUX
 	global using global::Keysharp.Internals.DBus;
 	global using global::Keysharp.Internals.Input.Hooks.Linux;
@@ -83,6 +74,16 @@ global using global::Keysharp.Runtime;
 	global using global::Keysharp.Internals.Linux;
 	global using global::Keysharp.Internals.Window.Linux.Wayland;
 	global using global::Keysharp.Internals.Window.Linux.X11;
+#elif OSX
+	global using global::Keysharp.Internals.Input.Hooks.MacOS;
+	global using global::Keysharp.Internals.Input.MacOS;
+	global using global::Keysharp.Internals.Window.MacOS;
+#endif
+
+#if !WINDOWS
+	global using global::Keysharp.Internals.Input.Hooks.Unix;
+	global using global::Keysharp.Internals.Input.Unix;
+	global using global::Keysharp.Internals.Window.Unix;
 #endif
 
 //Third party
