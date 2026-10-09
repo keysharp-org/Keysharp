@@ -1,5 +1,3 @@
-using Keysharp.Internals;
-
 namespace Keysharp.Tests
 {
 	[Category("Internal"), Category("Curated")]

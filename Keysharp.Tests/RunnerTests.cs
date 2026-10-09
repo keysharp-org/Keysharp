@@ -1,9 +1,3 @@
-#if WINDOWS
-using System.IO.Pipes;
-using System.Security.Principal;
-using Keysharp.Main;
-#endif
-using Keysharp.Internals.Scripting;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
 namespace Keysharp.Tests

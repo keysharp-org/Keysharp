@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using Keysharp.Internals.Invoke;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
 namespace Keysharp.Tests

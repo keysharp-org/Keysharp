@@ -1,4 +1,3 @@
-using Microsoft.CodeAnalysis;
 using static Keysharp.Builtins.External;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 

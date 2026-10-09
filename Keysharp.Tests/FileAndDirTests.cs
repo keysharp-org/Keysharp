@@ -1,6 +1,4 @@
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using Keysharp.Builtins;
-using Keysharp.Components.Scripting;
 
 namespace Keysharp.Tests
 {

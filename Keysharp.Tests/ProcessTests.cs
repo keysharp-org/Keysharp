@@ -1,4 +1,3 @@
-using System.Runtime.ExceptionServices;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
 namespace Keysharp.Tests

@@ -1,5 +1,3 @@
-using Keysharp.Internals;
-
 namespace Keysharp.Tests
 {
 	[TestFixture, NonParallelizable, Category("Misc"), Category("Internal"), Category("Curated")]

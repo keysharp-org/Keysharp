@@ -1,8 +1,3 @@
-using Keysharp.Builtins;
-using Keysharp.Internals.Input;
-using Keysharp.Internals.Input.Hooks;
-using Keysharp.Internals.Threading;
-using Keysharp.Internals.Window;
 using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 using Keyboard = Keysharp.Builtins.Keyboard;

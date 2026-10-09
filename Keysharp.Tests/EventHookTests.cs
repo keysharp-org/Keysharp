@@ -1,6 +1,3 @@
-using Keysharp.Internals.Audio;
-using Keysharp.Internals.Events;
-using Keysharp.Internals.Window;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
 namespace Keysharp.Tests

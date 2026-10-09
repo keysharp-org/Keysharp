@@ -1,7 +1,4 @@
 #if LINUX
-using Keysharp.Builtins.COM;
-using Keysharp.Internals.DBus;
-using Tmds.DBus.Protocol;
 using DBusMessage = Tmds.DBus.Protocol.Message;
 
 namespace Keysharp.Tests

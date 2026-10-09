@@ -1,5 +1,3 @@
-using System.Net;
-using System.Net.Sockets;
 using static Keysharp.Builtins.Network;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 

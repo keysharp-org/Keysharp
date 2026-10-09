@@ -1,7 +1,6 @@
 using static Keysharp.Builtins.External;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 using ComTypes = System.Runtime.InteropServices.ComTypes;
-using Keysharp.Builtins.COM;
 
 namespace Keysharp.Tests
 {

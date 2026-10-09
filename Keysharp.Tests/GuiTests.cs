@@ -1,14 +1,4 @@
-using System.Collections.Concurrent;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using Keysharp.Internals;
-using Keysharp.Internals.Images;
-#if LINUX
-using Keysharp.Internals.Window;
-using Keysharp.Internals.Window.Linux.Wayland;
-#endif
-#if OSX
-using AppKit = MonoMac.AppKit;
-#endif
 
 namespace Keysharp.Tests
 {

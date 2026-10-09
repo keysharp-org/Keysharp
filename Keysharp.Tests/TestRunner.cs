@@ -1,5 +1,3 @@
-using Keysharp.Internals.Threading;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
 namespace Keysharp.Tests

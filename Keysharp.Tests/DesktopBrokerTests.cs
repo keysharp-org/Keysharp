@@ -1,6 +1,4 @@
 #if LINUX
-using Keysharp.Internals.Linux;
-using Keysharp.Internals.Window.Linux.Wayland;
 using FormWindowState = Eto.Forms.WindowState;
 
 namespace Keysharp.Tests

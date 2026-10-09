@@ -1,9 +1,6 @@
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
 #if LINUX
-using System.Runtime.InteropServices;
-using Keysharp.Internals.Input.Linux;
-using Keysharp.Internals.Input.Unix;
 using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
 #endif
 

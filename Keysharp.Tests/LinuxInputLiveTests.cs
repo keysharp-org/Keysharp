@@ -1,10 +1,5 @@
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
-#if LINUX
-using System.Collections.Concurrent;
-using Keysharp.Internals.Input.Linux;
-#endif
-
 namespace Keysharp.Tests
 {
 	/// <summary>

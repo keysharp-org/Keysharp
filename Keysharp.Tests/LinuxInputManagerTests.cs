@@ -1,11 +1,5 @@
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
-#if LINUX
-using Keysharp.Internals;
-using Keysharp.Internals.Input.Linux;
-using Keysharp.Internals.Input.Keyboard;
-#endif
-
 namespace Keysharp.Tests
 {
 	[Category("Internal"), Category("Curated")]

@@ -1,6 +1,4 @@
 #if LINUX
-using Keysharp.Internals;
-using Keysharp.Internals.Window.Linux.X11;
 
 namespace Keysharp.Tests
 {

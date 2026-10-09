@@ -1,11 +1,4 @@
 #if LINUX
-using System.Collections.Concurrent;
-using System.Diagnostics;
-using System.Reflection;
-using System.Runtime.InteropServices;
-using Keysharp.Internals.Input.Linux;
-using Keysharp.Internals.Linux;
-using Keysharp.Internals.Window.Linux.Wayland;
 
 namespace Keysharp.Tests
 {

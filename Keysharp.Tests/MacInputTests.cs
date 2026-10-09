@@ -1,12 +1,5 @@
 #if OSX
-using System.Collections.Concurrent;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using Keysharp.Internals.Input.Hooks;
-using Keysharp.Internals.Input.Hooks.MacOS;
-using Keysharp.Internals.Input.Keyboard;
-using Keysharp.Internals.Input.MacOS;
-using Keysharp.Internals.Window;
-using Keysharp.Internals.Window.MacOS;
 using static Keysharp.Internals.Input.Keyboard.KeyboardMouseSender;
 using static Keysharp.Internals.Input.Keyboard.KeyboardUtils;
 using static Keysharp.Internals.Input.Keyboard.VirtualKeys;

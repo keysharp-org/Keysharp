@@ -1,9 +1,6 @@
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 using StringAssert = NUnit.Framework.StringAssert;
 using CollectionAssert = NUnit.Framework.CollectionAssert;
-using Keysharp.Components.Scripting;
-using Keysharp.Components.Scripting.Compiler;
-using Keysharp.Components.Scripting.Parser;
 
 namespace Keysharp.Tests
 {

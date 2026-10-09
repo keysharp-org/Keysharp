@@ -1,12 +1,4 @@
-using System.Runtime.InteropServices;
-using System.Collections.Concurrent;
-using System.Runtime.CompilerServices;
-using System.Reflection;
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using Keysharp.Internals;
-using Keysharp.Internals.Invoke;
-using Keysharp.Internals.Threading;
-using Keysharp.Internals.Window;
 
 namespace Keysharp.Tests
 {

@@ -1,5 +1,3 @@
-using Keysharp.Internals.AppleEvents;
-
 namespace Keysharp.Tests
 {
 	/// <summary>

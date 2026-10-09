@@ -1,7 +1,4 @@
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
-using Keysharp.Internals.Audio;
-using Keysharp.Internals.Os;
-using System.Runtime.CompilerServices;
 
 namespace Keysharp.Tests
 {
