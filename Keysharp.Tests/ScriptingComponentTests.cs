@@ -876,10 +876,12 @@ public class ScriptingComponentTests : TestRunner
 
 	private static string PipeContent(Task<string> pipe) => pipe.IsCompletedSuccessfully ? pipe.Result.Trim() : "<still open>";
 
-	private static string SurvivingProcesses() =>
+	private static string SurvivingProcesses()
 #if WINDOWS
+		=>
 		"<not captured on Windows>";
 #else
+	{
 		try
 		{
 			using var ps = Process.Start(new ProcessStartInfo("ps", "-axo pid,ppid,etime,args")
@@ -896,6 +898,7 @@ public class ScriptingComponentTests : TestRunner
 		{
 			return $"<ps failed: {ex.Message}>";
 		}
+	}
 #endif
 
 

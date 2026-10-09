@@ -116,12 +116,16 @@ global using ScreenRect = Keysharp.Internals.ScreenRect;
 
 #if WINDOWS
 	global using MessageFilter = Keysharp.Internals.Window.Windows.MessageFilter;
+	global using Message = Keysharp.Internals.Window.Windows.Message;
+#else
+	global using MessageFilter = Keysharp.Internals.Window.Unix.MessageFilter;
+	global using Message = Keysharp.Internals.Window.Unix.Message;
 #endif
 
 //Third party
 #if LINUX
 	global using DBusMessage = Tmds.DBus.Protocol.Message;
-	global using FormWindowState = Eto.Forms.WindowState;
+	//global using FormWindowState = Eto.Forms.WindowState;
 #elif OSX
 	global using AppKit = MonoMac.AppKit;
 #endif
