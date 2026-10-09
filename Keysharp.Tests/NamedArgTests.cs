@@ -1,65 +1,65 @@
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
-namespace Keysharp.Tests
+namespace Keysharp.Tests;
+
+public class NamedArgTests : TestRunner
 {
-	public class NamedArgTests : TestRunner
+	private string Warnings(string source) =>
+		RunScript("#ErrorStdOut\n#Warn NamedArg, StdOut\n" + source,
+			"named_arg_" + Guid.NewGuid().ToString("N"), execute: true, exeout: false) ?? "";
+
+	[Test, Category("Misc")]
+	public void WarnNamedArgTypo()
 	{
-		private string Warnings(string source) =>
-			RunScript("#ErrorStdOut\n#Warn NamedArg, StdOut\n" + source,
-				"named_arg_" + Guid.NewGuid().ToString("N"), execute: true, exeout: false) ?? "";
+		var warning = Warnings("f(alpha, beta := 2) => alpha\nx := f(1, betaa: 3)\n");
+		Assert.IsTrue(warning.Contains("betaa"), warning);
+		Assert.IsTrue(warning.Contains("alpha") && warning.Contains("beta"), warning);
+	}
 
-		[Test, Category("Misc")]
-		public void WarnNamedArgTypo()
-		{
-			var warning = Warnings("f(alpha, beta := 2) => alpha\nx := f(1, betaa: 3)\n");
-			Assert.IsTrue(warning.Contains("betaa"), warning);
-			Assert.IsTrue(warning.Contains("alpha") && warning.Contains("beta"), warning);
-		}
+	[Test, Category("Misc")]
+	public void WarnNamedArgValid()
+	{
+		var warning = Warnings("f(alpha, beta := 2) => alpha\nx := f(1, beta: 3)\n");
+		Assert.IsFalse(warning.Contains("not a parameter"), warning);
+	}
 
-		[Test, Category("Misc")]
-		public void WarnNamedArgValid()
-		{
-			var warning = Warnings("f(alpha, beta := 2) => alpha\nx := f(1, beta: 3)\n");
-			Assert.IsFalse(warning.Contains("not a parameter"), warning);
-		}
+	[Test, Category("Misc")]
+	public void WarnNamedArgDuplicate()
+	{
+		var warning = Warnings("f(alpha, beta := 2) => alpha\nx := f(1, alpha: 3)\n");
+		Assert.IsTrue(warning.Contains("alpha") && warning.Contains("more than once"), warning);
+	}
 
-		[Test, Category("Misc")]
-		public void WarnNamedArgDuplicate()
-		{
-			var warning = Warnings("f(alpha, beta := 2) => alpha\nx := f(1, alpha: 3)\n");
-			Assert.IsTrue(warning.Contains("alpha") && warning.Contains("more than once"), warning);
-		}
+	[Test, Category("Misc")]
+	public void ConstructorWarning()
+	{
+		var warning = Warnings("class W {\n__New(alpha := 1) {\nthis.a := alpha\n}\n}\nx := W(nosuch: 1)\n");
+		Assert.IsTrue(warning.Contains("nosuch"), warning);
+	}
 
-		[Test, Category("Misc")]
-		public void ConstructorWarning()
-		{
-			var warning = Warnings("class W {\n__New(alpha := 1) {\nthis.a := alpha\n}\n}\nx := W(nosuch: 1)\n");
-			Assert.IsTrue(warning.Contains("nosuch"), warning);
-		}
+	[Test, Category("Misc")]
+	public void ConstructorWarningStaticNew()
+	{
+		// A static __New initializes the class, so construction is checked against the instance __New alone, and a
+		// class with none takes an inherited one, which leaves nothing to check.
+		var warning = Warnings("class C {\nstatic __New() {\n}\n__New(beta) {\n}\n}\nclass D {\nstatic __New() {\n}\n}\n"
+			+ "Valid() => C(beta: 1)\nTypo() => C(nosuch: 1)\nInherited() => D(anything: 1)\n");
+		Assert.IsTrue(warning.Contains("'nosuch'"), warning);
+		Assert.IsFalse(warning.Contains("'beta'") || warning.Contains("'anything'"), warning);
+	}
 
-		[Test, Category("Misc")]
-		public void ConstructorWarningStaticNew()
-		{
-			// A static __New initializes the class, so construction is checked against the instance __New alone, and a
-			// class with none takes an inherited one, which leaves nothing to check.
-			var warning = Warnings("class C {\nstatic __New() {\n}\n__New(beta) {\n}\n}\nclass D {\nstatic __New() {\n}\n}\n"
-				+ "Valid() => C(beta: 1)\nTypo() => C(nosuch: 1)\nInherited() => D(anything: 1)\n");
-			Assert.IsTrue(warning.Contains("'nosuch'"), warning);
-			Assert.IsFalse(warning.Contains("'beta'") || warning.Contains("'anything'"), warning);
-		}
+	[Test, Category("Misc")]
+	public void WarnNamedArgBuiltin()
+	{
+		var warning = Warnings("try b := Buffer(nosuch: 1)\ntry c := Buffer(ByteCount: 4)\n");
+		Assert.IsTrue(warning.Contains("nosuch") && warning.Contains("ByteCount") && warning.Contains("FillByte"), warning);
+		Assert.IsFalse(warning.Contains("'ByteCount' is not"), warning);
+	}
 
-		[Test, Category("Misc")]
-		public void WarnNamedArgBuiltin()
-		{
-			var warning = Warnings("try b := Buffer(nosuch: 1)\ntry c := Buffer(ByteCount: 4)\n");
-			Assert.IsTrue(warning.Contains("nosuch") && warning.Contains("ByteCount") && warning.Contains("FillByte"), warning);
-			Assert.IsFalse(warning.Contains("'ByteCount' is not"), warning);
-		}
-
-		[Test, Category("Misc")]
-		public void WarnNamedArgImportedClass()
-		{
-			var warning = Warnings("""
+	[Test, Category("Misc")]
+	public void WarnNamedArgImportedClass()
+	{
+		var warning = Warnings("""
 #Import Ks { Overlay as Ov, * }
 ModuleAlias() => Ov(moduleBad: 1)
 Wildcard() => Overlay(wildcardBad: 1)
@@ -72,21 +72,21 @@ class C {
 	M() => ClassOverlay(classBad: 1)
 }
 """);
-			foreach (var name in new[] { "moduleBad", "wildcardBad", "scopedBad", "classBad", "Width" })
-				Assert.IsTrue(warning.Contains(name), warning);
+		foreach (var name in new[] { "moduleBad", "wildcardBad", "scopedBad", "classBad", "Width" })
+			Assert.IsTrue(warning.Contains(name), warning);
 
-			// Unimported, the name is no class, so nothing is checked against Overlay's parameters.
-			Assert.IsFalse(Warnings("#Warn VarUnset, Off\nf() => Overlay(nosuch: 1)\n").Contains("nosuch"));
+		// Unimported, the name is no class, so nothing is checked against Overlay's parameters.
+		Assert.IsFalse(Warnings("#Warn VarUnset, Off\nf() => Overlay(nosuch: 1)\n").Contains("nosuch"));
 
-			// The call is checked against what the import binds, a function included, not the global class it shadows.
-			var shadowed = Warnings("#Import Ks { Cosh as Buffer }\nf() => Buffer(nosuch: 1)\n");
-			Assert.IsTrue(shadowed.Contains("nosuch") && !shadowed.Contains("ByteCount"), shadowed);
-		}
+		// The call is checked against what the import binds, a function included, not the global class it shadows.
+		var shadowed = Warnings("#Import Ks { Cosh as Buffer }\nf() => Buffer(nosuch: 1)\n");
+		Assert.IsTrue(shadowed.Contains("nosuch") && !shadowed.Contains("ByteCount"), shadowed);
+	}
 
-		[Test, Category("Misc")]
-		public void WarnNamedArgScriptModuleImport()
-		{
-			var warning = Warnings("""
+	[Test, Category("Misc")]
+	public void WarnNamedArgScriptModuleImport()
+	{
+		var warning = Warnings("""
 #Import Other { F, C, Variadic, Relayed }
 #Import Other { F as G }
 #Import Wild { * }
@@ -112,53 +112,52 @@ Variadic(args*) => 1
 #Module Wild
 WildF(gamma) => gamma
 """);
-			// Each is checked against the declaration the import binds, followed through a re-export.
-			foreach (var name in new[] { "'nosuch'", "'aliasBad'", "'ctorBad'", "'wildBad'", "'relayBad'", "'scopedBad'" })
-				Assert.IsTrue(warning.Contains(name), warning);
+		// Each is checked against the declaration the import binds, followed through a re-export.
+		foreach (var name in new[] { "'nosuch'", "'aliasBad'", "'ctorBad'", "'wildBad'", "'relayBad'", "'scopedBad'" })
+			Assert.IsTrue(warning.Contains(name), warning);
 
-			// A variadic function absorbs any name, as a local one does, and a declared name is no mistake.
-			Assert.IsFalse(warning.Contains("'anything'") || warning.Contains("'alpha' is not"), warning);
-		}
+		// A variadic function absorbs any name, as a local one does, and a declared name is no mistake.
+		Assert.IsFalse(warning.Contains("'anything'") || warning.Contains("'alpha' is not"), warning);
+	}
 
-		[Test, Category("Misc")]
-		public void DynamicCallWarning()
-		{
-			var warning = Warnings("f(alpha) => alpha\ng := f\nx := g(nosuch: 1)\n");
-			Assert.IsFalse(warning.Contains("not a parameter"), warning);
-		}
+	[Test, Category("Misc")]
+	public void DynamicCallWarning()
+	{
+		var warning = Warnings("f(alpha) => alpha\ng := f\nx := g(nosuch: 1)\n");
+		Assert.IsFalse(warning.Contains("not a parameter"), warning);
+	}
 
-		[Test, Category("Misc"), Category("Internal")]
-		public void ComNamedArgLayout()
-		{
-			var named = new object[] { "pos0", Script.NamedArgs("Key", "k", "Item", "v") };
-			var values = NamedArgBinder.ToComLayout(named, out var names);
-			var expected = new Dictionary<string, object> { ["Key"] = "k", ["Item"] = "v" };
+	[Test, Category("Misc"), Category("Internal")]
+	public void ComNamedArgLayout()
+	{
+		var named = new object[] { "pos0", Script.NamedArgs("Key", "k", "Item", "v") };
+		var values = NamedArgBinder.ToComLayout(named, out var names);
+		var expected = new Dictionary<string, object> { ["Key"] = "k", ["Item"] = "v" };
 
-			Assert.AreEqual(2, names.Length);
-			Assert.AreEqual(3, values.Length);
+		Assert.AreEqual(2, names.Length);
+		Assert.AreEqual(3, values.Length);
 
-			for (var i = 0; i < names.Length; i++)
-				Assert.AreEqual(expected[names[i]], values[i], $"names[{i}] must name values[{i}]");
+		for (var i = 0; i < names.Length; i++)
+			Assert.AreEqual(expected[names[i]], values[i], $"names[{i}] must name values[{i}]");
 
-			Assert.AreEqual("pos0", values[2]);
+		Assert.AreEqual("pos0", values[2]);
 
-			var positional = new object[] { "a", "b" };
-			Assert.AreSame(positional, NamedArgBinder.ToComLayout(positional, out var none));
-			Assert.IsEmpty(none);
-		}
+		var positional = new object[] { "a", "b" };
+		Assert.AreSame(positional, NamedArgBinder.ToComLayout(positional, out var none));
+		Assert.IsEmpty(none);
+	}
 
-		[Test, Category("Misc"), Category("Internal")]
-		public void DispatchLayout()
-		{
-			var named = new object[] { "pos0", Script.NamedArgs("Key", "k", "Item", "v") };
-			var values = NamedArgBinder.StripNames(named, out var names);
-			var expected = new Dictionary<string, object> { ["Key"] = "k", ["Item"] = "v" };
+	[Test, Category("Misc"), Category("Internal")]
+	public void DispatchLayout()
+	{
+		var named = new object[] { "pos0", Script.NamedArgs("Key", "k", "Item", "v") };
+		var values = NamedArgBinder.StripNames(named, out var names);
+		var expected = new Dictionary<string, object> { ["Key"] = "k", ["Item"] = "v" };
 
-			Assert.AreEqual(2, names.Length);
-			Assert.AreEqual("pos0", values[0]);
+		Assert.AreEqual(2, names.Length);
+		Assert.AreEqual("pos0", values[0]);
 
-			for (var i = 0; i < names.Length; i++)
-				Assert.AreEqual(expected[names[i]], values[1 + i], $"names[{i}] must name values[{1 + i}]");
-		}
+		for (var i = 0; i < names.Length; i++)
+			Assert.AreEqual(expected[names[i]], values[1 + i], $"names[{i}] must name values[{1 + i}]");
 	}
 }

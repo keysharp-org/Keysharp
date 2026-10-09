@@ -27,15 +27,11 @@ global using global::System.Threading;
 global using global::System.Threading.Tasks;
 
 #if WINDOWS
-	global using global::System.Windows.Forms;
 	global using global::System.Drawing;
+	global using global::System.Windows.Forms;
 #else
-	global using global::Eto.Forms;
 	global using global::Eto.Drawing;
-#endif
-
-#if OSX
-#elif LINUX
+	global using global::Eto.Forms;
 #endif
 
 //Our usings
@@ -79,9 +75,9 @@ global using global::Keysharp.Runtime;
 #endif
 
 #if OSX
-	global using AppKit = MonoMac.AppKit;
 	global using global::Keysharp.Internals.Input.MacOS;
 	global using global::Keysharp.Internals.Window.MacOS;
+	global using AppKit = MonoMac.AppKit;
 #elif LINUX
 	global using global::Keysharp.Internals.Input.Hooks.Linux;
 	global using global::Keysharp.Internals.Input.Linux;
@@ -95,6 +91,7 @@ global using global::Keysharp.Runtime;
 global using global::Microsoft.CodeAnalysis;
 global using global::Microsoft.CodeAnalysis.CSharp.Syntax;
 global using global::NUnit.Framework;
+
 #if LINUX
 	global using global::Tmds.DBus.Protocol;
 #endif

@@ -1,1744 +1,1660 @@
 using Assert = NUnit.Framework.Legacy.ClassicAssert;
 
-namespace Keysharp.Tests
+namespace Keysharp.Tests;
+
+[Category("Internal")]
+public class GuiTests : TestRunner
 {
-	[Category("Internal")]
-	public class GuiTests : TestRunner
-	{
-		private const string MsgBoxTitle = "this is a sample title";
+	private const string MsgBoxTitle = "this is a sample title";
 
-		[Test, Category("Gui"), NonParallelizable]
+	[Test, Category("Gui"), NonParallelizable]
 #if WINDOWS
-		[Apartment(ApartmentState.STA)]
+	[Apartment(ApartmentState.STA)]
 #endif
-		public void OwnWindowFromPoint()
+	public void OwnWindowFromPoint()
+	{
+		SkipIfUiInitializationBlocked("Window point queries require a live GUI application.");
+		Assert.IsTrue(TestScript("gui-window-from-point", false));
+	}
+
+	[Test, Category("Gui")]
+	public void DisplaySelection()
+	{
+		DisplayInfo[] displays =
+		[
+			new("primary", new ScreenRect(0, 0, 1920, 1080), new ScreenRect(0, 0, 1920, 1040), 1.0, true),
+			new("left", new ScreenRect(-2560, 0, 2560, 1440), new ScreenRect(-2560, 0, 2560, 1400), 1.5, false),
+			new("above", new ScreenRect(0, -1200, 1600, 1200), new ScreenRect(0, -1200, 1600, 1160), 2.0, false)
+		];
+
+		Assert.IsTrue(DisplayTopology.TryFind(displays, new ScreenRect(-300, 100, 400, 300), out var spanning));
+		Assert.AreEqual("left", spanning.Name, "largest visible intersection should own a spanning overlay");
+
+		Assert.IsTrue(DisplayTopology.TryFind(displays, new ScreenRect(100, -100, 0, 0), out var point));
+		Assert.AreEqual("above", point.Name, "zero-size point lookup should honor negative monitor origins");
+
+		Assert.IsTrue(DisplayTopology.TryFind(displays, new ScreenRect(4000, 100, 20, 20), out var nearest));
+		Assert.AreEqual("primary", nearest.Name, "off-desktop placement should use the nearest display deterministically");
+
+		DisplayInfo[] unequalDisplays =
+		[
+			new("large", new ScreenRect(0, 0, 4000, 1000), new ScreenRect(0, 0, 4000, 1000), 1, true),
+			new("small", new ScreenRect(4200, 0, 100, 1000), new ScreenRect(4200, 0, 100, 1000), 1, false)
+		];
+		Assert.IsTrue(DisplayTopology.TryFind(unequalDisplays, new ScreenRect(4050, 500, 0, 0), out var edgeNearest));
+		Assert.AreEqual("large", edgeNearest.Name, "nearest lookup must compare display edges, not centres");
+	}
+
+	[Test, Category("Gui")]
+	public void ExtremeDisplayInput()
+	{
+		DisplayInfo[] displays =
+		[
+			new("left", new ScreenRect(int.MinValue, -10, 100, 20), new ScreenRect(int.MinValue, -10, 100, 20), 1, false),
+			new("right", new ScreenRect(int.MaxValue - 99, -10, 100, 20), new ScreenRect(int.MaxValue - 99, -10, 100, 20), 1, true)
+		];
+
+		Assert.IsTrue(DisplayTopology.TryFind(displays, new ScreenRect(int.MinValue, 0, int.MaxValue, 1), out var selected));
+		Assert.AreEqual("left", selected.Name);
+		Assert.AreEqual((long)int.MaxValue + 1, new ScreenRect(int.MaxValue, 0, 1, 1).Right);
+	}
+
+	[Test, Category("Gui")]
+	public void WindowsCaptureScale()
+	{
+		// PMv2 Windows exposes both monitors in physical desktop pixels. A 1920-wide 100% display followed
+		// by a 2560-wide 150% display is therefore one 4480-pixel-wide capture; UI scale is not applied here.
+		var desktop = new ScreenRect(0, 0, 4480, 1440);
+		var pixels = new PixelSize(4480, 1440);
+
+		Assert.AreEqual(new Point(2920, 700), desktop.PixelToScreen(new Point(2920, 700), pixels));
+		Assert.AreEqual(new Point(2920, 700), desktop.ScreenToPixel(2920, 700, pixels));
+	}
+
+	[Test, Category("Gui")]
+	public void DenseCaptureScale()
+	{
+		var twice = new ScreenRect(10, 20, 2, 1);
+		var fractional = new ScreenRect(10, 20, 2, 2);
+		var fiveForFour = new ScreenRect(10, 20, 4, 1);
+		var fractionalSeam = new ScreenRect(0, 0, 6, 1);
+		var roundedCanvasSeam = new ScreenRect(0, 0, 5, 1);
+		// A 1920-point non-Retina display beside a 1440-point Retina display is flattened to a
+		// 6720-pixel 2x canvas. X=4840 is 500 logical points into the second display.
+		var mixedMacDesktop = new ScreenRect(0, 0, 3360, 1080);
+
+		Assert.AreEqual(new Point(11, 20), twice.PixelToScreen(new Point(3, 1), new PixelSize(4, 2)));
+		Assert.AreEqual(new Point(11, 21), fractional.PixelToScreen(new Point(1, 1), new PixelSize(3, 3)));
+		Assert.AreEqual(new Point(11, 21), fractional.PixelToScreen(new Point(2, 2), new PixelSize(3, 3)));
+		Assert.AreEqual(new Point(11, 21), fractional.PixelToScreen(
+			fractional.ScreenToPixel(11, 21, new PixelSize(3, 3)), new PixelSize(3, 3)));
+		Assert.AreEqual(new Point(13, 20), fiveForFour.PixelToScreen(
+			fiveForFour.ScreenToPixel(13, 20, new PixelSize(5, 1)), new PixelSize(5, 1)));
+		Assert.AreEqual(new Point(3, 0), fractionalSeam.PixelToScreen(new Point(4, 0), new PixelSize(9, 1)));
+		Assert.AreEqual(new Point(2, 0), roundedCanvasSeam.PixelToScreen(new Point(4, 0), new PixelSize(8, 1)));
+		Assert.AreEqual(new Point(3, 0), roundedCanvasSeam.PixelToScreen(new Point(5, 0), new PixelSize(8, 1)));
+		Assert.AreEqual(new Point(2420, 300), mixedMacDesktop.PixelToScreen(
+			new Point(4840, 600), new PixelSize(6720, 2160)));
+	}
+
+	[Test, Category("Gui")]
+	public void HiddenOverlaySetImage()
+	{
+		using var image = KeysharpImage.Create(null, 20, 12, "0xFF204060") as KeysharpImage;
+		var overlay = new Ks.KeysharpOverlay();
+		_ = overlay.__New(1L, 2L, 20L, 12L);
+
+		try
 		{
-			SkipIfUiInitializationBlocked("Window point queries require a live GUI application.");
-			Assert.IsTrue(TestScript("gui-window-from-point", false));
+			_ = overlay.SetImage(image, 31L, 42L, 30L, 18L);
+
+			Assert.AreEqual(31L, overlay.X);
+			Assert.AreEqual(42L, overlay.Y);
+			Assert.AreEqual(30L, overlay.Width);
+			Assert.AreEqual(18L, overlay.Height);
+			Assert.AreEqual(false, overlay.IsVisible);
 		}
-
-		[Test, Category("Gui")]
-		public void DisplaySelection()
+		finally
 		{
-			DisplayInfo[] displays =
-			[
-				new("primary", new ScreenRect(0, 0, 1920, 1080), new ScreenRect(0, 0, 1920, 1040), 1.0, true),
-				new("left", new ScreenRect(-2560, 0, 2560, 1440), new ScreenRect(-2560, 0, 2560, 1400), 1.5, false),
-				new("above", new ScreenRect(0, -1200, 1600, 1200), new ScreenRect(0, -1200, 1600, 1160), 2.0, false)
-			];
-
-			Assert.IsTrue(DisplayTopology.TryFind(displays, new ScreenRect(-300, 100, 400, 300), out var spanning));
-			Assert.AreEqual("left", spanning.Name, "largest visible intersection should own a spanning overlay");
-
-			Assert.IsTrue(DisplayTopology.TryFind(displays, new ScreenRect(100, -100, 0, 0), out var point));
-			Assert.AreEqual("above", point.Name, "zero-size point lookup should honor negative monitor origins");
-
-			Assert.IsTrue(DisplayTopology.TryFind(displays, new ScreenRect(4000, 100, 20, 20), out var nearest));
-			Assert.AreEqual("primary", nearest.Name, "off-desktop placement should use the nearest display deterministically");
-
-			DisplayInfo[] unequalDisplays =
-			[
-				new("large", new ScreenRect(0, 0, 4000, 1000), new ScreenRect(0, 0, 4000, 1000), 1, true),
-				new("small", new ScreenRect(4200, 0, 100, 1000), new ScreenRect(4200, 0, 100, 1000), 1, false)
-			];
-			Assert.IsTrue(DisplayTopology.TryFind(unequalDisplays, new ScreenRect(4050, 500, 0, 0), out var edgeNearest));
-			Assert.AreEqual("large", edgeNearest.Name, "nearest lookup must compare display edges, not centres");
+			_ = overlay.Destroy();
 		}
+	}
 
-		[Test, Category("Gui")]
-		public void ExtremeDisplayInput()
+	[Test, Category("Gui")]
+	public void OverlayRedraw()
+	{
+		var overlay = new Ks.KeysharpOverlay();
+		_ = overlay.__New(1L, 2L, 10L, 10L);
+
+		try
 		{
-			DisplayInfo[] displays =
-			[
-				new("left", new ScreenRect(int.MinValue, -10, 100, 20), new ScreenRect(int.MinValue, -10, 100, 20), 1, false),
-				new("right", new ScreenRect(int.MaxValue - 99, -10, 100, 20), new ScreenRect(int.MaxValue - 99, -10, 100, 20), 1, true)
-			];
-
-			Assert.IsTrue(DisplayTopology.TryFind(displays, new ScreenRect(int.MinValue, 0, int.MaxValue, 1), out var selected));
-			Assert.AreEqual("left", selected.Name);
-			Assert.AreEqual((long)int.MaxValue + 1, new ScreenRect(int.MaxValue, 0, 1, 1).Right);
-		}
-
-		[Test, Category("Gui")]
-		public void WindowsCaptureScale()
-		{
-			// PMv2 Windows exposes both monitors in physical desktop pixels. A 1920-wide 100% display followed
-			// by a 2560-wide 150% display is therefore one 4480-pixel-wide capture; UI scale is not applied here.
-			var desktop = new ScreenRect(0, 0, 4480, 1440);
-			var pixels = new PixelSize(4480, 1440);
-
-			Assert.AreEqual(new Point(2920, 700), desktop.PixelToScreen(new Point(2920, 700), pixels));
-			Assert.AreEqual(new Point(2920, 700), desktop.ScreenToPixel(2920, 700, pixels));
-		}
-
-		[Test, Category("Gui")]
-		public void DenseCaptureScale()
-		{
-			var twice = new ScreenRect(10, 20, 2, 1);
-			var fractional = new ScreenRect(10, 20, 2, 2);
-			var fiveForFour = new ScreenRect(10, 20, 4, 1);
-			var fractionalSeam = new ScreenRect(0, 0, 6, 1);
-			var roundedCanvasSeam = new ScreenRect(0, 0, 5, 1);
-			// A 1920-point non-Retina display beside a 1440-point Retina display is flattened to a
-			// 6720-pixel 2x canvas. X=4840 is 500 logical points into the second display.
-			var mixedMacDesktop = new ScreenRect(0, 0, 3360, 1080);
-
-			Assert.AreEqual(new Point(11, 20), twice.PixelToScreen(new Point(3, 1), new PixelSize(4, 2)));
-			Assert.AreEqual(new Point(11, 21), fractional.PixelToScreen(new Point(1, 1), new PixelSize(3, 3)));
-			Assert.AreEqual(new Point(11, 21), fractional.PixelToScreen(new Point(2, 2), new PixelSize(3, 3)));
-			Assert.AreEqual(new Point(11, 21), fractional.PixelToScreen(
-				fractional.ScreenToPixel(11, 21, new PixelSize(3, 3)), new PixelSize(3, 3)));
-			Assert.AreEqual(new Point(13, 20), fiveForFour.PixelToScreen(
-				fiveForFour.ScreenToPixel(13, 20, new PixelSize(5, 1)), new PixelSize(5, 1)));
-			Assert.AreEqual(new Point(3, 0), fractionalSeam.PixelToScreen(new Point(4, 0), new PixelSize(9, 1)));
-			Assert.AreEqual(new Point(2, 0), roundedCanvasSeam.PixelToScreen(new Point(4, 0), new PixelSize(8, 1)));
-			Assert.AreEqual(new Point(3, 0), roundedCanvasSeam.PixelToScreen(new Point(5, 0), new PixelSize(8, 1)));
-			Assert.AreEqual(new Point(2420, 300), mixedMacDesktop.PixelToScreen(
-				new Point(4840, 600), new PixelSize(6720, 2160)));
-		}
-
-		[Test, Category("Gui")]
-		public void HiddenOverlaySetImage()
-		{
-			using var image = KeysharpImage.Create(null, 20, 12, "0xFF204060") as KeysharpImage;
-			var overlay = new Ks.KeysharpOverlay();
-			_ = overlay.__New(1L, 2L, 20L, 12L);
-
-			try
-			{
-				_ = overlay.SetImage(image, 31L, 42L, 30L, 18L);
-
-				Assert.AreEqual(31L, overlay.X);
-				Assert.AreEqual(42L, overlay.Y);
-				Assert.AreEqual(30L, overlay.Width);
-				Assert.AreEqual(18L, overlay.Height);
-				Assert.AreEqual(false, overlay.IsVisible);
-			}
-			finally
-			{
-				_ = overlay.Destroy();
-			}
-		}
-
-		[Test, Category("Gui")]
-		public void OverlayRedraw()
-		{
-			var overlay = new Ks.KeysharpOverlay();
-			_ = overlay.__New(1L, 2L, 10L, 10L);
-
-			try
-			{
-				var callback = new KeysharpFunc((Func<object, object>)(target =>
-				{
-					_ = ((Ks.KeysharpImage)target).Clear("0xFF204060");
-					return 0L;
-				}));
-				_ = overlay.Redraw(callback, 31L, 42L, 30L, 18L);
-
-				Assert.AreEqual(31L, overlay.X);
-				Assert.AreEqual(42L, overlay.Y);
-				Assert.AreEqual(30L, overlay.Width);
-				Assert.AreEqual(18L, overlay.Height);
-				Assert.AreEqual(false, overlay.IsVisible);
-			}
-			finally
-			{
-				_ = overlay.Destroy();
-			}
-		}
-
-		[Test, Category("Gui")]
-		public void OverlayRedrawPreservesAutoSize()
-		{
-			using var small = KeysharpImage.Create(null, 10L, 6L, "0xFF204060") as KeysharpImage;
-			using var large = KeysharpImage.Create(null, 20L, 12L, "0xFF406080") as KeysharpImage;
-			var overlay = Ks.KeysharpOverlay.FromImage(null, small) as Ks.KeysharpOverlay;
-			Assert.IsNotNull(overlay);
 			var callback = new KeysharpFunc((Func<object, object>)(target =>
 			{
 				_ = ((Ks.KeysharpImage)target).Clear("0xFF204060");
 				return 0L;
 			}));
+			_ = overlay.Redraw(callback, 31L, 42L, 30L, 18L);
 
-			try
-			{
-				_ = overlay.Redraw(callback);
-				Assert.AreEqual(10L, overlay.Width);
-				Assert.AreEqual(6L, overlay.Height);
-
-				_ = overlay.SetImage(large);
-				Assert.AreEqual(20L, overlay.Width, "an auto width must follow the next source image");
-				Assert.AreEqual(12L, overlay.Height, "an auto height must follow the next source image");
-
-				var surface = overlay.SurfaceForTests;
-				var error = Assert.Throws<KeysharpException>(() => overlay.Redraw(callback, null, null, -1L));
-				Assert.IsInstanceOf<ValueError>(error.UserError);
-				Assert.AreSame(surface, overlay.SurfaceForTests, "invalid geometry must not replace the canvas");
-				Assert.AreEqual(20L, overlay.Width);
-				Assert.AreEqual(12L, overlay.Height);
-			}
-			finally
-			{
-				_ = overlay.Destroy();
-			}
+			Assert.AreEqual(31L, overlay.X);
+			Assert.AreEqual(42L, overlay.Y);
+			Assert.AreEqual(30L, overlay.Width);
+			Assert.AreEqual(18L, overlay.Height);
+			Assert.AreEqual(false, overlay.IsVisible);
 		}
-
-		[Test, Category("Gui")]
-		public void OverlayImageSize()
+		finally
 		{
-			using var image = KeysharpImage.Create(null, 20, 12, "0xFF204060", 2.0) as KeysharpImage;
-			var overlay = new Ks.KeysharpOverlay();
-			_ = overlay.__New();
-
-			try
-			{
-				_ = overlay.SetImage(image, 1L, 2L);
-				Assert.AreEqual(40L, overlay.Width);
-				Assert.AreEqual(24L, overlay.Height);
-			}
-			finally
-			{
-				_ = overlay.Destroy();
-			}
+			_ = overlay.Destroy();
 		}
+	}
 
-		/// <summary>
-		/// One Overlay event's handlers run as one chain, as a Gui event's do: a non-empty return (0 included) or an
-		/// uncaught error stops the rest, while "" or no return passes the event on.
-		/// </summary>
-		[Test, Category("Gui")]
-		public void OverlayEventChainStopsOnNonEmptyReturn()
+	[Test, Category("Gui")]
+	public void OverlayRedrawPreservesAutoSize()
+	{
+		using var small = KeysharpImage.Create(null, 10L, 6L, "0xFF204060") as KeysharpImage;
+		using var large = KeysharpImage.Create(null, 20L, 12L, "0xFF406080") as KeysharpImage;
+		var overlay = Ks.KeysharpOverlay.FromImage(null, small) as Ks.KeysharpOverlay;
+		Assert.IsNotNull(overlay);
+		var callback = new KeysharpFunc((Func<object, object>)(target =>
 		{
-			var overlay = new Ks.KeysharpOverlay();
-			_ = overlay.__New(1L, 2L, 10L, 10L);
-			var throws = new object();
+			_ = ((Ks.KeysharpImage)target).Clear("0xFF204060");
+			return 0L;
+		}));
 
-			try
+		try
+		{
+			_ = overlay.Redraw(callback);
+			Assert.AreEqual(10L, overlay.Width);
+			Assert.AreEqual(6L, overlay.Height);
+
+			_ = overlay.SetImage(large);
+			Assert.AreEqual(20L, overlay.Width, "an auto width must follow the next source image");
+			Assert.AreEqual(12L, overlay.Height, "an auto height must follow the next source image");
+
+			var surface = overlay.SurfaceForTests;
+			var error = Assert.Throws<KeysharpException>(() => overlay.Redraw(callback, null, null, -1L));
+			Assert.IsInstanceOf<ValueError>(error.UserError);
+			Assert.AreSame(surface, overlay.SurfaceForTests, "invalid geometry must not replace the canvas");
+			Assert.AreEqual(20L, overlay.Width);
+			Assert.AreEqual(12L, overlay.Height);
+		}
+		finally
+		{
+			_ = overlay.Destroy();
+		}
+	}
+
+	[Test, Category("Gui")]
+	public void OverlayImageSize()
+	{
+		using var image = KeysharpImage.Create(null, 20, 12, "0xFF204060", 2.0) as KeysharpImage;
+		var overlay = new Ks.KeysharpOverlay();
+		_ = overlay.__New();
+
+		try
+		{
+			_ = overlay.SetImage(image, 1L, 2L);
+			Assert.AreEqual(40L, overlay.Width);
+			Assert.AreEqual(24L, overlay.Height);
+		}
+		finally
+		{
+			_ = overlay.Destroy();
+		}
+	}
+
+	/// <summary>
+	/// One Overlay event's handlers run as one chain, as a Gui event's do: a non-empty return (0 included) or an
+	/// uncaught error stops the rest, while "" or no return passes the event on.
+	/// </summary>
+	[Test, Category("Gui")]
+	public void OverlayEventChainStopsOnNonEmptyReturn()
+	{
+		var overlay = new Ks.KeysharpOverlay();
+		_ = overlay.__New(1L, 2L, 10L, 10L);
+		var throws = new object();
+
+		try
+		{
+			foreach (var (firstReturns, secondRuns) in new (object, bool)[] { ("", true), (null, true), (0L, false), ("abc", false), (throws, false) })
 			{
-				foreach (var (firstReturns, secondRuns) in new (object, bool)[] { ("", true), (null, true), (0L, false), ("abc", false), (throws, false) })
+				var what = ReferenceEquals(firstReturns, throws) ? "an error" : firstReturns == null ? "no return" : $"a return of '{firstReturns}'";
+				var order = new List<string>();
+				var first = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) =>
 				{
-					var what = ReferenceEquals(firstReturns, throws) ? "an error" : firstReturns == null ? "no return" : $"a return of '{firstReturns}'";
-					var order = new List<string>();
-					var first = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) =>
-					{
-						order.Add("first");
-						return ReferenceEquals(firstReturns, throws) ? throw new Keysharp.Builtins.Error("handler failed") : firstReturns;
-					}));
-					var second = new KeysharpFunc((Func<object, object, object, object>)((_, x, y) => { order.Add($"second {x},{y}"); return ""; }));
-					_ = overlay.OnEvent("Click", first);
-					_ = overlay.OnEvent("Click", second);
-					overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.Click, 3, 4));
-					Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
-					NUnit.Framework.CollectionAssert.AreEqual(secondRuns ? new[] { "first", "second 3,4" } : new[] { "first" }, order, $"Click after {what}");
-					_ = overlay.OnEvent("Click", first, 0L);
-					_ = overlay.OnEvent("Click", second, 0L);
+					order.Add("first");
+					return ReferenceEquals(firstReturns, throws) ? throw new Keysharp.Builtins.Error("handler failed") : firstReturns;
+				}));
+				var second = new KeysharpFunc((Func<object, object, object, object>)((_, x, y) => { order.Add($"second {x},{y}"); return ""; }));
+				_ = overlay.OnEvent("Click", first);
+				_ = overlay.OnEvent("Click", second);
+				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.Click, 3, 4));
+				Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+				NUnit.Framework.CollectionAssert.AreEqual(secondRuns ? new[] { "first", "second 3,4" } : new[] { "first" }, order, $"Click after {what}");
+				_ = overlay.OnEvent("Click", first, 0L);
+				_ = overlay.OnEvent("Click", second, 0L);
+			}
+		}
+		finally
+		{
+			_ = overlay.Destroy();
+		}
+	}
+
+	/// <summary>
+	/// MouseMove events raised while one is still queued collapse into it, and it reports the latest position;
+	/// a move after it ran is queued again.
+	/// </summary>
+	[Test, Category("Gui"), Category("Internal"), Category("Curated")]
+	public void OverlayMouseMoveCoalesces()
+	{
+		var overlay = new Ks.KeysharpOverlay();
+		_ = overlay.__New(1L, 2L, 10L, 10L);
+		var moves = new List<string>();
+		var threads = s.Threads;
+		var allowInterruption = threads.allowInterruption;
+		var handler = new KeysharpFunc((Func<object, object, object, object>)((_, x, y) => { moves.Add($"{x},{y}"); return ""; }));
+
+		void Pump() => Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+
+		try
+		{
+			_ = overlay.OnEvent("MouseMove", handler);
+			overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 1, 1));
+			overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 2, 2));
+			overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 3, 4));
+			Pump();
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "3,4" }, moves);
+
+			overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 5, 6));
+			Pump();
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "3,4", "5,6" }, moves);
+
+			moves.Clear();
+			overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 7, 8));
+			_ = overlay.Destroy();
+			_ = overlay.OnEvent("MouseMove", handler);
+			Pump();
+			Assert.IsEmpty(moves, "Destroy cancels queued moves before new handlers are registered");
+
+			overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 9, 10));
+			_ = overlay.Destroy();
+			_ = overlay.OnEvent("MouseMove", handler);
+			overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 11, 12));
+			Pump();
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "11,12" }, moves);
+
+			moves.Clear();
+			_ = overlay.OnEvent("Click", handler);
+			overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 13, 14));
+			_ = overlay.OnEvent("MouseMove", handler, 0L);
+			_ = overlay.OnEvent("MouseMove", handler);
+			Pump();
+			Assert.IsEmpty(moves, "Removing the last move handler cancels queued moves");
+
+			threads.allowInterruption = false;
+			overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 15, 16));
+			Pump();
+			Assert.IsEmpty(moves);
+			Assert.IsTrue(s.EventScheduler.HasBlockedQueuedWork);
+			overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 17, 18));
+			Pump();
+			Assert.IsEmpty(moves);
+			threads.allowInterruption = allowInterruption;
+			Pump();
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "17,18" }, moves);
+
+			moves.Clear();
+			_ = overlay.OnEvent("MouseMove", handler, 0L);
+			Task.Run(() =>
+			{
+				var context = SynchronizationContext.Current;
+				var scheduler = s.ThreadScheduler;
+
+				try
+				{
+					SynchronizationContext.SetSynchronizationContext(scheduler.DispatchContext);
+					_ = overlay.OnEvent("MouseMove", handler);
+					SynchronizationContext.SetSynchronizationContext(null);
+					overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 19, 20));
 				}
-			}
-			finally
-			{
-				_ = overlay.Destroy();
-			}
-		}
-
-		/// <summary>
-		/// MouseMove events raised while one is still queued collapse into it, and it reports the latest position;
-		/// a move after it ran is queued again.
-		/// </summary>
-		[Test, Category("Gui"), Category("Internal"), Category("Curated")]
-		public void OverlayMouseMoveCoalesces()
-		{
-			var overlay = new Ks.KeysharpOverlay();
-			_ = overlay.__New(1L, 2L, 10L, 10L);
-			var moves = new List<string>();
-			var threads = s.Threads;
-			var allowInterruption = threads.allowInterruption;
-			var handler = new KeysharpFunc((Func<object, object, object, object>)((_, x, y) => { moves.Add($"{x},{y}"); return ""; }));
-
-			void Pump() => Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
-
-			try
-			{
-				_ = overlay.OnEvent("MouseMove", handler);
-				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 1, 1));
-				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 2, 2));
-				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 3, 4));
-				Pump();
-				NUnit.Framework.CollectionAssert.AreEqual(new[] { "3,4" }, moves);
-
-				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 5, 6));
-				Pump();
-				NUnit.Framework.CollectionAssert.AreEqual(new[] { "3,4", "5,6" }, moves);
-
-				moves.Clear();
-				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 7, 8));
-				_ = overlay.Destroy();
-				_ = overlay.OnEvent("MouseMove", handler);
-				Pump();
-				Assert.IsEmpty(moves, "Destroy cancels queued moves before new handlers are registered");
-
-				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 9, 10));
-				_ = overlay.Destroy();
-				_ = overlay.OnEvent("MouseMove", handler);
-				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 11, 12));
-				Pump();
-				NUnit.Framework.CollectionAssert.AreEqual(new[] { "11,12" }, moves);
-
-				moves.Clear();
-				_ = overlay.OnEvent("Click", handler);
-				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 13, 14));
-				_ = overlay.OnEvent("MouseMove", handler, 0L);
-				_ = overlay.OnEvent("MouseMove", handler);
-				Pump();
-				Assert.IsEmpty(moves, "Removing the last move handler cancels queued moves");
-
-				threads.allowInterruption = false;
-				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 15, 16));
-				Pump();
-				Assert.IsEmpty(moves);
-				Assert.IsTrue(s.EventScheduler.HasBlockedQueuedWork);
-				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 17, 18));
-				Pump();
-				Assert.IsEmpty(moves);
-				threads.allowInterruption = allowInterruption;
-				Pump();
-				NUnit.Framework.CollectionAssert.AreEqual(new[] { "17,18" }, moves);
-
-				moves.Clear();
-				_ = overlay.OnEvent("MouseMove", handler, 0L);
-				Task.Run(() =>
+				finally
 				{
-					var context = SynchronizationContext.Current;
-					var scheduler = s.ThreadScheduler;
-
-					try
-					{
-						SynchronizationContext.SetSynchronizationContext(scheduler.DispatchContext);
-						_ = overlay.OnEvent("MouseMove", handler);
-						SynchronizationContext.SetSynchronizationContext(null);
-						overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 19, 20));
-					}
-					finally
-					{
-						scheduler.DisposeWorker();
-						SynchronizationContext.SetSynchronizationContext(context);
-					}
-				}).GetAwaiter().GetResult();
-				_ = overlay.OnEvent("MouseMove", handler);
-				Pump();
-				Assert.IsEmpty(moves, "Owner teardown cancels queued moves while another event remains registered");
-				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 21, 22));
-				Pump();
-				NUnit.Framework.CollectionAssert.AreEqual(new[] { "21,22" }, moves);
-			}
-			finally
-			{
-				threads.allowInterruption = allowInterruption;
-				_ = overlay.Destroy();
-			}
+					scheduler.DisposeWorker();
+					SynchronizationContext.SetSynchronizationContext(context);
+				}
+			}).GetAwaiter().GetResult();
+			_ = overlay.OnEvent("MouseMove", handler);
+			Pump();
+			Assert.IsEmpty(moves, "Owner teardown cancels queued moves while another event remains registered");
+			overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.MouseMove, 21, 22));
+			Pump();
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "21,22" }, moves);
 		}
-
-		// Script-visible canvas behaviour: what Canvas is, what it refuses, and that Copy escapes the refusals; then
-		// the shown surfaces built on it (Overlay, Highlight, ToolTip) across Hide, Show and Destroy.
-		[Test, Category("Gui"), Category("Curated"), NonParallelizable]
-#if WINDOWS
-		[Apartment(ApartmentState.STA)]
-#endif
-		public void OverlayCanvas()
+		finally
 		{
-			if (Script.IsHeadless)
-				Assert.Ignore("Overlay surfaces need an initialized graphics backend.");
-
-			Assert.IsTrue(TestScript("overlay-canvas", false));
+			threads.allowInterruption = allowInterruption;
+			_ = overlay.Destroy();
 		}
+	}
+
+	// Script-visible canvas behaviour: what Canvas is, what it refuses, and that Copy escapes the refusals; then
+	// the shown surfaces built on it (Overlay, Highlight, ToolTip) across Hide, Show and Destroy.
+	[Test, Category("Gui"), Category("Curated"), NonParallelizable]
+#if WINDOWS
+	[Apartment(ApartmentState.STA)]
+#endif
+	public void OverlayCanvas()
+	{
+		if (Script.IsHeadless)
+			Assert.Ignore("Overlay surfaces need an initialized graphics backend.");
+
+		Assert.IsTrue(TestScript("overlay-canvas", false));
+	}
 
 #if LINUX
-		[Test, Category("Gui"), Category("Curated")]
-		public void PictureBeforeShow()
-		{
-			SkipIfUiInitializationBlocked("Pictures need a GTK backend.");
-			Assert.IsTrue(TestScript("gui-picture", false));
-		}
+	[Test, Category("Gui"), Category("Curated")]
+	public void PictureBeforeShow()
+	{
+		SkipIfUiInitializationBlocked("Pictures need a GTK backend.");
+		Assert.IsTrue(TestScript("gui-picture", false));
+	}
 
-		[TestCase(true), TestCase(false), Category("Gui")]
-		public void WaylandSurfaceOrigin(bool decorated)
+	[TestCase(true), TestCase(false), Category("Gui")]
+	public void WaylandSurfaceOrigin(bool decorated)
+	{
+		SkipIfUiInitializationBlocked("Surface coordinates require a GTK window.");
+		s.InvokeOnUIThread(() =>
 		{
-			SkipIfUiInitializationBlocked("Surface coordinates require a GTK window.");
-			s.InvokeOnUIThread(() =>
+			var frame = new Rectangle(-240, 180, 300, 200);
+			var info = new WaylandWindowInfo(1, frameGeometry: frame);
+			var reported = new WaylandWindowInfo(1,
+				frameGeometry: frame, surfaceGeometry: new Rectangle(-252, 168, 324, 224));
+			Assert.IsTrue(WaylandOwnToplevels.TryGetSurfaceOrigin(null, reported, out var origin));
+			Assert.AreEqual(new Point(-252, 168), origin);
+			Assert.IsFalse(WaylandOwnToplevels.TryGetSurfaceOrigin(null, info, out _));
+			using var form = new Eto.Forms.Form
 			{
-				var frame = new Rectangle(-240, 180, 300, 200);
-				var info = new WaylandWindowInfo(1, frameGeometry: frame);
-				var reported = new WaylandWindowInfo(1,
-					frameGeometry: frame, surfaceGeometry: new Rectangle(-252, 168, 324, 224));
-				Assert.IsTrue(WaylandOwnToplevels.TryGetSurfaceOrigin(null, reported, out var origin));
-				Assert.AreEqual(new Point(-252, 168), origin);
-				Assert.IsFalse(WaylandOwnToplevels.TryGetSurfaceOrigin(null, info, out _));
-				using var form = new Eto.Forms.Form
-				{
-					Content = new PixelLayout(), ClientSize = new Size(300, 200),
-					WindowStyle = decorated ? WindowStyle.Default : WindowStyle.None
-				};
-				var native = (Gtk.Window)form.ToNative();
-				// An empty title bar leaves the content origin at the frame's top-left.
-				if (decorated)
-					native.Titlebar = new Gtk.Box(Gtk.Orientation.Horizontal, 0);
+				Content = new PixelLayout(), ClientSize = new Size(300, 200),
+				WindowStyle = decorated ? WindowStyle.Default : WindowStyle.None
+			};
+			var native = (Gtk.Window)form.ToNative();
+			// An empty title bar leaves the content origin at the frame's top-left.
+			if (decorated)
+				native.Titlebar = new Gtk.Box(Gtk.Orientation.Horizontal, 0);
+			Assert.IsFalse(WaylandOwnToplevels.TryGetSurfaceOrigin(form, info, out _));
+			form.Show();
+			Application.Instance.RunIteration();
+			Assert.IsTrue(native.IsMapped);
+
+			if (!GLib.GType.FromName("GdkWaylandWindow").IsInstance(native.Window.Handle))
+			{
 				Assert.IsFalse(WaylandOwnToplevels.TryGetSurfaceOrigin(form, info, out _));
+				return;
+			}
+
+			Assert.IsTrue(WaylandOwnToplevels.TryGetSurfaceOrigin(form, info, out origin));
+			var content = form.Content.PointToScreen(Point.Empty);
+			Assert.AreEqual(new Point(frame.X - (int)content.X, frame.Y - (int)content.Y), origin);
+			Assert.IsFalse(System.Threading.Tasks.Task.Run(() =>
+				WaylandOwnToplevels.TryGetSurfaceOrigin(form, info, out _)).GetAwaiter().GetResult());
+			native.Gravity = Gdk.Gravity.Center;
+			Assert.IsFalse(WaylandOwnToplevels.TryGetSurfaceOrigin(form, info, out _));
+			native.Gravity = Gdk.Gravity.NorthWest;
+			form.Hide();
+			Assert.IsFalse(WaylandOwnToplevels.TryGetSurfaceOrigin(form, info, out _));
+		});
+	}
+
+	// GTK unmap invalidates bindings even when hiding bypasses Gui.Hide.
+	[Test, Category("Gui")]
+	public void WaylandOwnToplevelFollowsWindowLifecycle()
+	{
+		SkipIfUiInitializationBlocked("The lifecycle comes from a GTK window.");
+		s.InvokeOnUIThread(() =>
+		{
+			var states = (IDictionary)OwnToplevelsField("states");
+			var claimedIds = (HashSet<string>)OwnToplevelsField("claimedIds");
+			var form = new Eto.Forms.Form { Content = new PixelLayout(), ClientSize = new Size(200, 100) };
+			var handle = EtoExtensions.GetHandle(form);
+			var state = TrackOwnToplevel(form, handle);
+
+			void Bind()
+			{
+				SetOwnToplevelField(state, "CompositorHandle", (nint)42);
+				SetOwnToplevelField(state, "AppliedTo", (nint)42);
+				SetOwnToplevelField(state, "CompositorId", "lifecycle");
+				_ = claimedIds.Add("lifecycle");
+			}
+
+			try
+			{
+				Assert.IsTrue(states.Contains(handle));
+				Assert.IsFalse(OwnToplevelField<bool>(state, "Mapped"));
 				form.Show();
 				Application.Instance.RunIteration();
-				Assert.IsTrue(native.IsMapped);
-
-				if (!GLib.GType.FromName("GdkWaylandWindow").IsInstance(native.Window.Handle))
-				{
-					Assert.IsFalse(WaylandOwnToplevels.TryGetSurfaceOrigin(form, info, out _));
-					return;
-				}
-
-				Assert.IsTrue(WaylandOwnToplevels.TryGetSurfaceOrigin(form, info, out origin));
-				var content = form.Content.PointToScreen(Point.Empty);
-				Assert.AreEqual(new Point(frame.X - (int)content.X, frame.Y - (int)content.Y), origin);
-				Assert.IsFalse(System.Threading.Tasks.Task.Run(() =>
-					WaylandOwnToplevels.TryGetSurfaceOrigin(form, info, out _)).GetAwaiter().GetResult());
-				native.Gravity = Gdk.Gravity.Center;
-				Assert.IsFalse(WaylandOwnToplevels.TryGetSurfaceOrigin(form, info, out _));
-				native.Gravity = Gdk.Gravity.NorthWest;
-				form.Hide();
-				Assert.IsFalse(WaylandOwnToplevels.TryGetSurfaceOrigin(form, info, out _));
-			});
-		}
-
-		// GTK unmap invalidates bindings even when hiding bypasses Gui.Hide.
-		[Test, Category("Gui")]
-		public void WaylandOwnToplevelFollowsWindowLifecycle()
-		{
-			SkipIfUiInitializationBlocked("The lifecycle comes from a GTK window.");
-			s.InvokeOnUIThread(() =>
-			{
-				var states = (IDictionary)OwnToplevelsField("states");
-				var claimedIds = (HashSet<string>)OwnToplevelsField("claimedIds");
-				var form = new Eto.Forms.Form { Content = new PixelLayout(), ClientSize = new Size(200, 100) };
-				var handle = EtoExtensions.GetHandle(form);
-				var state = TrackOwnToplevel(form, handle);
-
-				void Bind()
-				{
-					SetOwnToplevelField(state, "CompositorHandle", (nint)42);
-					SetOwnToplevelField(state, "AppliedTo", (nint)42);
-					SetOwnToplevelField(state, "CompositorId", "lifecycle");
-					_ = claimedIds.Add("lifecycle");
-				}
-
-				try
-				{
-					Assert.IsTrue(states.Contains(handle));
-					Assert.IsFalse(OwnToplevelField<bool>(state, "Mapped"));
-					form.Show();
-					Application.Instance.RunIteration();
-					Assert.IsTrue(OwnToplevelField<bool>(state, "Mapped"));
-					var generation = OwnToplevelField<int>(state, "MapGeneration");
-					Bind();
-					form.Visible = false;
-					Assert.IsFalse(OwnToplevelField<bool>(state, "Mapped"));
-					Assert.AreEqual((nint)0, OwnToplevelField<nint>(state, "CompositorHandle"));
-					Assert.AreEqual((nint)0, OwnToplevelField<nint>(state, "AppliedTo"));
-					Assert.IsFalse(claimedIds.Contains("lifecycle"));
-					form.Show();
-					Application.Instance.RunIteration();
-					Assert.AreEqual(generation + 1, OwnToplevelField<int>(state, "MapGeneration"));
-					Bind();
-				}
-				finally
-				{
-					form.Dispose();
-				}
-
-				Assert.IsTrue(OwnToplevelField<bool>(state, "Retired"));
-				Assert.IsFalse(states.Contains(handle));
+				Assert.IsTrue(OwnToplevelField<bool>(state, "Mapped"));
+				var generation = OwnToplevelField<int>(state, "MapGeneration");
+				Bind();
+				form.Visible = false;
+				Assert.IsFalse(OwnToplevelField<bool>(state, "Mapped"));
+				Assert.AreEqual((nint)0, OwnToplevelField<nint>(state, "CompositorHandle"));
+				Assert.AreEqual((nint)0, OwnToplevelField<nint>(state, "AppliedTo"));
 				Assert.IsFalse(claimedIds.Contains("lifecycle"));
-			});
-		}
-
-		[Test, Category("Gui"), Category("Internal")]
-		public void WaylandOwnEventsPreserveIdentityThroughCloseAndRemap()
-		{
-			SkipIfUiInitializationBlocked("Own-window lifecycle tracking requires GTK.");
-			s.InvokeOnUIThread(() =>
+				form.Show();
+				Application.Instance.RunIteration();
+				Assert.AreEqual(generation + 1, OwnToplevelField<int>(state, "MapGeneration"));
+				Bind();
+			}
+			finally
 			{
-				using var first = new Eto.Forms.Form { Content = new PixelLayout(), ClientSize = new Size(200, 100) };
-				using var second = new Eto.Forms.Form { Content = new PixelLayout(), ClientSize = new Size(200, 100) };
-				var firstHandle = EtoExtensions.GetHandle(first);
-				var secondHandle = EtoExtensions.GetHandle(second);
-				var firstState = TrackOwnToplevel(first, firstHandle);
-				var secondState = TrackOwnToplevel(second, secondHandle);
-				var claim = typeof(WaylandOwnToplevels).GetMethod("Claim", BindingFlags.NonPublic | BindingFlags.Static);
-				var unmap = typeof(WaylandOwnToplevels).GetMethod("OnUnmapped", BindingFlags.NonPublic | BindingFlags.Static);
-				WaylandWindowInfo Bind(object state, string id, ulong serviceHandle)
-				{
-					SetOwnToplevelField(state, "Mapped", true);
-					SetOwnToplevelField(state, "MapGeneration", 1);
-					var window = new WaylandWindowInfo(42, id, pid: Environment.ProcessId,
-						frameGeometry: new Rectangle(10, 20, 200, 100), serviceHandle: serviceHandle);
-					Assert.AreSame(window, claim.Invoke(null, [state, 1, window]));
-					return window;
-				}
+				form.Dispose();
+			}
 
-				var original = Bind(firstState, "event-first-map", 4200);
-				var source = new ListingBackend(false);
-				using var adapter = new WaylandWindowEventBackend(s, source);
-				using var entered = new ManualResetEventSlim();
-				using var release = new ManualResetEventSlim();
-				using var delivered = new ManualResetEventSlim();
-				var events = new ConcurrentQueue<WindowEventRaw>();
-				adapter.Sink = raw =>
-				{
-					events.Enqueue(raw);
-					if (raw.Type == WindowEventType.TitleChange && raw.Hwnd == firstHandle)
-					{
-						entered.Set();
-						release.Wait(2000);
-					}
-					else delivered.Set();
-				};
-				adapter.Start(WindowEventMask.TitleChange | WindowEventMask.Close);
-				try
-				{
-					source.EventSink(new(WaylandWindowEventKind.TitleChanged, 42));
-					Assert.IsTrue(entered.Wait(2000));
-					unmap.Invoke(null, [firstState]);
-					Assert.AreEqual((nint)0, OwnToplevelField<nint>(firstState, "CompositorHandle"));
-					source.EventSink(new(WaylandWindowEventKind.Closed, 42));
-					WaylandOwnToplevels.RetireEventAlias(original);
-					var remapped = Bind(secondState, "event-second-map", 4201);
-					WaylandOwnToplevels.RetireEventAlias(original);
-					Assert.AreEqual(secondHandle, WaylandOwnToplevels.ResolveEventHandle(42));
-					release.Set();
-					Assert.IsTrue(delivered.Wait(2000));
-					Assert.AreEqual(new[] { firstHandle, firstHandle }, events.Select(item => item.Hwnd).ToArray());
-					Assert.IsTrue(events.Last().DestroyConfirmed);
+			Assert.IsTrue(OwnToplevelField<bool>(state, "Retired"));
+			Assert.IsFalse(states.Contains(handle));
+			Assert.IsFalse(claimedIds.Contains("lifecycle"));
+		});
+	}
 
-					adapter.Stop(WindowEventMask.Close);
-					delivered.Reset();
-					source.EventSink(new(WaylandWindowEventKind.Closed, 42));
-					WaylandOwnToplevels.RetireEventAlias(remapped);
-					source.EventSink(new(WaylandWindowEventKind.TitleChanged, 99));
-					Assert.IsTrue(delivered.Wait(2000));
-					Assert.AreEqual(3, events.Count, "a masked close must still retire the alias");
-					Assert.AreEqual((nint)99, events.Last().Hwnd);
-					Assert.AreEqual((nint)42, WaylandOwnToplevels.ResolveEventHandle(42));
-					Bind(secondState, "event-after-close", 4202);
-					WaylandOwnToplevels.Reset();
-					Assert.AreEqual((nint)42, WaylandOwnToplevels.ResolveEventHandle(42));
-				}
-				finally { release.Set(); }
-			});
-		}
-
-		// An explicit query can retry a listed miss before the background retry delay ends.
-		[Test, Category("Gui")]
-		public void WaylandCorrelationFailsOnlyOnAListWithoutTheWindow()
+	[Test, Category("Gui"), Category("Internal")]
+	public void WaylandOwnEventsPreserveIdentityThroughCloseAndRemap()
+	{
+		SkipIfUiInitializationBlocked("Own-window lifecycle tracking requires GTK.");
+		s.InvokeOnUIThread(() =>
 		{
-			SkipIfUiInitializationBlocked("Correlation needs a GTK window.");
-			s.InvokeOnUIThread(() =>
+			using var first = new Eto.Forms.Form { Content = new PixelLayout(), ClientSize = new Size(200, 100) };
+			using var second = new Eto.Forms.Form { Content = new PixelLayout(), ClientSize = new Size(200, 100) };
+			var firstHandle = EtoExtensions.GetHandle(first);
+			var secondHandle = EtoExtensions.GetHandle(second);
+			var firstState = TrackOwnToplevel(first, firstHandle);
+			var secondState = TrackOwnToplevel(second, secondHandle);
+			var claim = typeof(WaylandOwnToplevels).GetMethod("Claim", BindingFlags.NonPublic | BindingFlags.Static);
+			var unmap = typeof(WaylandOwnToplevels).GetMethod("OnUnmapped", BindingFlags.NonPublic | BindingFlags.Static);
+			WaylandWindowInfo Bind(object state, string id, ulong serviceHandle)
 			{
-				var form = new Eto.Forms.Form { Content = new PixelLayout(), ClientSize = new Size(200, 100) };
-				var correlate = typeof(WaylandOwnToplevels).GetMethod("Correlate", BindingFlags.NonPublic | BindingFlags.Static);
-				var correlateNow = typeof(WaylandOwnToplevels).GetMethod("CorrelateCore", BindingFlags.NonPublic | BindingFlags.Static);
-
-				try
-				{
-					var state = TrackOwnToplevel(form, EtoExtensions.GetHandle(form));
-					SetOwnToplevelField(state, "Mapped", true);
-					SetOwnToplevelField(state, "MapGeneration", 1);
-					Assert.IsNull(correlate.Invoke(null, [new ListingBackend(false), state]));
-					Assert.IsFalse(OwnToplevelField<bool>(state, "CorrelationFailed"));
-					Assert.IsNull(correlate.Invoke(null, [new ListingBackend(true), state]));
-					Assert.IsTrue(OwnToplevelField<bool>(state, "CorrelationFailed"));
-					SetOwnToplevelField(state, "RetryCorrelationAt", Environment.TickCount64 + 60_000);
-					var published = new WaylandWindowInfo(42, "correlation-recovered", "own toplevel",
-						pid: Environment.ProcessId, frameGeometry: new Rectangle(10, 20, 200, 100));
-					var recovered = new ListingBackend(true) { Windows = [published] };
-					Assert.IsNull(correlate.Invoke(null, [recovered, state]));
-					Assert.AreEqual(0, recovered.ListCalls);
-					Assert.AreSame(published, correlateNow.Invoke(null, [recovered, state, true]));
-					Assert.IsFalse(OwnToplevelField<bool>(state, "CorrelationFailed"));
-					Assert.AreEqual((nint)42, OwnToplevelField<nint>(state, "CompositorHandle"));
-				}
-				finally
-				{
-					form.Dispose();
-				}
-			});
-		}
-
-		[Test, Category("Gui")]
-		public void WaylandCorrelationWaitsForFirstBuffer()
-		{
-			SkipIfUiInitializationBlocked("Correlation needs a GTK window.");
-			s.InvokeOnUIThread(() =>
-			{
-				using var form = new Eto.Forms.Form { Content = new PixelLayout(), ClientSize = new Size(200, 100) };
-				var handle = EtoExtensions.GetHandle(form);
-				var state = TrackOwnToplevel(form, handle);
 				SetOwnToplevelField(state, "Mapped", true);
 				SetOwnToplevelField(state, "MapGeneration", 1);
-				var backend = new ListingBackend(true)
+				var window = new WaylandWindowInfo(42, id, pid: Environment.ProcessId,
+					frameGeometry: new Rectangle(10, 20, 200, 100), serviceHandle: serviceHandle);
+				Assert.AreSame(window, claim.Invoke(null, [state, 1, window]));
+				return window;
+			}
+
+			var original = Bind(firstState, "event-first-map", 4200);
+			var source = new ListingBackend(false);
+			using var adapter = new WaylandWindowEventBackend(s, source);
+			using var entered = new ManualResetEventSlim();
+			using var release = new ManualResetEventSlim();
+			using var delivered = new ManualResetEventSlim();
+			var events = new ConcurrentQueue<WindowEventRaw>();
+			adapter.Sink = raw =>
+			{
+				events.Enqueue(raw);
+				if (raw.Type == WindowEventType.TitleChange && raw.Hwnd == firstHandle)
 				{
-					WindowsOnList = count =>
-					{
-						var appIds = (IDictionary)OwnToplevelsField("correlationAppIds");
-						return [new WaylandWindowInfo(42, "first-buffer", "own toplevel",
-							appId: (string)appIds[handle], pid: Environment.ProcessId,
-							frameGeometry: count < 3 ? Rectangle.Empty : new Rectangle(10, 20, 200, 100))];
-					}
-				};
-				var correlate = typeof(WaylandOwnToplevels).GetMethod("CorrelateCore", BindingFlags.NonPublic | BindingFlags.Static);
-				var window = (WaylandWindowInfo)correlate.Invoke(null, [backend, state, true]);
-				Assert.IsNotNull(window);
-				Assert.AreEqual(new Rectangle(10, 20, 200, 100), window.FrameGeometry);
-				Assert.GreaterOrEqual(backend.ListCalls, 3);
-			});
-		}
-
-		private static object OwnToplevelsField(string name)
-			=> typeof(WaylandOwnToplevels).GetField(name, BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
-
-		private static object TrackOwnToplevel(Eto.Forms.Form form, nint handle)
-			=> typeof(WaylandOwnToplevels).GetMethod("Track", BindingFlags.NonPublic | BindingFlags.Static)
-				.Invoke(null, [form, handle, "own toplevel", 200, 100]);
-
-		private static T OwnToplevelField<T>(object state, string name)
-			=> (T)state.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(state);
-
-		private static void SetOwnToplevelField(object state, string name, object value)
-			=> state.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance).SetValue(state, value);
-
-		// A controllable window list and event source for compositor contracts.
-		private sealed class ListingBackend(bool lists) : IWaylandBackend, IDisposable
-		{
-			public string BackendKey => "test";
-			public string Name => "test";
-			internal IReadOnlyList<WaylandWindowInfo> Windows { get; init; } = [];
-			internal Func<int, IReadOnlyList<WaylandWindowInfo>> WindowsOnList { get; init; }
-			internal int ListCalls { get; private set; }
-			internal Action<WaylandWindowEvent> EventSink;
-			public bool SupportsWindowEvents => true;
-			public IDisposable SubscribeWindowEvents(Action<WaylandWindowEvent> sink)
-			{
-				EventSink = sink;
-				return this;
-			}
-			public void Dispose() => EventSink = null;
-
-			public bool TryGetCursorPos(out int x, out int y)
-			{
-				x = y = 0;
-				return false;
-			}
-
-			public bool TryListWindows(bool includeHidden, out IReadOnlyList<WaylandWindowInfo> windows)
-			{
-				ListCalls++;
-				windows = WindowsOnList?.Invoke(ListCalls) ?? Windows;
-				return lists;
-			}
-		}
-
-#endif
-
-		// The canvas is the backing's presentable memory (on Windows the DIB the compositor reads), so no
-		// operation may swap or free that bitmap out from under it.
-		[Test, Category("Gui"), Category("Curated")]
-		public void SurfaceCanvasOwnership()
-		{
-			using var surface = OverlaySurface.Plain(new PixelSize(8, 4));
-			var canvas = surface.Image;
-			var bitmap = surface.Bitmap;
-
-			var before = canvas.PrepareForPixelAccess();
-			_ = canvas.Clear();
-			Assert.AreSame(before, canvas.PrepareForPixelAccess(), "Clear must overwrite the surface, not replace it");
-			_ = canvas.Clear("0xFF204060");
-			Assert.AreSame(before, canvas.PrepareForPixelAccess(), "clearing to a colour must not replace it either");
-
-			_ = canvas.PrepareForRead();
-			Assert.AreSame(bitmap, canvas.PrepareForPixelAccess(), "materializing must not dispose or replace a borrowed base");
-
-			// Disposing through the interface is the surface's own teardown path and does release the view; the
-			// borrowed pixels must survive it, since the surface frees those separately and in order.
-			((IDisposable)canvas).Dispose();
-			Assert.AreEqual(8, bitmap.Width, "the borrowed bitmap must outlive the image that drew into it");
-			Assert.AreEqual(4, bitmap.Height);
-		}
-
-		// Damage decides how much of a frame is transferred, so under-reporting is a stale pixel on screen.
-		[Test, Category("Gui"), Category("Curated")]
-		public void SurfaceDamage()
-		{
-			using var surface = OverlaySurface.Plain(new PixelSize(200, 100));
-			var canvas = surface.Image;
-
-			// A never-presented surface is entirely unpresented; starting at None is what let Redraw's
-			// replacement transfer only the drawn part and leave the previous surface's pixels showing.
-			Assert.AreEqual(DamageKind.All, surface.Damage.Kind, "a never-presented surface is fully damaged");
-			surface.Damage.Reset();   // stand in for a successful present
-
-			_ = canvas.FillRect(10L, 10L, 20L, 20L, "0xFF0000");
-			Assert.AreEqual(DamageKind.Region, surface.Damage.Kind);
-			var one = surface.Damage.Union();
-			Assert.IsTrue(one.X <= 10 && one.Y <= 10 && one.Right >= 30 && one.Bottom >= 30,
-						  $"rounded outward: damage {one.X},{one.Y} {one.Width}x{one.Height} must cover the fill");
-
-			_ = canvas.FillRect(100L, 50L, 20L, 20L, "0x00FF00");
-			var both = surface.Damage.Union();
-			Assert.IsTrue(both.X <= 10 && both.Y <= 10 && both.Right >= 120 && both.Bottom >= 70,
-						  $"a disjoint draw widens the region: got {both.X},{both.Y} {both.Width}x{both.Height}");
-
-			for (var i = 0; i < 64; i++)
-				_ = canvas.FillRect((long)i, (long)i, 4L, 4L, "0x0000FF");
-
-			Assert.AreEqual(DamageKind.Region, surface.Damage.Kind, "many draws stay one region");
-
-			_ = canvas.Clear();
-			Assert.AreEqual(DamageKind.All, surface.Damage.Kind, "the first clear establishes the background");
-			surface.Damage.Reset();
-			Assert.AreEqual(DamageKind.None, surface.Damage.Kind);
-
-			_ = canvas.FillRect(10L, 10L, 20L, 20L, "Red");
-			surface.Damage.Reset();
-			_ = canvas.SetPixel(150L, 75L, "Blue");
-			surface.Damage.Reset();
-			_ = canvas.Clear();
-			Assert.AreEqual(DamageKind.Region, surface.Damage.Kind);
-			var erased = surface.Damage.Union();
-			Assert.IsTrue(erased.X <= 10 && erased.Y <= 10 && erased.Right >= 151 && erased.Bottom >= 76,
-				"Clear must include content from every present since the previous clear");
-			Assert.IsTrue(erased.Width < 200 && erased.Height < 100);
-			Assert.AreEqual(0L, canvas.GetPixel(20L, 20L));
-			Assert.AreEqual(0L, canvas.GetPixel(150L, 75L));
-			_ = canvas.FillRect(175L, 80L, 10L, 10L, "Red");
-			Assert.IsTrue(surface.Damage.Union().Right >= 185, "new content joins the erased region");
-			_ = canvas.Clear();
-			surface.Damage.Reset();
-			_ = canvas.Clear();
-			Assert.AreEqual(DamageKind.None, surface.Damage.Kind, "clearing an unchanged background does no work");
-
-			_ = canvas.Clear("Blue");
-			Assert.AreEqual(DamageKind.All, surface.Damage.Kind, "changing background affects every pixel");
-			surface.Damage.Reset();
-			_ = canvas.ToClr();
-			_ = canvas.Clear("Blue");
-			Assert.AreEqual(DamageKind.All, surface.Damage.Kind, "an exposed bitmap can be modified outside drawing bounds");
-		}
-
-		[Test, Category("Gui"), Category("Curated")]
-		public void VectorSurfaceDamage()
-		{
-			using var surface = OverlaySurface.Plain(new PixelSize(200, 100));
-			var canvas = surface.Image;
-			var transform = new KeysharpObject();
-			transform.DefinePropInternal("OffsetX", new OwnPropsDesc(30L));
-			transform.DefinePropInternal("SkewX", new OwnPropsDesc(0.5));
-			canvas.Transform = transform;
-
-			var path = new Ks.KeysharpImage.KeysharpPath();
-			_ = path.AddRect(10L, 10L, 20L, 10L);
-			surface.Damage.Reset();
-			_ = canvas.FillPath(path, "Red");
-
-			Assert.AreEqual(DamageKind.Region, surface.Damage.Kind);
-			var bounds = surface.Damage.Union();
-			Assert.IsTrue(bounds.X <= 45 && bounds.Y <= 10 && bounds.Right >= 70 && bounds.Bottom >= 20,
-				$"damage {bounds.X},{bounds.Y} {bounds.Width}x{bounds.Height} must cover the transformed path");
-			Assert.IsTrue(bounds.Width < 200 && bounds.Height < 100);
-
-			var empty = new Ks.KeysharpImage.KeysharpPath();
-			_ = canvas.Clip(empty);
-			surface.Damage.Reset();
-			_ = canvas.FillPath(path, "Blue");
-			Assert.AreEqual(DamageKind.None, surface.Damage.Kind, "an empty clip cannot damage the surface");
-		}
-
-		// Redraw builds a replacement surface and draws only part of it. If that surface were handed to a
-		// backing carrying only the damage the callback produced, a dirty-rect present would top up the old
-		// frame instead of replacing it, and everything the callback did not draw would keep showing the
-		// previous content — a moving shape would leave a trail. The replacement must be fully damaged.
-		[Test, Category("Gui"), Category("Curated")]
-		public void RedrawFullDamage()
-		{
-			if (Script.IsHeadless)
-				Assert.Ignore("Overlay surfaces need an initialized graphics backend.");
-
-			var overlay = new Ks.KeysharpOverlay();
-			_ = overlay.__New(0L, 0L, 64L, 32L);
-
-			try
-			{
-				var callback = new KeysharpFunc((Func<object, object>)(target =>
-				{
-					_ = ((Ks.KeysharpImage)target).FillRect(2L, 2L, 4L, 4L, "0xFF0000");
-					return 0L;
-				}));
-				_ = overlay.Redraw(callback);
-				var surface = overlay.SurfaceForTests;
-				Assert.IsNotNull(surface);
-				Assert.AreEqual(DamageKind.All, surface.Damage.Kind,
-								"a Redraw replacement must repaint the whole surface, not just what was drawn");
-			}
-			finally
-			{
-				_ = overlay.Destroy();
-			}
-		}
-
-		// Drawing stages; Present publishes. Nothing may reach the screen behind the script's back, and the
-		// operations that are complete in themselves must still publish without a second call.
-		[Test, Category("Gui"), Category("Curated")]
-		public void ExplicitPresent()
-		{
-			if (Script.IsHeadless)
-				Assert.Ignore("Overlay surfaces need an initialized graphics backend.");
-
-			var context = UseQueuedMainContext();
-			var overlay = new Ks.KeysharpOverlay();
-			_ = overlay.__New(0L, 0L, 64L, 32L);
-
-			try
-			{
-				_ = overlay.Show();
-				context.DrainAll();
-				Assert.IsFalse(overlay.HasUnpresentedDamageForTests, "Show uploads, so nothing is left over");
-
-				for (var i = 0; i < 50; i++)
-					_ = overlay.Canvas.FillRect((long)i, 0L, 4L, 4L, "0xFF0000");
-
-				Assert.IsTrue(overlay.HasUnpresentedDamageForTests, "50 primitives, deliberately unshown");
-				Assert.AreEqual(0, context.PendingCount, "drawing must not schedule anything either");
-				context.DrainAll();
-				Assert.IsTrue(overlay.HasUnpresentedDamageForTests, "yielding must not upload");
-
-				_ = overlay.Present();
-				Assert.IsFalse(overlay.HasUnpresentedDamageForTests, "Present uploads the frame");
-
-				// Show and a resize are complete operations, so each publishes on its own. A pure move does not
-				// (the window keeps its content across SWP_NOSIZE), which is why this uses Width.
-				_ = overlay.Canvas.FillRect(0L, 0L, 4L, 4L, "0x00FF00");
-				_ = overlay.Show();
-				Assert.IsFalse(overlay.HasUnpresentedDamageForTests, "Show publishes the current canvas");
-
-				_ = overlay.Canvas.FillRect(0L, 0L, 2L, 2L, "0x0000FF");
-				overlay.Width = 40L;
-				Assert.IsFalse(overlay.HasUnpresentedDamageForTests, "a resize republishes the surface");
-			}
-			finally
-			{
-				_ = overlay.Destroy();
-			}
-		}
-		// Drawing interleaved with reads must fold into the same bitmap without replaying earlier operations.
-		[Test, Category("Gui"), Category("Curated")]
-		public void LazyDrawFold()
-		{
-			var image = KeysharpImage.Create(null, 40L, 20L, "0xFF000000") as KeysharpImage;
-
-			try
-			{
-				_ = image.FillRect(0L, 0L, 10L, 10L, "0xFF0000");
-				var first = image.PrepareForPixelAccess();
-				Assert.AreEqual(0xFFFF0000, (uint)(long)image.GetPixel(2L, 2L));
-
-				_ = image.FillRect(20L, 0L, 10L, 10L, "0x00FF00");
-				Assert.AreEqual(0xFF00FF00, (uint)(long)image.GetPixel(22L, 2L));
-				Assert.AreEqual(0xFFFF0000, (uint)(long)image.GetPixel(2L, 2L), "the earlier draw must survive");
-				Assert.AreSame(first, image.PrepareForPixelAccess(), "reads must not rebuild the surface");
-			}
-			finally
-			{
-				_ = image.Dispose();
-			}
-		}
-
-		/// <summary>
-		/// The RichEdit surface as a script reaches it. Driven from a script because its members live on the
-		/// holder the binder hands back, and because character positions are only worth checking against the
-		/// text a script sees. The script itself knows which parts of the surface each platform can serve.
-		/// </summary>
-		[Test, Category("Gui"), Category("Curated"), NonParallelizable]
-#if WINDOWS
-		//WinForms needs it; NUnit skips an apartment-bound test outright on the platforms that have no STA.
-		[Apartment(ApartmentState.STA)]
-#endif
-		public void RichEditScriptSurface()
-		{
-			SkipIfUiInitializationBlocked("Creating an AppKit window requires OS thread 1.");
-			Assert.IsTrue(TestScript("gui-richedit", false));
-		}
-
-		[Test, Category("Gui"), Category("Curated"), NonParallelizable]
-#if WINDOWS
-		[Apartment(ApartmentState.STA)]
-#endif
-		public void ControlCoordinates()
-		{
-			SkipIfUiInitializationBlocked("Control coordinates require a live GUI application.");
-			Assert.IsTrue(TestScript("control-coordinates", false));
-		}
-
-		[Test, Category("Gui"), NonParallelizable]
-#if WINDOWS
-		[Apartment(ApartmentState.STA)]
-#endif
-		public void GuiWindow()
-		{
-			SkipIfUiInitializationBlocked("Control tests require a live GUI application.");
-			Assert.IsTrue(TestScript("gui-window", false));
-		}
-
-		[Test, Category("Gui"), NonParallelizable]
-#if WINDOWS
-		[Apartment(ApartmentState.STA)]
-#endif
-		public void WindowFunctions()
-		{
-			SkipIfUiInitializationBlocked("Control tests require a live GUI application.");
-			Assert.IsTrue(TestScript("window-functions", false));
-		}
-
-#if WINDOWS
-		// The whole zero-copy design rests on one property: GDI+ drawing through the Bitmap and GDI reading
-		// through the DC address the same memory. If that ever stopped holding, presents would silently show
-		// stale frames rather than fail, so assert it directly.
-		[Test, Category("Gui"), Category("Curated")]
-		public void DibSurfacePixelSharing()
-		{
-			using var canvas = DibOverlaySurface.TryCreate(new PixelSize(8, 4));
-			Assert.IsNotNull(canvas, "a 32bpp DIB section should always be creatable");
-			Assert.IsTrue(canvas.Premultiplied, "UpdateLayeredWindow consumes premultiplied alpha");
-			Assert.AreNotEqual(0, canvas.SourceDC, "the DIB must be selected into a DC to be presentable");
-			Assert.AreEqual(System.Drawing.Imaging.PixelFormat.Format32bppPArgb, canvas.Bitmap.PixelFormat);
-
-			_ = canvas.Image.FillRect(0L, 0L, 8L, 4L, "0xFF0000FF");
-			Assert.AreSame(canvas.Bitmap, canvas.PrepareForPresent());
-
-			Assert.IsTrue(canvas.TryAcquireSourceDC(out var dc));
-
-			try
-			{
-				Assert.AreEqual(0x00FF0000u, WindowsAPI.GetPixel(dc, 1, 1) & 0x00FFFFFFu,
-								"GDI must see canvas drawing after the production present boundary (COLORREF is BGR)");
-			}
-			finally
-			{
-				canvas.ReleaseSourceDC();
-			}
-
-			_ = canvas.Image.FillRect(0L, 0L, 8L, 4L, "0xFF00FF00");
-			_ = canvas.PrepareForPresent();
-			Assert.IsTrue(canvas.TryAcquireSourceDC(out dc));
-
-			try
-			{
-				Assert.AreEqual(0x0000FF00u, WindowsAPI.GetPixel(dc, 1, 1) & 0x00FFFFFFu,
-								"a later draw through the retained Graphics must also be visible through the DC");
-			}
-			finally
-			{
-				canvas.ReleaseSourceDC();
-			}
-		}
-
-		// SetImage with same-sized content must keep the surface it already has. Allocating a new DIB and DC per
-		// frame is what made a sequence-of-frames overlay (video, sprite animation) churn a screen-sized
-		// platform buffer every frame.
-		[Test, Category("Gui"), Category("Curated")]
-		public void SetImageSurfaceReuse()
-		{
-			if (Script.IsHeadless)
-				Assert.Ignore("Overlay surfaces need an initialized graphics backend.");
-
-			var overlay = new Ks.KeysharpOverlay();
-			_ = overlay.__New(0L, 0L, 32L, 16L);
-			var frameA = KeysharpImage.Create(null, 32L, 16L, "0xFF0000") as KeysharpImage;
-			// Transparent on purpose: reusing the surface must clear it before blitting. An opaque frame would
-			// pass under plain source-over too, so it would not pin the behaviour that matters on the Eto
-			// backends, where the previous frame would otherwise show through forever.
-			var frameB = KeysharpImage.Create(null, 32L, 16L) as KeysharpImage;
-			var frameC = KeysharpImage.Create(null, 40L, 20L, "0x0000FF") as KeysharpImage;
-
-			try
-			{
-				_ = overlay.SetImage(frameA);
-				var first = overlay.SurfaceForTests;
-				Assert.IsNotNull(first, "SetImage must create a surface");
-
-				_ = overlay.SetImage(frameB);
-				Assert.AreSame(first, overlay.SurfaceForTests, "a same-sized SetImage must reuse the surface");
-				Assert.AreEqual(0u, (uint)(long)first.Image.GetPixel(4L, 4L),
-								"the reused surface must be wiped, not composited onto — red must not survive");
-
-				// A different size has no choice but to build a new one.
-				_ = overlay.SetImage(frameC);
-				Assert.AreNotSame(first, overlay.SurfaceForTests, "a resize must build a new surface");
-			}
-			finally
-			{
-				_ = overlay.Destroy();
-				_ = frameA.Dispose();
-				_ = frameB.Dispose();
-				_ = frameC.Dispose();
-			}
-		}
-
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void CaptionlessToolWindow()
-		{
-			foreach (var options in new[] { "-Caption +ToolWindow", "+ToolWindow -Caption" })
-			{
-				var gui = new Gui(new object[] { options });
-
-				try
-				{
-					var exStyle = WindowsAPI.GetWindowLongPtr(gui.form.Handle, WindowsAPI.GWL_EXSTYLE).ToInt64();
-					Assert.AreEqual(FormBorderStyle.None, gui.form.FormBorderStyle);
-					Assert.AreEqual(0L, exStyle & WindowsAPI.WS_EX_APPWINDOW);
-					Assert.AreNotEqual(0L, exStyle & WindowsAPI.WS_EX_TOOLWINDOW,
-						$"+ToolWindow must survive -Caption in either option order ({options})");
-
-					_ = gui.Opt("-ToolWindow");
-					exStyle = WindowsAPI.GetWindowLongPtr(gui.form.Handle, WindowsAPI.GWL_EXSTYLE).ToInt64();
-					Assert.AreEqual(FormBorderStyle.None, gui.form.FormBorderStyle);
-					Assert.AreNotEqual(0L, exStyle & WindowsAPI.WS_EX_APPWINDOW, "-ToolWindow must restore the taskbar button in place");
-					Assert.AreEqual(0L, exStyle & WindowsAPI.WS_EX_TOOLWINDOW,
-						"-ToolWindow must remove the extended style from an existing captionless window");
-
-					_ = gui.Opt("+ToolWindow");
-					exStyle = WindowsAPI.GetWindowLongPtr(gui.form.Handle, WindowsAPI.GWL_EXSTYLE).ToInt64();
-					Assert.AreEqual(0L, exStyle & WindowsAPI.WS_EX_APPWINDOW);
-					Assert.AreNotEqual(0L, exStyle & WindowsAPI.WS_EX_TOOLWINDOW,
-						"+ToolWindow must restore the extended style on an existing captionless window");
+					entered.Set();
+					release.Wait(2000);
 				}
-				finally
+				else delivered.Set();
+			};
+			adapter.Start(WindowEventMask.TitleChange | WindowEventMask.Close);
+			try
+			{
+				source.EventSink(new(WaylandWindowEventKind.TitleChanged, 42));
+				Assert.IsTrue(entered.Wait(2000));
+				unmap.Invoke(null, [firstState]);
+				Assert.AreEqual((nint)0, OwnToplevelField<nint>(firstState, "CompositorHandle"));
+				source.EventSink(new(WaylandWindowEventKind.Closed, 42));
+				WaylandOwnToplevels.RetireEventAlias(original);
+				var remapped = Bind(secondState, "event-second-map", 4201);
+				WaylandOwnToplevels.RetireEventAlias(original);
+				Assert.AreEqual(secondHandle, WaylandOwnToplevels.ResolveEventHandle(42));
+				release.Set();
+				Assert.IsTrue(delivered.Wait(2000));
+				Assert.AreEqual(new[] { firstHandle, firstHandle }, events.Select(item => item.Hwnd).ToArray());
+				Assert.IsTrue(events.Last().DestroyConfirmed);
+
+				adapter.Stop(WindowEventMask.Close);
+				delivered.Reset();
+				source.EventSink(new(WaylandWindowEventKind.Closed, 42));
+				WaylandOwnToplevels.RetireEventAlias(remapped);
+				source.EventSink(new(WaylandWindowEventKind.TitleChanged, 99));
+				Assert.IsTrue(delivered.Wait(2000));
+				Assert.AreEqual(3, events.Count, "a masked close must still retire the alias");
+				Assert.AreEqual((nint)99, events.Last().Hwnd);
+				Assert.AreEqual((nint)42, WaylandOwnToplevels.ResolveEventHandle(42));
+				Bind(secondState, "event-after-close", 4202);
+				WaylandOwnToplevels.Reset();
+				Assert.AreEqual((nint)42, WaylandOwnToplevels.ResolveEventHandle(42));
+			}
+			finally { release.Set(); }
+		});
+	}
+
+	// An explicit query can retry a listed miss before the background retry delay ends.
+	[Test, Category("Gui")]
+	public void WaylandCorrelationFailsOnlyOnAListWithoutTheWindow()
+	{
+		SkipIfUiInitializationBlocked("Correlation needs a GTK window.");
+		s.InvokeOnUIThread(() =>
+		{
+			var form = new Eto.Forms.Form { Content = new PixelLayout(), ClientSize = new Size(200, 100) };
+			var correlate = typeof(WaylandOwnToplevels).GetMethod("Correlate", BindingFlags.NonPublic | BindingFlags.Static);
+			var correlateNow = typeof(WaylandOwnToplevels).GetMethod("CorrelateCore", BindingFlags.NonPublic | BindingFlags.Static);
+
+			try
+			{
+				var state = TrackOwnToplevel(form, EtoExtensions.GetHandle(form));
+				SetOwnToplevelField(state, "Mapped", true);
+				SetOwnToplevelField(state, "MapGeneration", 1);
+				Assert.IsNull(correlate.Invoke(null, [new ListingBackend(false), state]));
+				Assert.IsFalse(OwnToplevelField<bool>(state, "CorrelationFailed"));
+				Assert.IsNull(correlate.Invoke(null, [new ListingBackend(true), state]));
+				Assert.IsTrue(OwnToplevelField<bool>(state, "CorrelationFailed"));
+				SetOwnToplevelField(state, "RetryCorrelationAt", Environment.TickCount64 + 60_000);
+				var published = new WaylandWindowInfo(42, "correlation-recovered", "own toplevel",
+					pid: Environment.ProcessId, frameGeometry: new Rectangle(10, 20, 200, 100));
+				var recovered = new ListingBackend(true) { Windows = [published] };
+				Assert.IsNull(correlate.Invoke(null, [recovered, state]));
+				Assert.AreEqual(0, recovered.ListCalls);
+				Assert.AreSame(published, correlateNow.Invoke(null, [recovered, state, true]));
+				Assert.IsFalse(OwnToplevelField<bool>(state, "CorrelationFailed"));
+				Assert.AreEqual((nint)42, OwnToplevelField<nint>(state, "CompositorHandle"));
+			}
+			finally
+			{
+				form.Dispose();
+			}
+		});
+	}
+
+	[Test, Category("Gui")]
+	public void WaylandCorrelationWaitsForFirstBuffer()
+	{
+		SkipIfUiInitializationBlocked("Correlation needs a GTK window.");
+		s.InvokeOnUIThread(() =>
+		{
+			using var form = new Eto.Forms.Form { Content = new PixelLayout(), ClientSize = new Size(200, 100) };
+			var handle = EtoExtensions.GetHandle(form);
+			var state = TrackOwnToplevel(form, handle);
+			SetOwnToplevelField(state, "Mapped", true);
+			SetOwnToplevelField(state, "MapGeneration", 1);
+			var backend = new ListingBackend(true)
+			{
+				WindowsOnList = count =>
 				{
-					_ = gui.Destroy();
+					var appIds = (IDictionary)OwnToplevelsField("correlationAppIds");
+					return [new WaylandWindowInfo(42, "first-buffer", "own toplevel",
+						appId: (string)appIds[handle], pid: Environment.ProcessId,
+						frameGeometry: count < 3 ? Rectangle.Empty : new Rectangle(10, 20, 200, 100))];
 				}
-			}
+			};
+			var correlate = typeof(WaylandOwnToplevels).GetMethod("CorrelateCore", BindingFlags.NonPublic | BindingFlags.Static);
+			var window = (WaylandWindowInfo)correlate.Invoke(null, [backend, state, true]);
+			Assert.IsNotNull(window);
+			Assert.AreEqual(new Rectangle(10, 20, 200, 100), window.FrameGeometry);
+			Assert.GreaterOrEqual(backend.ListCalls, 3);
+		});
+	}
+
+	private static object OwnToplevelsField(string name)
+		=> typeof(WaylandOwnToplevels).GetField(name, BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+
+	private static object TrackOwnToplevel(Eto.Forms.Form form, nint handle)
+		=> typeof(WaylandOwnToplevels).GetMethod("Track", BindingFlags.NonPublic | BindingFlags.Static)
+			.Invoke(null, [form, handle, "own toplevel", 200, 100]);
+
+	private static T OwnToplevelField<T>(object state, string name)
+		=> (T)state.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance).GetValue(state);
+
+	private static void SetOwnToplevelField(object state, string name, object value)
+		=> state.GetType().GetField(name, BindingFlags.NonPublic | BindingFlags.Instance).SetValue(state, value);
+
+	// A controllable window list and event source for compositor contracts.
+	private sealed class ListingBackend(bool lists) : IWaylandBackend, IDisposable
+	{
+		public string BackendKey => "test";
+		public string Name => "test";
+		internal IReadOnlyList<WaylandWindowInfo> Windows { get; init; } = [];
+		internal Func<int, IReadOnlyList<WaylandWindowInfo>> WindowsOnList { get; init; }
+		internal int ListCalls { get; private set; }
+		internal Action<WaylandWindowEvent> EventSink;
+		public bool SupportsWindowEvents => true;
+		public IDisposable SubscribeWindowEvents(Action<WaylandWindowEvent> sink)
+		{
+			EventSink = sink;
+			return this;
+		}
+		public void Dispose() => EventSink = null;
+
+		public bool TryGetCursorPos(out int x, out int y)
+		{
+			x = y = 0;
+			return false;
 		}
 
-		/// <summary>
-		/// The WebView surface as a script reaches it. Driven from a script because the members live on the
-		/// holder the binder hands back, and because OnEvent's per-control event set is only visible from there.
-		/// </summary>
-		[Test, Category("Gui"), NonParallelizable]
-		[Apartment(ApartmentState.STA)]
-		public void WebViewScriptSurface() => Assert.IsTrue(TestScript("gui-webview", false));
-
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void DpiResizeDefaults()
+		public bool TryListWindows(bool includeHidden, out IReadOnlyList<WaylandWindowInfo> windows)
 		{
-			var gui = new Gui(System.Array.Empty<object>());
-			_ = gui.__New();
+			ListCalls++;
+			windows = WindowsOnList?.Invoke(ListCalls) ?? Windows;
+			return lists;
+		}
+	}
+
+#endif
+
+	// The canvas is the backing's presentable memory (on Windows the DIB the compositor reads), so no
+	// operation may swap or free that bitmap out from under it.
+	[Test, Category("Gui"), Category("Curated")]
+	public void SurfaceCanvasOwnership()
+	{
+		using var surface = OverlaySurface.Plain(new PixelSize(8, 4));
+		var canvas = surface.Image;
+		var bitmap = surface.Bitmap;
+
+		var before = canvas.PrepareForPixelAccess();
+		_ = canvas.Clear();
+		Assert.AreSame(before, canvas.PrepareForPixelAccess(), "Clear must overwrite the surface, not replace it");
+		_ = canvas.Clear("0xFF204060");
+		Assert.AreSame(before, canvas.PrepareForPixelAccess(), "clearing to a colour must not replace it either");
+
+		_ = canvas.PrepareForRead();
+		Assert.AreSame(bitmap, canvas.PrepareForPixelAccess(), "materializing must not dispose or replace a borrowed base");
+
+		// Disposing through the interface is the surface's own teardown path and does release the view; the
+		// borrowed pixels must survive it, since the surface frees those separately and in order.
+		((IDisposable)canvas).Dispose();
+		Assert.AreEqual(8, bitmap.Width, "the borrowed bitmap must outlive the image that drew into it");
+		Assert.AreEqual(4, bitmap.Height);
+	}
+
+	// Damage decides how much of a frame is transferred, so under-reporting is a stale pixel on screen.
+	[Test, Category("Gui"), Category("Curated")]
+	public void SurfaceDamage()
+	{
+		using var surface = OverlaySurface.Plain(new PixelSize(200, 100));
+		var canvas = surface.Image;
+
+		// A never-presented surface is entirely unpresented; starting at None is what let Redraw's
+		// replacement transfer only the drawn part and leave the previous surface's pixels showing.
+		Assert.AreEqual(DamageKind.All, surface.Damage.Kind, "a never-presented surface is fully damaged");
+		surface.Damage.Reset();   // stand in for a successful present
+
+		_ = canvas.FillRect(10L, 10L, 20L, 20L, "0xFF0000");
+		Assert.AreEqual(DamageKind.Region, surface.Damage.Kind);
+		var one = surface.Damage.Union();
+		Assert.IsTrue(one.X <= 10 && one.Y <= 10 && one.Right >= 30 && one.Bottom >= 30,
+					  $"rounded outward: damage {one.X},{one.Y} {one.Width}x{one.Height} must cover the fill");
+
+		_ = canvas.FillRect(100L, 50L, 20L, 20L, "0x00FF00");
+		var both = surface.Damage.Union();
+		Assert.IsTrue(both.X <= 10 && both.Y <= 10 && both.Right >= 120 && both.Bottom >= 70,
+					  $"a disjoint draw widens the region: got {both.X},{both.Y} {both.Width}x{both.Height}");
+
+		for (var i = 0; i < 64; i++)
+			_ = canvas.FillRect((long)i, (long)i, 4L, 4L, "0x0000FF");
+
+		Assert.AreEqual(DamageKind.Region, surface.Damage.Kind, "many draws stay one region");
+
+		_ = canvas.Clear();
+		Assert.AreEqual(DamageKind.All, surface.Damage.Kind, "the first clear establishes the background");
+		surface.Damage.Reset();
+		Assert.AreEqual(DamageKind.None, surface.Damage.Kind);
+
+		_ = canvas.FillRect(10L, 10L, 20L, 20L, "Red");
+		surface.Damage.Reset();
+		_ = canvas.SetPixel(150L, 75L, "Blue");
+		surface.Damage.Reset();
+		_ = canvas.Clear();
+		Assert.AreEqual(DamageKind.Region, surface.Damage.Kind);
+		var erased = surface.Damage.Union();
+		Assert.IsTrue(erased.X <= 10 && erased.Y <= 10 && erased.Right >= 151 && erased.Bottom >= 76,
+			"Clear must include content from every present since the previous clear");
+		Assert.IsTrue(erased.Width < 200 && erased.Height < 100);
+		Assert.AreEqual(0L, canvas.GetPixel(20L, 20L));
+		Assert.AreEqual(0L, canvas.GetPixel(150L, 75L));
+		_ = canvas.FillRect(175L, 80L, 10L, 10L, "Red");
+		Assert.IsTrue(surface.Damage.Union().Right >= 185, "new content joins the erased region");
+		_ = canvas.Clear();
+		surface.Damage.Reset();
+		_ = canvas.Clear();
+		Assert.AreEqual(DamageKind.None, surface.Damage.Kind, "clearing an unchanged background does no work");
+
+		_ = canvas.Clear("Blue");
+		Assert.AreEqual(DamageKind.All, surface.Damage.Kind, "changing background affects every pixel");
+		surface.Damage.Reset();
+		_ = canvas.ToClr();
+		_ = canvas.Clear("Blue");
+		Assert.AreEqual(DamageKind.All, surface.Damage.Kind, "an exposed bitmap can be modified outside drawing bounds");
+	}
+
+	[Test, Category("Gui"), Category("Curated")]
+	public void VectorSurfaceDamage()
+	{
+		using var surface = OverlaySurface.Plain(new PixelSize(200, 100));
+		var canvas = surface.Image;
+		var transform = new KeysharpObject();
+		transform.DefinePropInternal("OffsetX", new OwnPropsDesc(30L));
+		transform.DefinePropInternal("SkewX", new OwnPropsDesc(0.5));
+		canvas.Transform = transform;
+
+		var path = new Ks.KeysharpImage.KeysharpPath();
+		_ = path.AddRect(10L, 10L, 20L, 10L);
+		surface.Damage.Reset();
+		_ = canvas.FillPath(path, "Red");
+
+		Assert.AreEqual(DamageKind.Region, surface.Damage.Kind);
+		var bounds = surface.Damage.Union();
+		Assert.IsTrue(bounds.X <= 45 && bounds.Y <= 10 && bounds.Right >= 70 && bounds.Bottom >= 20,
+			$"damage {bounds.X},{bounds.Y} {bounds.Width}x{bounds.Height} must cover the transformed path");
+		Assert.IsTrue(bounds.Width < 200 && bounds.Height < 100);
+
+		var empty = new Ks.KeysharpImage.KeysharpPath();
+		_ = canvas.Clip(empty);
+		surface.Damage.Reset();
+		_ = canvas.FillPath(path, "Blue");
+		Assert.AreEqual(DamageKind.None, surface.Damage.Kind, "an empty clip cannot damage the surface");
+	}
+
+	// Redraw builds a replacement surface and draws only part of it. If that surface were handed to a
+	// backing carrying only the damage the callback produced, a dirty-rect present would top up the old
+	// frame instead of replacing it, and everything the callback did not draw would keep showing the
+	// previous content — a moving shape would leave a trail. The replacement must be fully damaged.
+	[Test, Category("Gui"), Category("Curated")]
+	public void RedrawFullDamage()
+	{
+		if (Script.IsHeadless)
+			Assert.Ignore("Overlay surfaces need an initialized graphics backend.");
+
+		var overlay = new Ks.KeysharpOverlay();
+		_ = overlay.__New(0L, 0L, 64L, 32L);
+
+		try
+		{
+			var callback = new KeysharpFunc((Func<object, object>)(target =>
+			{
+				_ = ((Ks.KeysharpImage)target).FillRect(2L, 2L, 4L, 4L, "0xFF0000");
+				return 0L;
+			}));
+			_ = overlay.Redraw(callback);
+			var surface = overlay.SurfaceForTests;
+			Assert.IsNotNull(surface);
+			Assert.AreEqual(DamageKind.All, surface.Damage.Kind,
+							"a Redraw replacement must repaint the whole surface, not just what was drawn");
+		}
+		finally
+		{
+			_ = overlay.Destroy();
+		}
+	}
+
+	// Drawing stages; Present publishes. Nothing may reach the screen behind the script's back, and the
+	// operations that are complete in themselves must still publish without a second call.
+	[Test, Category("Gui"), Category("Curated")]
+	public void ExplicitPresent()
+	{
+		if (Script.IsHeadless)
+			Assert.Ignore("Overlay surfaces need an initialized graphics backend.");
+
+		var context = UseQueuedMainContext();
+		var overlay = new Ks.KeysharpOverlay();
+		_ = overlay.__New(0L, 0L, 64L, 32L);
+
+		try
+		{
+			_ = overlay.Show();
+			context.DrainAll();
+			Assert.IsFalse(overlay.HasUnpresentedDamageForTests, "Show uploads, so nothing is left over");
+
+			for (var i = 0; i < 50; i++)
+				_ = overlay.Canvas.FillRect((long)i, 0L, 4L, 4L, "0xFF0000");
+
+			Assert.IsTrue(overlay.HasUnpresentedDamageForTests, "50 primitives, deliberately unshown");
+			Assert.AreEqual(0, context.PendingCount, "drawing must not schedule anything either");
+			context.DrainAll();
+			Assert.IsTrue(overlay.HasUnpresentedDamageForTests, "yielding must not upload");
+
+			_ = overlay.Present();
+			Assert.IsFalse(overlay.HasUnpresentedDamageForTests, "Present uploads the frame");
+
+			// Show and a resize are complete operations, so each publishes on its own. A pure move does not
+			// (the window keeps its content across SWP_NOSIZE), which is why this uses Width.
+			_ = overlay.Canvas.FillRect(0L, 0L, 4L, 4L, "0x00FF00");
+			_ = overlay.Show();
+			Assert.IsFalse(overlay.HasUnpresentedDamageForTests, "Show publishes the current canvas");
+
+			_ = overlay.Canvas.FillRect(0L, 0L, 2L, 2L, "0x0000FF");
+			overlay.Width = 40L;
+			Assert.IsFalse(overlay.HasUnpresentedDamageForTests, "a resize republishes the surface");
+		}
+		finally
+		{
+			_ = overlay.Destroy();
+		}
+	}
+	// Drawing interleaved with reads must fold into the same bitmap without replaying earlier operations.
+	[Test, Category("Gui"), Category("Curated")]
+	public void LazyDrawFold()
+	{
+		var image = KeysharpImage.Create(null, 40L, 20L, "0xFF000000") as KeysharpImage;
+
+		try
+		{
+			_ = image.FillRect(0L, 0L, 10L, 10L, "0xFF0000");
+			var first = image.PrepareForPixelAccess();
+			Assert.AreEqual(0xFFFF0000, (uint)(long)image.GetPixel(2L, 2L));
+
+			_ = image.FillRect(20L, 0L, 10L, 10L, "0x00FF00");
+			Assert.AreEqual(0xFF00FF00, (uint)(long)image.GetPixel(22L, 2L));
+			Assert.AreEqual(0xFFFF0000, (uint)(long)image.GetPixel(2L, 2L), "the earlier draw must survive");
+			Assert.AreSame(first, image.PrepareForPixelAccess(), "reads must not rebuild the surface");
+		}
+		finally
+		{
+			_ = image.Dispose();
+		}
+	}
+
+	/// <summary>
+	/// The RichEdit surface as a script reaches it. Driven from a script because its members live on the
+	/// holder the binder hands back, and because character positions are only worth checking against the
+	/// text a script sees. The script itself knows which parts of the surface each platform can serve.
+	/// </summary>
+	[Test, Category("Gui"), Category("Curated"), NonParallelizable]
+#if WINDOWS
+	//WinForms needs it; NUnit skips an apartment-bound test outright on the platforms that have no STA.
+	[Apartment(ApartmentState.STA)]
+#endif
+	public void RichEditScriptSurface()
+	{
+		SkipIfUiInitializationBlocked("Creating an AppKit window requires OS thread 1.");
+		Assert.IsTrue(TestScript("gui-richedit", false));
+	}
+
+	[Test, Category("Gui"), Category("Curated"), NonParallelizable]
+#if WINDOWS
+	[Apartment(ApartmentState.STA)]
+#endif
+	public void ControlCoordinates()
+	{
+		SkipIfUiInitializationBlocked("Control coordinates require a live GUI application.");
+		Assert.IsTrue(TestScript("control-coordinates", false));
+	}
+
+	[Test, Category("Gui"), NonParallelizable]
+#if WINDOWS
+	[Apartment(ApartmentState.STA)]
+#endif
+	public void GuiWindow()
+	{
+		SkipIfUiInitializationBlocked("Control tests require a live GUI application.");
+		Assert.IsTrue(TestScript("gui-window", false));
+	}
+
+	[Test, Category("Gui"), NonParallelizable]
+#if WINDOWS
+	[Apartment(ApartmentState.STA)]
+#endif
+	public void WindowFunctions()
+	{
+		SkipIfUiInitializationBlocked("Control tests require a live GUI application.");
+		Assert.IsTrue(TestScript("window-functions", false));
+	}
+
+#if WINDOWS
+	// The whole zero-copy design rests on one property: GDI+ drawing through the Bitmap and GDI reading
+	// through the DC address the same memory. If that ever stopped holding, presents would silently show
+	// stale frames rather than fail, so assert it directly.
+	[Test, Category("Gui"), Category("Curated")]
+	public void DibSurfacePixelSharing()
+	{
+		using var canvas = DibOverlaySurface.TryCreate(new PixelSize(8, 4));
+		Assert.IsNotNull(canvas, "a 32bpp DIB section should always be creatable");
+		Assert.IsTrue(canvas.Premultiplied, "UpdateLayeredWindow consumes premultiplied alpha");
+		Assert.AreNotEqual(0, canvas.SourceDC, "the DIB must be selected into a DC to be presentable");
+		Assert.AreEqual(System.Drawing.Imaging.PixelFormat.Format32bppPArgb, canvas.Bitmap.PixelFormat);
+
+		_ = canvas.Image.FillRect(0L, 0L, 8L, 4L, "0xFF0000FF");
+		Assert.AreSame(canvas.Bitmap, canvas.PrepareForPresent());
+
+		Assert.IsTrue(canvas.TryAcquireSourceDC(out var dc));
+
+		try
+		{
+			Assert.AreEqual(0x00FF0000u, WindowsAPI.GetPixel(dc, 1, 1) & 0x00FFFFFFu,
+							"GDI must see canvas drawing after the production present boundary (COLORREF is BGR)");
+		}
+		finally
+		{
+			canvas.ReleaseSourceDC();
+		}
+
+		_ = canvas.Image.FillRect(0L, 0L, 8L, 4L, "0xFF00FF00");
+		_ = canvas.PrepareForPresent();
+		Assert.IsTrue(canvas.TryAcquireSourceDC(out dc));
+
+		try
+		{
+			Assert.AreEqual(0x0000FF00u, WindowsAPI.GetPixel(dc, 1, 1) & 0x00FFFFFFu,
+							"a later draw through the retained Graphics must also be visible through the DC");
+		}
+		finally
+		{
+			canvas.ReleaseSourceDC();
+		}
+	}
+
+	// SetImage with same-sized content must keep the surface it already has. Allocating a new DIB and DC per
+	// frame is what made a sequence-of-frames overlay (video, sprite animation) churn a screen-sized
+	// platform buffer every frame.
+	[Test, Category("Gui"), Category("Curated")]
+	public void SetImageSurfaceReuse()
+	{
+		if (Script.IsHeadless)
+			Assert.Ignore("Overlay surfaces need an initialized graphics backend.");
+
+		var overlay = new Ks.KeysharpOverlay();
+		_ = overlay.__New(0L, 0L, 32L, 16L);
+		var frameA = KeysharpImage.Create(null, 32L, 16L, "0xFF0000") as KeysharpImage;
+		// Transparent on purpose: reusing the surface must clear it before blitting. An opaque frame would
+		// pass under plain source-over too, so it would not pin the behaviour that matters on the Eto
+		// backends, where the previous frame would otherwise show through forever.
+		var frameB = KeysharpImage.Create(null, 32L, 16L) as KeysharpImage;
+		var frameC = KeysharpImage.Create(null, 40L, 20L, "0x0000FF") as KeysharpImage;
+
+		try
+		{
+			_ = overlay.SetImage(frameA);
+			var first = overlay.SurfaceForTests;
+			Assert.IsNotNull(first, "SetImage must create a surface");
+
+			_ = overlay.SetImage(frameB);
+			Assert.AreSame(first, overlay.SurfaceForTests, "a same-sized SetImage must reuse the surface");
+			Assert.AreEqual(0u, (uint)(long)first.Image.GetPixel(4L, 4L),
+							"the reused surface must be wiped, not composited onto — red must not survive");
+
+			// A different size has no choice but to build a new one.
+			_ = overlay.SetImage(frameC);
+			Assert.AreNotSame(first, overlay.SurfaceForTests, "a resize must build a new surface");
+		}
+		finally
+		{
+			_ = overlay.Destroy();
+			_ = frameA.Dispose();
+			_ = frameB.Dispose();
+			_ = frameC.Dispose();
+		}
+	}
+
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void CaptionlessToolWindow()
+	{
+		foreach (var options in new[] { "-Caption +ToolWindow", "+ToolWindow -Caption" })
+		{
+			var gui = new Gui(new object[] { options });
 
 			try
 			{
-				// WinForms must never scale on its own, otherwise "-DPIScale" raw pixels get scaled anyway and
-				// every child is resized regardless of its own "-DPIResize".
-				Assert.AreEqual(AutoScaleMode.None, gui.form.AutoScaleMode);
-				_ = gui.Opt("-DPIScale");
-				Assert.AreEqual(AutoScaleMode.None, gui.form.AutoScaleMode);
+				var exStyle = WindowsAPI.GetWindowLongPtr(gui.form.Handle, WindowsAPI.GWL_EXSTYLE).ToInt64();
+				Assert.AreEqual(FormBorderStyle.None, gui.form.FormBorderStyle);
+				Assert.AreEqual(0L, exStyle & WindowsAPI.WS_EX_APPWINDOW);
+				Assert.AreNotEqual(0L, exStyle & WindowsAPI.WS_EX_TOOLWINDOW,
+					$"+ToolWindow must survive -Caption in either option order ({options})");
 
-				var inherited = (Gui.Control)gui.Add("Button", "x10 y10 w100 h30");
-				var optedOut = (Gui.Control)gui.Add("Button", "x10 y50 w100 h30 -DPIResize");
-				Assert.IsTrue(inherited.dpiResize, "controls should inherit the GUI's default");
-				Assert.IsFalse(optedOut.dpiResize, "a per-control -DPIResize should override the GUI default");
+				_ = gui.Opt("-ToolWindow");
+				exStyle = WindowsAPI.GetWindowLongPtr(gui.form.Handle, WindowsAPI.GWL_EXSTYLE).ToInt64();
+				Assert.AreEqual(FormBorderStyle.None, gui.form.FormBorderStyle);
+				Assert.AreNotEqual(0L, exStyle & WindowsAPI.WS_EX_APPWINDOW, "-ToolWindow must restore the taskbar button in place");
+				Assert.AreEqual(0L, exStyle & WindowsAPI.WS_EX_TOOLWINDOW,
+					"-ToolWindow must remove the extended style from an existing captionless window");
 
-				// As in AHK, the GUI option only seeds controls added afterwards.
-				_ = gui.Opt("-DPIResize");
-				Assert.IsTrue(inherited.dpiResize, "changing the GUI default must not affect existing controls");
-				var addedAfter = (Gui.Control)gui.Add("Button", "x10 y90 w100 h30");
-				Assert.IsFalse(addedAfter.dpiResize);
-
-				// GuiCtrl.Opt() can flip it back on an existing control.
-				_ = optedOut.Opt("+DPIResize");
-				Assert.IsTrue(optedOut.dpiResize);
+				_ = gui.Opt("+ToolWindow");
+				exStyle = WindowsAPI.GetWindowLongPtr(gui.form.Handle, WindowsAPI.GWL_EXSTYLE).ToInt64();
+				Assert.AreEqual(0L, exStyle & WindowsAPI.WS_EX_APPWINDOW);
+				Assert.AreNotEqual(0L, exStyle & WindowsAPI.WS_EX_TOOLWINDOW,
+					"+ToolWindow must restore the extended style on an existing captionless window");
 			}
 			finally
 			{
 				_ = gui.Destroy();
 			}
+		}
+	}
 
+	/// <summary>
+	/// The WebView surface as a script reaches it. Driven from a script because the members live on the
+	/// holder the binder hands back, and because OnEvent's per-control event set is only visible from there.
+	/// </summary>
+	[Test, Category("Gui"), NonParallelizable]
+	[Apartment(ApartmentState.STA)]
+	public void WebViewScriptSurface() => Assert.IsTrue(TestScript("gui-webview", false));
+
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void DpiResizeDefaults()
+	{
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+
+		try
+		{
+			// WinForms must never scale on its own, otherwise "-DPIScale" raw pixels get scaled anyway and
+			// every child is resized regardless of its own "-DPIResize".
+			Assert.AreEqual(AutoScaleMode.None, gui.form.AutoScaleMode);
+			_ = gui.Opt("-DPIScale");
+			Assert.AreEqual(AutoScaleMode.None, gui.form.AutoScaleMode);
+
+			var inherited = (Gui.Control)gui.Add("Button", "x10 y10 w100 h30");
+			var optedOut = (Gui.Control)gui.Add("Button", "x10 y50 w100 h30 -DPIResize");
+			Assert.IsTrue(inherited.dpiResize, "controls should inherit the GUI's default");
+			Assert.IsFalse(optedOut.dpiResize, "a per-control -DPIResize should override the GUI default");
+
+			// As in AHK, the GUI option only seeds controls added afterwards.
+			_ = gui.Opt("-DPIResize");
+			Assert.IsTrue(inherited.dpiResize, "changing the GUI default must not affect existing controls");
+			var addedAfter = (Gui.Control)gui.Add("Button", "x10 y90 w100 h30");
+			Assert.IsFalse(addedAfter.dpiResize);
+
+			// GuiCtrl.Opt() can flip it back on an existing control.
+			_ = optedOut.Opt("+DPIResize");
+			Assert.IsTrue(optedOut.dpiResize);
+		}
+		finally
+		{
+			_ = gui.Destroy();
 		}
 
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void DpiOptOut()
+	}
+
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void DpiOptOut()
+	{
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+
+		try
 		{
-			var gui = new Gui(System.Array.Empty<object>());
-			_ = gui.__New();
+			var scaled = (Gui.Control)gui.Add("Button", "w100 h30");
+			var unscaled = (Gui.Control)gui.Add("Button", "w100 h30 -DPIResize");
+			// Bounds are assigned explicitly so the expected values don't depend on Keysharp's layout math.
+			var original = new Rectangle(10, 10, 100, 30);
+			scaled.Ctrl.Bounds = original;
+			unscaled.Ctrl.Bounds = original;
 
-			try
-			{
-				var scaled = (Gui.Control)gui.Add("Button", "w100 h30");
-				var unscaled = (Gui.Control)gui.Add("Button", "w100 h30 -DPIResize");
-				// Bounds are assigned explicitly so the expected values don't depend on Keysharp's layout math.
-				var original = new Rectangle(10, 10, 100, 30);
-				scaled.Ctrl.Bounds = original;
-				unscaled.Ctrl.Bounds = original;
+			gui.RescaleForDpi(96, 144);
+			Assert.AreEqual(new Rectangle(15, 15, 150, 45), scaled.Ctrl.Bounds);
+			Assert.AreEqual(original, unscaled.Ctrl.Bounds, "-DPIResize controls must keep their bounds");
 
-				gui.RescaleForDpi(96, 144);
-				Assert.AreEqual(new Rectangle(15, 15, 150, 45), scaled.Ctrl.Bounds);
-				Assert.AreEqual(original, unscaled.Ctrl.Bounds, "-DPIResize controls must keep their bounds");
+			// Scaling back down must land on the original bounds rather than drifting.
+			gui.RescaleForDpi(144, 96);
+			Assert.AreEqual(original, scaled.Ctrl.Bounds);
+			Assert.AreEqual(original, unscaled.Ctrl.Bounds);
 
-				// Scaling back down must land on the original bounds rather than drifting.
-				gui.RescaleForDpi(144, 96);
-				Assert.AreEqual(original, scaled.Ctrl.Bounds);
-				Assert.AreEqual(original, unscaled.Ctrl.Bounds);
-
-				// A no-op transition must not touch anything.
-				gui.RescaleForDpi(96, 96);
-				Assert.AreEqual(original, scaled.Ctrl.Bounds);
-			}
-			finally
-			{
-				_ = gui.Destroy();
-			}
-
+			// A no-op transition must not touch anything.
+			gui.RescaleForDpi(96, 96);
+			Assert.AreEqual(original, scaled.Ctrl.Bounds);
+		}
+		finally
+		{
+			_ = gui.Destroy();
 		}
 
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void DpiChangeEvent()
-		{
-			var gui = new Gui(System.Array.Empty<object>());
-			_ = gui.__New();
-			var callback = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => 0L));
+	}
 
-			try
-			{
-				_ = gui.OnEvent("DpiChanged", callback);
-				Assert.AreEqual(1, gui.form.dpiChangeHandlers.Count);
-				// Dispatch depends on the script thread scheduler; this verifies registration and the native event bridge.
-				gui.form.CallDpiChangeHandlers(96, 144);
-			}
-			finally
-			{
-				_ = gui.Destroy();
-			}
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void DpiChangeEvent()
+	{
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+		var callback = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => 0L));
+
+		try
+		{
+			_ = gui.OnEvent("DpiChanged", callback);
+			Assert.AreEqual(1, gui.form.dpiChangeHandlers.Count);
+			// Dispatch depends on the script thread scheduler; this verifies registration and the native event bridge.
+			gui.form.CallDpiChangeHandlers(96, 144);
 		}
-
-		/// <summary>
-		/// An <c>ObjBindMethod</c> handler carries no signature, which raised out of <c>IsClosure</c>, and its
-		/// receiver was then cleared off the script's own function object. Registration must leave it as it was.
-		/// </summary>
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void BoundEventHandler()
+		finally
 		{
-			var gui = new Gui(System.Array.Empty<object>());
-			_ = gui.__New();
-			var target = new Keysharp.Builtins.Array();
-			var handler = (KeysharpFunc)Functions.ObjBindMethod(target, "Push");
-
-			try
-			{
-				_ = gui.OnEvent("Close", handler);
-				Assert.AreEqual(1, gui.form.closedHandlers.Count);
-				Assert.AreSame(target, handler.Inst, "registration must not detach the receiver");
-				_ = handler.Call("fired");
-				Assert.AreEqual(1, target.Count, "the handler must still reach its own receiver afterwards");
-			}
-			finally
-			{
-				_ = gui.Destroy();
-			}
+			_ = gui.Destroy();
 		}
+	}
 
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void MessageHandlers()
+	/// <summary>
+	/// An <c>ObjBindMethod</c> handler carries no signature, which raised out of <c>IsClosure</c>, and its
+	/// receiver was then cleared off the script's own function object. Registration must leave it as it was.
+	/// </summary>
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void BoundEventHandler()
+	{
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+		var target = new Keysharp.Builtins.Array();
+		var handler = (KeysharpFunc)Functions.ObjBindMethod(target, "Push");
+
+		try
 		{
-			const int msgId = 0x8123;
-			var gui = new Gui(System.Array.Empty<object>());
-			_ = gui.__New();
+			_ = gui.OnEvent("Close", handler);
+			Assert.AreEqual(1, gui.form.closedHandlers.Count);
+			Assert.AreSame(target, handler.Inst, "registration must not detach the receiver");
+			_ = handler.Call("fired");
+			Assert.AreEqual(1, target.Count, "the handler must still reach its own receiver afterwards");
+		}
+		finally
+		{
+			_ = gui.Destroy();
+		}
+	}
 
-			try
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void MessageHandlers()
+	{
+		const int msgId = 0x8123;
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+
+		try
+		{
+			var order = new List<string>();
+			var control = (Gui.Control)gui.Add("Button", "w80 h24");
+			// Returning "" (empty) is what lets the chain continue; see the explicit-0 case further down.
+			var first = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) => { order.Add("first"); return ""; }));
+			var second = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) => { order.Add("second"); return ""; }));
+
+			// AddRemove is an ordering switch, not a thread count: AHK rejects anything outside -1..1.
+			_ = Assert.Throws<Keysharp.Builtins.KeysharpException>(() => gui.OnMessage(msgId, second, 5L));
+			_ = Assert.Throws<Keysharp.Builtins.KeysharpException>(() => control.OnMessage(msgId, second, -2L));
+
+			_ = gui.OnMessage(msgId, second);        // default 1: append
+			_ = gui.OnMessage(msgId, first, -1L);    // -1: run before the already-registered one
+
+			var m = Message.Create(gui.form.Handle, msgId, 0, 0);
+			Assert.IsFalse(gui.InvokeWindowMessageHandlers(ref m), "handlers returning \"\" must not claim the message");
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "first", "second" }, order);
+
+			// A non-empty return claims the message and supplies its result, skipping later handlers.
+			order.Clear();
+			var claiming = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) => { order.Add("claim"); return 7L; }));
+			_ = gui.OnMessage(msgId, claiming, -1L);
+			m = Message.Create(gui.form.Handle, msgId, 0, 0);
+			Assert.IsTrue(gui.InvokeWindowMessageHandlers(ref m));
+			Assert.AreEqual(7, m.Result.ToInt64());
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "claim" }, order);
+
+			// 0 unregisters.
+			order.Clear();
+			_ = gui.OnMessage(msgId, claiming, 0L);
+			_ = gui.OnMessage(msgId, first, 0L);
+			_ = gui.OnMessage(msgId, second, 0L);
+			m = Message.Create(gui.form.Handle, msgId, 0, 0);
+			Assert.IsFalse(gui.InvokeWindowMessageHandlers(ref m));
+			NUnit.Framework.CollectionAssert.IsEmpty(order);
+
+			// Only an EMPTY return leaves the message unclaimed, per AHK. An empty string and no return at
+			// all both let the next handler (and then the default window procedure) run.
+			foreach (var inert in new object[] { "", null })
 			{
-				var order = new List<string>();
-				var control = (Gui.Control)gui.Add("Button", "w80 h24");
-				// Returning "" (empty) is what lets the chain continue; see the explicit-0 case further down.
-				var first = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) => { order.Add("first"); return ""; }));
-				var second = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) => { order.Add("second"); return ""; }));
-
-				// AddRemove is an ordering switch, not a thread count: AHK rejects anything outside -1..1.
-				_ = Assert.Throws<Keysharp.Builtins.KeysharpException>(() => gui.OnMessage(msgId, second, 5L));
-				_ = Assert.Throws<Keysharp.Builtins.KeysharpException>(() => control.OnMessage(msgId, second, -2L));
-
-				_ = gui.OnMessage(msgId, second);        // default 1: append
-				_ = gui.OnMessage(msgId, first, -1L);    // -1: run before the already-registered one
-
-				var m = Message.Create(gui.form.Handle, msgId, 0, 0);
-				Assert.IsFalse(gui.InvokeWindowMessageHandlers(ref m), "handlers returning \"\" must not claim the message");
-				NUnit.Framework.CollectionAssert.AreEqual(new[] { "first", "second" }, order);
-
-				// A non-empty return claims the message and supplies its result, skipping later handlers.
 				order.Clear();
-				var claiming = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) => { order.Add("claim"); return 7L; }));
-				_ = gui.OnMessage(msgId, claiming, -1L);
-				m = Message.Create(gui.form.Handle, msgId, 0, 0);
-				Assert.IsTrue(gui.InvokeWindowMessageHandlers(ref m));
-				Assert.AreEqual(7, m.Result.ToInt64());
-				NUnit.Framework.CollectionAssert.AreEqual(new[] { "claim" }, order);
-
-				// 0 unregisters.
-				order.Clear();
-				_ = gui.OnMessage(msgId, claiming, 0L);
-				_ = gui.OnMessage(msgId, first, 0L);
-				_ = gui.OnMessage(msgId, second, 0L);
-				m = Message.Create(gui.form.Handle, msgId, 0, 0);
-				Assert.IsFalse(gui.InvokeWindowMessageHandlers(ref m));
-				NUnit.Framework.CollectionAssert.IsEmpty(order);
-
-				// Only an EMPTY return leaves the message unclaimed, per AHK. An empty string and no return at
-				// all both let the next handler (and then the default window procedure) run.
-				foreach (var inert in new object[] { "", null })
-				{
-					order.Clear();
-					var quiet = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) => { order.Add("quiet"); return inert; }));
-					_ = gui.OnMessage(msgId, quiet);
-					_ = gui.OnMessage(msgId, second);
-					m = Message.Create(gui.form.Handle, msgId, 0, 0);
-					Assert.IsFalse(gui.InvokeWindowMessageHandlers(ref m), $"a return of '{inert ?? "(no return)"}' must not claim the message");
-					NUnit.Framework.CollectionAssert.AreEqual(new[] { "quiet", "second" }, order, "an unclaimed message must still reach later handlers");
-					Assert.AreEqual(0, m.Result.ToInt64());
-					_ = gui.OnMessage(msgId, quiet, 0L);
-					_ = gui.OnMessage(msgId, second, 0L);
-				}
-
-				// An explicit 0 IS non-empty, so it claims the message and replies 0 — the distinction that
-				// separates AHK's rule from a plain non-zero test.
-				order.Clear();
-				var repliesZero = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) => { order.Add("zero"); return 0L; }));
-				_ = gui.OnMessage(msgId, repliesZero);
+				var quiet = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) => { order.Add("quiet"); return inert; }));
+				_ = gui.OnMessage(msgId, quiet);
 				_ = gui.OnMessage(msgId, second);
 				m = Message.Create(gui.form.Handle, msgId, 0, 0);
-				Assert.IsTrue(gui.InvokeWindowMessageHandlers(ref m), "an explicit 0 is non-empty and claims the message");
-				Assert.AreEqual(0, m.Result.ToInt64(), "the claimed message replies with the returned 0");
-				NUnit.Framework.CollectionAssert.AreEqual(new[] { "zero" }, order, "claiming must skip the remaining handlers");
-				_ = gui.OnMessage(msgId, repliesZero, 0L);
+				Assert.IsFalse(gui.InvokeWindowMessageHandlers(ref m), $"a return of '{inert ?? "(no return)"}' must not claim the message");
+				NUnit.Framework.CollectionAssert.AreEqual(new[] { "quiet", "second" }, order, "an unclaimed message must still reach later handlers");
+				Assert.AreEqual(0, m.Result.ToInt64());
+				_ = gui.OnMessage(msgId, quiet, 0L);
 				_ = gui.OnMessage(msgId, second, 0L);
-
-				// Controls keep their own registry, keyed by message rather than by notification code.
-				var ctrlHits = 0;
-				var ctrlHandler = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) => { ctrlHits++; return 3L; }));
-				_ = control.OnMessage(msgId, ctrlHandler);
-				var cm = Message.Create(control.Ctrl.Handle, msgId, 0, 0);
-				Assert.IsTrue(control.InvokeMessageHandlers(ref cm).TryCoerceLong(out var handled) && handled == 1L);
-				Assert.AreEqual(1, ctrlHits);
-				Assert.AreEqual(3, cm.Result.ToInt64());
 			}
-			finally
+
+			// An explicit 0 IS non-empty, so it claims the message and replies 0 — the distinction that
+			// separates AHK's rule from a plain non-zero test.
+			order.Clear();
+			var repliesZero = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) => { order.Add("zero"); return 0L; }));
+			_ = gui.OnMessage(msgId, repliesZero);
+			_ = gui.OnMessage(msgId, second);
+			m = Message.Create(gui.form.Handle, msgId, 0, 0);
+			Assert.IsTrue(gui.InvokeWindowMessageHandlers(ref m), "an explicit 0 is non-empty and claims the message");
+			Assert.AreEqual(0, m.Result.ToInt64(), "the claimed message replies with the returned 0");
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "zero" }, order, "claiming must skip the remaining handlers");
+			_ = gui.OnMessage(msgId, repliesZero, 0L);
+			_ = gui.OnMessage(msgId, second, 0L);
+
+			// Controls keep their own registry, keyed by message rather than by notification code.
+			var ctrlHits = 0;
+			var ctrlHandler = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) => { ctrlHits++; return 3L; }));
+			_ = control.OnMessage(msgId, ctrlHandler);
+			var cm = Message.Create(control.Ctrl.Handle, msgId, 0, 0);
+			Assert.IsTrue(control.InvokeMessageHandlers(ref cm).TryCoerceLong(out var handled) && handled == 1L);
+			Assert.AreEqual(1, ctrlHits);
+			Assert.AreEqual(3, cm.Result.ToInt64());
+		}
+		finally
+		{
+			_ = gui.Destroy();
+		}
+	}
+
+	/// <summary>
+	/// Every GUI event chain stops on a non-empty return, as AHK's GUI MsgMonitorList does: 0 and a non-numeric
+	/// string stop it, while "" or no return passes the event on. Close runs its chain inline and DpiChanged
+	/// queues it, so both dispatch paths are covered.
+	/// </summary>
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void EventChainStopsOnNonEmptyReturn()
+	{
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+
+		try
+		{
+			foreach (var (firstReturns, secondRuns) in new (object, bool)[] { ("", true), (null, true), (0L, false), ("abc", false) })
 			{
-				_ = gui.Destroy();
+				var what = firstReturns == null ? "(no return)" : $"'{firstReturns}'";
+				var expected = secondRuns ? new[] { "first", "second" } : new[] { "first" };
+				var order = new List<string>();
+
+				var firstClose = new KeysharpFunc((Func<object, object>)(_ => { order.Add("first"); return firstReturns; }));
+				var secondClose = new KeysharpFunc((Func<object, object>)(_ => { order.Add("second"); return ""; }));
+				_ = gui.OnEvent("Close", firstClose);
+				_ = gui.OnEvent("Close", secondClose);
+				var result = gui.form.closedHandlers.InvokeSynchronousEventHandlers(gui);
+				NUnit.Framework.CollectionAssert.AreEqual(expected, order, $"Close after a return of {what}");
+
+				// Close decides whether the window stays open from the value that stopped the chain.
+				if (!secondRuns)
+					Assert.AreEqual(firstReturns, result);
+
+				_ = gui.OnEvent("Close", firstClose, 0L);
+				_ = gui.OnEvent("Close", secondClose, 0L);
+
+				order.Clear();
+				var firstDpi = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => { order.Add("first"); return firstReturns; }));
+				var secondDpi = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => { order.Add("second"); return ""; }));
+				_ = gui.OnEvent("DpiChanged", firstDpi);
+				_ = gui.OnEvent("DpiChanged", secondDpi);
+				gui.form.CallDpiChangeHandlers(96, 144);
+				Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+				NUnit.Framework.CollectionAssert.AreEqual(expected, order, $"DpiChanged after a return of {what}");
+				_ = gui.OnEvent("DpiChanged", firstDpi, 0L);
+				_ = gui.OnEvent("DpiChanged", secondDpi, 0L);
 			}
 		}
-
-		/// <summary>
-		/// Every GUI event chain stops on a non-empty return, as AHK's GUI MsgMonitorList does: 0 and a non-numeric
-		/// string stop it, while "" or no return passes the event on. Close runs its chain inline and DpiChanged
-		/// queues it, so both dispatch paths are covered.
-		/// </summary>
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void EventChainStopsOnNonEmptyReturn()
+		finally
 		{
-			var gui = new Gui(System.Array.Empty<object>());
-			_ = gui.__New();
+			_ = gui.Destroy();
+		}
+	}
 
-			try
+	/// <summary>
+	/// A handler whose thread ends with an uncaught error ends the chain, as AHK's MsgMonitorList breaks on FAIL,
+	/// while one which calls Exit (EARLY_EXIT) ends only itself and the next handler runs. Covers the inline
+	/// (Close), queued (DpiChanged) and window-message (OnMessage) paths.
+	/// </summary>
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void EventChainStopsOnErrorButNotExit()
+	{
+		const int msgId = 0x8124;
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+
+		try
+		{
+			foreach (var (how, secondRuns) in new (string, bool)[] { ("throws", false), ("calls Exit", true) })
 			{
-				foreach (var (firstReturns, secondRuns) in new (object, bool)[] { ("", true), (null, true), (0L, false), ("abc", false) })
+				var expected = secondRuns ? new[] { "first", "second" } : new[] { "first" };
+				var order = new List<string>();
+
+				object First()
 				{
-					var what = firstReturns == null ? "(no return)" : $"'{firstReturns}'";
-					var expected = secondRuns ? new[] { "first", "second" } : new[] { "first" };
-					var order = new List<string>();
-
-					var firstClose = new KeysharpFunc((Func<object, object>)(_ => { order.Add("first"); return firstReturns; }));
-					var secondClose = new KeysharpFunc((Func<object, object>)(_ => { order.Add("second"); return ""; }));
-					_ = gui.OnEvent("Close", firstClose);
-					_ = gui.OnEvent("Close", secondClose);
-					var result = gui.form.closedHandlers.InvokeSynchronousEventHandlers(gui);
-					NUnit.Framework.CollectionAssert.AreEqual(expected, order, $"Close after a return of {what}");
-
-					// Close decides whether the window stays open from the value that stopped the chain.
-					if (!secondRuns)
-						Assert.AreEqual(firstReturns, result);
-
-					_ = gui.OnEvent("Close", firstClose, 0L);
-					_ = gui.OnEvent("Close", secondClose, 0L);
-
-					order.Clear();
-					var firstDpi = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => { order.Add("first"); return firstReturns; }));
-					var secondDpi = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => { order.Add("second"); return ""; }));
-					_ = gui.OnEvent("DpiChanged", firstDpi);
-					_ = gui.OnEvent("DpiChanged", secondDpi);
-					gui.form.CallDpiChangeHandlers(96, 144);
-					Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
-					NUnit.Framework.CollectionAssert.AreEqual(expected, order, $"DpiChanged after a return of {what}");
-					_ = gui.OnEvent("DpiChanged", firstDpi, 0L);
-					_ = gui.OnEvent("DpiChanged", secondDpi, 0L);
+					order.Add("first");
+					return secondRuns ? Keysharp.Builtins.Flow.Exit() : throw new Keysharp.Builtins.Error("handler failed");
 				}
-			}
-			finally
-			{
-				_ = gui.Destroy();
+
+				var firstClose = new KeysharpFunc((Func<object, object>)(_ => First()));
+				var secondClose = new KeysharpFunc((Func<object, object>)(_ => { order.Add("second"); return ""; }));
+				_ = gui.OnEvent("Close", firstClose);
+				_ = gui.OnEvent("Close", secondClose);
+				var result = gui.form.closedHandlers.InvokeSynchronousEventHandlers(gui);
+				NUnit.Framework.CollectionAssert.AreEqual(expected, order, $"Close when the first handler {how}");
+				Assert.IsTrue(result.IsNullOrEmpty(), $"a chain whose first handler {how} must not keep the window open");
+				_ = gui.OnEvent("Close", firstClose, 0L);
+				_ = gui.OnEvent("Close", secondClose, 0L);
+
+				order.Clear();
+				var firstDpi = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => First()));
+				var secondDpi = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => { order.Add("second"); return ""; }));
+				_ = gui.OnEvent("DpiChanged", firstDpi);
+				_ = gui.OnEvent("DpiChanged", secondDpi);
+				gui.form.CallDpiChangeHandlers(96, 144);
+				Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+				NUnit.Framework.CollectionAssert.AreEqual(expected, order, $"DpiChanged when the first handler {how}");
+				_ = gui.OnEvent("DpiChanged", firstDpi, 0L);
+				_ = gui.OnEvent("DpiChanged", secondDpi, 0L);
+
+				order.Clear();
+				var firstMsg = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) => First()));
+				var secondMsg = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) => { order.Add("second"); return ""; }));
+				_ = gui.OnMessage(msgId, firstMsg);
+				_ = gui.OnMessage(msgId, secondMsg);
+				var m = Message.Create(gui.form.Handle, msgId, 0, 0);
+				Assert.IsFalse(gui.InvokeWindowMessageHandlers(ref m), $"a message whose first handler {how} must stay unclaimed");
+				NUnit.Framework.CollectionAssert.AreEqual(expected, order, $"OnMessage when the first handler {how}");
+				_ = gui.OnMessage(msgId, firstMsg, 0L);
+				_ = gui.OnMessage(msgId, secondMsg, 0L);
 			}
 		}
-
-		/// <summary>
-		/// A handler whose thread ends with an uncaught error ends the chain, as AHK's MsgMonitorList breaks on FAIL,
-		/// while one which calls Exit (EARLY_EXIT) ends only itself and the next handler runs. Covers the inline
-		/// (Close), queued (DpiChanged) and window-message (OnMessage) paths.
-		/// </summary>
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void EventChainStopsOnErrorButNotExit()
+		finally
 		{
-			const int msgId = 0x8124;
-			var gui = new Gui(System.Array.Empty<object>());
-			_ = gui.__New();
-
-			try
-			{
-				foreach (var (how, secondRuns) in new (string, bool)[] { ("throws", false), ("calls Exit", true) })
-				{
-					var expected = secondRuns ? new[] { "first", "second" } : new[] { "first" };
-					var order = new List<string>();
-
-					object First()
-					{
-						order.Add("first");
-						return secondRuns ? Keysharp.Builtins.Flow.Exit() : throw new Keysharp.Builtins.Error("handler failed");
-					}
-
-					var firstClose = new KeysharpFunc((Func<object, object>)(_ => First()));
-					var secondClose = new KeysharpFunc((Func<object, object>)(_ => { order.Add("second"); return ""; }));
-					_ = gui.OnEvent("Close", firstClose);
-					_ = gui.OnEvent("Close", secondClose);
-					var result = gui.form.closedHandlers.InvokeSynchronousEventHandlers(gui);
-					NUnit.Framework.CollectionAssert.AreEqual(expected, order, $"Close when the first handler {how}");
-					Assert.IsTrue(result.IsNullOrEmpty(), $"a chain whose first handler {how} must not keep the window open");
-					_ = gui.OnEvent("Close", firstClose, 0L);
-					_ = gui.OnEvent("Close", secondClose, 0L);
-
-					order.Clear();
-					var firstDpi = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => First()));
-					var secondDpi = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => { order.Add("second"); return ""; }));
-					_ = gui.OnEvent("DpiChanged", firstDpi);
-					_ = gui.OnEvent("DpiChanged", secondDpi);
-					gui.form.CallDpiChangeHandlers(96, 144);
-					Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
-					NUnit.Framework.CollectionAssert.AreEqual(expected, order, $"DpiChanged when the first handler {how}");
-					_ = gui.OnEvent("DpiChanged", firstDpi, 0L);
-					_ = gui.OnEvent("DpiChanged", secondDpi, 0L);
-
-					order.Clear();
-					var firstMsg = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) => First()));
-					var secondMsg = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, _) => { order.Add("second"); return ""; }));
-					_ = gui.OnMessage(msgId, firstMsg);
-					_ = gui.OnMessage(msgId, secondMsg);
-					var m = Message.Create(gui.form.Handle, msgId, 0, 0);
-					Assert.IsFalse(gui.InvokeWindowMessageHandlers(ref m), $"a message whose first handler {how} must stay unclaimed");
-					NUnit.Framework.CollectionAssert.AreEqual(expected, order, $"OnMessage when the first handler {how}");
-					_ = gui.OnMessage(msgId, firstMsg, 0L);
-					_ = gui.OnMessage(msgId, secondMsg, 0L);
-				}
-			}
-			finally
-			{
-				_ = gui.Destroy();
-			}
+			_ = gui.Destroy();
 		}
+	}
 
-		/// <summary>
-		/// ContextMenu follows AHK's dispatch: the control's handlers first, then the window's with that control as
-		/// GuiCtrlObj, unless a control handler returned a non-empty value. Raised as the system raises it: a
-		/// WM_CONTEXTMENU sent to the control, which its default procedure passes up to the window, and a ListView's
-		/// NM_RCLICK, which carries the clicked row.
-		/// </summary>
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void ContextMenuDispatch()
+	/// <summary>
+	/// ContextMenu follows AHK's dispatch: the control's handlers first, then the window's with that control as
+	/// GuiCtrlObj, unless a control handler returned a non-empty value. Raised as the system raises it: a
+	/// WM_CONTEXTMENU sent to the control, which its default procedure passes up to the window, and a ListView's
+	/// NM_RCLICK, which carries the clicked row.
+	/// </summary>
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void ContextMenuDispatch()
+	{
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+
+		try
 		{
-			var gui = new Gui(System.Array.Empty<object>());
-			_ = gui.__New();
-
-			try
-			{
-				var btn = (Gui.Control)gui.Add("Button", "x10 y20 w80 h24", "OK");
-				var lv = (Gui.ListView)gui.Add("ListView", "x10 y60 w200 h100", "Name");
-				var hotkey = (Gui.Control)gui.Add("Hotkey", "x100 y20 w80 h24");
-				_ = lv.Add("", "one");
-				_ = lv.Add("", "two");
-				var menu = new Keysharp.Builtins.MenuBar();
-				_ = menu.Add("File", new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => "")));
-				gui.MenuBar = menu;
-				var calls = new List<(string Who, object[] Args)>();
-				object ctrlReturns = "";
-				var ctrlHandler = new KeysharpFunc((Func<object, object, object, object, object, object>)((c, item, right, x, y) =>
-				{
-					calls.Add(("ctrl", new object[] { c, item, right, x, y }));
-					return ctrlReturns;
-				}));
-				var guiHandler = new KeysharpFunc((Func<object, object, object, object, object, object, object>)((g, c, item, right, x, y) =>
-				{
-					calls.Add(("gui", new object[] { g, c, item, right, x, y }));
-					return "";
-				}));
-				_ = btn.OnEvent("ContextMenu", ctrlHandler);
-				_ = lv.OnEvent("ContextMenu", ctrlHandler);
-				_ = hotkey.OnEvent("ContextMenu", ctrlHandler);
-				_ = gui.OnEvent("ContextMenu", guiHandler);
-
-				//Shown once, offscreen: until then WinForms keeps the controls in its parking window, so a control's
-				//WM_CONTEXTMENU would go up to that rather than to the Gui.
-				_ = gui.Show("NoActivate x-20000 y-20000");
-				_ = gui.Hide();
-
-				void Send(nint hwnd, nint lParam)
-				{
-					calls.Clear();
-					_ = WindowsAPI.SendMessage(hwnd, (uint)WindowsAPI.WM_CONTEXTMENU, hwnd, lParam);
-				}
-
-				//The event is queued, as AHK posts it, so nothing runs until the queue is pumped.
-				string[] Pump()
-				{
-					Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
-					return calls.Select(c => c.Who).ToArray();
-				}
-
-				void AssertArgs(object[] actual, object[] expected, string what)
-				{
-					Assert.AreEqual(expected.Length, actual.Length, what);
-
-					for (var i = 0; i < expected.Length; i++)
-					{
-						if (expected[i] is KeysharpObject)
-							Assert.AreSame(expected[i], actual[i], $"{what}: parameter {i + 1}");
-						else
-							Assert.AreEqual(expected[i], actual[i], $"{what}: parameter {i + 1}");
-					}
-				}
-
-				//The Menu key (lParam -1): IsRightClick 0, and X/Y at the control's left edge 2px below its middle, in
-				//the window's client coordinates.
-				var b = btn.Ctrl.Bounds;
-				long expectedX = b.Left, expectedY = b.Top + 2 + b.Height / 2;
-				Send(btn.Ctrl.Handle, -1);
-				NUnit.Framework.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "the control's handler runs first, then the window's");
-				AssertArgs(calls[0].Args, [btn, 0L, 0L, expectedX, expectedY], "the control's handler");
-				AssertArgs(calls[1].Args, [gui, btn, 0L, 0L, expectedX, expectedY], "the window's handler");
-
-				//A right-click reports the supplied screen point in the same menu-free client coordinates.
-				var at = btn.Ctrl.PointToScreen(new Point(b.Width / 2, b.Height / 2));
-				Send(btn.Ctrl.Handle, ((at.Y & 0xFFFF) << 16) | (at.X & 0xFFFF));
-				NUnit.Framework.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "a right-click");
-				Assert.AreEqual(1L, calls[0].Args[2]);
-				Assert.AreEqual((long)(b.Left + b.Width / 2), calls[0].Args[3]);
-				Assert.AreEqual((long)(b.Top + b.Height / 2), calls[0].Args[4]);
-				Assert.AreSame(btn, calls[1].Args[1]);
-				Assert.AreEqual(1L, calls[1].Args[3]);
-
-				//Any non-empty return from the control's handler, 0 included, keeps the window's from running.
-				foreach (var stop in new object[] { 0L, "abc" })
-				{
-					ctrlReturns = stop;
-					Send(btn.Ctrl.Handle, -1);
-					NUnit.Framework.CollectionAssert.AreEqual(new[] { "ctrl" }, Pump(), $"a control handler returning '{stop}'");
-				}
-
-				ctrlReturns = "";
-
-				//On the window itself there is no control: GuiCtrlObj is "" and Item 0.
-				Send(gui.form.Handle, -1);
-				NUnit.Framework.CollectionAssert.AreEqual(new[] { "gui" }, Pump(), "the window itself");
-				Assert.AreEqual("", calls[0].Args[1]);
-				Assert.AreEqual(0L, calls[0].Args[2]);
-
-				//A ListView's NM_RCLICK carries the clicked row, which both handlers receive as Item.
-				var hdrSize = Marshal.SizeOf<NMHDR>();
-				var nm = Marshal.AllocHGlobal(hdrSize + 64);
-
-				try
-				{
-					for (var i = 0; i < hdrSize + 64; i++)
-						Marshal.WriteByte(nm, i, 0);
-
-					Marshal.StructureToPtr(new NMHDR { hwndFrom = lv.Ctrl.Handle, code = unchecked((uint)WindowsAPI.NM_RCLICK) }, nm, false);
-					Marshal.WriteInt32(nm, hdrSize, 1);//NMITEMACTIVATE.iItem: the second row.
-					calls.Clear();
-					_ = WindowsAPI.SendMessage(gui.form.Handle, (uint)WindowsAPI.WM_NOTIFY, (nint)0, nm);
-					NUnit.Framework.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "a ListView row");
-					Assert.AreSame(lv, calls[0].Args[0]);
-					Assert.AreEqual(2L, calls[0].Args[1]);
-					Assert.AreEqual(1L, calls[0].Args[2]);
-					Assert.AreSame(lv, calls[1].Args[1]);
-					Assert.AreEqual(2L, calls[1].Args[2]);
-				}
-				finally
-				{
-					Marshal.FreeHGlobal(nm);
-				}
-
-				//The Menu key on a ListView reports its focused row.
-				((System.Windows.Forms.ListView)lv.Ctrl).Items[1].Focused = true;
-				Send(lv.Ctrl.Handle, -1);
-				NUnit.Framework.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "the Menu key on a ListView");
-				Assert.AreEqual(2L, calls[0].Args[1]);
-				Assert.AreEqual(0L, calls[0].Args[2]);
-				Assert.AreEqual(2L, calls[1].Args[2]);
-
-				//The Hotkey control suppresses its native edit menu, but still forwards WM_CONTEXTMENU to the Gui.
-				Send(hotkey.Ctrl.Handle, -1);
-				NUnit.Framework.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "the Menu key on a Hotkey control");
-				Assert.AreSame(hotkey, calls[0].Args[0]);
-				Assert.AreEqual(0L, calls[0].Args[2]);
-
-				Send(gui.form.ContentContainer.Handle, -1);
-				NUnit.Framework.CollectionAssert.AreEqual(new[] { "gui" }, Pump(), "the Menu key on the content background");
-				Assert.AreEqual("", calls[0].Args[1]);
-			}
-			finally
-			{
-				_ = gui.Destroy();
-			}
-		}
-
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void MenuBarUsesClientCoordinates()
-		{
-			var gui = new Gui(System.Array.Empty<object>());
-			_ = gui.__New();
-
-			try
-			{
-				var button = (Gui.Control)gui.Add("Button", "x0 y0 w80 h24", "Top");
-				var menu = new Keysharp.Builtins.MenuBar();
-				_ = menu.Add("File", new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => "")));
-				gui.MenuBar = menu;
-				var status = (Gui.Control)gui.Add("StatusBar", null, "Ready");
-				Assert.AreSame(gui.form.ContentContainer, button.Ctrl.Parent);
-				Assert.AreSame(gui, button.Parent);
-				Assert.AreSame(gui.form.ContentContainer, status.Ctrl.Parent);
-				Assert.AreEqual(0, button.Ctrl.Top, "adding a menu leaves the control at the content origin");
-
-				_ = gui.Show("NoActivate x-20000 y-20000 w200 h100");
-				Assert.AreEqual(menu.MenuStrip.Bottom, gui.form.ContentContainer.Top, "the content starts below the menu bar");
-				Assert.AreEqual((int)Math.Ceiling(100 * gui.DpiScale), gui.form.GuiClientSize.Height);
-				Assert.AreEqual(gui.form.GuiClientSize.Height, status.Ctrl.Bottom, "the status bar is docked within the client area");
-
-				var y = new VarRef(null);
-				var height = new VarRef(null);
-				_ = gui.GetClientPos(null, null, null, height);
-				Assert.AreEqual(100L, height.__Value);
-
-				_ = button.GetPos(null, y, null, null);
-				Assert.AreEqual(0L, y.__Value);
-				_ = button.Move(null, 10L);
-				_ = button.GetPos(null, y, null, null);
-				Assert.AreEqual(10L, y.__Value);
-
-				var nativeOrigin = gui.form.ContentContainer.PointToScreen(Point.Empty);
-				var publicOrigin = Platform.Window.ClientToScreen(gui.form.Handle);
-				Assert.AreEqual(nativeOrigin.Y, publicOrigin.Y, "CoordMode Client uses the content origin below the menu");
-			}
-			finally
-			{
-				_ = gui.Destroy();
-			}
-		}
-
-		//As in AHK, the controls are children of the Gui window, which so gets their notifications and the mouse on its
-		//background: a -Caption window answering WM_NCHITTEST with HTCAPTION there is dragged, and OnMessage sees Gui.Hwnd.
-		//Only a menu bar, a control within the WinForms client area, moves them to a panel below it.
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void ControlsParentIsGuiWindowUntilMenuBar()
-		{
-			var gui = new Gui(System.Array.Empty<object>());
-			_ = gui.__New();
-
-			try
-			{
-				var button = (Gui.Control)gui.Add("Button", "x10 y10 w80 h24", "OK");
-				var edit = (Gui.Control)gui.Add("Edit", "x10 y40 w80 h24");
-				_ = gui.Show("NoActivate x-20000 y-20000 w200 h100");
-				var buttonHwnd = button.Ctrl.Handle;
-
-				Assert.AreSame(gui.form, gui.form.ContentContainer);
-				Assert.AreEqual(gui.form.Handle, WindowsAPI.GetParent(buttonHwnd));
-				var background = gui.form.PointToScreen(new Point(gui.form.ClientSize.Width - 2, gui.form.ClientSize.Height - 2));
-				Assert.AreEqual(gui.form.Handle, WindowsAPI.WindowFromPoint(new Keysharp.Internals.Window.POINT(background)), "the background");
-
-				//Assigned to a window whose controls have their handles.
-				var menu = NewMenuBar();
-				gui.MenuBar = menu;
-
-				Assert.AreNotSame(gui.form, gui.form.ContentContainer);
-				Assert.AreSame(gui.form.ContentContainer, button.Ctrl.Parent);
-				Assert.AreSame(gui, button.Parent);
-				Assert.AreEqual(buttonHwnd, button.Ctrl.Handle, "a moved control keeps its window");
-				Assert.AreEqual(gui.form.ContentContainer.Handle, WindowsAPI.GetParent(buttonHwnd));
-				Assert.AreEqual(menu.MenuStrip.Bottom, gui.form.ContentContainer.Top, "the content starts below the menu bar");
-				Assert.Less(gui.form.ContentContainer.Controls.GetChildIndex(edit.Ctrl), gui.form.ContentContainer.Controls.GetChildIndex(button.Ctrl), "the Z order is kept");
-
-				var y = new VarRef(null);
-				_ = button.GetPos(null, y, null, null);
-				Assert.AreEqual(10L, y.__Value);
-
-				var next = (Gui.Control)gui.Add("Button", "x10 y70 w80 h24", "Next");
-				Assert.AreSame(gui.form.ContentContainer, next.Ctrl.Parent);
-				_ = next.GetPos(null, y, null, null);
-				Assert.AreEqual(70L, y.__Value);
-			}
-			finally
-			{
-				_ = gui.Destroy();
-			}
-		}
-
-		private static Keysharp.Builtins.MenuBar NewMenuBar()
-		{
+			var btn = (Gui.Control)gui.Add("Button", "x10 y20 w80 h24", "OK");
+			var lv = (Gui.ListView)gui.Add("ListView", "x10 y60 w200 h100", "Name");
+			var hotkey = (Gui.Control)gui.Add("Hotkey", "x100 y20 w80 h24");
+			_ = lv.Add("", "one");
+			_ = lv.Add("", "two");
 			var menu = new Keysharp.Builtins.MenuBar();
 			_ = menu.Add("File", new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => "")));
-			return menu;
-		}
-
-		//The panel a menu bar puts the controls in is the toolkit's business: the margins, the section and the
-		//container the next control goes to are the Gui's, and carry on across it.
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void MenuBarLeavesLayoutAlone()
-		{
-			static List<(long, long)> Build(bool menuFirst, bool menuBetween)
+			gui.MenuBar = menu;
+			var calls = new List<(string Who, object[] Args)>();
+			object ctrlReturns = "";
+			var ctrlHandler = new KeysharpFunc((Func<object, object, object, object, object, object>)((c, item, right, x, y) =>
 			{
-				var gui = new Gui(System.Array.Empty<object>());
-				_ = gui.__New();
+				calls.Add(("ctrl", new object[] { c, item, right, x, y }));
+				return ctrlReturns;
+			}));
+			var guiHandler = new KeysharpFunc((Func<object, object, object, object, object, object, object>)((g, c, item, right, x, y) =>
+			{
+				calls.Add(("gui", new object[] { g, c, item, right, x, y }));
+				return "";
+			}));
+			_ = btn.OnEvent("ContextMenu", ctrlHandler);
+			_ = lv.OnEvent("ContextMenu", ctrlHandler);
+			_ = hotkey.OnEvent("ContextMenu", ctrlHandler);
+			_ = gui.OnEvent("ContextMenu", guiHandler);
 
-				try
+			//Shown once, offscreen: until then WinForms keeps the controls in its parking window, so a control's
+			//WM_CONTEXTMENU would go up to that rather than to the Gui.
+			_ = gui.Show("NoActivate x-20000 y-20000");
+			_ = gui.Hide();
+
+			void Send(nint hwnd, nint lParam)
+			{
+				calls.Clear();
+				_ = WindowsAPI.SendMessage(hwnd, (uint)WindowsAPI.WM_CONTEXTMENU, hwnd, lParam);
+			}
+
+			//The event is queued, as AHK posts it, so nothing runs until the queue is pumped.
+			string[] Pump()
+			{
+				Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+				return calls.Select(c => c.Who).ToArray();
+			}
+
+			void AssertArgs(object[] actual, object[] expected, string what)
+			{
+				Assert.AreEqual(expected.Length, actual.Length, what);
+
+				for (var i = 0; i < expected.Length; i++)
 				{
-					gui.MarginX = 30L;
-					gui.MarginY = 40L;
-					var controls = new List<Gui.Control>();
-
-					if (menuFirst)
-						gui.MenuBar = NewMenuBar();
-
-					controls.Add((Gui.Control)gui.Add("Button", "w80 h24", "By the margins"));
-					controls.Add((Gui.Control)gui.Add("Button", "x50 y90 w80 h24 Section", "Section"));
-
-					if (menuBetween)
-						gui.MenuBar = NewMenuBar();
-
-					controls.Add((Gui.Control)gui.Add("Button", "xs w80 h24", "xs"));
-					controls.Add((Gui.Control)gui.Add("Button", "ys w80 h24", "ys"));
-					controls.Add((Gui.Control)gui.Add("Button", "xm w80 h24", "xm"));
-					var tab = (Gui.Tab)gui.Add("Tab3", "x10 y260 w200 h80", new Keysharp.Builtins.Array(["One", "Two"]));
-					controls.Add(tab);
-					controls.Add((Gui.Control)gui.Add("Button", "w60 h24", "In the tab"));
-					_ = tab.UseTab();
-					controls.Add((Gui.Control)gui.Add("Button", "xs w60 h24", "After the tab"));
-
-					return controls.Select(c =>
-					{
-						var x = new VarRef(null);
-						var y = new VarRef(null);
-						_ = c.GetPos(x, y, null, null);
-						return ((long)x.__Value, (long)y.__Value);
-					}).ToList();
-				}
-				finally
-				{
-					_ = gui.Destroy();
+					if (expected[i] is KeysharpObject)
+						Assert.AreSame(expected[i], actual[i], $"{what}: parameter {i + 1}");
+					else
+						Assert.AreEqual(expected[i], actual[i], $"{what}: parameter {i + 1}");
 				}
 			}
 
-			var plain = Build(false, false);
-			NUnit.Framework.CollectionAssert.AreEqual(plain, Build(true, false), "a menu bar assigned first");
-			NUnit.Framework.CollectionAssert.AreEqual(plain, Build(false, true), "a menu bar assigned between controls");
-		}
+			//The Menu key (lParam -1): IsRightClick 0, and X/Y at the control's left edge 2px below its middle, in
+			//the window's client coordinates.
+			var b = btn.Ctrl.Bounds;
+			long expectedX = b.Left, expectedY = b.Top + 2 + b.Height / 2;
+			Send(btn.Ctrl.Handle, -1);
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "the control's handler runs first, then the window's");
+			AssertArgs(calls[0].Args, [btn, 0L, 0L, expectedX, expectedY], "the control's handler");
+			AssertArgs(calls[1].Args, [gui, btn, 0L, 0L, expectedX, expectedY], "the window's handler");
 
-		//A native control keeps notifying the parent it was created under, so its window is created only once it has been
-		//added to the Gui: OnMessage then sees an Edit's EN_CHANGE as in AHK, which WinForms' parking window would swallow.
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void ControlNotifiesGuiWindow()
-		{
-			const long WM_COMMAND = 0x111, EN_CHANGE = 0x300;
-			var gui = new Gui(System.Array.Empty<object>());
-			_ = gui.__New();
+			//A right-click reports the supplied screen point in the same menu-free client coordinates.
+			var at = btn.Ctrl.PointToScreen(new Point(b.Width / 2, b.Height / 2));
+			Send(btn.Ctrl.Handle, ((at.Y & 0xFFFF) << 16) | (at.X & 0xFFFF));
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "a right-click");
+			Assert.AreEqual(1L, calls[0].Args[2]);
+			Assert.AreEqual((long)(b.Left + b.Width / 2), calls[0].Args[3]);
+			Assert.AreEqual((long)(b.Top + b.Height / 2), calls[0].Args[4]);
+			Assert.AreSame(btn, calls[1].Args[1]);
+			Assert.AreEqual(1L, calls[1].Args[3]);
+
+			//Any non-empty return from the control's handler, 0 included, keeps the window's from running.
+			foreach (var stop in new object[] { 0L, "abc" })
+			{
+				ctrlReturns = stop;
+				Send(btn.Ctrl.Handle, -1);
+				NUnit.Framework.CollectionAssert.AreEqual(new[] { "ctrl" }, Pump(), $"a control handler returning '{stop}'");
+			}
+
+			ctrlReturns = "";
+
+			//On the window itself there is no control: GuiCtrlObj is "" and Item 0.
+			Send(gui.form.Handle, -1);
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "gui" }, Pump(), "the window itself");
+			Assert.AreEqual("", calls[0].Args[1]);
+			Assert.AreEqual(0L, calls[0].Args[2]);
+
+			//A ListView's NM_RCLICK carries the clicked row, which both handlers receive as Item.
+			var hdrSize = Marshal.SizeOf<NMHDR>();
+			var nm = Marshal.AllocHGlobal(hdrSize + 64);
 
 			try
 			{
-				var edit = (Gui.Control)gui.Add("Edit", "w100 r1");
-				var codes = new List<long>();
-				_ = gui.OnMessage(WM_COMMAND, new KeysharpFunc((Func<object, object, object, object, object>)((_, wParam, lParam, _) =>
-				{
-					if ((long)lParam == edit.Hwnd)
-						codes.Add((long)wParam >> 16);
+				for (var i = 0; i < hdrSize + 64; i++)
+					Marshal.WriteByte(nm, i, 0);
 
-					return "";
-				})));
-				_ = gui.Show("NoActivate x-20000 y-20000");
-
-				Assert.AreEqual(gui.form.Handle, WindowsAPI.GetParent(edit.Ctrl.Handle));
-				edit.Ctrl.Text = "changed";
-				NUnit.Framework.CollectionAssert.Contains(codes, EN_CHANGE);
+				Marshal.StructureToPtr(new NMHDR { hwndFrom = lv.Ctrl.Handle, code = unchecked((uint)WindowsAPI.NM_RCLICK) }, nm, false);
+				Marshal.WriteInt32(nm, hdrSize, 1);//NMITEMACTIVATE.iItem: the second row.
+				calls.Clear();
+				_ = WindowsAPI.SendMessage(gui.form.Handle, (uint)WindowsAPI.WM_NOTIFY, (nint)0, nm);
+				NUnit.Framework.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "a ListView row");
+				Assert.AreSame(lv, calls[0].Args[0]);
+				Assert.AreEqual(2L, calls[0].Args[1]);
+				Assert.AreEqual(1L, calls[0].Args[2]);
+				Assert.AreSame(lv, calls[1].Args[1]);
+				Assert.AreEqual(2L, calls[1].Args[2]);
 			}
 			finally
 			{
-				_ = gui.Destroy();
+				Marshal.FreeHGlobal(nm);
 			}
+
+			//The Menu key on a ListView reports its focused row.
+			((System.Windows.Forms.ListView)lv.Ctrl).Items[1].Focused = true;
+			Send(lv.Ctrl.Handle, -1);
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "the Menu key on a ListView");
+			Assert.AreEqual(2L, calls[0].Args[1]);
+			Assert.AreEqual(0L, calls[0].Args[2]);
+			Assert.AreEqual(2L, calls[1].Args[2]);
+
+			//The Hotkey control suppresses its native edit menu, but still forwards WM_CONTEXTMENU to the Gui.
+			Send(hotkey.Ctrl.Handle, -1);
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "ctrl", "gui" }, Pump(), "the Menu key on a Hotkey control");
+			Assert.AreSame(hotkey, calls[0].Args[0]);
+			Assert.AreEqual(0L, calls[0].Args[2]);
+
+			Send(gui.form.ContentContainer.Handle, -1);
+			NUnit.Framework.CollectionAssert.AreEqual(new[] { "gui" }, Pump(), "the Menu key on the content background");
+			Assert.AreEqual("", calls[0].Args[1]);
 		}
-
-		//As in AHK, MarginX/MarginY are in the units of a control's position whatever the DPI, and default to 1.25 and
-		//0.75 times the font's point size. The positions are the ones AHK gives for the same calls.
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void MarginsFollowDpi()
+		finally
 		{
-			static (long, long) Pos(object control)
-			{
-				var x = new VarRef(null);
-				var y = new VarRef(null);
-				_ = ((Gui.Control)control).GetPos(x, y, null, null);
-				return ((long)x.__Value, (long)y.__Value);
-			}
+			_ = gui.Destroy();
+		}
+	}
 
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void MenuBarUsesClientCoordinates()
+	{
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+
+		try
+		{
+			var button = (Gui.Control)gui.Add("Button", "x0 y0 w80 h24", "Top");
+			var menu = new Keysharp.Builtins.MenuBar();
+			_ = menu.Add("File", new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => "")));
+			gui.MenuBar = menu;
+			var status = (Gui.Control)gui.Add("StatusBar", null, "Ready");
+			Assert.AreSame(gui.form.ContentContainer, button.Ctrl.Parent);
+			Assert.AreSame(gui, button.Parent);
+			Assert.AreSame(gui.form.ContentContainer, status.Ctrl.Parent);
+			Assert.AreEqual(0, button.Ctrl.Top, "adding a menu leaves the control at the content origin");
+
+			_ = gui.Show("NoActivate x-20000 y-20000 w200 h100");
+			Assert.AreEqual(menu.MenuStrip.Bottom, gui.form.ContentContainer.Top, "the content starts below the menu bar");
+			Assert.AreEqual((int)Math.Ceiling(100 * gui.DpiScale), gui.form.GuiClientSize.Height);
+			Assert.AreEqual(gui.form.GuiClientSize.Height, status.Ctrl.Bottom, "the status bar is docked within the client area");
+
+			var y = new VarRef(null);
+			var height = new VarRef(null);
+			_ = gui.GetClientPos(null, null, null, height);
+			Assert.AreEqual(100L, height.__Value);
+
+			_ = button.GetPos(null, y, null, null);
+			Assert.AreEqual(0L, y.__Value);
+			_ = button.Move(null, 10L);
+			_ = button.GetPos(null, y, null, null);
+			Assert.AreEqual(10L, y.__Value);
+
+			var nativeOrigin = gui.form.ContentContainer.PointToScreen(Point.Empty);
+			var publicOrigin = Platform.Window.ClientToScreen(gui.form.Handle);
+			Assert.AreEqual(nativeOrigin.Y, publicOrigin.Y, "CoordMode Client uses the content origin below the menu");
+		}
+		finally
+		{
+			_ = gui.Destroy();
+		}
+	}
+
+	//As in AHK, the controls are children of the Gui window, which so gets their notifications and the mouse on its
+	//background: a -Caption window answering WM_NCHITTEST with HTCAPTION there is dragged, and OnMessage sees Gui.Hwnd.
+	//Only a menu bar, a control within the WinForms client area, moves them to a panel below it.
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void ControlsParentIsGuiWindowUntilMenuBar()
+	{
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+
+		try
+		{
+			var button = (Gui.Control)gui.Add("Button", "x10 y10 w80 h24", "OK");
+			var edit = (Gui.Control)gui.Add("Edit", "x10 y40 w80 h24");
+			_ = gui.Show("NoActivate x-20000 y-20000 w200 h100");
+			var buttonHwnd = button.Ctrl.Handle;
+
+			Assert.AreSame(gui.form, gui.form.ContentContainer);
+			Assert.AreEqual(gui.form.Handle, WindowsAPI.GetParent(buttonHwnd));
+			var background = gui.form.PointToScreen(new Point(gui.form.ClientSize.Width - 2, gui.form.ClientSize.Height - 2));
+			Assert.AreEqual(gui.form.Handle, WindowsAPI.WindowFromPoint(new Keysharp.Internals.Window.POINT(background)), "the background");
+
+			//Assigned to a window whose controls have their handles.
+			var menu = NewMenuBar();
+			gui.MenuBar = menu;
+
+			Assert.AreNotSame(gui.form, gui.form.ContentContainer);
+			Assert.AreSame(gui.form.ContentContainer, button.Ctrl.Parent);
+			Assert.AreSame(gui, button.Parent);
+			Assert.AreEqual(buttonHwnd, button.Ctrl.Handle, "a moved control keeps its window");
+			Assert.AreEqual(gui.form.ContentContainer.Handle, WindowsAPI.GetParent(buttonHwnd));
+			Assert.AreEqual(menu.MenuStrip.Bottom, gui.form.ContentContainer.Top, "the content starts below the menu bar");
+			Assert.Less(gui.form.ContentContainer.Controls.GetChildIndex(edit.Ctrl), gui.form.ContentContainer.Controls.GetChildIndex(button.Ctrl), "the Z order is kept");
+
+			var y = new VarRef(null);
+			_ = button.GetPos(null, y, null, null);
+			Assert.AreEqual(10L, y.__Value);
+
+			var next = (Gui.Control)gui.Add("Button", "x10 y70 w80 h24", "Next");
+			Assert.AreSame(gui.form.ContentContainer, next.Ctrl.Parent);
+			_ = next.GetPos(null, y, null, null);
+			Assert.AreEqual(70L, y.__Value);
+		}
+		finally
+		{
+			_ = gui.Destroy();
+		}
+	}
+
+	private static Keysharp.Builtins.MenuBar NewMenuBar()
+	{
+		var menu = new Keysharp.Builtins.MenuBar();
+		_ = menu.Add("File", new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => "")));
+		return menu;
+	}
+
+	//The panel a menu bar puts the controls in is the toolkit's business: the margins, the section and the
+	//container the next control goes to are the Gui's, and carry on across it.
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void MenuBarLeavesLayoutAlone()
+	{
+		static List<(long, long)> Build(bool menuFirst, bool menuBetween)
+		{
 			var gui = new Gui(System.Array.Empty<object>());
 			_ = gui.__New();
 
 			try
 			{
-				Assert.AreEqual(10L, gui.MarginX, "the default for the 8 point font");
-				Assert.AreEqual(6L, gui.MarginY);
-				Assert.AreEqual((10L, 6L), Pos(gui.Add("Button", "w80 h24", "First")));
-
 				gui.MarginX = 30L;
 				gui.MarginY = 40L;
-				Assert.AreEqual(30L, gui.MarginX);
-				Assert.AreEqual(40L, gui.MarginY);
-				Assert.AreEqual((int)Math.Round(30 * gui.DpiScale, MidpointRounding.AwayFromZero), gui.form.Margin.Left, "kept in pixels");
+				var controls = new List<Gui.Control>();
 
-				Assert.AreEqual((10L, 70L), Pos(gui.Add("Button", "w80 h24", "Below")));
-				Assert.AreEqual((120L, 70L), Pos(gui.Add("Button", "x+m w80 h24", "x+m")));
-				Assert.AreEqual((30L, 134L), Pos(gui.Add("Button", "xm y+m w80 h24", "xm y+m")));
-				Assert.AreEqual((145L, 134L), Pos(gui.Add("Button", "x+m5 w80 h24", "x+m5")));
+				if (menuFirst)
+					gui.MenuBar = NewMenuBar();
 
-				_ = gui.Show("NoActivate x-20000 y-20000");
-				var width = new VarRef(null);
-				var height = new VarRef(null);
-				_ = gui.GetClientPos(null, null, width, height);
-				Assert.AreEqual((255L, 198L), ((long)width.__Value, (long)height.__Value), "autosized to the controls plus a margin");
+				controls.Add((Gui.Control)gui.Add("Button", "w80 h24", "By the margins"));
+				controls.Add((Gui.Control)gui.Add("Button", "x50 y90 w80 h24 Section", "Section"));
+
+				if (menuBetween)
+					gui.MenuBar = NewMenuBar();
+
+				controls.Add((Gui.Control)gui.Add("Button", "xs w80 h24", "xs"));
+				controls.Add((Gui.Control)gui.Add("Button", "ys w80 h24", "ys"));
+				controls.Add((Gui.Control)gui.Add("Button", "xm w80 h24", "xm"));
+				var tab = (Gui.Tab)gui.Add("Tab3", "x10 y260 w200 h80", new Keysharp.Builtins.Array(["One", "Two"]));
+				controls.Add(tab);
+				controls.Add((Gui.Control)gui.Add("Button", "w60 h24", "In the tab"));
+				_ = tab.UseTab();
+				controls.Add((Gui.Control)gui.Add("Button", "xs w60 h24", "After the tab"));
+
+				return controls.Select(c =>
+				{
+					var x = new VarRef(null);
+					var y = new VarRef(null);
+					_ = c.GetPos(x, y, null, null);
+					return ((long)x.__Value, (long)y.__Value);
+				}).ToList();
 			}
 			finally
 			{
@@ -1746,1032 +1662,1115 @@ namespace Keysharp.Tests
 			}
 		}
 
-		//As in AHK: a blank value removes the menu bar, anything else but a MenuBar is a TypeError, and the window keeps
-		//its size while the bar comes out of, and goes back into, its client area.
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void MenuBarAssignment()
+		var plain = Build(false, false);
+		NUnit.Framework.CollectionAssert.AreEqual(plain, Build(true, false), "a menu bar assigned first");
+		NUnit.Framework.CollectionAssert.AreEqual(plain, Build(false, true), "a menu bar assigned between controls");
+	}
+
+	//A native control keeps notifying the parent it was created under, so its window is created only once it has been
+	//added to the Gui: OnMessage then sees an Edit's EN_CHANGE as in AHK, which WinForms' parking window would swallow.
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void ControlNotifiesGuiWindow()
+	{
+		const long WM_COMMAND = 0x111, EN_CHANGE = 0x300;
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+
+		try
 		{
-			var gui = new Gui(System.Array.Empty<object>());
-			_ = gui.__New();
-
-			try
+			var edit = (Gui.Control)gui.Add("Edit", "w100 r1");
+			var codes = new List<long>();
+			_ = gui.OnMessage(WM_COMMAND, new KeysharpFunc((Func<object, object, object, object, object>)((_, wParam, lParam, _) =>
 			{
-				_ = gui.Add("Button", "x10 y10 w80 h24", "OK");
-				_ = gui.Show("NoActivate x-20000 y-20000 w200 h100");
-				System.Windows.Forms.Application.DoEvents();//The window counts as shown once its posted Shown event has run.
-				var windowSize = gui.form.Size;
-				var clientSize = gui.form.GuiClientSize;
+				if ((long)lParam == edit.Hwnd)
+					codes.Add((long)wParam >> 16);
 
-				var first = NewMenuBar();
-				gui.MenuBar = first;
-				Assert.AreSame(first, gui.MenuBar);
-				Assert.AreEqual(windowSize, gui.form.Size);
-				Assert.AreEqual(clientSize.Height - first.MenuStrip.Height, gui.form.GuiClientSize.Height);
+				return "";
+			})));
+			_ = gui.Show("NoActivate x-20000 y-20000");
 
-				var second = NewMenuBar();
-				gui.MenuBar = second;
-				Assert.AreSame(second, gui.MenuBar);
-				Assert.IsNull(first.MenuStrip.Parent, "the bar replaced leaves the window");
-				Assert.AreSame(second.MenuStrip, gui.form.MainMenuStrip);
+			Assert.AreEqual(gui.form.Handle, WindowsAPI.GetParent(edit.Ctrl.Handle));
+			edit.Ctrl.Text = "changed";
+			NUnit.Framework.CollectionAssert.Contains(codes, EN_CHANGE);
+		}
+		finally
+		{
+			_ = gui.Destroy();
+		}
+	}
 
-				var error = Assert.Throws<KeysharpException>(() => gui.MenuBar = 0L);
-				Assert.IsInstanceOf<TypeError>(error.UserError);
-				Assert.AreEqual("Expected a MenuBar but got an Integer.", error.UserError.Message);
-				Assert.AreSame(second, gui.MenuBar);
-
-				gui.MenuBar = "";
-				Assert.AreEqual("", gui.MenuBar);
-				Assert.IsNull(second.MenuStrip.Parent);
-				Assert.IsNull(gui.form.MainMenuStrip);
-				Assert.AreEqual(windowSize, gui.form.Size);
-				Assert.AreEqual(clientSize, gui.form.GuiClientSize);
-			}
-			finally
-			{
-				_ = gui.Destroy();
-			}
+	//As in AHK, MarginX/MarginY are in the units of a control's position whatever the DPI, and default to 1.25 and
+	//0.75 times the font's point size. The positions are the ones AHK gives for the same calls.
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void MarginsFollowDpi()
+	{
+		static (long, long) Pos(object control)
+		{
+			var x = new VarRef(null);
+			var y = new VarRef(null);
+			_ = ((Gui.Control)control).GetPos(x, y, null, null);
+			return ((long)x.__Value, (long)y.__Value);
 		}
 
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void ColumnedMenuSize()
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+
+		try
 		{
-			// Mirrors guitest.ks's Presentation menu: a MenuBar submenu with radio items, a separator and two
-			// column breaks. A columned menu is sized explicitly, so anything measured from the laid-out bounds
-			// feeds back in and the menu grows a little every time it is shown.
-			var callback = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => 0L));
-			var menu = new Keysharp.Builtins.Menu();
-			_ = menu.Add("Radio choice &1", callback, "Radio");
-			_ = menu.Add("Radio choice &2", callback, "Radio");
-			_ = menu.Add("Radio choice &3", callback, "Radio");
-			_ = menu.Check("Radio choice &1");
-			_ = menu.Add();
-			var firstColumn = (ToolStripMenuItem)menu.Add("Toggle my chec&kmark", callback);
-			_ = menu.Add("Break: column two", callback, "Break");
-			_ = menu.Add("Second-column item", callback);
-			// Deliberately the widest item in the menu, and in the last column rather than the first.
-			var lastColumn = (ToolStripMenuItem)menu.Add("BarBreak: column three", callback, "BarBreak");
-			_ = menu.Add("Third-column item", callback);
+			Assert.AreEqual(10L, gui.MarginX, "the default for the 8 point font");
+			Assert.AreEqual(6L, gui.MarginY);
+			Assert.AreEqual((10L, 6L), Pos(gui.Add("Button", "w80 h24", "First")));
 
-			var menuBar = new Keysharp.Builtins.MenuBar();
-			var host = (ToolStripMenuItem)menuBar.Add("&Presentation", menu, "Right");
-			var drop = host.DropDown;
+			gui.MarginX = 30L;
+			gui.MarginY = 40L;
+			Assert.AreEqual(30L, gui.MarginX);
+			Assert.AreEqual(40L, gui.MarginY);
+			Assert.AreEqual((int)Math.Round(30 * gui.DpiScale, MidpointRounding.AwayFromZero), gui.form.Margin.Left, "kept in pixels");
 
-			try
+			Assert.AreEqual((10L, 70L), Pos(gui.Add("Button", "w80 h24", "Below")));
+			Assert.AreEqual((120L, 70L), Pos(gui.Add("Button", "x+m w80 h24", "x+m")));
+			Assert.AreEqual((30L, 134L), Pos(gui.Add("Button", "xm y+m w80 h24", "xm y+m")));
+			Assert.AreEqual((145L, 134L), Pos(gui.Add("Button", "x+m5 w80 h24", "x+m5")));
+
+			_ = gui.Show("NoActivate x-20000 y-20000");
+			var width = new VarRef(null);
+			var height = new VarRef(null);
+			_ = gui.GetClientPos(null, null, width, height);
+			Assert.AreEqual((255L, 198L), ((long)width.__Value, (long)height.__Value), "autosized to the controls plus a margin");
+		}
+		finally
+		{
+			_ = gui.Destroy();
+		}
+	}
+
+	//As in AHK: a blank value removes the menu bar, anything else but a MenuBar is a TypeError, and the window keeps
+	//its size while the bar comes out of, and goes back into, its client area.
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void MenuBarAssignment()
+	{
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+
+		try
+		{
+			_ = gui.Add("Button", "x10 y10 w80 h24", "OK");
+			_ = gui.Show("NoActivate x-20000 y-20000 w200 h100");
+			System.Windows.Forms.Application.DoEvents();//The window counts as shown once its posted Shown event has run.
+			var windowSize = gui.form.Size;
+			var clientSize = gui.form.GuiClientSize;
+
+			var first = NewMenuBar();
+			gui.MenuBar = first;
+			Assert.AreSame(first, gui.MenuBar);
+			Assert.AreEqual(windowSize, gui.form.Size);
+			Assert.AreEqual(clientSize.Height - first.MenuStrip.Height, gui.form.GuiClientSize.Height);
+
+			var second = NewMenuBar();
+			gui.MenuBar = second;
+			Assert.AreSame(second, gui.MenuBar);
+			Assert.IsNull(first.MenuStrip.Parent, "the bar replaced leaves the window");
+			Assert.AreSame(second.MenuStrip, gui.form.MainMenuStrip);
+
+			var error = Assert.Throws<KeysharpException>(() => gui.MenuBar = 0L);
+			Assert.IsInstanceOf<TypeError>(error.UserError);
+			Assert.AreEqual("Expected a MenuBar but got an Integer.", error.UserError.Message);
+			Assert.AreSame(second, gui.MenuBar);
+
+			gui.MenuBar = "";
+			Assert.AreEqual("", gui.MenuBar);
+			Assert.IsNull(second.MenuStrip.Parent);
+			Assert.IsNull(gui.form.MainMenuStrip);
+			Assert.AreEqual(windowSize, gui.form.Size);
+			Assert.AreEqual(clientSize, gui.form.GuiClientSize);
+		}
+		finally
+		{
+			_ = gui.Destroy();
+		}
+	}
+
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void ColumnedMenuSize()
+	{
+		// Mirrors guitest.ks's Presentation menu: a MenuBar submenu with radio items, a separator and two
+		// column breaks. A columned menu is sized explicitly, so anything measured from the laid-out bounds
+		// feeds back in and the menu grows a little every time it is shown.
+		var callback = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => 0L));
+		var menu = new Keysharp.Builtins.Menu();
+		_ = menu.Add("Radio choice &1", callback, "Radio");
+		_ = menu.Add("Radio choice &2", callback, "Radio");
+		_ = menu.Add("Radio choice &3", callback, "Radio");
+		_ = menu.Check("Radio choice &1");
+		_ = menu.Add();
+		var firstColumn = (ToolStripMenuItem)menu.Add("Toggle my chec&kmark", callback);
+		_ = menu.Add("Break: column two", callback, "Break");
+		_ = menu.Add("Second-column item", callback);
+		// Deliberately the widest item in the menu, and in the last column rather than the first.
+		var lastColumn = (ToolStripMenuItem)menu.Add("BarBreak: column three", callback, "BarBreak");
+		_ = menu.Add("Third-column item", callback);
+
+		var menuBar = new Keysharp.Builtins.MenuBar();
+		var host = (ToolStripMenuItem)menuBar.Add("&Presentation", menu, "Right");
+		var drop = host.DropDown;
+
+		try
+		{
+			drop.Show(new Point(0, 0));
+			drop.Close();
+			var initial = drop.Size;
+
+			// Each column is sized to its own widest item, not to the widest in the whole menu, so a column
+			// whose longest label is shorter must come out narrower.
+			Assert.Less(firstColumn.Width, lastColumn.Width,
+				"columns must be sized independently, not all to the widest item in the menu.");
+
+			// A separator belongs to one column, as a native menu draws it. WinForms stretches it across the
+			// whole window regardless of the width it is given, so the renderer clips it to this width.
+			var separator = drop.Items.OfType<ToolStripSeparator>().Single();
+			Assert.AreEqual(firstColumn.Width, Keysharp.Builtins.Menu.GetPresentation(separator).ColumnWidth,
+				"a separator must be clipped to the column it sits in.");
+			Assert.Greater(separator.Width, firstColumn.Width,
+				"this assumes WinForms is still stretching separators; if not, the clipping is dead code.");
+
+			for (var i = 0; i < 3; i++)
 			{
+				// What guitest.ks's PickPresentationRadio does on every selection.
+				for (var n = 1; n <= 3; n++)
+					_ = menu.UnCheck($"Radio choice &{n}");
+
+				_ = menu.Check($"Radio choice &{(i % 3) + 1}");
 				drop.Show(new Point(0, 0));
 				drop.Close();
-				var initial = drop.Size;
+				Assert.AreEqual(initial, drop.Size, $"the menu changed size on display {i + 2}.");
+			}
+		}
+		finally
+		{
+			menuBar.MenuStrip.Dispose();
+			menuBar.MenuItem.Dispose();
+			menu.MenuItem.Dispose();
+		}
+	}
 
-				// Each column is sized to its own widest item, not to the widest in the whole menu, so a column
-				// whose longest label is shorter must come out narrower.
-				Assert.Less(firstColumn.Width, lastColumn.Width,
-					"columns must be sized independently, not all to the widest item in the menu.");
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void MenuOptions()
+	{
+		var callback = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => 0L));
+		var menu = new Keysharp.Builtins.Menu();
+		var plainMenu = new Keysharp.Builtins.Menu();
+		var subMenu = new Keysharp.Builtins.Menu();
+		var menuBar = new Keysharp.Builtins.MenuBar();
 
-				// A separator belongs to one column, as a native menu draws it. WinForms stretches it across the
-				// whole window regardless of the width it is given, so the renderer clips it to this width.
-				var separator = drop.Items.OfType<ToolStripSeparator>().Single();
-				Assert.AreEqual(firstColumn.Width, Keysharp.Builtins.Menu.GetPresentation(separator).ColumnWidth,
-					"a separator must be clipped to the column it sits in.");
-				Assert.Greater(separator.Width, firstColumn.Width,
-					"this assumes WinForms is still stretching separators; if not, the clipping is dead code.");
+		try
+		{
+			var first = (ToolStripMenuItem)menu.Add("First", callback);
+			var second = (ToolStripMenuItem)menu.Add("Second", callback, "Radio BarBreak RTL");
+			_ = menu.Check("Second");
 
-				for (var i = 0; i < 3; i++)
+			Assert.IsTrue(second.Checked);
+			Assert.AreEqual(RightToLeft.Yes, second.RightToLeft);
+			var presentation = Keysharp.Builtins.Menu.GetPresentation(second);
+			Assert.IsTrue(presentation.Radio);
+			Assert.IsTrue(presentation.BarBreak);
+			Assert.IsTrue(presentation.StartsColumn);
+
+			// Break and BarBreak are mutually exclusive; removing one must leave the other alone.
+			_ = menu.Add("Second", callback, "Break");
+			Assert.IsTrue(presentation.Break);
+			Assert.IsFalse(presentation.BarBreak);
+			_ = menu.Add("Second", callback, "-BarBreak");
+			Assert.IsTrue(presentation.Break, "-BarBreak must not clear Break.");
+
+			// Columns are arranged when the drop-down opens, not on every Add, so drive a real open.
+			var flow = (FlowLayoutSettings)menu.MenuItem.LayoutSettings;
+			Assert.IsFalse(flow.GetFlowBreak(first), "Adding items must not lay out a menu that is not shown.");
+			OpenAndClose(menu.MenuItem);
+			Assert.IsTrue(flow.GetFlowBreak(first), "A column break should begin a new column after the preceding item.");
+			Assert.IsTrue(flow.WrapContents);
+			Assert.Greater(second.Bounds.Left, first.Bounds.Left);
+
+			// Losing the last column break must restore ordinary single-column autosizing.
+			_ = menu.Add("Second", callback, "-Break");
+			OpenAndClose(menu.MenuItem);
+			Assert.IsFalse(flow.WrapContents);
+			Assert.IsTrue(menu.MenuItem.AutoSize);
+			Assert.Greater(second.Bounds.Top, first.Bounds.Top);
+
+			// A menu that never asks for columns must be left entirely to WinForms' own layout.
+			var plainFirst = (ToolStripMenuItem)plainMenu.Add("First", callback);
+			var plainSecond = (ToolStripMenuItem)plainMenu.Add("Second", callback);
+			OpenAndClose(plainMenu.MenuItem);
+			Assert.IsFalse(((FlowLayoutSettings)plainMenu.MenuItem.LayoutSettings).WrapContents);
+			Assert.Greater(plainSecond.Bounds.Top, plainFirst.Bounds.Top, "A normal popup menu should remain vertical.");
+
+			// Right is a menu-bar-only option in AHK (MENU_TYPE_BAR), so a popup reports it as an invalid option.
+			var right = (ToolStripMenuItem)menuBar.Add("Right", callback, "Right");
+			Assert.AreEqual(ToolStripItemAlignment.Right, right.Alignment);
+			Assert.IsTrue(Keysharp.Builtins.Menu.GetPresentation(right).Right);
+			var notRight = Assert.Throws<KeysharpException>(() => plainMenu.Add("NotRight", callback, "Right"));
+			Assert.IsInstanceOf<ValueError>(notRight.UserError);
+
+			// A submenu's drop-down is created on demand and must still get the Keysharp renderer. It reports
+			// its owner's renderer rather than its own, so it also must not be mistaken for an already
+			// initialized menu and left without column handling.
+			var subFirst = (ToolStripMenuItem)subMenu.Add("First", callback);
+			var subSecond = (ToolStripMenuItem)subMenu.Add("Second", callback, "BarBreak");
+			var subItem = (ToolStripMenuItem)menuBar.Add("Sub", subMenu);
+			Assert.AreSame(menuBar.MenuStrip.Renderer, subItem.DropDown.Renderer);
+			OpenAndClose(subItem.DropDown);
+			Assert.IsTrue(((FlowLayoutSettings)subItem.DropDown.LayoutSettings).WrapContents);
+			Assert.Greater(subSecond.Bounds.Left, subFirst.Bounds.Left, "A menu bar's submenu must get columns too.");
+		}
+		finally
+		{
+			menu.MenuItem.Dispose();
+			plainMenu.MenuItem.Dispose();
+			subMenu.MenuItem.Dispose();
+			menuBar.MenuStrip.Dispose();
+			menuBar.MenuItem.Dispose();
+		}
+	}
+
+	// Raises Opening/Closed exactly as a real display would, without leaving a popup on screen.
+	private static void OpenAndClose(ToolStripDropDown menu)
+	{
+		menu.Show(new Point(0, 0));
+		menu.Close();
+	}
+
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void WinSetStyle()
+	{
+		using var form = new Form { Text = nameof(WinSetStyle) };
+		var handle = form.Handle;
+		var oldDetectHiddenWindows = A_DetectHiddenWindows;
+		var originalStyle = WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_STYLE).ToInt64();
+		var originalExStyle = WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_EXSTYLE).ToInt64();
+		var newStyle = originalStyle ^ WindowsAPI.WS_DISABLED;
+
+		try
+		{
+			A_DetectHiddenWindows = true;
+			WindowX.WinSetStyle(newStyle, $"ahk_id {handle.ToInt64()}");
+
+			Assert.AreEqual(newStyle, WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_STYLE).ToInt64());
+			Assert.AreEqual(originalExStyle, WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_EXSTYLE).ToInt64());
+		}
+		finally
+		{
+			_ = WindowsAPI.SetWindowLongPtr(handle, WindowsAPI.GWL_STYLE, new nint(originalStyle));
+			_ = WindowsAPI.SetWindowLongPtr(handle, WindowsAPI.GWL_EXSTYLE, new nint(originalExStyle));
+			A_DetectHiddenWindows = oldDetectHiddenWindows;
+		}
+	}
+
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void WinSetExStyle()
+	{
+		using var form = new Form { Text = nameof(WinSetExStyle) };
+		var handle = form.Handle;
+		var oldDetectHiddenWindows = A_DetectHiddenWindows;
+		var originalStyle = WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_STYLE).ToInt64();
+		var originalExStyle = WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_EXSTYLE).ToInt64();
+		var newExStyle = originalExStyle ^ WindowsAPI.WS_EX_TOOLWINDOW;
+
+		try
+		{
+			A_DetectHiddenWindows = true;
+			WindowX.WinSetExStyle(newExStyle, $"ahk_id {handle.ToInt64()}");
+
+			Assert.AreEqual(originalStyle, WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_STYLE).ToInt64());
+			Assert.AreEqual(newExStyle, WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_EXSTYLE).ToInt64());
+		}
+		finally
+		{
+			_ = WindowsAPI.SetWindowLongPtr(handle, WindowsAPI.GWL_STYLE, new nint(originalStyle));
+			_ = WindowsAPI.SetWindowLongPtr(handle, WindowsAPI.GWL_EXSTYLE, new nint(originalExStyle));
+			A_DetectHiddenWindows = oldDetectHiddenWindows;
+		}
+	}
+
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void NativeInputBox()
+	{
+		if (Script.IsHeadless)
+			Assert.Ignore("InputBox requires an interactive desktop session.");
+
+		const int probeMessage = 0xB035;
+		var title = $"Keysharp InputBox probe {Guid.NewGuid():N}";
+		nint dialogHandle = 0;
+		string dialogClass = null;
+		var managedPeer = true;
+		Exception callbackFailure = null;
+		var initHandler = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, hwndArg) =>
+		{
+			_ = hwndArg.TryCoerceLong(out var hwndValue);
+			var hwnd = unchecked((nint)hwndValue);
+
+			try
+			{
+				if (dialogHandle == 0)
 				{
-					// What guitest.ks's PickPresentationRadio does on every selection.
-					for (var n = 1; n <= 3; n++)
-						_ = menu.UnCheck($"Radio choice &{n}");
+					dialogHandle = hwnd;
+					dialogClass = WindowsAPI.GetClassName(hwnd);
+					managedPeer = Control.FromHandle(hwnd) != null;
 
-					_ = menu.Check($"Radio choice &{(i % 3) + 1}");
-					drop.Show(new Point(0, 0));
-					drop.Close();
-					Assert.AreEqual(initial, drop.Size, $"the menu changed size on display {i + 2}.");
+					//Posted so it arrives after InitializeDialog has populated the controls.
+					if (!WindowsAPI.PostMessage(hwnd, probeMessage, 0, 0))
+						throw new InvalidOperationException("Could not post the InputBox probe message.");
 				}
 			}
-			finally
+			catch (Exception ex)
 			{
-				menuBar.MenuStrip.Dispose();
-				menuBar.MenuItem.Dispose();
-				menu.MenuItem.Dispose();
+				callbackFailure ??= ex;
+				_ = WindowsAPI.PostMessage(hwnd, WindowsAPI.WM_CLOSE, 0, 0);
 			}
-		}
 
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void MenuOptions()
+			return "";
+		}));
+		var probeHandler = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, hwndArg) =>
 		{
-			var callback = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => 0L));
-			var menu = new Keysharp.Builtins.Menu();
-			var plainMenu = new Keysharp.Builtins.Menu();
-			var subMenu = new Keysharp.Builtins.Menu();
-			var menuBar = new Keysharp.Builtins.MenuBar();
+			_ = hwndArg.TryCoerceLong(out var hwndValue);
+			var hwnd = unchecked((nint)hwndValue);
 
-			try
+			if (hwnd == dialogHandle)
 			{
-				var first = (ToolStripMenuItem)menu.Add("First", callback);
-				var second = (ToolStripMenuItem)menu.Add("Second", callback, "Radio BarBreak RTL");
-				_ = menu.Check("Second");
-
-				Assert.IsTrue(second.Checked);
-				Assert.AreEqual(RightToLeft.Yes, second.RightToLeft);
-				var presentation = Keysharp.Builtins.Menu.GetPresentation(second);
-				Assert.IsTrue(presentation.Radio);
-				Assert.IsTrue(presentation.BarBreak);
-				Assert.IsTrue(presentation.StartsColumn);
-
-				// Break and BarBreak are mutually exclusive; removing one must leave the other alone.
-				_ = menu.Add("Second", callback, "Break");
-				Assert.IsTrue(presentation.Break);
-				Assert.IsFalse(presentation.BarBreak);
-				_ = menu.Add("Second", callback, "-BarBreak");
-				Assert.IsTrue(presentation.Break, "-BarBreak must not clear Break.");
-
-				// Columns are arranged when the drop-down opens, not on every Add, so drive a real open.
-				var flow = (FlowLayoutSettings)menu.MenuItem.LayoutSettings;
-				Assert.IsFalse(flow.GetFlowBreak(first), "Adding items must not lay out a menu that is not shown.");
-				OpenAndClose(menu.MenuItem);
-				Assert.IsTrue(flow.GetFlowBreak(first), "A column break should begin a new column after the preceding item.");
-				Assert.IsTrue(flow.WrapContents);
-				Assert.Greater(second.Bounds.Left, first.Bounds.Left);
-
-				// Losing the last column break must restore ordinary single-column autosizing.
-				_ = menu.Add("Second", callback, "-Break");
-				OpenAndClose(menu.MenuItem);
-				Assert.IsFalse(flow.WrapContents);
-				Assert.IsTrue(menu.MenuItem.AutoSize);
-				Assert.Greater(second.Bounds.Top, first.Bounds.Top);
-
-				// A menu that never asks for columns must be left entirely to WinForms' own layout.
-				var plainFirst = (ToolStripMenuItem)plainMenu.Add("First", callback);
-				var plainSecond = (ToolStripMenuItem)plainMenu.Add("Second", callback);
-				OpenAndClose(plainMenu.MenuItem);
-				Assert.IsFalse(((FlowLayoutSettings)plainMenu.MenuItem.LayoutSettings).WrapContents);
-				Assert.Greater(plainSecond.Bounds.Top, plainFirst.Bounds.Top, "A normal popup menu should remain vertical.");
-
-				// Right is a menu-bar-only option in AHK (MENU_TYPE_BAR), so a popup reports it as an invalid option.
-				var right = (ToolStripMenuItem)menuBar.Add("Right", callback, "Right");
-				Assert.AreEqual(ToolStripItemAlignment.Right, right.Alignment);
-				Assert.IsTrue(Keysharp.Builtins.Menu.GetPresentation(right).Right);
-				var notRight = Assert.Throws<KeysharpException>(() => plainMenu.Add("NotRight", callback, "Right"));
-				Assert.IsInstanceOf<ValueError>(notRight.UserError);
-
-				// A submenu's drop-down is created on demand and must still get the Keysharp renderer. It reports
-				// its owner's renderer rather than its own, so it also must not be mistaken for an already
-				// initialized menu and left without column handling.
-				var subFirst = (ToolStripMenuItem)subMenu.Add("First", callback);
-				var subSecond = (ToolStripMenuItem)subMenu.Add("Second", callback, "BarBreak");
-				var subItem = (ToolStripMenuItem)menuBar.Add("Sub", subMenu);
-				Assert.AreSame(menuBar.MenuStrip.Renderer, subItem.DropDown.Renderer);
-				OpenAndClose(subItem.DropDown);
-				Assert.IsTrue(((FlowLayoutSettings)subItem.DropDown.LayoutSettings).WrapContents);
-				Assert.Greater(subSecond.Bounds.Left, subFirst.Bounds.Left, "A menu bar's submenu must get columns too.");
-			}
-			finally
-			{
-				menu.MenuItem.Dispose();
-				plainMenu.MenuItem.Dispose();
-				subMenu.MenuItem.Dispose();
-				menuBar.MenuStrip.Dispose();
-				menuBar.MenuItem.Dispose();
-			}
-		}
-
-		// Raises Opening/Closed exactly as a real display would, without leaving a popup on screen.
-		private static void OpenAndClose(ToolStripDropDown menu)
-		{
-			menu.Show(new Point(0, 0));
-			menu.Close();
-		}
-
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void WinSetStyle()
-		{
-			using var form = new Form { Text = nameof(WinSetStyle) };
-			var handle = form.Handle;
-			var oldDetectHiddenWindows = A_DetectHiddenWindows;
-			var originalStyle = WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_STYLE).ToInt64();
-			var originalExStyle = WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_EXSTYLE).ToInt64();
-			var newStyle = originalStyle ^ WindowsAPI.WS_DISABLED;
-
-			try
-			{
-				A_DetectHiddenWindows = true;
-				WindowX.WinSetStyle(newStyle, $"ahk_id {handle.ToInt64()}");
-
-				Assert.AreEqual(newStyle, WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_STYLE).ToInt64());
-				Assert.AreEqual(originalExStyle, WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_EXSTYLE).ToInt64());
-			}
-			finally
-			{
-				_ = WindowsAPI.SetWindowLongPtr(handle, WindowsAPI.GWL_STYLE, new nint(originalStyle));
-				_ = WindowsAPI.SetWindowLongPtr(handle, WindowsAPI.GWL_EXSTYLE, new nint(originalExStyle));
-				A_DetectHiddenWindows = oldDetectHiddenWindows;
-			}
-		}
-
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void WinSetExStyle()
-		{
-			using var form = new Form { Text = nameof(WinSetExStyle) };
-			var handle = form.Handle;
-			var oldDetectHiddenWindows = A_DetectHiddenWindows;
-			var originalStyle = WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_STYLE).ToInt64();
-			var originalExStyle = WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_EXSTYLE).ToInt64();
-			var newExStyle = originalExStyle ^ WindowsAPI.WS_EX_TOOLWINDOW;
-
-			try
-			{
-				A_DetectHiddenWindows = true;
-				WindowX.WinSetExStyle(newExStyle, $"ahk_id {handle.ToInt64()}");
-
-				Assert.AreEqual(originalStyle, WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_STYLE).ToInt64());
-				Assert.AreEqual(newExStyle, WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_EXSTYLE).ToInt64());
-			}
-			finally
-			{
-				_ = WindowsAPI.SetWindowLongPtr(handle, WindowsAPI.GWL_STYLE, new nint(originalStyle));
-				_ = WindowsAPI.SetWindowLongPtr(handle, WindowsAPI.GWL_EXSTYLE, new nint(originalExStyle));
-				A_DetectHiddenWindows = oldDetectHiddenWindows;
-			}
-		}
-
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void NativeInputBox()
-		{
-			if (Script.IsHeadless)
-				Assert.Ignore("InputBox requires an interactive desktop session.");
-
-			const int probeMessage = 0xB035;
-			var title = $"Keysharp InputBox probe {Guid.NewGuid():N}";
-			nint dialogHandle = 0;
-			string dialogClass = null;
-			var managedPeer = true;
-			Exception callbackFailure = null;
-			var initHandler = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, hwndArg) =>
-			{
-				_ = hwndArg.TryCoerceLong(out var hwndValue);
-				var hwnd = unchecked((nint)hwndValue);
-
 				try
 				{
-					if (dialogHandle == 0)
-					{
-						dialogHandle = hwnd;
-						dialogClass = WindowsAPI.GetClassName(hwnd);
-						managedPeer = Control.FromHandle(hwnd) != null;
+					var edit = WindowsAPI.GetDlgItem(hwnd, InputDialog.InputEditId);
 
-						//Posted so it arrives after InitializeDialog has populated the controls.
-						if (!WindowsAPI.PostMessage(hwnd, probeMessage, 0, 0))
-							throw new InvalidOperationException("Could not post the InputBox probe message.");
-					}
+					if (edit == 0 || !WindowsAPI.SetWindowText(edit, "typed value"))
+						throw new InvalidOperationException("Could not update the native InputBox edit control.");
 				}
 				catch (Exception ex)
 				{
 					callbackFailure ??= ex;
-					_ = WindowsAPI.PostMessage(hwnd, WindowsAPI.WM_CLOSE, 0, 0);
-				}
-
-				return "";
-			}));
-			var probeHandler = new KeysharpFunc((Func<object, object, object, object, object>)((_, _, _, hwndArg) =>
-			{
-				_ = hwndArg.TryCoerceLong(out var hwndValue);
-				var hwnd = unchecked((nint)hwndValue);
-
-				if (hwnd == dialogHandle)
-				{
-					try
-					{
-						var edit = WindowsAPI.GetDlgItem(hwnd, InputDialog.InputEditId);
-
-						if (edit == 0 || !WindowsAPI.SetWindowText(edit, "typed value"))
-							throw new InvalidOperationException("Could not update the native InputBox edit control.");
-					}
-					catch (Exception ex)
-					{
-						callbackFailure ??= ex;
-					}
-					finally
-					{
-						_ = WindowsAPI.PostMessage(hwnd, WindowsAPI.WM_COMMAND, (nint)InputDialog.OkId, 0);
-					}
-				}
-
-				return "";
-			}));
-
-			_ = Keysharp.Builtins.Flow.OnMessage(WindowsAPI.WM_INITDIALOG, initHandler);
-			_ = Keysharp.Builtins.Flow.OnMessage(probeMessage, probeHandler);
-
-			try
-			{
-				//Safety net so a regression cannot leave a modal dialog waiting for a human.
-				using var watchdog = new System.Threading.Timer(_ =>
-				{
-					var hwnd = WindowsAPI.FindWindow(null, title);
-
-					if (hwnd != 0)
-						_ = WindowsAPI.PostMessage(hwnd, WindowsAPI.WM_CLOSE, 0, 0);
-				}, null, 2000, 100);
-				var okResult = Dialogs.InputBox("Native InputBox probe", title, "", "initial value");
-				var timeoutResult = Dialogs.InputBox("Native InputBox probe", title, "t0.05", "kept value");
-
-				if (callbackFailure != null)
-					Assert.Fail(callbackFailure.ToString());
-
-				Assert.AreEqual("#32770", dialogClass, "the InputBox must be a native dialog whose messages reach OnMessage");
-				Assert.IsFalse(managedPeer, "the InputBox must not be a decorated WinForms window");
-				Assert.AreEqual("OK", InputBoxProperty(okResult, "Result"));
-				Assert.AreEqual("typed value", InputBoxProperty(okResult, "Value"));
-				Assert.AreEqual("Timeout", InputBoxProperty(timeoutResult, "Result"));
-				Assert.AreEqual("kept value", InputBoxProperty(timeoutResult, "Value"));
-			}
-			finally
-			{
-				_ = Keysharp.Builtins.Flow.OnMessage(WindowsAPI.WM_INITDIALOG, initHandler, 0L);
-				_ = Keysharp.Builtins.Flow.OnMessage(probeMessage, probeHandler, 0L);
-			}
-		}
-
-		private static string InputBoxProperty(KeysharpObject result, string property)
-			=> Script.GetPropertyValue(result, property).TryCoerceString(out var text) ? text : "";
-#endif
-
-#if LINUX
-		[Test, Category("Gui")]
-		public void GtkMenuOptions()
-		{
-			SkipIfUiInitializationBlocked("Test requires a live GTK application.");
-			var callback = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => 0L));
-			var menu = new Keysharp.Builtins.Menu();
-			var menuBar = new Keysharp.Builtins.MenuBar();
-			var first = (ToolStripMenuItem)menu.Add("First", callback);
-			var second = (ToolStripMenuItem)menu.Add("Second", callback, "Radio BarBreak RTL");
-			_ = menu.Check("Second");
-			menu.MenuItem.Refresh();
-
-			var nativeFirst = (Gtk.MenuItem)first.EtoItem.ControlObject;
-			var nativeSecond = (Gtk.CheckMenuItem)second.EtoItem.ControlObject;
-			var nativeMenu = (Gtk.Menu)menu.MenuItem.EtoMenu.ControlObject;
-			using var firstColumn = nativeMenu.ChildGetProperty(nativeFirst, "left-attach");
-			using var secondColumn = nativeMenu.ChildGetProperty(nativeSecond, "left-attach");
-
-			Assert.IsTrue(nativeSecond.DrawAsRadio);
-			Assert.AreEqual(Gtk.TextDirection.Rtl, nativeSecond.Direction);
-			//The label carries the direction as well, because that is what right-aligns the item's text.
-			Assert.AreEqual(Gtk.TextDirection.Rtl, nativeSecond.Child.Direction);
-			Assert.AreEqual(Gtk.TextDirection.Ltr, nativeFirst.Child.Direction);
-			//Columns must be adjacent: a spacer column would be as wide as a column of text.
-			Assert.AreEqual(0U, Convert.ToUInt32(firstColumn.Val));
-			Assert.AreEqual(1U, Convert.ToUInt32(secondColumn.Val));
-			//The BarBreak divider is a border on the column's own items rather than a widget of its own.
-			Assert.IsTrue(nativeSecond.StyleContext.HasClass(UnixMenuPresentation.BarBreakStyleClass));
-			Assert.IsFalse(nativeFirst.StyleContext.HasClass(UnixMenuPresentation.BarBreakStyleClass));
-
-			_ = menu.Add("Third", callback);
-			Assert.AreSame(nativeFirst, first.EtoItem.ControlObject);
-			_ = menu.Add("Second", callback, "-BarBreak");
-			using var clearedColumn = nativeMenu.ChildGetProperty(second.EtoItem.ControlObject as Gtk.Widget, "left-attach");
-			Assert.AreEqual(0U, Convert.ToUInt32(clearedColumn.Val));
-			Assert.AreSame(nativeFirst, first.EtoItem.ControlObject);
-			var sub = new Keysharp.Builtins.Menu();
-			var subItem = (ToolStripMenuItem)sub.Add("Child", callback);
-			_ = menu.Add("Host", sub);
-			var nativeChild = subItem.EtoItem;
-			_ = sub.Add("Another", callback);
-			Assert.AreSame(nativeChild, subItem.EtoItem);
-
-			var right = (ToolStripMenuItem)menuBar.Add("Right", callback, "Right");
-			var nativeRight = (Gtk.MenuItem)right.EtoItem.ControlObject;
-			Assert.IsTrue((bool)nativeRight.GetType().GetProperty("RightJustified").GetValue(nativeRight));
-
-			menu.MenuItem.Items.RemoveAt(0);
-			Assert.AreEqual(3, menu.MenuItem.EtoMenu.Items.Count);
-			_ = menu.Delete();
-			Assert.AreEqual(0, menu.MenuItem.EtoMenu.Items.Count);
-		}
-#endif
-
-#if !WINDOWS
-		[TestCase(true), TestCase(false), Category("Gui")]
-		public void ListViewClickSelection(bool multiSelect)
-		{
-			SkipIfUiInitializationBlocked("ListView selection requires a live Eto application.");
-			s.InvokeOnUIThread(() =>
-			{
-				var gui = new Gui();
-
-				try
-				{
-					var list = (Gui.ListView)gui.Add("ListView", multiSelect ? "w200 h100" : "w200 h100 -Multi", new Keysharp.Builtins.Array("Name"));
-					_ = list.Add("Select", "First");
-					_ = list.Add("Select", "Second");
-					_ = list.Add("", "Third");
-					Assert.AreEqual(multiSelect ? 2L : 1L, list.GetCount("Selected"));
-					var grid = (KeysharpListView)list.Ctrl;
-					var column = ((GridView)grid).Columns[0];
-
-					foreach (var row in new[] { 2, 0, 0 })
-					{
-						list.Lv_CellClick(grid, new GridCellMouseEventArgs(column, row, 0, grid.Items[row], MouseButtons.Primary, Keys.None, PointF.Empty));
-						Assert.AreEqual(1L, list.GetCount("Selected"), "a plain click must replace the selection before native mouse tracking resumes");
-						Assert.AreEqual(row + 1L, list.GetNext());
-						Assert.AreEqual(row + 1L, list.GetNext(0L, "Focused"));
-					}
 				}
 				finally
 				{
-					_ = gui.Destroy();
+					_ = WindowsAPI.PostMessage(hwnd, WindowsAPI.WM_COMMAND, (nint)InputDialog.OkId, 0);
 				}
-			});
-		}
+			}
 
-		[Test, Category("Gui")]
-		public void MainWindowVisibility()
+			return "";
+		}));
+
+		_ = Keysharp.Builtins.Flow.OnMessage(WindowsAPI.WM_INITDIALOG, initHandler);
+		_ = Keysharp.Builtins.Flow.OnMessage(probeMessage, probeHandler);
+
+		try
 		{
-			SkipIfUiInitializationBlocked("Test requires a live Eto Application (macOS testhost cannot drive AppKit).");
-			var shown = false;
-			using var mainWindow = new Keysharp.Internals.UI.Unix.MainWindow(s);
-			mainWindow.Shown += (_, _) => shown = true;
+			//Safety net so a regression cannot leave a modal dialog waiting for a human.
+			using var watchdog = new System.Threading.Timer(_ =>
+			{
+				var hwnd = WindowsAPI.FindWindow(null, title);
 
-			mainWindow.InitializeHidden();
+				if (hwnd != 0)
+					_ = WindowsAPI.PostMessage(hwnd, WindowsAPI.WM_CLOSE, 0, 0);
+			}, null, 2000, 100);
+			var okResult = Dialogs.InputBox("Native InputBox probe", title, "", "initial value");
+			var timeoutResult = Dialogs.InputBox("Native InputBox probe", title, "t0.05", "kept value");
 
-			Assert.AreNotEqual(0, mainWindow.NativeHandle);
-			Assert.IsFalse(mainWindow.Visible);
-			Assert.IsFalse(shown);
+			if (callbackFailure != null)
+				Assert.Fail(callbackFailure.ToString());
+
+			Assert.AreEqual("#32770", dialogClass, "the InputBox must be a native dialog whose messages reach OnMessage");
+			Assert.IsFalse(managedPeer, "the InputBox must not be a decorated WinForms window");
+			Assert.AreEqual("OK", InputBoxProperty(okResult, "Result"));
+			Assert.AreEqual("typed value", InputBoxProperty(okResult, "Value"));
+			Assert.AreEqual("Timeout", InputBoxProperty(timeoutResult, "Result"));
+			Assert.AreEqual("kept value", InputBoxProperty(timeoutResult, "Value"));
 		}
-
-		[Test, Category("Gui")]
-		public void EtoWindowStyleBits()
+		finally
 		{
-			SkipIfUiInitializationBlocked("Test requires a live Eto Application (macOS testhost cannot drive AppKit).");
-
-			using var form = new Eto.Forms.Form
-			{
-				WindowStyle = Eto.Forms.WindowStyle.Default,
-				Closeable = true,
-				Resizable = true,
-				Minimizable = true,
-				Maximizable = true
-			};
-			var style = EtoWindowStyles.ForWindow(form);
-
-			// A decorated, fully-featured window carries the frame bits scripts test for. It is deliberately
-			// NOT Eto's own WindowStyle enum value (Default is 0, None is 1), which collides meaninglessly
-			// with the WS_* constants.
-			Assert.AreEqual(EtoWindowStyles.WS_CAPTION, style & EtoWindowStyles.WS_CAPTION);
-			Assert.AreEqual(EtoWindowStyles.WS_SYSMENU, style & EtoWindowStyles.WS_SYSMENU);
-			Assert.AreEqual(EtoWindowStyles.WS_THICKFRAME, style & EtoWindowStyles.WS_THICKFRAME);
-			Assert.AreEqual(EtoWindowStyles.WS_MINIMIZEBOX, style & EtoWindowStyles.WS_MINIMIZEBOX);
-			Assert.AreEqual(EtoWindowStyles.WS_MAXIMIZEBOX, style & EtoWindowStyles.WS_MAXIMIZEBOX);
-			Assert.AreEqual(0L, style & EtoWindowStyles.WS_POPUP, "a decorated window is not a popup");
-			Assert.AreEqual(0L, style & EtoWindowStyles.WS_CHILD, "a top-level window is not a child");
-
-			// Clearing the toolkit properties clears exactly the matching bits.
-			form.Resizable = false;
-			form.Minimizable = false;
-			form.Maximizable = false;
-			form.Closeable = false;
-			style = EtoWindowStyles.ForWindow(form);
-			Assert.AreEqual(0L, style & EtoWindowStyles.WS_THICKFRAME);
-			Assert.AreEqual(0L, style & EtoWindowStyles.WS_MINIMIZEBOX);
-			Assert.AreEqual(0L, style & EtoWindowStyles.WS_MAXIMIZEBOX);
-			Assert.AreEqual(0L, style & EtoWindowStyles.WS_SYSMENU);
-
-			// Borderless is the closest thing to a bare WS_POPUP, and drops the caption bits.
-			form.WindowStyle = Eto.Forms.WindowStyle.None;
-			style = EtoWindowStyles.ForWindow(form);
-			Assert.AreEqual(EtoWindowStyles.WS_POPUP, style & EtoWindowStyles.WS_POPUP);
-			Assert.AreEqual(0L, style & EtoWindowStyles.WS_CAPTION);
-
-			// Child controls report WS_CHILD plus the visible/enabled state, and never frame bits.
-			using var button = new Eto.Forms.Button { Enabled = false };
-			var controlStyle = EtoWindowStyles.For(button);
-			Assert.AreEqual(EtoWindowStyles.WS_CHILD, controlStyle & EtoWindowStyles.WS_CHILD);
-			Assert.AreEqual(EtoWindowStyles.WS_DISABLED, controlStyle & EtoWindowStyles.WS_DISABLED);
-			Assert.AreEqual(0L, controlStyle & EtoWindowStyles.WS_CAPTION);
+			_ = Keysharp.Builtins.Flow.OnMessage(WindowsAPI.WM_INITDIALOG, initHandler, 0L);
+			_ = Keysharp.Builtins.Flow.OnMessage(probeMessage, probeHandler, 0L);
 		}
+	}
+
+	private static string InputBoxProperty(KeysharpObject result, string property)
+		=> Script.GetPropertyValue(result, property).TryCoerceString(out var text) ? text : "";
 #endif
-
-		[Test, Category("Gui")]
-#if WINDOWS
-		[Apartment(ApartmentState.STA)]
-#endif
-		public void ControlOptionSigns()
-		{
-			SkipIfUiInitializationBlocked("Parsing control options requires a constructed Gui.");
-			var gui = new Gui(System.Array.Empty<object>());
-			_ = gui.__New();
-
-			try
-			{
-				// "In the absence of a preceding sign, a plus sign is assumed; for example, Wrap is the same as
-				// +Wrap. By contrast, -Wrap would remove the word-wrapping property." An unrecognized token throws,
-				// so merely reaching the assertion proves the signed spellings are accepted.
-				Assert.AreEqual(Gui.GuiOptions.HorizontalAlignment.Center, gui.ParseOpt("text", "", "Center").halign);
-				Assert.AreEqual(Gui.GuiOptions.HorizontalAlignment.Center, gui.ParseOpt("text", "", "+Center").halign);
-				Assert.AreEqual(Gui.GuiOptions.HorizontalAlignment.Left, gui.ParseOpt("text", "", "-Center").halign);
-				Assert.AreEqual(Gui.GuiOptions.VerticalAlignment.Middle, gui.ParseOpt("text", "", "+Middle").valign);
-
-				Assert.AreEqual(true, gui.ParseOpt("edit", "", "Wrap").wordwrap);
-				Assert.AreEqual(true, gui.ParseOpt("edit", "", "+Wrap").wordwrap);
-				Assert.AreEqual(false, gui.ParseOpt("edit", "", "-Wrap").wordwrap);
-				Assert.AreEqual(false, gui.ParseOpt("edit", "", "-Tabstop").tabstop);
-				Assert.AreEqual(true, gui.ParseOpt("edit", "", "+ReadOnly").rdonly);
-				// AHK compares "Multi" exactly, so a signed spelling has to survive but "Multiline" is not an option.
-				Assert.AreEqual(true, gui.ParseOpt("edit", "", "xc+10 y+20 h400 w500 +Multi").multiline);
-
-				// Hidden/Disabled additionally accept a trailing 1/0, which inverts the sign.
-				Assert.AreEqual(false, gui.ParseOpt("edit", "", "Hidden").visible);
-				Assert.AreEqual(true, gui.ParseOpt("edit", "", "Hidden0").visible);
-				Assert.AreEqual(true, gui.ParseOpt("edit", "", "-Hidden").visible);
-				Assert.AreEqual(false, gui.ParseOpt("edit", "", "+Disabled").enabled);
-				Assert.AreEqual(true, gui.ParseOpt("edit", "", "Disabled0").enabled);
-
-				Assert.AreEqual(1, gui.ParseOpt("checkbox", "", "Checked").ischecked);
-				Assert.AreEqual(0, gui.ParseOpt("checkbox", "", "-Checked").ischecked);
-				Assert.AreEqual(-1, gui.ParseOpt("checkbox", "", "Checked-1").ischecked);
-				Assert.AreEqual(-1, gui.ParseOpt("checkbox", "", "CheckedGray").ischecked);
-
-				// A word option must not be swallowed by a single-letter option that shares its first letter.
-				var vscroll = gui.ParseOpt("listbox", "", "+VScroll");
-				Assert.AreEqual(true, vscroll.vscroll);
-				Assert.IsNull(vscroll.name, "VScroll must not be read as the name \"Scroll\"");
-				Assert.AreEqual("MyEdit", gui.ParseOpt("edit", "", "vMyEdit").name);
-				Assert.AreEqual(true, gui.ParseOpt("listview", "", "SortDesc").sortdesc);
-				Assert.IsNull(gui.ParseOpt("listview", "", "SortDesc").sort, "SortDesc must not be read as Sort");
-
-				// Icon selects the view for a ListView but the icon index for a Picture.
-				Assert.AreEqual(View.SmallIcon, gui.ParseOpt("listview", "", "IconSmall").lvview);
-				Assert.AreEqual(View.LargeIcon, gui.ParseOpt("listview", "", "Icon").lvview);
-				Assert.AreEqual(1L, gui.ParseOpt("picture", "", "Icon2").iconnumber, "the 1-based icon index is stored 0-based");
-
-				// The sign decides whether a raw style number is added or removed.
-				Assert.AreEqual(0x40000, gui.ParseOpt("edit", "", "0x40000").addstyle);
-				Assert.AreEqual(0x40000, gui.ParseOpt("edit", "", "+0x40000").addstyle);
-				Assert.AreEqual(0x40000, gui.ParseOpt("edit", "", "-0x40000").remstyle);
-				Assert.AreEqual(0x200, gui.ParseOpt("edit", "", "E0x200").addexstyle);
-				Assert.AreEqual(0x200, gui.ParseOpt("edit", "", "-E0x200").remexstyle);
-				// Styles accumulate rather than overwriting each other.
-				Assert.AreEqual(0x40000 | 0x100, gui.ParseOpt("edit", "", "0x40000 0x100").addstyle);
-
-				// Type-specific numeric options only apply to their own control type, and are matched by content
-				// rather than by span identity, so they still work in the middle of an option string.
-				Assert.IsTrue(gui.ParseOpt("datetime", "", "x0 1").dtopt1);
-				Assert.IsTrue(gui.ParseOpt("monthcal", "", "x0 4").opt4);
-				Assert.AreEqual(4, gui.ParseOpt("edit", "", "4").addstyle, "a bare number is a style for other types");
-				// GuiControl.Opt() passes the type name as the script spelled it.
-				Assert.IsTrue(gui.ParseOpt("DateTime", "", "2").dtopt2);
-
-				// Applying an alignment must cope with control types that have no TextAlign at all: a Slider reads
-				// halign as its tick placement instead, and a ProgressBar has no notion of alignment.
-				var slider = (Gui.Control)gui.Add("Slider", "w100 +Center Page20 Line10 NoTicks AltSubmit");
-				_ = gui.Add("Progress", "w100 +Center");
-#if WINDOWS
-				Assert.AreEqual(TickStyle.Both, ((TrackBar)slider.Ctrl).TickStyle, "+Center places a slider's ticks on both sides");
-				// Edit-like controls spell TextAlign with the horizontal-only enum.
-				Assert.AreEqual(System.Windows.Forms.HorizontalAlignment.Center, ((TextBox)((Gui.Control)gui.Add("Edit", "w100 +Center")).Ctrl).TextAlign);
-				Assert.AreEqual(ContentAlignment.MiddleCenter, ((Label)((Gui.Control)gui.Add("Text", "w100 Center Middle")).Ctrl).TextAlign);
-#endif
-
-				// The sign is stripped before the font tokens are handed to ParseFont().
-				var font = gui.ParseOpt("text", "", "+s12 +Bold").fontstyles;
-				Assert.IsTrue(font.Contains("s12"), $"expected s12 in \"{font}\"");
-				Assert.IsTrue(font.Contains("Bold"), $"expected Bold in \"{font}\"");
-				Assert.IsFalse(font.Contains('+'), "font tokens must reach ParseFont() without their sign");
-			}
-			finally
-			{
-				_ = gui.Destroy();
-			}
-		}
-
-		[Test, Category("Gui")]
-#if WINDOWS
-		[Apartment(ApartmentState.STA)]
-#endif
-		public void EmptyHotkeyControl()
-		{
-			SkipIfUiInitializationBlocked("Reading a Hotkey control's value requires a constructed Gui.");
-			var gui = new Gui(System.Array.Empty<object>());
-			_ = gui.__New();
-
-			try
-			{
-				var hk = (Gui.Control)gui.Add("Hotkey", "w160");
-
-				// AHK reads the control with HKM_GETHOTKEY, which yields 0 while nothing is set; HotkeyToText()
-				// then produces "" because VK 0 has no key name. The control displays "None", but that string
-				// must never reach the script - callers test the value against "" to detect "no hotkey".
-				Assert.AreEqual("", hk.Value, "an empty Hotkey control's value must be blank, not \"None\"");
-				Assert.AreEqual("", hk.Text, "an empty Hotkey control's text must be blank, not \"None\"");
-
-				hk.Value = "^!a";
-				Assert.AreEqual("^!A", hk.Value);
-
-				// Assigning "" clears the control, and it reads back blank again rather than round-tripping
-				// the "None" it now displays.
-				hk.Value = "";
-				Assert.AreEqual("", hk.Value);
-
-				// AHK's TextToHotkey() maps any unparseable key name - including the displayed "None" - to 0,
-				// so assigning "None" clears the control too.
-				hk.Value = "^!a";
-				hk.Value = "None";
-				Assert.AreEqual("", hk.Value);
-			}
-			finally
-			{
-				_ = gui.Destroy();
-			}
-		}
-
-		[Test, Category("Gui")]
-#if WINDOWS
-		// Same STA apartment as Theme so the two share a per-test STA thread that is torn down afterward. Otherwise this
-		// test's message loop strands a SystemEvents (dark-mode/theming) subscription on the persistent runner thread,
-		// and Theme's Application.SetColorMode later deadlocks marshaling a synchronous notification back to it.
-		[Apartment(ApartmentState.STA)]
-#endif
-		public void MsgBox()
-		{
-			if (Script.IsHeadless)
-				Assert.Ignore("MsgBox requires an interactive desktop session.");
-#if LINUX
-			if (!Keysharp.Internals.Platform.Desktop.IsX11Available)
-				Assert.Ignore("Linux MsgBox automation currently requires X11-backed Eto windows.");
-#endif
-
-			var (cts, task) = StartMsgBoxAutoAccept();
-			KeysharpForm form = null;
-			try
-			{
-				form = CreateMsgBoxHostForm();
-				form.Shown += Form_Shown;
-				RunMsgBoxHost(form);
-			}
-			finally
-			{
-				form?.Close();
-				cts.Cancel();
-				task.Wait();
-			}
-
-			var timeoutForm = CreateMsgBoxHostForm();
-			timeoutForm.Shown += TimeoutForm_Shown;
-			RunMsgBoxHost(timeoutForm);
-		}
-
-		[Test, Category("Gui")]
-#if WINDOWS
-		[Apartment(ApartmentState.STA)]
-#endif
-		public void Theme()
-		{
-#if WINDOWS
-			var originalTheme = Ks.A_GuiTheme.ToString();
-
-			try
-			{
-				Ks.A_GuiTheme = "Dark";
-				Assert.AreEqual("Dark", Ks.A_GuiTheme);
-
-				Ks.A_GuiTheme = "System";
-				Assert.AreEqual("System", Ks.A_GuiTheme);
-
-				Ks.A_GuiTheme = "Classic";
-				Assert.AreEqual("Classic", Ks.A_GuiTheme);
-			}
-			finally
-			{
-				Ks.A_GuiTheme = originalTheme;
-			}
-#else
-			SkipIfUiInitializationBlocked("A_GuiTheme requires an Eto application.");
-			var originalTheme = Ks.A_GuiTheme.ToString();
-			var app = Application.Instance;
-			Assert.IsNotNull(app);
-			var originalEtoTheme = app.Theme;
-
-			try
-			{
-				Ks.A_GuiTheme = "Dark";
-				Assert.AreEqual("Dark", Ks.A_GuiTheme);
-				Assert.AreEqual(Themes.Dark, app.Theme);
-
-				Ks.A_GuiTheme = "System";
-				Assert.AreEqual("System", Ks.A_GuiTheme);
-				Assert.AreEqual(Themes.System, app.Theme);
-
-				Ks.A_GuiTheme = "Classic";
-				Assert.AreEqual("Classic", Ks.A_GuiTheme);
-				Assert.AreEqual(Themes.Light, app.Theme);
-			}
-			finally
-			{
-				Ks.A_GuiTheme = originalTheme;
-				s.InvokeOnUIThread(() => app.Theme = originalEtoTheme);
-			}
-#endif
-		}
 
 #if LINUX
-		[Test, Category("Gui")]
-		public void ThemeForegroundTransitions()
-		{
-			SkipIfUiInitializationBlocked("Theme colors require an Eto application.");
-			var originalTheme = Ks.A_GuiTheme;
-			var app = Application.Instance;
-			var originalEtoTheme = app.Theme;
-			string[] types = ["Text", "Button", "CheckBox", "Radio", "Edit", "GroupBox", "Link"];
-			Gui gui = null;
+	[Test, Category("Gui")]
+	public void GtkMenuOptions()
+	{
+		SkipIfUiInitializationBlocked("Test requires a live GTK application.");
+		var callback = new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => 0L));
+		var menu = new Keysharp.Builtins.Menu();
+		var menuBar = new Keysharp.Builtins.MenuBar();
+		var first = (ToolStripMenuItem)menu.Add("First", callback);
+		var second = (ToolStripMenuItem)menu.Add("Second", callback, "Radio BarBreak RTL");
+		_ = menu.Check("Second");
+		menu.MenuItem.Refresh();
 
-			try
-			{
-				s.InvokeOnUIThread(() =>
-				{
-					Ks.A_GuiTheme = "Classic";
-					gui = new Gui(System.Array.Empty<object>());
-					_ = gui.__New();
-					_ = gui.SetFont("s10", "Arial");
-					var controls = types.Select(type => (Gui.Control)gui.Add(type, "w200 h30", type)).ToArray();
-					var lightText = EtoExtensions.GetForeColor(controls[0].Ctrl);
-					var explicitBlack = (Gui.Control)gui.Add("Text", "cBlack", "Explicit black");
-					var pinnedByOpt = (Gui.Control)gui.Add("Text", null, "Fixed current color");
-					var pinnedColor = EtoExtensions.GetForeColor(pinnedByOpt.Ctrl);
-					_ = pinnedByOpt.Opt("c" + pinnedColor.ToHex(false));
-					_ = gui.SetFont("cRed");
-					var inheritedRed = (Gui.Control)gui.Add("Button", null, "Inherited red");
+		var nativeFirst = (Gtk.MenuItem)first.EtoItem.ControlObject;
+		var nativeSecond = (Gtk.CheckMenuItem)second.EtoItem.ControlObject;
+		var nativeMenu = (Gtk.Menu)menu.MenuItem.EtoMenu.ControlObject;
+		using var firstColumn = nativeMenu.ChildGetProperty(nativeFirst, "left-attach");
+		using var secondColumn = nativeMenu.ChildGetProperty(nativeSecond, "left-attach");
 
-					foreach (var theme in new[] { "Dark", "Classic" })
-					{
-						Ks.A_GuiTheme = theme;
-						app.RunIteration();
-						var comparison = new Gui(System.Array.Empty<object>());
-						_ = comparison.__New();
+		Assert.IsTrue(nativeSecond.DrawAsRadio);
+		Assert.AreEqual(Gtk.TextDirection.Rtl, nativeSecond.Direction);
+		//The label carries the direction as well, because that is what right-aligns the item's text.
+		Assert.AreEqual(Gtk.TextDirection.Rtl, nativeSecond.Child.Direction);
+		Assert.AreEqual(Gtk.TextDirection.Ltr, nativeFirst.Child.Direction);
+		//Columns must be adjacent: a spacer column would be as wide as a column of text.
+		Assert.AreEqual(0U, Convert.ToUInt32(firstColumn.Val));
+		Assert.AreEqual(1U, Convert.ToUInt32(secondColumn.Val));
+		//The BarBreak divider is a border on the column's own items rather than a widget of its own.
+		Assert.IsTrue(nativeSecond.StyleContext.HasClass(UnixMenuPresentation.BarBreakStyleClass));
+		Assert.IsFalse(nativeFirst.StyleContext.HasClass(UnixMenuPresentation.BarBreakStyleClass));
 
-						try
-						{
-							for (var i = 0; i < types.Length; i++)
-							{
-								var fresh = (Gui.Control)comparison.Add(types[i], "w200 h30", types[i]);
-								Assert.AreEqual(EtoExtensions.GetForeColor(fresh.Ctrl), EtoExtensions.GetForeColor(controls[i].Ctrl), $"{types[i]} follows {theme} after creation");
-							}
+		_ = menu.Add("Third", callback);
+		Assert.AreSame(nativeFirst, first.EtoItem.ControlObject);
+		_ = menu.Add("Second", callback, "-BarBreak");
+		using var clearedColumn = nativeMenu.ChildGetProperty(second.EtoItem.ControlObject as Gtk.Widget, "left-attach");
+		Assert.AreEqual(0U, Convert.ToUInt32(clearedColumn.Val));
+		Assert.AreSame(nativeFirst, first.EtoItem.ControlObject);
+		var sub = new Keysharp.Builtins.Menu();
+		var subItem = (ToolStripMenuItem)sub.Add("Child", callback);
+		_ = menu.Add("Host", sub);
+		var nativeChild = subItem.EtoItem;
+		_ = sub.Add("Another", callback);
+		Assert.AreSame(nativeChild, subItem.EtoItem);
 
-							if (theme == "Dark")
-								Assert.AreNotEqual(lightText, EtoExtensions.GetForeColor(controls[0].Ctrl), "the theme must change the text color");
+		var right = (ToolStripMenuItem)menuBar.Add("Right", callback, "Right");
+		var nativeRight = (Gtk.MenuItem)right.EtoItem.ControlObject;
+		Assert.IsTrue((bool)nativeRight.GetType().GetProperty("RightJustified").GetValue(nativeRight));
 
-							Assert.AreEqual(Colors.Black, EtoExtensions.GetForeColor(explicitBlack.Ctrl));
-							Assert.AreEqual(pinnedColor.ToHex(false), EtoExtensions.GetForeColor(pinnedByOpt.Ctrl).ToHex(false), "Opt must pin a color even when it matches the current theme");
-							Assert.AreEqual(Colors.Red, EtoExtensions.GetForeColor(inheritedRed.Ctrl));
-						}
-						finally
-						{
-							_ = comparison.Destroy();
-						}
-					}
-				});
-			}
-			finally
-			{
-				s.InvokeOnUIThread(() =>
-				{
-					_ = gui?.Destroy();
-					Ks.A_GuiTheme = originalTheme;
-					app.Theme = originalEtoTheme;
-				});
-			}
-		}
+		menu.MenuItem.Items.RemoveAt(0);
+		Assert.AreEqual(3, menu.MenuItem.EtoMenu.Items.Count);
+		_ = menu.Delete();
+		Assert.AreEqual(0, menu.MenuItem.EtoMenu.Items.Count);
+	}
 #endif
-
-#if WINDOWS
-		[Test, Category("Gui")]
-		[Apartment(ApartmentState.STA)]
-		public void ErrorDialogThemeColors()
-		{
-			var originalTheme = Ks.A_GuiTheme.ToString();
-
-			try
-			{
-				Ks.A_GuiTheme = "Dark";
-				using var dialog = new ErrorDialog(
-					$"Message: test{Environment.NewLine}What: test{Environment.NewLine}Stack:{Environment.NewLine}▶test",
-					allowContinue: true);
-				var mainPanel = (TableLayoutPanel)dialog.Controls[0];
-				var paddingPanel = (Panel)mainPanel.GetControlFromPosition(0, 0);
-				var richBox = (RichTextBox)paddingPanel.Controls[0];
-
-				Assert.AreEqual(SystemColors.Window.ToArgb(), paddingPanel.BackColor.ToArgb());
-				Assert.AreEqual(SystemColors.Window.ToArgb(), richBox.BackColor.ToArgb());
-				Assert.AreEqual(SystemColors.WindowText.ToArgb(), richBox.ForeColor.ToArgb());
-				Assert.AreNotEqual(richBox.BackColor.ToArgb(), richBox.ForeColor.ToArgb());
-				if (Application.IsDarkModeEnabled)
-					Assert.AreNotEqual(Color.White.ToArgb(), richBox.BackColor.ToArgb());
-
-				var marker = richBox.Text.IndexOf('▶');
-				Assert.GreaterOrEqual(marker, 0);
-				richBox.Select(marker, 1);
-				Assert.AreEqual(Color.Yellow.ToArgb(), richBox.SelectionBackColor.ToArgb());
-				Assert.AreEqual(Color.Black.ToArgb(), richBox.SelectionColor.ToArgb());
-			}
-			finally
-			{
-				Ks.A_GuiTheme = originalTheme;
-			}
-		}
-#endif
-
-		private void Form_Shown(object sender, EventArgs e)
-		{
-			var ret = Dialogs.MsgBox("ok, hand, def: 1", MsgBoxTitle, "0 16");
-			Assert.AreEqual(ret.ToUpper(), "OK");
-			ret = Dialogs.MsgBox("ok, hand, def: 1", MsgBoxTitle, 16);
-			Assert.AreEqual(ret.ToUpper(), "OK");
-			ret = Dialogs.MsgBox("ok-cancel, question, def: 2", MsgBoxTitle, "1 32 256");
-			Assert.AreEqual(ret, "Cancel");
-			ret = Dialogs.MsgBox("ok-cancel, question, def: 2", MsgBoxTitle, 1 | 32 | 256);
-			Assert.AreEqual(ret, "Cancel");
-			ret = Dialogs.MsgBox("yes-no-cancel, asterisk/info, def: 1", MsgBoxTitle, "3 64");
-			Assert.AreEqual(ret, "Yes");
-			ret = Dialogs.MsgBox("yes-no-cancel, asterisk/info, def: 1", MsgBoxTitle, 3 | 64);
-			Assert.AreEqual(ret, "Yes");
-			ret = Dialogs.MsgBox("yes-no, asterisk/info, def: 2", MsgBoxTitle, "4 64 256");
-			Assert.AreEqual(ret, "No");
-			ret = Dialogs.MsgBox("yes-no, asterisk/info, def: 2", MsgBoxTitle, 4 | 64 | 256);
-			Assert.AreEqual(ret, "No");
-#if WINDOWS
-			ret = Dialogs.MsgBox("abort-retry-ignore, exclamation, def: 3, just: right", MsgBoxTitle, "2 48 512 524288");
-			Assert.AreEqual(ret, "Ignore");
-			ret = Dialogs.MsgBox("abort-retry-ignore, exclamation, def: 3, just: right", MsgBoxTitle, 2 | 48 | 512 | 524288);
-			Assert.AreEqual(ret, "Ignore");
-			ret = Dialogs.MsgBox("retry-cancel, asterisk/info, def: 1", MsgBoxTitle, "5 64");
-			Assert.AreEqual(ret, "Retry");
-			ret = Dialogs.MsgBox("retry-cancel, asterisk/info, def: 1", MsgBoxTitle, 5 | 64);
-			Assert.AreEqual(ret, "Retry");
-			ret = Dialogs.MsgBox("cancel-try-continue, exclamation, def: 1", MsgBoxTitle, "0x36");
-			Assert.AreEqual(ret, "Cancel");
-#endif
-			(sender as Form)?.Close();
-		}
-
-		private static void TimeoutForm_Shown(object sender, EventArgs e)
-		{
-			var ret = Dialogs.MsgBox("ok, hand, def: 1, timeout: 0.2", MsgBoxTitle, "0 16 t0.2");
-			Assert.AreEqual("Timeout", ret);
-			(sender as Form)?.Close();
-		}
-
-		private static KeysharpForm CreateMsgBoxHostForm()
-		{
-#if WINDOWS
-			return new KeysharpForm
-			{
-				Size = new System.Drawing.Size(500, 500),
-				StartPosition = FormStartPosition.CenterScreen,
-				Text = "MessageBox holder",
-			};
-#else
-			return new KeysharpForm
-			{
-				Title = "MessageBox holder",
-				Size = new Size(500, 500),
-			};
-#endif
-		}
-
-		private static void RunMsgBoxHost(KeysharpForm form)
-		{
-#if WINDOWS
-			Application.Run(form);
-#else
-			var app = Application.Instance ?? new Application();
-			app.MainForm = form;
-			form.Show();
-
-			while (form.Visible)
-				app.RunIteration();
-
-			if (ReferenceEquals(app.MainForm, form))
-				app.MainForm = null;
-#endif
-		}
-
-		private static (CancellationTokenSource cts, Task task) StartMsgBoxAutoAccept()
-		{
-			var cts = new CancellationTokenSource();
-
-#if WINDOWS
-			var task = Task.Run(() =>
-			{
-				while (!cts.IsCancellationRequested)
-				{
-					var wnd = WindowsAPI.FindWindow(null, MsgBoxTitle);
-
-					if (wnd != 0)
-					{
-						_ = WindowsAPI.SetForegroundWindow(wnd);
-						SendKeys.SendWait(" ");
-
-						// Wait for this box to close rather than a fixed time, so the same one is not pressed twice.
-						// A keystroke that went nowhere is simply sent again once the wait gives up.
-						for (var i = 0; i < 60 && WindowsAPI.IsWindow(wnd); i++)
-							Thread.Sleep(5);
-					}
-					else
-						Thread.Sleep(10);
-				}
-			});
-#else
-			var responses = new ConcurrentQueue<string>(new[] { "OK", "OK", "Cancel", "Cancel", "Yes", "Yes", "No", "No" });
-			var task = Task.Run(() =>
-			{
-				while (!cts.IsCancellationRequested)
-				{
-					if (responses.TryPeek(out var response) && TryAcceptActiveMessageBox(response))
-						_ = responses.TryDequeue(out _);
-
-					Thread.Sleep(50);
-				}
-			});
-#endif
-
-			return (cts, task);
-		}
 
 #if !WINDOWS
-		private static bool TryAcceptActiveMessageBox(string expectedResult)
+	[TestCase(true), TestCase(false), Category("Gui")]
+	public void ListViewClickSelection(bool multiSelect)
+	{
+		SkipIfUiInitializationBlocked("ListView selection requires a live Eto application.");
+		s.InvokeOnUIThread(() =>
 		{
-#if LINUX
-			var accepted = false;
-			Application.Instance.Invoke(() =>
-			{
-				foreach (var window in Gtk.Window.ListToplevels())
-				{
-					if (window is not Gtk.MessageDialog dialog || !dialog.Visible || dialog.Title != MsgBoxTitle)
-						continue;
+			var gui = new Gui();
 
-					dialog.Respond(expectedResult switch
+			try
+			{
+				var list = (Gui.ListView)gui.Add("ListView", multiSelect ? "w200 h100" : "w200 h100 -Multi", new Keysharp.Builtins.Array("Name"));
+				_ = list.Add("Select", "First");
+				_ = list.Add("Select", "Second");
+				_ = list.Add("", "Third");
+				Assert.AreEqual(multiSelect ? 2L : 1L, list.GetCount("Selected"));
+				var grid = (KeysharpListView)list.Ctrl;
+				var column = ((GridView)grid).Columns[0];
+
+				foreach (var row in new[] { 2, 0, 0 })
+				{
+					list.Lv_CellClick(grid, new GridCellMouseEventArgs(column, row, 0, grid.Items[row], MouseButtons.Primary, Keys.None, PointF.Empty));
+					Assert.AreEqual(1L, list.GetCount("Selected"), "a plain click must replace the selection before native mouse tracking resumes");
+					Assert.AreEqual(row + 1L, list.GetNext());
+					Assert.AreEqual(row + 1L, list.GetNext(0L, "Focused"));
+				}
+			}
+			finally
+			{
+				_ = gui.Destroy();
+			}
+		});
+	}
+
+	[Test, Category("Gui")]
+	public void MainWindowVisibility()
+	{
+		SkipIfUiInitializationBlocked("Test requires a live Eto Application (macOS testhost cannot drive AppKit).");
+		var shown = false;
+		using var mainWindow = new Keysharp.Internals.UI.Unix.MainWindow(s);
+		mainWindow.Shown += (_, _) => shown = true;
+
+		mainWindow.InitializeHidden();
+
+		Assert.AreNotEqual(0, mainWindow.NativeHandle);
+		Assert.IsFalse(mainWindow.Visible);
+		Assert.IsFalse(shown);
+	}
+
+	[Test, Category("Gui")]
+	public void EtoWindowStyleBits()
+	{
+		SkipIfUiInitializationBlocked("Test requires a live Eto Application (macOS testhost cannot drive AppKit).");
+
+		using var form = new Eto.Forms.Form
+		{
+			WindowStyle = Eto.Forms.WindowStyle.Default,
+			Closeable = true,
+			Resizable = true,
+			Minimizable = true,
+			Maximizable = true
+		};
+		var style = EtoWindowStyles.ForWindow(form);
+
+		// A decorated, fully-featured window carries the frame bits scripts test for. It is deliberately
+		// NOT Eto's own WindowStyle enum value (Default is 0, None is 1), which collides meaninglessly
+		// with the WS_* constants.
+		Assert.AreEqual(EtoWindowStyles.WS_CAPTION, style & EtoWindowStyles.WS_CAPTION);
+		Assert.AreEqual(EtoWindowStyles.WS_SYSMENU, style & EtoWindowStyles.WS_SYSMENU);
+		Assert.AreEqual(EtoWindowStyles.WS_THICKFRAME, style & EtoWindowStyles.WS_THICKFRAME);
+		Assert.AreEqual(EtoWindowStyles.WS_MINIMIZEBOX, style & EtoWindowStyles.WS_MINIMIZEBOX);
+		Assert.AreEqual(EtoWindowStyles.WS_MAXIMIZEBOX, style & EtoWindowStyles.WS_MAXIMIZEBOX);
+		Assert.AreEqual(0L, style & EtoWindowStyles.WS_POPUP, "a decorated window is not a popup");
+		Assert.AreEqual(0L, style & EtoWindowStyles.WS_CHILD, "a top-level window is not a child");
+
+		// Clearing the toolkit properties clears exactly the matching bits.
+		form.Resizable = false;
+		form.Minimizable = false;
+		form.Maximizable = false;
+		form.Closeable = false;
+		style = EtoWindowStyles.ForWindow(form);
+		Assert.AreEqual(0L, style & EtoWindowStyles.WS_THICKFRAME);
+		Assert.AreEqual(0L, style & EtoWindowStyles.WS_MINIMIZEBOX);
+		Assert.AreEqual(0L, style & EtoWindowStyles.WS_MAXIMIZEBOX);
+		Assert.AreEqual(0L, style & EtoWindowStyles.WS_SYSMENU);
+
+		// Borderless is the closest thing to a bare WS_POPUP, and drops the caption bits.
+		form.WindowStyle = Eto.Forms.WindowStyle.None;
+		style = EtoWindowStyles.ForWindow(form);
+		Assert.AreEqual(EtoWindowStyles.WS_POPUP, style & EtoWindowStyles.WS_POPUP);
+		Assert.AreEqual(0L, style & EtoWindowStyles.WS_CAPTION);
+
+		// Child controls report WS_CHILD plus the visible/enabled state, and never frame bits.
+		using var button = new Eto.Forms.Button { Enabled = false };
+		var controlStyle = EtoWindowStyles.For(button);
+		Assert.AreEqual(EtoWindowStyles.WS_CHILD, controlStyle & EtoWindowStyles.WS_CHILD);
+		Assert.AreEqual(EtoWindowStyles.WS_DISABLED, controlStyle & EtoWindowStyles.WS_DISABLED);
+		Assert.AreEqual(0L, controlStyle & EtoWindowStyles.WS_CAPTION);
+	}
+#endif
+
+	[Test, Category("Gui")]
+#if WINDOWS
+	[Apartment(ApartmentState.STA)]
+#endif
+	public void ControlOptionSigns()
+	{
+		SkipIfUiInitializationBlocked("Parsing control options requires a constructed Gui.");
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+
+		try
+		{
+			// "In the absence of a preceding sign, a plus sign is assumed; for example, Wrap is the same as
+			// +Wrap. By contrast, -Wrap would remove the word-wrapping property." An unrecognized token throws,
+			// so merely reaching the assertion proves the signed spellings are accepted.
+			Assert.AreEqual(Gui.GuiOptions.HorizontalAlignment.Center, gui.ParseOpt("text", "", "Center").halign);
+			Assert.AreEqual(Gui.GuiOptions.HorizontalAlignment.Center, gui.ParseOpt("text", "", "+Center").halign);
+			Assert.AreEqual(Gui.GuiOptions.HorizontalAlignment.Left, gui.ParseOpt("text", "", "-Center").halign);
+			Assert.AreEqual(Gui.GuiOptions.VerticalAlignment.Middle, gui.ParseOpt("text", "", "+Middle").valign);
+
+			Assert.AreEqual(true, gui.ParseOpt("edit", "", "Wrap").wordwrap);
+			Assert.AreEqual(true, gui.ParseOpt("edit", "", "+Wrap").wordwrap);
+			Assert.AreEqual(false, gui.ParseOpt("edit", "", "-Wrap").wordwrap);
+			Assert.AreEqual(false, gui.ParseOpt("edit", "", "-Tabstop").tabstop);
+			Assert.AreEqual(true, gui.ParseOpt("edit", "", "+ReadOnly").rdonly);
+			// AHK compares "Multi" exactly, so a signed spelling has to survive but "Multiline" is not an option.
+			Assert.AreEqual(true, gui.ParseOpt("edit", "", "xc+10 y+20 h400 w500 +Multi").multiline);
+
+			// Hidden/Disabled additionally accept a trailing 1/0, which inverts the sign.
+			Assert.AreEqual(false, gui.ParseOpt("edit", "", "Hidden").visible);
+			Assert.AreEqual(true, gui.ParseOpt("edit", "", "Hidden0").visible);
+			Assert.AreEqual(true, gui.ParseOpt("edit", "", "-Hidden").visible);
+			Assert.AreEqual(false, gui.ParseOpt("edit", "", "+Disabled").enabled);
+			Assert.AreEqual(true, gui.ParseOpt("edit", "", "Disabled0").enabled);
+
+			Assert.AreEqual(1, gui.ParseOpt("checkbox", "", "Checked").ischecked);
+			Assert.AreEqual(0, gui.ParseOpt("checkbox", "", "-Checked").ischecked);
+			Assert.AreEqual(-1, gui.ParseOpt("checkbox", "", "Checked-1").ischecked);
+			Assert.AreEqual(-1, gui.ParseOpt("checkbox", "", "CheckedGray").ischecked);
+
+			// A word option must not be swallowed by a single-letter option that shares its first letter.
+			var vscroll = gui.ParseOpt("listbox", "", "+VScroll");
+			Assert.AreEqual(true, vscroll.vscroll);
+			Assert.IsNull(vscroll.name, "VScroll must not be read as the name \"Scroll\"");
+			Assert.AreEqual("MyEdit", gui.ParseOpt("edit", "", "vMyEdit").name);
+			Assert.AreEqual(true, gui.ParseOpt("listview", "", "SortDesc").sortdesc);
+			Assert.IsNull(gui.ParseOpt("listview", "", "SortDesc").sort, "SortDesc must not be read as Sort");
+
+			// Icon selects the view for a ListView but the icon index for a Picture.
+			Assert.AreEqual(View.SmallIcon, gui.ParseOpt("listview", "", "IconSmall").lvview);
+			Assert.AreEqual(View.LargeIcon, gui.ParseOpt("listview", "", "Icon").lvview);
+			Assert.AreEqual(1L, gui.ParseOpt("picture", "", "Icon2").iconnumber, "the 1-based icon index is stored 0-based");
+
+			// The sign decides whether a raw style number is added or removed.
+			Assert.AreEqual(0x40000, gui.ParseOpt("edit", "", "0x40000").addstyle);
+			Assert.AreEqual(0x40000, gui.ParseOpt("edit", "", "+0x40000").addstyle);
+			Assert.AreEqual(0x40000, gui.ParseOpt("edit", "", "-0x40000").remstyle);
+			Assert.AreEqual(0x200, gui.ParseOpt("edit", "", "E0x200").addexstyle);
+			Assert.AreEqual(0x200, gui.ParseOpt("edit", "", "-E0x200").remexstyle);
+			// Styles accumulate rather than overwriting each other.
+			Assert.AreEqual(0x40000 | 0x100, gui.ParseOpt("edit", "", "0x40000 0x100").addstyle);
+
+			// Type-specific numeric options only apply to their own control type, and are matched by content
+			// rather than by span identity, so they still work in the middle of an option string.
+			Assert.IsTrue(gui.ParseOpt("datetime", "", "x0 1").dtopt1);
+			Assert.IsTrue(gui.ParseOpt("monthcal", "", "x0 4").opt4);
+			Assert.AreEqual(4, gui.ParseOpt("edit", "", "4").addstyle, "a bare number is a style for other types");
+			// GuiControl.Opt() passes the type name as the script spelled it.
+			Assert.IsTrue(gui.ParseOpt("DateTime", "", "2").dtopt2);
+
+			// Applying an alignment must cope with control types that have no TextAlign at all: a Slider reads
+			// halign as its tick placement instead, and a ProgressBar has no notion of alignment.
+			var slider = (Gui.Control)gui.Add("Slider", "w100 +Center Page20 Line10 NoTicks AltSubmit");
+			_ = gui.Add("Progress", "w100 +Center");
+#if WINDOWS
+			Assert.AreEqual(TickStyle.Both, ((TrackBar)slider.Ctrl).TickStyle, "+Center places a slider's ticks on both sides");
+			// Edit-like controls spell TextAlign with the horizontal-only enum.
+			Assert.AreEqual(System.Windows.Forms.HorizontalAlignment.Center, ((TextBox)((Gui.Control)gui.Add("Edit", "w100 +Center")).Ctrl).TextAlign);
+			Assert.AreEqual(ContentAlignment.MiddleCenter, ((Label)((Gui.Control)gui.Add("Text", "w100 Center Middle")).Ctrl).TextAlign);
+#endif
+
+			// The sign is stripped before the font tokens are handed to ParseFont().
+			var font = gui.ParseOpt("text", "", "+s12 +Bold").fontstyles;
+			Assert.IsTrue(font.Contains("s12"), $"expected s12 in \"{font}\"");
+			Assert.IsTrue(font.Contains("Bold"), $"expected Bold in \"{font}\"");
+			Assert.IsFalse(font.Contains('+'), "font tokens must reach ParseFont() without their sign");
+		}
+		finally
+		{
+			_ = gui.Destroy();
+		}
+	}
+
+	[Test, Category("Gui")]
+#if WINDOWS
+	[Apartment(ApartmentState.STA)]
+#endif
+	public void EmptyHotkeyControl()
+	{
+		SkipIfUiInitializationBlocked("Reading a Hotkey control's value requires a constructed Gui.");
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+
+		try
+		{
+			var hk = (Gui.Control)gui.Add("Hotkey", "w160");
+
+			// AHK reads the control with HKM_GETHOTKEY, which yields 0 while nothing is set; HotkeyToText()
+			// then produces "" because VK 0 has no key name. The control displays "None", but that string
+			// must never reach the script - callers test the value against "" to detect "no hotkey".
+			Assert.AreEqual("", hk.Value, "an empty Hotkey control's value must be blank, not \"None\"");
+			Assert.AreEqual("", hk.Text, "an empty Hotkey control's text must be blank, not \"None\"");
+
+			hk.Value = "^!a";
+			Assert.AreEqual("^!A", hk.Value);
+
+			// Assigning "" clears the control, and it reads back blank again rather than round-tripping
+			// the "None" it now displays.
+			hk.Value = "";
+			Assert.AreEqual("", hk.Value);
+
+			// AHK's TextToHotkey() maps any unparseable key name - including the displayed "None" - to 0,
+			// so assigning "None" clears the control too.
+			hk.Value = "^!a";
+			hk.Value = "None";
+			Assert.AreEqual("", hk.Value);
+		}
+		finally
+		{
+			_ = gui.Destroy();
+		}
+	}
+
+	[Test, Category("Gui")]
+#if WINDOWS
+	// Same STA apartment as Theme so the two share a per-test STA thread that is torn down afterward. Otherwise this
+	// test's message loop strands a SystemEvents (dark-mode/theming) subscription on the persistent runner thread,
+	// and Theme's Application.SetColorMode later deadlocks marshaling a synchronous notification back to it.
+	[Apartment(ApartmentState.STA)]
+#endif
+	public void MsgBox()
+	{
+		if (Script.IsHeadless)
+			Assert.Ignore("MsgBox requires an interactive desktop session.");
+#if LINUX
+		if (!Keysharp.Internals.Platform.Desktop.IsX11Available)
+			Assert.Ignore("Linux MsgBox automation currently requires X11-backed Eto windows.");
+#endif
+
+		var (cts, task) = StartMsgBoxAutoAccept();
+		KeysharpForm form = null;
+		try
+		{
+			form = CreateMsgBoxHostForm();
+			form.Shown += Form_Shown;
+			RunMsgBoxHost(form);
+		}
+		finally
+		{
+			form?.Close();
+			cts.Cancel();
+			task.Wait();
+		}
+
+		var timeoutForm = CreateMsgBoxHostForm();
+		timeoutForm.Shown += TimeoutForm_Shown;
+		RunMsgBoxHost(timeoutForm);
+	}
+
+	[Test, Category("Gui")]
+#if WINDOWS
+	[Apartment(ApartmentState.STA)]
+#endif
+	public void Theme()
+	{
+#if WINDOWS
+		var originalTheme = Ks.A_GuiTheme.ToString();
+
+		try
+		{
+			Ks.A_GuiTheme = "Dark";
+			Assert.AreEqual("Dark", Ks.A_GuiTheme);
+
+			Ks.A_GuiTheme = "System";
+			Assert.AreEqual("System", Ks.A_GuiTheme);
+
+			Ks.A_GuiTheme = "Classic";
+			Assert.AreEqual("Classic", Ks.A_GuiTheme);
+		}
+		finally
+		{
+			Ks.A_GuiTheme = originalTheme;
+		}
+#else
+		SkipIfUiInitializationBlocked("A_GuiTheme requires an Eto application.");
+		var originalTheme = Ks.A_GuiTheme.ToString();
+		var app = Application.Instance;
+		Assert.IsNotNull(app);
+		var originalEtoTheme = app.Theme;
+
+		try
+		{
+			Ks.A_GuiTheme = "Dark";
+			Assert.AreEqual("Dark", Ks.A_GuiTheme);
+			Assert.AreEqual(Themes.Dark, app.Theme);
+
+			Ks.A_GuiTheme = "System";
+			Assert.AreEqual("System", Ks.A_GuiTheme);
+			Assert.AreEqual(Themes.System, app.Theme);
+
+			Ks.A_GuiTheme = "Classic";
+			Assert.AreEqual("Classic", Ks.A_GuiTheme);
+			Assert.AreEqual(Themes.Light, app.Theme);
+		}
+		finally
+		{
+			Ks.A_GuiTheme = originalTheme;
+			s.InvokeOnUIThread(() => app.Theme = originalEtoTheme);
+		}
+#endif
+	}
+
+#if LINUX
+	[Test, Category("Gui")]
+	public void ThemeForegroundTransitions()
+	{
+		SkipIfUiInitializationBlocked("Theme colors require an Eto application.");
+		var originalTheme = Ks.A_GuiTheme;
+		var app = Application.Instance;
+		var originalEtoTheme = app.Theme;
+		string[] types = ["Text", "Button", "CheckBox", "Radio", "Edit", "GroupBox", "Link"];
+		Gui gui = null;
+
+		try
+		{
+			s.InvokeOnUIThread(() =>
+			{
+				Ks.A_GuiTheme = "Classic";
+				gui = new Gui(System.Array.Empty<object>());
+				_ = gui.__New();
+				_ = gui.SetFont("s10", "Arial");
+				var controls = types.Select(type => (Gui.Control)gui.Add(type, "w200 h30", type)).ToArray();
+				var lightText = EtoExtensions.GetForeColor(controls[0].Ctrl);
+				var explicitBlack = (Gui.Control)gui.Add("Text", "cBlack", "Explicit black");
+				var pinnedByOpt = (Gui.Control)gui.Add("Text", null, "Fixed current color");
+				var pinnedColor = EtoExtensions.GetForeColor(pinnedByOpt.Ctrl);
+				_ = pinnedByOpt.Opt("c" + pinnedColor.ToHex(false));
+				_ = gui.SetFont("cRed");
+				var inheritedRed = (Gui.Control)gui.Add("Button", null, "Inherited red");
+
+				foreach (var theme in new[] { "Dark", "Classic" })
+				{
+					Ks.A_GuiTheme = theme;
+					app.RunIteration();
+					var comparison = new Gui(System.Array.Empty<object>());
+					_ = comparison.__New();
+
+					try
 					{
-						"OK" => (int)Gtk.ResponseType.Ok,
-						"Cancel" => (int)Gtk.ResponseType.Cancel,
-						"Yes" => (int)Gtk.ResponseType.Yes,
-						"No" => (int)Gtk.ResponseType.No,
-						_ => (int)Gtk.ResponseType.None
-					});
+						for (var i = 0; i < types.Length; i++)
+						{
+							var fresh = (Gui.Control)comparison.Add(types[i], "w200 h30", types[i]);
+							Assert.AreEqual(EtoExtensions.GetForeColor(fresh.Ctrl), EtoExtensions.GetForeColor(controls[i].Ctrl), $"{types[i]} follows {theme} after creation");
+						}
+
+						if (theme == "Dark")
+							Assert.AreNotEqual(lightText, EtoExtensions.GetForeColor(controls[0].Ctrl), "the theme must change the text color");
+
+						Assert.AreEqual(Colors.Black, EtoExtensions.GetForeColor(explicitBlack.Ctrl));
+						Assert.AreEqual(pinnedColor.ToHex(false), EtoExtensions.GetForeColor(pinnedByOpt.Ctrl).ToHex(false), "Opt must pin a color even when it matches the current theme");
+						Assert.AreEqual(Colors.Red, EtoExtensions.GetForeColor(inheritedRed.Ctrl));
+					}
+					finally
+					{
+						_ = comparison.Destroy();
+					}
+				}
+			});
+		}
+		finally
+		{
+			s.InvokeOnUIThread(() =>
+			{
+				_ = gui?.Destroy();
+				Ks.A_GuiTheme = originalTheme;
+				app.Theme = originalEtoTheme;
+			});
+		}
+	}
+#endif
+
+#if WINDOWS
+	[Test, Category("Gui")]
+	[Apartment(ApartmentState.STA)]
+	public void ErrorDialogThemeColors()
+	{
+		var originalTheme = Ks.A_GuiTheme.ToString();
+
+		try
+		{
+			Ks.A_GuiTheme = "Dark";
+			using var dialog = new ErrorDialog(
+				$"Message: test{Environment.NewLine}What: test{Environment.NewLine}Stack:{Environment.NewLine}▶test",
+				allowContinue: true);
+			var mainPanel = (TableLayoutPanel)dialog.Controls[0];
+			var paddingPanel = (Panel)mainPanel.GetControlFromPosition(0, 0);
+			var richBox = (RichTextBox)paddingPanel.Controls[0];
+
+			Assert.AreEqual(SystemColors.Window.ToArgb(), paddingPanel.BackColor.ToArgb());
+			Assert.AreEqual(SystemColors.Window.ToArgb(), richBox.BackColor.ToArgb());
+			Assert.AreEqual(SystemColors.WindowText.ToArgb(), richBox.ForeColor.ToArgb());
+			Assert.AreNotEqual(richBox.BackColor.ToArgb(), richBox.ForeColor.ToArgb());
+			if (Application.IsDarkModeEnabled)
+				Assert.AreNotEqual(Color.White.ToArgb(), richBox.BackColor.ToArgb());
+
+			var marker = richBox.Text.IndexOf('▶');
+			Assert.GreaterOrEqual(marker, 0);
+			richBox.Select(marker, 1);
+			Assert.AreEqual(Color.Yellow.ToArgb(), richBox.SelectionBackColor.ToArgb());
+			Assert.AreEqual(Color.Black.ToArgb(), richBox.SelectionColor.ToArgb());
+		}
+		finally
+		{
+			Ks.A_GuiTheme = originalTheme;
+		}
+	}
+#endif
+
+	private void Form_Shown(object sender, EventArgs e)
+	{
+		var ret = Dialogs.MsgBox("ok, hand, def: 1", MsgBoxTitle, "0 16");
+		Assert.AreEqual(ret.ToUpper(), "OK");
+		ret = Dialogs.MsgBox("ok, hand, def: 1", MsgBoxTitle, 16);
+		Assert.AreEqual(ret.ToUpper(), "OK");
+		ret = Dialogs.MsgBox("ok-cancel, question, def: 2", MsgBoxTitle, "1 32 256");
+		Assert.AreEqual(ret, "Cancel");
+		ret = Dialogs.MsgBox("ok-cancel, question, def: 2", MsgBoxTitle, 1 | 32 | 256);
+		Assert.AreEqual(ret, "Cancel");
+		ret = Dialogs.MsgBox("yes-no-cancel, asterisk/info, def: 1", MsgBoxTitle, "3 64");
+		Assert.AreEqual(ret, "Yes");
+		ret = Dialogs.MsgBox("yes-no-cancel, asterisk/info, def: 1", MsgBoxTitle, 3 | 64);
+		Assert.AreEqual(ret, "Yes");
+		ret = Dialogs.MsgBox("yes-no, asterisk/info, def: 2", MsgBoxTitle, "4 64 256");
+		Assert.AreEqual(ret, "No");
+		ret = Dialogs.MsgBox("yes-no, asterisk/info, def: 2", MsgBoxTitle, 4 | 64 | 256);
+		Assert.AreEqual(ret, "No");
+#if WINDOWS
+		ret = Dialogs.MsgBox("abort-retry-ignore, exclamation, def: 3, just: right", MsgBoxTitle, "2 48 512 524288");
+		Assert.AreEqual(ret, "Ignore");
+		ret = Dialogs.MsgBox("abort-retry-ignore, exclamation, def: 3, just: right", MsgBoxTitle, 2 | 48 | 512 | 524288);
+		Assert.AreEqual(ret, "Ignore");
+		ret = Dialogs.MsgBox("retry-cancel, asterisk/info, def: 1", MsgBoxTitle, "5 64");
+		Assert.AreEqual(ret, "Retry");
+		ret = Dialogs.MsgBox("retry-cancel, asterisk/info, def: 1", MsgBoxTitle, 5 | 64);
+		Assert.AreEqual(ret, "Retry");
+		ret = Dialogs.MsgBox("cancel-try-continue, exclamation, def: 1", MsgBoxTitle, "0x36");
+		Assert.AreEqual(ret, "Cancel");
+#endif
+		(sender as Form)?.Close();
+	}
+
+	private static void TimeoutForm_Shown(object sender, EventArgs e)
+	{
+		var ret = Dialogs.MsgBox("ok, hand, def: 1, timeout: 0.2", MsgBoxTitle, "0 16 t0.2");
+		Assert.AreEqual("Timeout", ret);
+		(sender as Form)?.Close();
+	}
+
+	private static KeysharpForm CreateMsgBoxHostForm()
+	{
+#if WINDOWS
+		return new KeysharpForm
+		{
+			Size = new System.Drawing.Size(500, 500),
+			StartPosition = FormStartPosition.CenterScreen,
+			Text = "MessageBox holder",
+		};
+#else
+		return new KeysharpForm
+		{
+			Title = "MessageBox holder",
+			Size = new Size(500, 500),
+		};
+#endif
+	}
+
+	private static void RunMsgBoxHost(KeysharpForm form)
+	{
+#if WINDOWS
+		Application.Run(form);
+#else
+		var app = Application.Instance ?? new Application();
+		app.MainForm = form;
+		form.Show();
+
+		while (form.Visible)
+			app.RunIteration();
+
+		if (ReferenceEquals(app.MainForm, form))
+			app.MainForm = null;
+#endif
+	}
+
+	private static (CancellationTokenSource cts, Task task) StartMsgBoxAutoAccept()
+	{
+		var cts = new CancellationTokenSource();
+
+#if WINDOWS
+		var task = Task.Run(() =>
+		{
+			while (!cts.IsCancellationRequested)
+			{
+				var wnd = WindowsAPI.FindWindow(null, MsgBoxTitle);
+
+				if (wnd != 0)
+				{
+					_ = WindowsAPI.SetForegroundWindow(wnd);
+					SendKeys.SendWait(" ");
+
+					// Wait for this box to close rather than a fixed time, so the same one is not pressed twice.
+					// A keystroke that went nowhere is simply sent again once the wait gives up.
+					for (var i = 0; i < 60 && WindowsAPI.IsWindow(wnd); i++)
+						Thread.Sleep(5);
+				}
+				else
+					Thread.Sleep(10);
+			}
+		});
+#else
+		var responses = new ConcurrentQueue<string>(new[] { "OK", "OK", "Cancel", "Cancel", "Yes", "Yes", "No", "No" });
+		var task = Task.Run(() =>
+		{
+			while (!cts.IsCancellationRequested)
+			{
+				if (responses.TryPeek(out var response) && TryAcceptActiveMessageBox(response))
+					_ = responses.TryDequeue(out _);
+
+				Thread.Sleep(50);
+			}
+		});
+#endif
+
+		return (cts, task);
+	}
+
+#if !WINDOWS
+	private static bool TryAcceptActiveMessageBox(string expectedResult)
+	{
+#if LINUX
+		var accepted = false;
+		Application.Instance.Invoke(() =>
+		{
+			foreach (var window in Gtk.Window.ListToplevels())
+			{
+				if (window is not Gtk.MessageDialog dialog || !dialog.Visible || dialog.Title != MsgBoxTitle)
+					continue;
+
+				dialog.Respond(expectedResult switch
+				{
+					"OK" => (int)Gtk.ResponseType.Ok,
+					"Cancel" => (int)Gtk.ResponseType.Cancel,
+					"Yes" => (int)Gtk.ResponseType.Yes,
+					"No" => (int)Gtk.ResponseType.No,
+					_ => (int)Gtk.ResponseType.None
+				});
+				accepted = true;
+				break;
+			}
+		});
+		return accepted;
+#elif OSX
+		var accepted = false;
+		Application.Instance.Invoke(() =>
+		{
+			foreach (var window in AppKit.NSApplication.SharedApplication.Windows)
+			{
+				if (window?.IsVisible != true || window.Title != MsgBoxTitle)
+					continue;
+
+				if (TryClickMacButton(window, expectedResult))
+				{
 					accepted = true;
 					break;
 				}
-			});
-			return accepted;
-#elif OSX
-			var accepted = false;
-			Application.Instance.Invoke(() =>
-			{
-				foreach (var window in AppKit.NSApplication.SharedApplication.Windows)
-				{
-					if (window?.IsVisible != true || window.Title != MsgBoxTitle)
-						continue;
-
-					if (TryClickMacButton(window, expectedResult))
-					{
-						accepted = true;
-						break;
-					}
-				}
-			});
-			return accepted;
+			}
+		});
+		return accepted;
 #else
-			return false;
-#endif
-		}
-
-#if OSX
-		private static bool TryClickMacButton(AppKit.NSWindow window, string expectedResult)
-		{
-			return window.ContentView != null && TryClickMacButton(window.ContentView, expectedResult);
-		}
-
-		private static bool TryClickMacButton(AppKit.NSView view, string expectedResult)
-		{
-			if (view is AppKit.NSButton button && string.Equals(button.Title, expectedResult, StringComparison.OrdinalIgnoreCase))
-			{
-				button.PerformClick(null);
-				return true;
-			}
-
-			foreach (var subview in view.Subviews)
-			{
-				if (TryClickMacButton(subview, expectedResult))
-					return true;
-			}
-
-			return false;
-		}
-#endif
+		return false;
 #endif
 	}
+
+#if OSX
+	private static bool TryClickMacButton(AppKit.NSWindow window, string expectedResult)
+	{
+		return window.ContentView != null && TryClickMacButton(window.ContentView, expectedResult);
+	}
+
+	private static bool TryClickMacButton(AppKit.NSView view, string expectedResult)
+	{
+		if (view is AppKit.NSButton button && string.Equals(button.Title, expectedResult, StringComparison.OrdinalIgnoreCase))
+		{
+			button.PerformClick(null);
+			return true;
+		}
+
+		foreach (var subview in view.Subviews)
+		{
+			if (TryClickMacButton(subview, expectedResult))
+				return true;
+		}
+
+		return false;
+	}
+#endif
+#endif
 }

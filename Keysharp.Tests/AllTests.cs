@@ -1,11 +1,10 @@
-﻿namespace Keysharp.Tests
+﻿namespace Keysharp.Tests;
+
+[SetUpFixture]
+public class GlobalSetup
 {
-	[SetUpFixture]
-	public class GlobalSetup
+	[OneTimeSetUp]
+	public void RunBeforeAnyTests()
 	{
-		[OneTimeSetUp]
-		public void RunBeforeAnyTests()
-		{
-		}
 	}
 }
