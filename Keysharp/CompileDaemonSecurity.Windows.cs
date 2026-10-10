@@ -1,16 +1,4 @@
 #if WINDOWS
-using System;
-using System.Diagnostics;
-using System.IO;
-using System.IO.Pipes;
-using System.Linq;
-using System.Reflection;
-using System.Runtime.InteropServices;
-using System.Security.Principal;
-using System.Text;
-using Keysharp.Builtins;
-using Keysharp.Internals.Os.Windows;
-using Microsoft.Win32.SafeHandles;
 
 namespace Keysharp.Main;
 
@@ -72,7 +60,7 @@ internal static class CompileDaemonSecurity
 		}
 		finally
 		{
-			LocalFree(arguments);
+			_ = LocalFree(arguments);
 		}
 	}
 
@@ -155,8 +143,8 @@ internal static class CompileDaemonSecurity
 			if (!CreateProcessWithTokenW(token, 0, startInfo.FileName, commandLine, CreateNoWindow | CreateUnicodeEnvironment,
 				(nint)environment, startInfo.WorkingDirectory, ref startup, out var process))
 				return false;
-			WindowsAPI.CloseHandle(process.Thread);
-			WindowsAPI.CloseHandle(process.Process);
+			_ = WindowsAPI.CloseHandle(process.Thread);
+			_ = WindowsAPI.CloseHandle(process.Process);
 			return true;
 		}
 	}
