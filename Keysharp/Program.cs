@@ -342,8 +342,13 @@ public static class Program
 		return Environment.ExitCode;
 	}
 
-	// --validate stops here. The load stays part of the check - bytes the runtime refuses are still a failed
-	// compile - as it is in Runner.CompileAndMaybeRun.
+	/// <summary>
+	/// Validate stops here. The load stays part of the check - bytes the runtime refuses are still a failed
+	/// compile - as it is in Runner.CompileAndMaybeRun.
+	/// </summary>
+	/// <param name="arr"></param>
+	/// <param name="command"></param>
+	/// <returns></returns>
 	private static int LoadCompiledBytes(byte[] arr, CliCommand command)
 	{
 		try
