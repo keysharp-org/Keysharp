@@ -1,5 +1,3 @@
-using static Keysharp.Runtime.Script;
-
 namespace Keysharp.Benchmark;
 
 public class MapReadBenchmark : BaseTest
@@ -68,15 +66,6 @@ public class MapWriteBenchmark : BaseTest
 	}
 
 	[Benchmark]
-	public void MapWrite()
-	{
-		_ = map.Clear();
-
-		for (var i = 0; i < Size; i++)
-			map[strings[i]] = i;
-	}
-
-	[Benchmark]
 	public void MapScriptSetObjectWrite()
 	{
 		_ = mapScript!.Clear();
@@ -85,6 +74,14 @@ public class MapWriteBenchmark : BaseTest
 			_ = SetObject(mapScript, i, strings[i]);
 	}
 
+	[Benchmark]
+	public void MapWrite()
+	{
+		_ = map.Clear();
+
+		for (var i = 0; i < Size; i++)
+			map[strings[i]] = i;
+	}
 	[Benchmark(Baseline = true)]
 	public void NativeDictionaryWrite()
 	{

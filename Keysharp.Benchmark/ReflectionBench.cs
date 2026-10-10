@@ -137,6 +137,8 @@ internal sealed class ReflectionBenchState
 		ArgsN10 = [1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L, 9L, 10L];
 	}
 
+#pragma warning disable IDE0060 // Remove unused parameter
+
 	public sealed class Target
 	{
 		public long Method0() => 0L;
@@ -145,16 +147,17 @@ internal sealed class ReflectionBenchState
 
 		public long Method10(long a, long b, long c, long d, long e,
 							long f, long g, long h, long i, long j)
-			=> a + b + c + d + e + f + g + h + i + j;
+			=> a;
 
-		public long Method5(long a, long b, long c, long d, long e) => a + b + c + d + e;
+		public long Method5(long a, long b, long c, long d, long e) => a;
 
 		public object ObjMethod1(object a) => a;
 
 		public object ObjMethod10(object a, object b, object c, object d, object e,
 								  object f, object g, object h, object i, object j)
-			=> j;
+			=> a;
 
-		public object ObjMethod5(object a, object b, object c, object d, object e) => e;
+		public object ObjMethod5(object a, object b, object c, object d, object e) => a;
 	}
+#pragma warning restore IDE0060 // Remove unused parameter
 }

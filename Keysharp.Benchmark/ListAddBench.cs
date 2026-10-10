@@ -1,5 +1,3 @@
-using static Keysharp.Runtime.Script;
-
 namespace Keysharp.Benchmark;
 
 public class ListAddBench : BaseTest

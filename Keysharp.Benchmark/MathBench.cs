@@ -2,10 +2,10 @@
 
 public class MathBench : BaseTest
 {
-	private double totalCos;
 	private KeysharpFunc? fo;
-	private List<double> vals = [];
 	private List<object> objvals = [];
+	private double totalCos;
+	private List<double> vals = [];
 
 	[Params(500000)]
 	public int Size { get; set; }

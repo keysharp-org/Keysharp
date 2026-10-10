@@ -12,37 +12,12 @@ public class HexBench : BaseTest
 	[Params(100000)]
 	public int Size { get; set; }
 
-	[GlobalSetup]
-	public void Setup() => _array = Enumerable.Range(0, Size).Select(i => (byte)i).ToArray();
-
-	public static string ToHexWithStringBuilder(byte[] bytes)
-	{
-		var hex = new StringBuilder(bytes.Length * 2);
-
-		foreach (var b in bytes)
-			_ = hex.Append(b.ToString("X2"));
-
-		return hex.ToString();
-	}
+	public static string ConvertToHexString(byte[] bytes) => Convert.ToHexString(bytes);
 
 	public static string ToHexWithBitConverter(byte[] bytes)
 	{
 		var hex = BitConverter.ToString(bytes);
 		return hex.Replace("-", "");
-	}
-
-	public static string ToHexWithLookupAndShift(byte[] bytes)
-	{
-		const string hexAlphabet = "0123456789ABCDEF";
-		var result = new StringBuilder(bytes.Length * 2);
-
-		foreach (var b in bytes)
-		{
-			_ = result.Append(hexAlphabet[b >> 4]);
-			_ = result.Append(hexAlphabet[b & 0xF]);
-		}
-
-		return result.ToString();
 	}
 
 	public static string ToHexWithByteManipulation(byte[] bytes)
@@ -61,21 +36,45 @@ public class HexBench : BaseTest
 		return new string(c);
 	}
 
-	public static string ConvertToHexString(byte[] bytes) => Convert.ToHexString(bytes);
+	public static string ToHexWithLookupAndShift(byte[] bytes)
+	{
+		const string hexAlphabet = "0123456789ABCDEF";
+		var result = new StringBuilder(bytes.Length * 2);
 
-	[Benchmark(Baseline = true)]
-	public string ToHexWithStringBuilder() => ToHexWithStringBuilder(_array);
+		foreach (var b in bytes)
+		{
+			_ = result.Append(hexAlphabet[b >> 4]);
+			_ = result.Append(hexAlphabet[b & 0xF]);
+		}
+
+		return result.ToString();
+	}
+
+	public static string ToHexWithStringBuilder(byte[] bytes)
+	{
+		var hex = new StringBuilder(bytes.Length * 2);
+
+		foreach (var b in bytes)
+			_ = hex.Append(b.ToString("X2"));
+
+		return hex.ToString();
+	}
+
+	[Benchmark]
+	public string ConvertToHexString() => ConvertToHexString(_array);
+
+	[GlobalSetup]
+	public void Setup() => _array = Enumerable.Range(0, Size).Select(i => (byte)i).ToArray();
 
 	[Benchmark]
 	public string ToHexWithBitConverter() => ToHexWithBitConverter(_array);
 
 	[Benchmark]
-	public string ToHexWithLookupAndShift() => ToHexWithLookupAndShift(_array);
-
-	[Benchmark]
 	public string ToHexWithByteManipulation() => ToHexWithByteManipulation(_array);
 
 	[Benchmark]
-	public string ConvertToHexString() => ConvertToHexString(_array);
+	public string ToHexWithLookupAndShift() => ToHexWithLookupAndShift(_array);
 
+	[Benchmark(Baseline = true)]
+	public string ToHexWithStringBuilder() => ToHexWithStringBuilder(_array);
 }

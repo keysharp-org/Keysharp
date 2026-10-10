@@ -1,7 +1,3 @@
-using System.Security.Cryptography;
-
-using BenchmarkDotNet.Order;
-
 namespace Keysharp.Benchmark;
 
 [MemoryDiagnoser]
@@ -23,7 +19,6 @@ public class BaseTest
 
 public sealed class Program
 {
-	private static BenchmarkDotNet.Reports.Summary? summary;
 	private static readonly BenchmarkDotNet.Loggers.ILogger logger = ConsoleLogger.Default;
 
 	[System.STAThreadAttribute()]
@@ -53,28 +48,18 @@ public sealed class Program
 		}
 
 		//Uncomment the tests you want to run.
-		//summary = BenchmarkRunner.Run<MapReadBenchmark>(config);
-		//MarkdownExporter.Console.ExportToLog(summary, logger);
-		//summary = BenchmarkRunner.Run<MapWriteBenchmark>(config);
-		//MarkdownExporter.Console.ExportToLog(summary, logger);
-		//summary = BenchmarkRunner.Run<IndexBench>(config);
-		//MarkdownExporter.Console.ExportToLog(summary, logger);
-		//summary = BenchmarkRunner.Run<ListAddBench>(config);
-		//MarkdownExporter.Console.ExportToLog(summary, logger);
-		//summary = BenchmarkRunner.Run<HexBench>(config);
-		//MarkdownExporter.Console.ExportToLog(summary, logger);
-		//summary = BenchmarkRunner.Run<MathBench>(config);
-		//MarkdownExporter.Console.ExportToLog(summary, logger);
-		//summary = BenchmarkRunner.Run<FuncBench>(config);
-		//MarkdownExporter.Console.ExportToLog(summary, logger);
-		//summary = BenchmarkRunner.Run<OverlayBench>(config);
-		//MarkdownExporter.Console.ExportToLog(summary, logger);
-		//summary = BenchmarkRunner.Run<DllBench>();
-		//MarkdownExporter.Console.ExportToLog(summary, logger);
-		//summary = BenchmarkRunner.Run<FuncBench>(config);
-		//MarkdownExporter.Console.ExportToLog(summary, logger);
+		//RunAndPrint<MapReadBenchmark>(config);
+		//RunAndPrint<MapWriteBenchmark>(config);
+		//RunAndPrint<IndexBench>(config);
+		//RunAndPrint<ListAddBench>(config);
+		//RunAndPrint<HexBench>(config);
+		//RunAndPrint<MathBench>(config);
+		//RunAndPrint<FuncBench>(config);
+		//RunAndPrint<OverlayBench>(config);
+		//RunAndPrint<DllBench>(config);
+		//RunAndPrint<ParserBench>(config);
 		//RunReflectionBenchmarks(config);
-		RunReflectionRefBenchmarks(config);
+		//RunReflectionRefBenchmarks(config);
 
 		//ConclusionHelper.Print(logger, summary.BenchmarksCases.First().Config.GetCompositeAnalyser().Analyse(summary).ToList());
 		_ = Console.ReadLine();
@@ -82,26 +67,22 @@ public sealed class Program
 
 	private static void RunReflectionBenchmarks(IConfig config)
 	{
-		summary = BenchmarkRunner.Run<ReflectionBench0Params>(config);
-		MarkdownExporter.Console.ExportToLog(summary, logger);
-
-		summary = BenchmarkRunner.Run<ReflectionBench1Param>(config);
-		MarkdownExporter.Console.ExportToLog(summary, logger);
-
-		summary = BenchmarkRunner.Run<ReflectionBench5Params>(config);
-		MarkdownExporter.Console.ExportToLog(summary, logger);
-
-		summary = BenchmarkRunner.Run<ReflectionBench10Params>(config);
-		MarkdownExporter.Console.ExportToLog(summary, logger);
+		RunAndPrint<ReflectionBench0Params>(config);
+		RunAndPrint<ReflectionBench1Param>(config);
+		RunAndPrint<ReflectionBench5Params>(config);
+		RunAndPrint<ReflectionBench10Params>(config);
 	}
 
 	private static void RunReflectionRefBenchmarks(IConfig config)
 	{
-		summary = BenchmarkRunner.Run<ReflectionBench1RefParam>(config);
-		MarkdownExporter.Console.ExportToLog(summary, logger);
-		summary = BenchmarkRunner.Run<ReflectionBench2RefParam>(config);
-		MarkdownExporter.Console.ExportToLog(summary, logger);
-		summary = BenchmarkRunner.Run<ReflectionBench5RefParam>(config);
+		RunAndPrint<ReflectionBench1RefParam>(config);
+		RunAndPrint<ReflectionBench2RefParam>(config);
+		RunAndPrint<ReflectionBench5RefParam>(config);
+	}
+
+	private static void RunAndPrint<T>(IConfig config)
+	{
+		var summary = BenchmarkRunner.Run<T>(config);
 		MarkdownExporter.Console.ExportToLog(summary, logger);
 	}
 }

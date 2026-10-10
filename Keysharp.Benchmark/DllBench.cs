@@ -6,9 +6,12 @@ namespace Keysharp.Benchmark;
 [WarmupCount(15)]
 public class DllBench : BaseTest
 {
-	private static readonly object mcode_e = new Keysharp.Builtins.Map("1", 4L, "2", 1L);
 	private static readonly object mcode_c = _ = Keysharp.Runtime.Script.IfTest(Keysharp.Runtime.Script.ValueEquality(Accessors.A_PtrSize, 8L)) ? (_ = "x64") : (object)(_ = "x86");
+	private static readonly object mcode_e = new Keysharp.Builtins.Map("1", 4L, "2", 1L);
 	private static object p = 0L, ptr = 0L, result = 0L;
+
+	[Params(100000)]
+	public int Size { get; set; }
 
 	public static object CallbackTwoArgs(object arg1, object arg2) => _ = Keysharp.Runtime.Script.Add(arg1, arg2);
 
@@ -47,10 +50,6 @@ public class DllBench : BaseTest
 		_ = Keysharp.Builtins.Dll.DllCall("GlobalFree", "ptr", p);
 		return "";
 	}
-
-	[Params(100000)]
-	public int Size { get; set; }
-
 	[Benchmark(Baseline = true)]
 	public void CreateCallbackThenFree()
 	{

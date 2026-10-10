@@ -1,5 +1,3 @@
-using static Keysharp.Runtime.Script;
-
 using Array = Keysharp.Builtins.Array;
 
 namespace Keysharp.Benchmark;
@@ -19,18 +17,6 @@ public class IndexBench : BaseTest
 	{
 		dynamickeysharparray = new Keysharp.Builtins.Array();
 		keysharparray = new Keysharp.Builtins.Array();
-	}
-
-	[Benchmark]
-	public void KeysharpArrayIndexRead()
-	{
-		var total = 0.0;
-
-		for (var i = 1; i <= Size; i++)
-			total += (double)keysharparray![i];
-
-		if (!total.IsAlmostEqual(totalSum))
-			throw new Exception($"{total} was not equal to {totalSum}.");
 	}
 
 	[Benchmark]
@@ -65,6 +51,18 @@ e4:
 
 		for (long i = 1; i <= Size; i++)
 			total += (double)GetIndex(keysharparray, i);
+
+		if (!total.IsAlmostEqual(totalSum))
+			throw new Exception($"{total} was not equal to {totalSum}.");
+	}
+
+	[Benchmark]
+	public void KeysharpArrayIndexRead()
+	{
+		var total = 0.0;
+
+		for (var i = 1; i <= Size; i++)
+			total += (double)keysharparray![i];
 
 		if (!total.IsAlmostEqual(totalSum))
 			throw new Exception($"{total} was not equal to {totalSum}.");
