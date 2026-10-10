@@ -1,21 +1,31 @@
-using System.Threading;
-
 namespace Keyview;
 
 internal sealed class KeyviewScriptRunner : IDisposable
 {
-	private readonly object sync = new ();
+	private readonly object sync = new();
+	private bool disposed;
 	private Process process;
 	private long runId;
-	private bool disposed;
-	internal event Action<long, string> OutputReceived;
-	internal event Action<long, bool> RunningChanged;
-	internal bool IsRunning { get { lock (sync) return process != null; } }
-	internal Task Completion { get { lock (sync) return field; }
+
+	internal Task Completion
+	{
+		get { lock (sync) return field; }
 
 		private set;
 	} = Task.CompletedTask;
-	internal bool IsCurrent(long id) { lock (sync) return !disposed && id == runId; }
+
+	internal bool IsRunning
+	{ get { lock (sync) return process != null; } }
+
+	public void Dispose()
+	{
+		lock (sync)
+			disposed = true;
+		Stop();
+	}
+
+	internal bool IsCurrent(long id)
+	{ lock (sync) return !disposed && id == runId; }
 
 	internal void Start(string executable, byte[] assembly)
 	{
@@ -38,7 +48,8 @@ internal sealed class KeyviewScriptRunner : IDisposable
 		lock (sync)
 		{
 			ObjectDisposedException.ThrowIf(disposed, this);
-			try { _ = child.Start(); }
+			try
+			{ _ = child.Start(); }
 			catch { child.Dispose(); throw; }
 
 			process = child;
@@ -46,8 +57,46 @@ internal sealed class KeyviewScriptRunner : IDisposable
 			Completion = finished.Task;
 		}
 
-		try { RunningChanged?.Invoke(id, true); }
+		try
+		{ RunningChanged?.Invoke(id, true); }
 		finally { _ = Observe(child, id, assembly, finished); }
+	}
+
+	internal void Stop()
+	{
+		Process child;
+		long id;
+		lock (sync)
+		{
+			child = process;
+			if (child != null)
+			{
+				// Observation owns disposal until the exit wait and both readers finish.
+				try
+				{ if (!child.HasExited) child.Kill(entireProcessTree: true); }
+				catch (InvalidOperationException) { }
+				catch (System.ComponentModel.Win32Exception) when (child.HasExited) { }
+			}
+
+			process = null;
+			id = ++runId;
+		}
+
+		RunningChanged?.Invoke(id, false);
+	}
+
+	private async Task Drain(StreamReader reader, long id, CancellationToken cancellation)
+	{
+		var buffer = new char[4096];
+		try
+		{
+			int count;
+			while ((count = await reader.ReadAsync(buffer.AsMemory(), cancellation).ConfigureAwait(false)) != 0)
+				if (IsCurrent(id))
+					OutputReceived?.Invoke(id, new string(buffer, 0, count));
+		}
+		catch (Exception ex) when (ex is IOException or ObjectDisposedException) { }
+		catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
 	}
 
 	private async Task Observe(Process child, long id, byte[] assembly, TaskCompletionSource finished)
@@ -83,7 +132,8 @@ internal sealed class KeyviewScriptRunner : IDisposable
 		catch (Exception ex)
 		{
 			_ = finished.TrySetException(ex);
-			if (IsCurrent(id)) OutputReceived?.Invoke(id, ex.Message + Environment.NewLine);
+			if (IsCurrent(id))
+				OutputReceived?.Invoke(id, ex.Message + Environment.NewLine);
 		}
 		finally
 		{
@@ -93,54 +143,19 @@ internal sealed class KeyviewScriptRunner : IDisposable
 				lock (sync)
 				{
 					current = ReferenceEquals(process, child);
-					if (current) process = null;
+					if (current)
+						process = null;
 				}
 
-				if (current) RunningChanged?.Invoke(id, false);
+				if (current)
+					RunningChanged?.Invoke(id, false);
 			}
 			catch (Exception ex) { _ = finished.TrySetException(ex); }
 			finally { _ = finished.TrySetResult(); }
 		}
 	}
 
-	private async Task Drain(StreamReader reader, long id, CancellationToken cancellation)
-	{
-		var buffer = new char[4096];
-		try
-		{
-			int count;
-			while ((count = await reader.ReadAsync(buffer.AsMemory(), cancellation).ConfigureAwait(false)) != 0)
-				if (IsCurrent(id)) OutputReceived?.Invoke(id, new string(buffer, 0, count));
-		}
-		catch (Exception ex) when (ex is IOException or ObjectDisposedException) { }
-		catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
-	}
+	internal event Action<long, string> OutputReceived;
 
-	internal void Stop()
-	{
-		Process child;
-		long id;
-		lock (sync)
-		{
-			child = process;
-			if (child != null)
-			{
-				// Observation owns disposal until the exit wait and both readers finish.
-				try { if (!child.HasExited) child.Kill(entireProcessTree: true); }
-				catch (InvalidOperationException) { }
-				catch (System.ComponentModel.Win32Exception) when (child.HasExited) { }
-			}
-
-			process = null;
-			id = ++runId;
-		}
-
-		RunningChanged?.Invoke(id, false);
-	}
-
-	public void Dispose()
-	{
-		lock (sync) disposed = true;
-		Stop();
-	}
+	internal event Action<long, bool> RunningChanged;
 }

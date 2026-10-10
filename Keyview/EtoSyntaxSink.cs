@@ -3,8 +3,8 @@ namespace Keyview;
 
 internal sealed class EtoSyntaxSink : ISyntaxSink
 {
-	private readonly RichTextArea area;
 	private readonly Action<bool> applying;
+	private readonly RichTextArea area;
 	internal EtoSyntaxSink(RichTextArea area, Action<bool> applying) { this.area = area; this.applying = applying; }
 	public void Style(int start, int endExclusive, SyntaxColor color)
 	{
@@ -20,15 +20,7 @@ internal sealed class EtoSyntaxSink : ISyntaxSink
 
 internal static class EtoHighlightExtensions
 {
-	private sealed class Cache { internal SyntaxHighlightSnapshot Snapshot; internal bool Applying; internal long Generation, Version; }
-	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<RichTextArea, Cache> caches = new ();
-	internal static bool IsApplyingStyle(RichTextArea area) => caches.GetOrCreateValue(area).Applying;
-	internal static void Invalidate(RichTextArea area)
-	{
-		var cache = caches.GetOrCreateValue(area);
-		cache.Snapshot = null;
-		cache.Generation++;
-	}
+	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<RichTextArea, Cache> caches = [];
 
 	internal static bool Highlight(this SyntaxHighlighter highlighter, RichTextArea area, Action pump = null, Func<long> currentVersion = null)
 	{
@@ -43,8 +35,24 @@ internal static class EtoHighlightExtensions
 		var applied = snapshot.ApplyChangedRange(sink, previous, pump,
 			() => cache.Generation == generation && (currentVersion == null || currentVersion() == version));
 		cache.Snapshot = applied ? snapshot : null;
-		if (applied) cache.Version = version;
+		if (applied)
+			cache.Version = version;
 		return applied;
+	}
+
+	internal static void Invalidate(RichTextArea area)
+	{
+		var cache = caches.GetOrCreateValue(area);
+		cache.Snapshot = null;
+		cache.Generation++;
+	}
+
+	internal static bool IsApplyingStyle(RichTextArea area) => caches.GetOrCreateValue(area).Applying;
+
+	private sealed class Cache {
+		internal bool Applying;
+		internal long Generation, Version;
+		internal SyntaxHighlightSnapshot Snapshot;
 	}
 }
 #endif

@@ -6,7 +6,7 @@ internal static class Program
 	///  The main entry point for the application.
 	/// </summary>
 	[STAThread]
-	private static void Main(string[] args)
+	public static void Main(string[] args)
 	{
 		var s = new Script();
 		var initialFile = GetInitialFileArgument(args);

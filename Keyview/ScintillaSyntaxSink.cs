@@ -12,6 +12,7 @@ internal sealed class ScintillaSyntaxSink : ISyntaxSink
 	// Scintilla reserves style 32 and up for itself, so the token styles live below that.
 	private const int StyleBase = 11;
 
+	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ScintillaNET.Scintilla, Cache> caches = [];
 	private readonly ScintillaNET.Scintilla scintilla;
 	private int styled;
 
@@ -20,8 +21,6 @@ internal sealed class ScintillaSyntaxSink : ISyntaxSink
 		this.scintilla = scintilla;
 		styled = from;
 	}
-
-	private static int StyleOf(SyntaxColor color) => color == SyntaxColor.Default ? ScintillaNET.Style.Default : StyleBase + (int)color;
 
 	public void Style(int start, int endExclusive, SyntaxColor color)
 	{
@@ -33,15 +32,6 @@ internal sealed class ScintillaSyntaxSink : ISyntaxSink
 
 		scintilla.SetStyling(endExclusive - start, StyleOf(color));
 		styled = endExclusive;
-	}
-
-	/// <summary>Assigns the default style to everything left, which Scintilla requires before it will repaint.</summary>
-	private void Finish(int to)
-	{
-		if (to > styled)
-			scintilla.SetStyling(to - styled, ScintillaNET.Style.Default);
-
-		styled = to;
 	}
 
 	/// <summary>
@@ -66,8 +56,6 @@ internal sealed class ScintillaSyntaxSink : ISyntaxSink
 		scintilla.LexerName = "";
 	}
 
-	private sealed class Cache { internal SyntaxHighlightSnapshot Snapshot; }
-	private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<ScintillaNET.Scintilla, Cache> caches = [];
 	internal static void Invalidate(ScintillaNET.Scintilla scintilla) => caches.GetOrCreateValue(scintilla).Snapshot = null;
 
 	internal static void Restyle(ScintillaNET.Scintilla scintilla, SyntaxHighlighter highlighter, int requestedEnd)
@@ -86,5 +74,16 @@ internal sealed class ScintillaSyntaxSink : ISyntaxSink
 
 		sink.Finish(to);
 	}
+
+	private static int StyleOf(SyntaxColor color) => color == SyntaxColor.Default ? ScintillaNET.Style.Default : StyleBase + (int)color;
+	/// <summary>Assigns the default style to everything left, which Scintilla requires before it will repaint.</summary>
+	private void Finish(int to)
+	{
+		if (to > styled)
+			scintilla.SetStyling(to - styled, ScintillaNET.Style.Default);
+
+		styled = to;
+	}
+	private sealed class Cache { internal SyntaxHighlightSnapshot Snapshot; }
 }
 #endif

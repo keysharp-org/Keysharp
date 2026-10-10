@@ -10,39 +10,36 @@ internal sealed record EditorEdit(int Offset, string Removed, string Inserted, E
 
 internal sealed class KeyviewEditHistory
 {
-	private const int MaxDepth = 200;
 	private const int MaxCharacters = 4_000_000;
-	private readonly LinkedList<EditorEdit> undo = new ();
-	private readonly Stack<EditorEdit> redo = new ();
-	private int characters;
+	private const int MaxDepth = 200;
+	private readonly Stack<EditorEdit> redo = new();
+	private readonly LinkedList<EditorEdit> undo = new();
 	private bool canMerge;
-	internal bool IsApplying { get; private set; }
-	internal bool CanUndo => undo.Count > 0;
+	private int characters;
+
 	internal bool CanRedo => redo.Count > 0;
-	internal void Clear() { undo.Clear(); redo.Clear(); characters = 0; canMerge = false; }
 
-	internal void RecordAppliedEdit(string before, string after, EditorSelection beforeSelection, Func<EditorSelection> apply, DateTime now)
-	{
-		EditorSelection afterSelection;
-		IsApplying = true;
-		try { afterSelection = apply(); }
-		finally { IsApplying = false; }
+	internal bool CanUndo => undo.Count > 0;
 
-		canMerge = false;
-		Record(before, after, beforeSelection, afterSelection, now);
-		canMerge = false;
-	}
+	internal bool IsApplying { get; private set; }
+
+	internal void Clear()
+	{ undo.Clear(); redo.Clear(); characters = 0; canMerge = false; }
 
 	internal void Record(string before, string after, EditorSelection beforeSelection, EditorSelection afterSelection, DateTime now)
 	{
-		if (IsApplying || before == after) return;
-		foreach (var edit in redo) characters -= edit.Size;
+		if (IsApplying || before == after)
+			return;
+		foreach (var edit in redo)
+			characters -= edit.Size;
 		redo.Clear();
 		var prefix = 0;
-		while (prefix < before.Length && prefix < after.Length && before[prefix] == after[prefix]) prefix++;
+		while (prefix < before.Length && prefix < after.Length && before[prefix] == after[prefix])
+			prefix++;
 		var suffix = 0;
 		while (suffix < before.Length - prefix && suffix < after.Length - prefix
-			&& before[before.Length - suffix - 1] == after[after.Length - suffix - 1]) suffix++;
+			&& before[before.Length - suffix - 1] == after[after.Length - suffix - 1])
+			suffix++;
 		var next = new EditorEdit(prefix, before.Substring(prefix, before.Length - prefix - suffix),
 			after.Substring(prefix, after.Length - prefix - suffix), beforeSelection, afterSelection, now);
 		var previous = undo.Last?.Value;
@@ -64,7 +61,8 @@ internal sealed class KeyviewEditHistory
 			}
 		}
 
-		if (merged) { characters -= previous.Size; undo.RemoveLast(); }
+		if (merged)
+		{ characters -= previous.Size; undo.RemoveLast(); }
 
 		_ = undo.AddLast(next);
 		characters += next.Size;
@@ -76,13 +74,17 @@ internal sealed class KeyviewEditHistory
 		}
 	}
 
-	internal (string Text, EditorSelection Selection) Undo(string text)
+	internal void RecordAppliedEdit(string before, string after, EditorSelection beforeSelection, Func<EditorSelection> apply, DateTime now)
 	{
-		var edit = undo.Last.Value;
-		undo.RemoveLast();
-		redo.Push(edit);
+		EditorSelection afterSelection;
+		IsApplying = true;
+		try
+		{ afterSelection = apply(); }
+		finally { IsApplying = false; }
+
 		canMerge = false;
-		return (edit.Apply(text, true), edit.Before);
+		Record(before, after, beforeSelection, afterSelection, now);
+		canMerge = false;
 	}
 
 	internal (string Text, EditorSelection Selection) Redo(string text)
@@ -91,5 +93,14 @@ internal sealed class KeyviewEditHistory
 		_ = undo.AddLast(edit);
 		canMerge = false;
 		return (edit.Apply(text, false), edit.After);
+	}
+
+	internal (string Text, EditorSelection Selection) Undo(string text)
+	{
+		var edit = undo.Last.Value;
+		undo.RemoveLast();
+		redo.Push(edit);
+		canMerge = false;
+		return (edit.Apply(text, true), edit.Before);
 	}
 }

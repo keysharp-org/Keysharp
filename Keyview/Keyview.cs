@@ -1,19 +1,12 @@
-#if WINDOWS
-using ScintillaNET;
-#endif
-
 namespace Keyview;
 
 /// <summary>
 /// Much of the Scintilla-related code was taken from: https://github.com/robinrodricks/ScintillaNET.Demo
 /// </summary>
 #if WINDOWS
+
 internal partial class Keyview : Form
 {
-	[System.Runtime.InteropServices.LibraryImport("uxtheme.dll", EntryPoint = "SetWindowTheme",
-		StringMarshalling = System.Runtime.InteropServices.StringMarshalling.Utf16)]
-	private static partial int SetWindowTheme(nint window, string subAppName, string subIdList);
-
 	/// <summary>
 	/// set this true to show circular buttons for code folding (the [+] and [-] buttons on the margin)
 	/// </summary>
@@ -29,36 +22,65 @@ internal partial class Keyview : Form
 	/// </summary>
 	private const int NUMBER_MARGIN = 1;
 
-	private readonly Button btnCopyFullCode = new ();
-	private readonly Button btnCompileScript = new ();
-	private readonly CheckBox chkFullCode = new ();
-	private readonly ToolStripLabel documentStatusLabel = new ();
-	private readonly string lastrun;
-	private readonly UITimer timer = new ();
-	private readonly IScriptCompiler ch = KeyviewCompilerRunner.GetCompiler();
-	private byte[] compiledBytes;
-	private readonly CSharpStyler csStyler = new ();
-	private readonly KeyviewCompileScheduler compileScheduler = new (TimeSpan.FromSeconds(1));
-	private KeyviewCompileResult lastCompile;
-	private bool SearchIsOpen = false;
-	private string trimmedCode = "";
-	private readonly KeyviewScriptRunner scriptRunner = new ();
-	private bool scriptOwnsOutput;
-	private bool runtimeOutputStarted;
 	private const string ScriptOutputHeader = "--- Script output ---\n\n";
-	private readonly Button btnRunScript = new ();
-	private readonly KeyviewDocumentState document = new ();
+
 	private readonly string baseTitle;
-	private string displayedDocumentPath;
-	private bool? displayedDirty;
-	private bool suppressDocumentChange;
-	private bool scratchAutosavePending;
-	private bool closing;
+
+	private readonly Button btnCompileScript = new();
+
+	private readonly Button btnCopyFullCode = new();
+
+	private readonly Button btnRunScript = new();
+
 	private readonly Dictionary<string, string> btnRunScriptText = new()
 	{
 		{ "Run", "▶ Run script (F9)" },
 		{ "Stop", "⏹ Stop script (F9)" }
 	};
+
+	private readonly IScriptCompiler ch = KeyviewCompilerRunner.GetCompiler();
+
+	private readonly CheckBox chkFullCode = new();
+
+	private readonly KeyviewCompileScheduler compileScheduler = new(TimeSpan.FromSeconds(1));
+
+	private readonly CSharpStyler csStyler = new();
+
+	private readonly KeyviewDocumentState document = new();
+
+	private readonly ToolStripLabel documentStatusLabel = new();
+
+	private readonly string lastrun;
+
+	private readonly KeyviewScriptRunner scriptRunner = new();
+
+	private readonly UITimer timer = new();
+
+	private bool closing;
+
+	private byte[] compiledBytes;
+
+	private bool? displayedDirty;
+
+	private string displayedDocumentPath;
+
+	// The Keysharp/AHK tokenizer for the input box, shared with the Eto editor on Linux/macOS. Built lazily
+	// because ForKeysharp() reads the built-in names off Script.TheScript, which is not up yet at field-init.
+	private SyntaxHighlighter inputHighlighter;
+
+	private KeyviewCompileResult lastCompile;
+
+	private bool runtimeOutputStarted;
+
+	private bool scratchAutosavePending;
+
+	private bool scriptOwnsOutput;
+
+	private bool SearchIsOpen = false;
+
+	private bool suppressDocumentChange;
+
+	private string trimmedCode = "";
 
 	public Keyview(string initialFile = null)
 	{
@@ -120,6 +142,8 @@ internal partial class Keyview : Form
 	private static void ApplyScintillaTheme(Scintilla scintilla) =>
 		_ = SetWindowTheme(scintilla.Handle, Application.IsDarkModeEnabled ? "DarkMode_Explorer" : null, null);
 
+	private static string GetKeysharpExecutable() => Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
+
 	private static void InitializeScintillaTheme(Scintilla scintilla)
 	{
 		// Scintilla owns its native scrollbars, so WinForms cannot theme them with the rest of the control tree.
@@ -129,12 +153,27 @@ internal partial class Keyview : Form
 			ApplyScintillaTheme(scintilla);
 	}
 
-	// The Keysharp/AHK tokenizer for the input box, shared with the Eto editor on Linux/macOS. Built lazily
-	// because ForKeysharp() reads the built-in names off Script.TheScript, which is not up yet at field-init.
-	private SyntaxHighlighter inputHighlighter;
+	[System.Runtime.InteropServices.LibraryImport("uxtheme.dll", EntryPoint = "SetWindowTheme", StringMarshalling = System.Runtime.InteropServices.StringMarshalling.Utf16)]
+	private static partial int SetWindowTheme(nint window, string subAppName, string subIdList);
 
-	private void TxtIn_StyleNeeded(object sender, StyleNeededEventArgs e) =>
-		ScintillaSyntaxSink.Restyle((Scintilla)sender, inputHighlighter ??= SyntaxHighlighter.ForKeysharp(), e.Position);
+	private void AutosaveScratchDocument()
+	{
+		if (closing || !document.IsScratch)
+			return;
+
+		var dir = Path.GetDirectoryName(lastrun);
+		try
+		{
+			if (!Directory.Exists(dir))
+				_ = Directory.CreateDirectory(dir);
+
+			File.WriteAllText(lastrun, txtIn.Text);
+		}
+		catch (Exception ex)
+		{
+			documentStatusLabel.Text = $"Scratch autosave failed: {ex.Message}";
+		}
+	}
 
 	private void BtnClearSearch_Click(object sender, EventArgs e) => CloseSearch();
 
@@ -161,6 +200,70 @@ internal partial class Keyview : Form
 	}
 
 	private void collapseAllToolStripMenuItem_Click(object sender, EventArgs e) => txtOut.FoldAll(FoldAction.Contract);
+
+	private async void CompileDocument()
+	{
+		if (compileScheduler.IsCompiling || !document.CanCompile || (!document.IsScratch && txtIn.Modified && !SaveDocument()))
+			return;
+		if (!compileScheduler.TryBeginExplicit())
+			return;
+		UpdateDocumentUi();
+		tslCodeStatus.Text = "Writing .cks...";
+		var sourcePath = document.CurrentFilePath;
+		var version = compileScheduler.EditVersion;
+		try
+		{
+			var result = await Task.Run(() =>
+			{
+				var success = KeyviewDocumentCompiler.TryCompile(sourcePath, ch, out var path, out var error);
+				return (success, path, error);
+			});
+			if (closing || !compileScheduler.IsCurrent(version, sourcePath, document.CurrentFilePath))
+				return;
+			if (result.success)
+			{
+				tslCodeStatus.ForeColor = SyntaxPalette.ToColor(SyntaxPalette.StatusSuccess);
+				tslCodeStatus.Text = $"Wrote {result.path}";
+			}
+			else
+			{
+				compiledBytes = null;
+				trimmedCode = result.error;
+				lastCompile = new(null, result.error, new Lazy<string>(() => result.error), result.error, TimeSpan.Zero);
+				btnRunScript.Enabled = scriptRunner.IsRunning;
+				tslCodeStatus.ForeColor = SyntaxPalette.ToColor(SyntaxPalette.StatusError);
+				tslCodeStatus.Text = "Compile failed";
+				SetTxtOut(result.error);
+			}
+		}
+		finally
+		{
+			compileScheduler.CompleteExplicit();
+			if (!closing)
+				UpdateDocumentUi();
+		}
+	}
+
+	private void compileToolStripMenuItem_Click(object sender, EventArgs e) => CompileDocument();
+
+	private bool ConfirmDiscardChanges()
+	{
+		if (document.IsScratch || !txtIn.Modified)
+			return true;
+
+		var result = MessageBox.Show(
+			$"Save changes to {document.DisplayName}?",
+			"Keyview",
+			MessageBoxButtons.YesNoCancel,
+			MessageBoxIcon.Question);
+
+		return result switch
+		{
+			DialogResult.Yes => SaveDocument(),
+			DialogResult.No => true,
+			_ => false
+		};
+	}
 
 	private void CopyFullCode_Click(object sender, EventArgs e)
 	{
@@ -258,46 +361,6 @@ internal partial class Keyview : Form
 		txt.AutocompleteListSelectedTextColor = SyntaxPalette.ToColor(SyntaxPalette.SelectionForeground);
 	}
 
-	private void InitNumberMargin(Scintilla txt)
-	{
-		txt.Styles[Style.LineNumber].BackColor = SyntaxPalette.ToColor(SyntaxPalette.MarginBackground);
-		txt.Styles[Style.LineNumber].ForeColor = SyntaxPalette.ToColor(SyntaxPalette.MarginForeground);
-		txt.Styles[Style.IndentGuide].ForeColor = SyntaxPalette.ToColor(SyntaxPalette.MarginForeground);
-		txt.Styles[Style.IndentGuide].BackColor = SyntaxPalette.ToColor(SyntaxPalette.MarginBackground);
-		var nums = txt.Margins[NUMBER_MARGIN];
-		nums.Width = 30;
-		nums.Type = MarginType.Number;
-		nums.Sensitive = true;
-		nums.Mask = 0;
-
-		UpdateNumberMarginWidth(txt);
-	}
-
-	private void UpdateNumberMarginWidth(Scintilla txt)
-	{
-		// how many lines do we have?
-		var maxLine = Math.Max(1, txt.Lines.Count);      // avoid 0
-		var digits = (int)Math.Log10(maxLine) + 1;       // 1 for 1..9, 2 for 10..99, etc.
-
-		// width in pixels needed to render that many '9' with the line-number style
-		var px = txt.TextWidth(Style.LineNumber, new string('9', digits));
-
-		// a little breathing room for padding glyphs
-		txt.Margins[NUMBER_MARGIN].Width = px + 8;
-	}
-
-	// Base style only. The coloring is done by ScintillaSyntaxSink from the shared tokenizer, so no lexer
-	// styles or keyword lists are configured here.
-	private void InitInputStyle(Scintilla txt)
-	{
-		txt.StyleResetDefault();
-		txt.Styles[Style.Default].Font = "Consolas";
-		txt.Styles[Style.Default].Size = 10;
-		txt.Styles[Style.Default].BackColor = SyntaxPalette.ToColor(SyntaxPalette.EditorBackground);
-		txt.Styles[Style.Default].ForeColor = SyntaxPalette.ToColor(SyntaxPalette.EditorForeground);
-		txt.StyleClearAll();
-	}
-
 	private void InitDragDropFile()
 	{
 		txtIn.AllowDrop = true;
@@ -322,12 +385,67 @@ internal partial class Keyview : Form
 		txtIn.ClearCmdKey(Keys.Control | Keys.U);
 	}
 
+	private void InitializeScriptRunner()
+	{
+		scriptRunner.RunningChanged += (id, running) => InvokeIfNeeded(() =>
+		{
+			if (closing || !scriptRunner.IsCurrent(id))
+				return;
+			btnRunScript.Text = btnRunScriptText[running ? "Stop" : "Run"];
+			btnRunScript.Enabled = running || compiledBytes != null;
+		});
+		scriptRunner.OutputReceived += (id, text) => InvokeIfNeeded(() =>
+		{
+			if (closing || !scriptRunner.IsCurrent(id) || !scriptOwnsOutput)
+				return;
+			if (!runtimeOutputStarted)
+			{
+				runtimeOutputStarted = true;
+				SetTxtOut(ScriptOutputHeader);
+				scriptOwnsOutput = true;
+			}
+
+			txtOut.ReadOnly = false;
+			txtOut.AppendText(text);
+			txtOut.ReadOnly = true;
+		});
+	}
+
+	// Base style only. The coloring is done by ScintillaSyntaxSink from the shared tokenizer, so no lexer
+	// styles or keyword lists are configured here.
+	private void InitInputStyle(Scintilla txt)
+	{
+		txt.StyleResetDefault();
+		txt.Styles[Style.Default].Font = "Consolas";
+		txt.Styles[Style.Default].Size = 10;
+		txt.Styles[Style.Default].BackColor = SyntaxPalette.ToColor(SyntaxPalette.EditorBackground);
+		txt.Styles[Style.Default].ForeColor = SyntaxPalette.ToColor(SyntaxPalette.EditorForeground);
+		txt.StyleClearAll();
+	}
+
+	private void InitNumberMargin(Scintilla txt)
+	{
+		txt.Styles[Style.LineNumber].BackColor = SyntaxPalette.ToColor(SyntaxPalette.MarginBackground);
+		txt.Styles[Style.LineNumber].ForeColor = SyntaxPalette.ToColor(SyntaxPalette.MarginForeground);
+		txt.Styles[Style.IndentGuide].ForeColor = SyntaxPalette.ToColor(SyntaxPalette.MarginForeground);
+		txt.Styles[Style.IndentGuide].BackColor = SyntaxPalette.ToColor(SyntaxPalette.MarginBackground);
+		var nums = txt.Margins[NUMBER_MARGIN];
+		nums.Width = 30;
+		nums.Type = MarginType.Number;
+		nums.Sensitive = true;
+		nums.Mask = 0;
+
+		UpdateNumberMarginWidth(txt);
+	}
+
 	private void InvokeIfNeeded(Action action)
 	{
-		if (closing || IsDisposed) return;
+		if (closing || IsDisposed)
+			return;
 		if (InvokeRequired)
 		{
-			try { _ = BeginInvoke(action); }
+			try
+			{ _ = BeginInvoke(action); }
 			catch (InvalidOperationException) when (closing || IsDisposed) { }
 		}
 		else
@@ -350,25 +468,6 @@ internal partial class Keyview : Form
 		AutosaveScratchDocument();
 		closing = true;
 		scriptRunner.Dispose();
-	}
-
-	private void AutosaveScratchDocument()
-	{
-		if (closing || !document.IsScratch)
-			return;
-
-		var dir = Path.GetDirectoryName(lastrun);
-		try
-		{
-			if (!Directory.Exists(dir))
-				_ = Directory.CreateDirectory(dir);
-
-			File.WriteAllText(lastrun, txtIn.Text);
-		}
-		catch (Exception ex)
-		{
-			documentStatusLabel.Text = $"Scratch autosave failed: {ex.Message}";
-		}
 	}
 
 	private void Keyview_Load(object sender, EventArgs e)
@@ -496,23 +595,32 @@ internal partial class Keyview : Form
 		}
 	}
 
-	private bool ConfirmDiscardChanges()
+	private void Outdent() =>
+		// we use this hack to send "Shift+Tab" to scintilla, since there is no known API to outdent,
+		// although the indentation function exists. Pressing Shift+Tab with the editor focused confirms this.
+		GenerateKeystrokes("+{TAB}");
+
+	private void outdentSelectionToolStripMenuItem_Click(object sender, EventArgs e) => Outdent();
+
+	private void pasteToolStripMenuItem_Click(object sender, EventArgs e) => txtIn.Paste();
+
+	private void RunScript_Click(object sender, EventArgs e) => RunStopScript();
+
+	private void RunStopScript()
 	{
-		if (document.IsScratch || !txtIn.Modified)
-			return true;
-
-		var result = MessageBox.Show(
-			$"Save changes to {document.DisplayName}?",
-			"Keyview",
-			MessageBoxButtons.YesNoCancel,
-			MessageBoxIcon.Question);
-
-		return result switch
+		try
 		{
-			DialogResult.Yes => SaveDocument(),
-			DialogResult.No => true,
-			_ => false
-		};
+			if (scriptRunner.IsRunning)
+			{ scriptRunner.Stop(); return; }
+
+			if (compiledBytes == null)
+			{ _ = MessageBox.Show(lastCompile?.Error ?? "Please wait, code is still compiling...", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
+
+			runtimeOutputStarted = false;
+			scriptOwnsOutput = true;
+			scriptRunner.Start(GetKeysharpExecutable(), compiledBytes);
+		}
+		catch (Exception ex) { scriptOwnsOutput = false; _ = MessageBox.Show(ex.Message, "Process Error", MessageBoxButtons.OK, MessageBoxIcon.Error); }
 	}
 
 	private bool SaveDocument()
@@ -535,76 +643,9 @@ internal partial class Keyview : Form
 		}
 	}
 
-	private async void CompileDocument()
-	{
-		if (compileScheduler.IsCompiling || !document.CanCompile || (!document.IsScratch && txtIn.Modified && !SaveDocument())) return;
-		if (!compileScheduler.TryBeginExplicit()) return;
-		UpdateDocumentUi();
-		tslCodeStatus.Text = "Writing .cks...";
-		var sourcePath = document.CurrentFilePath;
-		var version = compileScheduler.EditVersion;
-		try
-		{
-			var result = await Task.Run(() =>
-			{
-				var success = KeyviewDocumentCompiler.TryCompile(sourcePath, ch, out var path, out var error);
-				return (success, path, error);
-			});
-			if (closing || !compileScheduler.IsCurrent(version, sourcePath, document.CurrentFilePath)) return;
-			if (result.success)
-			{
-				tslCodeStatus.ForeColor = SyntaxPalette.ToColor(SyntaxPalette.StatusSuccess);
-				tslCodeStatus.Text = $"Wrote {result.path}";
-			}
-			else
-			{
-				compiledBytes = null;
-				trimmedCode = result.error;
-				lastCompile = new(null, result.error, new Lazy<string>(() => result.error), result.error, TimeSpan.Zero);
-				btnRunScript.Enabled = scriptRunner.IsRunning;
-				tslCodeStatus.ForeColor = SyntaxPalette.ToColor(SyntaxPalette.StatusError);
-				tslCodeStatus.Text = "Compile failed";
-				SetTxtOut(result.error);
-			}
-		}
-		finally
-		{
-			compileScheduler.CompleteExplicit();
-			if (!closing) UpdateDocumentUi();
-		}
-	}
-
-	private void UpdateDocumentUi()
-	{
-		var dirty = !document.IsScratch && txtIn.Modified;
-		if (displayedDirty != dirty || displayedDocumentPath != document.CurrentFilePath)
-		{
-			Text = document.GetWindowTitle(baseTitle, dirty);
-			documentStatusLabel.Text = document.GetStatusText(dirty);
-			displayedDirty = dirty;
-			displayedDocumentPath = document.CurrentFilePath;
-		}
-
-		saveToolStripMenuItem.Enabled = !document.IsScratch && dirty;
-		compileToolStripMenuItem.Enabled = document.CanCompile && !compileScheduler.IsCompiling;
-		btnCompileScript.Visible = !document.IsScratch;
-		btnCompileScript.Enabled = document.CanCompile && !compileScheduler.IsCompiling;
-	}
-
-	private void Outdent() =>
-		// we use this hack to send "Shift+Tab" to scintilla, since there is no known API to outdent,
-		// although the indentation function exists. Pressing Shift+Tab with the editor focused confirms this.
-		GenerateKeystrokes("+{TAB}");
-
-	private void outdentSelectionToolStripMenuItem_Click(object sender, EventArgs e) => Outdent();
-
-	private void pasteToolStripMenuItem_Click(object sender, EventArgs e) => txtIn.Paste();
-
-	private void selectAllToolStripMenuItem_Click(object sender, EventArgs e) => txtIn.SelectAll();
-
 	private void saveToolStripMenuItem_Click(object sender, EventArgs e) => SaveDocument();
 
-	private void compileToolStripMenuItem_Click(object sender, EventArgs e) => CompileDocument();
+	private void selectAllToolStripMenuItem_Click(object sender, EventArgs e) => txtIn.SelectAll();
 
 	private void selectLineToolStripMenuItem_Click(object sender, EventArgs e)
 	{
@@ -638,7 +679,8 @@ internal partial class Keyview : Form
 	private void SetTxtOut(string txt)
 	{
 		scriptOwnsOutput = false;
-		if (txtOut.Text == txt) return;
+		if (txtOut.Text == txt)
+			return;
 		txtOut.ReadOnly = false;
 		txtOut.Text = txt;
 		txtOut.ReadOnly = true;
@@ -655,7 +697,8 @@ internal partial class Keyview : Form
 			AutosaveScratchDocument();
 		}
 
-		if (closing || !compileScheduler.TryBegin(DateTime.UtcNow, txtIn.TextLength > 0, out var version)) return;
+		if (closing || !compileScheduler.TryBegin(DateTime.UtcNow, txtIn.TextLength > 0, out var version))
+			return;
 		compiledBytes = null;
 		btnRunScript.Enabled = scriptRunner.IsRunning;
 		SetStart();
@@ -666,7 +709,8 @@ internal partial class Keyview : Form
 		try
 		{
 			var result = await KeyviewCompilerRunner.RunCompile(txtIn.Text, KeyviewCompilerRunner.IncludeDirFor(document), ch);
-			if (closing || !compileScheduler.IsCurrent(version, sourcePath, document.CurrentFilePath)) return;
+			if (closing || !compileScheduler.IsCurrent(version, sourcePath, document.CurrentFilePath))
+				return;
 			lastCompile = result;
 			compiledBytes = result.AssemblyBytes;
 			trimmedCode = result.TrimmedCode;
@@ -678,52 +722,10 @@ internal partial class Keyview : Form
 		finally
 		{
 			compileScheduler.Complete(version);
-			if (!closing) UpdateDocumentUi();
+			if (!closing)
+				UpdateDocumentUi();
 		}
 	}
-
-	private void RunScript_Click(object sender, EventArgs e) => RunStopScript();
-
-	private void InitializeScriptRunner()
-	{
-		scriptRunner.RunningChanged += (id, running) => InvokeIfNeeded(() =>
-		{
-			if (closing || !scriptRunner.IsCurrent(id)) return;
-			btnRunScript.Text = btnRunScriptText[running ? "Stop" : "Run"];
-			btnRunScript.Enabled = running || compiledBytes != null;
-		});
-		scriptRunner.OutputReceived += (id, text) => InvokeIfNeeded(() =>
-		{
-			if (closing || !scriptRunner.IsCurrent(id) || !scriptOwnsOutput) return;
-			if (!runtimeOutputStarted)
-			{
-				runtimeOutputStarted = true;
-				SetTxtOut(ScriptOutputHeader);
-				scriptOwnsOutput = true;
-			}
-
-			txtOut.ReadOnly = false;
-			txtOut.AppendText(text);
-			txtOut.ReadOnly = true;
-		});
-	}
-
-	private void RunStopScript()
-	{
-		try
-		{
-			if (scriptRunner.IsRunning) { scriptRunner.Stop(); return; }
-
-			if (compiledBytes == null) { _ = MessageBox.Show(lastCompile?.Error ?? "Please wait, code is still compiling...", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error); return; }
-
-			runtimeOutputStarted = false;
-			scriptOwnsOutput = true;
-			scriptRunner.Start(GetKeysharpExecutable(), compiledBytes);
-		}
-		catch (Exception ex) { scriptOwnsOutput = false; _ = MessageBox.Show(ex.Message, "Process Error", MessageBoxButtons.OK, MessageBoxIcon.Error); }
-	}
-
-	private static string GetKeysharpExecutable() => Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
 
 	private void TxtIn_DragDrop(object sender, DragEventArgs e)
 	{
@@ -756,6 +758,9 @@ internal partial class Keyview : Form
 			compileScheduler.RequestCompile();
 	}
 
+	private void TxtIn_StyleNeeded(object sender, StyleNeededEventArgs e) =>
+		ScintillaSyntaxSink.Restyle((Scintilla)sender, inputHighlighter ??= SyntaxHighlighter.ForKeysharp(), e.Position);
+
 	private void txtIn_TextChanged(object sender, EventArgs e)
 	{
 		UpdateNumberMarginWidth(txtIn);
@@ -770,9 +775,9 @@ internal partial class Keyview : Form
 		}
 	}
 
-	private void txtOut_TextChanged(object sender, EventArgs e) => UpdateNumberMarginWidth(txtOut);
-
 	private void txtOut_KeyDown(object sender, KeyEventArgs e) => txtIn_KeyDown(sender, e);
+
+	private void txtOut_TextChanged(object sender, EventArgs e) => UpdateNumberMarginWidth(txtOut);
 
 	private void TxtSearch_KeyDown(object sender, KeyEventArgs e)
 	{
@@ -788,6 +793,36 @@ internal partial class Keyview : Form
 	}
 
 	private void TxtSearch_TextChanged(object sender, EventArgs e) => SearchManager.Find(true, true);
+
+	private void UpdateDocumentUi()
+	{
+		var dirty = !document.IsScratch && txtIn.Modified;
+		if (displayedDirty != dirty || displayedDocumentPath != document.CurrentFilePath)
+		{
+			Text = document.GetWindowTitle(baseTitle, dirty);
+			documentStatusLabel.Text = document.GetStatusText(dirty);
+			displayedDirty = dirty;
+			displayedDocumentPath = document.CurrentFilePath;
+		}
+
+		saveToolStripMenuItem.Enabled = !document.IsScratch && dirty;
+		compileToolStripMenuItem.Enabled = document.CanCompile && !compileScheduler.IsCompiling;
+		btnCompileScript.Visible = !document.IsScratch;
+		btnCompileScript.Enabled = document.CanCompile && !compileScheduler.IsCompiling;
+	}
+
+	private void UpdateNumberMarginWidth(Scintilla txt)
+	{
+		// how many lines do we have?
+		var maxLine = Math.Max(1, txt.Lines.Count);      // avoid 0
+		var digits = (int)Math.Log10(maxLine) + 1;       // 1 for 1..9, 2 for 10..99, etc.
+
+		// width in pixels needed to render that many '9' with the line-number style
+		var px = txt.TextWidth(Style.LineNumber, new string('9', digits));
+
+		// a little breathing room for padding glyphs
+		txt.Margins[NUMBER_MARGIN].Width = px + 8;
+	}
 
 	private void Uppercase()
 	{
@@ -833,6 +868,7 @@ internal partial class Keyview : Form
 
 	private void zoomOutToolStripMenuItem_Click(object sender, EventArgs e) => ZoomOut();
 }
+
 #endif
 
 #if !WINDOWS
@@ -1566,22 +1602,27 @@ internal sealed class Keyview : Eto.Forms.Form
 					OpenSearch();
 					e.Handled = true;
 					break;
+
 				case Keys.U:
 					TransformSelection(s => s.ToUpperInvariant());
 					e.Handled = true;
 					break;
+
 				case Keys.L:
 					TransformSelection(s => s.ToLowerInvariant());
 					e.Handled = true;
 					break;
+
 				case Keys.Equal:
 					ZoomIn();
 					e.Handled = true;
 					break;
+
 				case Keys.Minus:
 					ZoomOut();
 					e.Handled = true;
 					break;
+
 				case Keys.D0:
 					ZoomDefault();
 					e.Handled = true;
@@ -2070,7 +2111,6 @@ internal sealed class Keyview : Eto.Forms.Form
 		SetCodeStatusTone(StatusTone.Error);
 		codeStatusLabel.Text = "Error";
 	}
-
 
 	private void SetOutputText(string text)
 	{
