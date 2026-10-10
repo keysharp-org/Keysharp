@@ -313,7 +313,7 @@ public class DirectiveTests : TestRunner
 			Assert.IsNull(restoredFromSuppressed.TrayIconBytes);
 
 			var suppressedLast = Accepts("#TrayIcon\n#NoTrayIcon\nx := 1\n", root).Manifest;
-			Assert.That(suppressedLast.NoTrayIcon, Is.EqualTo(true));
+			Assert.That(suppressedLast.NoTrayIcon, Is.True);
 			Assert.IsNull(suppressedLast.TrayIcon);
 
 			var customLast = Accepts($"#NoTrayIcon\n#TrayIcon \"{logicalIcon}\"\nx := 1\n", root).Manifest;
@@ -358,7 +358,9 @@ public class DirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 
@@ -383,7 +385,8 @@ public class DirectiveTests : TestRunner
 		var program = ScriptExecutionState.Assembly.GetType("Keysharp.CompiledMain.Program");
 		Assert.That(program, Is.Not.Null);
 		// Force the script singleton to exist before invoking the hoisted registration method directly.
-		InvokeCompiledScript(() => {
+		InvokeCompiledScript(() =>
+		{
 			_ = program.GetField("MainScript", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
 			program.GetMethod("AutoExecSection").Invoke(null, null);
 		});
@@ -402,7 +405,7 @@ public class DirectiveTests : TestRunner
 		Assert.IsTrue(s.HotkeyData.shk[4].firstVariant.suspendExempt);
 		Assert.That(s.HotkeyData.shk[5].firstVariant.suspendExempt, Is.False);
 		Assert.That(s.HotkeyData.shk[5].firstVariant.inputLevel, Is.EqualTo(50));
-		Assert.That(hsm.Hotstrings[0].inputLevel, Is.EqualTo(0));
+		Assert.That(hsm.Hotstrings[0].inputLevel, Is.Zero);
 		Assert.That(hsm.Hotstrings[7].inputLevel, Is.EqualTo(50));
 		// While suspended, exactly the exempt hotstrings stay enabled.
 		bool[] exempt = [true, true, false, false, true, true, true, false, true, false];
@@ -416,10 +419,10 @@ public class DirectiveTests : TestRunner
 
 		Assert.That(hsm.enabledCount, Is.EqualTo(6));
 		Keysharp.Builtins.Keyboard.Hotstring(":S:dynamic");
-		Assert.That(hsm.Hotstrings[7].suspended, Is.EqualTo(0));
+		Assert.That(hsm.Hotstrings[7].suspended, Is.Zero);
 		Assert.That(hsm.enabledCount, Is.EqualTo(7));
 		Keysharp.Builtins.Keyboard.Hotstring(":S0:dynamic");
-		Assert.That(hsm.Hotstrings[7].suspended, Is.Not.EqualTo(0));
+		Assert.That(hsm.Hotstrings[7].suspended, Is.Not.Zero);
 		Assert.That(hsm.enabledCount, Is.EqualTo(6));
 #if WINDOWS
 		using var suspendItem = new ToolStripMenuItem();
@@ -450,7 +453,8 @@ public class DirectiveTests : TestRunner
 		ScriptExecutionState.Assembly = Assembly.Load(assemblyBytes);
 		var program = ScriptExecutionState.Assembly.GetType("Keysharp.CompiledMain.Program");
 		Assert.That(program, Is.Not.Null);
-		InvokeCompiledScript(() => {
+		InvokeCompiledScript(() =>
+		{
 			_ = program.GetField("MainScript", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
 			_ = program.GetMethod("AutoExecSection").Invoke(null, null);
 		});
@@ -665,7 +669,9 @@ public class DirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { File.Delete(script); } catch { }
+			try
+			{ File.Delete(script); }
+			catch { }
 		}
 	}
 
@@ -827,7 +833,9 @@ public class DirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 
@@ -910,7 +918,9 @@ public class DirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 
@@ -1075,7 +1085,9 @@ public class DirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 
@@ -1130,7 +1142,9 @@ public class DirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 
@@ -1221,7 +1235,9 @@ public class DirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 
@@ -1242,10 +1258,13 @@ public class DirectiveTests : TestRunner
 			File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#CSharp\nusing System.Text;\npublic static object Marker() => new StringBuilder(\"m\").ToString();\n#EndCSharp\nx := Marker()\n");
 			using var proc = Process.Start(new ProcessStartInfo(launcher, $"--errorstdout --transpile \"{script}\"")
 			{
-				RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true
+				RedirectStandardOutput = true,
+				RedirectStandardError = true,
+				UseShellExecute = false,
+				CreateNoWindow = true
 			});
 			_ = proc.WaitForExit(120000);
-			Assert.That(proc.ExitCode, Is.EqualTo(0), proc.StandardError.ReadToEnd());
+			Assert.That(proc.ExitCode, Is.Zero, proc.StandardError.ReadToEnd());
 			Assert.IsTrue(File.Exists(Path.Combine(dir, "t.cs")), "the lowered tree's .cs must be written");
 			var inline = Path.Combine(dir, "t.inline.cs");
 			Assert.IsTrue(File.Exists(inline), "the inline C# must be written to its own .inline.cs");
@@ -1261,7 +1280,9 @@ public class DirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 
@@ -1289,7 +1310,7 @@ public class DirectiveTests : TestRunner
 							  + "caught := \"\"\ntry\n\tC.Boom()\ncatch\n\tcaught := \"caught\"\n"
 							  + "FileAppend(Marker() \"-\" C.Tag() \"-\" caught, \"*\")\nExitApp()\n");
 			var (compileExit, _, compileErr) = Run(launcher, $"--errorstdout --compile exe \"{script}\"");
-			Assert.That(compileExit, Is.EqualTo(0), "compile failed: " + compileErr);
+			Assert.That(compileExit, Is.Zero, "compile failed: " + compileErr);
 			var exe = Path.ChangeExtension(script, OperatingSystem.IsWindows() ? ".exe" : null);
 			Assert.IsTrue(File.Exists(exe), $"compile produced no exe at {exe}");
 #if LINUX
@@ -1298,13 +1319,15 @@ public class DirectiveTests : TestRunner
 #endif
 			Assert.That(Directory.Exists(Path.Combine(dir, "components", "scripting")), Is.False, "this script needs no parser or compiler");
 			var (runExit, stdout, stderr) = Run(exe, "");
-			Assert.That(runExit, Is.EqualTo(0), stderr);
+			Assert.That(runExit, Is.Zero, stderr);
 			Assert.That(stdout.Trim(), Is.EqualTo("mod-cls-caught"),
 							$"exit {runExit}, stderr: {stderr}");
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 
@@ -1336,7 +1359,9 @@ public class DirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 
@@ -1356,18 +1381,20 @@ public class DirectiveTests : TestRunner
 			var bad = Path.Combine(dir, "bad.ks");
 			File.WriteAllText(bad, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#CSharp\npublic static object F() => new NoSuchType();\n#EndCSharp\nF()\n");
 			var (badExit, badOut, badErr) = Run(launcher, $"--errorstdout --validate \"{bad}\"");
-			Assert.That(badExit, Is.Not.EqualTo(0), "an unknown type in a #CSharp block must fail --validate");
+			Assert.That(badExit, Is.Not.Zero, "an unknown type in a #CSharp block must fail --validate");
 			Assert.IsTrue((badOut + badErr).Contains("NoSuchType"),
 						  $"the failure should name the offending code; stdout:\n{badOut}\nstderr:\n{badErr}");
 
 			var good = Path.Combine(dir, "good.ks");
 			File.WriteAllText(good, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#CSharp\npublic static object F() => 42L;\n#EndCSharp\nF()\n");
 			var (goodExit, goodOut, goodErr) = Run(launcher, $"--errorstdout --validate \"{good}\"");
-			Assert.That(goodExit, Is.EqualTo(0), $"a valid script must pass --validate; stdout:\n{goodOut}\nstderr:\n{goodErr}");
+			Assert.That(goodExit, Is.Zero, $"a valid script must pass --validate; stdout:\n{goodOut}\nstderr:\n{goodErr}");
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 
@@ -1376,14 +1403,19 @@ public class DirectiveTests : TestRunner
 	{
 		using var proc = Process.Start(new ProcessStartInfo(exe, args)
 		{
-			RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true
+			RedirectStandardOutput = true,
+			RedirectStandardError = true,
+			UseShellExecute = false,
+			CreateNoWindow = true
 		});
 		var so = proc.StandardOutput.ReadToEndAsync();
 		var se = proc.StandardError.ReadToEndAsync();
 
 		if (!proc.WaitForExit(240000))
 		{
-			try { proc.Kill(true); } catch { }
+			try
+			{ proc.Kill(true); }
+			catch { }
 
 			Assert.Fail($"'{exe} {args}' did not exit within 240s");
 		}
@@ -1414,7 +1446,9 @@ public class DirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 
@@ -1455,7 +1489,9 @@ public class DirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 
@@ -1540,7 +1576,9 @@ public class DirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 
@@ -1608,7 +1646,9 @@ public class DirectiveTests : TestRunner
 		{
 			Environment.SetEnvironmentVariable("AhkImportPath", savedPath);
 
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 
@@ -1641,7 +1681,9 @@ public class DirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 
@@ -1688,7 +1730,9 @@ public class DirectiveTests : TestRunner
 			Directory.SetCurrentDirectory(savedCwd);
 			Environment.SetEnvironmentVariable("AhkImportPath", savedPath);
 
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 

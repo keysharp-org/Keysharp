@@ -78,8 +78,8 @@ public partial class ClipboardTests : TestRunner
 		_ = Ks.KeysharpClipboard.staticset_Text(Clip, "something");
 		_ = Ks.KeysharpClipboard.Clear(Clip);
 		Assert.IsTrue((bool)Ks.KeysharpClipboard.staticget_IsEmpty(Clip));
-		Assert.That(((Array)Ks.KeysharpClipboard.staticget_Formats(Clip)).Count, Is.EqualTo(0));
-		Assert.That(Platform.Clipboard.ChangeType(), Is.EqualTo(0L));
+		Assert.That(((Array)Ks.KeysharpClipboard.staticget_Formats(Clip)).Count, Is.Zero);
+		Assert.That(Platform.Clipboard.ChangeType(), Is.Zero);
 		Assert.That(Ks.KeysharpClipboard.staticget_Text(Clip), Is.Empty);
 	}
 
@@ -380,8 +380,8 @@ public partial class ClipboardTests : TestRunner
 		Assert.That(parsed.Length, Is.EqualTo(2));
 		Assert.IsTrue(parsed[0].EndsWith("testfile1.txt", StringComparison.OrdinalIgnoreCase), parsed[0]);
 		Assert.That(parsed[1], Is.EqualTo("/tmp/bare/path"));
-		Assert.That(ClipboardBase.ParseUriList("").Length, Is.EqualTo(0));
-		Assert.That(ClipboardBase.ParseUriList(null).Length, Is.EqualTo(0));
+		Assert.That(ClipboardBase.ParseUriList("").Length, Is.Zero);
+		Assert.That(ClipboardBase.ParseUriList(null).Length, Is.Zero);
 	}
 
 	[Test, Category("Clipboard"), NonParallelizable]
@@ -438,10 +438,10 @@ public partial class ClipboardTests : TestRunner
 			Assert.That(calls[0][0], Is.SameAs(hook), "The callback receives the hook as its first argument.");
 			Assert.That(calls[0][1], Is.EqualTo(1L));
 			DispatchClipboardChange(0L);
-			Assert.That(calls[1][1], Is.EqualTo(0L));
+			Assert.That(calls[1][1], Is.Zero);
 			DispatchClipboardChange(2L);
 			Assert.That(calls[2][1], Is.EqualTo(2L));
-			Assert.That(calls[2][3], Is.EqualTo(0L), "The change type is an argument, and A_EventInfo has its default value.");
+			Assert.That(calls[2][3], Is.Zero, "The change type is an argument, and A_EventInfo has its default value.");
 
 			var ownerThread = Environment.CurrentManagedThreadId;
 			var script = Script.TheScript;
@@ -450,7 +450,7 @@ public partial class ClipboardTests : TestRunner
 			Assert.That(calls.Count, Is.EqualTo(3), "The callback waits for its owning thread.");
 			Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
 			Assert.That(calls.Count, Is.EqualTo(4));
-			Assert.That(calls[3][1], Is.EqualTo(0L));
+			Assert.That(calls[3][1], Is.Zero);
 			Assert.That(calls[3][2], Is.EqualTo(ownerThread));
 
 			_ = hook.Stop();
@@ -547,5 +547,5 @@ public partial class ClipboardTests : TestRunner
 		Assert.IsTrue(TestScript("clipboard-class", true));
 	}
 
-	private static Map MakeMap(params object[] keysAndValues) => new (keysAndValues);
+	private static Map MakeMap(params object[] keysAndValues) => new(keysAndValues);
 }

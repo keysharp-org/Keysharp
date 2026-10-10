@@ -51,7 +51,7 @@ public partial class TypeTests : TestRunner
 				_ => null
 			};
 			var names = holder?.ParamScan.ToDictionary(parameter => parameter.Index, parameter => parameter.Name)
-				?? new Dictionary<int, string>();
+				?? [];
 
 			foreach (var parameter in parameters)
 			{

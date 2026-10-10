@@ -13,55 +13,55 @@ public partial class FlowTests : TestRunner
 			ExitApp(0)
 			FileAppend('fail', '*')
 		", "1", true, false, 0)));
-	//Keysharp.Builtins.Flow.ResetState();
-	Assert.IsTrue(HasPassed(RunScript(@"
+		//Keysharp.Builtins.Flow.ResetState();
+		Assert.IsTrue(HasPassed(RunScript(@"
 			FileAppend('pass', '*')
 			ExitApp(2)
 			FileAppend('fail', '*')
 		", "2", true, false, 2)));
-	//Keysharp.Builtins.Flow.ResetState();
-	Assert.IsTrue(HasPassed(RunScript(@"
+		//Keysharp.Builtins.Flow.ResetState();
+		Assert.IsTrue(HasPassed(RunScript(@"
 			FileAppend('pass', '*')
 			Exit(0)
 			FileAppend('fail', '*')
 		", "3", true, false, 0)));
-	//Keysharp.Builtins.Flow.ResetState();
-	Assert.IsTrue(HasPassed(RunScript(@"
+		//Keysharp.Builtins.Flow.ResetState();
+		Assert.IsTrue(HasPassed(RunScript(@"
 			FileAppend('pass', '*')
 			Exit(2)
 			FileAppend('fail', '*')
 		", "4", true, false, 2)));
-	//As in AHK, the auto-execute section's Exit code stays pending while a timer keeps the script running, and the
-	//timer's thread ending with nothing left running exits with it.
-	Assert.IsTrue(HasPassed(RunScript(@"
+		//As in AHK, the auto-execute section's Exit code stays pending while a timer keeps the script running, and the
+		//timer's thread ending with nothing left running exits with it.
+		Assert.IsTrue(HasPassed(RunScript(@"
 			SetTimer((*) => FileAppend('pass', '*'), -1)
 			Exit(1)
 		", "5", true, false, 1)));
-	//Keysharp.Builtins.Flow.ResetState();
-	if (!Script.IsUiInitializationBlocked)
-		Assert.IsTrue(HasPassed(RunScript(@"
+		//Keysharp.Builtins.Flow.ResetState();
+		if (!Script.IsUiInitializationBlocked)
+			Assert.IsTrue(HasPassed(RunScript(@"
 				SetTimer((*) => (FileAppend('pass', '*'), Exit(3)), -1)
 				Exit(2) ; Exits the auto-exec section, then the UI loop should process the timer
 				FileAppend('fail', '*')
 			", "6", true, false, 3)));
-	//Keysharp.Builtins.Flow.ResetState();
-	Assert.IsTrue(HasPassed(RunScript(@"
+		//Keysharp.Builtins.Flow.ResetState();
+		Assert.IsTrue(HasPassed(RunScript(@"
 			SetTimer((*) => (FileAppend('pass', '*'), ExitApp(0)), -1)
 			SomeLabel:
 			Sleep(1)
 			goto SomeLabel
 		", "7", true, false, 0)));
-	//Targeting an underlying pseudo-thread: the timer marks the auto-execute thread, the later request
-	//replaces the pending exit code, and Exit returns the target's ID both times.
-	Assert.IsTrue(HasPassed(RunScript(@"
+		//Targeting an underlying pseudo-thread: the timer marks the auto-execute thread, the later request
+		//replaces the pending exit code, and Exit returns the target's ID both times.
+		Assert.IsTrue(HasPassed(RunScript(@"
 			#import KS { A_Thread }
 			autoThread := A_Thread
 			SetTimer((*) => (autoThread.Exit(6), FileAppend(autoThread.Exit(7) == autoThread.Id ? 'pass' : 'fail', '*')), -1)
 			Loop
 				Sleep(1)
 		", "8", true, false, 7)));
-	//The auto-execute thread is the oldest one on its real thread, so it is both Index 1 and Threads[1].
-	Assert.IsTrue(HasPassed(RunScript(@"
+		//The auto-execute thread is the oldest one on its real thread, so it is both Index 1 and Threads[1].
+		Assert.IsTrue(HasPassed(RunScript(@"
 			#import KS { A_Thread, A_RealThread }
 			if A_Thread.Index != 1
 				ExitApp(1)
@@ -70,29 +70,29 @@ public partial class FlowTests : TestRunner
 			Loop
 				Sleep(1)
 		", "9", true, false, 7)));
-	//A pseudo-thread stays reachable through Underlying while it is the one being interrupted.
-	Assert.IsTrue(HasPassed(RunScript(@"
+		//A pseudo-thread stays reachable through Underlying while it is the one being interrupted.
+		Assert.IsTrue(HasPassed(RunScript(@"
 			#import KS { A_Thread }
 			autoId := A_Thread.Id
 			SetTimer((*) => FileAppend(A_Thread.Underlying.Id == autoId ? 'pass' : 'fail', '*'), -1)
 			Sleep(200)
 			ExitApp(0)
 		", "10", true, false, 0)));
-	Assert.IsTrue(HasPassed(RunScript(@"
+		Assert.IsTrue(HasPassed(RunScript(@"
 			#import KS { A_Thread }
 			FileAppend('pass', '*')
 			A_Thread.Exit(4)
 			FileAppend('fail', '*')
 		", "11", true, false, 4)));
-	Assert.IsTrue(HasPassed(RunScript(@"
+		Assert.IsTrue(HasPassed(RunScript(@"
 			#import KS { A_RealThread }
 			FileAppend('pass', '*')
 			A_RealThread.Threads[1].Exit(5)
 			FileAppend('fail', '*')
 		", "12", true, false, 5)));
-	//A Thread object held past its pseudo-thread's lifetime reports itself inactive and refuses to be
-	//exited, rather than silently targeting whichever pseudo-thread reused the pooled slot.
-	Assert.IsTrue(HasPassed(RunScript(@"
+		//A Thread object held past its pseudo-thread's lifetime reports itself inactive and refuses to be
+		//exited, rather than silently targeting whichever pseudo-thread reused the pooled slot.
+		Assert.IsTrue(HasPassed(RunScript(@"
 			#import KS { A_Thread, A_RealThread }
 			staleThread := 0
 			SetTimer(CaptureThread, -1)
@@ -117,9 +117,9 @@ public partial class FlowTests : TestRunner
 				A_RealThread.Threads[1].Exit(0)
 			}
 		", "13", true, false, 0)));
-	//A Thread object first read while its thread unwinds by Exit reports the code, and keeps it once a later
-	//thread reuses the pooled slot.
-	Assert.IsTrue(HasPassed(RunScript(@"
+		//A Thread object first read while its thread unwinds by Exit reports the code, and keeps it once a later
+		//thread reuses the pooled slot.
+		Assert.IsTrue(HasPassed(RunScript(@"
 			#import KS { A_Thread }
 			exited := later := 0
 			t0 := A_TickCount
@@ -169,14 +169,14 @@ public partial class FlowTests : TestRunner
 		Assert.That(deletes, Is.EqualTo(1), $"__Delete ran {deletes} time(s) during teardown; expected exactly 1. Raw output: [{output}]");
 	}
 
-// A release made inside a thread takes effect when the last thread ends, as in AHK. Only a script whose
-// auto-execute section has run exits by itself; the C# fixture never runs one.
-[Test, Category("Flow"), NonParallelizable]
-public void FlowExitRequests()
-{
-	// No check runs once an exit is committed: a __Delete in the exit sweep that releases and pumps must not
-	// re-enter it, which would sweep again.
-	Passes(RunScript(@"
+	// A release made inside a thread takes effect when the last thread ends, as in AHK. Only a script whose
+	// auto-execute section has run exits by itself; the C# fixture never runs one.
+	[Test, Category("Flow"), NonParallelizable]
+	public void FlowExitRequests()
+	{
+		// No check runs once an exit is committed: a __Delete in the exit sweep that releases and pumps must not
+		// re-enter it, which would sweep again.
+		Passes(RunScript(@"
 			class Cleaner {
 				__Delete() {
 					SetTimer(Nothing, 0)
@@ -194,12 +194,12 @@ public void FlowExitRequests()
 			OnExit(Exiting)
 		", "exit-request-delete", true, false, 0));
 
-	// The rest end the script after auto-execute, which needs the message loop.
-	if (Script.IsUiInitializationBlocked)
-		return;
+		// The rest end the script after auto-execute, which needs the message loop.
+		if (Script.IsUiInitializationBlocked)
+			return;
 
-	// Persistent(false) inside a thread takes effect when that thread ends, not before.
-	Passes(RunScript(@"
+		// Persistent(false) inside a thread takes effect when that thread ends, not before.
+		Passes(RunScript(@"
 			Persistent()
 			OnExit(Exiting)
 			SetTimer(Release, -1)
@@ -213,8 +213,8 @@ public void FlowExitRequests()
 					FileAppend(' fail reason ' reason, '*')
 			}
 		", "exit-request-persistent", true, false, 0));
-	// An ExitApp which OnExit vetoes ends the thread which called it, at once, as AHK's EARLY_EXIT does.
-	Passes(RunScript(@"
+		// An ExitApp which OnExit vetoes ends the thread which called it, at once, as AHK's EARLY_EXIT does.
+		Passes(RunScript(@"
 			after := '', start := A_TickCount
 			OnExit(Veto)
 			SetTimer(VetoedExit, -1)
@@ -227,8 +227,8 @@ public void FlowExitRequests()
 				global after := 'continued'
 			}
 		", "exit-request-veto", true, false, 0));
-	// SetTimer(f, 0): a timer that stops itself ends the script when its thread ends.
-	Passes(RunScript(@"
+		// SetTimer(f, 0): a timer that stops itself ends the script when its thread ends.
+		Passes(RunScript(@"
 			SetTimer(Tick, 10)
 			Tick() {
 				static n := 0
@@ -239,8 +239,8 @@ public void FlowExitRequests()
 				FileAppend('pass', '*')
 			}
 		", "exit-request-settimer", true, false, 0));
-	// A release made while another thread runs takes effect when the last thread ends.
-	Passes(RunScript(@"
+		// A release made while another thread runs takes effect when the last thread ends.
+		Passes(RunScript(@"
 			Persistent()
 			released := false
 			SetTimer(Outer, -1)
@@ -254,8 +254,8 @@ public void FlowExitRequests()
 				Persistent(false)
 			}
 		", "exit-request-nested", true, false, 0));
-	// The check at a thread end exits with the code that thread's Exit(n) set.
-	Passes(RunScript(@"
+		// The check at a thread end exits with the code that thread's Exit(n) set.
+		Passes(RunScript(@"
 			Persistent()
 			SetTimer(Release, -1)
 			Release() {
@@ -264,16 +264,16 @@ public void FlowExitRequests()
 				Exit(3)
 			}
 		", "exit-request-code", true, false, 3));
-	// An Exit(n) in a thread that interrupted another is not left for the script's exit, as in AHK, where only
-	// the only running thread's is: the auto-execute section ends later, and the script exits with 0.
-	Passes(RunScript(@"
+		// An Exit(n) in a thread that interrupted another is not left for the script's exit, as in AHK, where only
+		// the only running thread's is: the auto-execute section ends later, and the script exits with 0.
+		Passes(RunScript(@"
 			SetTimer(() => Exit(5), -1)
 			Sleep(100)
 			FileAppend('pass', '*')
 		", "exit-request-interrupted-code", true, false, 0));
-	// SetTimer with no function refers to the timer that launched the current thread, even after another
-	// timer's thread interrupted it and ended.
-	Passes(RunScript(@"
+		// SetTimer with no function refers to the timer that launched the current thread, even after another
+		// timer's thread interrupted it and ended.
+		Passes(RunScript(@"
 			outerRuns := 0, innerRuns := 0
 			SetTimer(Outer, -1)
 			SetTimer(Finish, -300)
@@ -292,17 +292,17 @@ public void FlowExitRequests()
 				FileAppend(outerRuns = 2 && innerRuns = 1 ? 'pass' : 'fail ' outerRuns ' ' innerRuns, '*')
 			}
 		", "exit-request-own-timer", true, false, 0));
-	// A failed auto-execute section ends a script nothing keeps running with the reason Error, as in AHK.
-	var failed = RunScript(@"
+		// A failed auto-execute section ends a script nothing keeps running with the reason Error, as in AHK.
+		var failed = RunScript(@"
 			OnExit((reason, code) => FileAppend('reason ' reason ' ' code ';', '*'))
 			throw Error('expected auto-execute failure')
 		", "exit-request-autoexec-error", true, false, 1);
-	Assert.That(failed, Does.Contain("reason Error 1;"));
-	Assert.That(failed, Does.Not.Contain("fail exit"));
+		Assert.That(failed, Does.Contain("reason Error 1;"));
+		Assert.That(failed, Does.Not.Contain("fail exit"));
 #if WINDOWS
-	// That exit spends the check the section's end posted: a veto is not followed by a second, stale ask
-	// (reason Exit, code 0) before the message the vetoing handler posted exits with 5.
-	var vetoed = RunScript(@"
+		// That exit spends the check the section's end posted: a veto is not followed by a second, stale ask
+		// (reason Exit, code 0) before the message the vetoing handler posted exits with 5.
+		var vetoed = RunScript(@"
 			calls := 0
 			OnMessage(0x5555, (*) => ExitApp(5))
 			OnExit(Exiting)
@@ -317,10 +317,10 @@ public void FlowExitRequests()
 			}
 			throw Error('expected auto-execute failure')
 		", "exit-request-autoexec-veto", true, false, 5);
-	Assert.That(vetoed, Does.Contain("reason Error 1;reason Exit 5;"));
-	Assert.That(vetoed, Does.Not.Contain("fail exit"));
-	// OnClipboardChange(f, 0) emptying the chain releases what kept the script running.
-	Passes(RunScript(@"
+		Assert.That(vetoed, Does.Contain("reason Error 1;reason Exit 5;"));
+		Assert.That(vetoed, Does.Not.Contain("fail exit"));
+		// OnClipboardChange(f, 0) emptying the chain releases what kept the script running.
+		Passes(RunScript(@"
 			OnClipboardChange(Changed)
 			SetTimer(Remove, -1)
 			Changed(*) {
@@ -331,9 +331,9 @@ public void FlowExitRequests()
 				FileAppend('pass', '*')
 			}
 		", "exit-request-clipboard", true, false, 0));
-	// A vetoing OnExit is asked once per last-thread end: checks made before the posted one runs join it, and the
-	// next check waits for the message's thread to end.
-	Passes(RunScript(@"
+		// A vetoing OnExit is asked once per last-thread end: checks made before the posted one runs join it, and the
+		// next check waits for the message's thread to end.
+		Passes(RunScript(@"
 			calls := 0
 			messaged := false
 			OnMessage(0x5555, Received)
@@ -355,8 +355,8 @@ public void FlowExitRequests()
 		", "exit-request-veto", true, false, 0));
 #endif
 
-	static void Passes(string output) => Assert.IsTrue(HasPassed(output), $"[{output}]");
-}
+		static void Passes(string output) => Assert.IsTrue(HasPassed(output), $"[{output}]");
+	}
 
 	[Test, Category("Flow")]
 	public void FlowForIn() => Assert.IsTrue(TestScript("flow-for-in", false));
@@ -364,8 +364,8 @@ public void FlowExitRequests()
 	[Test, Category("Flow")]
 	public void FlowIf() => Assert.IsTrue(TestScript("flow-if", true));
 
-[Test, Category("Flow"), NonParallelizable]
-public void FlowLoop() => Assert.IsTrue(TestScript("flow-loop", true));
+	[Test, Category("Flow"), NonParallelizable]
+	public void FlowLoop() => Assert.IsTrue(TestScript("flow-loop", true));
 
 	[Test, Category("Flow")]
 	public void FlowLoopParse() => Assert.IsTrue(TestScript("flow-loop-parse", true));
@@ -377,8 +377,8 @@ public void FlowLoop() => Assert.IsTrue(TestScript("flow-loop", true));
 	public void FlowLoopRead() => Assert.IsTrue(TestScript("flow-loop-read", true));
 
 #if WINDOWS
-[Test, Category("Flow")]
-public void FlowLoopReg() => Assert.IsTrue(TestScript("flow-loop-reg", true));
+	[Test, Category("Flow")]
+	public void FlowLoopReg() => Assert.IsTrue(TestScript("flow-loop-reg", true));
 #endif
 
 	[Test, Category("Flow")]
@@ -398,43 +398,43 @@ public void FlowLoopReg() => Assert.IsTrue(TestScript("flow-loop-reg", true));
 
 	[Test, Category("Flow"), NonParallelizable]
 	public void FlowOnError()
-{
-	SkipIfUiInitializationBlocked("Error dispatch path differs when UI initialization is blocked.");
-	// The script's #ErrorStdOut makes the default error dialog its message on stderr, so the markers there
-	// name exactly the errors which got the dialog.
-	var previousError = Console.Error;
-	using var stderr = new StringWriter();
-
-	try
 	{
-		Console.SetError(stderr);
-		Assert.IsTrue(TestScript("flow-onerror", false));
-	}
-	finally
-	{
-		Console.SetError(previousError);
-	}
+		SkipIfUiInitializationBlocked("Error dispatch path differs when UI initialization is blocked.");
+		// The script's #ErrorStdOut makes the default error dialog its message on stderr, so the markers there
+		// name exactly the errors which got the dialog.
+		var previousError = Console.Error;
+		using var stderr = new StringWriter();
 
-	var shown = stderr.ToString();
-	int Count(string marker) => shown.Split("C3D38B48-" + marker).Length - 1;
+		try
+		{
+			Console.SetError(stderr);
+			Assert.IsTrue(TestScript("flow-onerror", false));
+		}
+		finally
+		{
+			Console.SetError(previousError);
+		}
 
-	foreach (var marker in new[] { "exit-then-zero", "zero-dialog", "inner-throw", "inner-builtin", "rethrown", "dialog-at-throw" })
+		var shown = stderr.ToString();
+		int Count(string marker) => shown.Split("C3D38B48-" + marker).Length - 1;
+
+		foreach (var marker in new[] { "exit-then-zero", "zero-dialog", "inner-throw", "inner-builtin", "rethrown", "dialog-at-throw" })
 			Assert.That(Count(marker), Is.EqualTo(1), $"{marker} must get the dialog once. stderr:\n{shown}");
 
-	foreach (var marker in new[] { "exit-then-continue", "one-silent", "thrown-negative", "outer-of-throw", "outer-of-builtin", "exitapp",
+		foreach (var marker in new[] { "exit-then-continue", "one-silent", "thrown-negative", "outer-of-throw", "outer-of-builtin", "exitapp",
 				"removed-callback", "located-builtin", "order-", "catch-rethrow", "bare-rethrow", "other-class", "caught", "late-builtin", "nested-other-class" })
-			Assert.That(Count(marker), Is.EqualTo(0), $"{marker} must get no dialog. stderr:\n{shown}");
+			Assert.That(Count(marker), Is.Zero, $"{marker} must get no dialog. stderr:\n{shown}");
 
-	var outputLines = shown.Replace("\r\n", "\n").Split('\n');
-	var dialogIndex = System.Array.FindIndex(outputLines, line => line.Contains("C3D38B48-dialog-at-throw", StringComparison.Ordinal));
-	Assert.GreaterOrEqual(dialogIndex, 0, shown);
-	var expectedFile = System.Text.RegularExpressions.Regex.Escape(Path.Combine(path, "flow-onerror.ahk"));
+		var outputLines = shown.Replace("\r\n", "\n").Split('\n');
+		var dialogIndex = System.Array.FindIndex(outputLines, line => line.Contains("C3D38B48-dialog-at-throw", StringComparison.Ordinal));
+		Assert.GreaterOrEqual(dialogIndex, 0, shown);
+		var expectedFile = System.Text.RegularExpressions.Regex.Escape(Path.Combine(path, "flow-onerror.ahk"));
 		Assert.That(outputLines[dialogIndex], Does.Match($"^{expectedFile} \\(\\d+\\) : ==> C3D38B48-dialog-at-throw$"));
 		Assert.That(outputLines[dialogIndex + 1], Is.EqualTo("     Specifically: C3D38B48-extra"));
 
-	// A throw nothing catches gets its dialog before the stack unwinds, so ahead of the finally block's line.
-	Assert.Less(shown.IndexOf("C3D38B48-dialog-at-throw"), shown.IndexOf("C3D38B48-finally-after-dialog"), $"The dialog must precede the finally block. stderr:\n{shown}");
-}
+		// A throw nothing catches gets its dialog before the stack unwinds, so ahead of the finally block's line.
+		Assert.Less(shown.IndexOf("C3D38B48-dialog-at-throw"), shown.IndexOf("C3D38B48-finally-after-dialog"), $"The dialog must precede the finally block. stderr:\n{shown}");
+	}
 
 	[Test, Category("Flow"), NonParallelizable]
 	public void FlowRealThreads() => Assert.IsTrue(TestScript("flow-realthreads", false));
@@ -508,7 +508,7 @@ public void FlowLoopReg() => Assert.IsTrue(TestScript("flow-loop-reg", true));
 		}));
 		_ = Errors.OnError(onError);
 		var registry = new CallbackRegistry(threadName: "Event");
-		_ = registry.ModifyEventHandlers(Functions.Func((Delegate)(Func<object, object>)ThrowForeign), 1);
+		_ = registry.ModifyEventHandlers(Functions.Func(ThrowForeign), 1);
 		registry.InvokeEventHandlers(0L);
 		context.DrainAll();
 
@@ -580,6 +580,6 @@ public void FlowLoopReg() => Assert.IsTrue(TestScript("flow-loop-reg", true));
 	[Test, Category("Flow")]
 	public void FlowUntil() => Assert.IsTrue(TestScript("flow-until", true));
 
-[Test, Category("Flow"), NonParallelizable]
-public void FlowWhile() => Assert.IsTrue(TestScript("flow-while", true));
+	[Test, Category("Flow"), NonParallelizable]
+	public void FlowWhile() => Assert.IsTrue(TestScript("flow-while", true));
 }

@@ -6,7 +6,7 @@ public class InputHookTests : TestRunner
 	// Joined with '|' so the exact phrase list (including order and embedded commas) is compared.
 	private static string MatchListOf(string matchList)
 	{
-		var io = (InputHook)new InputHook("", "", matchList);
+		var io = new InputHook("", "", matchList);
 		return string.Join("|", io.input.match);
 	}
 
@@ -41,18 +41,18 @@ public class InputHookTests : TestRunner
 			("ghi", "ghi")
 		})
 		{
-			var io = (InputHook)new InputHook("V");
+			var io = new InputHook("V");
 			_ = io.KeyOpt(keys, "S");
 
 			foreach (var key in expected)
 			{
 				var vk = (int)Keyboard.GetKeyVK(key.ToString());
-				Assert.That(vk, Is.Not.EqualTo(0), $"{keys}: {key} has a virtual key");
+				Assert.That(vk, Is.Not.Zero, $"{keys}: {key} has a virtual key");
 				Assert.That(io.input.keyVK[vk] & HookThread.INPUT_KEY_SUPPRESS, Is.EqualTo(HookThread.INPUT_KEY_SUPPRESS), $"{keys}: {key} is suppressed");
 			}
 		}
 
-		var named = (InputHook)new InputHook("V");
+		var named = new InputHook("V");
 		_ = named.KeyOpt("{Delete}{Home}{End}", "S");
 
 		foreach (var key in new[] { "Delete", "Home", "End" })
@@ -77,7 +77,7 @@ public class InputHookTests : TestRunner
 			("{{Keyboard}}", false, false), ("{{Mouse}}", false, false)
 		})
 		{
-			var io = (InputHook)new InputHook("V");
+			var io = new InputHook("V");
 			_ = io.KeyOpt(keys, "S");
 			var keyboardFlags = keyboard ? HookThread.INPUT_KEY_SUPPRESS : 0u;
 			var mouseFlags = mouse ? HookThread.INPUT_KEY_SUPPRESS : 0u;
@@ -90,26 +90,26 @@ public class InputHookTests : TestRunner
 				Assert.That(io.input.keyVK[vk] & HookThread.INPUT_KEY_SUPPRESS, Is.EqualTo(mouseFlags), $"{keys}: {vk:X2}");
 		}
 
-		var mixed = (InputHook)new InputHook("V");
+		var mixed = new InputHook("V");
 		_ = mixed.KeyOpt("a{Mouse}", "S");
 		Assert.That(mixed.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_SUPPRESS, Is.EqualTo(HookThread.INPUT_KEY_SUPPRESS));
 		Assert.That(mixed.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_SUPPRESS, Is.EqualTo(HookThread.INPUT_KEY_SUPPRESS));
 		_ = mixed.KeyOpt("{All}", "Z");
-		Assert.That(mixed.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_SUPPRESS, Is.EqualTo(0u));
+		Assert.That(mixed.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_SUPPRESS, Is.Zero);
 		Assert.That(mixed.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_SUPPRESS, Is.EqualTo(HookThread.INPUT_KEY_SUPPRESS));
 		_ = mixed.KeyOpt("{Mouse}", "E+V");
 		Assert.That(mixed.input.keyVK[VK_LBUTTON] & HookThread.END_KEY_ENABLED, Is.EqualTo(HookThread.END_KEY_ENABLED));
 		Assert.That(mixed.input.keyVK[VK_WHEEL_UP] & HookThread.INPUT_KEY_VISIBILITY_MASK, Is.EqualTo(HookThread.INPUT_KEY_VISIBLE));
 		_ = mixed.KeyOpt("{Mouse}", "Z");
-		Assert.That(mixed.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_OPTION_MASK, Is.EqualTo(0u));
+		Assert.That(mixed.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_OPTION_MASK, Is.Zero);
 
 		foreach (var option in new[] { "I", "-N" })
 		{
-			var rejected = (InputHook)new InputHook("V");
+			var rejected = new InputHook("V");
 			var error = Assert.Throws<KeysharpException>(() => rejected.KeyOpt("a{Keyboard}{Mouse}", $"S{option}"));
 			Assert.IsInstanceOf<ValueError>(error.UserError);
-			Assert.That(rejected.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_OPTION_MASK, Is.EqualTo(0u), option);
-			Assert.That(rejected.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_OPTION_MASK, Is.EqualTo(0u), option);
+			Assert.That(rejected.input.keyVK[keyboardVk] & HookThread.INPUT_KEY_OPTION_MASK, Is.Zero, option);
+			Assert.That(rejected.input.keyVK[VK_LBUTTON] & HookThread.INPUT_KEY_OPTION_MASK, Is.Zero, option);
 		}
 	}
 
@@ -118,8 +118,10 @@ public class InputHookTests : TestRunner
 	{
 		foreach (var (option, visible) in new[] { ("", true), ("S", false) })
 		{
-			var io = (InputHook)new InputHook("V");
-			io.VisibleNonText = false;
+			var io = new InputHook("V")
+			{
+				VisibleNonText = false
+			};
 
 			if (option.Length != 0)
 				_ = io.KeyOpt("{Mouse}", option);
@@ -155,10 +157,10 @@ public class InputHookTests : TestRunner
 			("{}", "")
 		})
 		{
-			var endKeys = (InputHook)new InputHook("E", keys);
+			var endKeys = new InputHook("E", keys);
 			Assert.That(endKeys.input.endChars, Is.EqualTo(expected), $"{keys}: end characters");
 
-			var io = (InputHook)new InputHook("V");
+			var io = new InputHook("V");
 			_ = io.KeyOpt(keys, "S");
 
 			foreach (var key in expected)
@@ -168,7 +170,7 @@ public class InputHookTests : TestRunner
 				if (vk == 0 && (key == '{' || key == '}'))
 					continue;
 
-				Assert.That(vk, Is.Not.EqualTo(0), $"{keys}: {key} has a virtual key");
+				Assert.That(vk, Is.Not.Zero, $"{keys}: {key} has a virtual key");
 				Assert.That(io.input.keyVK[vk] & HookThread.INPUT_KEY_SUPPRESS, Is.EqualTo(HookThread.INPUT_KEY_SUPPRESS), $"{keys}: {key} is suppressed");
 			}
 		}
@@ -181,15 +183,15 @@ public class InputHookTests : TestRunner
 	[Test, Category("InputHook")]
 	public void MouseHookNeed()
 	{
-		var io = (InputHook)new InputHook("");
-		Assert.That(io.VisibleMouseMove, Is.EqualTo(true)); // default: movement passes through
+		var io = new InputHook("");
+		Assert.That(io.VisibleMouseMove, Is.True); // default: movement passes through
 		Assert.That(io.input.MouseIsNeeded, Is.False);     // keyboard-only hook needs no mouse hook
 
 		io.VisibleMouseMove = false;                // suppressing movement requires the mouse hook
-		Assert.That(io.VisibleMouseMove, Is.EqualTo(false));
+		Assert.That(io.VisibleMouseMove, Is.False);
 		Assert.IsTrue(io.input.MouseIsNeeded);
 
-		var io2 = (InputHook)new InputHook("");
+		var io2 = new InputHook("");
 		Assert.That(io2.input.MouseIsNeeded, Is.False);
 		_ = io2.KeyOpt("{LButton}", "+E");              // LButton as an end key also needs the mouse hook
 		Assert.IsTrue(io2.input.MouseIsNeeded);
@@ -200,18 +202,18 @@ public class InputHookTests : TestRunner
 	[Test, Category("InputHook")]
 	public void KeyboardHookNeed()
 	{
-		var def = (InputHook)new InputHook("");  // default options suppress typed text
+		var def = new InputHook("");  // default options suppress typed text
 		Assert.IsTrue(def.input.KeyboardIsNeeded);   // ...so the keyboard hook is required
 		Assert.That(def.input.MouseIsNeeded, Is.False);
 
-		var vis = (InputHook)new InputHook("V"); // visible: no text suppression
+		var vis = new InputHook("V"); // visible: no text suppression
 		Assert.IsTrue(vis.input.KeyboardIsNeeded);   // still a keyboard collector (not mouse-only)
 
 		vis.VisibleMouseMove = false;                // now a pure mouse observer
 		Assert.IsTrue(vis.input.MouseIsNeeded);
 		Assert.That(vis.input.KeyboardIsNeeded, Is.False);  // ...so the keyboard hook is no longer needed
 
-		var ek = (InputHook)new InputHook("V", "{Enter}"); // visible + a keyboard end key
+		var ek = new InputHook("V", "{Enter}"); // visible + a keyboard end key
 		Assert.IsTrue(ek.input.KeyboardIsNeeded);    // keyboard end key keeps the keyboard hook
 	}
 
@@ -229,8 +231,8 @@ public class InputHookTests : TestRunner
 		var keyboard = new HookEventInfo(456, false, false, 0, null, 8);
 		s.Threads.CurrentThread.eventInfo = (Func<object>)keyboard.BuildEventInfo;
 		visible = ThreadAccessors.A_EventInfo;
-		Assert.That(KeysharpObject.HasOwnProp(visible, "X"), Is.EqualTo(0L));
-		Assert.That(KeysharpObject.HasOwnProp(visible, "Y"), Is.EqualTo(0L));
+		Assert.That(KeysharpObject.HasOwnProp(visible, "X"), Is.Zero);
+		Assert.That(KeysharpObject.HasOwnProp(visible, "Y"), Is.Zero);
 	}
 
 	[Test, Category("InputHook"), Category("Misc")]
@@ -238,14 +240,16 @@ public class InputHookTests : TestRunner
 	{
 		var context = UseQueuedMainContext();
 		var calls = new List<(long dx, long dy, object info)>();
-		var io = (InputHook)new InputHook("");
-		io.OnMouseMove = new KeysharpFunc((Func<object, object, object, object>)((_, dx, dy) =>
+		var io = new InputHook("")
 		{
-			_ = dx.TryCoerceLong(out var x);
-			_ = dy.TryCoerceLong(out var y);
-			calls.Add((x, y, ThreadAccessors.A_EventInfo));
-			return 0L;
-		}));
+			OnMouseMove = new KeysharpFunc((Func<object, object, object, object>)((_, dx, dy) =>
+			{
+				_ = dx.TryCoerceLong(out var x);
+				_ = dy.TryCoerceLong(out var y);
+				calls.Add((x, y, ThreadAccessors.A_EventInfo));
+				return 0L;
+			}))
+		};
 
 		var previous = s.input;
 		io.input.Start();
@@ -263,12 +267,12 @@ public class InputHookTests : TestRunner
 			Assert.That(calls.Select(c => (c.dx, c.dy)), Is.EqualTo([(0L, 0L), (4L, -2L), (0L, 0L)]));
 			Assert.That(Script.GetPropertyValue(calls[0].info, "X"), Is.EqualTo(20L));
 			Assert.That(Script.GetPropertyValue(calls[0].info, "Y"), Is.EqualTo(30L));
-			Assert.That(KeysharpObject.HasOwnProp(calls[0].info, "DeviceId"), Is.EqualTo(0L));
-			Assert.That(KeysharpObject.HasOwnProp(calls[0].info, "IsAbsolute"), Is.EqualTo(0L));
-			Assert.That(KeysharpObject.HasOwnProp(calls[1].info, "X"), Is.EqualTo(0L));
+			Assert.That(KeysharpObject.HasOwnProp(calls[0].info, "DeviceId"), Is.Zero);
+			Assert.That(KeysharpObject.HasOwnProp(calls[0].info, "IsAbsolute"), Is.Zero);
+			Assert.That(KeysharpObject.HasOwnProp(calls[1].info, "X"), Is.Zero);
 			Assert.That(Script.GetPropertyValue(calls[1].info, "DeviceId"), Is.EqualTo(2L));
 			Assert.That(Script.GetPropertyValue(calls[1].info, "IsAbsolute").Ab(), Is.False);
-			Assert.That(Script.GetPropertyValue(calls[2].info, "DeviceId"), Is.EqualTo(0L));
+			Assert.That(Script.GetPropertyValue(calls[2].info, "DeviceId"), Is.Zero);
 			Assert.IsTrue(Script.GetPropertyValue(calls[2].info, "IsAbsolute").Ab());
 			Assert.That(Script.GetPropertyValue(calls[2].info, "Timestamp"), Is.EqualTo(12L));
 			Assert.IsTrue(Script.GetPropertyValue(calls[2].info, "IsInjected").Ab());
@@ -285,7 +289,7 @@ public class InputHookTests : TestRunner
 	[Test, Category("InputHook")]
 	public void RunningHookReportsNoEndReason()
 	{
-		var io = (InputHook)new InputHook("");
+		var io = new InputHook("");
 
 		io.input.Start();
 		Assert.IsTrue(io.InProgress);
@@ -302,12 +306,14 @@ public class InputHookTests : TestRunner
 	{
 		var context = UseQueuedMainContext();
 		var calls = 0;
-		var io = (InputHook)new InputHook("");
-		io.OnMouseMove = new KeysharpFunc((Func<object, object, object, object>)((_, dx, dy) =>
+		var io = new InputHook("")
 		{
-			calls++;
-			return 0L;
-		}));
+			OnMouseMove = new KeysharpFunc((Func<object, object, object, object>)((_, dx, dy) =>
+			{
+				calls++;
+				return 0L;
+			}))
+		};
 
 		var previous = s.input;
 		io.input.Start();
@@ -348,7 +354,7 @@ public class InputHookTests : TestRunner
 	[Test, Category("InputHook")]
 	public void RestartBeforeTheEndRunsStaysLinked()
 	{
-		var io = (InputHook)new InputHook("");
+		var io = new InputHook("");
 		var previous = s.input;
 		io.input.Start();
 		io.input.prev = previous;
@@ -384,8 +390,10 @@ public class InputHookTests : TestRunner
 			Assert.Ignore("No input sender in this host, so an input cannot be ended through the hook.");
 
 		var context = UseQueuedMainContext();
-		var io = (InputHook)new InputHook("");
-		io.OnChar = new KeysharpFunc((Func<object, object, object>)((_, ch) => 0L));
+		var io = new InputHook("")
+		{
+			OnChar = new KeysharpFunc((Func<object, object, object>)((_, ch) => 0L))
+		};
 		var slot = io.GetCallbackSlot(UserMessages.AHK_INPUT_CHAR);
 
 		var previous = s.input;
@@ -423,8 +431,10 @@ public class InputHookTests : TestRunner
 			Assert.Ignore("No input sender in this host, so an input cannot be ended through the hook.");
 
 		var context = UseQueuedMainContext();
-		var io = (InputHook)new InputHook("");
-		io.OnChar = new KeysharpFunc((Func<object, object, object>)((_, ch) => 0L));
+		var io = new InputHook("")
+		{
+			OnChar = new KeysharpFunc((Func<object, object, object>)((_, ch) => 0L))
+		};
 		var slot = io.GetCallbackSlot(UserMessages.AHK_INPUT_CHAR);
 
 		var previous = s.input;
@@ -454,8 +464,10 @@ public class InputHookTests : TestRunner
 	[Test, Category("InputHook")]
 	public void BeforeHotkeysIsFixedWhileRunning()
 	{
-		var io = (InputHook)new InputHook("");
-		io.BeforeHotkeys = true;
+		var io = new InputHook("")
+		{
+			BeforeHotkeys = true
+		};
 		io.input.Start();
 
 		try
@@ -482,13 +494,15 @@ public class InputHookTests : TestRunner
 
 		var context = UseQueuedMainContext();
 		var ends = 0;
-		var io = (InputHook)new InputHook("");
-		io.BeforeHotkeys = true;
-		io.OnEnd = new KeysharpFunc((Func<object, object>)(_ =>
+		var io = new InputHook("")
 		{
-			ends++;
-			return 0L;
-		}));
+			BeforeHotkeys = true,
+			OnEnd = new KeysharpFunc((Func<object, object>)(_ =>
+				{
+					ends++;
+					return 0L;
+				}))
+		};
 
 		var previous = s.input;
 		var places = s.inputBeforeHotkeysCount;
@@ -535,12 +549,14 @@ public class InputHookTests : TestRunner
 
 		var context = UseQueuedMainContext();
 		var ends = 0;
-		var io = (InputHook)new InputHook("");
-		io.OnEnd = new KeysharpFunc((Func<object, object>)(_ =>
+		var io = new InputHook("")
 		{
-			ends++;
-			return 0L;
-		}));
+			OnEnd = new KeysharpFunc((Func<object, object>)(_ =>
+			{
+				ends++;
+				return 0L;
+			}))
+		};
 
 		var previous = s.input;
 		Assert.IsTrue(io.input.LinkForStart(), "The chain half of Start() links the input.");

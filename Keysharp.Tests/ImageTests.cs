@@ -33,7 +33,7 @@ public class ImageTests : TestRunner
 		for (var i = 0; i < 8; i++)
 			_ = canvas.DrawImage(source, 0, 0);
 
-		Assert.That(canvas.PendingResourcesCount, Is.EqualTo(0));
+		Assert.That(canvas.PendingResourcesCount, Is.Zero);
 	}
 
 	[Test, Category("Image"), Category("Internal")]
@@ -89,7 +89,7 @@ public class ImageTests : TestRunner
 			biBitCount = 32,
 		};
 		var handle = WindowsAPI.CreateDIBSection(0, ref header, 0, out var bits, 0, 0);
-		Assert.That(handle, Is.Not.EqualTo((nint)0));
+		Assert.That(handle, Is.Not.Zero);
 
 		try
 		{

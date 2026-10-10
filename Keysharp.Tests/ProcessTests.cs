@@ -49,7 +49,7 @@ public partial class ProcessTests : TestRunner
 		}
 
 		Assert.That(currentPid, Is.EqualTo(Environment.ProcessId));
-		Assert.That(exitedPid, Is.EqualTo(0));
+		Assert.That(exitedPid, Is.Zero);
 		Assert.IsEmpty(exceptions, "An exited PID must be an ordinary lookup miss, without a first-chance ArgumentException.");
 	}
 

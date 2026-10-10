@@ -18,11 +18,11 @@ public partial class OperatorTests : TestRunner
 	public void FailedClrCoercionDoesNotEqualScalarDefaults()
 	{
 		var value = new ClrValueWithoutText();
-		Assert.That(Script.ValueEquality(0L, value), Is.EqualTo(false));
-		Assert.That(Script.ValueEquality(value, 0.0), Is.EqualTo(false));
-		Assert.That(Script.ValueEquality("", value), Is.EqualTo(false));
-		Assert.That(Script.ValueEquality(true, "1.0"), Is.EqualTo(true));
-		Assert.That(Script.ValueEquality(false, "0.5"), Is.EqualTo(false));
+		Assert.That(Script.ValueEquality(0L, value), Is.False);
+		Assert.That(Script.ValueEquality(value, 0.0), Is.False);
+		Assert.That(Script.ValueEquality("", value), Is.False);
+		Assert.That(Script.ValueEquality(true, "1.0"), Is.True);
+		Assert.That(Script.ValueEquality(false, "0.5"), Is.False);
 	}
 
 	private sealed class ClrValueWithoutText

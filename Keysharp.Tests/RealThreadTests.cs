@@ -195,13 +195,13 @@ public class RealThreadTests : TestRunner
 					registrations.WorkerThreadId = Environment.CurrentManagedThreadId;
 					registrations.WorkerHasSchedulerContext = SynchronizationContext.Current is ScriptEventSynchronizationContext;
 
-					registrations.TimerFunc = new KeysharpFunc((Func<object>)(() => probe.Record("timer")));
+					registrations.TimerFunc = new KeysharpFunc(() => probe.Record("timer"));
 					_ = Keysharp.Builtins.Flow.SetTimer(registrations.TimerFunc, 250L);
 					registrations.TimerScheduler = s.EventScheduler;
 					registrations.Timer = s.FlowData.timers.Find(registrations.TimerFunc, registrations.TimerScheduler);
 
 					registrations.Hotkey = new HotkeyDefinition(s, 1, new KeysharpFunc((Func<object, object>)(_ => probe.Record("hotkey"))), 0, "F24", 0);
-					s.HotkeyData.shk = [..s.HotkeyData.shk, registrations.Hotkey];
+					s.HotkeyData.shk = [.. s.HotkeyData.shk, registrations.Hotkey];
 					registrations.HotkeyVariant = registrations.Hotkey.firstVariant;
 					registrations.HotkeyBinding = registrations.HotkeyVariant.FindBinding(s.EventScheduler);
 
@@ -221,7 +221,7 @@ public class RealThreadTests : TestRunner
 						return 1L;
 					})));
 
-						form.closedHandlers ??= new();
+					form.closedHandlers ??= new();
 					_ = form.closedHandlers.ModifyEventHandlers(new KeysharpFunc((Func<object, object>)(_ => probe.Record("gui"))), 1);
 
 					registrations.Overlay = new Ks.KeysharpOverlay();
@@ -229,7 +229,7 @@ public class RealThreadTests : TestRunner
 					_ = registrations.Overlay.OnEvent("Click", new KeysharpFunc((Func<object, object, object, object>)((_, _, _) => probe.Record("overlay"))));
 
 					_ = Env.OnClipboardChange(new KeysharpFunc((Func<object, object>)(_ => probe.Record("clipboard"))));
-					_ = Dll.CallbackCreate(new KeysharpFunc((Func<object>)(() => probe.Record("callbackcreate"))));
+					_ = Dll.CallbackCreate(new KeysharpFunc(() => probe.Record("callbackcreate")));
 					registrations.CallbackHolder = s.EventScheduler.GetOwnedDelegatesSnapshot().Single();
 				}
 				catch (Exception ex)
@@ -273,10 +273,10 @@ public class RealThreadTests : TestRunner
 			s.ClipFunctions.InvokeEventHandlers(1L);
 			Assert.IsTrue(probe.WaitFor("clipboard"));
 
-			Assert.That(Dll.DllCall((long)registrations.CallbackHolder.Ptr), Is.EqualTo(0L));
+			Assert.That(Dll.DllCall(registrations.CallbackHolder.Ptr), Is.Zero);
 			Assert.IsTrue(probe.WaitFor("callbackcreate"));
 
-			_ = worker.Post(new KeysharpFunc((Func<object>)(() => probe.Record("post"))));
+			_ = worker.Post(new KeysharpFunc(() => probe.Record("post")));
 			Assert.IsTrue(probe.WaitFor("post"));
 
 			foreach (var name in new[] { "timer", "hotkey", "hotstring", "message", "gui", "overlay", "clipboard", "callbackcreate", "post" })
@@ -428,7 +428,7 @@ public class RealThreadTests : TestRunner
 	{
 		var probe = new CallbackProbe();
 		var hk = new HotkeyDefinition(s, (uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ => probe.Record("main"))), 0, "$a", 0);
-		s.HotkeyData.shk = [..s.HotkeyData.shk, hk];
+		s.HotkeyData.shk = [.. s.HotkeyData.shk, hk];
 
 		WithMatchingWorkerHotkey(hk, new KeysharpFunc((Func<object, object>)(_ => probe.Record("worker"))), worker =>
 		{
@@ -464,7 +464,7 @@ public class RealThreadTests : TestRunner
 				callbackRan.Set();
 				return 0L;
 			})), 0, "$a", 0);
-			s.HotkeyData.shk = [..s.HotkeyData.shk, hk];
+			s.HotkeyData.shk = [.. s.HotkeyData.shk, hk];
 
 			Assert.IsTrue(s.HookThread.PostMessage(new KeysharpMsg
 			{
@@ -479,7 +479,7 @@ public class RealThreadTests : TestRunner
 			}));
 
 			Assert.IsTrue(WaitWithUiPump(() => callbackRan.IsSet), "Prequalified hook hotkey did not dispatch.");
-			Assert.That(Volatile.Read(ref criterionCalls), Is.EqualTo(0), "Hook hotkey dispatch should not re-evaluate its criterion on receipt.");
+			Assert.That(Volatile.Read(ref criterionCalls), Is.Zero, "Hook hotkey dispatch should not re-evaluate its criterion on receipt.");
 		}
 		finally
 		{
@@ -503,7 +503,7 @@ public class RealThreadTests : TestRunner
 				callbackRan.Set();
 				return 0L;
 			})), 0, "$c", 0);
-			s.HotkeyData.shk = [..s.HotkeyData.shk, hk];
+			s.HotkeyData.shk = [.. s.HotkeyData.shk, hk];
 
 			var buildMethod = s.HookThread.GetType().GetMethod("TryBuildHookHotkeyMessage", BindingFlags.Instance | BindingFlags.NonPublic);
 			Assert.That(buildMethod, Is.Not.Null, "Hook hotkey message builder should exist.");
@@ -540,7 +540,7 @@ public class RealThreadTests : TestRunner
 		try
 		{
 			var hk = new HotkeyDefinition(s, (uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ => 0L)), 0, "b", 0);
-			s.HotkeyData.shk = [..s.HotkeyData.shk, hk];
+			s.HotkeyData.shk = [.. s.HotkeyData.shk, hk];
 			s.Threads.CurrentThread.hotCriterion = new KeysharpFunc((Func<object, object>)(_ => 1L));
 			_ = hk.AddVariant(new KeysharpFunc((Func<object, object>)(_ => 0L)), 0);
 			s.Threads.CurrentThread.hotCriterion = previousCriterion;
@@ -571,7 +571,7 @@ public class RealThreadTests : TestRunner
 			_ = releaseMain.Wait(2000);
 			return 0L;
 		})), 0, "$a", 0);
-		s.HotkeyData.shk = [..s.HotkeyData.shk, hk];
+		s.HotkeyData.shk = [.. s.HotkeyData.shk, hk];
 
 		WithMatchingWorkerHotkey(hk, new KeysharpFunc((Func<object, object>)(_ =>
 		{
@@ -608,7 +608,7 @@ public class RealThreadTests : TestRunner
 			_ = releaseMain.Wait(2000);
 			return 0L;
 		})), 0, "$a", 0);
-		s.HotkeyData.shk = [..s.HotkeyData.shk, hk];
+		s.HotkeyData.shk = [.. s.HotkeyData.shk, hk];
 
 		WithMatchingWorkerHotkey(hk, new KeysharpFunc((Func<object, object>)(_ =>
 		{
@@ -658,7 +658,7 @@ public class RealThreadTests : TestRunner
 	public void StopUnhooksHotkeys()
 	{
 		var hk = new HotkeyDefinition(s, (uint)s.HotkeyData.shk.Length, new KeysharpFunc((Func<object, object>)(_ => 0L)), 0, "$a", 0);
-		s.HotkeyData.shk = [..s.HotkeyData.shk, hk];
+		s.HotkeyData.shk = [.. s.HotkeyData.shk, hk];
 		_ = HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(s);
 
 		// Installing a real global hook needs devices to grab: a headless container (WSL/CI has no /dev/input

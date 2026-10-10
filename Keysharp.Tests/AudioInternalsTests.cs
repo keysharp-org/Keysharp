@@ -441,7 +441,7 @@ public partial class AudioInternalsTests
 		public void Dispose() { }
 
 		private static AudioDeviceDescriptor Descriptor(AudioDeviceKind kind)
-			=> new ($"test:{kind}", $"Test {kind}", kind, true);
+			=> new($"test:{kind}", $"Test {kind}", kind, true);
 	}
 
 	private sealed class LosableStream : IAudioOutputStream
@@ -449,7 +449,7 @@ public partial class AudioInternalsTests
 		internal int Lost;
 		internal int StartCount, StopCount;
 
-		public AudioStreamFormat Format => new (48000, 2);
+		public AudioStreamFormat Format => new(48000, 2);
 		public double LatencyMilliseconds => 10;
 		public bool IsDeviceLost => Volatile.Read(ref Lost) != 0;
 		public void Start() => Interlocked.Increment(ref StartCount);
@@ -476,22 +476,22 @@ public partial class AudioInternalsTests
 		backend.Available = false;
 		Assert.That(device.Refresh(), Is.Empty);
 		Assert.That(device.Status, Is.EqualTo("Unknown"), "an unavailable backend cannot establish device removal");
-		Assert.That(device.IsRunning, Is.EqualTo(false));
+		Assert.That(device.IsRunning, Is.False);
 
 		backend.Available = true;
 		backend.Present = false;
 		Assert.That(device.Refresh(), Is.Empty);
 		Assert.That(device.Status, Is.EqualTo("Missing"));
-		Assert.That(device.IsRunning, Is.EqualTo(false));
+		Assert.That(device.IsRunning, Is.False);
 
 		backend.Present = true;
 		Assert.That(device.Refresh(), Is.SameAs(device));
 		Assert.That(device.Status, Is.EqualTo("Running"));
-		Assert.That(device.IsRunning, Is.EqualTo(true));
+		Assert.That(device.IsRunning, Is.True);
 
 		var removed = Ks.Audio.Device.WrapMissing(service, descriptor);
 		Assert.That(removed.Status, Is.EqualTo("Missing"));
-		Assert.That(removed.IsRunning, Is.EqualTo(false));
+		Assert.That(removed.IsRunning, Is.False);
 	}
 
 	[Test]
@@ -677,7 +677,8 @@ Is.EqualTo(48000).Within(1),
 			OnDispose = () =>
 			{
 				entered.Set();
-				if (!release.Wait(5000)) throw new TimeoutException("The native cleanup was not released.");
+				if (!release.Wait(5000))
+					throw new TimeoutException("The native cleanup was not released.");
 			}
 		};
 		var opens = 0;
@@ -729,7 +730,7 @@ Is.EqualTo(48000).Within(1),
 			release.Set();
 			Assert.IsTrue(observing.Wait(5000));
 			Assert.That(observing.Result, Is.EqualTo(AudioOutputStatus.Open));
-			Assert.That(second.Disposals, Is.EqualTo(0), "loss observed on a retired generation cannot release its successor");
+			Assert.That(second.Disposals, Is.Zero, "loss observed on a retired generation cannot release its successor");
 			Assert.That(second.Starts, Is.EqualTo(1));
 			Assert.That(core.Mixer, Is.Not.Null);
 		}
@@ -767,7 +768,10 @@ Is.EqualTo(48000).Within(1),
 		try
 		{
 			Assert.IsTrue(entered.Wait(5000), "the backend received the open request");
-			if (dispose) core.Dispose(); else core.Close();
+			if (dispose)
+				core.Dispose();
+			else
+				core.Close();
 			release.Set();
 			Assert.IsTrue(opening.Wait(5000), "the pending open completed");
 			Assert.That(opening.Result, Is.False);
@@ -776,7 +780,7 @@ Is.EqualTo(48000).Within(1),
 			Assert.IsNull(core.Mixer);
 			if (native != null)
 			{
-				Assert.That(native.Starts, Is.EqualTo(0));
+				Assert.That(native.Starts, Is.Zero);
 				Assert.That(native.Disposals, Is.EqualTo(1));
 			}
 		}
@@ -807,20 +811,22 @@ Is.EqualTo(48000).Within(1),
 				if (Interlocked.Increment(ref calls) == 1)
 				{
 					firstEntered.Set();
-					if (!releaseFirst.Wait(5000)) throw new TimeoutException("The first open was not released.");
-					if (outcome == 3) throw new IOException("injected open exception");
-					return (firstNative, outcome == 0 ? "injected open failure" : null);
+					return !releaseFirst.Wait(5000)
+						? throw new TimeoutException("The first open was not released.")
+						: outcome == 3
+						? throw new IOException("injected open exception")
+						: ((IAudioOutputStream Stream, string Error))(firstNative, outcome == 0 ? "injected open failure" : null);
 				}
 
 				secondEntered.Set();
-				if (!releaseSecond.Wait(5000)) throw new TimeoutException("The second open was not released.");
-				return (secondNative, null);
+				return !releaseSecond.Wait(5000) ? throw new TimeoutException("The second open was not released.") : ((IAudioOutputStream Stream, string Error))(secondNative, null);
 			}
 		};
 		using var core = new AudioOutputCore(backend, "", 4, AudioMixer.PolicyOldest, 20);
 		var first = System.Threading.Tasks.Task.Run(() =>
 		{
-			try { return core.TryOpen(out _); }
+			try
+			{ return core.TryOpen(out _); }
 			catch (IOException) when (outcome == 3) { return false; }
 		});
 		System.Threading.Tasks.Task<bool> second = null;
@@ -841,7 +847,7 @@ Is.EqualTo(48000).Within(1),
 			Assert.IsTrue(second.Result);
 			Assert.That(core.Status, Is.EqualTo(AudioOutputStatus.Open));
 			Assert.That(secondNative.Starts, Is.EqualTo(1));
-			Assert.That(secondNative.Disposals, Is.EqualTo(0));
+			Assert.That(secondNative.Disposals, Is.Zero);
 			if (firstNative != null)
 				Assert.That(firstNative.Disposals, Is.EqualTo(1));
 		}
@@ -858,7 +864,8 @@ Is.EqualTo(48000).Within(1),
 	private static WeakReference PlayTemporaryClip(AudioOutputCore core, bool prepare)
 	{
 		var clip = new AudioClipData(new float[480], 48000, 1, AudioFormats.Float32);
-		if (prepare) Assert.IsTrue(core.TryPrepare(clip, out var error), error);
+		if (prepare)
+			Assert.IsTrue(core.TryPrepare(clip, out var error), error);
 		Assert.That(core.TryPlay(clip, 1f, 0f, false, 0, out var playError), Is.Not.Null, playError);
 		return new WeakReference(clip);
 	}
@@ -899,7 +906,7 @@ Is.EqualTo(48000).Within(1),
 	[MethodImpl(MethodImplOptions.NoInlining)]
 	private static WeakReference StartTemporaryMeter(AudioService service)
 	{
-		var meter = new Ks.Audio.Meter((object[])null) { service = service, targetId = "test:Output" };
+		var meter = new Ks.Audio.Meter() { service = service, targetId = "test:Output" };
 		_ = meter.Start();
 		return new WeakReference(meter);
 	}
@@ -954,11 +961,13 @@ Is.EqualTo(48000).Within(1),
 		{
 			while (requested.WaitOne())
 			{
-				if (Volatile.Read(ref stopping) != 0) return;
+				if (Volatile.Read(ref stopping) != 0)
+					return;
 				mixer.Fill(new float[1]);
 				_ = rendered.Set();
 			}
-		}) { IsBackground = true };
+		})
+		{ IsBackground = true };
 		worker.Start();
 
 		try

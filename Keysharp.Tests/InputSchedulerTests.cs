@@ -39,7 +39,7 @@ public class InputSchedulerTests : TestRunner
 			hk.PerformInNewThreadMadeByCallerAsync(variant, 0, 0);
 			context.DrainAll();
 
-			Assert.That(calls, Is.EqualTo(0));
+			Assert.That(calls, Is.Zero);
 
 			s.Threads.EndThread(occupied);
 			context.DrainAll();
@@ -78,7 +78,7 @@ public class InputSchedulerTests : TestRunner
 
 		context.DrainAll();
 
-		Assert.That(hotstringCalls, Is.EqualTo(0));
+		Assert.That(hotstringCalls, Is.Zero);
 		Assert.That(normalCalls, Is.EqualTo(1));
 	}
 
@@ -107,7 +107,7 @@ public class InputSchedulerTests : TestRunner
 
 		context.DrainAll();
 
-		Assert.That(hotkeyCalls, Is.EqualTo(0));
+		Assert.That(hotkeyCalls, Is.Zero);
 		Assert.That(normalCalls, Is.EqualTo(1));
 
 		variant.FindBinding(Script.TheScript.EventScheduler).ExistingThreads = 0;
@@ -130,13 +130,13 @@ public class InputSchedulerTests : TestRunner
 		hk.PerformInNewThreadMadeByCallerAsync(variant, 0, 0);
 
 		context.DrainAll();
-		Assert.That(hotkeyCalls, Is.EqualTo(0));
+		Assert.That(hotkeyCalls, Is.Zero);
 
 		variant.FindBinding(Script.TheScript.EventScheduler).ExistingThreads = 0;
 		s.EventScheduler.SchedulePump();
 		context.DrainAll();
 
-		Assert.That(hotkeyCalls, Is.EqualTo(0), "Unbuffered hotkey events should be dropped before entering the scheduler queue.");
+		Assert.That(hotkeyCalls, Is.Zero, "Unbuffered hotkey events should be dropped before entering the scheduler queue.");
 	}
 
 	[Test, Category("Threading")]

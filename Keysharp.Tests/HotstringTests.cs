@@ -96,11 +96,11 @@ public partial class HotstringTests : TestRunner
 
 			var found = Keyboard.Hotstring(newOptsName) as HotstringDefinition;
 			Assert.That(found, Is.Not.Null);
-			Assert.That(found.EndCharRequired, Is.EqualTo(false));
-			Assert.That(found.DoBackspace, Is.EqualTo(false));
-			Assert.That(found.OmitEndChar, Is.EqualTo(true));
-			Assert.That(found.SuspendExempt, Is.EqualTo(true));
-			Assert.That(found.DoReset, Is.EqualTo(true));
+			Assert.That(found.EndCharRequired, Is.False);
+			Assert.That(found.DoBackspace, Is.False);
+			Assert.That(found.OmitEndChar, Is.True);
+			Assert.That(found.SuspendExempt, Is.True);
+			Assert.That(found.DoReset, Is.True);
 			Assert.That(found.SendRaw, Is.EqualTo(SendRawModes.Raw));
 			Assert.That(found.KeyDelay, Is.EqualTo(123L));
 			Assert.That(found.Priority, Is.EqualTo(10L));
@@ -252,7 +252,7 @@ public partial class HotstringTests : TestRunner
 		//Key delay.
 		var newInt = 42;
 		var origInt = A_DefaultHotstringKeyDelay;
-		Assert.That(origInt, Is.EqualTo(0));
+		Assert.That(origInt, Is.Zero);
 		oldVal = Keyboard.Hotstring($"K{newInt}");
 		Assert.That(A_DefaultHotstringKeyDelay, Is.Not.EqualTo(origInt));
 		Assert.That(newInt, Is.EqualTo(A_DefaultHotstringKeyDelay));
@@ -260,7 +260,7 @@ public partial class HotstringTests : TestRunner
 		//Priority.
 		newInt = 42;
 		origInt = A_DefaultHotstringPriority;
-		Assert.That(origInt, Is.EqualTo(0));
+		Assert.That(origInt, Is.Zero);
 		oldVal = Keyboard.Hotstring($"P{newInt}");
 		Assert.That(A_DefaultHotstringPriority, Is.Not.EqualTo(origInt));
 		Assert.That(newInt, Is.EqualTo(A_DefaultHotstringPriority));
@@ -293,25 +293,25 @@ public partial class HotstringTests : TestRunner
 		//First reset everything back to the default state.
 		_ = Keyboard.Hotstring("*0");
 		origVal = A_DefaultHotstringEndCharRequired;
-		Assert.That(origVal, Is.EqualTo(true));
+		Assert.That(origVal, Is.True);
 		_ = Keyboard.Hotstring("C0");
 		origVal = A_DefaultHotstringCaseSensitive;
-		Assert.That(origVal, Is.EqualTo(false));
+		Assert.That(origVal, Is.False);
 		_ = Keyboard.Hotstring("?0");
 		origVal = A_DefaultHotstringDetectWhenInsideWord;
-		Assert.That(origVal, Is.EqualTo(false));
+		Assert.That(origVal, Is.False);
 		_ = Keyboard.Hotstring("B");
 		origVal = A_DefaultHotstringDoBackspace;
-		Assert.That(origVal, Is.EqualTo(true));
+		Assert.That(origVal, Is.True);
 		_ = Keyboard.Hotstring("O0");
 		origVal = A_DefaultHotstringOmitEndChar;
-		Assert.That(origVal, Is.EqualTo(false));
+		Assert.That(origVal, Is.False);
 		_ = Keyboard.Hotstring("S0");
 		origVal = hsm.hsSuspendExempt;
-		Assert.That(origVal, Is.EqualTo(false));
+		Assert.That(origVal, Is.False);
 		_ = Keyboard.Hotstring("Z0");
 		origVal = A_DefaultHotstringDoReset;
-		Assert.That(origVal, Is.EqualTo(false));
+		Assert.That(origVal, Is.False);
 		_ = Keyboard.Hotstring("R0");
 		Assert.That(SendRawModes.NotRaw.ToString(), Is.EqualTo(A_DefaultHotstringSendRaw));
 		_ = Keyboard.Hotstring("T0");
@@ -324,13 +324,13 @@ public partial class HotstringTests : TestRunner
 		Assert.That(SendModes.InputThenPlay.ToString(), Is.EqualTo(A_DefaultHotstringSendMode));
 		//Now test a multi-option string.
 		_ = Keyboard.Hotstring("*?CB0OSZRK123P10");
-		Assert.That(A_DefaultHotstringEndCharRequired, Is.EqualTo(false));
-		Assert.That(A_DefaultHotstringDetectWhenInsideWord, Is.EqualTo(true));
-		Assert.That(A_DefaultHotstringCaseSensitive, Is.EqualTo(true));
-		Assert.That(A_DefaultHotstringDoBackspace, Is.EqualTo(false));
-		Assert.That(A_DefaultHotstringOmitEndChar, Is.EqualTo(true));
-		Assert.That(hsm.hsSuspendExempt, Is.EqualTo(true));
-		Assert.That(A_DefaultHotstringDoReset, Is.EqualTo(true));
+		Assert.That(A_DefaultHotstringEndCharRequired, Is.False);
+		Assert.That(A_DefaultHotstringDetectWhenInsideWord, Is.True);
+		Assert.That(A_DefaultHotstringCaseSensitive, Is.True);
+		Assert.That(A_DefaultHotstringDoBackspace, Is.False);
+		Assert.That(A_DefaultHotstringOmitEndChar, Is.True);
+		Assert.That(hsm.hsSuspendExempt, Is.True);
+		Assert.That(A_DefaultHotstringDoReset, Is.True);
 		Assert.That(SendRawModes.Raw.ToString(), Is.EqualTo(A_DefaultHotstringSendRaw));
 		Assert.That(A_DefaultHotstringKeyDelay, Is.EqualTo(123L));
 		Assert.That(A_DefaultHotstringPriority, Is.EqualTo(10L));
@@ -370,7 +370,7 @@ public partial class HotstringTests : TestRunner
 		SimulateKeyPress((uint)Keysharp.Builtins.Keyboard.GetKeyVK("w"));
 		SimulateKeyPress((uint)Keysharp.Builtins.Keyboard.GetKeyVK("Enter"));
 		Assert.IsTrue(WaitForCallback(btwTypedEvent), "Timed out waiting for hotstring callback.");
-		Assert.That(btwtyped, Is.EqualTo(true));
+		Assert.That(btwtyped, Is.True);
 	}
 
 	[Test, Category("Hotstring"), NonParallelizable]
@@ -653,10 +653,10 @@ public partial class HotstringTests : TestRunner
 		Assert.IsTrue(generated.Contains("\"a & <#<+F23\""), generated);
 		Assert.IsTrue(generated.Contains("\"MyCopilot\""), generated);
 		Assert.That(generated.Contains("\"Copilot\""), Is.False, generated);
-		Assert.That(Keyboard.GetKeyVK("Copilot"), Is.EqualTo(0L));
-		Assert.That(Keyboard.GetKeySC("Copilot"), Is.EqualTo(0L));
-		Assert.That(Keyboard.GetKeyVK("Office"), Is.EqualTo(0L));
-		Assert.That(Keyboard.GetKeySC("Office"), Is.EqualTo(0L));
+		Assert.That(Keyboard.GetKeyVK("Copilot"), Is.Zero);
+		Assert.That(Keyboard.GetKeySC("Copilot"), Is.Zero);
+		Assert.That(Keyboard.GetKeyVK("Office"), Is.Zero);
+		Assert.That(Keyboard.GetKeySC("Office"), Is.Zero);
 
 		// Office deliberately has no corresponding declaration/remap alias. Since it is not a real key name,
 		// an identifier in the target position remains a one-line hotkey body rather than becoming a remap.
@@ -776,7 +776,7 @@ public partial class HotstringTests : TestRunner
 		var plain = new HotkeyDefinition(Script.TheScript, 1101, null, (uint)HotkeyTypeEnum.Normal, "F23 & x", 0);
 		Assert.IsTrue(plain.constructedOK);
 		Assert.That(plain.modifierVK, Is.EqualTo(combo.modifierVK));
-		Assert.That(plain.prefixModifiersLR, Is.EqualTo(0u));
+		Assert.That(plain.prefixModifiersLR, Is.Zero);
 
 		// The suffix of a composite may carry modifiers too. AutoHotkey rejects these outright, so a
 		// combination which used to be spelled with a chord key name has an equivalent again.
@@ -786,12 +786,12 @@ public partial class HotstringTests : TestRunner
 		Assert.That(
 			suffix.suffixModifiersLR,
 			Is.EqualTo(Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LWIN | Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LSHIFT));
-		Assert.That(suffix.prefixModifiersLR, Is.EqualTo(0u)); // The modifiers belong to the suffix, not the prefix.
+		Assert.That(suffix.prefixModifiersLR, Is.Zero); // The modifiers belong to the suffix, not the prefix.
 
 		// A composite with no modifiers on either side keeps ignoring the modifier state.
 		var bare = new HotkeyDefinition(Script.TheScript, 1104, null, (uint)HotkeyTypeEnum.Normal, "a & F23", 0);
 		Assert.IsTrue(bare.constructedOK);
-		Assert.That(bare.suffixModifiersLR, Is.EqualTo(0u));
+		Assert.That(bare.suffixModifiersLR, Is.Zero);
 		Assert.IsTrue(ModifiersSatisfied(0u, bare.suffixModifiers, bare.suffixModifiersLR));
 
 		// A suffix's modifiers are held when the hotkey fires, which is what modifiersConsolidatedLR
@@ -800,13 +800,13 @@ public partial class HotstringTests : TestRunner
 		Assert.That(
 			suffix.modifiersConsolidatedLR & (Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LWIN | Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LSHIFT),
 			Is.EqualTo(Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LWIN | Keysharp.Internals.Input.Keyboard.KeyboardUtils.MOD_LSHIFT));
-		Assert.That(combo.modifiersConsolidatedLR, Is.EqualTo(0u));
+		Assert.That(combo.modifiersConsolidatedLR, Is.Zero);
 
 		// Specificity orders the chain, so a bare combination cannot eclipse a modified one on the same
 		// keys regardless of which was declared first.
 		Assert.Greater(combo.CompositeSpecificity(), plain.CompositeSpecificity());
 		Assert.Greater(suffix.CompositeSpecificity(), bare.CompositeSpecificity());
-		Assert.That(bare.CompositeSpecificity(), Is.EqualTo(0));
+		Assert.That(bare.CompositeSpecificity(), Is.Zero);
 
 		// A neutral modifier means either side satisfies it; a sided one means that side only.
 		var neutral = new HotkeyDefinition(Script.TheScript, 1102, null, (uint)HotkeyTypeEnum.Normal, "^F23 & x", 0);
@@ -836,12 +836,12 @@ public partial class HotstringTests : TestRunner
 		// "not yet sampled".
 		Keysharp.Internals.Input.Hooks.HookThread.RecordKeyDownState(key, false, 0u);
 		Keysharp.Internals.Input.Hooks.HookThread.RecordKeyDownState(key, true, 0u);
-		Assert.That(key.downModifiersLR, Is.EqualTo(0u));
+		Assert.That(key.downModifiersLR, Is.Zero);
 		Assert.That(ModifiersSatisfied(key.downModifiersLR ?? 0u, 0u, chord), Is.False);
 
 		// Auto-repeat must not revise it, even from that zero.
 		Keysharp.Internals.Input.Hooks.HookThread.RecordKeyDownState(key, true, chord);
-		Assert.That(key.downModifiersLR, Is.EqualTo(0u), "the sample was revised while the key was still held");
+		Assert.That(key.downModifiersLR, Is.Zero, "the sample was revised while the key was still held");
 
 		// Pressed with the modifiers held: armed.
 		Keysharp.Internals.Input.Hooks.HookThread.RecordKeyDownState(key, false, 0u);
@@ -971,7 +971,7 @@ public partial class HotstringTests : TestRunner
 		// VK_RETURN is the one VK backed by two scan codes, so MapVkToSc must report a non-zero *secondary*
 		// (the NumpadEnter code); that is exactly what lets KeyOpt tell Enter apart from NumpadEnter.
 		var secondary = Keysharp.Internals.Input.Keyboard.KeyCodes.MapVkToSc(VkReturn, true);
-		Assert.That(secondary, Is.Not.EqualTo(0u));
+		Assert.That(secondary, Is.Not.Zero);
 
 		// {Enter} names the MAIN Enter, so its end-key is registered at the primary scan code, not at
 		// NumpadEnter's. On Windows the primary is the secondary with its extended bit cleared; evdev/Mac
@@ -983,7 +983,7 @@ public partial class HotstringTests : TestRunner
 #endif
 
 		Assert.That(ih.input.keySC[sc] & Keysharp.Internals.Input.Hooks.HookThread.END_KEY_ENABLED, Is.EqualTo(Keysharp.Internals.Input.Hooks.HookThread.END_KEY_ENABLED));
-		Assert.That(ih.input.keySC[secondary] & Keysharp.Internals.Input.Hooks.HookThread.END_KEY_ENABLED, Is.EqualTo(0u)); // NumpadEnter is a distinct key, not this end-key.
+		Assert.That(ih.input.keySC[secondary] & Keysharp.Internals.Input.Hooks.HookThread.END_KEY_ENABLED, Is.Zero); // NumpadEnter is a distinct key, not this end-key.
 
 #if LINUX
 		const uint EvdevEnter = 28u;
@@ -1108,7 +1108,7 @@ public partial class HotstringTests : TestRunner
 		hsm.RestoreDefaults(true);
 		var newVal = false;
 		var origVal = A_DefaultHotstringNoMouse;
-		Assert.That(origVal, Is.EqualTo(false));
+		Assert.That(origVal, Is.False);
 		var oldVal = Keyboard.Hotstring("MouseReset", newVal);
 		Assert.That(A_DefaultHotstringNoMouse, Is.Not.EqualTo(origVal));
 		Assert.That(!newVal, Is.EqualTo(A_DefaultHotstringNoMouse));

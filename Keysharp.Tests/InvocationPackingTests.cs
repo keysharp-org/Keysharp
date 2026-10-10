@@ -12,7 +12,7 @@ public class InvocationPackingTests : TestRunner
 
 		foreach (var tail in new object[][] { [], [1L], [1L, 2L, 3L] })
 		{
-			object[] supplied = ["head", ..tail];
+			object[] supplied = ["head", .. tail];
 			var original = (object[])supplied.Clone();
 			var first = (object[])method.CallInst(receiver, supplied);
 			Assert.That(first, Is.EqualTo(tail));
@@ -28,8 +28,8 @@ public class InvocationPackingTests : TestRunner
 		}
 
 		object[] packed = [1L, 2L];
-		Assert.That(function.Call("head", (object)packed), Is.SameAs(packed));
-		Assert.That(method.CallInst(receiver, "head", (object)packed), Is.SameAs(packed));
+		Assert.That(function.Call("head", packed), Is.SameAs(packed));
+		Assert.That(method.CallInst(receiver, "head", packed), Is.SameAs(packed));
 		var all = Functions.Closure((Func<object[], object>)Fixture.All);
 		Assert.That(all.Call(packed), Is.SameAs(packed));
 		Assert.That(all.CallInst(receiver, packed), Is.EqualTo([receiver, 1L, 2L]));
@@ -39,7 +39,7 @@ public class InvocationPackingTests : TestRunner
 		var native = Functions.Closure((Func<object[], object>)instance.InstanceAll);
 		Assert.That(native.Call(packed), Is.SameAs(packed));
 		var unbound = new KeysharpFunc(typeof(Fixture).GetMethod(nameof(Fixture.InstanceAll)));
-		Assert.That(unbound.Call(instance, (object)packed), Is.SameAs(packed));
+		Assert.That(unbound.Call(instance, packed), Is.SameAs(packed));
 		Assert.That(unbound.Call(instance, 1L, 2L), Is.EqualTo(packed));
 	}
 
@@ -50,7 +50,7 @@ public class InvocationPackingTests : TestRunner
 		var receiver = new object();
 		foreach (var keys in new object[][] { [], ["a"], ["a", "b"] })
 		{
-			object[] supplied = [..keys, 42L];
+			object[] supplied = [.. keys, 42L];
 			var original = (object[])supplied.Clone();
 			var result = (object[])setter.CallInst(receiver, supplied);
 			Assert.That(result[0], Is.EqualTo(keys));

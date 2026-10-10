@@ -144,8 +144,10 @@ public class TokenizerContractTests : TestRunner
 
 				for (var i = 0; i < t.Offset; i++)
 				{
-					if (src[i] == '\n') { line++; col = 1; }
-					else col++;
+					if (src[i] == '\n')
+					{ line++; col = 1; }
+					else
+						col++;
 				}
 
 				Assert.That(t.Line, Is.EqualTo(line), $"line of {t.Kind} at offset {t.Offset} in <{src}>");

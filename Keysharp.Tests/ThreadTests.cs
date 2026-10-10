@@ -6,12 +6,12 @@ public class ThreadTests : TestRunner
 	[Test, Category("Threading")]
 	public void NoTimersLocal()
 	{
-		Assert.That(((KeysharpThread)Ks.A_Thread).AllowTimers, Is.EqualTo(true));
+		Assert.That(((KeysharpThread)Ks.A_Thread).AllowTimers, Is.True);
 		Assert.IsTrue(s.AccessorData.threadConfigDataPrototype.allowTimers);
 
 		_ = Keysharp.Builtins.KeysharpThread.staticCall(null, "NoTimers", true);
 
-		Assert.That(((KeysharpThread)Ks.A_Thread).AllowTimers, Is.EqualTo(false));
+		Assert.That(((KeysharpThread)Ks.A_Thread).AllowTimers, Is.False);
 		Assert.IsTrue(s.AccessorData.threadConfigDataPrototype.allowTimers);
 	}
 
@@ -77,13 +77,13 @@ public class ThreadTests : TestRunner
 		_ = s.EventScheduler.EnqueueThreadLaunch(0, false, false, () => calls++, false);
 		context.DrainAll();
 
-		Assert.That(calls, Is.EqualTo(0));
+		Assert.That(calls, Is.Zero);
 
 		s.Threads.CurrentThread.priority = 0;
 		s.EventScheduler.SchedulePump();
 		context.DrainAll();
 
-		Assert.That(calls, Is.EqualTo(0));
+		Assert.That(calls, Is.Zero);
 	}
 
 	[Test, Category("Threading")]

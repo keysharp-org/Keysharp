@@ -104,12 +104,12 @@ public partial class MonitorTests : TestRunner
 
 		// No usable name (Xinerama, a toolkit fallback): the index is the fallback while it is in range.
 		Assert.That(Builtins.Ks.KeysharpMonitor.MatchIndex(two, "", 2L), Is.EqualTo(2L));
-		Assert.That(Builtins.Ks.KeysharpMonitor.MatchIndex(two, "", 3L), Is.EqualTo(0L));
+		Assert.That(Builtins.Ks.KeysharpMonitor.MatchIndex(two, "", 3L), Is.Zero);
 
 		// The monitor was unplugged: gone, and reported as gone rather than as some other monitor.
 		DisplayInfo[] one = [two[0]];
-		Assert.That(Builtins.Ks.KeysharpMonitor.MatchIndex(one, "HDMI-1", 2L), Is.EqualTo(0L));
-		Assert.That(Builtins.Ks.KeysharpMonitor.MatchIndex([], "DP-1", 1L), Is.EqualTo(0L));
+		Assert.That(Builtins.Ks.KeysharpMonitor.MatchIndex(one, "HDMI-1", 2L), Is.Zero);
+		Assert.That(Builtins.Ks.KeysharpMonitor.MatchIndex([], "DP-1", 1L), Is.Zero);
 		// ...but a rename that keeps the position still resolves through the index rather than dropping it.
 		Assert.That(Builtins.Ks.KeysharpMonitor.MatchIndex(one, "HDMI-1", 1L), Is.EqualTo(1L));
 	}
@@ -153,12 +153,18 @@ public class EdidTests
 		ReadOnlySpan<byte> magic = [0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00];
 		magic.CopyTo(edid);
 
-		edid[8] = 0x10; edid[9] = 0xAC;               // "DEL" packed as three 5-bit letters, big-endian
-		edid[10] = 0xC1; edid[11] = 0x41;             // product code 0x41C1, little-endian
-		edid[12] = 0x04; edid[13] = 0x03;             // serial 0x01020304, little-endian
-		edid[14] = 0x02; edid[15] = 0x01;
-		edid[18] = 1; edid[19] = 4;                   // EDID 1.4
-		edid[21] = 60; edid[22] = 34;                 // coarse size in cm - the detailed descriptor overrides it
+		edid[8] = 0x10;
+		edid[9] = 0xAC;               // "DEL" packed as three 5-bit letters, big-endian
+		edid[10] = 0xC1;
+		edid[11] = 0x41;             // product code 0x41C1, little-endian
+		edid[12] = 0x04;
+		edid[13] = 0x03;             // serial 0x01020304, little-endian
+		edid[14] = 0x02;
+		edid[15] = 0x01;
+		edid[18] = 1;
+		edid[19] = 4;                   // EDID 1.4
+		edid[21] = 60;
+		edid[22] = 34;                 // coarse size in cm - the detailed descriptor overrides it
 
 		// Descriptor 1 (offset 54): detailed timing carrying the precise image size, 597 x 336 mm.
 		edid[54] = 0x01;                              // non-zero pixel clock marks it as a timing descriptor
@@ -240,16 +246,16 @@ public class EdidTests
 		Fix(edid);
 
 		Assert.IsTrue(Keysharp.Internals.Edid.TryParse(edid, out var info));
-		Assert.That(info.WidthMm, Is.EqualTo(0), "An aspect-ratio byte must not be reported as a physical width.");
-		Assert.That(info.HeightMm, Is.EqualTo(0));
+		Assert.That(info.WidthMm, Is.Zero, "An aspect-ratio byte must not be reported as a physical width.");
+		Assert.That(info.HeightMm, Is.Zero);
 
 		// The portrait spelling puts the ratio in the other byte; it must be rejected the same way.
 		edid[21] = 0;
 		edid[22] = 0x4F;
 		Fix(edid);
 		Assert.IsTrue(Keysharp.Internals.Edid.TryParse(edid, out var portrait));
-		Assert.That(portrait.WidthMm, Is.EqualTo(0));
-		Assert.That(portrait.HeightMm, Is.EqualTo(0));
+		Assert.That(portrait.WidthMm, Is.Zero);
+		Assert.That(portrait.HeightMm, Is.Zero);
 
 		// A genuine size — both bytes set — still reads as centimetres when no detailed timing overrides it.
 		edid[21] = 60;

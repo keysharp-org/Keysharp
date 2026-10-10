@@ -33,7 +33,7 @@ public class SchedulerTests : TestRunner
 		Assert.IsTrue(clipReg.IsActive);
 
 		var hs = (HotstringDefinition)s.HotstringManager.AddHotstring("::d1test", null, "", "d1test", "leak", false);
-		Assert.That(hs.suspended, Is.EqualTo(0));
+		Assert.That(hs.suspended, Is.Zero);
 
 		_ = s.FlowData.timers.Upsert(new KeysharpFunc((Func<object>)(() => 0L)), s.EventScheduler, 1000L, false, 0L);
 		Assert.That(s.FlowData.timers.IsEmpty, Is.False);
@@ -43,7 +43,7 @@ public class SchedulerTests : TestRunner
 		//Every kind of registration the retired script owned is now inert, and it stayed published so late
 		//callers resolve a script whose guards answer honestly rather than a null.
 		Assert.That(clipReg.IsActive, Is.False, "a clipboard registration must not survive its script");
-		Assert.That(hs.suspended & HotstringDefinition.HS_TURNED_OFF, Is.Not.EqualTo(0), "hotstrings must be disabled on exit");
+		Assert.That(hs.suspended & HotstringDefinition.HS_TURNED_OFF, Is.Not.Zero, "hotstrings must be disabled on exit");
 		Assert.IsTrue(s.FlowData.timers.IsEmpty, "timers must be removed on exit");
 		Assert.IsTrue(s.IsDisposed);
 		Assert.That(Script.TheScript, Is.SameAs(s));
@@ -136,7 +136,7 @@ public class SchedulerTests : TestRunner
 
 		s.Dispose();
 
-		Assert.That(s.ClipFunctions.Count, Is.EqualTo(0));
+		Assert.That(s.ClipFunctions.Count, Is.Zero);
 	}
 
 	/// <summary>A callback its owner already registered is not added again and keeps its place, as AHK's OnScriptEvent
@@ -185,7 +185,7 @@ public class SchedulerTests : TestRunner
 		s.EventScheduler.ShutdownForScriptDispose();
 
 		Assert.That(s.ClipFunctions.ModifyEventHandlers(callback, 1L), Is.False);
-		Assert.That(s.ClipFunctions.Count, Is.EqualTo(0));
+		Assert.That(s.ClipFunctions.Count, Is.Zero);
 	}
 
 	[Test, Category("Threading")]
@@ -211,7 +211,7 @@ public class SchedulerTests : TestRunner
 		s.Dispose();
 		context.DrainAll();
 
-		Assert.That(probe.Deletes, Is.EqualTo(0));
+		Assert.That(probe.Deletes, Is.Zero);
 		Assert.That(probe.Disposes, Is.EqualTo(1));
 	}
 
@@ -375,7 +375,7 @@ public class SchedulerTests : TestRunner
 		// A refused launch parks and holds its own class, but dispatch work behind it still runs: the
 		// conditions which refuse a launch do not gate message dispatch.
 		Assert.That(order, Is.EqualTo(["N1"]));
-		Assert.That(context.PendingCount, Is.EqualTo(0));
+		Assert.That(context.PendingCount, Is.Zero);
 
 		interactiveBlocked = false;
 		scheduler.SchedulePump();
@@ -426,7 +426,7 @@ public class SchedulerTests : TestRunner
 			? new[] { "dispatch", "hotkey", "timer1", "timer2" }
 			: ["hotkey", "timer1", "timer2"]));
 		Assert.That(scheduler.HasBlockedQueuedWork, Is.False);
-		Assert.That(context.PendingCount, Is.EqualTo(0));
+		Assert.That(context.PendingCount, Is.Zero);
 	}
 
 	[Test, Category("Threading")]

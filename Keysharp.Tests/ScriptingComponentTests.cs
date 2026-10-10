@@ -27,7 +27,9 @@ public class ScriptingComponentTests : TestRunner
 	[OneTimeTearDown]
 	public void DeleteSharedArtifacts()
 	{
-		try { Directory.Delete(sharedRoot, true); } catch { }
+		try
+		{ Directory.Delete(sharedRoot, true); }
+		catch { }
 	}
 
 	[Test]
@@ -158,7 +160,9 @@ public class ScriptingComponentTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 
@@ -240,7 +244,9 @@ public class ScriptingComponentTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 
@@ -300,7 +306,9 @@ public class ScriptingComponentTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 
@@ -322,7 +330,9 @@ public class ScriptingComponentTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 
@@ -349,9 +359,13 @@ public class ScriptingComponentTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(brokenRoot, true); } catch { }
+			try
+			{ Directory.Delete(brokenRoot, true); }
+			catch { }
 
-			try { Directory.Delete(validRoot, true); } catch { }
+			try
+			{ Directory.Delete(validRoot, true); }
+			catch { }
 		}
 	}
 
@@ -371,7 +385,9 @@ public class ScriptingComponentTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 
@@ -475,7 +491,9 @@ public class ScriptingComponentTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 
@@ -511,9 +529,13 @@ public class ScriptingComponentTests : TestRunner
 		}
 		finally
 		{
-			try { if (staleRoot != null) Directory.Delete(staleRoot, true); } catch { }
+			try
+			{ if (staleRoot != null) Directory.Delete(staleRoot, true); }
+			catch { }
 
-			try { if (!extractedRootExisted && extractedRoot != null) Directory.Delete(extractedRoot, true); } catch { }
+			try
+			{ if (!extractedRootExisted && extractedRoot != null) Directory.Delete(extractedRoot, true); }
+			catch { }
 		}
 	}
 
@@ -537,7 +559,7 @@ public class ScriptingComponentTests : TestRunner
 	{
 		// BuildLeanExecutable asserts the build carries no scripting components.
 		var (ExitCode, StdOut, StdErr) = RunProcess(leanExecutable.Value, []);
-		Assert.That(ExitCode, Is.EqualTo(0), StdErr);
+		Assert.That(ExitCode, Is.Zero, StdErr);
 		Assert.That(StdOut.Trim(), Is.EqualTo("lean-pass"), StdErr);
 	}
 
@@ -566,12 +588,14 @@ public class ScriptingComponentTests : TestRunner
 #endif
 			// The stamped host still has to run: a subsystem edit that corrupted it would fail only here.
 			var (ExitCode, StdOut, StdErr) = RunProcess(consoleExe, []);
-			Assert.That(ExitCode, Is.EqualTo(0), StdErr);
+			Assert.That(ExitCode, Is.Zero, StdErr);
 			Assert.That(StdOut.Trim(), Is.EqualTo("lean-pass"), StdErr);
 		}
 		finally
 		{
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 
@@ -587,7 +611,7 @@ public class ScriptingComponentTests : TestRunner
 			File.WriteAllText(helper, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n"
 				+ "FileAppend('helper-pass:' A_Args.Length, '*')\nExitApp()\n");
 			var compile = RunLauncher(["--errorstdout", "--compile", "asm", helper]);
-			Assert.That(compile.ExitCode, Is.EqualTo(0), compile.StdErr);
+			Assert.That(compile.ExitCode, Is.Zero, compile.StdErr);
 			var parent = Path.Combine(root, "inspector parent.ks");
 			File.WriteAllText(parent, """
 				#NoTrayIcon
@@ -621,7 +645,7 @@ public class ScriptingComponentTests : TestRunner
 			if (host == "compiled")
 			{
 				compile = RunLauncher(["--errorstdout", "--compile", "exe-min", "--with-compiler", parent]);
-				Assert.That(compile.ExitCode, Is.EqualTo(0), compile.StdErr);
+				Assert.That(compile.ExitCode, Is.Zero, compile.StdErr);
 				executable = Path.ChangeExtension(parent, OperatingSystem.IsWindows() ? ".exe" : null);
 			}
 
@@ -630,13 +654,15 @@ public class ScriptingComponentTests : TestRunner
 				string[] arguments = host == "compiled" ? [target, "parent-only"] : [parent, target, "parent-only"];
 				var (ExitCode, StdOut, StdErr) = host == "dotnet"
 					? RunLauncher(arguments) : RunProcess(executable, arguments);
-				Assert.That(ExitCode, Is.EqualTo(0), StdErr);
+				Assert.That(ExitCode, Is.Zero, StdErr);
 				Assert.That(StdOut.Trim(), Is.EqualTo("helper-pass:0"), target + ": " + StdErr);
 			}
 		}
 		finally
 		{
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 
@@ -660,12 +686,14 @@ public class ScriptingComponentTests : TestRunner
 				"a minimal executable must carry components as integrity-checked embedded assets");
 
 			var (ExitCode, StdOut, StdErr) = RunProcess(executable, []);
-			Assert.That(ExitCode, Is.EqualTo(0), StdErr);
+			Assert.That(ExitCode, Is.Zero, StdErr);
 			Assert.That(StdOut.Trim(), Is.EqualTo("0:nested-pass"), StdErr);
 		}
 		finally
 		{
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 
@@ -675,7 +703,7 @@ public class ScriptingComponentTests : TestRunner
 		// BuildCksTarget asserts the sidecar compiler was deployed and the host carries none of its own.
 		var (target, hostRoot) = cksTarget.Value;
 		var (ExitCode, StdOut, StdErr) = RunProcess("dotnet", [Path.Combine(hostRoot, "Keysharp.dll"), "--errorstdout", target]);
-		Assert.That(ExitCode, Is.EqualTo(0), StdErr);
+		Assert.That(ExitCode, Is.Zero, StdErr);
 		Assert.That(StdOut.Trim(), Is.EqualTo($"{target}:0:nested-pass"), StdErr);
 	}
 
@@ -695,18 +723,20 @@ public class ScriptingComponentTests : TestRunner
 				+ $"info := RunScript('{target.Replace("'", "''")}')\n"
 				+ "FileAppend(info.ExitCode ':' info.StdOut.Read(512), '*')\nExitApp()\n");
 			var (ExitCode, StdOut, StdErr) = RunLauncher(["--errorstdout", "--compile", "asm", "--without-compiler", "--dest", outer, outerSource]);
-			Assert.That(ExitCode, Is.EqualTo(0), "outer compile failed: " + StdErr);
+			Assert.That(ExitCode, Is.Zero, "outer compile failed: " + StdErr);
 			Assert.That(Directory.Exists(Path.Combine(root, "components", "scripting")),
 				Is.False,
 				"the outer artifact must not carry its own compiler");
 
 			var run = RunProcess("dotnet", [Path.Combine(hostRoot, "Keysharp.dll"), "--errorstdout", outer]);
-			Assert.That(run.ExitCode, Is.EqualTo(0), run.StdErr);
+			Assert.That(run.ExitCode, Is.Zero, run.StdErr);
 			Assert.That(run.StdOut.Trim(), Is.EqualTo($"0:{target}:0:nested-pass"), run.StdErr);
 		}
 		finally
 		{
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 
@@ -721,13 +751,15 @@ public class ScriptingComponentTests : TestRunner
 			var script = Path.Combine(root, "stdout.ks");
 			File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\nx := 1\n");
 			var (ExitCode, StdOut, StdErr) = RunLauncher(["--errorstdout", "--compile", "asm", "--with-compiler", "--dest", "*", script]);
-			Assert.That(ExitCode, Is.Not.EqualTo(0));
+			Assert.That(ExitCode, Is.Not.Zero);
 			Assert.IsTrue((StdOut + StdErr).Contains("requires sidecar scripting components", StringComparison.Ordinal),
 				StdErr);
 		}
 		finally
 		{
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 
@@ -774,8 +806,9 @@ public class ScriptingComponentTests : TestRunner
 			+ "ownPath := A_ScriptFullPath\n"
 			+ "info := RunScript(\"#NoTrayIcon`n#ErrorStdOut`nFileAppend('nested-pass', '*')`nExitApp(0)\")\n"
 			+ "FileAppend(ownPath ':' info.ExitCode ':' info.StdOut.Read(64), '*')\nExitApp()\n");
-		var (ExitCode, StdOut, StdErr) = RunLauncher(["--errorstdout", "--compile", "asm", "--with-compiler", "--dest", target, targetSource]);
-		Assert.That(ExitCode, Is.EqualTo(0), "target compile failed: " + StdErr);
+
+		var (ExitCode, _, StdErr) = RunLauncher(["--errorstdout", "--compile", "asm", "--with-compiler", "--dest", target, targetSource]);
+		Assert.That(ExitCode, Is.Zero, "target compile failed: " + StdErr);
 		Assert.IsTrue(File.Exists(target));
 		Assert.IsTrue(File.Exists(Path.Combine(artifactRoot, "components", "scripting", "compiler", "component.json")));
 
@@ -814,7 +847,7 @@ public class ScriptingComponentTests : TestRunner
 	private static string BuildExecutable(string script)
 	{
 		var (ExitCode, StdOut, StdErr) = RunLauncher(["--errorstdout", "--compile", "exe-min", script]);
-		Assert.That(ExitCode, Is.EqualTo(0), "compile failed: " + StdErr);
+		Assert.That(ExitCode, Is.Zero, "compile failed: " + StdErr);
 #if WINDOWS
 		var executable = Path.ChangeExtension(script, ".exe");
 #else
@@ -859,7 +892,9 @@ public class ScriptingComponentTests : TestRunner
 		var error = process.StandardError.ReadToEndAsync();
 		if (!process.WaitForExit(240000))
 		{
-			try { process.Kill(true); } catch { }
+			try
+			{ process.Kill(true); }
+			catch { }
 
 			Assert.Fail($"'{executable}' did not exit within 240 seconds.");
 		}
@@ -900,7 +935,6 @@ public class ScriptingComponentTests : TestRunner
 		}
 	}
 #endif
-
 
 	private static string NewComponentRoot() => Path.Combine(Path.GetTempPath(), "ks-components-" + Guid.NewGuid().ToString("N"));
 

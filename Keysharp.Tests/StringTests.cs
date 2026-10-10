@@ -94,10 +94,10 @@ public partial class StringTests : TestRunner
 
 		try
 		{
-			Assert.That(Keysharp.Builtins.Strings.StrCompare("i", "I", "Locale"), Is.Not.EqualTo(0L));
-			Assert.That(Keysharp.Builtins.Strings.StrCompare("i", "I", "Off"), Is.EqualTo(0L));
+			Assert.That(Keysharp.Builtins.Strings.StrCompare("i", "I", "Locale"), Is.Not.Zero);
+			Assert.That(Keysharp.Builtins.Strings.StrCompare("i", "I", "Off"), Is.Zero);
 			Assert.That(Keysharp.Builtins.Strings.InStr("I", "i", "Locale"), Is.EqualTo(1L));
-			Assert.That(Keysharp.Builtins.Strings.InStr("İ", "i", "Locale"), Is.EqualTo(0L));
+			Assert.That(Keysharp.Builtins.Strings.InStr("İ", "i", "Locale"), Is.Zero);
 		}
 		finally
 		{

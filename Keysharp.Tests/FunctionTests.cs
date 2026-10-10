@@ -136,7 +136,7 @@ public class FunctionTests : TestRunner
 			GC.KeepAlive(holder.CallFunc);
 
 		var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-		Assert.That(allocated, Is.EqualTo(0L));
+		Assert.That(allocated, Is.Zero);
 		Assert.That(holder.CallFunc, Is.SameAs(cached));
 	}
 
@@ -302,11 +302,11 @@ public class FunctionTests : TestRunner
 	[Test, Category("Function"), NonParallelizable]
 	public void VarParamsInFunc() => Assert.IsTrue(TestScript("func-var-params", false));
 
-		[Test, Category("Function"), NonParallelizable]
-		public void FuncCallable() => Assert.IsTrue(TestScript("func-callable", false));
+	[Test, Category("Function"), NonParallelizable]
+	public void FuncCallable() => Assert.IsTrue(TestScript("func-callable", false));
 
-		[Test, Category("Function"), NonParallelizable]
-		public void FuncClosure() => Assert.IsTrue(TestScript("func-closure", false));
+	[Test, Category("Function"), NonParallelizable]
+	public void FuncClosure() => Assert.IsTrue(TestScript("func-closure", false));
 
 	[Test, Category("Function"), NonParallelizable]
 	public void FuncParamCount() => Assert.IsTrue(TestScript("func-param-count", false));

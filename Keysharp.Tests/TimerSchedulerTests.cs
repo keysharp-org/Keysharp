@@ -37,6 +37,6 @@ public class TimerSchedulerTests : TestRunner
 		// The original post is still in the test transport; the active pass must add one follow-up.
 		Assert.That(context.PendingCount, Is.EqualTo(2));
 		context.DrainAll();
-		Assert.That(context.PendingCount, Is.EqualTo(0));
+		Assert.That(context.PendingCount, Is.Zero);
 	}
 }

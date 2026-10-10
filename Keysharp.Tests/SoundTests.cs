@@ -61,8 +61,8 @@ public partial class SoundTests : TestRunner
 		Assert.That(Crossings(SoundPlayback.BuildToneWav(880, 250, rate), rate, 0.05, 0.15), Is.EqualTo(264).Within(2), "880 Hz over 0.15 s");
 
 		// Fades in and out, so a tone does not click at either end.
-		Assert.That(BitConverter.ToInt16(wav, 44), Is.EqualTo(0), "starts silent");
-		Assert.That(BitConverter.ToInt16(wav, wav.Length - 2), Is.EqualTo(0), "ends silent");
+		Assert.That(BitConverter.ToInt16(wav, 44), Is.Zero, "starts silent");
+		Assert.That(BitConverter.ToInt16(wav, wav.Length - 2), Is.Zero, "ends silent");
 
 		// Out-of-range input is clamped to the documented 37..32767 Hz rather than throwing, and a
 		// zero/negative duration yields a valid, empty WAV.

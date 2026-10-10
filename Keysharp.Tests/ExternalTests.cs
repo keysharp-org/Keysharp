@@ -13,10 +13,9 @@ public partial class ExternalTests : TestRunner
 	public void DllCall_()
 	{
 		var desktop = WindowsAPI.GetDesktopWindow();
-		var rect = new RECT();
 		var buf = new Keysharp.Builtins.Buffer(16, 0);
 		_ = Dll.DllCall("user32.dll\\GetWindowRect", "ptr", desktop, "ptr", buf);
-		_ = WindowsAPI.GetWindowRect((nint)desktop, out rect);
+		_ = WindowsAPI.GetWindowRect((nint)desktop, out var rect);
 		var l = (long)NumGet(buf, 0, "UInt");
 		var t = (long)NumGet(buf, 4, "UInt");
 		var r = (long)NumGet(buf, 8, "UInt");
@@ -72,18 +71,18 @@ public partial class ExternalTests : TestRunner
 		using var inner = new ComObjArray(VarEnum.VT_BSTR, 1);
 		using var outer = new ComObjArray(VarEnum.VT_VARIANT, 1);
 		Assert.IsTrue(outer.TryPutElementAtIndices([0], inner, out var hr));
-		Assert.That(hr, Is.EqualTo(0));
+		Assert.That(hr, Is.Zero);
 		var pointer = (nint)(long)outer.Ptr;
-		Assert.That(OleAuto.SafeArrayLock(pointer), Is.EqualTo(0));
+		Assert.That(OleAuto.SafeArrayLock(pointer), Is.Zero);
 		nint nested;
 		try
 		{
-			Assert.That(OleAuto.SafeArrayPtrOfIndex(pointer, [0], out var cell), Is.EqualTo(0));
+			Assert.That(OleAuto.SafeArrayPtrOfIndex(pointer, [0], out var cell), Is.Zero);
 			nested = VariantHelper.ReadStorage(cell, VarEnum.VT_VARIANT).ptrVal;
 		}
 		finally { _ = OleAuto.SafeArrayUnlock(pointer); }
 
-		Assert.That(OleAuto.SafeArrayLock(nested), Is.EqualTo(0));
+		Assert.That(OleAuto.SafeArrayLock(nested), Is.Zero);
 		try
 		{
 			Assert.IsTrue(outer.TryPutElementAtIndices([0], "replacement", out hr));
@@ -91,10 +90,10 @@ public partial class ExternalTests : TestRunner
 		}
 		finally { _ = OleAuto.SafeArrayUnlock(nested); }
 
-		Assert.That(OleAuto.SafeArrayLock(pointer), Is.EqualTo(0));
+		Assert.That(OleAuto.SafeArrayLock(pointer), Is.Zero);
 		try
 		{
-			Assert.That(OleAuto.SafeArrayPtrOfIndex(pointer, [0], out var cell), Is.EqualTo(0));
+			Assert.That(OleAuto.SafeArrayPtrOfIndex(pointer, [0], out var cell), Is.Zero);
 			Assert.That(VariantHelper.ReadStorage(cell, VarEnum.VT_VARIANT).ptrVal, Is.EqualTo(nested));
 			outer.Dispose();
 			Assert.That(outer.Ptr, Is.EqualTo((long)pointer));

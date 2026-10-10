@@ -25,7 +25,7 @@ public partial class ScreenTests
 		}
 		finally
 		{
-			foreach (var (Bounds, Pixels) in captures)
+			foreach (var (_, Pixels) in captures)
 				Pixels.Dispose();
 		}
 	}
@@ -41,7 +41,7 @@ public partial class ScreenTests
 
 		using var result = ScreenCaptureComposer.Compose(new ScreenRect(-2, 4, 2, 1), captures);
 		Assert.That(result, Is.SameAs(source));
-		Assert.That(captures.Count, Is.EqualTo(0), "ownership transfer must remove the returned bitmap from disposal");
+		Assert.That(captures.Count, Is.Zero, "ownership transfer must remove the returned bitmap from disposal");
 	}
 
 	[Test, Category("Screen"), Category("Internal"), Category("Curated")]
@@ -188,10 +188,8 @@ public partial class ScreenTests
 	{
 		var type = typeof(OverlayBase);
 		var sync = type.GetField("sync", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(service);
-		var overlays = type.GetField("overlays", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(service)
-			as IDictionary;
 
-		if (sync == null || overlays == null)
+		if (sync == null || type.GetField("overlays", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(service) is not IDictionary overlays)
 			throw new InvalidOperationException("OverlayBase registration fields were not found.");
 
 		lock (sync)

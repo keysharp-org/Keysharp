@@ -413,7 +413,7 @@ public class EventHookTests : TestRunner
 
 			Assert.That(we.InProgress, Is.False, "The hook stays stopped.");
 			Assert.That(we.EndReason, Is.EqualTo("Stopped"));
-			Assert.That(((Keysharp.Builtins.Array)Ks.WinEvent.staticget_Hooks(null)).Length, Is.EqualTo(0L), "No run is left listed.");
+			Assert.That(((Keysharp.Builtins.Array)Ks.WinEvent.staticget_Hooks(null)).Length, Is.Zero, "No run is left listed.");
 			Assert.That(Script.TheScript.WinEventManager.IsKeepingScriptRunning, Is.False);
 		}
 		finally
@@ -464,7 +464,7 @@ public class EventHookTests : TestRunner
 		var needsThreeThenAny = new KeysharpFunc((Func<object, object, object, object[], object>)((a, b, c, rest) => ""));
 		Assert.IsTrue(needsThreeThenAny.IsVariadic);
 		Assert.IsInstanceOf<ValueError>(Assert.Throws<KeysharpException>(() => Ks.KeysharpClipboard.OnChange(null, needsThreeThenAny)).UserError);
-		Assert.That(((Keysharp.Builtins.Array)Ks.KeysharpClipboard.staticget_Hooks(null)).Length, Is.EqualTo(0L),
+		Assert.That(((Keysharp.Builtins.Array)Ks.KeysharpClipboard.staticget_Hooks(null)).Length, Is.Zero,
 			"A refused callback leaves no hook behind.");
 	}
 
@@ -655,7 +655,7 @@ public class EventHookTests : TestRunner
 		};
 		manager.SetForegroundTracking(true);
 		Assert.That(duringStartup, Is.EqualTo((nint)0x2220), "Restarting tracking does not expose the previous cache.");
-		Assert.That(manager.ForegroundWindowHandle, Is.EqualTo((nint)0), "A native event wins over the startup snapshot.");
+		Assert.That(manager.ForegroundWindowHandle, Is.EqualTo(IntPtr.Zero), "A native event wins over the startup snapshot.");
 		Assert.That(queries, Is.EqualTo(4), "An authoritative native zero does not cause another live query.");
 	}
 
@@ -677,13 +677,13 @@ public class EventHookTests : TestRunner
 
 		manager.SetForegroundTracking(true);
 		Assert.That(queries, Is.EqualTo(1));
-		Assert.That(manager.ForegroundWindowHandle, Is.EqualTo((nint)0), "The removed window cannot become the cached foreground.");
+		Assert.That(manager.ForegroundWindowHandle, Is.EqualTo(IntPtr.Zero), "The removed window cannot become the cached foreground.");
 		Assert.That(queries, Is.EqualTo(2), "An invalidated seed falls back to a fresh foreground query.");
-		Assert.That(manager.ForegroundWindowHandle, Is.EqualTo((nint)0));
+		Assert.That(manager.ForegroundWindowHandle, Is.EqualTo(IntPtr.Zero));
 		Assert.That(queries, Is.EqualTo(3), "A removal does not establish an authoritative zero foreground.");
 
 		backend.Sink(new WindowEventRaw(WindowEventType.Active, 0, 0));
-		Assert.That(manager.ForegroundWindowHandle, Is.EqualTo((nint)0));
+		Assert.That(manager.ForegroundWindowHandle, Is.EqualTo(IntPtr.Zero));
 		Assert.That(queries, Is.EqualTo(3), "An authoritative native zero finishes cache initialization.");
 	}
 
@@ -706,7 +706,7 @@ public class EventHookTests : TestRunner
 		{
 			Assert.That(Send(WindowEventType.Active, 0x1110), Is.EqualTo((nint)0x1110));
 			Assert.That(Send(WindowEventType.Deactivate, 0x2220), Is.EqualTo((nint)0x1110), "Another window's deactivation is ignored.");
-			Assert.That(Send(WindowEventType.Deactivate, 0x1110), Is.EqualTo((nint)0), "The foreground window's deactivation clears it.");
+			Assert.That(Send(WindowEventType.Deactivate, 0x1110), Is.EqualTo(IntPtr.Zero), "The foreground window's deactivation clears it.");
 		}
 		finally
 		{

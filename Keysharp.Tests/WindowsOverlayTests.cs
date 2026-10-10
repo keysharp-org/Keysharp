@@ -12,9 +12,11 @@ public class WindowsOverlayTests : TestRunner
 		Exception creationError = null;
 		var creator = new Thread(() =>
 		{
-			try { surface = DibOverlaySurface.TryCreate(new PixelSize(8, 4)); }
+			try
+			{ surface = DibOverlaySurface.TryCreate(new PixelSize(8, 4)); }
 			catch (Exception ex) { creationError = ex; }
-		}) { IsBackground = true };
+		})
+		{ IsBackground = true };
 
 		creator.Start();
 		Assert.IsTrue(creator.Join(TimeSpan.FromSeconds(10)), "surface creation should not block");

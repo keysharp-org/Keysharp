@@ -121,7 +121,9 @@ public partial class ModuleTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 

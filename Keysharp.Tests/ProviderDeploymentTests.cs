@@ -39,9 +39,13 @@ public class ProviderDeploymentTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 
-			try { Directory.Delete(destination, true); } catch { }
+			try
+			{ Directory.Delete(destination, true); }
+			catch { }
 		}
 	}
 
@@ -97,11 +101,17 @@ public class ProviderDeploymentTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 
-			try { Directory.Delete(work, true); } catch { }
+			try
+			{ Directory.Delete(work, true); }
+			catch { }
 
-			try { if (extractedRoot != null) Directory.Delete(extractedRoot, true); } catch { }
+			try
+			{ if (extractedRoot != null) Directory.Delete(extractedRoot, true); }
+			catch { }
 		}
 	}
 
@@ -185,7 +195,9 @@ public class ProviderDeploymentTests : TestRunner
 		finally
 		{
 			Keysharp.Internals.Os.NuGetPackageLoader.ResetForTests();
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 

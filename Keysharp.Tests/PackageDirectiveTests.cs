@@ -1,5 +1,5 @@
-using KP = Keysharp.Parsing.Syntax;
 using KC = Keysharp.Compilation.Syntax;
+using KP = Keysharp.Parsing.Syntax;
 
 namespace Keysharp.Tests;
 
@@ -228,7 +228,11 @@ public class PackageDirectiveTests : TestRunner
 			var source = Path.Combine(root, "lib", "Example.dll");
 			var package = new Keysharp.Internals.Os.PackageResolver.ResolvedPackage
 			{
-				Provider = "aris", Id = id, Version = "1.0.0", PinnedVersion = "1.0.0", Root = root
+				Provider = "aris",
+				Id = id,
+				Version = "1.0.0",
+				PinnedVersion = "1.0.0",
+				Root = root
 			};
 			package.Managed.Add(source);
 			var manifest = new Keysharp.Internals.Os.PackageManifest();
@@ -261,7 +265,9 @@ public class PackageDirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(cache, true); } catch { }
+			try
+			{ Directory.Delete(cache, true); }
+			catch { }
 		}
 	}
 
@@ -286,7 +292,9 @@ public class PackageDirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(cache, true); } catch { }
+			try
+			{ Directory.Delete(cache, true); }
+			catch { }
 		}
 	}
 
@@ -322,7 +330,9 @@ public class PackageDirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(cache, true); } catch { }
+			try
+			{ Directory.Delete(cache, true); }
+			catch { }
 		}
 	}
 
@@ -365,7 +375,9 @@ public class PackageDirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 
@@ -391,7 +403,9 @@ public class PackageDirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 
@@ -437,7 +451,7 @@ public class PackageDirectiveTests : TestRunner
 		{
 			var (c, d) = Lower(other);
 			Assert.IsEmpty(d, other + " -> " + string.Join("; ", d));
-			Assert.That(CountCalls(c), Is.EqualTo(0), other + " must not load a package");
+			Assert.That(CountCalls(c), Is.Zero, other + " must not load a package");
 		}
 	}
 
@@ -545,7 +559,9 @@ public class PackageDirectiveTests : TestRunner
 		File.WriteAllText(Path.Combine(pkgDir, "runtimes", "win-x64", "native", "demo_native.dll"), "");
 		var package = new Keysharp.Internals.Os.PackageResolver.ResolvedPackage
 		{
-			Id = "demo.pkg", Version = "1.0.0", Root = pkgDir
+			Id = "demo.pkg",
+			Version = "1.0.0",
+			Root = pkgDir
 		};
 		package.Managed.Add(Path.Combine(pkgDir, "lib", "net6.0", "Demo.dll"));
 		package.Native.Add(Path.Combine(pkgDir, "runtimes", "win-x64", "native", "demo_native.dll"));
@@ -555,7 +571,9 @@ public class PackageDirectiveTests : TestRunner
 		Assert.That(manifest.Packages[0].Native[0].Deployed,
 			Does.EndWith(Path.Combine("native", "runtimes", "win-x64", "native", "demo_native.dll")));
 
-		try { Directory.Delete(root, true); } catch { }
+		try
+		{ Directory.Delete(root, true); }
+		catch { }
 	}
 
 	/// <summary>A P/Invoke names a native library in several ways; all of them have to find the one file.</summary>
@@ -603,7 +621,9 @@ public class PackageDirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(root, true); } catch { }
+			try
+			{ Directory.Delete(root, true); }
+			catch { }
 		}
 	}
 
@@ -652,7 +672,7 @@ public class PackageDirectiveTests : TestRunner
 		var unversioned = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Newtonsoft.Json", "", false, out var unversionedError);
 		Assert.IsNull(unversionedError, unversionedError);
 		Assert.That(unversioned, Is.EqualTo(pkg).AsCollection);
-		Assert.That(Keysharp.Internals.Os.PackageResolver.ResolveCount, Is.EqualTo(0));
+		Assert.That(Keysharp.Internals.Os.PackageResolver.ResolveCount, Is.Zero);
 
 		// A different version for an already-requested package is reported rather than silently loading a second copy.
 		_ = Keysharp.Internals.Os.NuGetPackageLoader.LoadOne("Newtonsoft.Json", "12.0.3", false, out var conflict);
@@ -713,7 +733,9 @@ public class PackageDirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 
 		// The contrast: the imperative runtime form cannot batch, so each call resolves again — over the UNION,
@@ -739,7 +761,7 @@ public class PackageDirectiveTests : TestRunner
 		// cache this test exists to pin. Only the network/restore step may be skipped.
 		Keysharp.Internals.Os.PackageResolver.ResetCounters();
 		Assert.IsTrue(Keysharp.Internals.Os.PackageResolver.TryResolve(pkgs, true, "#Package", out _, out err), err);
-		Assert.That(Keysharp.Internals.Os.PackageResolver.RestoreCount, Is.EqualTo(0),
+		Assert.That(Keysharp.Internals.Os.PackageResolver.RestoreCount, Is.Zero,
 						"a package set already resolved on this machine must not invoke the provider restore again");
 	}
 
@@ -790,7 +812,7 @@ public class PackageDirectiveTests : TestRunner
 		var script = Path.Combine(dir, "compiled.ks");
 		File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#Package Newtonsoft.Json 13.0.3\n#import \"Ks\" { Clr }\n"
 								  + "FileAppend(Clr.Newtonsoft.Json.JsonConvert.SerializeObject([1, 2, 3]), \"*\")\nExitApp()\n");
-		Assert.That(Run(launcher, $"--errorstdout --compile {mode} \"{script}\"", out _, out var cerr), Is.EqualTo(0), "compile failed: " + cerr);
+		Assert.That(Run(launcher, $"--errorstdout --compile {mode} \"{script}\"", out _, out var cerr), Is.Zero, "compile failed: " + cerr);
 		var exe = Path.ChangeExtension(script, OperatingSystem.IsWindows() ? ".exe" : null);
 		Assert.IsTrue(File.Exists(exe), $"compile produced no exe at {exe}");
 
@@ -835,9 +857,11 @@ public class PackageDirectiveTests : TestRunner
 				"every manifest asset must be present at its collision-free deployed path");
 		}
 
-		Assert.That(Run(exe, "", out var stdout, out var stderr), Is.EqualTo(0), stderr);
+		Assert.That(Run(exe, "", out var stdout, out var stderr), Is.Zero, stderr);
 		Assert.That(stdout.Trim(), Is.EqualTo("[1,2,3]"), "stderr: " + stderr);
-		try { Directory.Delete(dir, true); } catch { }
+		try
+		{ Directory.Delete(dir, true); }
+		catch { }
 	}
 
 	/// <summary>
@@ -861,7 +885,7 @@ public class PackageDirectiveTests : TestRunner
 			File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#Import Ks { Clr }\n"
 				+ "Clr.LoadPackage(\"Newtonsoft.Json\", \"v13.0.3\")\n"
 				+ "FileAppend(Clr.Newtonsoft.Json.JsonConvert.SerializeObject([4, 5]), \"*\")\nExitApp()\n");
-			Assert.That(Run(launcher, $"--errorstdout --compile {mode} \"{script}\"", out _, out var compileError), Is.EqualTo(0),
+			Assert.That(Run(launcher, $"--errorstdout --compile {mode} \"{script}\"", out _, out var compileError), Is.Zero,
 				"compile failed: " + compileError);
 
 			var exe = Path.ChangeExtension(script, OperatingSystem.IsWindows() ? ".exe" : null);
@@ -894,12 +918,14 @@ public class PackageDirectiveTests : TestRunner
 				Is.False,
 				"compiled artifacts must not recreate the legacy providers subtree");
 
-			Assert.That(Run(exe, "", out var stdout, out var stderr), Is.EqualTo(0), stderr);
+			Assert.That(Run(exe, "", out var stdout, out var stderr), Is.Zero, stderr);
 			Assert.That(stdout.Trim(), Is.EqualTo("[4,5]"), "stderr: " + stderr);
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 
@@ -936,7 +962,9 @@ public class PackageDirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 
@@ -956,7 +984,7 @@ public class PackageDirectiveTests : TestRunner
 			File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#Import Ks { Clr }\n"
 				+ "Clr.LoadPackage(\"nuget:Newtonsoft.Json\", \"v13.0.3\")\n"
 				+ "FileAppend(Clr.Newtonsoft.Json.JsonConvert.SerializeObject([6, 7]), \"*\")\nExitApp()\n");
-			Assert.That(Run(launcher, $"--errorstdout --compile asm \"{script}\"", out _, out var error), Is.EqualTo(0), error);
+			Assert.That(Run(launcher, $"--errorstdout --compile asm \"{script}\"", out _, out var error), Is.Zero, error);
 			var compiled = Path.ChangeExtension(script, ".cks");
 			Assert.IsTrue(File.Exists(compiled));
 			Assert.That(Directory.Exists(Path.Combine(dir, "components", "packages")),
@@ -965,12 +993,14 @@ public class PackageDirectiveTests : TestRunner
 			Assert.That(Directory.Exists(Path.Combine(dir, "providers")),
 				Is.False,
 				"a .cks must not recreate the legacy providers subtree");
-			Assert.That(Run(launcher, $"--errorstdout \"{compiled}\"", out var stdout, out error), Is.EqualTo(0), error);
+			Assert.That(Run(launcher, $"--errorstdout \"{compiled}\"", out var stdout, out error), Is.Zero, error);
 			Assert.That(stdout.Trim(), Is.EqualTo("[6,7]"), "stderr: " + error);
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 
@@ -993,14 +1023,19 @@ public class PackageDirectiveTests : TestRunner
 	{
 		using var proc = Process.Start(new ProcessStartInfo(exe, args)
 		{
-			RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true
+			RedirectStandardOutput = true,
+			RedirectStandardError = true,
+			UseShellExecute = false,
+			CreateNoWindow = true
 		});
 		var o = proc.StandardOutput.ReadToEndAsync();
 		var e = proc.StandardError.ReadToEndAsync();
 
 		if (!proc.WaitForExit(240000))
 		{
-			try { proc.Kill(true); } catch { }
+			try
+			{ proc.Kill(true); }
+			catch { }
 
 			Assert.Fail($"{Path.GetFileName(exe)} did not exit within 240s");
 		}
@@ -1014,7 +1049,7 @@ public class PackageDirectiveTests : TestRunner
 	/// A dependency the script never named must be (a) resolvable by type name and (b) not loaded until it is.
 	/// Both halves matter: (a) is what the resolving hook alone cannot do â€” it fires on an assembly-name miss, and a
 	/// lookup by TYPE name never gets that far â€” and (b) is the whole point of deferring at all. SQLitePCLRaw.core is
-/// a transitive dependency of the bundle package.
+	/// a transitive dependency of the bundle package.
 	/// </summary>
 	[Test, Category("NuGet")]
 	public void LazyDependency()
@@ -1072,7 +1107,9 @@ public class PackageDirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 
@@ -1123,7 +1160,9 @@ public class PackageDirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 
@@ -1153,7 +1192,9 @@ public class PackageDirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 
@@ -1187,7 +1228,9 @@ public class PackageDirectiveTests : TestRunner
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 
@@ -1211,13 +1254,15 @@ public class PackageDirectiveTests : TestRunner
 			// Passed per call: there is no mode to save, restore, or leak into a concurrent compile.
 			var (arr, code, _) = new CompilerHelper().CompileCodeToByteArray(script, "off", allowPackageRestore: false);
 			Assert.IsNull(arr, "an unrestored package set must fail an offline compile rather than resolve");
-			Assert.That(Keysharp.Internals.Os.PackageResolver.RestoreCount, Is.EqualTo(0),
+			Assert.That(Keysharp.Internals.Os.PackageResolver.RestoreCount, Is.Zero,
 							"an offline compile must not invoke the provider restore");
 			Assert.IsTrue(code.Contains("not been restored"), "the report should name the actual situation; got:\n" + code);
 		}
 		finally
 		{
-			try { Directory.Delete(dir, true); } catch { }
+			try
+			{ Directory.Delete(dir, true); }
+			catch { }
 		}
 	}
 }

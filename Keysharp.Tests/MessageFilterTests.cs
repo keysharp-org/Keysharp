@@ -51,7 +51,7 @@ public class MessageFilterTests : TestRunner
 			_ = WindowsAPI.SendMessage(nativeHandle, nativeMessage, messageId, notification);
 			context.DrainAll();
 			CheckNotification(1, notification);
-			Assert.That(selected, Is.EqualTo(0), "a zero return must suppress the default tray callback");
+			Assert.That(selected, Is.Zero, "a zero return must suppress the default tray callback");
 
 			claimed = false;
 			_ = WindowsAPI.SendMessage(nativeHandle, nativeMessage, messageId, notification);
@@ -212,7 +212,7 @@ public class MessageFilterTests : TestRunner
 			_ = Keysharp.Builtins.Flow.Critical();
 			Assert.That(CallBuffered(filter, ref msg), Is.False);
 			context.DrainAll();
-			Assert.That(calls, Is.EqualTo(0));
+			Assert.That(calls, Is.Zero);
 		}
 		finally
 		{
@@ -410,7 +410,7 @@ public class MessageFilterTests : TestRunner
 		s.EventScheduler.SchedulePump();
 		context.DrainAll();
 
-		Assert.That(calls, Is.EqualTo(0));
+		Assert.That(calls, Is.Zero);
 	}
 #endif
 
@@ -577,7 +577,7 @@ public class MessageFilterTests : TestRunner
 				Assert.IsTrue(WindowsAPI.PostMessage(gui.form.Handle, msgId, 0, 0));
 				Application.DoEvents();
 				Assert.That(probe.Count, Is.EqualTo(1), "the window must get the message while no thread can start");
-				Assert.That(calls, Is.EqualTo(0));
+				Assert.That(calls, Is.Zero);
 			}
 			finally
 			{

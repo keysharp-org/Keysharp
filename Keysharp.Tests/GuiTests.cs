@@ -110,7 +110,7 @@ public class GuiTests : TestRunner
 			Assert.That(overlay.Y, Is.EqualTo(42L));
 			Assert.That(overlay.Width, Is.EqualTo(30L));
 			Assert.That(overlay.Height, Is.EqualTo(18L));
-			Assert.That(overlay.IsVisible, Is.EqualTo(false));
+			Assert.That(overlay.IsVisible, Is.False);
 		}
 		finally
 		{
@@ -137,7 +137,7 @@ public class GuiTests : TestRunner
 			Assert.That(overlay.Y, Is.EqualTo(42L));
 			Assert.That(overlay.Width, Is.EqualTo(30L));
 			Assert.That(overlay.Height, Is.EqualTo(18L));
-			Assert.That(overlay.IsVisible, Is.EqualTo(false));
+			Assert.That(overlay.IsVisible, Is.False);
 		}
 		finally
 		{
@@ -709,8 +709,8 @@ public class GuiTests : TestRunner
 		Assert.IsTrue(erased.X <= 10 && erased.Y <= 10 && erased.Right >= 151 && erased.Bottom >= 76,
 			"Clear must include content from every present since the previous clear");
 		Assert.IsTrue(erased.Width < 200 && erased.Height < 100);
-		Assert.That(canvas.GetPixel(20L, 20L), Is.EqualTo(0L));
-		Assert.That(canvas.GetPixel(150L, 75L), Is.EqualTo(0L));
+		Assert.That(canvas.GetPixel(20L, 20L), Is.Zero);
+		Assert.That(canvas.GetPixel(150L, 75L), Is.Zero);
 		_ = canvas.FillRect(175L, 80L, 10L, 10L, "Red");
 		Assert.IsTrue(surface.Damage.Union().Right >= 185, "new content joins the erased region");
 		_ = canvas.Clear();
@@ -808,7 +808,7 @@ public class GuiTests : TestRunner
 				_ = overlay.Canvas.FillRect((long)i, 0L, 4L, 4L, "0xFF0000");
 
 			Assert.IsTrue(overlay.HasUnpresentedDamageForTests, "50 primitives, deliberately unshown");
-			Assert.That(context.PendingCount, Is.EqualTo(0), "drawing must not schedule anything either");
+			Assert.That(context.PendingCount, Is.Zero, "drawing must not schedule anything either");
 			context.DrainAll();
 			Assert.IsTrue(overlay.HasUnpresentedDamageForTests, "yielding must not upload");
 
@@ -909,7 +909,7 @@ public class GuiTests : TestRunner
 		using var canvas = DibOverlaySurface.TryCreate(new PixelSize(8, 4));
 		Assert.That(canvas, Is.Not.Null, "a 32bpp DIB section should always be creatable");
 		Assert.IsTrue(canvas.Premultiplied, "UpdateLayeredWindow consumes premultiplied alpha");
-		Assert.That(canvas.SourceDC, Is.Not.EqualTo(0), "the DIB must be selected into a DC to be presentable");
+		Assert.That(canvas.SourceDC, Is.Not.Zero, "the DIB must be selected into a DC to be presentable");
 		Assert.That(canvas.Bitmap.PixelFormat, Is.EqualTo(System.Drawing.Imaging.PixelFormat.Format32bppPArgb));
 
 		_ = canvas.Image.FillRect(0L, 0L, 8L, 4L, "0xFF0000FF");
@@ -968,7 +968,7 @@ public class GuiTests : TestRunner
 
 			_ = overlay.SetImage(frameB);
 			Assert.That(overlay.SurfaceForTests, Is.SameAs(first), "a same-sized SetImage must reuse the surface");
-			Assert.That((uint)(long)first.Image.GetPixel(4L, 4L), Is.EqualTo(0u),
+			Assert.That((uint)(long)first.Image.GetPixel(4L, 4L), Is.Zero,
 							"the reused surface must be wiped, not composited onto — red must not survive");
 
 			// A different size has no choice but to build a new one.
@@ -996,21 +996,21 @@ public class GuiTests : TestRunner
 			{
 				var exStyle = WindowsAPI.GetWindowLongPtr(gui.form.Handle, WindowsAPI.GWL_EXSTYLE).ToInt64();
 				Assert.That(gui.form.FormBorderStyle, Is.EqualTo(FormBorderStyle.None));
-				Assert.That(exStyle & WindowsAPI.WS_EX_APPWINDOW, Is.EqualTo(0L));
-				Assert.That(exStyle & WindowsAPI.WS_EX_TOOLWINDOW, Is.Not.EqualTo(0L),
+				Assert.That(exStyle & WindowsAPI.WS_EX_APPWINDOW, Is.Zero);
+				Assert.That(exStyle & WindowsAPI.WS_EX_TOOLWINDOW, Is.Not.Zero,
 					$"+ToolWindow must survive -Caption in either option order ({options})");
 
 				_ = gui.Opt("-ToolWindow");
 				exStyle = WindowsAPI.GetWindowLongPtr(gui.form.Handle, WindowsAPI.GWL_EXSTYLE).ToInt64();
 				Assert.That(gui.form.FormBorderStyle, Is.EqualTo(FormBorderStyle.None));
-				Assert.That(exStyle & WindowsAPI.WS_EX_APPWINDOW, Is.Not.EqualTo(0L), "-ToolWindow must restore the taskbar button in place");
-				Assert.That(exStyle & WindowsAPI.WS_EX_TOOLWINDOW, Is.EqualTo(0L),
+				Assert.That(exStyle & WindowsAPI.WS_EX_APPWINDOW, Is.Not.Zero, "-ToolWindow must restore the taskbar button in place");
+				Assert.That(exStyle & WindowsAPI.WS_EX_TOOLWINDOW, Is.Zero,
 					"-ToolWindow must remove the extended style from an existing captionless window");
 
 				_ = gui.Opt("+ToolWindow");
 				exStyle = WindowsAPI.GetWindowLongPtr(gui.form.Handle, WindowsAPI.GWL_EXSTYLE).ToInt64();
-				Assert.That(exStyle & WindowsAPI.WS_EX_APPWINDOW, Is.EqualTo(0L));
-				Assert.That(exStyle & WindowsAPI.WS_EX_TOOLWINDOW, Is.Not.EqualTo(0L),
+				Assert.That(exStyle & WindowsAPI.WS_EX_APPWINDOW, Is.Zero);
+				Assert.That(exStyle & WindowsAPI.WS_EX_TOOLWINDOW, Is.Not.Zero,
 					"+ToolWindow must restore the extended style on an existing captionless window");
 			}
 			finally
@@ -1203,7 +1203,7 @@ public class GuiTests : TestRunner
 				m = Message.Create(gui.form.Handle, msgId, 0, 0);
 				Assert.That(gui.InvokeWindowMessageHandlers(ref m), Is.False, $"a return of '{inert ?? "(no return)"}' must not claim the message");
 				Assert.That(order, Is.EqualTo(["quiet", "second"]).AsCollection, "an unclaimed message must still reach later handlers");
-				Assert.That(m.Result.ToInt64(), Is.EqualTo(0));
+				Assert.That(m.Result.ToInt64(), Is.Zero);
 				_ = gui.OnMessage(msgId, quiet, 0L);
 				_ = gui.OnMessage(msgId, second, 0L);
 			}
@@ -1216,7 +1216,7 @@ public class GuiTests : TestRunner
 			_ = gui.OnMessage(msgId, second);
 			m = Message.Create(gui.form.Handle, msgId, 0, 0);
 			Assert.IsTrue(gui.InvokeWindowMessageHandlers(ref m), "an explicit 0 is non-empty and claims the message");
-			Assert.That(m.Result.ToInt64(), Is.EqualTo(0), "the claimed message replies with the returned 0");
+			Assert.That(m.Result.ToInt64(), Is.Zero, "the claimed message replies with the returned 0");
 			Assert.That(order, Is.EqualTo(["zero"]).AsCollection, "claiming must skip the remaining handlers");
 			_ = gui.OnMessage(msgId, repliesZero, 0L);
 			_ = gui.OnMessage(msgId, second, 0L);
@@ -1401,7 +1401,7 @@ public class GuiTests : TestRunner
 			void Send(nint hwnd, nint lParam)
 			{
 				calls.Clear();
-				_ = WindowsAPI.SendMessage(hwnd, (uint)WindowsAPI.WM_CONTEXTMENU, hwnd, lParam);
+				_ = WindowsAPI.SendMessage(hwnd, WindowsAPI.WM_CONTEXTMENU, hwnd, lParam);
 			}
 
 			//The event is queued, as AHK posts it, so nothing runs until the queue is pumped.
@@ -1457,7 +1457,7 @@ public class GuiTests : TestRunner
 			Send(gui.form.Handle, -1);
 			Assert.That(Pump(), Is.EqualTo(["gui"]).AsCollection, "the window itself");
 			Assert.That(calls[0].Args[1], Is.Empty);
-			Assert.That(calls[0].Args[2], Is.EqualTo(0L));
+			Assert.That(calls[0].Args[2], Is.Zero);
 
 			//A ListView's NM_RCLICK carries the clicked row, which both handlers receive as Item.
 			var hdrSize = Marshal.SizeOf<NMHDR>();
@@ -1471,7 +1471,7 @@ public class GuiTests : TestRunner
 				Marshal.StructureToPtr(new NMHDR { hwndFrom = lv.Ctrl.Handle, code = unchecked((uint)WindowsAPI.NM_RCLICK) }, nm, false);
 				Marshal.WriteInt32(nm, hdrSize, 1);//NMITEMACTIVATE.iItem: the second row.
 				calls.Clear();
-				_ = WindowsAPI.SendMessage(gui.form.Handle, (uint)WindowsAPI.WM_NOTIFY, (nint)0, nm);
+				_ = WindowsAPI.SendMessage(gui.form.Handle, WindowsAPI.WM_NOTIFY, 0, nm);
 				Assert.That(Pump(), Is.EqualTo(["ctrl", "gui"]).AsCollection, "a ListView row");
 				Assert.That(calls[0].Args[0], Is.SameAs(lv));
 				Assert.That(calls[0].Args[1], Is.EqualTo(2L));
@@ -1489,14 +1489,14 @@ public class GuiTests : TestRunner
 			Send(lv.Ctrl.Handle, -1);
 			Assert.That(Pump(), Is.EqualTo(["ctrl", "gui"]).AsCollection, "the Menu key on a ListView");
 			Assert.That(calls[0].Args[1], Is.EqualTo(2L));
-			Assert.That(calls[0].Args[2], Is.EqualTo(0L));
+			Assert.That(calls[0].Args[2], Is.Zero);
 			Assert.That(calls[1].Args[2], Is.EqualTo(2L));
 
 			//The Hotkey control suppresses its native edit menu, but still forwards WM_CONTEXTMENU to the Gui.
 			Send(hotkey.Ctrl.Handle, -1);
 			Assert.That(Pump(), Is.EqualTo(["ctrl", "gui"]).AsCollection, "the Menu key on a Hotkey control");
 			Assert.That(calls[0].Args[0], Is.SameAs(hotkey));
-			Assert.That(calls[0].Args[2], Is.EqualTo(0L));
+			Assert.That(calls[0].Args[2], Is.Zero);
 
 			Send(gui.form.ContentContainer.Handle, -1);
 			Assert.That(Pump(), Is.EqualTo(["gui"]).AsCollection, "the Menu key on the content background");
@@ -1525,7 +1525,7 @@ public class GuiTests : TestRunner
 			Assert.That(button.Ctrl.Parent, Is.SameAs(gui.form.ContentContainer));
 			Assert.That(button.Parent, Is.SameAs(gui));
 			Assert.That(status.Ctrl.Parent, Is.SameAs(gui.form.ContentContainer));
-			Assert.That(button.Ctrl.Top, Is.EqualTo(0), "adding a menu leaves the control at the content origin");
+			Assert.That(button.Ctrl.Top, Is.Zero, "adding a menu leaves the control at the content origin");
 
 			_ = gui.Show("NoActivate x-20000 y-20000 w200 h100");
 			Assert.That(gui.form.ContentContainer.Top, Is.EqualTo(menu.MenuStrip.Bottom), "the content starts below the menu bar");
@@ -1538,7 +1538,7 @@ public class GuiTests : TestRunner
 			Assert.That(height.__Value, Is.EqualTo(100L));
 
 			_ = button.GetPos(null, y, null, null);
-			Assert.That(y.__Value, Is.EqualTo(0L));
+			Assert.That(y.__Value, Is.Zero);
 			_ = button.Move(null, 10L);
 			_ = button.GetPos(null, y, null, null);
 			Assert.That(y.__Value, Is.EqualTo(10L));
@@ -2053,7 +2053,7 @@ public class GuiTests : TestRunner
 				}
 				finally
 				{
-					_ = WindowsAPI.PostMessage(hwnd, WindowsAPI.WM_COMMAND, (nint)InputDialog.OkId, 0);
+					_ = WindowsAPI.PostMessage(hwnd, WindowsAPI.WM_COMMAND, InputDialog.OkId, 0);
 				}
 			}
 
@@ -2273,32 +2273,32 @@ public class GuiTests : TestRunner
 			Assert.That(gui.ParseOpt("text", "", "-Center").halign, Is.EqualTo(Gui.GuiOptions.HorizontalAlignment.Left));
 			Assert.That(gui.ParseOpt("text", "", "+Middle").valign, Is.EqualTo(Gui.GuiOptions.VerticalAlignment.Middle));
 
-			Assert.That(gui.ParseOpt("edit", "", "Wrap").wordwrap, Is.EqualTo(true));
-			Assert.That(gui.ParseOpt("edit", "", "+Wrap").wordwrap, Is.EqualTo(true));
-			Assert.That(gui.ParseOpt("edit", "", "-Wrap").wordwrap, Is.EqualTo(false));
-			Assert.That(gui.ParseOpt("edit", "", "-Tabstop").tabstop, Is.EqualTo(false));
-			Assert.That(gui.ParseOpt("edit", "", "+ReadOnly").rdonly, Is.EqualTo(true));
+			Assert.That(gui.ParseOpt("edit", "", "Wrap").wordwrap, Is.True);
+			Assert.That(gui.ParseOpt("edit", "", "+Wrap").wordwrap, Is.True);
+			Assert.That(gui.ParseOpt("edit", "", "-Wrap").wordwrap, Is.False);
+			Assert.That(gui.ParseOpt("edit", "", "-Tabstop").tabstop, Is.False);
+			Assert.That(gui.ParseOpt("edit", "", "+ReadOnly").rdonly, Is.True);
 			// AHK compares "Multi" exactly, so a signed spelling has to survive but "Multiline" is not an option.
-			Assert.That(gui.ParseOpt("edit", "", "xc+10 y+20 h400 w500 +Multi").multiline, Is.EqualTo(true));
+			Assert.That(gui.ParseOpt("edit", "", "xc+10 y+20 h400 w500 +Multi").multiline, Is.True);
 
 			// Hidden/Disabled additionally accept a trailing 1/0, which inverts the sign.
-			Assert.That(gui.ParseOpt("edit", "", "Hidden").visible, Is.EqualTo(false));
-			Assert.That(gui.ParseOpt("edit", "", "Hidden0").visible, Is.EqualTo(true));
-			Assert.That(gui.ParseOpt("edit", "", "-Hidden").visible, Is.EqualTo(true));
-			Assert.That(gui.ParseOpt("edit", "", "+Disabled").enabled, Is.EqualTo(false));
-			Assert.That(gui.ParseOpt("edit", "", "Disabled0").enabled, Is.EqualTo(true));
+			Assert.That(gui.ParseOpt("edit", "", "Hidden").visible, Is.False);
+			Assert.That(gui.ParseOpt("edit", "", "Hidden0").visible, Is.True);
+			Assert.That(gui.ParseOpt("edit", "", "-Hidden").visible, Is.True);
+			Assert.That(gui.ParseOpt("edit", "", "+Disabled").enabled, Is.False);
+			Assert.That(gui.ParseOpt("edit", "", "Disabled0").enabled, Is.True);
 
 			Assert.That(gui.ParseOpt("checkbox", "", "Checked").ischecked, Is.EqualTo(1));
-			Assert.That(gui.ParseOpt("checkbox", "", "-Checked").ischecked, Is.EqualTo(0));
+			Assert.That(gui.ParseOpt("checkbox", "", "-Checked").ischecked, Is.Zero);
 			Assert.That(gui.ParseOpt("checkbox", "", "Checked-1").ischecked, Is.EqualTo(-1));
 			Assert.That(gui.ParseOpt("checkbox", "", "CheckedGray").ischecked, Is.EqualTo(-1));
 
 			// A word option must not be swallowed by a single-letter option that shares its first letter.
 			var vscroll = gui.ParseOpt("listbox", "", "+VScroll");
-			Assert.That(vscroll.vscroll, Is.EqualTo(true));
+			Assert.That(vscroll.vscroll, Is.True);
 			Assert.IsNull(vscroll.name, "VScroll must not be read as the name \"Scroll\"");
 			Assert.That(gui.ParseOpt("edit", "", "vMyEdit").name, Is.EqualTo("MyEdit"));
-			Assert.That(gui.ParseOpt("listview", "", "SortDesc").sortdesc, Is.EqualTo(true));
+			Assert.That(gui.ParseOpt("listview", "", "SortDesc").sortdesc, Is.True);
 			Assert.IsNull(gui.ParseOpt("listview", "", "SortDesc").sort, "SortDesc must not be read as Sort");
 
 			// Icon selects the view for a ListView but the icon index for a Picture.
