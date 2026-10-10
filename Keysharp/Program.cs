@@ -86,102 +86,6 @@ public static class Program
 		};
 	}
 
-	// Compile-server control, deferred to us by Runner because CompileServer lives in this launcher.
-	// daemonArgs[0] is the "--daemon" switch itself: bare "--daemon" starts it; "--daemon stop" stops the
-	// running one; "--daemon ping <script>" compiles via a running daemon and reports only (no spawn/run).
-	// Only the bare form starts a server: a malformed subcommand is a usage error, not a daemon the user
-	// never asked for and now has for hours.
-	private static int HandleDaemon(string[] daemonArgs)
-	{
-		var sub = daemonArgs.Length > 1 ? (Runner.TryGetSwitch(daemonArgs[1], out var daemonSub) ? daemonSub : daemonArgs[1]) : null;
-
-		if (sub == null)
-			return CompileServer.Run();
-
-		if (string.Equals(sub, "stop", StringComparison.OrdinalIgnoreCase))
-		{
-			DaemonCoordinator.StopOwner();
-			return 0;
-		}
-
-		if (string.Equals(sub, "ping", StringComparison.OrdinalIgnoreCase))
-		{
-			if (daemonArgs.Length < 3 || string.IsNullOrWhiteSpace(daemonArgs[2]))
-				return DaemonUsageError("--daemon ping requires a script path.");
-
-			var reply = CompileClient.TryCompile(new CliCommand { ScriptName = daemonArgs[2] }) ?? DaemonReply.Unavailable;
-			Console.WriteLine(reply.Status switch
-			{
-				CompileDaemonStatus.Compiled => $"daemon ping: OK, {reply.AssemblyBytes.Length} bytes"
-					+ (string.IsNullOrEmpty(reply.WarningText) ? "" : $"\n{reply.WarningText}"),
-				CompileDaemonStatus.CompileFailed or CompileDaemonStatus.PackageRestoreNeeded => $"daemon ping: COMPILE ERROR\n{reply.ErrorText}",
-				_ when reply.ErrorText != null => $"daemon ping: FAIL, the daemon could not compile\n{reply.ErrorText}",
-				_ => "daemon ping: FAIL, no daemon reachable",
-			});
-			return reply.Status == CompileDaemonStatus.Compiled ? 0 : 1;
-		}
-
-		return DaemonUsageError($"Unknown --daemon subcommand \"{daemonArgs[1]}\".");
-	}
-
-	private static int DaemonUsageError(string problem)
-	{
-		Console.Error.WriteLine($"{problem} Valid forms: --daemon, --daemon stop, --daemon ping <script>.");
-		return 1;
-	}
-
-	// --kpm hands the rest of the command line to the package manager. Its commands, arguments and
-	// output are kpm's own, so there is one surface to learn and one implementation of it rather than a
-	// second copy here that would drift from the standalone tool.
-	//
-	// Reached by reflection, and deliberately not referenced at build time: KPM.Core travels with an
-	// install rather than being part of Keysharp, so a build that could not fetch it still compiles, still
-	// packages and still runs everything else. Its absence is a message, not a crash.
-	private static int HandlePackage(CliCommand command)
-	{
-		// Acquired before the first message and outside the try, because every path below reports through
-		// it - including the catch. A `using` inside the try would detach the console while unwinding, and
-		// send the failure message nowhere; and a plain Console.Error here reaches no terminal at all, since
-		// this is a GUI-subsystem process until the parent's console is attached.
-		using var console = ConsoleOutput.Acquire();
-		var library = Path.Combine(command.ExeDir, "KPM.Core.dll");
-
-		if (!File.Exists(library))
-		{
-			console.Error.WriteLine($"Package management is not available in this installation: {library} is missing."
-									+ "\nkpm can be installed on its own from https://github.com/keysharp-org/KPM/releases.");
-			return 1;
-		}
-
-		try
-		{
-			// A library too old to carry the command surface is the one failure worth naming: it says
-			// "upgrade this install", where the generic reflection error would say nothing useful.
-			var runner = Assembly.LoadFrom(library).GetType("Kpm.Cli.CommandRunner", throwOnError: false);
-			var run = runner?.GetMethod("Run", [typeof(string[]), typeof(TextWriter), typeof(TextWriter), typeof(TextReader)]);
-
-			if (run is null)
-			{
-				console.Error.WriteLine($"{library} is too old for this Keysharp: it does not provide the package"
-										+ " commands. Reinstall Keysharp, or replace that file from"
-										+ " https://github.com/keysharp-org/KPM/releases.");
-				return 1;
-			}
-
-			// Which engine the registry resolves for: this one, whatever the caller's environment says.
-			// The package manager reads it here rather than being told in every command.
-			Environment.SetEnvironmentVariable("KPM_ENGINE_VERSION", Version.ToString());
-			return (int)run.Invoke(null, [command.PackageArgs, console.Out, console.Error, console.In]);
-		}
-		catch (Exception ex)
-		{
-			// TargetInvocationException hides the real one, and a package command failing is ordinary news.
-			var reported = ex is TargetInvocationException { InnerException: { } inner } ? inner : ex;
-			console.Error.WriteLine($"package command failed: {reported.GetType().Name}: {reported.Message}");
-			return 1;
-		}
-	}
-
 	// Builds an executable from a script. Deferred to us by Runner because HostWriter.CreateAppHost
 	// requires the Microsoft.NET.HostModel package, which Keysharp.Core deliberately does not reference.
 	private static int CompileToExe(CliCommand r)
@@ -297,49 +201,108 @@ public static class Program
 		return 0;
 	}
 
-	private static bool ShouldUseDaemon()
+	private static int DaemonUsageError(string problem)
 	{
-		// KEYSHARP_DAEMON forces the daemon on/off; if unset (or unrecognized), default on for release
-		// builds and off for debug builds.
-		var value = Environment.GetEnvironmentVariable("KEYSHARP_DAEMON")?.Trim();
-		return Conversions.ParseBoolish(value)
-#if DEBUG
-			   ?? false;
-#else
-			   ?? true;
-#endif
+		Console.Error.WriteLine($"{problem} Valid forms: --daemon, --daemon stop, --daemon ping <script>.");
+		return 1;
 	}
 
-	// Loads a precompiled script assembly (bytes returned by the compile server) and invokes its entry
-	// point in this process. No compile-context Script is created here: the compiled assembly's own Main
-	// creates its runtime Script.
-	private static int RunCompiledBytes(byte[] arr, string[] scriptArgs)
+	/// <summary>
+	/// Compile-server control, deferred to us by Runner because CompileServer lives in this launcher.
+	/// daemonArgs[0] is the "--daemon" switch itself: bare "--daemon" starts it; "--daemon stop" stops the
+	/// running one; "--daemon ping <script>" compiles via a running daemon and reports only (no spawn/run).
+	/// Only the bare form starts a server: a malformed subcommand is a usage error, not a daemon the user
+	/// never asked for and now has for hours.
+	/// </summary>
+	/// <param name="daemonArgs"></param>
+	/// <returns></returns>
+	private static int HandleDaemon(string[] daemonArgs)
 	{
+		var sub = daemonArgs.Length > 1 ? (Runner.TryGetSwitch(daemonArgs[1], out var daemonSub) ? daemonSub : daemonArgs[1]) : null;
+
+		if (sub == null)
+			return CompileServer.Run();
+
+		if (string.Equals(sub, "stop", StringComparison.OrdinalIgnoreCase))
+		{
+			DaemonCoordinator.StopOwner();
+			return 0;
+		}
+
+		if (string.Equals(sub, "ping", StringComparison.OrdinalIgnoreCase))
+		{
+			if (daemonArgs.Length < 3 || string.IsNullOrWhiteSpace(daemonArgs[2]))
+				return DaemonUsageError("--daemon ping requires a script path.");
+
+			var reply = CompileClient.TryCompile(new CliCommand { ScriptName = daemonArgs[2] }) ?? DaemonReply.Unavailable;
+			Console.WriteLine(reply.Status switch
+			{
+				CompileDaemonStatus.Compiled => $"daemon ping: OK, {reply.AssemblyBytes.Length} bytes"
+					+ (string.IsNullOrEmpty(reply.WarningText) ? "" : $"\n{reply.WarningText}"),
+				CompileDaemonStatus.CompileFailed or CompileDaemonStatus.PackageRestoreNeeded => $"daemon ping: COMPILE ERROR\n{reply.ErrorText}",
+				_ when reply.ErrorText != null => $"daemon ping: FAIL, the daemon could not compile\n{reply.ErrorText}",
+				_ => "daemon ping: FAIL, no daemon reachable",
+			});
+			return reply.Status == CompileDaemonStatus.Compiled ? 0 : 1;
+		}
+
+		return DaemonUsageError($"Unknown --daemon subcommand \"{daemonArgs[1]}\".");
+	}
+
+	/// <summary>
+	/// kpm hands the rest of the command line to the package manager. Its commands, arguments and
+	/// output are kpm's own, so there is one surface to learn and one implementation of it rather than a
+	/// second copy here that would drift from the standalone tool.
+	///
+	/// Reached by reflection, and deliberately not referenced at build time: KPM.Core travels with an
+	/// install rather than being part of Keysharp, so a build that could not fetch it still compiles, still
+	/// packages and still runs everything else. Its absence is a message, not a crash.
+	/// </summary>
+	/// <param name="command"></param>
+	/// <returns></returns>
+	private static int HandlePackage(CliCommand command)
+	{
+		// Acquired before the first message and outside the try, because every path below reports through
+		// it - including the catch. A `using` inside the try would detach the console while unwinding, and
+		// send the failure message nowhere; and a plain Console.Error here reaches no terminal at all, since
+		// this is a GUI-subsystem process until the parent's console is attached.
+		using var console = ConsoleOutput.Acquire();
+		var library = Path.Combine(command.ExeDir, "KPM.Core.dll");
+
+		if (!File.Exists(library))
+		{
+			console.Error.WriteLine($"Package management is not available in this installation: {library} is missing."
+									+ "\nkpm can be installed on its own from https://github.com/keysharp-org/KPM/releases.");
+			return 1;
+		}
+
 		try
 		{
-			ScriptExecutionState.Assembly = Assembly.Load(arr);
-			var program = ScriptExecutionState.Assembly.GetType($"{Keywords.MainNamespaceName}.{Keywords.MainClassName}");
-			var main = program.GetMethod("Main");
-#if DEBUG
-			Ks.OutputDebugLine("Running compiled code (daemon).");
-#endif
-			_ = main.Invoke(null, [scriptArgs]).TryCoerceInt(out var exitCode);
-			Environment.ExitCode = exitCode;
+			// A library too old to carry the command surface is the one failure worth naming: it says
+			// "upgrade this install", where the generic reflection error would say nothing useful.
+			var runner = Assembly.LoadFrom(library).GetType("Kpm.Cli.CommandRunner", throwOnError: false);
+			var run = runner?.GetMethod("Run", [typeof(string[]), typeof(TextWriter), typeof(TextWriter), typeof(TextReader)]);
+
+			if (run is null)
+			{
+				console.Error.WriteLine($"{library} is too old for this Keysharp: it does not provide the package"
+										+ " commands. Reinstall Keysharp, or replace that file from"
+										+ " https://github.com/keysharp-org/KPM/releases.");
+				return 1;
+			}
+
+			// Which engine the registry resolves for: this one, whatever the caller's environment says.
+			// The package manager reads it here rather than being told in every command.
+			Environment.SetEnvironmentVariable("KPM_ENGINE_VERSION", Version.ToString());
+			return (int)run.Invoke(null, [command.PackageArgs, console.Out, console.Error, console.In]);
 		}
 		catch (Exception ex)
 		{
-			if (ex is TargetInvocationException)
-				ex = ex.InnerException;
-
-			var error = new StringBuilder();
-			_ = error.AppendLine("Execution error:\n");
-			_ = error.AppendLine($"{ex.GetType().Name}: {ex.Message}");
-			_ = error.AppendLine();
-			_ = error.AppendLine(ex.StackTrace);
-			Environment.ExitCode = Runner.Message(error.ToString(), true);
+			// TargetInvocationException hides the real one, and a package command failing is ordinary news.
+			var reported = ex is TargetInvocationException { InnerException: { } inner } ? inner : ex;
+			console.Error.WriteLine($"package command failed: {reported.GetType().Name}: {reported.Message}");
+			return 1;
 		}
-
-		return Environment.ExitCode;
 	}
 
 	/// <summary>
@@ -387,5 +350,55 @@ public static class Program
 			nameNoExt = scriptNameNoExt;
 
 		return (Path.Combine(outputDirForFile, nameNoExt), outputDirForFile, nameNoExt);
+	}
+
+	/// <summary>
+	/// Loads a precompiled script assembly (bytes returned by the compile server) and invokes its entry
+	/// point in this process. No compile-context Script is created here: the compiled assembly's own Main
+	/// creates its runtime Script.
+	/// </summary>
+	/// <param name="arr"></param>
+	/// <param name="scriptArgs"></param>
+	/// <returns></returns>
+	private static int RunCompiledBytes(byte[] arr, string[] scriptArgs)
+	{
+		try
+		{
+			ScriptExecutionState.Assembly = Assembly.Load(arr);
+			var program = ScriptExecutionState.Assembly.GetType($"{Keywords.MainNamespaceName}.{Keywords.MainClassName}");
+			var main = program.GetMethod("Main");
+#if DEBUG
+			Ks.OutputDebugLine("Running compiled code (daemon).");
+#endif
+			_ = main.Invoke(null, [scriptArgs]).TryCoerceInt(out var exitCode);
+			Environment.ExitCode = exitCode;
+		}
+		catch (Exception ex)
+		{
+			if (ex is TargetInvocationException)
+				ex = ex.InnerException;
+
+			var error = new StringBuilder();
+			_ = error.AppendLine("Execution error:\n");
+			_ = error.AppendLine($"{ex.GetType().Name}: {ex.Message}");
+			_ = error.AppendLine();
+			_ = error.AppendLine(ex.StackTrace);
+			Environment.ExitCode = Runner.Message(error.ToString(), true);
+		}
+
+		return Environment.ExitCode;
+	}
+
+	private static bool ShouldUseDaemon()
+	{
+		// KEYSHARP_DAEMON forces the daemon on/off; if unset (or unrecognized), default on for release
+		// builds and off for debug builds.
+		var value = Environment.GetEnvironmentVariable("KEYSHARP_DAEMON")?.Trim();
+		return Conversions.ParseBoolish(value)
+#if DEBUG
+			   ?? false;
+#else
+			   ?? true;
+#endif
 	}
 }

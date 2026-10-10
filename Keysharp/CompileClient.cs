@@ -234,6 +234,7 @@ internal static class CompileClient
 	}
 
 #if WINDOWS
+
 	[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
 	private static extern bool GetHandleInformation(nint hObject, out int lpdwFlags);
 
