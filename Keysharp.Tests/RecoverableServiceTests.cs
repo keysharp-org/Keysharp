@@ -19,24 +19,6 @@ public class RecoverableServiceTests
 	}
 
 	[Test]
-	public void StaleInvalidation()
-	{
-		var first = new TrackedService();
-		var second = new TrackedService();
-		var queue = new Queue<TrackedService>([first, second]);
-		using var service = new RecoverableService<TrackedService>(() => queue.Dequeue(),
-			initialRetryDelay: TimeSpan.Zero);
-
-		using var firstLease = service.TryAcquire();
-		service.Invalidate(first);
-		using var secondLease = service.TryAcquire();
-		service.Invalidate(first);
-
-		Assert.That(secondLease, Is.Not.Null);
-		Assert.That(second.Disposed, Is.False);
-	}
-
-	[Test]
 	public void RetryAfterBurst()
 	{
 		var attempts = 0;
@@ -83,17 +65,39 @@ public class RecoverableServiceTests
 		Assert.That(old.Disposed, Is.True);
 	}
 
-	private sealed class TrackedService : IDisposable
+	[Test]
+	public void StaleInvalidation()
 	{
-		internal bool Disposed { get; private set; }
-		public void Dispose() => Disposed = true;
+		var first = new TrackedService();
+		var second = new TrackedService();
+		var queue = new Queue<TrackedService>([first, second]);
+		using var service = new RecoverableService<TrackedService>(() => queue.Dequeue(),
+			initialRetryDelay: TimeSpan.Zero);
+
+		using var firstLease = service.TryAcquire();
+		service.Invalidate(first);
+		using var secondLease = service.TryAcquire();
+		service.Invalidate(first);
+
+		Assert.That(secondLease, Is.Not.Null);
+		Assert.That(second.Disposed, Is.False);
 	}
 
 	private sealed class ManualTimeProvider : TimeProvider
 	{
 		private long timestamp = 1;
-		public override long GetTimestamp() => timestamp;
+
 		public override long TimestampFrequency => 1000;
+
+		public override long GetTimestamp() => timestamp;
+
 		internal void Advance(TimeSpan elapsed) => timestamp += (long)elapsed.TotalMilliseconds;
+	}
+
+	private sealed class TrackedService : IDisposable
+	{
+		internal bool Disposed { get; private set; }
+
+		public void Dispose() => Disposed = true;
 	}
 }

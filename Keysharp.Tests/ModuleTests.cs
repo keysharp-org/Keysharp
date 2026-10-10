@@ -6,10 +6,48 @@ public partial class ModuleTests : TestRunner
 	public void Basic() => Assert.IsTrue(TestScript("module-basic", false));
 
 	[Test, Category("Module")]
-	public void Import() => Assert.IsTrue(TestScript("module-import", false));
+	public void CompatibilityMode() => Assert.IsTrue(TestScript("module-compatibility-mode", false));
 
 	[Test, Category("Module")]
-	public void ImportFile() => Assert.IsTrue(TestScript("module-import-file", false));
+	public void DynamicNames() => Assert.IsTrue(TestScript("module-dynamic-names", false));
+
+	[Test, Category("Module")]
+	public void Export() => Assert.IsTrue(TestScript("module-export", false));
+
+	[Test, Category("Module")]
+	public void Extends() => Assert.IsTrue(TestScript("module-extends", false));
+
+	// A class of the Ks module or of another script module is a base class only through an import.
+	[Test, Category("Module")]
+	public void ExtendsNeedsImport()
+	{
+		foreach (var (src, name) in new[]
+		{
+			("class X extends HashMap {\n}\n", "HashMap"),
+			("class X extends Ks.HashMap {\n}\n", "Ks.HashMap"),
+			("class X extends Font {\n}\n", "Font"),
+			("class X extends OtherClass {\n}\n#Module Other\nclass OtherClass {\n}\n", "OtherClass"),
+			("#Import Other\nclass X extends Other.Nope {\n}\n#Module Other\nclass OtherClass {\n}\n", "Other.Nope"),
+			("#Import Other { OtherF }\nclass X extends OtherF {\n}\n#Module Other\nOtherF() => 1\n", "OtherF"),
+			// An import that renames the class leaves its own name unbound in the importing module.
+			("#Import Relay\nclass X extends Relay.OtherClass {\n}\n#Module Relay\n#Import Other { OtherClass as Renamed }\n#Module Other\nclass OtherClass {\n}\n", "Relay.OtherClass"),
+		})
+		{
+			var diags = LoweringDiagnostics.Diagnostics(src);
+			Assert.IsTrue(System.Array.Exists(diags, d => d.Contains("Invalid base class") && d.Contains(name)),
+				$"expected an 'Invalid base class' diagnostic for {name}, got: " + string.Join("; ", diags));
+		}
+
+		foreach (var src in new[]
+		{
+			"#Import Ks { HashMap }\nclass X extends HashMap {\n}\n",
+			"#Import Ks\nclass X extends Ks.HashMap {\n}\n",
+			"#Import Ks { * }\nclass X extends HashMap {\n}\n",
+			"class X extends Map {\n}\nclass Y extends Gui.Control {\n}\n",
+			"#Import __Main\nclass X extends __Main.Y {\n}\nclass Y {\n}\n",
+		})
+			Assert.IsEmpty(LoweringDiagnostics.Diagnostics(src), src);
+	}
 
 	[Test, Category("Module")]
 	public void FileIdentity()
@@ -128,82 +166,7 @@ public partial class ModuleTests : TestRunner
 	}
 
 	[Test, Category("Module")]
-	public void Export() => Assert.IsTrue(TestScript("module-export", false));
-
-	[Test, Category("Module")]
-	public void Order() => Assert.IsTrue(TestScript("module-order", false));
-
-	[Test, Category("Module")]
-	public void CompatibilityMode() => Assert.IsTrue(TestScript("module-compatibility-mode", false));
-
-	[Test, Category("Module")]
-	public void ImportUnknownMember()
-	{
-		// Real Ks members still compile cleanly (the fix must not over-reject) — both a method (Cosh) and a
-		// type exposed under a [UserDeclaredName] (Image, whose CLR type is KeysharpImage).
-		Assert.IsEmpty(LoweringDiagnostics.Diagnostics("#import \"Ks\" { Cosh }\n"), "a valid built-in method import should not error");
-		Assert.IsEmpty(LoweringDiagnostics.Diagnostics("#import KS { Image }\n"), "a valid built-in type import (UserDeclaredName) should not error");
-
-		// A name the module does not expose is rejected, and the diagnostic names the offending member.
-		var bad = LoweringDiagnostics.Diagnostics("#import \"Ks\" { NotARealKsMember123 }\n");
-		Assert.IsTrue(System.Array.Exists(bad, d => d.Contains("has no exported member") && d.Contains("NotARealKsMember123")),
-			"expected a 'has no exported member' diagnostic, got: " + string.Join("; ", bad));
-		var removed = LoweringDiagnostics.Diagnostics("#Import Ks { A_InputLevel }\n");
-		Assert.IsTrue(System.Array.Exists(removed, d => d.Contains("has no exported member") && d.Contains("A_InputLevel")),
-			"A_InputLevel must not be exported by Ks: " + string.Join("; ", removed));
-	}
-
-	[Test, Category("Module")]
-	public void ScopedImport() => Assert.IsTrue(TestScript("module-scoped-import", false));
-
-	[Test, Category("Module")]
-	public void DynamicNames() => Assert.IsTrue(TestScript("module-dynamic-names", false));
-
-	[Test, Category("Module")]
-	public void Extends() => Assert.IsTrue(TestScript("module-extends", false));
-
-	[Test, Category("Module")]
-	public void ObjectMembers() => Assert.IsTrue(TestScript("module-object-members", false));
-
-	/// <summary>
-	/// A script without #Module is one module, and a wildcard import supplies no name it assigns or declares, as in
-	/// AutoHotkey: each is the module's own variable, so assigning one leaves the imported module's alone, and one
-	/// only declared is unset.
-	/// </summary>
-	[Test, Category("Module")]
-	public void WildcardSkipsOwnVariables() => Assert.IsTrue(TestScript("module-wildcard-own-vars", false));
-
-	// A class of the Ks module or of another script module is a base class only through an import.
-	[Test, Category("Module")]
-	public void ExtendsNeedsImport()
-	{
-		foreach (var (src, name) in new[]
-		{
-			("class X extends HashMap {\n}\n", "HashMap"),
-			("class X extends Ks.HashMap {\n}\n", "Ks.HashMap"),
-			("class X extends Font {\n}\n", "Font"),
-			("class X extends OtherClass {\n}\n#Module Other\nclass OtherClass {\n}\n", "OtherClass"),
-			("#Import Other\nclass X extends Other.Nope {\n}\n#Module Other\nclass OtherClass {\n}\n", "Other.Nope"),
-			("#Import Other { OtherF }\nclass X extends OtherF {\n}\n#Module Other\nOtherF() => 1\n", "OtherF"),
-			// An import that renames the class leaves its own name unbound in the importing module.
-			("#Import Relay\nclass X extends Relay.OtherClass {\n}\n#Module Relay\n#Import Other { OtherClass as Renamed }\n#Module Other\nclass OtherClass {\n}\n", "Relay.OtherClass"),
-		})
-		{
-			var diags = LoweringDiagnostics.Diagnostics(src);
-			Assert.IsTrue(System.Array.Exists(diags, d => d.Contains("Invalid base class") && d.Contains(name)),
-				$"expected an 'Invalid base class' diagnostic for {name}, got: " + string.Join("; ", diags));
-		}
-
-		foreach (var src in new[]
-		{
-			"#Import Ks { HashMap }\nclass X extends HashMap {\n}\n",
-			"#Import Ks\nclass X extends Ks.HashMap {\n}\n",
-			"#Import Ks { * }\nclass X extends HashMap {\n}\n",
-			"class X extends Map {\n}\nclass Y extends Gui.Control {\n}\n",
-			"#Import __Main\nclass X extends __Main.Y {\n}\nclass Y {\n}\n",
-		})
-			Assert.IsEmpty(LoweringDiagnostics.Diagnostics(src), src);
-	}
+	public void Import() => Assert.IsTrue(TestScript("module-import", false));
 
 	[Test, Category("Module")]
 	public void ImportDiagnostics()
@@ -282,6 +245,26 @@ public partial class ModuleTests : TestRunner
 	}
 
 	[Test, Category("Module")]
+	public void ImportFile() => Assert.IsTrue(TestScript("module-import-file", false));
+
+	[Test, Category("Module")]
+	public void ImportUnknownMember()
+	{
+		// Real Ks members still compile cleanly (the fix must not over-reject) — both a method (Cosh) and a
+		// type exposed under a [UserDeclaredName] (Image, whose CLR type is KeysharpImage).
+		Assert.IsEmpty(LoweringDiagnostics.Diagnostics("#import \"Ks\" { Cosh }\n"), "a valid built-in method import should not error");
+		Assert.IsEmpty(LoweringDiagnostics.Diagnostics("#import KS { Image }\n"), "a valid built-in type import (UserDeclaredName) should not error");
+
+		// A name the module does not expose is rejected, and the diagnostic names the offending member.
+		var bad = LoweringDiagnostics.Diagnostics("#import \"Ks\" { NotARealKsMember123 }\n");
+		Assert.IsTrue(System.Array.Exists(bad, d => d.Contains("has no exported member") && d.Contains("NotARealKsMember123")),
+			"expected a 'has no exported member' diagnostic, got: " + string.Join("; ", bad));
+		var removed = LoweringDiagnostics.Diagnostics("#Import Ks { A_InputLevel }\n");
+		Assert.IsTrue(System.Array.Exists(removed, d => d.Contains("has no exported member") && d.Contains("A_InputLevel")),
+			"A_InputLevel must not be exported by Ks: " + string.Join("; ", removed));
+	}
+
+	[Test, Category("Module")]
 	public void ModuleInClass()
 	{
 		// `#Module` is only meaningful at the top level; inside a class body it is a parse error, not a silent drop.
@@ -289,4 +272,21 @@ public partial class ModuleTests : TestRunner
 		Assert.IsTrue(System.Array.Exists(diags.ToArray(), d => d.Contains("#Module")),
 			"expected a '#Module' parse diagnostic, got: " + string.Join("; ", diags));
 	}
+
+	[Test, Category("Module")]
+	public void ObjectMembers() => Assert.IsTrue(TestScript("module-object-members", false));
+
+	[Test, Category("Module")]
+	public void Order() => Assert.IsTrue(TestScript("module-order", false));
+
+	[Test, Category("Module")]
+	public void ScopedImport() => Assert.IsTrue(TestScript("module-scoped-import", false));
+
+	/// <summary>
+	/// A script without #Module is one module, and a wildcard import supplies no name it assigns or declares, as in
+	/// AutoHotkey: each is the module's own variable, so assigning one leaves the imported module's alone, and one
+	/// only declared is unset.
+	/// </summary>
+	[Test, Category("Module")]
+	public void WildcardSkipsOwnVariables() => Assert.IsTrue(TestScript("module-wildcard-own-vars", false));
 }

@@ -11,6 +11,7 @@ public class MessageFilterTests : TestRunner
 	}
 
 #if WINDOWS
+
 	// An invisible WinForms icon exercises notification routing without publishing a shell icon.
 	[TestCase(1L, WindowsAPI.WM_LBUTTONDOWN, false), TestCase(1L, WindowsAPI.WM_LBUTTONDOWN, true)]
 	[TestCase(1L, WindowsAPI.WM_LBUTTONDBLCLK, false), TestCase(1L, WindowsAPI.WM_LBUTTONDBLCLK, true)]
@@ -37,7 +38,7 @@ public class MessageFilterTests : TestRunner
 		icon.MouseDown += s.TrayIcon_MouseDown;
 		const int messageId = (int)UserMessages.AHK_NOTIFYICON;
 		var nativeHandle = winFormsCallback ? s.trayMessageWindow.Handle : hwnd;
-		var nativeMessage = winFormsCallback ? 0x800U : (uint)messageId;
+		var nativeMessage = winFormsCallback ? 0x800U : messageId;
 		_ = Keysharp.Builtins.Flow.OnMessage(messageId, new KeysharpFunc((Func<object, object, object, object, object>)((wParam, lParam, msg, handle) =>
 		{
 			calls.Add([wParam, lParam, msg, handle]);
@@ -186,6 +187,7 @@ public class MessageFilterTests : TestRunner
 #endif
 
 #if WINDOWS
+
 	// Only the Windows pre-filter buffers: a monitor off Windows runs inline, so it can claim the message.
 	[Test, Category("Threading")]
 	public void OnMessageBuffered()
@@ -224,6 +226,7 @@ public class MessageFilterTests : TestRunner
 
 		Assert.That(calls, Is.EqualTo(1));
 	}
+
 #endif
 
 	[Test, Category("Threading")]
@@ -324,6 +327,7 @@ public class MessageFilterTests : TestRunner
 	}
 
 #if WINDOWS
+
 	/// <summary>
 	/// A callback at its MaxThreads skips the message, and with every callback there the message is left unmonitored
 	/// rather than replayed, as AHK's MsgMonitor does.
@@ -412,6 +416,7 @@ public class MessageFilterTests : TestRunner
 
 		Assert.That(calls, Is.Zero);
 	}
+
 #endif
 
 	[Test, Category("Threading")]
@@ -509,6 +514,7 @@ public class MessageFilterTests : TestRunner
 	}
 
 #if WINDOWS
+
 	/// <summary>
 	/// While the script is interruptible, a posted message above 0x0311 runs its callbacks before it is dispatched,
 	/// as in AHK, so a claim keeps it from the window and from the Gui's own OnMessage.
@@ -676,6 +682,7 @@ public class MessageFilterTests : TestRunner
 	private static bool CallBuffered(MessageFilter filter, ref Message message) => filter.CallEventHandlers(ref message, true);
 
 	private static nint GetResult(Message message) => message.Result;
+
 #else
 	private static Message CreateMessage(int msgId) => new()
 	{

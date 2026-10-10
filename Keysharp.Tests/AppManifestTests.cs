@@ -4,6 +4,58 @@ namespace Keysharp.Tests;
 public class AppManifestTests : TestRunner
 {
 	[Test]
+	public void EmbeddedValidation()
+	{
+		var malformed = BuildAssemblyWithManifest("{");
+		var malformedError = Assert.Throws<InvalidDataException>(() => AppManifest.FromAssembly(malformed));
+		Assert.That(malformedError.Message, Does.Contain(AppManifest.ResourceName));
+		Assert.That(malformedError.Message, Does.Contain(malformed.GetName().Name));
+
+		var invalidUtf8 = BuildAssemblyWithManifest([0xff]);
+		Assert.That(Assert.Throws<InvalidDataException>(() => AppManifest.FromAssembly(invalidUtf8)).Message,
+			Does.Contain("could not be read"));
+
+		foreach (var json in new[]
+		{
+			"{\"trayIcon\":\"icons/library.dll\",\"trayIconNumber\":2,\"files\":[]}",
+			"{\"icon\":\"assets/app.ico\",\"files\":[]}",
+		})
+			Assert.That(Assert.Throws<InvalidDataException>(() =>
+				AppManifest.FromAssembly(BuildAssemblyWithManifest(json))).Message, Does.Contain("payload is missing"));
+
+		foreach (var (json, resource) in new[]
+		{
+			("{\"icon\":\"assets/app.ico\",\"files\":[]}", AppManifest.IconResourceName),
+			("{\"trayIcon\":\"assets/tray.png\",\"files\":[]}", AppManifest.TrayIconResourceName),
+		})
+		{
+			var assembly = BuildAssemblyWithManifest(Encoding.UTF8.GetBytes(json),
+				(resource, new byte[] { 0, 0, 1, 0, 1, 0 }));
+			Assert.That(Assert.Throws<InvalidDataException>(() => AppManifest.FromAssembly(assembly)).Message,
+				Does.Contain("structurally valid ICO"));
+		}
+	}
+
+	[Test]
+	public void FailureIsolation()
+	{
+		var previous = Script.TheScript;
+		var programType = BuildAssemblyWithManifest("{").GetType("AppManifestMarker", throwOnError: true);
+		_ = Assert.Throws<InvalidDataException>(() => new Script(programType));
+		Assert.That(Script.TheScript, Is.SameAs(previous));
+	}
+
+	[TestCase(" classic ", "Classic")]
+	[TestCase("SYSTEM", "System")]
+	[TestCase("dark", "Dark")]
+	public void GuiTheme(string value, string expected)
+	{
+		Assert.IsTrue(Script.TryNormalizeGuiTheme(value, out var actual));
+		Assert.That(actual, Is.EqualTo(expected));
+		Assert.That(Script.TryNormalizeGuiTheme("Neon", out _), Is.False);
+	}
+
+	[Test]
 	public void ReadContract()
 	{
 		Assert.IsNull(AppManifest.FromAssembly(typeof(AppManifestTests).Assembly));
@@ -57,39 +109,6 @@ public class AppManifestTests : TestRunner
 	}
 
 	[Test]
-	public void EmbeddedValidation()
-	{
-		var malformed = BuildAssemblyWithManifest("{");
-		var malformedError = Assert.Throws<InvalidDataException>(() => AppManifest.FromAssembly(malformed));
-		Assert.That(malformedError.Message, Does.Contain(AppManifest.ResourceName));
-		Assert.That(malformedError.Message, Does.Contain(malformed.GetName().Name));
-
-		var invalidUtf8 = BuildAssemblyWithManifest([0xff]);
-		Assert.That(Assert.Throws<InvalidDataException>(() => AppManifest.FromAssembly(invalidUtf8)).Message,
-			Does.Contain("could not be read"));
-
-		foreach (var json in new[]
-		{
-			"{\"trayIcon\":\"icons/library.dll\",\"trayIconNumber\":2,\"files\":[]}",
-			"{\"icon\":\"assets/app.ico\",\"files\":[]}",
-		})
-			Assert.That(Assert.Throws<InvalidDataException>(() =>
-				AppManifest.FromAssembly(BuildAssemblyWithManifest(json))).Message, Does.Contain("payload is missing"));
-
-		foreach (var (json, resource) in new[]
-		{
-			("{\"icon\":\"assets/app.ico\",\"files\":[]}", AppManifest.IconResourceName),
-			("{\"trayIcon\":\"assets/tray.png\",\"files\":[]}", AppManifest.TrayIconResourceName),
-		})
-		{
-			var assembly = BuildAssemblyWithManifest(Encoding.UTF8.GetBytes(json),
-				(resource, new byte[] { 0, 0, 1, 0, 1, 0 }));
-			Assert.That(Assert.Throws<InvalidDataException>(() => AppManifest.FromAssembly(assembly)).Message,
-				Does.Contain("structurally valid ICO"));
-		}
-	}
-
-	[Test]
 	public void TrayDefaults()
 	{
 		var json = "{\"trayIcon\":\"assets/tray.png\",\"trayIconNumber\":-12,\"files\":[]}";
@@ -98,25 +117,6 @@ public class AppManifestTests : TestRunner
 		using var script = new Script(assembly.GetType("AppManifestMarker", throwOnError: true));
 		Assert.That(Accessors.A_IconFile, Is.Empty);
 		Assert.That(Accessors.A_IconNumber, Is.EqualTo(1L));
-	}
-
-	[Test]
-	public void FailureIsolation()
-	{
-		var previous = Script.TheScript;
-		var programType = BuildAssemblyWithManifest("{").GetType("AppManifestMarker", throwOnError: true);
-		_ = Assert.Throws<InvalidDataException>(() => new Script(programType));
-		Assert.That(Script.TheScript, Is.SameAs(previous));
-	}
-
-	[TestCase(" classic ", "Classic")]
-	[TestCase("SYSTEM", "System")]
-	[TestCase("dark", "Dark")]
-	public void GuiTheme(string value, string expected)
-	{
-		Assert.IsTrue(Script.TryNormalizeGuiTheme(value, out var actual));
-		Assert.That(actual, Is.EqualTo(expected));
-		Assert.That(Script.TryNormalizeGuiTheme("Neon", out _), Is.False);
 	}
 
 	private static Assembly BuildAssemblyWithManifest(string json) =>

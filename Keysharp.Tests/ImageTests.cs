@@ -64,6 +64,7 @@ public class ImageTests : TestRunner
 	}
 
 #if WINDOWS
+
 	[TestCase(true, true), TestCase(true, false), TestCase(false, true), TestCase(false, false)]
 	[Category("Image"), Category("Internal"), Category("Curated")]
 	public void BitmapHandleOrientation(bool topDown, bool hasAlpha)
@@ -147,6 +148,7 @@ public class ImageTests : TestRunner
 			Marshal.FreeHGlobal(memory);
 		}
 	}
+
 #endif
 
 #if LINUX

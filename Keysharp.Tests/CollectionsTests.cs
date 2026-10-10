@@ -6,13 +6,13 @@ public class CollectionsTests : TestRunner
 	public void Array() => Assert.IsTrue(TestScript("collections-array", true));
 
 	[Test, Category("Collections")]
-	public void Map() => Assert.IsTrue(TestScript("collections-map", true));
+	public void Buffer() => Assert.IsTrue(TestScript("collections-buffer", true));
 
 	[Test, Category("Collections")]
 	public void HashMap() => Assert.IsTrue(TestScript("collections-hashmap", false));
 
 	[Test, Category("Collections")]
-	public void Buffer() => Assert.IsTrue(TestScript("collections-buffer", true));
+	public void Map() => Assert.IsTrue(TestScript("collections-map", true));
 
 	[Test, Category("Collections")]
 	public void Object() => Assert.IsTrue(TestScript("collections-object", false));

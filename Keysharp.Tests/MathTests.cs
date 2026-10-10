@@ -36,13 +36,13 @@ public partial class MathTests : TestRunner
 	public void Exp() => Assert.IsTrue(TestScript("math-exp", true));
 
 	[Test, Category("Math")]
+	public void Float() => Assert.IsTrue(TestScript("math-float", true));
+
+	[Test, Category("Math")]
 	public void Floor() => Assert.IsTrue(TestScript("math-floor", true));
 
 	[Test, Category("Math")]
 	public void Integer() => Assert.IsTrue(TestScript("math-integer", true));
-
-	[Test, Category("Math")]
-	public void Float() => Assert.IsTrue(TestScript("math-float", true));
 
 	[Test, Category("Math")]
 	public void Ln() => Assert.IsTrue(TestScript("math-ln", true));

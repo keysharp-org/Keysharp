@@ -5,17 +5,6 @@ namespace Keysharp.Tests;
 /// </summary>
 public class FunctionTests : TestRunner
 {
-	[Test, Category("Function")]
-	public void StorageLifetime() => Assert.IsTrue(TestScript("func-storage-lifetime", false));
-
-	[Test, Category("Function")]
-	public void ArgumentPacking() => Assert.IsTrue(TestScript("func-argument-packing", false));
-
-	// A plain call runs a Closure's function without its Call, which is right only while Closure inherits that Call.
-	[Test, Category("Function"), Category("Internal")]
-	public void ClosureCallInherited() =>
-		Assert.That(typeof(Closure).GetMethod(nameof(KeysharpFunc.Call), [typeof(object[])]).DeclaringType, Is.EqualTo(typeof(KeysharpFunc)));
-
 	[Test, Category("Function"), Category("Internal")]
 	public void AddressTakenLocalShape()
 	{
@@ -50,6 +39,18 @@ public class FunctionTests : TestRunner
 		Assert.That(generated.ToFullString().Contains("FuncScope.Layout", StringComparison.Ordinal), Is.False);
 	}
 
+	[Test, Category("Function"), NonParallelizable]
+	public void AllGlobalInFunc() => Assert.IsTrue(TestScript("func-all-global", false));
+
+	[Test, Category("Function"), NonParallelizable]
+	public void AllLocalInFunc() => Assert.IsTrue(TestScript("func-all-local", false));
+
+	[Test, Category("Function")]
+	public void ArgumentPacking() => Assert.IsTrue(TestScript("func-argument-packing", false));
+
+	[Test, Category("Function"), NonParallelizable]
+	public void BoundFunc() => Assert.IsTrue(TestScript("func-bound", false));
+
 	[Test, Category("Function"), Category("Internal")]
 	public void ByRefLoweringShape()
 	{
@@ -73,55 +74,6 @@ public class FunctionTests : TestRunner
 	}
 
 	[Test, Category("Function"), Category("Internal")]
-	public void CallbackValidationDefersCompilation()
-	{
-		var method = typeof(FunctionTests).GetMethod(nameof(LazyCallback), BindingFlags.NonPublic | BindingFlags.Static);
-		var holder = new Keysharp.Internals.Invoke.MethodPropertyHolder(method);
-		var callback = new KeysharpFunc(holder);
-
-		Assert.IsTrue(callback.IsValid);
-		Assert.That(Functions.ToCallback(callback), Is.SameAs(callback));
-		Assert.IsNull(holder._callFunc);
-		Assert.That(callback.Call(7L), Is.EqualTo(7L));
-		Assert.That(holder._callFunc, Is.Not.Null);
-		Assert.That(new KeysharpFunc((Keysharp.Internals.Invoke.MethodPropertyHolder)null).IsValid, Is.False);
-	}
-
-	private static object LazyCallback(object value) => value;
-
-	[Test, Category("Function"), Category("Internal")]
-	public void FieldWritabilityDefersCompilation()
-	{
-		var field = typeof(LazyFields).GetField(nameof(LazyFields.Value));
-		var holder = new Keysharp.Internals.Invoke.MethodPropertyHolder(field);
-		var cachedSetter = typeof(Keysharp.Internals.Invoke.MethodPropertyHolder).GetField("setProp", BindingFlags.NonPublic | BindingFlags.Instance);
-
-		// Compilation timing cannot be asserted deterministically through a script.
-		Assert.IsNull(cachedSetter.GetValue(holder));
-		Assert.IsTrue(holder.HasSetter);
-		Assert.IsTrue(Keysharp.Runtime.ScriptVar.Of(holder).RequireWritable(Keysharp.Runtime.VarUsage.Assign, "Value"));
-		Assert.IsNull(cachedSetter.GetValue(holder));
-
-		var target = new LazyFields();
-		holder.SetProp(target, 7.9);
-		Assert.That(target.Value, Is.EqualTo(7L));
-		var setter = holder.SetProp;
-		holder.SetProp(target, 8L);
-		Assert.That(target.Value, Is.EqualTo(8L));
-		Assert.That(holder.SetProp, Is.SameAs(setter));
-
-		var readOnly = new Keysharp.Internals.Invoke.MethodPropertyHolder(typeof(LazyFields).GetField(nameof(LazyFields.ReadOnly)));
-		Assert.That(readOnly.HasSetter, Is.False);
-		Assert.IsNull(readOnly.SetProp);
-	}
-
-	private sealed class LazyFields
-	{
-		public long Value = 0;
-		public readonly long ReadOnly = 1;
-	}
-
-	[Test, Category("Function"), Category("Internal")]
 	public void CachedCallDelegateDoesNotAllocate()
 	{
 		var holder = Keysharp.Internals.Invoke.MethodPropertyHolder.GetOrAdd(s.ReflectionsData.flatPublicStaticMethods["StrLen"]);
@@ -140,81 +92,28 @@ public class FunctionTests : TestRunner
 		Assert.That(holder.CallFunc, Is.SameAs(cached));
 	}
 
-	[Test, Category("Function"), NonParallelizable]
-	public void AllGlobalInFunc() => Assert.IsTrue(TestScript("func-all-global", false));
-
-	[Test, Category("Function"), NonParallelizable]
-	public void AllLocalInFunc() => Assert.IsTrue(TestScript("func-all-local", false));
-
-	[Test, Category("Function"), NonParallelizable]
-	public void BoundFunc() => Assert.IsTrue(TestScript("func-bound", false));
-
-	[Test, Category("Function"), NonParallelizable]
-	public void NamedArgs() => Assert.IsTrue(TestScript("func-named-params", false));
-
-	[Test, Category("Function"), NonParallelizable]
-	public void FuncNames() => Assert.IsTrue(TestScript("func-names", false));
-
 	[Test, Category("Function"), Category("Internal")]
-	public void ThisFuncUsesLiteralFastPath()
+	public void CallbackValidationDefersCompilation()
 	{
-		const string source = "Probe() => A_ThisFunc\nclass C { static M() => A_ThisFunc\nP { get => A_ThisFunc }\nS => A_ThisFunc }\n"
-							  + "F13::MsgBox A_ThisFunc\n";
-		var (program, diagnostics) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(source);
-		Assert.IsEmpty(diagnostics, string.Join("; ", diagnostics));
-		var generated = new Keysharp.Compilation.Syntax.Lowerer().Build(program, "Test").ToFullString();
-		Assert.That(generated.Contains("Keysharp.Builtins.Accessors.A_ThisFunc", StringComparison.Ordinal), Is.False, generated);
-		Assert.IsTrue(generated.Contains("\"Probe\"", StringComparison.Ordinal), generated);
-		Assert.IsTrue(generated.Contains("\"C.M\"", StringComparison.Ordinal), generated);
-		Assert.IsTrue(generated.Contains("\"C.Prototype.P.Get\"", StringComparison.Ordinal), generated);
-		// A shorthand getter capitalises, and every hot callback is AutoHotkey's one `<Hotkey>` function.
-		Assert.IsTrue(generated.Contains("\"C.Prototype.S.Get\"", StringComparison.Ordinal), generated);
-		Assert.IsTrue(generated.Contains("\"<Hotkey>\"", StringComparison.Ordinal), generated);
+		var method = typeof(FunctionTests).GetMethod(nameof(LazyCallback), BindingFlags.NonPublic | BindingFlags.Static);
+		var holder = new Keysharp.Internals.Invoke.MethodPropertyHolder(method);
+		var callback = new KeysharpFunc(holder);
+
+		Assert.IsTrue(callback.IsValid);
+		Assert.That(Functions.ToCallback(callback), Is.SameAs(callback));
+		Assert.IsNull(holder._callFunc);
+		Assert.That(callback.Call(7L), Is.EqualTo(7L));
+		Assert.That(holder._callFunc, Is.Not.Null);
+		Assert.That(new KeysharpFunc((Keysharp.Internals.Invoke.MethodPropertyHolder)null).IsValid, Is.False);
 	}
 
-	// A nested function is a variable of the function declaring it, so any declaration of the same name conflicts with it.
-	[Test, Category("Function")]
-	public void NestedFunctionConflictsWithDeclaration()
-	{
-		foreach (var (source, line, existing) in new[]
-		{
-			("F() {\n\tstatic tick := 1\n\ttick() => 2\n}\n", 3, "static variable"),
-			("F() {\n\tstatic tick := 1\n\tstatic tick() => 2\n}\n", 3, "static variable"),
-			("F() {\n\tlocal tick := 1\n\ttick() => 2\n}\n", 3, "local variable"),
-			("F() {\n\tglobal tick\n\ttick() => 2\n}\n", 3, "global variable"),
-			("F(tick) {\n\tx := 1\n\ttick() => 2\n}\n", 3, "parameter"),
-			("F() {\n\ttick() => 1\n\ttick() => 2\n}\n", 3, "Func"),
-			("F() {\n\ttick() => 1\n\tf := tick() => 2\n}\n", 3, "Func"),
-			("tick() => 1\nf := tick() => 2\n", 2, "Func"),
-		})
-		{
-			var diagnostics = LoweringDiagnostics.Diagnostics(source);
-			Assert.IsTrue(System.Array.Exists(diagnostics, d => d.StartsWith($"{line}:") && d.EndsWith($"This function declaration conflicts with an existing {existing}: tick")),
-				source.Replace("\n", "\\n") + ": " + string.Join("; ", diagnostics));
-		}
-
-		foreach (var source in new[]
-		{
-			"Õ() => 1\nõ() => 2\n",
-			"F(Σ, ς) => 1\n",
-			"class Ω {\n}\nclass ω {\n}\n",
-			"class C {\n MΣ() => 1\n Mς() => 2\n}\n",
-			"class C {\n Σ => 1\n ς => 2\n}\n",
-			"class C {\n M(This) => 1\n}\n",
-			"class C {\n P[Value] {\n set => 1\n }\n}\n"
-		})
-			Assert.IsTrue(System.Array.Exists(LoweringDiagnostics.Diagnostics(source),
-				diagnostic => diagnostic.Contains("declaration conflicts")), source);
-	}
+	// A plain call runs a Closure's function without its Call, which is right only while Closure inherits that Call.
+	[Test, Category("Function"), Category("Internal")]
+	public void ClosureCallInherited() =>
+		Assert.That(typeof(Closure).GetMethod(nameof(KeysharpFunc.Call), [typeof(object[])]).DeclaringType, Is.EqualTo(typeof(KeysharpFunc)));
 
 	[Test, Category("Function"), NonParallelizable]
 	public void CombinedParamsInFunc() => Assert.IsTrue(TestScript("func-combined-params", false));
-
-	[Test, Category("Function"), NonParallelizable]
-	public void DefParamsInFunc() => Assert.IsTrue(TestScript("func-def-params", false));
-
-	[Test, Category("Function"), NonParallelizable]
-	public void DynVarsInFunc() => Assert.IsTrue(TestScript("func-dyn-vars", false));
 
 	// Writing the module's own function or class is a load-time error; writing a local of the same name is not.
 	[Test, Category("Function")]
@@ -257,6 +156,53 @@ public class FunctionTests : TestRunner
 			Assert.IsEmpty(Diagnostics(source), source);
 	}
 
+	[Test, Category("Function"), NonParallelizable]
+	public void DefParamsInFunc() => Assert.IsTrue(TestScript("func-def-params", false));
+
+	[Test, Category("Function"), NonParallelizable]
+	public void DynVarsInFunc() => Assert.IsTrue(TestScript("func-dyn-vars", false));
+
+	[Test, Category("Function"), NonParallelizable]
+	public void FatArrowFunc() => Assert.IsTrue(TestScript("func-fat-arrow", false));
+
+	[Test, Category("Function"), Category("Internal")]
+	public void FieldWritabilityDefersCompilation()
+	{
+		var field = typeof(LazyFields).GetField(nameof(LazyFields.Value));
+		var holder = new Keysharp.Internals.Invoke.MethodPropertyHolder(field);
+		var cachedSetter = typeof(Keysharp.Internals.Invoke.MethodPropertyHolder).GetField("setProp", BindingFlags.NonPublic | BindingFlags.Instance);
+
+		// Compilation timing cannot be asserted deterministically through a script.
+		Assert.IsNull(cachedSetter.GetValue(holder));
+		Assert.IsTrue(holder.HasSetter);
+		Assert.IsTrue(Keysharp.Runtime.ScriptVar.Of(holder).RequireWritable(Keysharp.Runtime.VarUsage.Assign, "Value"));
+		Assert.IsNull(cachedSetter.GetValue(holder));
+
+		var target = new LazyFields();
+		holder.SetProp(target, 7.9);
+		Assert.That(target.Value, Is.EqualTo(7L));
+		var setter = holder.SetProp;
+		holder.SetProp(target, 8L);
+		Assert.That(target.Value, Is.EqualTo(8L));
+		Assert.That(holder.SetProp, Is.SameAs(setter));
+
+		var readOnly = new Keysharp.Internals.Invoke.MethodPropertyHolder(typeof(LazyFields).GetField(nameof(LazyFields.ReadOnly)));
+		Assert.That(readOnly.HasSetter, Is.False);
+		Assert.IsNull(readOnly.SetProp);
+	}
+
+	[Test, Category("Function"), NonParallelizable]
+	public void FuncCallable() => Assert.IsTrue(TestScript("func-callable", false));
+
+	[Test, Category("Function"), NonParallelizable]
+	public void FuncClosure() => Assert.IsTrue(TestScript("func-closure", false));
+
+	[Test, Category("Function"), NonParallelizable]
+	public void FuncNames() => Assert.IsTrue(TestScript("func-names", false));
+
+	[Test, Category("Function"), NonParallelizable]
+	public void FuncParamCount() => Assert.IsTrue(TestScript("func-param-count", false));
+
 	// A name which names no function adds no function object, so a probe such as IsSet(%name%) leaves nothing behind, and
 	// a built-in function is one object however it is reached.
 	[Test, Category("Function"), Category("Internal"), NonParallelizable]
@@ -270,9 +216,6 @@ public class FunctionTests : TestRunner
 	}
 
 	[Test, Category("Function"), NonParallelizable]
-	public void FatArrowFunc() => Assert.IsTrue(TestScript("func-fat-arrow", false));
-
-	[Test, Category("Function"), NonParallelizable]
 	public void GlobalLocalInFunc() => Assert.IsTrue(TestScript("func-global-local", false));
 
 	[Test, Category("Function"), NonParallelizable]
@@ -281,11 +224,54 @@ public class FunctionTests : TestRunner
 	[Test, Category("Function"), NonParallelizable]
 	public void GlobalStaticInFunc() => Assert.IsTrue(TestScript("func-global-static", false));
 
+	// RequiresHook: registers a real global hotkey, which needs the keysharp-input hook and, on a desktop
+	// with the daemon, prompts for input-access permission. Excluded from the non-interactive curated CI set.
+	[Test, Category("Function"), Category("RequiresHook"), NonParallelizable]
+	public void HotkeyLocalFunc() => Assert.IsTrue(TestScript("func-hotkey-local", false));
+
 	[Test, Category("Function"), NonParallelizable]
 	public void LabelInFunc() => Assert.IsTrue(TestScript("func-label", true));
 
 	[Test, Category("Function"), NonParallelizable]
 	public void LocalStaticInFunc() => Assert.IsTrue(TestScript("func-local-static", false));
+
+	[Test, Category("Function"), NonParallelizable]
+	public void NamedArgs() => Assert.IsTrue(TestScript("func-named-params", false));
+
+	// A nested function is a variable of the function declaring it, so any declaration of the same name conflicts with it.
+	[Test, Category("Function")]
+	public void NestedFunctionConflictsWithDeclaration()
+	{
+		foreach (var (source, line, existing) in new[]
+		{
+			("F() {\n\tstatic tick := 1\n\ttick() => 2\n}\n", 3, "static variable"),
+			("F() {\n\tstatic tick := 1\n\tstatic tick() => 2\n}\n", 3, "static variable"),
+			("F() {\n\tlocal tick := 1\n\ttick() => 2\n}\n", 3, "local variable"),
+			("F() {\n\tglobal tick\n\ttick() => 2\n}\n", 3, "global variable"),
+			("F(tick) {\n\tx := 1\n\ttick() => 2\n}\n", 3, "parameter"),
+			("F() {\n\ttick() => 1\n\ttick() => 2\n}\n", 3, "Func"),
+			("F() {\n\ttick() => 1\n\tf := tick() => 2\n}\n", 3, "Func"),
+			("tick() => 1\nf := tick() => 2\n", 2, "Func"),
+		})
+		{
+			var diagnostics = LoweringDiagnostics.Diagnostics(source);
+			Assert.IsTrue(System.Array.Exists(diagnostics, d => d.StartsWith($"{line}:") && d.EndsWith($"This function declaration conflicts with an existing {existing}: tick")),
+				source.Replace("\n", "\\n") + ": " + string.Join("; ", diagnostics));
+		}
+
+		foreach (var source in new[]
+		{
+			"Õ() => 1\nõ() => 2\n",
+			"F(Σ, ς) => 1\n",
+			"class Ω {\n}\nclass ω {\n}\n",
+			"class C {\n MΣ() => 1\n Mς() => 2\n}\n",
+			"class C {\n Σ => 1\n ς => 2\n}\n",
+			"class C {\n M(This) => 1\n}\n",
+			"class C {\n P[Value] {\n set => 1\n }\n}\n"
+		})
+			Assert.IsTrue(System.Array.Exists(LoweringDiagnostics.Diagnostics(source),
+				diagnostic => diagnostic.Contains("declaration conflicts")), source);
+	}
 
 	[Test, Category("Function"), NonParallelizable]
 	public void OptParamsInFunc() => Assert.IsTrue(TestScript("func-opt-params", false));
@@ -299,21 +285,34 @@ public class FunctionTests : TestRunner
 	[Test, Category("Function"), NonParallelizable]
 	public void ReturnFunc() => Assert.IsTrue(TestScript("func-return", false));
 
+	[Test, Category("Function")]
+	public void StorageLifetime() => Assert.IsTrue(TestScript("func-storage-lifetime", false));
+
+	[Test, Category("Function"), Category("Internal")]
+	public void ThisFuncUsesLiteralFastPath()
+	{
+		const string source = "Probe() => A_ThisFunc\nclass C { static M() => A_ThisFunc\nP { get => A_ThisFunc }\nS => A_ThisFunc }\n"
+							  + "F13::MsgBox A_ThisFunc\n";
+		var (program, diagnostics) = Keysharp.Parsing.Syntax.Parser.ParseWithDiagnostics(source);
+		Assert.IsEmpty(diagnostics, string.Join("; ", diagnostics));
+		var generated = new Keysharp.Compilation.Syntax.Lowerer().Build(program, "Test").ToFullString();
+		Assert.That(generated.Contains("Keysharp.Builtins.Accessors.A_ThisFunc", StringComparison.Ordinal), Is.False, generated);
+		Assert.IsTrue(generated.Contains("\"Probe\"", StringComparison.Ordinal), generated);
+		Assert.IsTrue(generated.Contains("\"C.M\"", StringComparison.Ordinal), generated);
+		Assert.IsTrue(generated.Contains("\"C.Prototype.P.Get\"", StringComparison.Ordinal), generated);
+		// A shorthand getter capitalises, and every hot callback is AutoHotkey's one `<Hotkey>` function.
+		Assert.IsTrue(generated.Contains("\"C.Prototype.S.Get\"", StringComparison.Ordinal), generated);
+		Assert.IsTrue(generated.Contains("\"<Hotkey>\"", StringComparison.Ordinal), generated);
+	}
+
 	[Test, Category("Function"), NonParallelizable]
 	public void VarParamsInFunc() => Assert.IsTrue(TestScript("func-var-params", false));
 
-	[Test, Category("Function"), NonParallelizable]
-	public void FuncCallable() => Assert.IsTrue(TestScript("func-callable", false));
+	private static object LazyCallback(object value) => value;
 
-	[Test, Category("Function"), NonParallelizable]
-	public void FuncClosure() => Assert.IsTrue(TestScript("func-closure", false));
-
-	[Test, Category("Function"), NonParallelizable]
-	public void FuncParamCount() => Assert.IsTrue(TestScript("func-param-count", false));
-
-	// RequiresHook: registers a real global hotkey, which needs the keysharp-input hook and, on a desktop
-	// with the daemon, prompts for input-access permission. Excluded from the non-interactive curated CI set.
-	[Test, Category("Function"), Category("RequiresHook"), NonParallelizable]
-	public void HotkeyLocalFunc() => Assert.IsTrue(TestScript("func-hotkey-local", false));
-
+	private sealed class LazyFields
+	{
+		public readonly long ReadOnly = 1;
+		public long Value = 0;
+	}
 }

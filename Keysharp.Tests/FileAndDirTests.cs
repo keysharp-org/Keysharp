@@ -3,9 +3,6 @@ namespace Keysharp.Tests;
 public class FileAndDirTests : TestRunner
 {
 	[Test, Category("FileAndDir")]
-	public void FileCreateTemp() => Assert.IsTrue(TestScript("file-filecreatetemp", true));
-
-	[Test, Category("FileAndDir")]
 	public void DirCopy() => Assert.IsTrue(TestScript("file-dircopy", false));
 
 	[Test, Category("FileAndDir")]
@@ -106,6 +103,9 @@ public class FileAndDirTests : TestRunner
 
 	[Test, Category("FileAndDir")]
 	public void FileCreateShortcut() => Assert.IsTrue(TestScript("file-filecreateshortcut", true));
+
+	[Test, Category("FileAndDir")]
+	public void FileCreateTemp() => Assert.IsTrue(TestScript("file-filecreatetemp", true));
 
 	[Test, Category("FileAndDir")]
 	public void FileDelete() => Assert.IsTrue(TestScript("file-filedelete", true));

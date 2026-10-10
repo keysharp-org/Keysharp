@@ -105,6 +105,7 @@ public class RealThreadTests : TestRunner
 	private static Message CreateMessage(int msgId) =>
 #if WINDOWS
 		Message.Create(IntPtr.Zero, msgId, IntPtr.Zero, IntPtr.Zero);
+
 #else
 		new Message
 		{

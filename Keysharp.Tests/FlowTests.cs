@@ -377,8 +377,10 @@ public partial class FlowTests : TestRunner
 	public void FlowLoopRead() => Assert.IsTrue(TestScript("flow-loop-read", true));
 
 #if WINDOWS
+
 	[Test, Category("Flow")]
 	public void FlowLoopReg() => Assert.IsTrue(TestScript("flow-loop-reg", true));
+
 #endif
 
 	[Test, Category("Flow")]

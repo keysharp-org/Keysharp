@@ -19,6 +19,9 @@ public partial class StringTests : TestRunner
 	//}
 
 	[Test, Category("String")]
+	public void Base64DecodeEncode() => Assert.IsTrue(TestScript("string-base64", true));
+
+	[Test, Category("String")]
 	public void Chr() => Assert.IsTrue(TestScript("string-chr", true));
 
 	[Test, Category("String")]
@@ -41,6 +44,27 @@ public partial class StringTests : TestRunner
 
 	[Test, Category("String")]
 	public void InStr() => Assert.IsTrue(TestScript("string-instr", true));
+
+	// Locale compares in the user's culture, which differs by machine, so the test chooses one: Turkish does not fold i
+	// to I, where the invariant culture the threads run in would. Searches fold one character at a time, as AHK's do.
+	[Test, Category("String"), Category("Internal")]
+	public void LocaleIsUserCulture()
+	{
+		var saved = Keysharp.Internals.Strings.CaseCompare.UserCulture;
+		Keysharp.Internals.Strings.CaseCompare.UserCulture = new System.Globalization.CultureInfo("tr-TR");
+
+		try
+		{
+			Assert.That(Keysharp.Builtins.Strings.StrCompare("i", "I", "Locale"), Is.Not.Zero);
+			Assert.That(Keysharp.Builtins.Strings.StrCompare("i", "I", "Off"), Is.Zero);
+			Assert.That(Keysharp.Builtins.Strings.InStr("I", "i", "Locale"), Is.EqualTo(1L));
+			Assert.That(Keysharp.Builtins.Strings.InStr("İ", "i", "Locale"), Is.Zero);
+		}
+		finally
+		{
+			Keysharp.Internals.Strings.CaseCompare.UserCulture = saved;
+		}
+	}
 
 	[Test, Category("String")]
 	public void LTrim() => Assert.IsTrue(TestScript("string-ltrim", true));
@@ -84,27 +108,6 @@ public partial class StringTests : TestRunner
 		}
 	}
 
-	// Locale compares in the user's culture, which differs by machine, so the test chooses one: Turkish does not fold i
-	// to I, where the invariant culture the threads run in would. Searches fold one character at a time, as AHK's do.
-	[Test, Category("String"), Category("Internal")]
-	public void LocaleIsUserCulture()
-	{
-		var saved = Keysharp.Internals.Strings.CaseCompare.UserCulture;
-		Keysharp.Internals.Strings.CaseCompare.UserCulture = new System.Globalization.CultureInfo("tr-TR");
-
-		try
-		{
-			Assert.That(Keysharp.Builtins.Strings.StrCompare("i", "I", "Locale"), Is.Not.Zero);
-			Assert.That(Keysharp.Builtins.Strings.StrCompare("i", "I", "Off"), Is.Zero);
-			Assert.That(Keysharp.Builtins.Strings.InStr("I", "i", "Locale"), Is.EqualTo(1L));
-			Assert.That(Keysharp.Builtins.Strings.InStr("İ", "i", "Locale"), Is.Zero);
-		}
-		finally
-		{
-			Keysharp.Internals.Strings.CaseCompare.UserCulture = saved;
-		}
-	}
-
 	[Test, Category("String")]
 	public void String() => Assert.IsTrue(TestScript("string-string", true));
 
@@ -134,7 +137,4 @@ public partial class StringTests : TestRunner
 
 	[Test, Category("String")]
 	public void VerCompare() => Assert.IsTrue(TestScript("string-vercompare", true));
-
-	[Test, Category("String")]
-	public void Base64DecodeEncode() => Assert.IsTrue(TestScript("string-base64", true));
 }

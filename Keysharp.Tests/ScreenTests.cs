@@ -15,6 +15,7 @@ public partial class ScreenTests : TestRunner
 	}
 
 #if WINDOWS
+
 	[Test, Category("Screen")]
 	public void ImageSearchDirection()
 	{
@@ -60,6 +61,7 @@ public partial class ScreenTests : TestRunner
 			Assert.That(got.Value, Is.EqualTo(kv.Value), $"Direction {kv.Key} returned the wrong match.");
 		}
 	}
+
 #endif
 
 	[Test, Category("Screen")]

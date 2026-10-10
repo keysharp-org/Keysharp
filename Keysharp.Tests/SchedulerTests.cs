@@ -8,7 +8,9 @@ public class SchedulerTests : TestRunner
 		internal int Deletes;
 		internal int Disposes;
 
-		internal DestructorProbe() : base(null) { }
+		internal DestructorProbe() : base(null)
+		{
+		}
 
 		public override object __Delete()
 		{
@@ -175,6 +177,7 @@ public class SchedulerTests : TestRunner
 	private sealed class EqualsEverything : KeysharpObject
 	{
 		public override bool Equals(object obj) => true;
+
 		public override int GetHashCode() => 0;
 	}
 

@@ -9,6 +9,7 @@ public partial class ExternalTests : TestRunner
 	public void Clr() => Assert.IsTrue(TestScript("external-clr", false));
 
 #if WINDOWS
+
 	[Test, Category("External")]
 	public void DllCall_()
 	{
@@ -206,5 +207,6 @@ public partial class ExternalTests : TestRunner
 
 	[Test, Category("External")]
 	public void OnMessage() => Assert.IsTrue(TestScript("external-onmessage", false));
+
 #endif
 }

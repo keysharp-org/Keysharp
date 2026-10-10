@@ -3,6 +3,65 @@ namespace Keysharp.Tests;
 public partial class ScreenTests
 {
 	[Test, Category("Screen"), Category("Internal"), Category("Curated")]
+	public void BitmapTransfer()
+	{
+		var source = SolidBitmap(2, 1, unchecked((int)0xFF102030));
+		var captures = new List<(ScreenRect Bounds, Bitmap Pixels)>
+		{
+			(new ScreenRect(-2, 4, 2, 1), source)
+		};
+
+		using var result = ScreenCaptureComposer.Compose(new ScreenRect(-2, 4, 2, 1), captures);
+		Assert.That(result, Is.SameAs(source));
+		Assert.That(captures.Count, Is.Zero, "ownership transfer must remove the returned bitmap from disposal");
+	}
+
+	[Test, Category("Screen"), Category("Internal"), Category("Curated")]
+	public void ConcurrentHide()
+	{
+		using var canvas = TestSurface(1, 1);
+		var backing = new BlockingOverlayBacking();
+		var service = new TestOverlayService(() => backing);
+		var showing = Task.Run(() => service.TryPresentImageOverlay(3, canvas,
+			new ScreenRect(0, 0, 1, 1), 255, true));
+
+		Assert.IsTrue(backing.FirstShowEntered.Wait(TimeSpan.FromSeconds(2)));
+		using var hideStarted = new ManualResetEventSlim();
+		var hiding = Task.Run(() =>
+		{
+			hideStarted.Set();
+			return service.DisposeAllImageOverlays();
+		});
+		Assert.IsTrue(hideStarted.Wait(TimeSpan.FromSeconds(2)));
+		Assert.IsTrue(SpinWait.SpinUntil(() => !IsOverlayRegistered(service, 3), TimeSpan.FromSeconds(2)),
+			"HideAll must clear registration before waiting for an in-progress Show");
+		backing.ReleaseShows.Set();
+
+		Assert.That(showing.GetAwaiter().GetResult(), Is.False);
+		Assert.IsTrue(hiding.GetAwaiter().GetResult());
+		Assert.IsTrue(backing.Disposed);
+		Assert.That(service.GetImageOverlayHandle(3), Is.EqualTo(nint.Zero));
+	}
+
+	// A present that did not reach the screen must leave the damage standing, so the next one repaints those
+	// pixels instead of losing them. This is the half of the contract that only shows up when something
+	// fails, which is exactly when it matters.
+	[Test, Category("Screen"), Category("Internal"), Category("Curated")]
+	public void FailedPresentDamage()
+	{
+		var backing = new RecordingOverlayBacking { Result = false };
+		var service = new TestOverlayService(() => backing);
+		var bounds = new ScreenRect(0, 0, 4, 4);
+		using var surface = TestSurface(4, 4);
+
+		surface.Damage.Reset();
+		surface.Damage.Add(new PixelRect(1, 1, 2, 2));
+		Assert.That(service.TryPresentImageOverlay(1, surface, bounds, 255, true), Is.False);
+		Assert.That(surface.Damage.Kind, Is.EqualTo(DamageKind.Region),
+						"a present that failed must not clear the damage it did not paint");
+	}
+
+	[Test, Category("Screen"), Category("Internal"), Category("Curated")]
 	public void FractionalSeam()
 	{
 		var captures = new List<(ScreenRect Bounds, Bitmap Pixels)>
@@ -28,44 +87,6 @@ public partial class ScreenTests
 			foreach (var (_, Pixels) in captures)
 				Pixels.Dispose();
 		}
-	}
-
-	[Test, Category("Screen"), Category("Internal"), Category("Curated")]
-	public void BitmapTransfer()
-	{
-		var source = SolidBitmap(2, 1, unchecked((int)0xFF102030));
-		var captures = new List<(ScreenRect Bounds, Bitmap Pixels)>
-		{
-			(new ScreenRect(-2, 4, 2, 1), source)
-		};
-
-		using var result = ScreenCaptureComposer.Compose(new ScreenRect(-2, 4, 2, 1), captures);
-		Assert.That(result, Is.SameAs(source));
-		Assert.That(captures.Count, Is.Zero, "ownership transfer must remove the returned bitmap from disposal");
-	}
-
-	[Test, Category("Screen"), Category("Internal"), Category("Curated")]
-	public void OverlaySerialization()
-	{
-		using var canvas = TestSurface(1, 1);
-		var backing = new BlockingOverlayBacking();
-		var service = new TestOverlayService(() => backing);
-		var bounds = new ScreenRect(0, 0, 1, 1);
-		var first = Task.Run(() => service.TryPresentImageOverlay(1, canvas, bounds, 255, true));
-
-		Assert.IsTrue(backing.FirstShowEntered.Wait(TimeSpan.FromSeconds(2)));
-		using var secondStarted = new ManualResetEventSlim();
-		var second = Task.Run(() =>
-		{
-			secondStarted.Set();
-			return service.TryPresentImageOverlay(1, canvas, bounds, 255, true);
-		});
-		Assert.IsTrue(secondStarted.Wait(TimeSpan.FromSeconds(2)));
-
-		backing.ReleaseShows.Set();
-		Assert.IsTrue(first.GetAwaiter().GetResult());
-		Assert.IsTrue(second.GetAwaiter().GetResult());
-		Assert.That(backing.MaxConcurrentCalls, Is.EqualTo(1));
 	}
 
 	[Test, Category("Screen"), Category("Internal"), Category("Curated")]
@@ -157,55 +178,28 @@ public partial class ScreenTests
 	}
 
 	[Test, Category("Screen"), Category("Internal"), Category("Curated")]
-	public void ConcurrentHide()
+	public void OverlaySerialization()
 	{
 		using var canvas = TestSurface(1, 1);
 		var backing = new BlockingOverlayBacking();
 		var service = new TestOverlayService(() => backing);
-		var showing = Task.Run(() => service.TryPresentImageOverlay(3, canvas,
-			new ScreenRect(0, 0, 1, 1), 255, true));
+		var bounds = new ScreenRect(0, 0, 1, 1);
+		var first = Task.Run(() => service.TryPresentImageOverlay(1, canvas, bounds, 255, true));
 
 		Assert.IsTrue(backing.FirstShowEntered.Wait(TimeSpan.FromSeconds(2)));
-		using var hideStarted = new ManualResetEventSlim();
-		var hiding = Task.Run(() =>
+		using var secondStarted = new ManualResetEventSlim();
+		var second = Task.Run(() =>
 		{
-			hideStarted.Set();
-			return service.DisposeAllImageOverlays();
+			secondStarted.Set();
+			return service.TryPresentImageOverlay(1, canvas, bounds, 255, true);
 		});
-		Assert.IsTrue(hideStarted.Wait(TimeSpan.FromSeconds(2)));
-		Assert.IsTrue(SpinWait.SpinUntil(() => !IsOverlayRegistered(service, 3), TimeSpan.FromSeconds(2)),
-			"HideAll must clear registration before waiting for an in-progress Show");
+		Assert.IsTrue(secondStarted.Wait(TimeSpan.FromSeconds(2)));
+
 		backing.ReleaseShows.Set();
-
-		Assert.That(showing.GetAwaiter().GetResult(), Is.False);
-		Assert.IsTrue(hiding.GetAwaiter().GetResult());
-		Assert.IsTrue(backing.Disposed);
-		Assert.That(service.GetImageOverlayHandle(3), Is.EqualTo(nint.Zero));
+		Assert.IsTrue(first.GetAwaiter().GetResult());
+		Assert.IsTrue(second.GetAwaiter().GetResult());
+		Assert.That(backing.MaxConcurrentCalls, Is.EqualTo(1));
 	}
-
-	// Observe HideAll's documented linearization point without adding a test-only production API.
-	private static bool IsOverlayRegistered(OverlayBase service, uint id)
-	{
-		var type = typeof(OverlayBase);
-		var sync = type.GetField("sync", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(service);
-
-		if (sync == null || type.GetField("overlays", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(service) is not IDictionary overlays)
-			throw new InvalidOperationException("OverlayBase registration fields were not found.");
-
-		lock (sync)
-			return overlays.Contains(id);
-	}
-
-	private static Bitmap SolidBitmap(int width, int height, int argb)
-	{
-		var bitmap = ImageHelper.NewArgbCanvas(width, height);
-		using var graphics = ImageHelper.MakeGraphics(bitmap, highQuality: false);
-		graphics.Clear(Color.FromArgb(argb));
-		return bitmap;
-	}
-
-	private static OverlaySurface TestSurface(int w, int h)
-		=> new(SolidBitmap(w, h, unchecked((int)0xFFFFFFFF)), new PixelSize(w, h), false);
 
 	// A backing's dirty-rect path is only sound while it keeps receiving the same surface: its window
 	// still holds what the last present put there. Presenting a different surface — which Overlay.Redraw
@@ -238,84 +232,29 @@ public partial class ScreenTests
 						"a surface this backing has not presented before must be transferred whole");
 	}
 
-	// A present that did not reach the screen must leave the damage standing, so the next one repaints those
-	// pixels instead of losing them. This is the half of the contract that only shows up when something
-	// fails, which is exactly when it matters.
-	[Test, Category("Screen"), Category("Internal"), Category("Curated")]
-	public void FailedPresentDamage()
+	// Observe HideAll's documented linearization point without adding a test-only production API.
+	private static bool IsOverlayRegistered(OverlayBase service, uint id)
 	{
-		var backing = new RecordingOverlayBacking { Result = false };
-		var service = new TestOverlayService(() => backing);
-		var bounds = new ScreenRect(0, 0, 4, 4);
-		using var surface = TestSurface(4, 4);
+		var type = typeof(OverlayBase);
+		var sync = type.GetField("sync", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(service);
 
-		surface.Damage.Reset();
-		surface.Damage.Add(new PixelRect(1, 1, 2, 2));
-		Assert.That(service.TryPresentImageOverlay(1, surface, bounds, 255, true), Is.False);
-		Assert.That(surface.Damage.Kind, Is.EqualTo(DamageKind.Region),
-						"a present that failed must not clear the damage it did not paint");
+		if (sync == null || type.GetField("overlays", BindingFlags.Instance | BindingFlags.NonPublic)?.GetValue(service) is not IDictionary overlays)
+			throw new InvalidOperationException("OverlayBase registration fields were not found.");
+
+		lock (sync)
+			return overlays.Contains(id);
 	}
 
-	private sealed class RecordingOverlayBacking : IImageOverlayBacking
+	private static Bitmap SolidBitmap(int width, int height, int argb)
 	{
-		internal bool Disposed;
-		internal bool Result = true;
-		internal bool HideResult = true;
-		internal DamageList LastDamage;
-		internal OverlaySurface LastSurface;
-
-		public Action<OverlayPointerEvent> PointerSink { get; set; }
-		public nint Handle => 123;
-		public bool Present(OverlaySurface surface, ScreenRect bounds, byte opacity, bool clickThrough, DamageList damage)
-		{
-			LastSurface = surface;
-			LastDamage = damage;
-			return Result;
-		}
-
-		public bool Move(ScreenRect bounds) => true;
-		public bool Hide() => HideResult;
-		public void Dispose() => Disposed = true;
+		var bitmap = ImageHelper.NewArgbCanvas(width, height);
+		using var graphics = ImageHelper.MakeGraphics(bitmap, highQuality: false);
+		graphics.Clear(Color.FromArgb(argb));
+		return bitmap;
 	}
 
-	private sealed class TestOverlayService : OverlayBase
-	{
-		private readonly Func<IImageOverlayBacking> create;
-
-		internal TestOverlayService(Func<IImageOverlayBacking> create) => this.create = create;
-		public override PixelSize GetCanvasSize(ScreenRect bounds) => new(bounds.Width, bounds.Height);
-		protected override IImageOverlayBacking CreateBacking(uint id, Script owner) => create();
-	}
-
-	private sealed class BlockingOverlayBacking : IImageOverlayBacking
-	{
-		private int activeCalls;
-		private int maxConcurrentCalls;
-
-		internal readonly ManualResetEventSlim FirstShowEntered = new(false);
-		internal readonly ManualResetEventSlim ReleaseShows = new(false);
-		internal bool ShowResult = true;
-		internal bool Disposed;
-		internal int MaxConcurrentCalls => Volatile.Read(ref maxConcurrentCalls);
-
-		public Action<OverlayPointerEvent> PointerSink { get; set; }
-
-		public nint Handle => Disposed ? 0 : 123;
-
-		public bool Present(OverlaySurface surface, ScreenRect bounds, byte opacity, bool clickThrough, DamageList damage)
-		{
-			var active = Interlocked.Increment(ref activeCalls);
-			InterlockedExtensions.Max(ref maxConcurrentCalls, active);
-			FirstShowEntered.Set();
-			_ = ReleaseShows.Wait(TimeSpan.FromSeconds(2));
-			_ = Interlocked.Decrement(ref activeCalls);
-			return ShowResult;
-		}
-
-		public bool Move(ScreenRect bounds) => true;
-		public bool Hide() => true;
-		public void Dispose() => Disposed = true;
-	}
+	private static OverlaySurface TestSurface(int w, int h)
+		=> new(SolidBitmap(w, h, unchecked((int)0xFFFFFFFF)), new PixelSize(w, h), false);
 
 	private static class InterlockedExtensions
 	{
@@ -330,5 +269,74 @@ public partial class ScreenTests
 			}
 			while (Interlocked.CompareExchange(ref target, value, current) != current);
 		}
+	}
+
+	private sealed class BlockingOverlayBacking : IImageOverlayBacking
+	{
+		internal readonly ManualResetEventSlim FirstShowEntered = new(false);
+		internal readonly ManualResetEventSlim ReleaseShows = new(false);
+		internal bool Disposed;
+		internal bool ShowResult = true;
+		private int activeCalls;
+		private int maxConcurrentCalls;
+
+		public nint Handle => Disposed ? 0 : 123;
+
+		public Action<OverlayPointerEvent> PointerSink { get; set; }
+
+		internal int MaxConcurrentCalls => Volatile.Read(ref maxConcurrentCalls);
+
+		public void Dispose() => Disposed = true;
+
+		public bool Hide() => true;
+
+		public bool Move(ScreenRect bounds) => true;
+
+		public bool Present(OverlaySurface surface, ScreenRect bounds, byte opacity, bool clickThrough, DamageList damage)
+		{
+			var active = Interlocked.Increment(ref activeCalls);
+			InterlockedExtensions.Max(ref maxConcurrentCalls, active);
+			FirstShowEntered.Set();
+			_ = ReleaseShows.Wait(TimeSpan.FromSeconds(2));
+			_ = Interlocked.Decrement(ref activeCalls);
+			return ShowResult;
+		}
+	}
+
+	private sealed class RecordingOverlayBacking : IImageOverlayBacking
+	{
+		internal bool Disposed;
+		internal bool HideResult = true;
+		internal DamageList LastDamage;
+		internal OverlaySurface LastSurface;
+		internal bool Result = true;
+
+		public nint Handle => 123;
+
+		public Action<OverlayPointerEvent> PointerSink { get; set; }
+
+		public void Dispose() => Disposed = true;
+
+		public bool Hide() => HideResult;
+
+		public bool Move(ScreenRect bounds) => true;
+
+		public bool Present(OverlaySurface surface, ScreenRect bounds, byte opacity, bool clickThrough, DamageList damage)
+		{
+			LastSurface = surface;
+			LastDamage = damage;
+			return Result;
+		}
+	}
+
+	private sealed class TestOverlayService : OverlayBase
+	{
+		private readonly Func<IImageOverlayBacking> create;
+
+		internal TestOverlayService(Func<IImageOverlayBacking> create) => this.create = create;
+
+		public override PixelSize GetCanvasSize(ScreenRect bounds) => new(bounds.Width, bounds.Height);
+
+		protected override IImageOverlayBacking CreateBacking(uint id, Script owner) => create();
 	}
 }

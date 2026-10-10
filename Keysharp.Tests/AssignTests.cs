@@ -21,9 +21,6 @@ public class AssignTests : TestRunner
 	public void AssignMultiline() => Assert.IsTrue(TestScript("assign-multiline", false));
 
 	[Test, Category("Assign")]
-	public void AssignUnset() => Assert.IsTrue(TestScript("assign-unset", true));
-
-	[Test, Category("Assign")]
 	public void AssignNumerics() => Assert.IsTrue(TestScript("assign-numerics", true));
 
 	[Test, Category("Assign")]
@@ -34,6 +31,9 @@ public class AssignTests : TestRunner
 
 	[Test, Category("Assign")]
 	public void AssignStringConcat() => Assert.IsTrue(TestScript("assign-string-concat", true));
+
+	[Test, Category("Assign")]
+	public void AssignUnset() => Assert.IsTrue(TestScript("assign-unset", true));
 
 	[Test, Category("Assign")]
 	public void AssignVar() => Assert.IsTrue(TestScript("assign-var", false));//Dynamic variables only work as global statics, not function variables.

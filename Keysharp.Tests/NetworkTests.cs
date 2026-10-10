@@ -12,6 +12,20 @@ public partial class NetworkTests : TestRunner
 	}
 
 	/// <summary>
+	/// <c>Ks.Http</c> and the <c>Url</c> codec, against loopback HTTP and FTP servers the script starts
+	/// itself, so the suite never depends on the network being reachable.
+	/// </summary>
+	[Test, Category("Network"), NonParallelizable]
+	public void HttpClass() => Assert.IsTrue(TestScript("http", true));
+
+	/// <summary>
+	/// <c>Ks.Mail</c> against a loopback SMTP server the script starts itself, covering the envelope it
+	/// builds as well as every input it refuses.
+	/// </summary>
+	[Test, Category("Network"), NonParallelizable]
+	public void MailClass() => Assert.IsTrue(TestScript("mail", true));
+
+	/// <summary>
 	/// Transfers over http, https and ftp are covered against loopback servers by <see cref="HttpClass"/>.
 	/// This pins the script-visible entry point and the input it refuses, without depending on a host being
 	/// reachable.
@@ -28,18 +42,4 @@ public partial class NetworkTests : TestRunner
 	}
 
 	private static Error ScriptError(Action action) => Assert.Throws<KeysharpException>(action).UserError;
-
-	/// <summary>
-	/// <c>Ks.Http</c> and the <c>Url</c> codec, against loopback HTTP and FTP servers the script starts
-	/// itself, so the suite never depends on the network being reachable.
-	/// </summary>
-	[Test, Category("Network"), NonParallelizable]
-	public void HttpClass() => Assert.IsTrue(TestScript("http", true));
-
-	/// <summary>
-	/// <c>Ks.Mail</c> against a loopback SMTP server the script starts itself, covering the envelope it
-	/// builds as well as every input it refuses.
-	/// </summary>
-	[Test, Category("Network"), NonParallelizable]
-	public void MailClass() => Assert.IsTrue(TestScript("mail", true));
 }

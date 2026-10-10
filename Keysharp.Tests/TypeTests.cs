@@ -67,6 +67,15 @@ public partial class TypeTests : TestRunner
 	}
 
 	/// <summary>
+	/// Ks.Boolean, the type of a truth value. The language already produced booleans -- every comparison,
+	/// every negation, Map.Has -- with nothing able to name them, and nothing able to tell one from the
+	/// Integer 1 it reads as. This pins both halves: it behaves as an Integer everywhere, and it is a
+	/// distinct type when asked.
+	/// </summary>
+	[Test, Category("Types"), NonParallelizable]
+	public void TypesBoolean() => Assert.IsTrue(TestScript("types-boolean", true));
+
+	/// <summary>
 	/// Verifies the numeric conversion semantics: TypeError on invalid input where a number
 	/// is required (AHK v2 parity), Float truncation toward zero in integer contexts, and
 	/// canonical Float-to-string formatting (whole-valued Floats keep a trailing .0).
@@ -84,14 +93,4 @@ public partial class TypeTests : TestRunner
 	/// </summary>
 	[Test, Category("Types"), NonParallelizable]
 	public void TypesTypedParams() => Assert.IsTrue(TestScript("types-typed-params", true));
-
-	/// <summary>
-	/// Ks.Boolean, the type of a truth value. The language already produced booleans -- every comparison,
-	/// every negation, Map.Has -- with nothing able to name them, and nothing able to tell one from the
-	/// Integer 1 it reads as. This pins both halves: it behaves as an Integer everywhere, and it is a
-	/// distinct type when asked.
-	/// </summary>
-	[Test, Category("Types"), NonParallelizable]
-	public void TypesBoolean() => Assert.IsTrue(TestScript("types-boolean", true));
-
 }

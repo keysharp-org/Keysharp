@@ -6,10 +6,14 @@ public class BuiltInVarsTests : TestRunner
 	public void PropsDateTime() => Assert.IsTrue(TestScript("props-date-time", true));
 
 	[Test, Category("BuiltInVars"), NonParallelizable]
-	public void PropsScriptProperties() => Assert.IsTrue(TestScript("props-script-properties", false));
-
-	[Test, Category("BuiltInVars"), NonParallelizable]
 	public void PropsLineFile() => Assert.IsTrue(TestScript("props-linefile", false));
+
+	[Test, Category("BuiltInVars")]
+	public void PropsMenuCommands()
+	{
+		SkipIfUiInitializationBlocked("Interception of default menu actions needs a usable UI toolkit.");
+		Assert.IsTrue(TestScript("props-menu-commands", false));
+	}
 
 	[Test, Category("BuiltInVars"), NonParallelizable]
 	public void PropsScriptName()
@@ -31,7 +35,13 @@ public class BuiltInVarsTests : TestRunner
 	}
 
 	[Test, Category("BuiltInVars"), NonParallelizable]
+	public void PropsScriptProperties() => Assert.IsTrue(TestScript("props-script-properties", false));
+
+	[Test, Category("BuiltInVars"), NonParallelizable]
 	public void PropsScriptSettings() => Assert.IsTrue(TestScript("props-script-settings", false));
+
+	[Test, Category("BuiltInVars")]
+	public void PropsSpecialChars() => Assert.IsTrue(TestScript("props-special-chars", true));
 
 	[Test, Category("BuiltInVars"), NonParallelizable]
 	public void PropsTrayMenuWithoutIcon()
@@ -39,14 +49,4 @@ public class BuiltInVarsTests : TestRunner
 		SkipIfUiInitializationBlocked("Building a tray menu needs a usable UI toolkit.");
 		Assert.IsTrue(TestScript("props-tray-menu", false));
 	}
-
-	[Test, Category("BuiltInVars")]
-	public void PropsMenuCommands()
-	{
-		SkipIfUiInitializationBlocked("Interception of default menu actions needs a usable UI toolkit.");
-		Assert.IsTrue(TestScript("props-menu-commands", false));
-	}
-
-	[Test, Category("BuiltInVars")]
-	public void PropsSpecialChars() => Assert.IsTrue(TestScript("props-special-chars", true));
 }

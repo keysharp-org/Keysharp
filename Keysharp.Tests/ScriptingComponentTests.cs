@@ -294,7 +294,7 @@ public class ScriptingComponentTests : TestRunner
 			Assert.That(failure.ToLowerInvariant(), Does.Contain("missing"));
 
 			Directory.Delete(malformed, true);
-			CopyComponentPayload(typeof(Keysharp.Components.Scripting.Parser.ParserComponent).Assembly, root, "parser");
+			CopyComponentPayload(root, "parser");
 			var descriptorPath = Path.Combine(malformed, "component.json");
 			var descriptor = File.ReadAllText(descriptorPath).Replace(
 				"Keysharp.Components.Scripting.Parser.ParserComponent", "System.String", StringComparison.Ordinal);
@@ -319,7 +319,7 @@ public class ScriptingComponentTests : TestRunner
 
 		try
 		{
-			CopyComponentPayload(typeof(Keysharp.Components.Scripting.Parser.ParserComponent).Assembly, root, "parser");
+			CopyComponentPayload(root, "parser");
 			var descriptorPath = Path.Combine(ComponentDirectory(root, "parser"), "component.json");
 			File.WriteAllText(descriptorPath, File.ReadAllText(descriptorPath)
 				.Replace("\"contractVersion\":1", "\"contractVersion\":2", StringComparison.Ordinal));
@@ -350,7 +350,7 @@ public class ScriptingComponentTests : TestRunner
 				// Declares the parser's full capability set on purpose: anything else is rejected as an
 				// incomplete descriptor, and this fixture is meant to fail on its missing assembly instead.
 				"{\"schemaVersion\":1,\"contractVersion\":1,\"id\":\"parser\",\"version\":\"1.0.0\",\"assembly\":\"missing.dll\",\"type\":\"Missing.Parser\",\"capabilities\":[\"SyntaxValidation\",\"Tokenization\"],\"files\":[\"missing.dll\"]}");
-			CopyComponentPayload(typeof(Keysharp.Components.Scripting.Parser.ParserComponent).Assembly, validRoot, "parser");
+			CopyComponentPayload(validRoot, "parser");
 			ScriptingComponentRegistry.SetSearchRootsForTests(brokenRoot, validRoot);
 
 			Assert.IsTrue(ScriptingComponentRegistry.IsAvailable(ScriptingCapability.SyntaxValidation));
@@ -376,7 +376,7 @@ public class ScriptingComponentTests : TestRunner
 
 		try
 		{
-			CopyComponentPayload(typeof(CompilerComponent).Assembly, root, "compiler");
+			CopyComponentPayload(root, "compiler");
 			ScriptingComponentRegistry.SetSearchRootsForTests(root);
 			Assert.IsTrue(ScriptingComponentRegistry.TryGetCompiler(out _, out var failure), failure);
 			Assert.That(ScriptingComponentRegistry.TryGetSyntaxValidator(out _, out failure), Is.False);
@@ -915,6 +915,7 @@ public class ScriptingComponentTests : TestRunner
 #if WINDOWS
 		=>
 		"<not captured on Windows>";
+
 #else
 	{
 		try
@@ -941,7 +942,7 @@ public class ScriptingComponentTests : TestRunner
 	private static string ComponentDirectory(string root, string name) =>
 		Path.Combine(root, "components", "scripting", name);
 
-	private static void CopyComponentPayload(Assembly assembly, string root, string name)
+	private static void CopyComponentPayload(string root, string name)
 	{
 		var source = Path.Combine(AppContext.BaseDirectory, "components", "scripting", name);
 		Assert.IsTrue(Directory.Exists(source), $"canonical {name} payload is missing at {source}");

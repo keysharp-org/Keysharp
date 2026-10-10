@@ -3,16 +3,19 @@ namespace Keysharp.Tests;
 public class ClassTests : TestRunner
 {
 	[Test, Category("Class")]
+	public void BuiltInTypeVisibility() => Assert.IsTrue(TestScript("class-builtin-visibility", false));
+
+	[Test, Category("Class")]
 	public void ClassBasic() => Assert.IsTrue(TestScript("class", false));
 
 	[Test, Category("Class")]
-	public void ClassWithStaticVar() => Assert.IsTrue(TestScript("class-static", false));
-
-	[Test, Category("Class")]
-	public void ClassWithMemberFuncs() => Assert.IsTrue(TestScript("class-member-funcs", false));
-
-	[Test, Category("Class")]
 	public void ClassExtends() => Assert.IsTrue(TestScript("class-extends", false));
+
+	[Test, Category("Class")]
+	public void ClassNested() => Assert.IsTrue(TestScript("class-nested", false));
+
+	[Test, Category("Class")]
+	public void ClassOwnProperties() => Assert.IsTrue(TestScript("class-ownprops", false));
 
 	[Test, Category("Class")]
 	public void ClassParams() => Assert.IsTrue(TestScript("class-params", false));
@@ -21,28 +24,16 @@ public class ClassTests : TestRunner
 	public void ClassProperties() => Assert.IsTrue(TestScript("class-props", false));
 
 	[Test, Category("Class")]
-	public void ClassOwnProperties() => Assert.IsTrue(TestScript("class-ownprops", false));
+	public void ClassPrototype() => Assert.IsTrue(TestScript("class-prototype", false));
 
 	[Test, Category("Class")]
 	public void ClassSpecialFunctions() => Assert.IsTrue(TestScript("class-special-funcs", false));
 
 	[Test, Category("Class")]
-	public void ClassPrototype() => Assert.IsTrue(TestScript("class-prototype", false));
+	public void ClassWithMemberFuncs() => Assert.IsTrue(TestScript("class-member-funcs", false));
 
 	[Test, Category("Class")]
-	public void ClassNested() => Assert.IsTrue(TestScript("class-nested", false));
-
-	[Test, Category("Class")]
-	public void BuiltInTypeVisibility() => Assert.IsTrue(TestScript("class-builtin-visibility", false));
-
-	[Test, Category("Class")]
-	public void StructBasic() => Assert.IsTrue(TestScript("struct-basic", false));
-
-	[Test, Category("Class")]
-	public void StructPack() => Assert.IsTrue(TestScript("struct-pack", false));
-
-	[Test, Category("Class")]
-	public void StructArray() => Assert.IsTrue(TestScript("struct-array", false));
+	public void ClassWithStaticVar() => Assert.IsTrue(TestScript("class-static", false));
 
 	// A struct extends only a struct class and a class only a class which is not one, reported at the class's line.
 	[Test, Category("Class")]
@@ -72,4 +63,13 @@ public class ClassTests : TestRunner
 		})
 			Assert.IsEmpty(LoweringDiagnostics.Diagnostics(src), src);
 	}
+
+	[Test, Category("Class")]
+	public void StructArray() => Assert.IsTrue(TestScript("struct-array", false));
+
+	[Test, Category("Class")]
+	public void StructBasic() => Assert.IsTrue(TestScript("struct-basic", false));
+
+	[Test, Category("Class")]
+	public void StructPack() => Assert.IsTrue(TestScript("struct-pack", false));
 }

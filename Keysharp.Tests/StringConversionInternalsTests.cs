@@ -4,24 +4,6 @@ namespace Keysharp.Tests;
 public class StringConversionInternalsTests : TestRunner
 {
 	[Test, Category("Internal"), Category("Curated")]
-	public void DefaultsAndScalarResults()
-	{
-		Assert.That(Lenient(null, "fallback"), Is.EqualTo("fallback"));
-		Assert.That(Lenient(null, null), Is.Empty);
-		Assert.That(Lenient(new KeysharpObject(), "fallback"), Is.EqualTo("fallback"));
-		Assert.That(Lenient(WithToString(() => ""), "fallback"), Is.Empty);
-		Assert.That(Lenient(WithToString(() => null), "fallback"), Is.EqualTo("fallback"));
-		Assert.That(Lenient(WithToString(() => 1.0)), Is.EqualTo("1.0"));
-		Assert.That(Lenient(true), Is.EqualTo("1"));
-		Assert.That(Lenient(1.234), Is.EqualTo("1.234"));
-
-		var calls = 0;
-		var nested = WithToString(() => { calls++; return "nested"; });
-		Assert.That(Lenient(WithToString(() => nested), "fallback"), Is.EqualTo("fallback"));
-		Assert.That(calls, Is.Zero);
-	}
-
-	[Test, Category("Internal"), Category("Curated")]
 	public void DefaultingContainsCallbackErrorsAndRestoresTryState()
 	{
 		var errorsSeen = 0;
@@ -42,35 +24,28 @@ public class StringConversionInternalsTests : TestRunner
 	}
 
 	[Test, Category("Internal"), Category("Curated")]
-	public void StrictConversionPreservesErrors()
-	{
-		using var scope = Keysharp.Runtime.Flow.EnterTry();
-		var unsupported = new KeysharpObject();
-		Assert.That(unsupported.TryCoerceString(out _), Is.False);
-		Assert.IsInstanceOf<TypeError>(Assert.Throws<KeysharpException>(() => unsupported.CoerceString(out _)).UserError);
-		var failure = Assert.Throws<KeysharpException>(() =>
-			WithToString(() => Errors.ValueErrorOccurred("conversion failed")).CoerceString(out _));
-		Assert.IsInstanceOf<ValueError>(failure.UserError);
-		Assert.That(failure.Message, Is.EqualTo("conversion failed"));
-		_ = Assert.Throws<InvalidOperationException>(() => new ThrowingClrValue().CoerceString(out _));
-	}
-
-	[Test, Category("Internal"), Category("Curated")]
-	public void StrictConversionReportsAContinuedError()
-	{
-		_ = Errors.OnError(new KeysharpFunc((Func<object, object, object>)((_, _) => -1L)));
-		Assert.That(new KeysharpObject().CoerceString(out var text, "fallback"), Is.False);
-		Assert.That(text, Is.EqualTo("fallback"));
-		Assert.That(new KeysharpObject().CoerceLong(out var number), Is.False);
-		Assert.That(number, Is.Zero);
-		Assert.That(new KeysharpObject().CoerceDouble(out _), Is.False);
-	}
-
-	[Test, Category("Internal"), Category("Curated")]
 	public void DefaultingPreservesScriptExit()
 	{
 		_ = Assert.Throws<Keysharp.Builtins.Flow.UserRequestedExitException>(() =>
 			WithToString(() => throw new Keysharp.Builtins.Flow.UserRequestedExitException()).TryCoerceString(out _));
+	}
+
+	[Test, Category("Internal"), Category("Curated")]
+	public void DefaultsAndScalarResults()
+	{
+		Assert.That(Lenient(null, "fallback"), Is.EqualTo("fallback"));
+		Assert.That(Lenient(null, null), Is.Empty);
+		Assert.That(Lenient(new KeysharpObject(), "fallback"), Is.EqualTo("fallback"));
+		Assert.That(Lenient(WithToString(() => ""), "fallback"), Is.Empty);
+		Assert.That(Lenient(WithToString(() => null), "fallback"), Is.EqualTo("fallback"));
+		Assert.That(Lenient(WithToString(() => 1.0)), Is.EqualTo("1.0"));
+		Assert.That(Lenient(true), Is.EqualTo("1"));
+		Assert.That(Lenient(1.234), Is.EqualTo("1.234"));
+
+		var calls = 0;
+		var nested = WithToString(() => { calls++; return "nested"; });
+		Assert.That(Lenient(WithToString(() => nested), "fallback"), Is.EqualTo("fallback"));
+		Assert.That(calls, Is.Zero);
 	}
 
 	[Test, Category("Internal"), Category("Curated")]
@@ -135,6 +110,31 @@ public class StringConversionInternalsTests : TestRunner
 		_ = Assert.Throws<Keysharp.Builtins.Flow.UserRequestedExitException>(() => new ExitingClrValue().TryCoerceDouble(out _));
 	}
 
+	[Test, Category("Internal"), Category("Curated")]
+	public void StrictConversionPreservesErrors()
+	{
+		using var scope = Keysharp.Runtime.Flow.EnterTry();
+		var unsupported = new KeysharpObject();
+		Assert.That(unsupported.TryCoerceString(out _), Is.False);
+		Assert.IsInstanceOf<TypeError>(Assert.Throws<KeysharpException>(() => unsupported.CoerceString(out _)).UserError);
+		var failure = Assert.Throws<KeysharpException>(() =>
+			WithToString(() => Errors.ValueErrorOccurred("conversion failed")).CoerceString(out _));
+		Assert.IsInstanceOf<ValueError>(failure.UserError);
+		Assert.That(failure.Message, Is.EqualTo("conversion failed"));
+		_ = Assert.Throws<InvalidOperationException>(() => new ThrowingClrValue().CoerceString(out _));
+	}
+
+	[Test, Category("Internal"), Category("Curated")]
+	public void StrictConversionReportsAContinuedError()
+	{
+		_ = Errors.OnError(new KeysharpFunc((Func<object, object, object>)((_, _) => -1L)));
+		Assert.That(new KeysharpObject().CoerceString(out var text, "fallback"), Is.False);
+		Assert.That(text, Is.EqualTo("fallback"));
+		Assert.That(new KeysharpObject().CoerceLong(out var number), Is.False);
+		Assert.That(number, Is.Zero);
+		Assert.That(new KeysharpObject().CoerceDouble(out _), Is.False);
+	}
+
 	private static string Lenient(object value, string def = "")
 	{
 		_ = value.TryCoerceString(out var text, def);
@@ -149,9 +149,9 @@ public class StringConversionInternalsTests : TestRunner
 		return value;
 	}
 
-	private sealed class ThrowingClrValue
+	private sealed class ExitingClrValue
 	{
-		public override string ToString() => throw new InvalidOperationException("conversion failed");
+		public override string ToString() => throw new Keysharp.Builtins.Flow.UserRequestedExitException();
 	}
 
 	private sealed class ScriptErrorClrValue
@@ -163,8 +163,8 @@ public class StringConversionInternalsTests : TestRunner
 		}
 	}
 
-	private sealed class ExitingClrValue
+	private sealed class ThrowingClrValue
 	{
-		public override string ToString() => throw new Keysharp.Builtins.Flow.UserRequestedExitException();
+		public override string ToString() => throw new InvalidOperationException("conversion failed");
 	}
 }

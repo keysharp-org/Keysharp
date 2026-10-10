@@ -4,52 +4,6 @@ namespace Keysharp.Tests;
 public class ThreadTests : TestRunner
 {
 	[Test, Category("Threading")]
-	public void NoTimersLocal()
-	{
-		Assert.That(((KeysharpThread)Ks.A_Thread).AllowTimers, Is.True);
-		Assert.IsTrue(s.AccessorData.threadConfigDataPrototype.allowTimers);
-
-		_ = Keysharp.Builtins.KeysharpThread.staticCall(null, "NoTimers", true);
-
-		Assert.That(((KeysharpThread)Ks.A_Thread).AllowTimers, Is.False);
-		Assert.IsTrue(s.AccessorData.threadConfigDataPrototype.allowTimers);
-	}
-
-	[Test, Category("Threading")]
-	public void NoTimersPrototype()
-	{
-		s.AccessorData.threadConfigDataPrototype.allowTimers = false;
-		Assert.IsTrue(s.Threads.TryBeginThread(out var btv));
-
-		try
-		{
-			Assert.That(btv.configData.allowTimers, Is.False);
-		}
-		finally
-		{
-			s.Threads.EndThread(btv);
-		}
-	}
-
-	[Test, Category("Threading")]
-	public void InterruptDuration()
-	{
-		_ = Keysharp.Builtins.KeysharpThread.staticCall(null, "Interrupt", 42, 1);
-		Assert.That(s.uninterruptibleTime, Is.EqualTo(42));
-
-		Assert.IsTrue(s.Threads.TryBeginThread(out var btv));
-
-		try
-		{
-			Assert.That(btv.UninterruptibleDuration, Is.EqualTo(42));
-		}
-		finally
-		{
-			s.Threads.EndThread(btv);
-		}
-	}
-
-	[Test, Category("Threading")]
 	public void CriticalDefault()
 	{
 		s.AccessorData.threadConfigDataPrototype.defaultIsCritical = true;
@@ -68,25 +22,6 @@ public class ThreadTests : TestRunner
 	}
 
 	[Test, Category("Threading")]
-	public void PriorityDrop()
-	{
-		var context = UseQueuedMainContext();
-		var calls = 0;
-		s.Threads.CurrentThread.priority = 1;
-
-		_ = s.EventScheduler.EnqueueThreadLaunch(0, false, false, () => calls++, false);
-		context.DrainAll();
-
-		Assert.That(calls, Is.Zero);
-
-		s.Threads.CurrentThread.priority = 0;
-		s.EventScheduler.SchedulePump();
-		context.DrainAll();
-
-		Assert.That(calls, Is.Zero);
-	}
-
-	[Test, Category("Threading")]
 	public void CriticalDialog()
 	{
 		Assert.IsTrue(s.Threads.TryBeginThread(out var btv));
@@ -100,6 +35,26 @@ public class ThreadTests : TestRunner
 				Assert.IsTrue(s.Threads.IsInterruptible());
 
 			Assert.That(s.Threads.IsInterruptible(), Is.False);
+		}
+		finally
+		{
+			s.Threads.EndThread(btv);
+		}
+	}
+
+	[Test, Category("Threading")]
+	public void CriticalMinusOne()
+	{
+		Assert.IsTrue(s.Threads.TryBeginThread(out var btv));
+
+		try
+		{
+			_ = Keysharp.Builtins.Flow.Critical(-1);
+			s.Threads.CurrentThread.lastPeekTick = 0;
+
+			Assert.IsTrue(Keysharp.Runtime.Flow.IsTrueAndRunning(true));
+			Assert.That(s.IsCurrentThreadPreemptiveCheckDue(), Is.False);
+			Assert.That(s.GetPeekFrequency(), Is.EqualTo(-1));
 		}
 		finally
 		{
@@ -126,6 +81,52 @@ public class ThreadTests : TestRunner
 			{
 				s.Threads.allowInterruption = true;
 			}
+		}
+		finally
+		{
+			s.Threads.EndThread(btv);
+		}
+	}
+
+	[Test, Category("Threading")]
+	public void InterruptDuration()
+	{
+		_ = Keysharp.Builtins.KeysharpThread.staticCall(null, "Interrupt", 42, 1);
+		Assert.That(s.uninterruptibleTime, Is.EqualTo(42));
+
+		Assert.IsTrue(s.Threads.TryBeginThread(out var btv));
+
+		try
+		{
+			Assert.That(btv.UninterruptibleDuration, Is.EqualTo(42));
+		}
+		finally
+		{
+			s.Threads.EndThread(btv);
+		}
+	}
+
+	[Test, Category("Threading")]
+	public void NoTimersLocal()
+	{
+		Assert.That(((KeysharpThread)Ks.A_Thread).AllowTimers, Is.True);
+		Assert.IsTrue(s.AccessorData.threadConfigDataPrototype.allowTimers);
+
+		_ = Keysharp.Builtins.KeysharpThread.staticCall(null, "NoTimers", true);
+
+		Assert.That(((KeysharpThread)Ks.A_Thread).AllowTimers, Is.False);
+		Assert.IsTrue(s.AccessorData.threadConfigDataPrototype.allowTimers);
+	}
+
+	[Test, Category("Threading")]
+	public void NoTimersPrototype()
+	{
+		s.AccessorData.threadConfigDataPrototype.allowTimers = false;
+		Assert.IsTrue(s.Threads.TryBeginThread(out var btv));
+
+		try
+		{
+			Assert.That(btv.configData.allowTimers, Is.False);
 		}
 		finally
 		{
@@ -164,22 +165,21 @@ public class ThreadTests : TestRunner
 	}
 
 	[Test, Category("Threading")]
-	public void CriticalMinusOne()
+	public void PriorityDrop()
 	{
-		Assert.IsTrue(s.Threads.TryBeginThread(out var btv));
+		var context = UseQueuedMainContext();
+		var calls = 0;
+		s.Threads.CurrentThread.priority = 1;
 
-		try
-		{
-			_ = Keysharp.Builtins.Flow.Critical(-1);
-			s.Threads.CurrentThread.lastPeekTick = 0;
+		_ = s.EventScheduler.EnqueueThreadLaunch(0, false, false, () => calls++, false);
+		context.DrainAll();
 
-			Assert.IsTrue(Keysharp.Runtime.Flow.IsTrueAndRunning(true));
-			Assert.That(s.IsCurrentThreadPreemptiveCheckDue(), Is.False);
-			Assert.That(s.GetPeekFrequency(), Is.EqualTo(-1));
-		}
-		finally
-		{
-			s.Threads.EndThread(btv);
-		}
+		Assert.That(calls, Is.Zero);
+
+		s.Threads.CurrentThread.priority = 0;
+		s.EventScheduler.SchedulePump();
+		context.DrainAll();
+
+		Assert.That(calls, Is.Zero);
 	}
 }

@@ -9,47 +9,6 @@ public class TokenizerContractTests : TestRunner
 {
 	private static IScriptTokenizer Tokenizer => new ParserComponent();
 
-	/// <summary>Without this, a kind added to the lexer would silently publish as <c>Unknown</c>.</summary>
-	[Test, Category("Parser")]
-	public void MapsEveryKind()
-	{
-		var unmapped = new List<string>();
-
-		// The mapping is private, so check by name instead: every internal kind needs a contract counterpart.
-		foreach (var kind in Enum.GetValues<TokenKind>())
-		{
-			if (kind == TokenKind.Unknown)
-				continue;
-
-			var expected = kind == TokenKind.EOF ? nameof(ScriptTokenKind.EndOfFile) : kind.ToString();
-
-			if (!Enum.TryParse<ScriptTokenKind>(expected, out _))
-				unmapped.Add(kind.ToString());
-		}
-
-		Assert.That(unmapped,
-			Is.Empty,
-			"internal TokenKind members with no ScriptTokenKind counterpart — add them to ScriptTokenKind and ParserComponent.ToKind: "
-			+ string.Join(", ", unmapped));
-	}
-
-	/// <summary>The published stream must be ordered and non-overlapping, or a highlighter cannot style from it.</summary>
-	[Test, Category("Parser")]
-	public void TokensNeverOverlap()
-	{
-		var src = "; lead\nx := 1 + 2   ; trailing\n/* block\n   spanning */\nf(a, \"s\")\n^a::b\n";
-		var toks = Tokenizer.Tokenize(src);
-		var end = 0;
-
-		foreach (var t in toks)
-		{
-			Assert.GreaterOrEqual(t.Offset, end, $"token {t.Kind} at {t.Offset} overlaps the previous one");
-			Assert.GreaterOrEqual(t.Length, 0);
-			Assert.LessOrEqual(t.Offset + t.Length, src.Length, $"token {t.Kind} runs past the end of the source");
-			end = t.Offset + t.Length;
-		}
-	}
-
 	/// <summary>Comments are tokens, not skipped trivia.</summary>
 	[Test, Category("Parser")]
 	public void CommentsAreTokens()
@@ -62,55 +21,82 @@ public class TokenizerContractTests : TestRunner
 		Assert.That(src.Substring(comments[1].Offset, comments[1].Length), Is.EqualTo("/* block */"));
 	}
 
-	/// <summary>A continuation section is one string token.</summary>
+	/// <summary>Losslessness: every non-whitespace character falls inside some token, so nothing needs re-scanning.</summary>
 	[Test, Category("Parser")]
-	public void SectionIsOneString()
+	public void CoversEveryCharacter()
 	{
-		var src = "s := \"\n(\n//***** banner *****\nint x;\n)\"\nMsgBox(\"after\")\n";
-		var toks = Tokenizer.Tokenize(src);
-		var strings = toks.Where(t => t.Kind == ScriptTokenKind.String).ToList();
-		Assert.That(strings.Count, Is.EqualTo(2));
-		Assert.That(src.Substring(strings[0].Offset, strings[0].Length), Does.Contain("//***** banner *****"));
-		Assert.That(src.Substring(strings[1].Offset, strings[1].Length), Is.EqualTo("\"after\""));
-		Assert.That(toks.Any(t => t.Kind == ScriptTokenKind.Comment),
-			Is.False,
-			"the banner is inside a string; nothing here is a comment");
+		var sources = new[]
+		{
+			"; line comment\n/* block\n   comment */\nx := 1 + 2\n",
+			"^!a::MsgBox('hi')\n",                                   // hotkey
+			"a::b\n",                                                // remap
+			":*:btw::by the way ; stripped\n",                       // hotstring with a stripped comment
+			"x := 1\n(\n  + 2\n)\n",                                 // code continuation section
+			"x := 1\n(Join`s LTrim ; opts and a comment\n  + 2\n)\n", // …with options
+			"a := Array(\n(Join,\n1\n2\n)\n)\n",                     // …with a Join that is merged in as syntax
+			"v :=\n(\n\"one\ntwo\"\n)\n",                            // …with a string spanning its content lines
+			"n :=\n(Join\nMyV\nar\n)Suffix\n",                       // …with one name split across the lines and the ')'
+			"(Joinpp\nFileA\nend \"x\"\n)\n",                        // …opening the file, with nothing above to merge onto
+			"c :=\n(Comments\none  ; stripped\n; whole line\ntwo\n)\n", // …with comments the merge removes
+			"s := \"\n(\n//***** banner\n)\"\n",                     // string continuation section
+			"#CSharp\npublic static int F() => 1;\n#EndCSharp\n",
+			"#Requires AutoHotkey v2.0   ; trailing comment\n",
+			"#DllLoad *i user32.dll\n",
+		};
+
+		foreach (var src in sources)
+		{
+			var covered = new bool[src.Length];
+
+			foreach (var t in Tokenizer.Tokenize(src))
+				for (var k = t.Offset; k < t.Offset + t.Length; k++)
+					covered[k] = true;
+
+			for (var k = 0; k < src.Length; k++)
+			{
+				if (char.IsWhiteSpace(src[k]) || covered[k])
+					continue;
+
+				Assert.Fail($"character {k} ('{src[k]}') is covered by no token, in:\n{src}");
+			}
+		}
 	}
 
-	/// <summary>
-	/// A quoted string inside a *code* continuation section closes on a later content line, so it is still one
-	/// string token — highlighting it line by line would invert the colors from there to the end of the section.
-	/// </summary>
+	/// <summary>A `#CSharp` body is one embedded-code token, so a consumer knows to switch languages.</summary>
 	[Test, Category("Parser")]
-	public void SectionStringSpansContentLines()
+	public void CSharpBodyIsOneToken()
 	{
-		var src = "Var :=\n(\n\"Quote marks are not escaped here.\nSpecify variables as follows: \" Var \"\nA line of text.\"\n)\nMsgBox(\"after\")\n";
+		var src = "#CSharp\npublic static int F() => 1; // c# comment\n#EndCSharp\nx := 1\n";
 		var toks = Tokenizer.Tokenize(src);
-		var strings = toks.Where(t => t.Kind == ScriptTokenKind.String).ToList();
-		Assert.That(strings.Count, Is.EqualTo(3), "two strings in the section plus the one after it");
-		Assert.That(src.Substring(strings[0].Offset, strings[0].Length), Does.Contain("\nSpecify variables as follows: "));
-		Assert.That(src.Substring(strings[1].Offset, strings[1].Length), Does.Contain("\nA line of text."));
-		Assert.That(src.Substring(strings[2].Offset, strings[2].Length), Is.EqualTo("\"after\""));
+		var body = toks.Where(t => t.Kind == ScriptTokenKind.CSharpBlock).ToList();
+		Assert.That(body.Count, Is.EqualTo(1));
+		Assert.That(src.Substring(body[0].Offset, body[0].Length), Does.Contain("public static int F()"));
+		Assert.That(ScriptTokenKind.CSharpBlock.Category(), Is.EqualTo(ScriptTokenCategory.EmbeddedCode));
 	}
 
-	/// <summary>
-	/// A continuation section merges its lines as text, so a name split across them is ONE token whose span runs
-	/// from the first line to the last. The section's `)` falls inside that span and is therefore not published
-	/// separately — two tokens may not claim the same characters.
-	/// </summary>
+	/// <summary>The component must declare the capability, or the registry will not hand it out.</summary>
 	[Test, Category("Parser")]
-	public void SectionCanSplitOneTokenAcrossLines()
+	public void DeclaresTokenization()
 	{
-		var src = "a :=\n(Join\nMyV\nar\n)\n";
-		var toks = Tokenizer.Tokenize(src);
-		var names = toks.Where(t => t.Kind == ScriptTokenKind.Identifier).ToList();
-		Assert.That(names.Count, Is.EqualTo(2), "`a` and the merged `MyVar`");
-		Assert.That(src.Substring(names[1].Offset, names[1].Length), Is.EqualTo("MyV\nar"));
+		var component = new ParserComponent();
+		Assert.IsTrue(component.Capabilities.HasFlag(ScriptingCapability.Tokenization));
+		Assert.IsTrue(component.Capabilities.HasFlag(ScriptingCapability.SyntaxValidation));
+	}
 
-		var glued = Tokenizer.Tokenize("a :=\n(Join\nMy\n)Var\n");
-		var last = glued.Last(t => t.Kind == ScriptTokenKind.Identifier);
-		Assert.That("a :=\n(Join\nMy\n)Var\n".Substring(last.Offset, last.Length), Is.EqualTo("My\n)Var"),
-					   "the text after ')' joins on with no delimiter, so the ')' is inside the name");
+	/// <summary>Highlighting runs on every keystroke, so half-typed input must not throw.</summary>
+	[Test, Category("Parser")]
+	public void HandlesPartialInput()
+	{
+		var src = "x := \"unterminated\ny := (\nf(a,\n/* never closed\n#CSharp\nint z;\n";
+
+		for (var cut = 0; cut <= src.Length; cut++)
+		{
+			var prefix = src[..cut];
+			Assert.DoesNotThrow(() => Tokenizer.Tokenize(prefix), $"threw on prefix of length {cut}");
+		}
+
+		Assert.DoesNotThrow(() => Tokenizer.Tokenize(null));
+		Assert.DoesNotThrow(() => Tokenizer.Tokenize(""));
 	}
 
 	/// <summary>
@@ -156,6 +142,50 @@ public class TokenizerContractTests : TestRunner
 		}
 	}
 
+	/// <summary>Without this, a kind added to the lexer would silently publish as <c>Unknown</c>.</summary>
+	[Test, Category("Parser")]
+	public void MapsEveryKind()
+	{
+		var unmapped = new List<string>();
+
+		// The mapping is private, so check by name instead: every internal kind needs a contract counterpart.
+		foreach (var kind in Enum.GetValues<TokenKind>())
+		{
+			if (kind == TokenKind.Unknown)
+				continue;
+
+			var expected = kind == TokenKind.EOF ? nameof(ScriptTokenKind.EndOfFile) : kind.ToString();
+
+			if (!Enum.TryParse<ScriptTokenKind>(expected, out _))
+				unmapped.Add(kind.ToString());
+		}
+
+		Assert.That(unmapped,
+			Is.Empty,
+			"internal TokenKind members with no ScriptTokenKind counterpart — add them to ScriptTokenKind and ParserComponent.ToKind: "
+			+ string.Join(", ", unmapped));
+	}
+
+	/// <summary>
+	/// A continuation section merges its lines as text, so a name split across them is ONE token whose span runs
+	/// from the first line to the last. The section's `)` falls inside that span and is therefore not published
+	/// separately — two tokens may not claim the same characters.
+	/// </summary>
+	[Test, Category("Parser")]
+	public void SectionCanSplitOneTokenAcrossLines()
+	{
+		var src = "a :=\n(Join\nMyV\nar\n)\n";
+		var toks = Tokenizer.Tokenize(src);
+		var names = toks.Where(t => t.Kind == ScriptTokenKind.Identifier).ToList();
+		Assert.That(names.Count, Is.EqualTo(2), "`a` and the merged `MyVar`");
+		Assert.That(src.Substring(names[1].Offset, names[1].Length), Is.EqualTo("MyV\nar"));
+
+		var glued = Tokenizer.Tokenize("a :=\n(Join\nMy\n)Var\n");
+		var last = glued.Last(t => t.Kind == ScriptTokenKind.Identifier);
+		Assert.That("a :=\n(Join\nMy\n)Var\n".Substring(last.Offset, last.Length), Is.EqualTo("My\n)Var"),
+					   "the text after ')' joins on with no delimiter, so the ')' is inside the name");
+	}
+
 	/// <summary>
 	/// AutoHotkey keeps a `;` comment inside a section as literal text unless the Comments option is given, which
 	/// makes the merged line a syntax error. Keysharp drops it instead — but only outside a quoted string, and
@@ -179,81 +209,51 @@ public class TokenizerContractTests : TestRunner
 		Assert.That(only.Count(t => t.Kind == ScriptTokenKind.Number), Is.EqualTo(2));
 	}
 
-	/// <summary>A `#CSharp` body is one embedded-code token, so a consumer knows to switch languages.</summary>
+	/// <summary>A continuation section is one string token.</summary>
 	[Test, Category("Parser")]
-	public void CSharpBodyIsOneToken()
+	public void SectionIsOneString()
 	{
-		var src = "#CSharp\npublic static int F() => 1; // c# comment\n#EndCSharp\nx := 1\n";
+		var src = "s := \"\n(\n//***** banner *****\nint x;\n)\"\nMsgBox(\"after\")\n";
 		var toks = Tokenizer.Tokenize(src);
-		var body = toks.Where(t => t.Kind == ScriptTokenKind.CSharpBlock).ToList();
-		Assert.That(body.Count, Is.EqualTo(1));
-		Assert.That(src.Substring(body[0].Offset, body[0].Length), Does.Contain("public static int F()"));
-		Assert.That(ScriptTokenKind.CSharpBlock.Category(), Is.EqualTo(ScriptTokenCategory.EmbeddedCode));
+		var strings = toks.Where(t => t.Kind == ScriptTokenKind.String).ToList();
+		Assert.That(strings.Count, Is.EqualTo(2));
+		Assert.That(src.Substring(strings[0].Offset, strings[0].Length), Does.Contain("//***** banner *****"));
+		Assert.That(src.Substring(strings[1].Offset, strings[1].Length), Is.EqualTo("\"after\""));
+		Assert.That(toks.Any(t => t.Kind == ScriptTokenKind.Comment),
+			Is.False,
+			"the banner is inside a string; nothing here is a comment");
 	}
 
-	/// <summary>Highlighting runs on every keystroke, so half-typed input must not throw.</summary>
+	/// <summary>
+	/// A quoted string inside a *code* continuation section closes on a later content line, so it is still one
+	/// string token — highlighting it line by line would invert the colors from there to the end of the section.
+	/// </summary>
 	[Test, Category("Parser")]
-	public void HandlesPartialInput()
+	public void SectionStringSpansContentLines()
 	{
-		var src = "x := \"unterminated\ny := (\nf(a,\n/* never closed\n#CSharp\nint z;\n";
+		var src = "Var :=\n(\n\"Quote marks are not escaped here.\nSpecify variables as follows: \" Var \"\nA line of text.\"\n)\nMsgBox(\"after\")\n";
+		var toks = Tokenizer.Tokenize(src);
+		var strings = toks.Where(t => t.Kind == ScriptTokenKind.String).ToList();
+		Assert.That(strings.Count, Is.EqualTo(3), "two strings in the section plus the one after it");
+		Assert.That(src.Substring(strings[0].Offset, strings[0].Length), Does.Contain("\nSpecify variables as follows: "));
+		Assert.That(src.Substring(strings[1].Offset, strings[1].Length), Does.Contain("\nA line of text."));
+		Assert.That(src.Substring(strings[2].Offset, strings[2].Length), Is.EqualTo("\"after\""));
+	}
 
-		for (var cut = 0; cut <= src.Length; cut++)
+	/// <summary>The published stream must be ordered and non-overlapping, or a highlighter cannot style from it.</summary>
+	[Test, Category("Parser")]
+	public void TokensNeverOverlap()
+	{
+		var src = "; lead\nx := 1 + 2   ; trailing\n/* block\n   spanning */\nf(a, \"s\")\n^a::b\n";
+		var toks = Tokenizer.Tokenize(src);
+		var end = 0;
+
+		foreach (var t in toks)
 		{
-			var prefix = src[..cut];
-			Assert.DoesNotThrow(() => Tokenizer.Tokenize(prefix), $"threw on prefix of length {cut}");
+			Assert.GreaterOrEqual(t.Offset, end, $"token {t.Kind} at {t.Offset} overlaps the previous one");
+			Assert.GreaterOrEqual(t.Length, 0);
+			Assert.LessOrEqual(t.Offset + t.Length, src.Length, $"token {t.Kind} runs past the end of the source");
+			end = t.Offset + t.Length;
 		}
-
-		Assert.DoesNotThrow(() => Tokenizer.Tokenize(null));
-		Assert.DoesNotThrow(() => Tokenizer.Tokenize(""));
-	}
-
-	/// <summary>Losslessness: every non-whitespace character falls inside some token, so nothing needs re-scanning.</summary>
-	[Test, Category("Parser")]
-	public void CoversEveryCharacter()
-	{
-		var sources = new[]
-		{
-			"; line comment\n/* block\n   comment */\nx := 1 + 2\n",
-			"^!a::MsgBox('hi')\n",                                   // hotkey
-			"a::b\n",                                                // remap
-			":*:btw::by the way ; stripped\n",                       // hotstring with a stripped comment
-			"x := 1\n(\n  + 2\n)\n",                                 // code continuation section
-			"x := 1\n(Join`s LTrim ; opts and a comment\n  + 2\n)\n", // …with options
-			"a := Array(\n(Join,\n1\n2\n)\n)\n",                     // …with a Join that is merged in as syntax
-			"v :=\n(\n\"one\ntwo\"\n)\n",                            // …with a string spanning its content lines
-			"n :=\n(Join\nMyV\nar\n)Suffix\n",                       // …with one name split across the lines and the ')'
-			"(Joinpp\nFileA\nend \"x\"\n)\n",                        // …opening the file, with nothing above to merge onto
-			"c :=\n(Comments\none  ; stripped\n; whole line\ntwo\n)\n", // …with comments the merge removes
-			"s := \"\n(\n//***** banner\n)\"\n",                     // string continuation section
-			"#CSharp\npublic static int F() => 1;\n#EndCSharp\n",
-			"#Requires AutoHotkey v2.0   ; trailing comment\n",
-			"#DllLoad *i user32.dll\n",
-		};
-
-		foreach (var src in sources)
-		{
-			var covered = new bool[src.Length];
-
-			foreach (var t in Tokenizer.Tokenize(src))
-				for (var k = t.Offset; k < t.Offset + t.Length; k++)
-					covered[k] = true;
-
-			for (var k = 0; k < src.Length; k++)
-			{
-				if (char.IsWhiteSpace(src[k]) || covered[k])
-					continue;
-
-				Assert.Fail($"character {k} ('{src[k]}') is covered by no token, in:\n{src}");
-			}
-		}
-	}
-
-	/// <summary>The component must declare the capability, or the registry will not hand it out.</summary>
-	[Test, Category("Parser")]
-	public void DeclaresTokenization()
-	{
-		var component = new ParserComponent();
-		Assert.IsTrue(component.Capabilities.HasFlag(ScriptingCapability.Tokenization));
-		Assert.IsTrue(component.Capabilities.HasFlag(ScriptingCapability.SyntaxValidation));
 	}
 }

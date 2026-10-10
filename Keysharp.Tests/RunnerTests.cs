@@ -127,6 +127,7 @@ public class RunnerTests : TestRunner
 	}
 
 #if WINDOWS
+
 	[Test, Category("Internal")]
 	public void CompileDaemonRejectsUnregisteredServer()
 	{
@@ -163,5 +164,6 @@ public class RunnerTests : TestRunner
 
 	[DllImport("kernel32.dll")]
 	private static extern nint GetCommandLineW();
+
 #endif
 }

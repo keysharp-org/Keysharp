@@ -632,6 +632,7 @@ public partial class HotstringTests : TestRunner
 		downSend[..^1];
 #else
 		downSend;
+
 #endif
 
 	[Test, Category("Hotstring"), Category("Internal")]

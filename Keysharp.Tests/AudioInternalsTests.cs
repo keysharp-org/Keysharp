@@ -361,10 +361,14 @@ public partial class AudioInternalsTests
 		internal Func<(IAudioOutputStream Stream, string Error)> OutputFactory;
 
 		public bool IsAvailable => Available;
+
 		public int LastError => EnumerationError;
+
 		public bool Supports(AudioCapability capability)
 			=> capability is AudioCapability.Playback or AudioCapability.DeviceEnumeration or AudioCapability.Metering;
+
 		public string UnsupportedReason(AudioCapability capability) => "";
+
 		public AudioDeviceDescriptor[] EnumerateDevices(AudioDeviceKind kind) => EnumerationError == 0 ? [Descriptor(kind)] : [];
 
 		public bool TryGetDefaultDevice(AudioDeviceKind kind, out AudioDeviceDescriptor device)
@@ -395,12 +399,21 @@ public partial class AudioInternalsTests
 			return true;
 		}
 
-		public bool TryGetVolume(AudioDeviceKind kind, string id, out double volume) { volume = 0; return false; }
+		public bool TryGetVolume(AudioDeviceKind kind, string id, out double volume)
+		{ volume = 0; return false; }
+
 		public bool TrySetVolume(AudioDeviceKind kind, string id, double volume) => false;
-		public bool TryGetMute(AudioDeviceKind kind, string id, out bool mute) { mute = false; return false; }
+
+		public bool TryGetMute(AudioDeviceKind kind, string id, out bool mute)
+		{ mute = false; return false; }
+
 		public bool TrySetMute(AudioDeviceKind kind, string id, bool mute) => false;
-		public bool TryGetIsRunning(AudioDeviceKind kind, string id, out bool running) { running = Running.GetValueOrDefault(); return Running.HasValue; }
+
+		public bool TryGetIsRunning(AudioDeviceKind kind, string id, out bool running)
+		{ running = Running.GetValueOrDefault(); return Running.HasValue; }
+
 		public object GetNativeDeviceObject(AudioDeviceKind kind, string id) => null;
+
 		public IAudioDeviceWatcher WatchDevices(Action sink) => null;
 
 		// Capture, sessions and decoding are all reported unsupported by Supports above, so these are
@@ -413,11 +426,20 @@ public partial class AudioInternalsTests
 		}
 
 		public AudioSessionDescriptor[] EnumerateSessions(string deviceId) => [];
-		public bool TryRefreshSession(string sessionId, out AudioSessionDescriptor descriptor) { descriptor = default; return false; }
-		public bool TryGetSessionVolume(string sessionId, out double linearVolume) { linearVolume = 0; return false; }
+
+		public bool TryRefreshSession(string sessionId, out AudioSessionDescriptor descriptor)
+		{ descriptor = default; return false; }
+
+		public bool TryGetSessionVolume(string sessionId, out double linearVolume)
+		{ linearVolume = 0; return false; }
+
 		public bool TrySetSessionVolume(string sessionId, double linearVolume) => false;
-		public bool TryGetSessionMute(string sessionId, out bool mute) { mute = false; return false; }
+
+		public bool TryGetSessionMute(string sessionId, out bool mute)
+		{ mute = false; return false; }
+
 		public bool TrySetSessionMute(string sessionId, bool mute) => false;
+
 		public object GetNativeSessionObject(string sessionId) => null;
 
 		public bool TryOpenMeter(string targetId, bool isSession, double intervalMilliseconds, out IAudioNativeMeter meter, out string error)
@@ -429,6 +451,7 @@ public partial class AudioInternalsTests
 		}
 
 		public string[] SupportedFormats => [];
+
 		public bool TryDecodeFile(string path, out float[] samples, out int sampleRate, out int channels, out string error)
 		{
 			samples = null;
@@ -438,7 +461,8 @@ public partial class AudioInternalsTests
 			return false;
 		}
 
-		public void Dispose() { }
+		public void Dispose()
+		{ }
 
 		private static AudioDeviceDescriptor Descriptor(AudioDeviceKind kind)
 			=> new($"test:{kind}", $"Test {kind}", kind, true);
@@ -450,11 +474,17 @@ public partial class AudioInternalsTests
 		internal int StartCount, StopCount;
 
 		public AudioStreamFormat Format => new(48000, 2);
+
 		public double LatencyMilliseconds => 10;
+
 		public bool IsDeviceLost => Volatile.Read(ref Lost) != 0;
+
 		public void Start() => Interlocked.Increment(ref StartCount);
+
 		public void Stop() => Interlocked.Increment(ref StopCount);
-		public void Dispose() { }
+
+		public void Dispose()
+		{ }
 	}
 
 	[Test]
@@ -636,7 +666,9 @@ Is.EqualTo(48000).Within(1),
 	private sealed class TestMeter : IAudioNativeMeter
 	{
 		internal bool Disposed;
+
 		public double Peak => 0.5;
+
 		public void Dispose() => Disposed = true;
 	}
 
@@ -658,12 +690,20 @@ Is.EqualTo(48000).Within(1),
 		internal Action OnDispose;
 		internal Exception StopError;
 		internal Func<bool> DeviceLost;
+
 		public AudioStreamFormat Format => new(48000, channels);
+
 		public double LatencyMilliseconds => 10;
+
 		public bool IsDeviceLost => DeviceLost?.Invoke() ?? false;
+
 		public void Start() => Interlocked.Increment(ref Starts);
-		public void Stop() { if (StopError != null) throw StopError; }
-		public void Dispose() { _ = Interlocked.Increment(ref Disposals); OnDispose?.Invoke(); }
+
+		public void Stop()
+		{ if (StopError != null) throw StopError; }
+
+		public void Dispose()
+		{ _ = Interlocked.Increment(ref Disposals); OnDispose?.Invoke(); }
 	}
 
 	[TestCase(false), TestCase(true)]
@@ -938,6 +978,7 @@ Is.EqualTo(48000).Within(1),
 	}
 
 #if WINDOWS
+
 	[TestCase("0", false), TestCase("Test:x", false), TestCase("Missing", true)]
 	public void ComponentDeviceQueryPreservesNativeError(string selector, bool nativeQuery)
 	{
@@ -948,6 +989,7 @@ Is.EqualTo(48000).Within(1),
 		else
 			Assert.IsNull(Sound.GetDevice(selector, backend));
 	}
+
 #endif
 
 	[Test]
@@ -996,6 +1038,7 @@ Is.EqualTo(48000).Within(1),
 	}
 
 #if WINDOWS
+
 	[Test]
 	public void DisposedOwnerCannotOpenMci()
 	{
@@ -1004,6 +1047,7 @@ Is.EqualTo(48000).Within(1),
 		Assert.That(SoundPlayback.TryPlay(owner, "keysharp-retired-player.wav", false, out var error), Is.False);
 		Assert.That(error, Is.EqualTo("Cannot play sound file keysharp-retired-player.wav after its script has exited."));
 	}
+
 #else
 	private static Process StartSleepingPlayer()
 	{

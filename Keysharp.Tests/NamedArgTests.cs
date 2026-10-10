@@ -2,30 +2,24 @@ namespace Keysharp.Tests;
 
 public class NamedArgTests : TestRunner
 {
-	private string Warnings(string source) =>
-		RunScript("#ErrorStdOut\n#Warn NamedArg, StdOut\n" + source,
-			"named_arg_" + Guid.NewGuid().ToString("N"), execute: true, exeout: false) ?? "";
-
-	[Test, Category("Misc")]
-	public void WarnNamedArgTypo()
+	[Test, Category("Misc"), Category("Internal")]
+	public void ComNamedArgLayout()
 	{
-		var warning = Warnings("f(alpha, beta := 2) => alpha\nx := f(1, betaa: 3)\n");
-		Assert.IsTrue(warning.Contains("betaa"), warning);
-		Assert.IsTrue(warning.Contains("alpha") && warning.Contains("beta"), warning);
-	}
+		var named = new object[] { "pos0", Script.NamedArgs("Key", "k", "Item", "v") };
+		var values = NamedArgBinder.ToComLayout(named, out var names);
+		var expected = new Dictionary<string, object> { ["Key"] = "k", ["Item"] = "v" };
 
-	[Test, Category("Misc")]
-	public void WarnNamedArgValid()
-	{
-		var warning = Warnings("f(alpha, beta := 2) => alpha\nx := f(1, beta: 3)\n");
-		Assert.That(warning.Contains("not a parameter"), Is.False, warning);
-	}
+		Assert.That(names.Length, Is.EqualTo(2));
+		Assert.That(values.Length, Is.EqualTo(3));
 
-	[Test, Category("Misc")]
-	public void WarnNamedArgDuplicate()
-	{
-		var warning = Warnings("f(alpha, beta := 2) => alpha\nx := f(1, alpha: 3)\n");
-		Assert.IsTrue(warning.Contains("alpha") && warning.Contains("more than once"), warning);
+		for (var i = 0; i < names.Length; i++)
+			Assert.That(values[i], Is.EqualTo(expected[names[i]]), $"names[{i}] must name values[{i}]");
+
+		Assert.That(values[2], Is.EqualTo("pos0"));
+
+		var positional = new object[] { "a", "b" };
+		Assert.That(NamedArgBinder.ToComLayout(positional, out var none), Is.SameAs(positional));
+		Assert.IsEmpty(none);
 	}
 
 	[Test, Category("Misc")]
@@ -46,12 +40,40 @@ public class NamedArgTests : TestRunner
 		Assert.That(warning.Contains("'beta'") || warning.Contains("'anything'"), Is.False, warning);
 	}
 
+	[Test, Category("Misc"), Category("Internal")]
+	public void DispatchLayout()
+	{
+		var named = new object[] { "pos0", Script.NamedArgs("Key", "k", "Item", "v") };
+		var values = NamedArgBinder.StripNames(named, out var names);
+		var expected = new Dictionary<string, object> { ["Key"] = "k", ["Item"] = "v" };
+
+		Assert.That(names.Length, Is.EqualTo(2));
+		Assert.That(values[0], Is.EqualTo("pos0"));
+
+		for (var i = 0; i < names.Length; i++)
+			Assert.That(values[1 + i], Is.EqualTo(expected[names[i]]), $"names[{i}] must name values[{1 + i}]");
+	}
+
+	[Test, Category("Misc")]
+	public void DynamicCallWarning()
+	{
+		var warning = Warnings("f(alpha) => alpha\ng := f\nx := g(nosuch: 1)\n");
+		Assert.That(warning.Contains("not a parameter"), Is.False, warning);
+	}
+
 	[Test, Category("Misc")]
 	public void WarnNamedArgBuiltin()
 	{
 		var warning = Warnings("try b := Buffer(nosuch: 1)\ntry c := Buffer(ByteCount: 4)\n");
 		Assert.IsTrue(warning.Contains("nosuch") && warning.Contains("ByteCount") && warning.Contains("FillByte"), warning);
 		Assert.That(warning.Contains("'ByteCount' is not"), Is.False, warning);
+	}
+
+	[Test, Category("Misc")]
+	public void WarnNamedArgDuplicate()
+	{
+		var warning = Warnings("f(alpha, beta := 2) => alpha\nx := f(1, alpha: 3)\n");
+		Assert.IsTrue(warning.Contains("alpha") && warning.Contains("more than once"), warning);
 	}
 
 	[Test, Category("Misc")]
@@ -119,43 +141,21 @@ WildF(gamma) => gamma
 	}
 
 	[Test, Category("Misc")]
-	public void DynamicCallWarning()
+	public void WarnNamedArgTypo()
 	{
-		var warning = Warnings("f(alpha) => alpha\ng := f\nx := g(nosuch: 1)\n");
+		var warning = Warnings("f(alpha, beta := 2) => alpha\nx := f(1, betaa: 3)\n");
+		Assert.IsTrue(warning.Contains("betaa"), warning);
+		Assert.IsTrue(warning.Contains("alpha") && warning.Contains("beta"), warning);
+	}
+
+	[Test, Category("Misc")]
+	public void WarnNamedArgValid()
+	{
+		var warning = Warnings("f(alpha, beta := 2) => alpha\nx := f(1, beta: 3)\n");
 		Assert.That(warning.Contains("not a parameter"), Is.False, warning);
 	}
 
-	[Test, Category("Misc"), Category("Internal")]
-	public void ComNamedArgLayout()
-	{
-		var named = new object[] { "pos0", Script.NamedArgs("Key", "k", "Item", "v") };
-		var values = NamedArgBinder.ToComLayout(named, out var names);
-		var expected = new Dictionary<string, object> { ["Key"] = "k", ["Item"] = "v" };
-
-		Assert.That(names.Length, Is.EqualTo(2));
-		Assert.That(values.Length, Is.EqualTo(3));
-
-		for (var i = 0; i < names.Length; i++)
-			Assert.That(values[i], Is.EqualTo(expected[names[i]]), $"names[{i}] must name values[{i}]");
-
-		Assert.That(values[2], Is.EqualTo("pos0"));
-
-		var positional = new object[] { "a", "b" };
-		Assert.That(NamedArgBinder.ToComLayout(positional, out var none), Is.SameAs(positional));
-		Assert.IsEmpty(none);
-	}
-
-	[Test, Category("Misc"), Category("Internal")]
-	public void DispatchLayout()
-	{
-		var named = new object[] { "pos0", Script.NamedArgs("Key", "k", "Item", "v") };
-		var values = NamedArgBinder.StripNames(named, out var names);
-		var expected = new Dictionary<string, object> { ["Key"] = "k", ["Item"] = "v" };
-
-		Assert.That(names.Length, Is.EqualTo(2));
-		Assert.That(values[0], Is.EqualTo("pos0"));
-
-		for (var i = 0; i < names.Length; i++)
-			Assert.That(values[1 + i], Is.EqualTo(expected[names[i]]), $"names[{i}] must name values[{1 + i}]");
-	}
+	private string Warnings(string source) =>
+													RunScript("#ErrorStdOut\n#Warn NamedArg, StdOut\n" + source,
+			"named_arg_" + Guid.NewGuid().ToString("N"), execute: true, exeout: false) ?? "";
 }

@@ -23,6 +23,18 @@ public class RetryGateTests
 	}
 
 	[Test]
+	public void StaleAttempt()
+	{
+		var gate = new RetryGate(maximumAttempts: 1, initialRetryDelay: TimeSpan.Zero,
+			maximumRetryDelay: TimeSpan.Zero);
+		var stale = gate.TryBegin();
+		gate.Rearm();
+		stale.Dispose();
+
+		Assert.That(gate.TryBegin(), Is.Not.Null);
+	}
+
+	[Test]
 	public void SuccessResetsFailures()
 	{
 		var time = new ManualTimeProvider();
@@ -42,18 +54,6 @@ public class RetryGateTests
 	}
 
 	[Test]
-	public void StaleAttempt()
-	{
-		var gate = new RetryGate(maximumAttempts: 1, initialRetryDelay: TimeSpan.Zero,
-			maximumRetryDelay: TimeSpan.Zero);
-		var stale = gate.TryBegin();
-		gate.Rearm();
-		stale.Dispose();
-
-		Assert.That(gate.TryBegin(), Is.Not.Null);
-	}
-
-	[Test]
 	public void Suspension()
 	{
 		var gate = new RetryGate();
@@ -66,8 +66,11 @@ public class RetryGateTests
 	private sealed class ManualTimeProvider : TimeProvider
 	{
 		private long timestamp = 1;
+
 		public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
 		public override long GetTimestamp() => timestamp;
+
 		internal void Advance(TimeSpan duration) => timestamp += duration.Ticks;
 	}
 }

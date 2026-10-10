@@ -24,6 +24,7 @@ public class DriveTests : TestRunner
 	public void DriveGetStatus() => Assert.IsTrue(TestScript("drive-getstatus", true));
 
 #if WINDOWS
+
 	[Test, Category("Drive")]
 	public void DriveGetSetLabel()
 	{
@@ -33,5 +34,6 @@ public class DriveTests : TestRunner
 
 		Assert.IsTrue(TestScript("drive-getsetlabel", true));
 	}
+
 #endif
 }

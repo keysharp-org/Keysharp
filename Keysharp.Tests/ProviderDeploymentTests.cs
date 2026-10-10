@@ -3,8 +3,26 @@ namespace Keysharp.Tests;
 [Category("Internal")]
 public class ProviderDeploymentTests : TestRunner
 {
-	[SetUp]
-	public void ResetProviders() => Keysharp.Internals.Os.PackageProviderRegistry.ResetForTests();
+	[Test]
+	public void BundledNuGetProviderIsAnIsolatedExplicitPayload()
+	{
+		Assert.IsTrue(Keysharp.Internals.Os.PackageProviderRegistry.TryGetPayload("nuget", out var payload),
+			"the test host must ship the NuGet provider under components/packages/nuget");
+		Assert.That(payload.Files.Count, Is.EqualTo(16),
+			"provider.json plus its explicit 15-file payload should be the complete provider directory");
+		Assert.IsTrue(payload.Files.Any(path => Path.GetFileName(path).Equals("NuGet.Commands.dll", StringComparison.OrdinalIgnoreCase)));
+		Assert.IsTrue(payload.Files.Any(path => Path.GetFileName(path).Equals("NuGet.Credentials.dll", StringComparison.OrdinalIgnoreCase)));
+		Assert.IsTrue(payload.Files.Any(path => Path.GetFileName(path).Equals("Keysharp.Components.Packages.NuGet.deps.json", StringComparison.OrdinalIgnoreCase)));
+
+		var forbidden = new[] { "Keysharp.Core", "Microsoft.CodeAnalysis", "PCRE", "BitFaster", "Semver", "System.Management" };
+		Assert.That(payload.Files.Any(path => forbidden.Any(name =>
+			Path.GetFileName(path).Contains(name, StringComparison.OrdinalIgnoreCase))),
+			Is.False,
+			"the provider payload must not absorb Core's runtime/compiler dependency graph");
+		Assert.That(Directory.GetFiles(AppContext.BaseDirectory, "NuGet*.dll", SearchOption.TopDirectoryOnly).Any(),
+			Is.False,
+			"NuGet implementation DLLs must remain under components/packages/nuget rather than entering the host root");
+	}
 
 	[TearDown]
 	public void ClearProviders() => Keysharp.Internals.Os.PackageProviderRegistry.ResetForTests();
@@ -45,6 +63,71 @@ public class ProviderDeploymentTests : TestRunner
 
 			try
 			{ Directory.Delete(destination, true); }
+			catch { }
+		}
+	}
+
+	[Test, Category("Directives")]
+	public void InlineNamesFromPackageConstants()
+	{
+		var root = NewProviderRoot(out var providerRoot);
+		Keysharp.Internals.Os.NuGetPackageLoader.ResetForTests();
+		Keysharp.Internals.Os.PackageResolver.ResetCounters();
+		try
+		{
+			var source = """
+				using System;
+				using System.Collections.Generic;
+				using System.IO;
+				using System.Threading;
+				using System.Threading.Tasks;
+				using Keysharp.Components.Packages;
+				namespace Fake;
+				public static class Names { public const string Field = "Renamed"; }
+				public sealed class Provider : IPackageProvider
+				{
+				    public string Name => "fake";
+				    public string Version => "1.0";
+				    public bool IsValidPackageId(string id) => id == "Names";
+				    public bool TryNormalizeVersion(string written, out string normalized, out string error)
+				    { normalized = written; error = null; return true; }
+				    public Task<PackageResolveResult> ResolveAsync(PackageResolveContext context,
+				        IReadOnlyList<PackageRequest> packages, CancellationToken cancellationToken)
+				    {
+				        var file = typeof(Provider).Assembly.Location;
+				        return Task.FromResult(new PackageResolveResult { Success = true, Packages = new()
+				        {
+				            new() { Id = "Names", Version = "1.0.0", PinnedVersion = "1.0.0",
+				                Root = Path.GetDirectoryName(file), Compile = new() { file }, Runtime = new() { file } }
+				        }});
+				    }
+				}
+				""";
+			var providerCompilation = Microsoft.CodeAnalysis.CSharp.CSharpCompilation.Create("InlineNames_" + Guid.NewGuid().ToString("N"),
+				[Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(source)], CompilerHelper.CompilationReferences(root, true),
+				new Microsoft.CodeAnalysis.CSharp.CSharpCompilationOptions(Microsoft.CodeAnalysis.OutputKind.DynamicallyLinkedLibrary));
+			using (var file = File.Create(Path.Combine(providerRoot, "fake.dll")))
+			{
+				var emitted = providerCompilation.Emit(file);
+				Assert.IsTrue(emitted.Success, string.Join("\n", emitted.Diagnostics));
+			}
+
+			Keysharp.Internals.Os.PackageProviderRegistry.AddSearchRoot(root);
+			var script = Path.Combine(root, "names.ks");
+			File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#Package fake:Names 1.0.0\n"
+				+ "#Import Typed { Renamed as Alias }\nAlias := 7\nif Typed.ReadRaw() != 7\n    throw Error(\"alias did not reach the original field\")\n"
+				+ "FileAppend \"pass\", \"*\"\n#Module Typed\n#CSharp\n"
+				+ "[UserDeclaredName(Fake.Names.Field)] public static long RawField = 1;\n"
+				+ "public static long ReadRaw() => RawField;\n#EndCSharp\n");
+			Assert.That(RunScript(script, "package_names", true, false).Trim(), Is.EqualTo("pass"));
+			Assert.That(Keysharp.Internals.Os.PackageResolver.ResolveCount, Is.EqualTo(1),
+				"declaration binding and final compilation must share the one resolved package manifest");
+		}
+		finally
+		{
+			Keysharp.Internals.Os.NuGetPackageLoader.ResetForTests();
+			try
+			{ Directory.Delete(root, true); }
 			catch { }
 		}
 	}
@@ -115,91 +198,8 @@ public class ProviderDeploymentTests : TestRunner
 		}
 	}
 
-	[Test]
-	public void BundledNuGetProviderIsAnIsolatedExplicitPayload()
-	{
-		Assert.IsTrue(Keysharp.Internals.Os.PackageProviderRegistry.TryGetPayload("nuget", out var payload),
-			"the test host must ship the NuGet provider under components/packages/nuget");
-		Assert.That(payload.Files.Count, Is.EqualTo(16),
-			"provider.json plus its explicit 15-file payload should be the complete provider directory");
-		Assert.IsTrue(payload.Files.Any(path => Path.GetFileName(path).Equals("NuGet.Commands.dll", StringComparison.OrdinalIgnoreCase)));
-		Assert.IsTrue(payload.Files.Any(path => Path.GetFileName(path).Equals("NuGet.Credentials.dll", StringComparison.OrdinalIgnoreCase)));
-		Assert.IsTrue(payload.Files.Any(path => Path.GetFileName(path).Equals("Keysharp.Components.Packages.NuGet.deps.json", StringComparison.OrdinalIgnoreCase)));
-
-		var forbidden = new[] { "Keysharp.Core", "Microsoft.CodeAnalysis", "PCRE", "BitFaster", "Semver", "System.Management" };
-		Assert.That(payload.Files.Any(path => forbidden.Any(name =>
-			Path.GetFileName(path).Contains(name, StringComparison.OrdinalIgnoreCase))),
-			Is.False,
-			"the provider payload must not absorb Core's runtime/compiler dependency graph");
-		Assert.That(Directory.GetFiles(AppContext.BaseDirectory, "NuGet*.dll", SearchOption.TopDirectoryOnly).Any(),
-			Is.False,
-			"NuGet implementation DLLs must remain under components/packages/nuget rather than entering the host root");
-	}
-
-	[Test, Category("Directives")]
-	public void InlineNamesFromPackageConstants()
-	{
-		var root = NewProviderRoot(out var providerRoot);
-		Keysharp.Internals.Os.NuGetPackageLoader.ResetForTests();
-		Keysharp.Internals.Os.PackageResolver.ResetCounters();
-		try
-		{
-			var source = """
-				using System;
-				using System.Collections.Generic;
-				using System.IO;
-				using System.Threading;
-				using System.Threading.Tasks;
-				using Keysharp.Components.Packages;
-				namespace Fake;
-				public static class Names { public const string Field = "Renamed"; }
-				public sealed class Provider : IPackageProvider
-				{
-				    public string Name => "fake";
-				    public string Version => "1.0";
-				    public bool IsValidPackageId(string id) => id == "Names";
-				    public bool TryNormalizeVersion(string written, out string normalized, out string error)
-				    { normalized = written; error = null; return true; }
-				    public Task<PackageResolveResult> ResolveAsync(PackageResolveContext context,
-				        IReadOnlyList<PackageRequest> packages, CancellationToken cancellationToken)
-				    {
-				        var file = typeof(Provider).Assembly.Location;
-				        return Task.FromResult(new PackageResolveResult { Success = true, Packages = new()
-				        {
-				            new() { Id = "Names", Version = "1.0.0", PinnedVersion = "1.0.0",
-				                Root = Path.GetDirectoryName(file), Compile = new() { file }, Runtime = new() { file } }
-				        }});
-				    }
-				}
-				""";
-			var providerCompilation = Microsoft.CodeAnalysis.CSharp.CSharpCompilation.Create("InlineNames_" + Guid.NewGuid().ToString("N"),
-				[Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(source)], CompilerHelper.CompilationReferences(root, true),
-				new Microsoft.CodeAnalysis.CSharp.CSharpCompilationOptions(Microsoft.CodeAnalysis.OutputKind.DynamicallyLinkedLibrary));
-			using (var file = File.Create(Path.Combine(providerRoot, "fake.dll")))
-			{
-				var emitted = providerCompilation.Emit(file);
-				Assert.IsTrue(emitted.Success, string.Join("\n", emitted.Diagnostics));
-			}
-
-			Keysharp.Internals.Os.PackageProviderRegistry.AddSearchRoot(root);
-			var script = Path.Combine(root, "names.ks");
-			File.WriteAllText(script, "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#Package fake:Names 1.0.0\n"
-				+ "#Import Typed { Renamed as Alias }\nAlias := 7\nif Typed.ReadRaw() != 7\n    throw Error(\"alias did not reach the original field\")\n"
-				+ "FileAppend \"pass\", \"*\"\n#Module Typed\n#CSharp\n"
-				+ "[UserDeclaredName(Fake.Names.Field)] public static long RawField = 1;\n"
-				+ "public static long ReadRaw() => RawField;\n#EndCSharp\n");
-			Assert.That(RunScript(script, "package_names", true, false).Trim(), Is.EqualTo("pass"));
-			Assert.That(Keysharp.Internals.Os.PackageResolver.ResolveCount, Is.EqualTo(1),
-				"declaration binding and final compilation must share the one resolved package manifest");
-		}
-		finally
-		{
-			Keysharp.Internals.Os.NuGetPackageLoader.ResetForTests();
-			try
-			{ Directory.Delete(root, true); }
-			catch { }
-		}
-	}
+	[SetUp]
+	public void ResetProviders() => Keysharp.Internals.Os.PackageProviderRegistry.ResetForTests();
 
 	private static string NewProviderRoot(out string providerRoot)
 	{
