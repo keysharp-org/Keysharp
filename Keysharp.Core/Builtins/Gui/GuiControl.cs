@@ -489,6 +489,75 @@ namespace Keysharp.Builtins
 				return DefaultObject;
 			}
 
+			/// <summary>
+			/// Sets a Picture's image from a Value: "" clears it, and otherwise *wN, *hN and *IconN may precede the source.
+			/// The box keeps its size and the picture is centered in it; an omitted *w or *h is the box's, w0/h0 keeps the
+			/// source's own size and -1 follows the aspect ratio, as when the Picture is added.
+			/// </summary>
+			private static void SetPicture(KeysharpPictureBox pic, string val)
+			{
+				if (val == "")
+				{
+					var cleared = pic.Image;
+					pic.Image = null;
+
+					if (cleared is Bitmap clearedBmp)
+						clearedBmp.Dispose();
+
+					return;
+				}
+
+				var width = int.MinValue;
+				var height = int.MinValue;
+				var icon = "";
+				object iconnumber = 0L;
+				var filename = "";
+
+				foreach (Range r in val.AsSpan().SplitAny(SpaceTabSv))
+				{
+					var opt = val.AsSpan(r).Trim();
+
+					if (opt.Length > 0)
+					{
+						if (Options.TryParse(opt, "*w", ref width)) { }
+						else if (Options.TryParse(opt, "*h", ref height)) { }
+						else if (Options.TryParseString(opt, "*icon", ref icon)) { iconnumber = ImageHelper.PrepareIconNumber(icon); }
+						else
+						{
+							filename = val.Substring(r.Start.Value);
+							break;
+						}
+					}
+				}
+
+				if (pic.SizeMode != PictureBoxSizeMode.CenterImage)
+					pic.SizeMode = PictureBoxSizeMode.CenterImage;
+
+				// The assigned size, since GTK allocates 1x1 before layout.
+				var size = pic.GetSize();
+
+				if (width == int.MinValue)
+					width = size.Width;
+
+				if (height == int.MinValue)
+					height = size.Height;
+
+				var (bmp, source, _) = ImageHelper.LoadDisplayImage(filename, width, height, iconnumber);
+				(source as IDisposable)?.Dispose();
+
+				if (bmp == null)
+				{
+					_ = Errors.ValueErrorOccurred("Invalid value.", filename);
+					return;
+				}
+
+				var oldimage = pic.Image;
+				pic.Image = bmp;
+
+				if (oldimage is Bitmap oldbmp)
+					oldbmp.Dispose();
+			}
+
 			internal static void GetClientPos(Forms.Control control, double scale, [ByRef] object outX, [ByRef] object outY, [ByRef] object outWidth, [ByRef] object outHeight) => GetPosHelper(control, scale, true, outX, outY, outWidth, outHeight);
 
 			internal static void GetPos(Forms.Control control, double scale, [ByRef] object outX, [ByRef] object outY, [ByRef] object outWidth, [ByRef] object outHeight) => GetPosHelper(control, scale, false, outX, outY, outWidth, outHeight);

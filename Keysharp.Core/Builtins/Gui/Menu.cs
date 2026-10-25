@@ -751,7 +751,7 @@ namespace Keysharp.Builtins
 			if (filename.Length != 0 && filename != "*")
 			{
 				// A height of -1 follows the aspect ratio, as in AutoHotkey.
-				(bmp, var source) = ImageHelper.LoadImage(filename, width, -1, iconnumber);
+				(bmp, var source, _) = ImageHelper.LoadDisplayImage(filename, width, -1, iconnumber);
 				(source as IDisposable)?.Dispose();
 
 				if (bmp == null)

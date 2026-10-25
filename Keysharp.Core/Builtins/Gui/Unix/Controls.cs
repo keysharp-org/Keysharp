@@ -1244,8 +1244,6 @@ namespace Keysharp.Builtins
 
 	public class KeysharpPictureBox : ImageView
 	{
-		private bool scaleHeight;
-		private bool scaleWidth;
 		private PictureBoxSizeMode sizeMode = PictureBoxSizeMode.Normal;
 
 		public string Filename { get; private set; }
@@ -1253,28 +1251,6 @@ namespace Keysharp.Builtins
 		{
 			get => sizeMode;
 			set => sizeMode = value;
-		}
-
-		public bool ScaleHeight
-		{
-			get => scaleHeight;
-			set
-			{
-				scaleHeight = value;
-				if (scaleHeight)
-					scaleWidth = false;
-			}
-		}
-
-		public bool ScaleWidth
-		{
-			get => scaleWidth;
-			set
-			{
-				scaleWidth = value;
-				if (scaleWidth)
-					scaleHeight = false;
-			}
 		}
 
 		public KeysharpPictureBox(string filename, int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)

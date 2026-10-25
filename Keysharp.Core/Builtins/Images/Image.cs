@@ -597,7 +597,7 @@ namespace Keysharp.Builtins
 				if (!width.CoerceInt(out var w, 0) || !height.CoerceInt(out var h, 0))
 					return DefaultObject;
 
-				var (bmp, source) = ImageHelper.LoadImage(f, w, h, iconNumber == null ? 0L : ImageHelper.PrepareIconNumber(iconNumber), exactPixels: true);
+				var (bmp, source) = ImageHelper.LoadImage(f, w, h, iconNumber == null ? 0L : ImageHelper.PrepareIconNumber(iconNumber));
 				(source as IDisposable)?.Dispose();
 				return Wrap(bmp, failMsg: $"Loading the image from {f} failed.");
 			}
@@ -740,7 +740,7 @@ namespace Keysharp.Builtins
 				{
 					var nw = Math.Max(1, (int)Math.Round(b.Width * sx));
 					var nh = Math.Max(1, (int)Math.Round(b.Height * sy));
-					return ImageHelper.ResizeBitmap(b, nw, nh, exactPixels: true);
+					return ImageHelper.ResizeBitmap(b, nw, nh);
 				}))
 					return this;
 
@@ -849,7 +849,7 @@ namespace Keysharp.Builtins
 				if (nw < 0) nw = Math.Max(1, (int)Math.Round(curW * (nh / (double)curH)));
 				if (nh < 0) nh = Math.Max(1, (int)Math.Round(curH * (nw / (double)curW)));
 
-				if (!QueueTransform(b => ImageHelper.ResizeBitmap(b, nw, nh, exactPixels: true)))
+				if (!QueueTransform(b => ImageHelper.ResizeBitmap(b, nw, nh)))
 					return this;
 
 				// Absolute resize changes the pixels-per-screen-unit density by nw/curW (nh/curH); fold it into
@@ -2441,7 +2441,7 @@ namespace Keysharp.Builtins
 
 				if (source is string s)
 				{
-					var (loaded, icon) = ImageHelper.LoadImage(s, 0, 0, 0L, exactPixels: true);
+					var (loaded, icon) = ImageHelper.LoadImage(s, 0, 0, 0L);
 					(icon as IDisposable)?.Dispose();
 					return (loaded, 1.0, 1.0);
 				}

@@ -737,39 +737,9 @@ namespace Keysharp.Builtins
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 		private readonly InterpolationMode interpolationMode = InterpolationMode.NearestNeighbor;
-		private bool scaleHeight;
-		private bool scaleWidth;
 
 		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
 		public string Filename { get; private set; }
-
-		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-		public bool ScaleHeight
-		{
-			get => scaleHeight;
-
-			set
-			{
-				scaleHeight = value;
-
-				if (scaleHeight)
-					scaleWidth = false;
-			}
-		}
-
-		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
-		public bool ScaleWidth
-		{
-			get => scaleWidth;
-
-			set
-			{
-				scaleWidth = value;
-
-				if (scaleWidth)
-					scaleHeight = false;
-			}
-		}
 
 		protected override CreateParams CreateParams
 		{

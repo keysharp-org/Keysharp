@@ -810,18 +810,9 @@ namespace Keysharp.Builtins
 					};//Attempt to support transparency.
 
 					if (opts.width < 0 && opts.height < 0)
-					{
 						pic.SizeMode = PictureBoxSizeMode.AutoSize;
-					}
 					else if (opts.width < 0 || opts.height < 0)
-					{
-						if (opts.width < 0)
-							pic.ScaleWidth = true;
-						else if (opts.height < 0)
-							pic.ScaleHeight = true;
-
 						pic.SizeMode = PictureBoxSizeMode.Zoom;
-					}
 					else
 						pic.SizeMode = PictureBoxSizeMode.StretchImage;
 
@@ -2204,35 +2195,15 @@ namespace Keysharp.Builtins
 
 			if (ctrl is KeysharpPictureBox pbox && !string.IsNullOrEmpty(textStr))
 			{
-				var (bmp, source) = ImageHelper.LoadImage(textStr, opts.width, opts.height, opts.iconnumber);
+				var (bmp, source, box) = ImageHelper.LoadDisplayImage(textStr, opts.width, opts.height, opts.iconnumber);
 				(source as IDisposable)?.Dispose();
 
 				if (bmp == null)
 					_ = Errors.ErrorOccurred("Can't create control.", null, textStr);
 				else
 				{
-					if (pbox.SizeMode == PictureBoxSizeMode.Zoom)
-					{
-						var ratio = bmp.Height != 0 ? (double)bmp.Width / bmp.Height : 1;
-
-						if (ratio == 0)
-							ratio = 1;
-
-						if (opts.width < 0)
-						{
-							var pboxSize = pbox.GetSize();
-							pbox.SetSize(new Size((int)(pboxSize.Height * ratio), pboxSize.Height));
-						}
-						else
-						{
-							var pboxSize = pbox.GetSize();
-							pbox.SetSize(new Size(pboxSize.Width, (int)(pboxSize.Width / ratio)));
-						}
-					}
-
 					pbox.Image = bmp;
-					pbox.SetSize(bmp.Size);
-					//pbox.BackgroundImage = bmp;
+					pbox.SetSize(box);
 				}
 			}
 

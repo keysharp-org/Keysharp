@@ -1370,7 +1370,7 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ New methods and properties:
 		+ `Gui`:
 			+ `Visible`: Gets/sets whether the window is visible or not.
-			+ `PixelScale`: Read-only backing pixels per GUI unit; Windows `-DPIScale` returns `1`. Use `Image.Create(Width, Height, , MyGui.PixelScale)` for GUI pictures and reread it after display changes. Windows/Linux mappings are source-reviewed; live behavior remains unverified.
+			+ `PixelScale`: Read-only backing pixels per GUI unit; Windows `-DPIScale` returns `1`. Use `Image.Create(Width, Height, , MyGui.PixelScale)` for GUI pictures and reread it after display changes. A Picture keeps an image's detail up to the densest display's backing scale, so an image made at `PixelScale` stays sharp at the Picture's size in GUI units; image-list images and menu icons are loaded the same way. 
 		+ `Menu`:
 			+ `HideItem()`, `ShowItem()` and `ToggleItemVis()`: Shows, hides or toggles the visibility of a specific menu item.
 			+ `MenuItemName()`: Gets the name of a menu item, rather than having to use `DllCall()`.

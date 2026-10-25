@@ -247,23 +247,59 @@ namespace Keysharp.Internals.Images
 
 		/// <summary>
 		/// Loads a picture, an icon or a cursor from a file, a module's icon resources, or an "HBITMAP:"/"HICON:" handle,
-		/// which is consumed unless "*" follows the colon. A width or height of 0 keeps the source's own size, and -1
-		/// follows the other dimension's aspect ratio.
+		/// which is consumed unless "*" follows the colon, at a size in pixels. A width or height of 0 keeps the source's
+		/// own size, and -1 follows the other dimension's aspect ratio.
 		/// </summary>
-		/// <param name="exactPixels">See <see cref="ResizeBitmap"/>: pixel consumers
-		/// (ImageSearch needles) must pass true so *w/*h options resample real pixels.</param>
 		/// <returns>The bitmap, and the icon or cursor it came from, which the caller disposes, or null for a picture or a
 		/// handle. A null bitmap means the source could not be loaded; nothing is raised, so each caller reports that as
 		/// its own error.</returns>
-		internal static (Bitmap, object) LoadImage(string filename, int w, int h, object iconindex, bool exactPixels = false)
+		internal static (Bitmap, object) LoadImage(string filename, int w, int h, object iconindex)
+		{
+			var (bmp, source, _) = Load(filename, w, h, iconindex, 1.0);
+			return (bmp, source);
+		}
+
+		/// <summary>
+		/// Loads an image to be shown at a size in toolkit units, as a GUI control, or a list, tab or menu slot, shows it.
+		/// The toolkit draws it at the backing density of whichever display shows it, so it is sampled for the densest
+		/// display: it stays sharp wherever its window is shown or moved, with nothing redrawn, and the drawing only ever
+		/// scales it down. Sizes follow <see cref="LoadImage"/>, and a source shown at its own size is not resampled.
+		/// </summary>
+		/// <returns>What <see cref="LoadImage"/> returns, and the size in toolkit units the image is shown at.</returns>
+		internal static (Bitmap bmp, object source, Size size) LoadDisplayImage(string filename, int w, int h, object iconindex)
+		{
+#if WINDOWS
+			// WinForms lays controls out in device pixels.
+			const double density = 1.0;
+#else
+			var density = ScaleFactor.Normalize((Forms.Screen.Screens ?? []).Select(s => (double)s.LogicalPixelSize).DefaultIfEmpty(1.0).Max());
+#endif
+			var (bmp, source, size) = Load(filename, w, h, iconindex, density);
+#if OSX
+			// An NSImage carries the size it is drawn at in points apart from its pixels, which a list or menu slot
+			// relies on, having no size of its own to fit the image into.
+			if (bmp != null && size != bmp.Size && bmp.Handler is Eto.Mac.Drawing.BitmapHandler { Control: { } image })
+			{
+				var copy = (MonoMac.AppKit.NSImage)image.Copy();
+				copy.Size = new MonoMac.CoreGraphics.CGSize(size.Width, size.Height);
+				bmp.Dispose();
+				bmp = new Bitmap(new Eto.Mac.Drawing.BitmapHandler(copy));
+			}
+#endif
+			return (bmp, source, size);
+		}
+
+		// Loads as LoadImage does, with w and h in units of density pixels, and returns the size in those units.
+		private static (Bitmap, object, Size) Load(string filename, int w, int h, object iconindex, double density)
 		{
 			Bitmap bmp = null;
 			object source = null;
+			var size = Size.Empty;
 
 			// Every source below is decoded into a bitmap nothing else holds, so the one it is resized from goes.
 			Bitmap Sized(Bitmap loaded)
 			{
-				var resized = loaded == null ? null : ResizeBitmap(loaded, w, h, exactPixels);
+				var resized = loaded == null ? null : ResizeBitmap(loaded, w, h, density, out size);
 
 				if (!ReferenceEquals(resized, loaded))
 					loaded.Dispose();
@@ -281,10 +317,12 @@ namespace Keysharp.Internals.Images
 						if (kind == ImageHandleKind.Icon)
 						{
 							using var icon = Icon.FromHandle(handle);
-							return (Sized(icon.ToBitmap()), null);
+							bmp = Sized(icon.ToBitmap());
+							return (bmp, null, size);
 						}
 #endif
-						return (Sized(GetBitmapFromHBitmap(handle)), null);
+						bmp = Sized(GetBitmapFromHBitmap(handle));
+						return (bmp, null, size);
 					}
 					finally
 					{
@@ -327,6 +365,9 @@ namespace Keysharp.Internals.Images
 					if (w > 0 && h < 0) h = w;
 					if (h > 0 && w < 0) w = h;
 
+					// The frame is the one drawn at the pixel size the image is shown with.
+					int fw = w > 0 ? (int)Math.Round(w * density) : w, fh = h > 0 ? (int)Math.Round(h * density) : h;
+
 #if WINDOWS
 					List<(Icon, Bitmap)> frames;
 
@@ -334,7 +375,7 @@ namespace Keysharp.Internals.Images
 						frames = GuiHelper.SplitIcon(ico);
 
 					var chosen = w > 0 || h > 0
-								 ? frames.FindIndex(frame => (w <= 0 || frame.Item1.Width == w) && (h <= 0 || frame.Item1.Height == h))
+								 ? frames.FindIndex(frame => (fw <= 0 || frame.Item1.Width == fw) && (fh <= 0 || frame.Item1.Height == fh))
 								 : iconindex.TryCoerceInt(out var iconint) && iconint >= 0 && iconint < frames.Count ? iconint : 0;
 
 					if (chosen < 0)
@@ -359,7 +400,7 @@ namespace Keysharp.Internals.Images
 							IconFrame frame;
 							if (w > 0 || h > 0)
 							{
-								var targetSize = new Size(w > 0 ? w : h, h > 0 ? h : w);
+								var targetSize = new Size(fw > 0 ? fw : fh, fh > 0 ? fh : fw);
 								frame = frames.FirstOrDefault(tempFrame => tempFrame.PixelSize == targetSize) ?? frames[0];
 							}
 							else
@@ -386,7 +427,7 @@ namespace Keysharp.Internals.Images
 				{
 					//The decoded file keeps the file locked, so a bitmap that is not resized from it is copied.
 					using var file = (Bitmap)Image.FromFile(filename);
-					var resized = ResizeBitmap(file, w, h, exactPixels);
+					var resized = ResizeBitmap(file, w, h, density, out size);
 					bmp = ReferenceEquals(resized, file) ? CopyBitmap(file) : resized;
 				}
 			}
@@ -394,10 +435,10 @@ namespace Keysharp.Internals.Images
 			{
 				bmp?.Dispose();
 				(source as IDisposable)?.Dispose();
-				return (null, null);
+				return (null, null, Size.Empty);
 			}
 
-			return (bmp, source);
+			return (bmp, source, size);
 		}
 
 		// Reads an "HBITMAP:" or "HICON:" source, whose handle LoadImage consumes unless "*" marks the script as keeping it.
@@ -411,23 +452,6 @@ namespace Keysharp.Internals.Images
 			handle = prefix > 0 && long.TryParse(keep ? value[1..] : value, out var number) ? (nint)number : 0;
 			return handle != 0;
 		}
-
-#if OSX
-		// Returns a copy of an NSImage-backed bitmap whose logical size is (w, h) points while
-		// retaining the original full-resolution representations: on Retina displays the GUI
-		// draws it sharp from the high-res rep instead of from resampled pixels, and pixel
-		// access renders at (w, h) just like a true resize would. Returns null when the bitmap
-		// isn't NSImage-backed so the caller can fall back to a resampling resize.
-		internal static Bitmap ResizeNSImagePointSize(Bitmap bmp, int w, int h)
-		{
-			if (bmp?.Handler is not Eto.Mac.Drawing.BitmapHandler handler || handler.Control == null)
-				return null;
-
-			var copy = (MonoMac.AppKit.NSImage)handler.Control.Copy();
-			copy.Size = new MonoMac.CoreGraphics.CGSize(w, h);
-			return new Bitmap(new Eto.Mac.Drawing.BitmapHandler(copy));
-		}
-#endif
 
 #if !WINDOWS
 		// Returns a 32bpp opaque copy of `bmp` when its Pixbuf storage is 3 bytes per
@@ -480,24 +504,32 @@ namespace Keysharp.Internals.Images
 		}
 #endif
 
-		/// <param name="exactPixels">True to force a true pixel resample. On macOS the default
-		/// is a point-size change that keeps the high-res representation, which displays sharp
-		/// on Retina; pixel consumers (e.g. ImageSearch needles with *w/*h) need real pixels,
-		/// otherwise EnsurePixelSize would see the original representation and undo the resize.</param>
-		internal static Bitmap ResizeBitmap(Bitmap bmp, int w, int h, bool exactPixels = false)
-		{
-			if (w <= 0 && h <= 0)
-				return bmp;
+		/// <summary>
+		/// Resizes a bitmap to a size in pixels. A width or height of 0 keeps the bitmap's own, and -1 follows the other
+		/// dimension's aspect ratio; a bitmap already that size is returned as it is.
+		/// </summary>
+		internal static Bitmap ResizeBitmap(Bitmap bmp, int w, int h) => ResizeBitmap(bmp, w, h, 1.0, out _);
 
+		// Resizes as above with w and h in units of density pixels, which size returns resolved. The result is sampled up
+		// to density, but no denser than the source's own detail along its denser axis, since enlarging it here would only
+		// cost memory.
+		private static Bitmap ResizeBitmap(Bitmap bmp, int w, int h, double density, out Size size)
+		{
 			// Negative = derive from the other dimension preserving the aspect ratio; 0 = keep original.
 			if (w <= 0) w = w < 0 && h > 0 ? Math.Max(1, (int)Math.Round(bmp.Width * (h / (double)bmp.Height))) : bmp.Width;
 			if (h <= 0) h = h < 0 ? Math.Max(1, (int)Math.Round(bmp.Height * (w / (double)bmp.Width))) : bmp.Height;
+			size = new Size(w, h);
+
+			if (density > 1.0)
+			{
+				var factor = Math.Clamp(Math.Max(bmp.Width / (double)w, bmp.Height / (double)h), 1.0, density);
+				w = Math.Max(1, (int)Math.Round(w * factor));
+				h = Math.Max(1, (int)Math.Round(h * factor));
+			}
 
 			if (bmp.Width != w || bmp.Height != h)
 #if WINDOWS
 				bmp = bmp.Resize(w, h);
-#elif OSX
-				bmp = (exactPixels ? null : ResizeNSImagePointSize(bmp, w, h)) ?? new Bitmap(bmp, w, h, ImageInterpolation.Default);
 #else
 				bmp = new Bitmap(bmp, w, h, ImageInterpolation.Default);
 #endif

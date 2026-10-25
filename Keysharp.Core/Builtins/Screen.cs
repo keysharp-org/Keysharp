@@ -132,7 +132,7 @@ namespace Keysharp.Builtins
 				height = SystemInformation.SmallIconSize.Height;
 			}
 
-			var (needle, source) = ImageHelper.LoadImage(filename, width ?? 0, height ?? 0, iconNumber, exactPixels: true);
+			var (needle, source) = ImageHelper.LoadImage(filename, width ?? 0, height ?? 0, iconNumber);
 
 			if (needle == null)
 				return Errors.ValueErrorOccurred($"Loading icon or bitmap from {filename} failed.");

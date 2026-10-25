@@ -120,7 +120,7 @@ namespace Keysharp.Builtins
 			else if (!maskColor.CoerceInt(out mask))
 				return 0L;
 
-			var (bmp, source) = ImageHelper.LoadImage(filename, divide ? 0 : size.Width, divide ? 0 : size.Height, iconNumber);
+			var (bmp, source, _) = ImageHelper.LoadDisplayImage(filename, divide ? 0 : size.Width, divide ? 0 : size.Height, iconNumber);
 
 			if (bmp == null)
 				return 0L;
