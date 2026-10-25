@@ -18,7 +18,8 @@ Hook.OnActive := (Hook, Hwnd, Time) => Events.Push(Hwnd)
 Hook.Start()
 #endif
 try {
-    Target.Show("x40 y80 w240 h180 NA")
+    Target.Show("x40 y80 w240 h180")
+    AssertEq(WinWaitActive(Target, , 2), Target.Hwnd, A_LineNumber)
     AssertEq(WindowAtCenter(Target), Target.Hwnd, A_LineNumber)
     WinGetClientPos(&X, &Y, &Width, &Height, "ahk_id " Target.Hwnd)
     Assert(Target.PixelScale > 0, A_LineNumber)
@@ -39,13 +40,30 @@ try {
     AssertEq(FoundWidth, Width, A_LineNumber)
     AssertEq(FoundHeight, Height, A_LineNumber)
 
-    Cover.Show("x" (X + 30) " y" (Y + 30) " w100 h70 NA")
+    Cover.Show("x" (X + 30) " y" (Y + 30) " w100 h70")
+    AssertEq(WinWaitActive(Cover, , 2), Cover.Hwnd, A_LineNumber)
     AssertEq(WindowAtCenter(Cover), Cover.Hwnd, A_LineNumber)
     WinGetClientPos(&CoverX, &CoverY, &CoverWidth, &CoverHeight, "ahk_id " Cover.Hwnd)
-    PointX := CoverX + CoverWidth // 2
-    PointY := CoverY + CoverHeight // 2
+    WinGetClientPos(&X, &Y, &Width, &Height, "ahk_id " Target.Hwnd)
+
+    ; A compositor can place the windows independently, so use their actual overlap.
+    OverlapLeft := Max(X, CoverX), OverlapTop := Max(Y, CoverY)
+    OverlapRight := Min(X + Width, CoverX + CoverWidth)
+    OverlapBottom := Min(Y + Height, CoverY + CoverHeight)
+    PointX := X + Width // 2, PointY := Y + Height // 2
+    if OverlapLeft < OverlapRight && OverlapTop < OverlapBottom {
+        PointX := OverlapLeft + (OverlapRight - OverlapLeft) // 2
+        PointY := OverlapTop + (OverlapBottom - OverlapTop) // 2
+        AssertEq(WindowAt(PointX, PointY, Cover.Hwnd), Cover.Hwnd, A_LineNumber)
+    }
 
     Cover.Hide()
+    WinActivate(Target)
+    AssertEq(WinWaitActive(Target, , 2), Target.Hwnd, A_LineNumber)
+    WinGetClientPos(&X, &Y, &Width, &Height, "ahk_id " Target.Hwnd)
+    ; Hiding a tiled window can also change the remaining window's placement.
+    if PointX < X || PointX >= X + Width || PointY < Y || PointY >= Y + Height
+        PointX := X + Width // 2, PointY := Y + Height // 2
     AssertEq(WindowAt(PointX, PointY, Target.Hwnd), Target.Hwnd, A_LineNumber)
 #if OSX
     AssertEq(Target.Hwnd, TargetHandle, A_LineNumber)

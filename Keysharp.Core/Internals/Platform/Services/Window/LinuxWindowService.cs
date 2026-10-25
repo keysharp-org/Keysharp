@@ -125,11 +125,14 @@ namespace Keysharp.Internals
 				return form == null && !Known(h) && base.TryGetBounds(h, client, out bounds);
 			}
 
+			if (client && TryOwnClientBounds(form, own, out bounds))
+				return true;
+
 			if (!own.TryGetBounds(client, out bounds))
 				return false;
 
 			if (client)
-				bounds = OwnClientBounds(form, own);
+				bounds = EstimateOwnClientBounds(form, own);
 
 			return true;
 		}
@@ -250,19 +253,11 @@ namespace Keysharp.Internals
 		/// says where the surface is, the toolkit says where the content sits inside it.
 		/// </summary>
 		private static Rectangle OwnClientBounds(Form form, WaylandWindowInfo own)
+			=> TryOwnClientBounds(form, own, out var bounds) ? bounds : EstimateOwnClientBounds(form, own);
+
+		private static Rectangle EstimateOwnClientBounds(Form form, WaylandWindowInfo own)
 		{
 			var frame = own.FrameGeometry;
-
-			if (form.Content is Control content && WaylandOwnToplevels.TryGetSurfaceOrigin(form, own, out var surface))
-			{
-				var offset = content.PointToScreen(Point.Empty);   // surface-relative, which is what we correct
-				var size = form.ClientSize;
-
-				if (size.Width > 0 && size.Height > 0)
-					return new Rectangle(surface.X + (int)Math.Round(offset.X), surface.Y + (int)Math.Round(offset.Y),
-										 size.Width, size.Height);
-			}
-
 			var local = form.GetClientScreenRect(true);
 
 			if (local.Width > 0 && local.Height > 0 && frame.Width > 0 && frame.Height > 0)
@@ -277,6 +272,25 @@ namespace Keysharp.Internals
 			}
 
 			return own.ClientGeometry.Width > 0 && own.ClientGeometry.Height > 0 ? own.ClientGeometry : frame;
+		}
+
+		private static bool TryOwnClientBounds(Form form, WaylandWindowInfo own, out Rectangle bounds)
+		{
+			if (form.Content is Control content && WaylandOwnToplevels.TryGetSurfaceOrigin(form, own, out var surface))
+			{
+				var offset = content.PointToScreen(Point.Empty);   // surface-relative, which is what we correct
+				var size = form.ClientSize;
+
+				if (size.Width > 0 && size.Height > 0)
+				{
+					bounds = new Rectangle(surface.X + (int)Math.Round(offset.X), surface.Y + (int)Math.Round(offset.Y),
+										   size.Width, size.Height);
+					return true;
+				}
+			}
+
+			bounds = Rectangle.Empty;
+			return false;
 		}
 
 		public override bool TryGetParent(nint h, out nint parent)
@@ -533,7 +547,7 @@ namespace Keysharp.Internals
 		/// under its own handle, but a script only ever holds the Eto one (that is what <c>Gui.Hwnd</c> returns),
 		/// so anything a script can compare against <c>Gui.Hwnd</c> - or hand to <c>Control.FromHandle</c>, which
 		/// is how MouseGetPos finds the control under the cursor - has to be re-homed onto that handle first.
-		/// Explicit window queries correlate registered forms when needed; pointer and event paths use cached bindings.
+		/// Window queries correlate each newly shown form once; pointer and event paths use cached bindings.
 		/// </summary>
 		private static WindowInfoBase AsOwn(WindowInfoBase window, bool correlate = false)
 		{

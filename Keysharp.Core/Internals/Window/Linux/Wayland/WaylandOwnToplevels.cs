@@ -67,6 +67,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			internal bool Mapped;                     // GTK has the window mapped, the only time the compositor has one
 			internal int MapGeneration;               // counts maps, so a correlation is only ever for the current one
 			internal bool CorrelationFailed;          // no compositor window was found on the last attempt
+			internal bool QueryCorrelated;            // a window query has spent its one correlation on this map
 			internal long RetryCorrelationAt;         // a late compositor publication can recover on the same map
 			internal bool Retired;
 			internal readonly object Applying = new(); // held while telling the compositor, by the background pass or a caller
@@ -270,7 +271,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			var asserts = x != WindowInfoBase.Unchanged || y != WindowInfoBase.Unchanged
 						  || removeBorder || keepAbove || skipTaskbar;
 
-			// Registration is local; a plain Show starts no compositor work until an explicit query needs it.
+			// Registration is local; a plain Show starts no compositor work until a query needs it.
 			var state = Track(form, formHandle, title, matchW, matchH);
 
 			if (!asserts)
@@ -329,13 +330,26 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			return false;
 		}
 
+		/// <summary>
+		/// The form a compositor window belongs to, for a query that holds only the window: the active window, or one
+		/// in a listing. Such queries are polled, so each form costs them at most one correlation per map; a form
+		/// that fails it is resolved from then on only once something else binds it.
+		/// </summary>
 		internal static bool TryResolveFormHandle(WaylandWindowInfo window, out nint formHandle)
 		{
 			if (TryGetFormHandle(window.Handle, out formHandle))
 				return true;
 
-			if (Keysharp.Internals.Input.Hooks.HookThread.InHookCallback || window.PID != Environment.ProcessId || !IsSupported)
+			// A reported foreign owner is definitive, while an unknown one can still be ours. A window without a
+			// readable frame cannot be bound yet.
+			if (Keysharp.Internals.Input.Hooks.HookThread.InHookCallback
+				|| (window.PID > 0 && window.PID != Environment.ProcessId) || !window.HasFrame || !IsSupported)
 				return false;
+
+			// A query with no form left to correlate does not wait for the UI thread.
+			lock (sync)
+				if (!states.Values.Any(IsQueryCorrelatableLocked))
+					return false;
 
 			var app = Eto.Forms.Application.Instance;
 			if (app == null)
@@ -384,18 +398,31 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 			FormState[] pending;
 			lock (sync)
-				pending = states.Values.Where(state => IsCurrentLocked(state) && state.Mapped && state.CompositorHandle == 0).ToArray();
+				pending = states.Values.Where(IsQueryCorrelatableLocked).ToArray();
 
 			foreach (var state in pending)
 			{
-				var form = state.Form;
-				if (form is { IsDisposed: false, Visible: true }
-					&& TryGetOwnWindow(form, out var own) && own.Handle == window.Handle)
+				if (state.Form is not { IsDisposed: false, Visible: true } form)
+					continue;
+
+				// Claimed before correlating, since a query nested in its pumping must not start another.
+				lock (sync)
+				{
+					if (state.QueryCorrelated)
+						continue;
+
+					state.QueryCorrelated = true;
+				}
+
+				if (TryGetOwnWindow(form, out var own) && own.Handle == window.Handle)
 					return TryGetFormHandle(window.Handle, out formHandle) ? formHandle : 0;
 			}
 
 			return 0;
 		}
+
+		private static bool IsQueryCorrelatableLocked(FormState state)
+			=> IsCurrentLocked(state) && state.Mapped && state.CompositorHandle == 0 && !state.QueryCorrelated;
 
 		//The window can be dragged, tiled or maximized at any moment and a Wayland client is never told, so the
 		//origin is only ever a snapshot; one frame is as current as anything on screen can be. A form nothing can
@@ -474,8 +501,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (surface.Width > 0 && surface.Height > 0)
 				return true;
 
-			if (info?.HasKnownField(WaylandWindowFields.Frame) != true
-				|| info.FrameGeometry.Width <= 0 || info.FrameGeometry.Height <= 0
+			if (info?.HasFrame != true
 				|| form is not { IsDisposed: false } || Eto.Forms.Application.Instance?.IsUIThread != true
 				|| form.ToNative() is not Gtk.Window { IsMapped: true } gtkWindow
 				|| gtkWindow.Gravity != Gdk.Gravity.NorthWest
@@ -803,6 +829,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				state.Mapped = true;
 				state.MapGeneration++;
 				state.CorrelationFailed = false;
+				state.QueryCorrelated = false;
 				state.RetryCorrelationAt = 0;
 
 				// Whatever the compositor was told went with the window the last unmap destroyed.
@@ -1313,8 +1340,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			while (Environment.TickCount64 < deadline)
 			{
 				var change = DesktopClient.Current.WindowChangeSignal;
-				if (readable = backend.TryGetWindow(reserved, out info) && info?.HasKnownField(WaylandWindowFields.Frame) == true
-					&& info.FrameGeometry.Width > 0 && info.FrameGeometry.Height > 0) break;
+				if (readable = backend.TryGetWindow(reserved, out info) && info?.HasFrame == true) break;
 				WaitForWindowChange(change, deadline, ReservedGeometryRetryMs);
 			}
 
@@ -1377,8 +1403,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		{
 			// Metadata can identify a toplevel before its first buffer commits. Keep correlating until
 			// geometry is readable, as callers query its position immediately after binding.
-			if (!pick.HasKnownField(WaylandWindowFields.Frame)
-				|| pick.FrameGeometry.Width <= 0 || pick.FrameGeometry.Height <= 0)
+			if (!pick.HasFrame)
 				return null;
 
 			lock (sync)

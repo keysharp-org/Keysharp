@@ -16,6 +16,7 @@ public class DaemonCompilationTests
 		var directory = Path.Combine(tempRoot, "keysharp-daemon-" + Guid.NewGuid().ToString("N"));
 		Directory.CreateDirectory(directory);
 		Process daemon = null;
+		var completed = false;
 		try
 		{
 			var installation = Path.Combine(directory, "host");
@@ -46,29 +47,51 @@ public class DaemonCompilationTests
 				Thread.Sleep(100);
 				ready = Run(launcher, directory, "1", false, "--daemon", "ping", Path.Combine(directory, "compile-file.ahk"));
 			}
-			Assert.That(ready.ExitCode, Is.Zero, ready.Output + ready.Error + (daemonError.IsCompleted ? daemonError.Result : ""));
+			Assert.That(ready.ExitCode, Is.Zero, ready.Output + ready.Error + (daemonError.IsCompletedSuccessfully ? daemonError.Result : ""));
 			Assert.That(daemon.HasExited, Is.False, "The isolated daemon exited during startup.");
 
 			void CheckParent(string enabled, bool expectLocal)
 			{
 				var result = Run(launcher, directory, enabled, expectLocal, "--errorstdout", "--assembly", assembly);
-				Assert.That(result.ExitCode, Is.Zero, result.Output + result.Error);
+				var daemonDiagnostics = "";
+				if (result.ExitCode != 0)
+				{
+					try
+					{
+						Stop(daemon);
+						daemonDiagnostics = daemonError.Wait(5000) ? "\n" + daemonError.GetAwaiter().GetResult()
+							: "\nDaemon diagnostics did not close.";
+					}
+					catch (Exception ex)
+					{
+						daemonDiagnostics = "\nDaemon diagnostics unavailable: " + ex.GetBaseException().Message;
+					}
+				}
+				Assert.That(result.ExitCode, Is.Zero, result.Output + result.Error + daemonDiagnostics);
 				Assert.That(result.Output.Trim(), Is.EqualTo("pass"), result.Error);
 			}
 			CheckParent("1", false);
 			CheckParent("0", true);
 			Stop(daemon);
 			CheckParent("1", true);
+			completed = true;
 		}
 		finally
 		{
-			if (daemon != null)
+			try
 			{
-				Stop(daemon);
-				daemon.Dispose();
+				if (daemon != null)
+				{
+					Stop(daemon);
+					daemon.Dispose();
+				}
+				Assert.That(Path.GetFullPath(directory).StartsWith(tempRoot, StringComparison.Ordinal), Is.True);
+				Directory.Delete(directory, true);
 			}
-			Assert.That(Path.GetFullPath(directory).StartsWith(tempRoot, StringComparison.Ordinal), Is.True);
-			Directory.Delete(directory, true);
+			catch (Exception ex) when (!completed)
+			{
+				TestContext.Out.WriteLine("Daemon fixture cleanup failed: " + ex);
+			}
 		}
 	}
 
@@ -167,16 +190,17 @@ public class DaemonCompilationTests
 					return true
 			return false
 		}
-		CheckComponents(expectLocal) {
+		CheckComponents(expectLocal, request) {
 			loaded := CompilationAssemblies()
 			if expectLocal {
-				Check(InStr(loaded, "Keysharp.Components.Scripting.Compiler") && InStr(loaded, "Keysharp.Components.Scripting.Parser") && InStr(loaded, "Microsoft.CodeAnalysis"), "local fallback did not load compilation components: " loaded)
+				Check(InStr(loaded, "Keysharp.Components.Scripting.Compiler") && InStr(loaded, "Keysharp.Components.Scripting.Parser") && InStr(loaded, "Microsoft.CodeAnalysis"), request " did not load local compilation components: " loaded)
 			} else {
-				Check(loaded == "", "daemon compilation loaded local compilation components: " loaded)
+				Check(loaded == "", request " loaded local compilation components: " loaded)
 			}
 		}
 
 		Check(CompilationAssemblies() == "", "caller loaded compilation components before the nested compile")
+		expectLocal := EnvGet("KEYSHARP_TEST_EXPECT_LOCAL") == "1"
 		headless := "#NoTrayIcon`n#ErrorStdOut`n#Warn All, StdOut`n"
 		child := headless '
 		(
@@ -208,26 +232,29 @@ public class DaemonCompilationTests
 				info.Kill()
 			info.Close()
 		}
+		CheckComponents(expectLocal, "RunScript source")
 
 		fileChild := RunScript("file-child.ahk", Name: "IgnoredBuildName")
 		Check(fileChild.ExitCode == 0, "file RunScript failed: " fileChild.StdErr.Read())
 		Check(fileChild.StdOut.Read() == "file-ok", "file RunScript relative include differed")
 		fileChild.Close()
+		CheckComponents(expectLocal, "RunScript file")
 
 		result := CompileScript(headless "#Warning compile-warning`nx := 1`n")
 		Check(result.IsValid && result.Errors.Length == 0, "valid CompileScript failed")
 		Check(HasMessage(result.Warnings, "compile-warning"), "successful compile lost its warning")
+		CheckComponents(expectLocal, "CompileScript source")
 		result := CompileScript("compile-file.ahk")
 		Check(result.IsValid && result.Errors.Length == 0, "file CompileScript identity or relative include differed")
-		expectLocal := EnvGet("KEYSHARP_TEST_EXPECT_LOCAL") == "1"
-		CheckComponents(expectLocal)
+		CheckComponents(expectLocal, "CompileScript file")
 		result := CompileScript(headless "x := (`n")
 		Check(!result.IsValid && result.Errors.Length > 0, "CompileScript accepted invalid syntax")
+		CheckComponents(expectLocal, "CompileScript syntax error")
 		result := CompileScript(headless "#Warning failed-compile-warning`n#CSharp`npublic static object Bad() => new MissingDaemonType();`n#EndCSharp`nBad()`n")
 		Check(!result.IsValid && HasMessage(result.Errors, "MissingDaemonType"), "CompileScript lost C# errors")
 		Check(HasMessage(result.Warnings, "failed-compile-warning"), "failed compile lost its warning")
 
-		CheckComponents(expectLocal)
+		CheckComponents(expectLocal, "CompileScript C# error")
 		FileAppend("pass", "*")
 		""";
 }

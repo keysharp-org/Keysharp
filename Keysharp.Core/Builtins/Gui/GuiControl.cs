@@ -500,6 +500,12 @@ namespace Keysharp.Builtins
 				{
 					// The client area's on-screen rectangle (client origin mapped to the screen, plus the client
 					// size). Mirrors AHK's GetClientPos. The per-toolkit mapping lives in GetClientScreenRect.
+#if LINUX
+					if (control is Form form && Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.IsSupported
+						&& Platform.Window.TryGetBounds(form.Handle, true, out var bounds))
+						rect = bounds;
+					else
+#endif
 					rect = control.GetClientScreenRect(true);
 #if WINDOWS
 					//As AHK reports it, a child window's client area is relative to its parent's, like its position.

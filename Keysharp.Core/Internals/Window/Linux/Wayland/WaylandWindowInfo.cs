@@ -100,6 +100,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		internal bool HasKnownField(WaylandWindowFields field) => (KnownFields & field) != 0;
 
+		/// <summary>Whether the compositor reports a frame with an area, which a window lacks until its first
+		/// buffer commits.</summary>
+		internal bool HasFrame => HasKnownField(WaylandWindowFields.Frame) && FrameGeometry.Width > 0 && FrameGeometry.Height > 0;
+
 		internal override string Title => winTitle;
 		internal override string ClassName => AppId;
 		internal override long PID => pid;

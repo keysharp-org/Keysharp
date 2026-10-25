@@ -12,11 +12,14 @@ try {
     bitmap := needle.ToBitmap()
     WinGetPos(&left, &top, &width, &height, fixture.Window)
     right := left + width - 1, bottom := top + height - 1
+    ; Fractional desktop scaling can give captures a different pixel scale than the GUI.
+    capture := Image.FromRect(left, top, width, height)
+    needleWidth := needle.Width / capture.ScaleX, needleHeight := needle.Height / capture.ScaleY
     AssertEq(ImageSearch(&x, &y, left, top, right, bottom, "HBITMAP:" bitmap), 1, A_LineNumber)
     Assert(Abs(x - fixture.X) <= 2 && Abs(y - fixture.Y) <= 2, A_LineNumber)
     AssertEq(PixelGetColor(x + 4, y + 4), "0xCC5533", A_LineNumber)
     AssertEq(ImageSearch(&x, &y, left, top, right, bottom, "*DirBottomRight HBITMAP:" needle.ToBitmap()), 1, A_LineNumber)
-    Assert(Abs(x - (fixture.X + fixture.Width - 8)) <= 2 && Abs(y - (fixture.Y + fixture.Height - 8)) <= 2, A_LineNumber)
+    Assert(Abs(x - (fixture.X + fixture.Width - needleWidth)) <= 2 && Abs(y - (fixture.Y + fixture.Height - needleHeight)) <= 2, A_LineNumber)
 
     ; *Trans reads hexadecimal without 0x, and a variation applies after any other option.
     framed := Image.Create(8, 8, 0xFFFFAA)
@@ -26,6 +29,8 @@ try {
     AssertEq(ImageSearch(&x, &y, left, top, right, bottom, "HBITMAP:" near.ToBitmap()), 0, A_LineNumber)
     AssertEq(ImageSearch(&x, &y, left, top, right, bottom, "*w8 *h8 *4 HBITMAP:" near.ToBitmap()), 1, A_LineNumber)
 } finally {
+    if IsSet(capture)
+        capture.Dispose()
     if IsSet(needle)
         needle.Dispose()
     fixture.Window.Destroy()

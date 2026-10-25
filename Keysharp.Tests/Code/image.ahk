@@ -17,6 +17,14 @@ HasAlpha(image) {
     return false
 }
 
+PremultipliedColor(Color) {
+    PixelAlpha := (Color >> 24) & 255
+    Red := Round(((Color >> 16) & 255) * PixelAlpha / 255)
+    Green := Round(((Color >> 8) & 255) * PixelAlpha / 255)
+    Blue := Round((Color & 255) * PixelAlpha / 255)
+    return (PixelAlpha << 24) | (Red << 16) | (Green << 8) | Blue
+}
+
 ; The right and bottom edges of dark pixels on a light image.
 InkExtent(image) {
     inkPixels := image.GetPixelData(1), width := image.Width, right := 0, bottom := 0
@@ -57,11 +65,22 @@ AssertEq(badColour.GetPixel(1, 1), 0, A_LineNumber)
 ; A queued Clear rewrites the image's own pixels, and a draw after it still lands on them.
 cleared := Image.Create(2, 2, "Red").Clear(0x80112233)
 AssertEq(cleared.GetPixel(0, 0), 0x80112233, A_LineNumber)
+; Drawing can quantize translucent channels through premultiplied storage; the represented color stays the same.
 for color in [0xFF0000FF, 0xFFFF0000, 0xFF0000FF] {
     cleared.FillRect(1, 1, 1, 1, color)
     AssertEq(cleared.GetPixel(1, 1), color, A_LineNumber)
-    AssertEq(cleared.GetPixel(0, 1), 0x80112233, A_LineNumber)
+    AssertEq(PremultipliedColor(cleared.GetPixel(0, 1)), PremultipliedColor(0x80112233), A_LineNumber)
 }
+
+#if LINUX
+; Repeated Cairo drawing and readback must not progressively darken an untouched translucent pixel.
+stable := Image.Create(2, 2, 0xC8406080)
+AssertEq(stable.GetPixel(0, 0), 0xC8406080, A_LineNumber)
+Loop 4 {
+    stable.FillRect(1, 1, 1, 1, "Blue")
+    AssertEq(PremultipliedColor(stable.GetPixel(0, 0)), PremultipliedColor(0xC8406080), A_LineNumber)
+}
+#endif
 
 canvas := Image.Create(12, 12)
 copy := canvas.Copy()
@@ -211,9 +230,10 @@ Assert(movedPixel.x == 5 && movedPixel.y == 3, A_LineNumber)
 path := A_Temp A_DirSeparator "keysharp-image-" A_TickCount ".png"
 try {
 #if WINDOWS || LINUX
+    savedClearPixel := cleared.GetPixel(0, 1)
     cleared.Save(path)
     loadedClear := Image.FromFile(path)
-    AssertEq(loadedClear.GetPixel(0, 1), 0x80112233, A_LineNumber)
+    AssertEq(loadedClear.GetPixel(0, 1), savedClearPixel, A_LineNumber)
 #endif
 
     Image.Create(20, 10, "0xFF102030").Save(path)

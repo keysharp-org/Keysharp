@@ -740,6 +740,70 @@ public class GuiTests : TestRunner
 		});
 	}
 
+	[Test, Category("Gui"), Category("Internal")]
+	public void WaylandEnumerationBoundsCorrelationRetries()
+	{
+		SkipIfUiInitializationBlocked("Correlation needs a GTK window.");
+		if (!WaylandOwnToplevels.IsSupported)
+			Assert.Ignore("Own-window correlation requires a Wayland backend.");
+
+		s.InvokeOnUIThread(() =>
+		{
+			using var first = new Eto.Forms.Form { Title = "own toplevel", Content = new PixelLayout(), ClientSize = new Size(200, 100) };
+			using var second = new Eto.Forms.Form { Title = "second toplevel", Content = new PixelLayout(), ClientSize = new Size(200, 100) };
+			var firstHandle = EtoExtensions.GetHandle(first);
+			var secondHandle = EtoExtensions.GetHandle(second);
+			var firstState = TrackOwnToplevel(first, firstHandle);
+			var secondState = TrackOwnToplevel(second, secondHandle);
+			first.Show();
+			second.Show();
+			Application.Instance.RunIteration();
+			var readable = false;
+			var frame = new Rectangle(10, 20, 200, 100);
+			var backend = new ListingBackend(true)
+			{
+				WindowsOnList = _ =>
+				{
+					var appIds = (IDictionary)OwnToplevelsField("correlationAppIds");
+					WaylandWindowInfo Own(nint handle, nint formHandle, string title) => new(handle, $"retry-{handle}", title,
+						appId: appIds[formHandle] as string ?? "keysharp", pid: 0,
+						frameGeometry: readable ? frame : Rectangle.Empty,
+						knownFields: WaylandWindowFields.CompositorId | WaylandWindowFields.Title | WaylandWindowFields.AppId
+							| (readable ? WaylandWindowFields.Frame : WaylandWindowFields.None));
+					return [Own(42, firstHandle, "own toplevel"), Own(43, secondHandle, "second toplevel")];
+				}
+			};
+			var resolve = typeof(WaylandOwnToplevels).GetMethod("ResolveFormHandle", BindingFlags.NonPublic | BindingFlags.Static);
+			nint Resolve(WaylandWindowInfo window, HashSet<nint> attempted) => (nint)resolve.Invoke(null, [backend, window, attempted]);
+			var batch = new HashSet<nint>();
+			Assert.AreEqual((nint)0, Resolve(new(99, "unreadable-foreign", pid: 0,
+				knownFields: WaylandWindowFields.CompositorId), batch));
+			Assert.AreEqual(0, backend.ListCalls);
+			Assert.AreEqual((nint)0, Resolve(new(100, "foreign-first", pid: 0, frameGeometry: frame), batch));
+			Assert.IsTrue(batch.SetEquals([firstHandle, secondHandle]));
+			var calls = backend.ListCalls;
+			Assert.Greater(calls, 0);
+			foreach (var handle in new nint[] { 101, 102, 103 })
+				Assert.AreEqual((nint)0, Resolve(new(handle, $"foreign-{handle}", pid: 0, frameGeometry: frame), batch));
+			Assert.AreEqual(calls, backend.ListCalls, "a listed batch must attempt each own form only once");
+			foreach (var state in new[] { firstState, secondState })
+			{
+				Assert.IsTrue(OwnToplevelField<bool>(state, "CorrelationFailed"));
+				Assert.AreEqual((nint)0, OwnToplevelField<nint>(state, "CompositorHandle"));
+				SetOwnToplevelField(state, "RetryCorrelationAt", Environment.TickCount64 + 60_000);
+			}
+			Assert.AreEqual((nint)0, Resolve(new(104, "foreign-next-batch", pid: 0, frameGeometry: frame), []));
+			Assert.AreEqual(calls, backend.ListCalls, "a new batch must respect correlation backoff");
+			readable = true;
+			SetOwnToplevelField(firstState, "RetryCorrelationAt", 0L);
+			Assert.AreEqual(firstHandle, Resolve(new(42, "retry-42", pid: 0, frameGeometry: frame), []));
+			Assert.IsFalse(OwnToplevelField<bool>(firstState, "CorrelationFailed"));
+			calls = backend.ListCalls;
+			Assert.AreEqual(firstHandle, Resolve(new(42, "retry-42", pid: 0), batch));
+			Assert.AreEqual(calls, backend.ListCalls, "cached bindings must survive a consumed batch");
+		});
+	}
+
 	private static object OwnToplevelsField(string name)
 		=> typeof(WaylandOwnToplevels).GetField(name, BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
 

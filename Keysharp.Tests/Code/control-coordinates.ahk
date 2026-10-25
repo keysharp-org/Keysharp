@@ -17,10 +17,12 @@ g.Show("NoActivate x120 y130 w260 h180")
 Sleep 50
 
 ; Finish compositor placement before comparing consecutive screen-coordinate queries.
+windowMoveAvailable := true
 try {
     WinGetPos(, , , , g)
     WinMove(120, 130, , , g)
 } catch UnsupportedError {
+    windowMoveAvailable := false
 }
 
 ; The menu's height belongs outside the content origin used for control coordinates.
@@ -63,8 +65,8 @@ try WinGetPos(, &windowY, &windowWidth, &windowHeight, g)
 catch UnsupportedError
     frameGeometryAvailable := false
 
-; A compositor without frame geometry cannot preserve a top-level window's omitted axis.
-if frameGeometryAvailable {
+; Preserving a top-level window's omitted axis requires both frame geometry and window movement.
+if frameGeometryAvailable && windowMoveAvailable {
     g.GetClientPos(&clientX, &clientY)
     ControlMove(12, , , , g)
     Sleep 50

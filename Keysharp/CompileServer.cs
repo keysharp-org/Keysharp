@@ -206,30 +206,31 @@ internal static class CompileServer
 
 		Log($"listening on pipe '{PipeName}' (idle timeout {IdleTimeout.TotalHours:0} h).");
 
-		while (true)
+		NamedPipeServerStream server;
+
+		try
 		{
-			NamedPipeServerStream server;
+			// Only this user's processes may connect, and a client checks the same of the pipe: a request carries
+			// the caller's paths, and a reply is code the caller runs.
+			server = new NamedPipeServerStream(
+				PipeName,
+				PipeDirection.InOut,
+				maxNumberOfServerInstances: 1,
+				PipeTransmissionMode.Byte,
+				PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+		}
+		catch (IOException)
+		{
+			// The pipe name is already taken: another daemon with the same fingerprint owns it.
+			// Two daemons would be redundant, so defer to the existing one and exit.
+			Log("a compatible daemon is already running; exiting.");
+			return 0;
+		}
 
-			try
-			{
-				// Only this user's processes may connect, and a client checks the same of the pipe: a request carries
-				// the caller's paths, and a reply is code the caller runs.
-				server = new NamedPipeServerStream(
-					PipeName,
-					PipeDirection.InOut,
-					maxNumberOfServerInstances: 1,
-					PipeTransmissionMode.Byte,
-					PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-			}
-			catch (IOException)
-			{
-				// The pipe name is already taken: another daemon with the same fingerprint owns it.
-				// Two daemons would be redundant, so defer to the existing one and exit.
-				Log("a compatible daemon is already running; exiting.");
-				return 0;
-			}
-
-			using (server)
+		// Retain the Unix listening socket so a queued next client survives the previous client's disconnect.
+		using (server)
+		{
+			while (true)
 			{
 				try
 				{
@@ -239,7 +240,7 @@ internal static class CompileServer
 						return 0;
 					}
 				}
-				// Another user's connection, which the pipe refuses; a new instance waits for the next one.
+				// The pipe refuses another user's connection and keeps waiting for this user's clients.
 				catch (AggregateException ex) when (ex.InnerException is UnauthorizedAccessException)
 				{
 					continue;
@@ -253,6 +254,10 @@ internal static class CompileServer
 				{
 					// A single bad request must not take down the daemon.
 					Log($"request failed: {ex.Message}");
+				}
+				finally
+				{
+					server.Disconnect();
 				}
 			}
 		}

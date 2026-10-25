@@ -11320,8 +11320,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Retrieves the specified window\u0027s client-area position and size. On Wayland, a matched window whose compositor does not report client geometry raises UnsupportedError instead of returning zero coordinates. A window that does not match still returns zero coordinates.",
-                     "tested-by":  "GuiTests.WaylandSurfaceOrigin"
+                     "notes":  "Retrieves the specified window\u0027s client-area position and size. On Wayland, a script-owned Gui can derive client coordinates from known frame or surface geometry and its toolkit content bounds even when the compositor omits the client rectangle. A matched window whose client geometry cannot be determined raises UnsupportedError. A window that does not match raises TargetError.",
+                     "tested-by":  "gui-window-from-point.ahk; control-coordinates.ahk; GuiTests.WaylandSurfaceOrigin"
                  },
                  {
                      "category":  "Windowing/GUI",
