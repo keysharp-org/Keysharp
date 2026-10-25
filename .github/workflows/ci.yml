@@ -99,7 +99,7 @@ jobs:
         if: ${{ matrix.platform != 'nixos' }}
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: 10.0.402
           cache: true
           cache-dependency-path: |
             **/*.csproj
