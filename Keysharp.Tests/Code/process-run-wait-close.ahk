@@ -50,6 +50,12 @@ AssertEq(pid, "", A_LineNumber)
 	Run("sleep", "", "max", &pid, "60")
 	Assert(pid > 0, A_LineNumber)
 	ProcessWait(pid, 2)
+#if LINUX
+	sleeper := ProcessGetPath(pid)
+	SplitPath(sleeper, &sleeperName)
+	; A renamed copy of a multicall executable needs its original command selected explicitly.
+	sleeperPrefix := sleeperName = "coreutils" ? "--coreutils-prog=sleep " : sleeperName = "busybox" ? "sleep " : ""
+#endif
 
 	; Priority is not raised here: only root can raise it above normal.
 	if (ProcessExist(pid) != 0)
@@ -80,6 +86,8 @@ AssertEq(pid, "", A_LineNumber)
 
 #if WINDOWS
 	sleeper := A_WinDir "\System32\PING.EXE", sleeperArgs := "-n 2 127.0.0.1"
+#elif LINUX
+	sleeperArgs := sleeperPrefix "1"
 #else
 	sleeper := "/bin/sleep", sleeperArgs := "1"
 #endif
@@ -106,7 +114,11 @@ DirCreate(waitDir "/process")
 	waitArgs := "-n 60 127.0.0.1"
 #else
 	waitProgram := waitDir "/process wait-" ProcessExist()
+#if LINUX
+	waitArgs := sleeperPrefix "60"
+#else
 	waitArgs := "60"
+#endif
 #endif
 
 SplitPath(waitProgram, &waitName)

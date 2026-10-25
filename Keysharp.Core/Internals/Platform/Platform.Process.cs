@@ -149,7 +149,31 @@ namespace Keysharp.Internals
 			[return: MarshalAs(UnmanagedType.Bool)]
 			private static partial bool Process32NextW(nint snapshot, ref ProcessEntry32 entry);
 
-			internal static unsafe long? GetParentProcessId(int pid)
+			private delegate bool ProcessEntryMatch(ref ProcessEntry32 entry);
+
+			// AutoHotkey reports the recorded parent even if its PID was reused.
+			internal static long? GetParentProcessId(int pid)
+				=> FindProcessEntry((ref ProcessEntry32 candidate) => candidate.ProcessId == (uint)pid) is { } entry ? entry.ParentProcessId : null;
+
+			// As AutoHotkey does, the file name is compared in full, extension included.
+			internal static unsafe int FindByExecutableName(string name)
+			{
+				try
+				{
+					return FindProcessEntry((ref ProcessEntry32 candidate) =>
+					{
+						fixed (char* file = candidate.ExecutableFile)
+							return Path.GetFileName(MemoryMarshal.CreateReadOnlySpanFromNullTerminated(file)).Equals(name, StringComparison.OrdinalIgnoreCase);
+					}) is { } entry ? (int)entry.ProcessId : 0;
+				}
+				catch (Win32Exception)
+				{
+					return 0;
+				}
+			}
+
+			/// <summary>The first entry of a process snapshot that <paramref name="match"/> accepts, or null.</summary>
+			private static unsafe ProcessEntry32? FindProcessEntry(ProcessEntryMatch match)
 			{
 				const uint snapProcess = 0x00000002;
 				const int noMoreFiles = 18;
@@ -165,9 +189,8 @@ namespace Keysharp.Internals
 
 					while (found)
 					{
-						// AutoHotkey reports the recorded parent even if its PID was reused.
-						if (entry.ProcessId == (uint)pid)
-							return entry.ParentProcessId;
+						if (match(ref entry))
+							return entry;
 
 						found = Process32NextW(snapshot, ref entry);
 					}
@@ -218,6 +241,42 @@ namespace Keysharp.Internals
 				}
 			}
 
+			[LibraryImport("libproc.dylib", EntryPoint = "proc_listallpids")]
+			private static unsafe partial int ProcListAllPids(int* buffer, int bufferSize);
+
+			[LibraryImport("libproc.dylib", EntryPoint = "proc_pidpath")]
+			private static unsafe partial int ProcPidPath(int pid, byte* buffer, uint bufferSize);
+
+			internal static unsafe int FindByExecutableName(string name)
+			{
+				const int pathMaxSize = 4096; // PROC_PIDPATHINFO_MAXSIZE
+				// Called without a buffer it reports the count, so the margin covers processes started since.
+				var pids = new int[Math.Max(0, ProcListAllPids(null, 0)) + 64];
+				int count;
+
+				fixed (int* buffer = pids)
+					count = Math.Min(ProcListAllPids(buffer, pids.Length * sizeof(int)), pids.Length);
+
+				var path = stackalloc byte[pathMaxSize];
+				Span<char> chars = stackalloc char[pathMaxSize];
+
+				for (var i = 0; i < count; i++)
+				{
+					var length = ProcPidPath(pids[i], path, pathMaxSize);
+
+					// A process that has exited, or one we may not inspect, reports no path.
+					if (length <= 0)
+						continue;
+
+					var written = Encoding.UTF8.GetChars(new ReadOnlySpan<byte>(path, length), chars);
+
+					if (Path.GetFileName(chars[..written]).Equals(name, StringComparison.OrdinalIgnoreCase))
+						return pids[i];
+				}
+
+				return 0;
+			}
+
 			[LibraryImport("libSystem.dylib")]
 			private static partial int pthread_threadid_np(IntPtr thread, out ulong threadid);
 
@@ -248,6 +307,27 @@ namespace Keysharp.Internals
 				catch (DirectoryNotFoundException) { return null; }
 
 				throw new InvalidDataException("The process status has no parent process ID.");
+			}
+
+			// The comm name is no substitute: it is truncated to 15 characters, and a process can change it with
+			// prctl, as coreutils' multicall binary does.
+			internal static int FindByExecutableName(string name)
+			{
+				foreach (var dir in Directory.EnumerateDirectories("/proc"))
+				{
+					if (!int.TryParse(Path.GetFileName(dir.AsSpan()), NumberStyles.None, CultureInfo.InvariantCulture, out var pid))
+						continue;
+
+					try
+					{
+						if (string.Equals(File.ResolveLinkTarget($"{dir}/exe", false)?.Name, name, StringComparison.OrdinalIgnoreCase))
+							return pid;
+					}
+					// Another user's process denies access, and a kernel thread or an exited process has no link.
+					catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+				}
+
+				return 0;
 			}
 
 			public static uint CurrentThreadId() => (uint)Keysharp.Internals.Window.Linux.X11.Xlib.gettid();

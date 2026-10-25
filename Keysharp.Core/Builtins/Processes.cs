@@ -364,6 +364,38 @@ namespace Keysharp.Builtins
 
 		private static Process FindProcessByName(string name)
 		{
+			var pid = FindProcessIdByName(name);
+
+			if (pid == 0)
+				return null;
+
+			try
+			{
+				return Process.GetProcessById(pid);
+			}
+			catch (ArgumentException) // It exited after the scan.
+			{
+				return null;
+			}
+		}
+
+		/// <summary>The PID of the first process <see cref="FindProcess"/> matches, or 0 when none does.</summary>
+		private static long FindProcessId(string name)
+			=> int.TryParse(name, out var id) && Platform.Process.Exists(id) ? id : FindProcessIdByName(name);
+
+		/// <summary>
+		/// The PID of the first process whose executable file is named <paramref name="name"/>, which is what
+		/// ProcessGetName and ahk_exe report and, on Windows, all that AutoHotkey compares. Elsewhere the name the
+		/// system records for the process is the fallback: on Linux that serves <c>sleep</c> when its executable is
+		/// coreutils, and a process whose executable we cannot read.
+		/// </summary>
+		private static int FindProcessIdByName(string name)
+		{
+			var pid = Platform.Process.FindByExecutableName(name);
+#if !WINDOWS
+			if (pid != 0)
+				return pid;
+
 			const string exe = ".exe";
 
 			if (name.EndsWith(exe, StringComparison.OrdinalIgnoreCase))
@@ -372,27 +404,14 @@ namespace Keysharp.Builtins
 			try
 			{
 				var prc = Process.GetProcessesByName(name);
-				var found = prc.Length > 0 ? prc[0] : null;
+				pid = prc.Length > 0 ? prc[0].Id : 0;
 
-				for (var i = found == null ? 0 : 1; i < prc.Length; i++)
-					prc[i].Dispose();
-
-				return found;
+				foreach (var p in prc)
+					p.Dispose();
 			}
-			catch
-			{
-				return null;
-			}
-		}
-
-		/// <summary>The PID of the first process <see cref="FindProcess"/> matches, or 0 when none does.</summary>
-		private static long FindProcessId(string name)
-		{
-			if (int.TryParse(name, out var id) && Platform.Process.Exists(id))
-				return id;
-
-			using var proc = FindProcessByName(name);
-			return proc?.Id ?? 0L;
+			catch { }
+#endif
+			return pid;
 		}
 
 		/// <summary>
