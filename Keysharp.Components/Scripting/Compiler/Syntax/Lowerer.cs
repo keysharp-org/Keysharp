@@ -478,6 +478,8 @@ namespace Keysharp.Compilation.Syntax
 
 			// A module name may carry a subdirectory (`#import "Sub\Mod"`); both separators work on every platform.
 			modName = Parser.NormalizeDirectiveSeparators(modName);
+			if (modName.IsNamedPipe())
+				return System.IO.Path.GetFullPath(modName);
 
 			// The directory walk itself lives in SearchModulePath, shared with the `#CSharp "file.cs"` form; only
 			// these candidates are specific to a module NAME.
@@ -486,7 +488,7 @@ namespace Keysharp.Compilation.Syntax
 				var exact = System.IO.Path.Combine(dir, modName);
 				var cands = new List<string> { exact };                                   // <name> exact file
 
-				if (System.IO.Directory.Exists(exact))                                    // <name>\__Init.ks/.ahk
+				if (!exact.IsNamedPipe() && System.IO.Directory.Exists(exact))              // <name>\__Init.ks/.ahk
 					cands.AddRange(moduleInitNames.Select(init => System.IO.Path.Combine(exact, init)));
 
 				cands.AddRange(moduleExts.Select(ext => exact + ext));                    // <name>.ks/.ahk
@@ -2720,7 +2722,7 @@ namespace Keysharp.Compilation.Syntax
 
 			if (System.IO.Path.IsPathRooted(raw))
 			{
-				if (System.IO.File.Exists(raw))
+				if (raw.IsNamedPipe() || System.IO.File.Exists(raw))
 					return System.IO.Path.GetFullPath(raw);
 
 				Diag($"{NodeAnchor(d)}#CSharp: cannot find '{raw}'");
@@ -2757,7 +2759,7 @@ namespace Keysharp.Compilation.Syntax
 
 				foreach (var c in cands)
 				{
-					if (System.IO.File.Exists(c))
+					if (!c.IsNamedPipe() && System.IO.File.Exists(c))
 						return c;
 
 					if (tried != null && !tried.Contains(c, SourcePathComparer))

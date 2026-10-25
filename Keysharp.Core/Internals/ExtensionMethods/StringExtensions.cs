@@ -6,6 +6,14 @@ namespace System
 	/// </summary>
 	public static class StringExtensions
 	{
+		// File.Exists and Directory.Exists connect to named pipes and consume the connection carrying the source.
+		internal static bool IsNamedPipe(this string path) =>
+#if WINDOWS
+			path.AsSpan().StartsWith(@"\\.\pipe\", StringComparison.OrdinalIgnoreCase);
+#else
+			false;
+#endif
+
 		/// <summary>
 		/// Provides an easy way to iterate through the lines of a string without using as much memory as <see cref="string.Split"/>.<br/>
 		/// Taken from https://stackoverflow.com/questions/1547476/easiest-way-to-split-a-string-on-newlines-in-net.

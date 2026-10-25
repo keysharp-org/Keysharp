@@ -415,7 +415,7 @@ namespace Keysharp.Internals.Scripting
 			if (string.IsNullOrEmpty(scriptName))
 				return CliCommand.Error($"No script was specified, no text was read from stdin, and no default script named {exeName}.ahk, {exeName}.ks or {exeName}.cks was found in the current folder or next to the executable.");
 
-			if (!fromstdin && !File.Exists(scriptName))
+			if (!fromstdin && !scriptName.IsNamedPipe() && !File.Exists(scriptName))
 				return CliCommand.Error($"Could not find the script file {scriptName}.");
 
 			if (!compileAsm && !compileExe && compileDestPath.Length != 0)
@@ -658,7 +658,7 @@ namespace Keysharp.Internals.Scripting
 		/// </summary>
 		private static int EmitAssembly(Keysharp.Components.Scripting.IScriptCompiler compiler, CliCommand command, string scriptPath)
 		{
-			if (scriptPath != null && !File.Exists(scriptPath))
+			if (scriptPath != null && !scriptPath.IsNamedPipe() && !File.Exists(scriptPath))
 				return Message($"Could not find the script file {scriptPath}.", true);
 
 			SetScriptIdentity(Script.TheScript, scriptPath);
@@ -1106,8 +1106,9 @@ namespace Keysharp.Internals.Scripting
 		internal static bool IsCompiledScriptInput(string path)
 		{
 			var ext = Path.GetExtension(path);
-			return ext.Equals(".cks", StringComparison.OrdinalIgnoreCase)
-				   || ext.Equals(".dll", StringComparison.OrdinalIgnoreCase);
+			return !path.IsNamedPipe()
+				   && (ext.Equals(".cks", StringComparison.OrdinalIgnoreCase)
+					   || ext.Equals(".dll", StringComparison.OrdinalIgnoreCase));
 		}
 
 		private static string ResolveCompileAsmOutput(string outputPath, string scriptDir, string scriptNameNoExt)

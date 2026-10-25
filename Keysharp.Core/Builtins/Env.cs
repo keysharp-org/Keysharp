@@ -752,11 +752,11 @@ namespace Keysharp.Builtins
 			string result = null;
 			byte[] compiledBytes = null;
 			string compiledPath = null;
-			var ext = Path.GetExtension(script);
+			var isFile = script.IsNamedPipe() || File.Exists(script);
 
 			// A precompiled assembly file (.cks/.dll) is run as-is; only source needs compiling. This lets
 			// callers ship and launch a precompiled script (e.g. WindowSpy.cks) for faster startup.
-			if (File.Exists(script) && (ext.Equals(".cks", StringComparison.OrdinalIgnoreCase) || ext.Equals(".dll", StringComparison.OrdinalIgnoreCase)))
+			if (isFile && Runner.IsCompiledScriptInput(script))
 			{
 				if (defineNames is { Count: > 0 } || includeFile != null)
 					return Errors.ValueErrorOccurred("--define and --include cannot be applied to an already-compiled .cks/.dll script; its code was settled when it was built.");
@@ -765,8 +765,6 @@ namespace Keysharp.Builtins
 			}
 			else
 			{
-				var isFile = File.Exists(script);
-
 				if (!TryCompileScript(new Keysharp.Components.Scripting.ScriptCompileRequest
 				{
 					SourceText = isFile ? null : script,
@@ -919,7 +917,7 @@ namespace Keysharp.Builtins
 			if (!code.CoerceString(out var text))
 				return DefaultObject;
 
-			var isFile = File.Exists(text);
+			var isFile = text.IsNamedPipe() || File.Exists(text);
 			var result = validator.ValidateSyntax(new Keysharp.Components.Scripting.ScriptSyntaxValidationRequest
 			{
 				SourceText = isFile ? File.ReadAllText(text) : text,
@@ -956,7 +954,7 @@ namespace Keysharp.Builtins
 			if (!code.CoerceString(out var source))
 				return DefaultObject;
 
-			var isFile = File.Exists(source);
+			var isFile = source.IsNamedPipe() || File.Exists(source);
 			if (!TryCompileScript(new Keysharp.Components.Scripting.ScriptCompileRequest
 			{
 				SourceText = isFile ? null : source,

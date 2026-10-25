@@ -52,7 +52,7 @@ namespace Keysharp.Parsing.Syntax
 				try
 				{
 					path = Path.GetFullPath(Path.IsPathRooted(path) ? path : Path.Combine(moduleDir, path));
-					if (Directory.Exists(path) && !dirs.Contains(path, SourcePathComparer)) dirs.Add(path);
+					if (!path.IsNamedPipe() && Directory.Exists(path) && !dirs.Contains(path, SourcePathComparer)) dirs.Add(path);
 				}
 				catch { }
 			}
@@ -82,6 +82,7 @@ namespace Keysharp.Parsing.Syntax
 					string path;
 					try { path = Path.GetFullPath(Path.Combine(dir, name)); }
 					catch { continue; }
+					if (path.IsNamedPipe()) continue;
 					if (!compatible && File.Exists(path)) return path;
 					foreach (var extension in extensions)
 						if (File.Exists(path + extension)) return path + extension;

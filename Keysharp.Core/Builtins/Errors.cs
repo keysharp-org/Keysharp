@@ -1083,7 +1083,7 @@ namespace Keysharp.Builtins
 		/// can be opened in an editor (i.e. not empty, not the stdin marker "*").
 		/// </summary>
 		internal static bool CanEditFile(string fileToEdit)
-			=> !fileToEdit.IsNullOrEmpty() && fileToEdit != "*" && File.Exists(fileToEdit);
+			=> !fileToEdit.IsNullOrEmpty() && fileToEdit != "*" && !fileToEdit.IsNamedPipe() && File.Exists(fileToEdit);
 
 		/// <summary>
 		/// Opens <paramref name="fileToEdit"/> in the user's text editor without running it.

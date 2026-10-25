@@ -180,7 +180,7 @@ The capability names match those used by `#Requires capability` and `RequestCapa
 
 #### VS Code extension
 
-For thqby's **AutoHotkey v2 Language Support** VS Code extension, create an `AutoHotkey.exe` compatibility symlink because the extension requires that filename:
+For thqby's **AutoHotkey v2 Language Support** VS Code extension, you can create an `AutoHotkey.exe` compatibility symlink:
 ```sh
 mkdir -p ~/.local/bin
 ln -sf "$(command -v keysharp)" ~/.local/bin/AutoHotkey.exe

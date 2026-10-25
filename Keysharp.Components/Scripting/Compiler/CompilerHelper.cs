@@ -820,7 +820,7 @@ namespace Keysharp.Compilation
 		{
 			var compilation = new ScriptCompilationResult();
 			var errors = compilation.Errors;
-			var isFile = sourceIsFile ?? File.Exists(fileName);
+			var isFile = sourceIsFile ?? (fileName.IsNamedPipe() || File.Exists(fileName));
 			var scriptPath = isFile ? Path.GetFullPath(fileName) : "*";
 			var startupName = isFile ? null : name;
 

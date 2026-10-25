@@ -998,7 +998,7 @@ namespace Keysharp.Parsing.Syntax
 			{
 				includeFile = System.IO.Path.GetFullPath(includeFile);
 
-				if (!System.IO.File.Exists(includeFile))
+				if (!includeFile.IsNamedPipe() && !System.IO.File.Exists(includeFile))
 					throw new Keysharp.Builtins.ParseException($"--include file not found: {includeFile}");
 
 				if (_included.Add(includeFile))
@@ -1055,7 +1055,8 @@ namespace Keysharp.Parsing.Syntax
 						i = j;
 						var path = ResolveIncludePath(fileToks, curDir, t, backCompat, out var ignoreMissing);
 						if (path == null) continue;
-						if (System.IO.Directory.Exists(path))
+						var isPipe = path.IsNamedPipe();
+						if (!isPipe && System.IO.Directory.Exists(path))
 						{
 							_scratchListTokens.Return(fileToks);
 							curDir = path;
@@ -1063,13 +1064,21 @@ namespace Keysharp.Parsing.Syntax
 						}
 						// Missing *i paths also count as included; #IncludeAgain can retry them.
 						if (!_included.Add(path) && !nameTok.IsKeyword("includeagain")) continue;
-						if (!System.IO.File.Exists(path))
+						if (!isPipe && !System.IO.File.Exists(path))
 						{
 							_scratchListTokens.Return(fileToks);
 							if (!ignoreMissing) throw IncludeNotFound(t, path);
 							continue;
 						}
-						var included = LexIncludedFile(path, out var diagnostics);
+						List<Token> included;
+						IReadOnlyList<string> diagnostics;
+						try { included = LexIncludedFile(path, out diagnostics); }
+						catch (Exception ex) when (isPipe && ex is System.IO.IOException or UnauthorizedAccessException)
+						{
+							_scratchListTokens.Return(fileToks);
+							if (!ignoreMissing) throw IncludeNotFound(t, path);
+							continue;
+						}
 						if (++includeDepth > MaxIncludeDepth)
 						{
 							_scratchListTokens.Return(fileToks);

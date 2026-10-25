@@ -127,7 +127,7 @@ internal partial class Keyview : Form
 		documentStatusLabel.TextAlign = ContentAlignment.MiddleLeft;
 		toolStrip1.Items.Insert(0, documentStatusLabel);
 
-		if (!string.IsNullOrWhiteSpace(initialFile) && File.Exists(initialFile))
+		if (!string.IsNullOrWhiteSpace(initialFile) && !initialFile.IsNamedPipe() && File.Exists(initialFile))
 		{
 			LoadDataFromFile(initialFile);
 		}
@@ -506,7 +506,7 @@ internal partial class Keyview : Form
 
 	private void LoadDataFromFile(string path)
 	{
-		if (!File.Exists(path))
+		if (path.IsNamedPipe() || !File.Exists(path))
 			return;
 
 		suppressDocumentChange = true;
@@ -1013,7 +1013,7 @@ internal sealed class Keyview : Eto.Forms.Form
 #endif
 		};
 
-		if (!string.IsNullOrWhiteSpace(initialFile) && File.Exists(initialFile))
+		if (!string.IsNullOrWhiteSpace(initialFile) && !initialFile.IsNamedPipe() && File.Exists(initialFile))
 		{
 			LoadDataFromFile(initialFile);
 		}
@@ -1945,7 +1945,7 @@ internal sealed class Keyview : Eto.Forms.Form
 
 	private void LoadDataFromFile(string path)
 	{
-		if (!File.Exists(path))
+		if (path.IsNamedPipe() || !File.Exists(path))
 			return;
 
 		suppressDocumentChange = true;

@@ -45,7 +45,7 @@ internal static class Program
 			if (Uri.TryCreate(raw, UriKind.Absolute, out var uri) && uri.IsFile)
 				candidate = uri.LocalPath;
 
-			if (File.Exists(candidate))
+			if (!candidate.IsNamedPipe() && File.Exists(candidate))
 				return candidate;
 		}
 
