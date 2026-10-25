@@ -1346,7 +1346,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "AutoHotkey compatibility target: 2.1-alpha.36.",
+                     "notes":  "AutoHotkey compatibility target: 2.1-alpha.37.",
                      "tested-by":  "props-script-properties.ahk"
                  },
                  {

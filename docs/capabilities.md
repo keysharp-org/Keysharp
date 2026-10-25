@@ -121,7 +121,7 @@ Status legend:
 | ~= | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Regex match operator |
 | 1, 2, 3 | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Comma operator evaluates expressions left-to-right and returns the last value. |
 | A_AhkPath | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The full path to the executable compiling the script. For compiled scripts, it's the path to the compiled executable. |
-| A_AhkVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | AutoHotkey compatibility target: 2.1-alpha.36. |
+| A_AhkVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | AutoHotkey compatibility target: 2.1-alpha.37. |
 | A_AllowMainWindow | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_AppData | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. %APPDATA% on Windows; $XDG_CONFIG_HOME else ~/.config on Linux; ~/Library/Application Support on macOS. |
 | A_AppDataCommon | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. %ProgramData% on Windows; the first entry of $XDG_CONFIG_DIRS else /etc/xdg on Linux; /Library/Application Support on macOS. Writable only by an administrator, like %ProgramData%. |

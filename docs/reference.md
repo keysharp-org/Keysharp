@@ -2,7 +2,7 @@
 
 This document contains detailed platform, implementation, and AutoHotkey v2 compatibility notes. For the concise project introduction and quick-start instructions, see the [main README](../README.md).
 
-The compatibility target is AutoHotkey v2.1-alpha.36. `A_AhkVersion` reports this target; `A_KsVersion` identifies the Keysharp release.
+The compatibility target is AutoHotkey v2.1-alpha.37. `A_AhkVersion` reports this target; `A_KsVersion` identifies the Keysharp release.
 
 Jump directly to:
 
