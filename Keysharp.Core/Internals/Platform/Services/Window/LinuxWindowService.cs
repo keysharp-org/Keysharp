@@ -320,7 +320,7 @@ namespace Keysharp.Internals
 		public override nint GetForegroundHandle()
 		{
 			if (Wayland?.TryGetActiveWindow(out var active) == true)
-				return AsOwn(active, correlate: true).Handle;
+				return AsOwn(active, []).Handle;
 
 			return 0;
 		}
@@ -547,22 +547,23 @@ namespace Keysharp.Internals
 		/// under its own handle, but a script only ever holds the Eto one (that is what <c>Gui.Hwnd</c> returns),
 		/// so anything a script can compare against <c>Gui.Hwnd</c> - or hand to <c>Control.FromHandle</c>, which
 		/// is how MouseGetPos finds the control under the cursor - has to be re-homed onto that handle first.
-		/// Window queries correlate each newly shown form once; pointer and event paths use cached bindings.
+		/// Window queries correlate unbound forms at most once per query, passing the same
+		/// <paramref name="attempted"/> for every window of a listing; pointer and event paths use cached bindings.
 		/// </summary>
-		private static WindowInfoBase AsOwn(WindowInfoBase window, bool correlate = false)
+		private static WindowInfoBase AsOwn(WindowInfoBase window, HashSet<nint> attempted = null)
 		{
 			if (window == null)
 				return null;
 
-			var found = correlate && window is WaylandWindowInfo info
-				? WaylandOwnToplevels.TryResolveFormHandle(info, out var own)
+			var found = attempted != null && window is WaylandWindowInfo info
+				? WaylandOwnToplevels.TryResolveFormHandle(info, attempted, out var own)
 				: WaylandOwnToplevels.TryGetFormHandle(window.Handle, out own);
 			return found ? new WindowInfo(own) : window;
 		}
 
 		public override WindowInfoBase ActiveWindow()
 		{
-			if (Wayland?.TryGetActiveWindow(out var active) == true) return AsOwn(active, correlate: true);
+			if (Wayland?.TryGetActiveWindow(out var active) == true) return AsOwn(active, []);
 			return new WindowInfo(0);
 		}
 
@@ -571,8 +572,9 @@ namespace Keysharp.Internals
 			var list = new List<WindowInfoBase>();
 			if (Wayland?.TryListWindows(includeHidden, out var backendWindows) == true)
 			{
+				var attempted = new HashSet<nint>();
 				foreach (var w in backendWindows)
-					list.Add(AsOwn(w, correlate: true));
+					list.Add(AsOwn(w, attempted));
 			}
 
 			list.Reverse();
