@@ -309,22 +309,34 @@ namespace Keysharp.Internals
 				throw new InvalidDataException("The process status has no parent process ID.");
 			}
 
+			[LibraryImport("libc", EntryPoint = "readlink", StringMarshalling = StringMarshalling.Utf8)]
+			private static unsafe partial nint ReadLink(string path, byte* buffer, nint bufferSize);
+
 			// The comm name is no substitute: it is truncated to 15 characters, and a process can change it with
 			// prctl, as coreutils' multicall binary does.
-			internal static int FindByExecutableName(string name)
+			internal static unsafe int FindByExecutableName(string name)
 			{
+				const int pathMaxSize = 4096; // PATH_MAX
+				var path = stackalloc byte[pathMaxSize];
+				Span<char> chars = stackalloc char[pathMaxSize];
+
 				foreach (var dir in Directory.EnumerateDirectories("/proc"))
 				{
 					if (!int.TryParse(Path.GetFileName(dir.AsSpan()), NumberStyles.None, CultureInfo.InvariantCulture, out var pid))
 						continue;
 
-					try
-					{
-						if (string.Equals(File.ResolveLinkTarget($"{dir}/exe", false)?.Name, name, StringComparison.OrdinalIgnoreCase))
-							return pid;
-					}
 					// Another user's process denies access, and a kernel thread or an exited process has no link.
-					catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+					// readlink reports those by its result where File.ResolveLinkTarget throws, and a debugger logs
+					// every one of those throws.
+					var length = (int)ReadLink($"{dir}/exe", path, pathMaxSize);
+
+					if (length <= 0)
+						continue;
+
+					var written = Encoding.UTF8.GetChars(new ReadOnlySpan<byte>(path, length), chars);
+
+					if (Path.GetFileName(chars[..written]).Equals(name, StringComparison.OrdinalIgnoreCase))
+						return pid;
 				}
 
 				return 0;
