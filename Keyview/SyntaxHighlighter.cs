@@ -44,7 +44,7 @@ internal sealed class SyntaxHighlighter
 
 	// C# keyword list (kept in sync with CSharpStyler used on Windows). The huge "all exported
 	// type names" tier is intentionally omitted here to keep highlighting cheap and simple.
-	private static string CSharpKeywords { get; } =
+	private const string CSharpKeywords =
 		"abstract partial as base break case catch checked continue default delegate do else event " +
 		"explicit extern false finally fixed for foreach goto if implicit in interface internal is lock " +
 		"namespace new null operator out override params private protected public readonly ref return " +
