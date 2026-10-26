@@ -81,6 +81,26 @@ public class HookProviderTests : TestRunner
 		Assert.That(provider.Disposals, Is.EqualTo(1));
 	}
 
+	[Test]
+	public void SenderProviderOutput()
+	{
+		var provider = new Provider();
+		_ = Install(provider);
+		var keyboard = (Ks.Input)((Keysharp.Builtins.Array)Ks.Input.staticget_Devices(null)).array[0];
+		using var sending = s.RegisterSenderProvider(new NoSender());
+		var marker = (ulong)KeyIgnoreLevel(0);
+		s.KeyboardData.blockInput = true;
+
+		try
+		{
+			Assert.That(provider.Key(0x100, 0x41, extraInfo: marker), Is.False, "BlockInput leaves the script's own flagless output alone");
+			_ = provider.Key(0x101, 0x41, 0x80, extraInfo: marker);
+		}
+		finally { s.KeyboardData.blockInput = false; }
+
+		Assert.Throws<KeysharpException>(() => keyboard.GetKeyState("A"), "that output records no physical device state");
+	}
+
 	[TestCase(false), TestCase(true)]
 	public void ReusedDeviceState(bool mouse)
 	{
@@ -518,6 +538,13 @@ public class HookProviderTests : TestRunner
 		internal override void Unhook(nint hook) { }
 	}
 
+	private sealed class NoSender : ISenderProvider
+	{
+		public void KeybdEvent(ushort VirtualKey, ushort ScanCode, uint Flags, ulong ExtraInfo) { }
+		public void MouseEvent(uint Flags, int X, int Y, uint MouseData, ulong ExtraInfo) { }
+		public void Dispose() { }
+	}
+
 	private sealed class Provider : IHookProvider, IInputDeviceProvider
 	{
 		internal IHookHost Host;
@@ -536,8 +563,8 @@ public class HookProviderTests : TestRunner
 			Message = RejectSelection ? "Selection rejected." : "";
 			return !RejectSelection;
 		}
-		internal bool Key(uint message, uint vk, uint flags = 0, long id = 5)
-			=> Host.KeyboardEvent(message, vk, KeyCodes.MapVkToSc(vk), flags, 1, 0, id);
+		internal bool Key(uint message, uint vk, uint flags = 0, long id = 5, ulong extraInfo = 0)
+			=> Host.KeyboardEvent(message, vk, KeyCodes.MapVkToSc(vk), flags, 1, extraInfo, id);
 		public void CallNextHook() => Forwards++;
 		public void Dispose() => Disposals++;
 		public Keysharp.Components.Input.InputDeviceInfo[] GetDevices()

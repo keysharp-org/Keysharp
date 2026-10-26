@@ -768,8 +768,8 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 
 		internal override bool IsKeyToggledOn(uint vk) => (GetKeyState((int)vk) & 0x01) != 0;
 
-		internal static bool IsKeybdEventArtificial(uint flags) => (flags & LLKHF_INJECTED) != 0 || (flags & LLKHF_LOWER_IL_INJECTED) != 0;
-		internal static bool IsMouseEventArtificial(uint flags) => (flags & LLMHF_INJECTED) != 0 || (flags & LLMHF_LOWER_IL_INJECTED) != 0;
+		internal bool IsKeybdEventArtificial(uint flags, ulong extraInfo) => (flags & LLKHF_INJECTED) != 0 || (flags & LLKHF_LOWER_IL_INJECTED) != 0 || IsSenderProviderOutput(extraInfo);
+		internal bool IsMouseEventArtificial(uint flags, ulong extraInfo) => (flags & LLMHF_INJECTED) != 0 || (flags & LLMHF_LOWER_IL_INJECTED) != 0 || IsSenderProviderOutput(extraInfo);
 
 		protected internal override nint CallNextHook(HookEventArgs e)
 			=> CallNextHookEx(e.Hook, e.Code, e.WParam, e.StructPtr);
@@ -893,7 +893,7 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 			// Make all mouse events physical to try to simulate mouse clicks in games that normally ignore
 			// artificial input.
 			//event.flags &= ~LLMHF_INJECTED;
-			var isArtificial = IsMouseEventArtificial(lParam.flags);
+			var isArtificial = IsMouseEventArtificial(lParam.flags, lParam.dwExtraInfo);
 
 			if (!isArtificial) // Physical mouse movement or button action (uses LLMHF vs. LLKHF).
 				script.timeLastInputPhysical = script.timeLastInputMouse = DateTime.UtcNow;
@@ -1180,7 +1180,7 @@ namespace Keysharp.Internals.Input.Hooks.Windows
 			var keyUp = wParamVal == WM_KEYUP || wParamVal == WM_SYSKEYUP;
 			var vk = lParam.vkCode;
 			var sc = lParam.scanCode;
-			var isArtificial = IsKeybdEventArtificial(lParam.flags);
+			var isArtificial = IsKeybdEventArtificial(lParam.flags, lParam.dwExtraInfo);
 
 			//if (vk == 'B')
 			//{

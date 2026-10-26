@@ -462,6 +462,7 @@ namespace Keysharp.Runtime
 		internal JoystickData JoystickData => joystickData ?? (joystickData = new ());
 		internal KeyboardData KeyboardData => keyboardData ?? (keyboardData = new ());
 		internal KeyState KeyState { get; }
+		internal ProviderSlot<ISenderProvider> SenderProvider { get; }
 		internal KeyboardUtilsData KeyboardUtilsData => keyboardUtilsData ?? (keyboardUtilsData = new ());
 		internal nint MainWindowHandle
 		{
@@ -619,6 +620,7 @@ namespace Keysharp.Runtime
 			var programType = program ?? GetCallingType();
 			var manifest = Keysharp.Internals.Scripting.AppManifest.FromAssembly(programType?.Assembly);
 			KeyState = new(this);
+			SenderProvider = new(this, "sender provider");
 
 #if LINUX
 			LinuxServices = new(this);
@@ -778,6 +780,9 @@ namespace Keysharp.Runtime
 
 		/// <summary>Registers one key-state provider; disposing the returned handle restores native queries.</summary>
 		public IDisposable RegisterKeyStateProvider(IKeyStateProvider Provider) => KeyState.Register(Provider);
+
+		/// <summary>Registers a Play sender; disposing the registration restores native Play sending.</summary>
+		public IDisposable RegisterSenderProvider(ISenderProvider Provider) => SenderProvider.Register(Provider);
 
 		/// <summary>Registers input capture before hotkeys are initialized; disposing restores native capture.</summary>
 		public IDisposable RegisterHookProvider(IHookProvider Provider)
@@ -1670,6 +1675,7 @@ namespace Keysharp.Runtime
 			Teardown(ShutdownEventSchedulers);
 			Teardown(() => HookThread?.Stop());
 			Teardown(KeyState.Dispose);
+			Teardown(SenderProvider.Dispose);
 			Teardown(() => InvokeOnUIThread(() => inputData?.Dispose()));
 			inputTimerExists = false;
 			Teardown(WinEventManager.Dispose);

@@ -19,20 +19,21 @@ namespace Keysharp.Internals.Input.Hooks
 	internal class ProviderHookThread(Script owner, string mutexName, IHookProvider replacement)
 		: NativeHookThread(owner, mutexName), IHookHost, IDisposable
 	{
-		private IHookProvider provider = replacement;
+		private readonly ProviderLease<IHookProvider> capture = new(replacement, "hook provider");
+		private IHookProvider provider => capture.Provider;
 		private readonly object controlGate = new();
 		private readonly Dictionary<(long Id, bool Mouse), DeviceState> devices = [];
 		private readonly Dictionary<(long Id, bool Mouse), string> identities = [];
 		private object source = new();
 		private Frame current, reusable;
-		private int calls, retired, panicKeys, lost, generation, resetPending;
+		private int panicKeys, lost, generation, resetPending;
 #if WINDOWS
 		private bool altGrControl;
 		private int forwardingHolds;
 #endif
 		private string failure = "";
 
-		internal override bool UsesHookProvider => Volatile.Read(ref retired) == 0;
+		internal override bool UsesHookProvider => !capture.IsRetired;
 		protected override bool CaptureBelowOsKeyState => current != null;
 #if WINDOWS
 		protected virtual void AddRemoveNativeHooks(HookType kinds, bool temporary) => base.AddRemoveHooks(kinds, temporary);
@@ -150,7 +151,7 @@ namespace Keysharp.Internals.Input.Hooks
 		protected override nint KeybdHookCallback(int code, nint message, ref KBDLLHOOKSTRUCT input)
 		{
 			if (code == HC_ACTION && UsesHookProvider && Volatile.Read(ref lost) == 0 && HasKbdHook()
-				&& !IsKeybdEventArtificial(input.flags))
+				&& !IsKeybdEventArtificial(input.flags, input.dwExtraInfo))
 				return CallNextHookEx(kbdHook, code, message, ref input);
 			var previous = current;
 			current = null;
@@ -161,7 +162,7 @@ namespace Keysharp.Internals.Input.Hooks
 		protected override nint MouseHookCallback(int code, nint message, ref MSDLLHOOKSTRUCT input)
 		{
 			if (code == HC_ACTION && UsesHookProvider && Volatile.Read(ref lost) == 0 && HasMouseHook()
-				&& !IsMouseEventArtificial(input.flags))
+				&& !IsMouseEventArtificial(input.flags, input.dwExtraInfo))
 			{
 				if (message == WM_MOUSEMOVE && CursorClipActive)
 				{
@@ -195,6 +196,7 @@ namespace Keysharp.Internals.Input.Hooks
 				var panicVk = vk;
 				var physical = (flags & LLKHF_INJECTED) == 0;
 #endif
+				physical &= !IsSenderProviderOutput(extraInfo);
 				var key = !physical ? 0 : panicVk switch
 				{ VK_BACK => 1, VK_ESCAPE => 2, VK_RETURN => 4, _ => 0 };
 				if (message is WM_KEYUP or WM_SYSKEYUP) panicKeys &= ~key;
@@ -219,7 +221,8 @@ namespace Keysharp.Internals.Input.Hooks
 			try
 			{
 				if (!Admit(HookType.Mouse)) return false;
-				if (message == WM_MOUSEMOVE && (flags & LLMHF_INJECTED) == 0 && script.input == null && !script.KeyboardData.blockMouseMove
+				if (message == WM_MOUSEMOVE && (flags & LLMHF_INJECTED) == 0 && !IsSenderProviderOutput(extraInfo)
+					&& script.input == null && !script.KeyboardData.blockMouseMove
 					&& !script.KeyboardData.blockInput && !CursorClipActive)
 				{
 #if OSX
@@ -378,7 +381,7 @@ namespace Keysharp.Internals.Input.Hooks
 			if (f.Message is not (WM_KEYDOWN or WM_KEYUP or WM_SYSKEYDOWN or WM_SYSKEYUP) || f.Vk > VK_MAX) return false;
 			if (f.Scan > SC_MAX && !(f.Vk == VK_PACKET && (f.Flags & LLKHF_INJECTED) != 0 && f.Scan <= char.MaxValue)) return false;
 			var up = f.Message is WM_KEYUP or WM_SYSKEYUP;
-			var injected = (f.Flags & LLKHF_INJECTED) != 0;
+			var injected = (f.Flags & LLKHF_INJECTED) != 0 || IsSenderProviderOutput(f.ExtraInfo);
 #if WINDOWS
 			var extended = (f.Flags & LLKHF_EXTENDED) != 0 || (f.Scan & 0x100) != 0;
 			var scan = f.Scan & 0xFF;
@@ -459,7 +462,7 @@ namespace Keysharp.Internals.Input.Hooks
 		private bool ProcessMouse(Frame f)
 		{
 			var vk = MouseButton(f.Message, f.Data, out var up);
-			var injected = (f.Flags & LLMHF_INJECTED) != 0;
+			var injected = (f.Flags & LLMHF_INJECTED) != 0 || IsSenderProviderOutput(f.ExtraInfo);
 #if OSX
 			var mouseRevision = mouseStream.SenderRevision;
 #endif
@@ -622,23 +625,29 @@ namespace Keysharp.Internals.Input.Hooks
 
 		public void Dispose()
 		{
-			lock (controlGate)
+			// Removal holds a call of its own, so the provider outlives the retirement that removes its hooks.
+			if (!TryEnter()) return;
+			try
 			{
-				if (Interlocked.Exchange(ref retired, 1) != 0) return;
+				lock (controlGate)
+				{
+					if (capture.IsRetired) return;
+					_ = capture.Retire();
 #if WINDOWS
-				activeHooks = GetNativeHooks();
+					activeHooks = GetNativeHooks();
 #else
-				activeHooks = HookType.None;
+					activeHooks = HookType.None;
 #endif
-				ClearDeviceState();
-				try { _ = provider.SetHooks(false, false, this, out _); }
-				catch (Exception ex) { Diagnostics.Debug.WriteLine($"Input capture removal failed: {ex}"); }
+					ClearDeviceState();
+					try { _ = provider.SetHooks(false, false, this, out _); }
+					catch (Exception ex) { Diagnostics.Debug.WriteLine($"Input capture removal failed: {ex}"); }
+				}
+				SyncHookMutexes(false);
+				if (!script.IsDisposed && IsHookThreadRunning())
+					try { QueueOnHookThread(ResetPendingState); }
+					catch (ObjectDisposedException) { }
 			}
-			SyncHookMutexes(false);
-			if (!script.IsDisposed && IsHookThreadRunning())
-				try { QueueOnHookThread(ResetPendingState); }
-				catch (ObjectDisposedException) { }
-			if (Interlocked.Or(ref calls, int.MinValue) == 0) Release();
+			finally { Exit(); }
 		}
 
 		protected internal override void Stop()
@@ -647,25 +656,14 @@ namespace Keysharp.Internals.Input.Hooks
 			base.Stop();
 		}
 
-		private bool TryEnter()
+		private bool TryEnter() => capture.TryEnter();
+		private void Exit()
 		{
-			var state = Volatile.Read(ref calls);
-			while (state >= 0 && state < int.MaxValue && Volatile.Read(ref retired) == 0)
-			{
-				var observed = Interlocked.CompareExchange(ref calls, state + 1, state);
-				if (observed == state) return true;
-				state = observed;
-			}
-			return false;
-		}
-		private void Exit() { if (Interlocked.Decrement(ref calls) == int.MinValue) Release(); }
-		private void Release()
-		{
-			var released = provider;
-			provider = null;
-			try { released.Dispose(); }
-			catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"Input capture teardown failed: {ex}"); }
-#if !WINDOWS
+#if WINDOWS
+			_ = capture.Exit();
+#else
+			if (!capture.Exit()) return;
+			// The last call out of a removed provider hands capture back to the native hooks.
 			_ = Invoke(() =>
 			{
 				var kinds = script.HotkeyData.whichHookNeeded | script.HotkeyData.whichHookAlways;

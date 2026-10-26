@@ -124,6 +124,17 @@
                      "tested-by":  "HookProviderTests.Registration; HookProviderTests.DeviceState; HookProviderTests.NativeObservation; HookProviderTests.Timeout; HookProviderTests.ActiveRemoval; HookProviderTests.QueuedCaptureChange"
                   },
                   {
+                     "category":  "Input/Automation",
+                     "feature":  "Managed sender provider",
+                     "syntax":  "Script.TheScript.RegisterSenderProvider(Provider)",
+                     "windows":  "partial",
+                     "linux_x11":  "unknown",
+                     "linux_wayland":  "unknown",
+                     "macos":  "unknown",
+                     "notes":  "Managed host API registering one ISenderProvider per Script, which receives Play mode's keyboard and mouse events as Input mode would send them, with Play delays. Input it cannot carry, such as Unicode text, goes to the native Input path. The output is asynchronous, so state read straight after a send can lag. Linux and macOS execution and driver and hardware delivery remain unverified.",
+                     "tested-by":  "sender-provider.ahk; SenderProviderTests.Registration; SenderProviderTests.OutputMarkers"
+                  },
+                  {
                      "category":  "Environment/System",
                      "feature":  "#ClipboardTimeout",
                      "syntax":  "",
@@ -10147,7 +10158,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Sets the default send mode. \"Play\" has no journal-playback equivalent on Linux or macOS and is downgraded to \"Event\" with a one-time warning to stderr; Input and Event behave as documented.",
+                     "notes":  "Sets the default send mode. \"Play\" has no journal-playback equivalent on Linux or macOS and is downgraded to \"Event\" with a one-time warning to stderr; Input and Event behave as documented. A registered sender provider handles Play on every platform.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -10158,7 +10169,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Sends keystrokes via Play mode. Play mode depends on the Win32 journal-playback hook, which has no equivalent elsewhere: Linux and macOS silently downgrade to Event mode and print a one-time warning to stderr.",
+                     "notes":  "Sends keystrokes via Play mode. Play mode depends on the Win32 journal-playback hook, which has no equivalent elsewhere: Linux and macOS silently downgrade to Event mode and print a one-time warning to stderr. A registered sender provider handles Play on every platform.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {

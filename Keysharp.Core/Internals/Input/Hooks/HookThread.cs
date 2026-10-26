@@ -242,7 +242,10 @@ namespace Keysharp.Internals.Input.Hooks
 			{
 				if (hwnd != history.HistoryHwndPrev)
 				{
-					script.mainWindow.CheckedBeginInvoke(() => item.targetWindow = Keysharp.Internals.Os.Windows.WindowsAPI.GetWindowText(hwnd), false, false);
+					// Keep the closure allocation in this branch; most events reuse the foreground window.
+					var historyItem = item;
+					var windowHandle = hwnd;
+					script.mainWindow.CheckedBeginInvoke(() => historyItem.targetWindow = Keysharp.Internals.Os.Windows.WindowsAPI.GetWindowText(windowHandle), false, false);
 
 					// v1.0.44.12: The reason for the above is that clicking a window's close or minimize button
 					// (and possibly other types of title bar clicks) causes a delay for the following window, at least
@@ -349,6 +352,14 @@ namespace Keysharp.Internals.Input.Hooks
 
 		/// <summary>True while this thread runs a native hook callback, as AutoHotkey's test of the hook thread's id.</summary>
 		internal static bool InHookCallback => hotIfCallbackDeadline != 0L;
+
+		/// <summary>Whether ExtraInfo carries a script's sending marker, apart from the one that asks to be taken as physical.</summary>
+		internal static bool HasScriptMarker(ulong extraInfo)
+			=> extraInfo >= (ulong)KeyIgnoreMin() && extraInfo <= KeyIgnoreMax && extraInfo != KeyPhysIgnore;
+
+		/// <summary>Whether an event is this script's sender provider output, which a driver delivers with the marker but no
+		/// injected flag. Other sources can leave any value in ExtraInfo, so the marker counts only once a provider is registered.</summary>
+		internal bool IsSenderProviderOutput(ulong extraInfo) => HasScriptMarker(extraInfo) && script.SenderProvider.WasRegistered;
 
 		internal readonly struct HookCallbackScope(long previousDeadline) : IDisposable
 		{

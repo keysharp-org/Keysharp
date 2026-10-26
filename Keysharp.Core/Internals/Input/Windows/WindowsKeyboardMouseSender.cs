@@ -31,6 +31,9 @@ namespace Keysharp.Internals.Input.Windows
 		internal int currentEvent;
 		internal List<PlaybackEvent> eventPb = new (MaxInitialEventsPB);
 		internal List<INPUT> eventSi = new (MaxInitialEventsSI);
+		// Marks an eventSi entry as a sender provider's Play delay, held in its time field, as the playback array
+		// marks a delay with message 0. Only provider sends record one, and SendInput never receives it.
+		private const uint InputDelay = uint.MaxValue;
 		internal bool firstCallForThisEvent;
 		// sizeof(INPUT) == 28 as of 2006. Since Send is called so often, and since most Sends are short, reducing the load on the stack is also a deciding factor for these.
 		// sizeof(PlaybackEvent) == 8, so more events are justified before resorting to malloc().
@@ -489,6 +492,18 @@ namespace Keysharp.Internals.Input.Windows
 			// Execution should never reach since all cases do their own custom return above.
 		}
 
+		internal override void PutDelayIntoArray(uint delay)
+		{
+			if (sendMode == SendModes.Input)
+			{
+				var thisEvent = new INPUT { type = InputDelay };
+				thisEvent.i.k.time = delay;
+				eventSi.Add(thisEvent);
+			}
+			else
+				base.PutDelayIntoArray(delay);
+		}
+
 		/// <summary>
 		/// This function is designed to be called from only one thread (the main thread) since it's not thread-safe.
 		/// Playback hook only supports sending neutral modifiers.  Caller must ensure that any left/right modifiers
@@ -611,8 +626,7 @@ namespace Keysharp.Internals.Input.Windows
 			}
 			else // Playback hook.
 			{
-				// Note: Delay events (sleeps), which are supported in playback mode but not SendInput, are always inserted
-				// via PutKeybdEventIntoArray() rather than this function.
+				// Delays are inserted through PutDelayIntoArray().
 				var thisEvent = new PlaybackEvent();
 
 				// Determine the type of event specified by caller, but also omit MOUSEEVENTF_MOVE so that the
@@ -681,6 +695,14 @@ namespace Keysharp.Internals.Input.Windows
 
 			if (sendMode == SendModes.Input)
 			{
+				if (UsesSenderProvider)
+				{
+					if (SendEventArrayToProvider())
+						return;
+
+					_ = eventSi.RemoveAll(e => e.type == InputDelay);
+				}
+
 				//if (eventSi.Count == 0)
 				//return;
 				// Remove hook(s) temporarily because the presence of low-level (LL) keybd hook completely disables
@@ -831,6 +853,23 @@ namespace Keysharp.Internals.Input.Windows
 			// will keep its own modifiers up-to-date if any physical or simulate keystrokes happen to
 			// come in during playback (such keystrokes arrive in the hook in real time, but they don't
 			// actually hit the active window until the playback finishes).
+		}
+
+		protected override bool TryGetSenderEvents(List<SenderEvent> events)
+		{
+			foreach (var e in eventSi)
+			{
+				if (e.type == InputDelay)
+					events.Add(new(false, 0, Delay: (int)e.i.k.time));
+				else if (e.type == INPUT_MOUSE)
+					events.Add(new(true, e.i.m.dwFlags, X: e.i.m.dx, Y: e.i.m.dy, MouseData: e.i.m.mouseData, ExtraInfo: e.i.m.dwExtraInfo));
+				else if ((e.i.k.dwFlags & KEYEVENTF_UNICODE) == 0 && e.i.k.wScan != 0)
+					events.Add(new(false, e.i.k.dwFlags, e.i.k.wVk, e.i.k.wScan, ExtraInfo: e.i.k.dwExtraInfo));
+				else
+					return false;
+			}
+
+			return true;
 		}
 
 		internal override void AttachTargetWindowThread(ref bool threadsAreAttached, ref uint keybdLayoutThread, ref WindowInfoBase tempitem, nint targetWindow)

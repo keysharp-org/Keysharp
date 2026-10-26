@@ -145,6 +145,9 @@ namespace Keysharp.Internals.Input.Linux
 
 			try
 			{
+				if (UsesSenderProvider && SendEventArrayToProvider())
+					return;
+
 				var batch = new List<KeysharpInputClient.Input>(Math.Min(eventQueue.Count, MaxInputBatchSize));
 
 				for (var i = 0; i < eventQueue.Count; i++)
@@ -174,6 +177,40 @@ namespace Keysharp.Internals.Input.Linux
 			}
 
 
+		}
+
+		protected override bool TryGetSenderEvents(List<SenderEvent> events)
+		{
+			foreach (var ev in eventQueue)
+			{
+				if (ev.IsDelay)
+				{
+					events.Add(new(false, 0, Delay: ev.DelayMs));
+					continue;
+				}
+
+				if (ev.Input.Type != KeysharpInputClient.InputType.Keyboard)
+				{
+					var m = ev.Input.Mouse;
+					var flags = (uint)m.Flags;
+					// The queue's absolute coordinates already span the virtual desktop.
+					if ((flags & (uint)MOUSEEVENTF.ABSOLUTE) != 0) flags |= (uint)MOUSEEVENTF.VIRTUALDESK;
+					events.Add(new(true, flags, X: m.Dx, Y: m.Dy, MouseData: m.MouseData, ExtraInfo: m.ExtraInfo));
+					continue;
+				}
+
+				var k = ev.Input.Keyboard;
+
+				if ((k.Flags & KeysharpInputClient.KeyEventFlags.Unicode) != 0 || k.Scan == 0)
+					return false;
+
+				// The queue folds evdev's 0x100 bit into ExtendedKey, as the input service expects; the provider gets the whole code.
+				var extended = (k.Flags & KeysharpInputClient.KeyEventFlags.ExtendedKey) != 0;
+				events.Add(new(false, (uint)(k.Flags & ~KeysharpInputClient.KeyEventFlags.ExtendedKey), k.Vk,
+					(ushort)(k.Scan | (extended ? 0x100 : 0)), ExtraInfo: k.ExtraInfo));
+			}
+
+			return true;
 		}
 
 		/// <summary>Uses the input service-backed live toggle state after sending a lock key.</summary>
@@ -442,7 +479,7 @@ namespace Keysharp.Internals.Input.Linux
 			if (x == CoordUnspecified || y == CoordUnspecified)
 				return;
 
-			if (moveOffset)
+			if (moveOffset && !UsesSenderProvider)
 			{
 				if (sendMode == SendModes.Event)
 				{
@@ -465,7 +502,17 @@ namespace Keysharp.Internals.Input.Linux
 
 			var targetX = x;
 			var targetY = y;
-			CoordToScreen(ref targetX, ref targetY, CoordMode.Mouse);
+
+			if (moveOffset) // A provider moves by pixels, from where this send has already moved the cursor or else from the cursor.
+			{
+				if (sendInputCursorPos.X == CoordUnspecified)
+					_ = GetCursorPos(out sendInputCursorPos);
+
+				targetX += sendInputCursorPos.X;
+				targetY += sendInputCursorPos.Y;
+			}
+			else
+				CoordToScreen(ref targetX, ref targetY, CoordMode.Mouse);
 
 			// Fall back to uinput when the compositor rejects absolute injection.
 			if (sendMode == SendModes.Event)
@@ -529,8 +576,8 @@ namespace Keysharp.Internals.Input.Linux
 
 			// uinput fallback maps [0,65535] across the whole virtual desktop.
 			var vb = Platform.Screen.GetVirtualScreenBounds();
-			var absTargetX = MouseCoordToAbs(targetX - vb.X, vb.Width);
-			var absTargetY = MouseCoordToAbs(targetY - vb.Y, vb.Height);
+			var (absTargetX, absTargetY) = UsesSenderProvider ? ToProviderAbsolute(targetX, targetY, vb)
+				: (MouseCoordToAbs(targetX - vb.X, vb.Width), MouseCoordToAbs(targetY - vb.Y, vb.Height));
 
 			if (sendMode == SendModes.Input)
 			{

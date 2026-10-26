@@ -5,32 +5,17 @@ namespace Keysharp.Internals.Input.Keyboard
 {
 	internal sealed class KeyState(Script script) : IDisposable
 	{
-		// A permanent marker prevents registration from racing past shutdown.
-		private static readonly Registration retired = new(null, null);
-		private Registration registration;
+		private readonly ProviderSlot<IKeyStateProvider> provider = new(script, "key-state provider");
 
 		internal bool? GetState(uint vk, KeyStateTypes type)
 		{
-			var current = Volatile.Read(ref registration);
-			return current == null ? GetNativeState(vk, type) : GetCustomState(current, vk, type);
-		}
-
-		private bool? GetCustomState(Registration current, uint vk, KeyStateTypes type)
-		{
-			while (true)
-			{
-				if (current == retired) return null;
-				var calls = Volatile.Read(ref current.calls);
-				if (calls >= 0 && calls < int.MaxValue && Interlocked.CompareExchange(ref current.calls, calls + 1, calls) == calls)
-					break;
-				current = Volatile.Read(ref registration);
-				if (current == null) return GetNativeState(vk, type);
-			}
+			if (provider.Enter() is not { } lease)
+				return provider.IsRetired ? null : GetNativeState(vk, type);
 
 			try
 			{
 				var mode = type switch { KeyStateTypes.Physical => "P", KeyStateTypes.Toggle => "T", _ => "L" };
-				if (current.provider.TryGetKeyState(vk, mode, out var down)) return down;
+				if (lease.Provider.TryGetKeyState(vk, mode, out var down)) return down;
 			}
 			catch (Exception ex) when (ex is not KeysharpException and not Keysharp.Builtins.Flow.UserRequestedExitException)
 			{
@@ -39,54 +24,15 @@ namespace Keysharp.Internals.Input.Keyboard
 			}
 			finally
 			{
-				if (Interlocked.Decrement(ref current.calls) == int.MinValue) current.Release();
+				lease.Exit();
 			}
 
-			return Volatile.Read(ref registration) == retired ? null : GetNativeState(vk, type);
+			return provider.IsRetired ? null : GetNativeState(vk, type);
 		}
 
-		internal IDisposable Register(IKeyStateProvider replacement)
-		{
-			ArgumentNullException.ThrowIfNull(replacement);
-			ObjectDisposedException.ThrowIf(script.IsDisposed, script);
-			var current = new Registration(this, replacement);
-			var previous = Interlocked.CompareExchange(ref registration, current, null);
+		internal IDisposable Register(IKeyStateProvider replacement) => provider.Register(replacement);
 
-			if (previous != null)
-			{
-				ObjectDisposedException.ThrowIf(previous == retired, script);
-				throw new InvalidOperationException("This script already has a key-state provider.");
-			}
-			return current;
-		}
-
-		public void Dispose()
-		{
-			var current = Interlocked.Exchange(ref registration, retired);
-			if (current != retired) current?.Dispose();
-		}
-
-		private sealed class Registration(KeyState owner, IKeyStateProvider replacement) : IDisposable
-		{
-			internal IKeyStateProvider provider = replacement;
-			// The sign bit retires admission; the remaining bits count queries still using the plugin.
-			internal int calls;
-
-			public void Dispose()
-			{
-				Interlocked.CompareExchange(ref owner.registration, null, this);
-				// The last query releases the plugin, so shutdown never waits for a blocked driver call.
-				if (Interlocked.Or(ref calls, int.MinValue) == 0) Release();
-			}
-
-			internal void Release()
-			{
-				var released = provider;
-				provider = null;
-				try { (released as IDisposable)?.Dispose(); }
-				catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"Key-state provider teardown failed: {ex}"); }
-			}
-		}
+		public void Dispose() => provider.Dispose();
 
 		internal bool GetNativeState(uint vk, KeyStateTypes keyStateType)
 		{

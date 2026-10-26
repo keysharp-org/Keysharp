@@ -1,4 +1,5 @@
 using Keysharp.Builtins;
+using Keysharp.Components.Input;
 using static Keysharp.Internals.Input.Keyboard.KeyboardUtils;
 using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
 using static Keysharp.Internals.Input.Mouse.MouseUtils;
@@ -98,6 +99,41 @@ namespace Keysharp.Internals.Input.Keyboard
 		internal uint modifiersLRRemapped;
 		protected ArrayPool<byte> keyStatePool = ArrayPool<byte>.Create(256, 100);
 		protected SendModes sendMode = SendModes.Event;//Note this is different than the one in Accessors and serves as a temporary.
+		// Native sends nested in provider output keep a frame too, so their modifier changes reach the outer send.
+		protected SenderBatch senderBatch;
+		protected bool UsesSenderProvider => senderBatch?.Lease != null;
+		private bool UsesPlayTiming => sendMode == SendModes.Play || UsesSenderProvider;
+
+		protected sealed class SenderBatch(ProviderLease<ISenderProvider> lease, SenderBatch parent)
+		{
+			internal readonly ProviderLease<ISenderProvider> Lease = lease;
+			internal readonly SenderBatch Parent = parent;
+			internal bool IsEmitting;
+			// Failure restores these modifier masks, except for changes made by nested sends.
+			internal uint Persistent, Remapped, Logical, NestedModifiers;
+			// Whether the send turned CapsLock off for itself.
+			internal bool RestoreCapsLock;
+			// Whether the provider could not carry the batch, which then went out natively.
+			internal bool NativeFallback;
+
+			internal void Snapshot(KeyboardMouseSender sender)
+				=> (Persistent, Remapped, Logical) = (sender.modifiersLRPersistent, sender.modifiersLRRemapped, sender.eventModifiersLR);
+		}
+
+		/// <summary>One sender provider call, or a wait of <see cref="Delay"/> milliseconds instead when that is nonzero.</summary>
+		protected readonly record struct SenderEvent(bool Mouse, uint Flags, ushort VirtualKey = 0, ushort ScanCode = 0,
+			int X = 0, int Y = 0, uint MouseData = 0, ulong ExtraInfo = 0, int Delay = 0)
+		{
+			internal void Submit(ISenderProvider provider)
+			{
+				if (Delay > 0)
+					Keysharp.Internals.Flow.SleepWithoutInterruption(Delay);
+				else if (Mouse)
+					provider.MouseEvent(Flags, X, Y, MouseData, ExtraInfo);
+				else
+					provider.KeybdEvent(VirtualKey, ScanCode, Flags, ExtraInfo);
+			}
+		}
 		private const int retention = 1024;
 		private readonly StringBuilder caser = new (32);
 
@@ -313,15 +349,15 @@ namespace Keysharp.Internals.Input.Keyboard
 		internal virtual void DoKeyDelay(long delay = long.MinValue)
 		{
 			if (delay == long.MinValue)
-				delay = (sendMode == SendModes.Play) ? ThreadAccessors.A_KeyDelayPlay : ThreadAccessors.A_KeyDelay;
+				delay = UsesPlayTiming ? ThreadAccessors.A_KeyDelayPlay : ThreadAccessors.A_KeyDelay;
 
 			if (delay < 0) // To support user-specified KeyDelay of -1 (fastest send rate).
 				return;
 
 			if (sendMode != SendModes.Event)
 			{
-				if (sendMode == SendModes.Play && delay > 0) // Zero itself isn't supported by playback hook, so no point in inserting such delays into the array.
-					PutKeybdEventIntoArray(0, 0, 0, 0, (uint)delay); // Passing zero for vk and sc signals it that aExtraInfo contains the delay.
+				if (delay > 0 && UsesPlayTiming) // Zero itself isn't supported by playback hook, so no point in inserting such delays into the array.
+					PutDelayIntoArray((uint)delay);
 
 				//else for other types of arrays, never insert a delay or do one now.
 				return;
@@ -344,15 +380,15 @@ namespace Keysharp.Internals.Input.Keyboard
 
 		internal virtual void DoMouseDelay()// Helper function for the mouse functions below.
 		{
-			var mouseDelay = sendMode == SendModes.Play ? ThreadAccessors.A_MouseDelayPlay : ThreadAccessors.A_MouseDelay;
+			var mouseDelay = UsesPlayTiming ? ThreadAccessors.A_MouseDelayPlay : ThreadAccessors.A_MouseDelay;
 
 			if (mouseDelay < 0) // To support user-specified KeyDelay of -1 (fastest send rate).
 				return;
 
 			if (sendMode != SendModes.Event)
 			{
-				if (sendMode == SendModes.Play && mouseDelay > 0) // Zero itself isn't supported by playback hook, so no point in inserting such delays into the array.
-					PutKeybdEventIntoArray(0, 0, 0, 0, (uint)mouseDelay); // Passing zero for vk and sc signals to it that aExtraInfo contains the delay.
+				if (mouseDelay > 0 && UsesPlayTiming) // Zero itself isn't supported by playback hook, so no point in inserting such delays into the array.
+					PutDelayIntoArray((uint)mouseDelay);
 
 				//else for other types of arrays, never insert a delay or do one now (caller should have already
 				// checked that, so it's written this way here only for maintainability).
@@ -922,12 +958,24 @@ namespace Keysharp.Internals.Input.Keyboard
 				sendInputCursorPos.Y = y; //
 			}
 
-			// Find dimensions of primary monitor.
-			var (primaryWidth, primaryHeight) = Keysharp.Builtins.Monitor.GetPrimaryScreenSize();
-			var screen_width = (int)primaryWidth;
-			var screen_height = (int)primaryHeight;
-			x = MouseCoordToAbs(x, screen_width);
-			y = MouseCoordToAbs(y, screen_height);
+			int screen_width = 0, screen_height = 0;
+			var virtualDesk = 0u;
+
+			if (UsesSenderProvider)
+			{
+				(x, y) = ToProviderAbsolute(x, y, Platform.Screen.GetVirtualScreenBounds());
+				virtualDesk = (uint)MOUSEEVENTF.VIRTUALDESK;
+				eventFlags |= virtualDesk;
+			}
+			else
+			{
+				// Find dimensions of primary monitor.
+				var (primaryWidth, primaryHeight) = Keysharp.Builtins.Monitor.GetPrimaryScreenSize();
+				screen_width = (int)primaryWidth;
+				screen_height = (int)primaryHeight;
+				x = MouseCoordToAbs(x, screen_width);
+				y = MouseCoordToAbs(y, screen_height);
+			}
 			// x and aY MUST BE SET UNCONDITIONALLY because the output parameters must be updated for caller.
 			// The incremental-move section further below also needs it.
 
@@ -939,7 +987,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			if (speed == 0 || sendMode == SendModes.Input) // Instantaneous move to destination coordinates with no incremental positions in between.
 			{
 				// See the comments in the playback-mode section at the top of this function for why SM_INPUT ignores aSpeed.
-				MouseEvent((int)MOUSEEVENTF.MOVE | (int)MOUSEEVENTF.ABSOLUTE, 0, x, y);
+				MouseEvent((uint)MOUSEEVENTF.MOVE | (uint)MOUSEEVENTF.ABSOLUTE | virtualDesk, 0, x, y);
 				DoMouseDelay(); // Inserts delay for all modes except SendInput, for which it does nothing.
 				return;
 			}
@@ -976,6 +1024,17 @@ namespace Keysharp.Internals.Input.Keyboard
 					sendMode = (sendMode == SendModes.Input) ? SendModes.Event : SendModes.Play;
 				else
 					sendMode = SendModes.Input; // Resolve early so that other sections don't have to consider SM_INPUT_FALLBACK_TO_PLAY a valid value.
+			}
+
+			// Each send sets its own batch, so a send nested in this one never inherits it.
+			var outerBatch = senderBatch;
+			var provider = sendMode == SendModes.Play ? script.SenderProvider.Enter() : null;
+			senderBatch = provider != null || outerBatch != null ? new(provider, outerBatch) : null;
+
+			if (provider != null)
+			{
+				senderBatch.Snapshot(this);
+				sendMode = SendModes.Input;
 			}
 
 			WarnIfPlayUnsupported(sendMode);
@@ -1046,6 +1105,9 @@ namespace Keysharp.Internals.Input.Keyboard
 				{
 					if (selectiveBlockInputApplied && !blockinputPrev) // Turn it back off only if it was off before we started.
 						_ = Builtins.Keyboard.ScriptBlockInput(ToggleValueType.Off);
+
+					senderBatch = outerBatch;
+					_ = provider?.Exit();
 				}
 			}
 		}
@@ -1118,6 +1180,147 @@ namespace Keysharp.Internals.Input.Keyboard
 		}
 
 		internal abstract void SendEventArray(ref long aFinalKeyDelay, uint aModsDuringSend);
+
+		/// <summary>Translates the Input event array for the sender provider, returning false for input it cannot carry,
+		/// such as a Unicode packet or a key without a scan code.</summary>
+		protected abstract bool TryGetSenderEvents(List<SenderEvent> events);
+
+		/// <summary>Sends the Input event array through the sender provider, or leaves it to the native path.</summary>
+		protected bool SendEventArrayToProvider()
+		{
+			// The list belongs to this send, since a provider callback or an error handler can start another.
+			var events = new List<SenderEvent>(SiEventCount());
+
+			if (!TryGetSenderEvents(events))
+			{
+				senderBatch.NativeFallback = true;
+				return false;
+			}
+
+			// Restore CapsLock only if this batch left it off; native fallback restores it separately.
+			if (senderBatch.RestoreCapsLock && GetCapsLockState(CollectionsMarshal.AsSpan(events)) is (false, var held))
+			{
+				// The opening CapsLock toggle is the first event in the batch.
+				var down = events[0] with { Flags = events[0].Flags & ~(uint)KEYEVENTF_KEYUP };
+				var up = down with { Flags = down.Flags | KEYEVENTF_KEYUP };
+				if (held) events.Add(up);
+				events.Add(down);
+				events.Add(up);
+			}
+
+			var provider = senderBatch.Lease.Provider;
+			var sent = 0;
+			string failure = null;
+			senderBatch.IsEmitting = true;
+
+			try
+			{
+				for (; sent < events.Count; sent++)
+					events[sent].Submit(provider);
+			}
+			catch (Exception ex) when (ex is not KeysharpException and not Keysharp.Builtins.Flow.UserRequestedExitException)
+			{
+				failure = ex.Message;
+			}
+			finally
+			{
+				try
+				{
+					if (sent < events.Count)
+						RecoverFailedSend(provider, CollectionsMarshal.AsSpan(events)[..sent]);
+				}
+				finally { senderBatch.IsEmitting = false; }
+			}
+
+			// Reported after the releases, so an error handler never runs while this send holds input.
+			if (failure != null)
+				_ = Errors.OSErrorOccurredWithMessage($"Sender provider failed: {failure}");
+
+			return true;
+		}
+
+		/// <summary>Releases held input and rolls back unsubmitted modifier changes before reporting failure.</summary>
+		private void RecoverFailedSend(ISenderProvider provider, ReadOnlySpan<SenderEvent> sent)
+		{
+			const uint buttonsDown = 0xAA; // LEFTDOWN, RIGHTDOWN, MIDDLEDOWN and XDOWN; each up flag is its down flag << 1.
+			HashSet<uint> settled = null;
+			var touched = 0u;
+
+			void Submit(SenderEvent e)
+			{
+				try { e.Submit(provider); }
+				catch (Exception ex)
+				{
+					_ = Diagnostics.Debug.WriteLine($"Sender provider could not restore input after a failed send: {ex}");
+				}
+			}
+
+			// Walking backwards, the first event seen for a key or button is its final state.
+			for (var n = sent.Length - 1; n >= 0; n--)
+			{
+				var e = sent[n];
+				var buttons = (e.Flags | e.Flags >> 1) & buttonsDown;
+
+				if (e.Delay > 0 || (e.Mouse && buttons == 0))
+					continue;
+
+				var down = e.Mouse ? (e.Flags & buttonsDown) != 0 : (e.Flags & KEYEVENTF_KEYUP) == 0;
+
+				if (!e.Mouse)
+				{
+					bool? neutral = null;
+					touched |= script.HookThread.KeyToModifiersLR(e.VirtualKey, e.ScanCode | ((e.Flags & KEYEVENTF_EXTENDEDKEY) != 0 ? 0x100u : 0u), ref neutral);
+				}
+
+				var id = e.Mouse ? 0x80000000u | buttons | e.MouseData << 16 : e.ScanCode | (e.Flags & KEYEVENTF_EXTENDEDKEY) << 16;
+
+				if (!(settled ??= []).Add(id))
+					continue;
+
+				if (down)
+					Submit(e.Mouse ? e with { Flags = (e.Flags & buttonsDown) << 1, X = 0, Y = 0 } : e with { Flags = e.Flags | KEYEVENTF_KEYUP });
+			}
+
+			// Whatever the submitted part touched is up now and the rest of the plan never happened, but the modifiers a
+			// nested send pressed or released keep the state it left.
+			var nested = senderBatch.NestedModifiers;
+			uint Rollback(uint before, uint now) => ((before & ~nested) | (now & nested)) & ~touched;
+			modifiersLRPersistent = Rollback(senderBatch.Persistent, modifiersLRPersistent);
+			modifiersLRRemapped = Rollback(senderBatch.Remapped, modifiersLRRemapped);
+			eventModifiersLR = Rollback(senderBatch.Logical, eventModifiersLR);
+
+			// The releases above have already let go of a held CapsLock.
+			if (senderBatch.RestoreCapsLock && !GetCapsLockState(sent).On)
+			{
+				var down = sent[0] with { Flags = sent[0].Flags & ~(uint)KEYEVENTF_KEYUP };
+				Submit(down);
+				Submit(down with { Flags = down.Flags | KEYEVENTF_KEYUP });
+			}
+		}
+
+		private static (bool On, bool Held) GetCapsLockState(ReadOnlySpan<SenderEvent> events)
+		{
+			// CapsLock started on; the opening toggle releases a held key before pressing it again.
+			bool on = true, held = false;
+
+			foreach (var e in events)
+				if (!e.Mouse && e.VirtualKey == VK_CAPITAL)
+				{
+					var down = (e.Flags & KEYEVENTF_KEYUP) == 0;
+					on ^= down && !held;
+					held = down;
+				}
+
+			return (on, held);
+		}
+
+		/// <summary>Normalizes a screen point into a provider's 0..65535 absolute range across the virtual desktop.</summary>
+		// Native SendInput accepts values past that range, which its own normalization relies on; a device does not.
+		protected static (int X, int Y) ToProviderAbsolute(int x, int y, in ScreenRect desktop)
+		{
+			static int Normalize(long coordinate, int size) => size <= 0 ? 0 : (int)Math.Clamp(65536L * coordinate / size + 1, 0, 65535);
+			return (Normalize((long)x - desktop.X, desktop.Width), Normalize((long)y - desktop.Y, desktop.Height));
+		}
 
 		/// <summary>
 		/// Caller has ensured that: 1) vk or sc may be zero, but not both; 2) aRepeatCount > 0.
@@ -1419,6 +1622,8 @@ namespace Keysharp.Internals.Input.Keyboard
 			var priorCapslockState = ToggleValueType.Invalid;
 			var eventArrayInitialized = false;
 			var eventArrayModeFinalized = false;
+			ProviderLease<ISenderProvider> provider = null;
+			var outerBatch = senderBatch;
 
 			try
 			{
@@ -1464,6 +1669,12 @@ namespace Keysharp.Internals.Input.Keyboard
 				else // SendInput is available and no other impacting hooks are obviously present on the system, so use SendInput unconditionally.
 					sendModeOrig = SendModes.Input; // Resolve early so that other sections don't have to consider SM_INPUT_FALLBACK_TO_PLAY a valid value.
 			}
+
+			// A sender provider takes Play's keystrokes from the Input array; each send sets its own batch, so a nested send never inherits one.
+			if (sendModeOrig == SendModes.Play && targetWindow == 0 && (provider = script.SenderProvider.Enter()) != null)
+				sendModeOrig = SendModes.Input;
+
+			senderBatch = provider != null || outerBatch != null ? new(provider, outerBatch) : null;
 
 			// Might be better to do this prior to changing capslock state.  UPDATE: In v1.0.44.03, the following section
 			// has been moved to the top of the function because:
@@ -1660,10 +1871,9 @@ namespace Keysharp.Internals.Input.Keyboard
 			// Remember that apps like MS Word have an auto-correct feature that might make it
 			// wrongly seem that the turning off of Capslock below needs a Sleep(0) to take effect.
 			blockinputPrev = kbd.blockInput;
-			priorCapslockState = tv.storeCapsLockMode && !inBlindMode && sendRaw != SendRawModes.RawText
-								 && (targetWindow == 0 || TargetWindowSendUsesGlobalInput)
-								 ? ToggleKeyState(VK_CAPITAL, ToggleValueType.Off)
-								 : ToggleValueType.Invalid; // In blind mode, don't do store capslock (helps remapping and also adds flexibility).
+			var storeCapsLock = tv.storeCapsLockMode && !inBlindMode && sendRaw != SendRawModes.RawText
+								&& (targetWindow == 0 || TargetWindowSendUsesGlobalInput); // In blind mode, don't do store capslock (helps remapping and also adds flexibility).
+			priorCapslockState = storeCapsLock && provider == null ? ToggleKeyState(VK_CAPITAL, ToggleValueType.Off) : ToggleValueType.Invalid;
 			// sendMode must be set only after setting Capslock state above, because the hook method
 			// is incapable of changing the on/off state of toggleable keys like Capslock.
 			// However, it can change Capslock state as seen in the window to which playback events are being
@@ -1679,6 +1889,21 @@ namespace Keysharp.Internals.Input.Keyboard
 				maxEvents = sendMode == SendModes.Input ? MaxInitialEventsSI : MaxInitialEventsPB;
 				InitEventArray(maxEvents, modsCurrent);
 				eventArrayInitialized = true;
+			}
+
+			if (provider != null)
+			{
+				senderBatch.Snapshot(this);
+				// A provider carries the CapsLock toggles too, so they open and close its batch instead of going out natively.
+				if (storeCapsLock && ht.IsKeyToggledOn(VK_CAPITAL))
+				{
+					senderBatch.RestoreCapsLock = true;
+
+					if (ht.IsKeyDownLogical(VK_CAPITAL)) // A held key would swallow the toggle, as in ToggleKeyState.
+						SendKeyEvent(KeyEventTypes.KeyUp, VK_CAPITAL);
+
+					SendKeyEvent(KeyEventTypes.KeyDownAndUp, VK_CAPITAL);
+				}
 			}
 
 			if (doSelectiveBlockInput)
@@ -2372,7 +2597,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				{
 					try
 					{
-						if (priorCapslockState == ToggleValueType.On)
+						if (priorCapslockState == ToggleValueType.On || senderBatch is { NativeFallback: true, RestoreCapsLock: true })
 							_ = ToggleKeyState(VK_CAPITAL, ToggleValueType.On);
 					}
 					finally
@@ -2395,6 +2620,8 @@ namespace Keysharp.Internals.Input.Keyboard
 								tv.keyDuration = origPressDuration;
 								if (!eventArrayModeFinalized)
 									sendMode = SendModes.Event;
+								senderBatch = outerBatch;
+								_ = provider?.Exit();
 							}
 						}
 					}
@@ -2424,6 +2651,8 @@ namespace Keysharp.Internals.Input.Keyboard
 
 		/// <summary>Closes the platform transaction opened by <see cref="OnSendKeysStarting"/>, including exceptional exits.</summary>
 		protected virtual void OnSendKeysFinished() { }
+
+		internal virtual void PutDelayIntoArray(uint delay) => PutKeybdEventIntoArray(0, 0, 0, 0, delay);
 
 		internal abstract void PutMouseEventIntoArray(uint eventFlags, uint data, int x, int y);
 
@@ -2485,7 +2714,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			var callerIsKeybdHook = HookThread.InHookCallback;
 			var putEventIntoArray = sendMode != SendModes.Event && !callerIsKeybdHook;
 
-			if (sendMode == SendModes.Input || callerIsKeybdHook) // First check is necessary but second is just for maintainability.
+			if ((sendMode == SendModes.Input && !UsesSenderProvider) || callerIsKeybdHook) // First check is necessary but second is just for maintainability.
 				doKeyDelay = false;
 
 			// Even if the sc_to_vk() mapping results in a zero-value vk, don't return.
@@ -2501,6 +2730,16 @@ namespace Keysharp.Internals.Input.Keyboard
 				// with any apps that may rely on scan code (and such would be the case if the hook isn't
 				// active because the user doesn't need it; also for some games maybe).
 				sc = KeyCodes.MapVkToSc(vk);
+
+			if (senderBatch?.Parent != null && !callerIsKeybdHook)
+			{
+				bool? neutral = null;
+				var modifiers = ht.KeyToModifiersLR(vk, sc, ref neutral);
+
+				for (var parent = senderBatch.Parent; parent != null; parent = parent.Parent)
+					if (parent.IsEmitting)
+						parent.NestedModifiers |= modifiers;
+			}
 
 			var eventFlags = ((sc >> 8) & 0xFF) != 0 ? KEYEVENTF_EXTENDEDKEY : 0u;
 
@@ -2585,7 +2824,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				// the normal g->KeyDelay will be in effect.  In other words, it seems undesirable in
 				// most cases to do both delays for only "one half" of a keystroke:
 				if (doKeyDelay && eventType == KeyEventTypes.KeyDownAndUp) // Hook should never specify a delay, so no need to check if caller is hook.
-					DoKeyDelay(sendMode == SendModes.Play ? ThreadAccessors.A_KeyDurationPlay : ThreadAccessors.A_KeyDuration); // DoKeyDelay() is not thread safe but since the hook thread should never pass true for aKeyDelay, it shouldn't be an issue.
+					DoKeyDelay(UsesPlayTiming ? ThreadAccessors.A_KeyDurationPlay : ThreadAccessors.A_KeyDuration); // DoKeyDelay() is not thread safe but since the hook thread should never pass true for aKeyDelay, it shouldn't be an issue.
 
 				if (eventType != KeyEventTypes.KeyDown)  // i.e. always do it for KEYDOWNANDUP
 				{
@@ -3243,7 +3482,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			// -1 has been verified to be insufficient, at least for the very first letter sent if it is
 			// supposed to be capitalized.
 			// g_MainThreadID is the only thread of our process that owns any windows.
-			var pressDuration = sendMode == SendModes.Play ? ThreadAccessors.A_KeyDurationPlay : ThreadAccessors.A_KeyDuration;
+			var pressDuration = UsesPlayTiming ? ThreadAccessors.A_KeyDurationPlay : ThreadAccessors.A_KeyDuration;
 
 			if (pressDuration > -1) // SM_PLAY does use DoKeyDelay() to store a delay item in the event array.
 			{

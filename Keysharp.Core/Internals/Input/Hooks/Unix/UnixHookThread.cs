@@ -267,12 +267,7 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 		}
 
 		protected static bool HasKeysharpInjectedExtraInfo(ulong extraInfo)
-		{
-			var rawExtraInfo = unchecked((long)extraInfo);
-			return rawExtraInfo == KeyIgnore
-				   || rawExtraInfo == KeyBlockThis
-				   || (rawExtraInfo >= KeyIgnoreMin() && rawExtraInfo <= KeyIgnoreLevel(0));
-		}
+			=> unchecked((long)extraInfo) == KeyBlockThis || HasScriptMarker(extraInfo);
 
 #if OSX
 		private static bool IsModifierKey(uint vk) => vk is

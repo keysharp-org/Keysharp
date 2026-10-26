@@ -59,6 +59,7 @@ namespace Keysharp.Internals.Input.MacOS
 
 			// Key
 			internal readonly uint Vk;
+			internal readonly uint Sc;
 			internal readonly uint ModifiersLR;
 			internal readonly bool AutoRepeat;
 
@@ -75,10 +76,11 @@ namespace Keysharp.Internals.Input.MacOS
 			internal readonly short WheelDelta;
 
 			private ArrayEvent(ArrayEventType type, uint vk, uint modifiersLR, int delayMs, char text,
-							int x, int y, MouseButton button, short wheelDelta, bool autoRepeat = false)
+							int x, int y, MouseButton button, short wheelDelta, bool autoRepeat = false, uint sc = 0)
 			{
 				Type = type;
 				Vk = vk;
+				Sc = sc;
 				ModifiersLR = modifiersLR;
 				AutoRepeat = autoRepeat;
 				DelayMs = delayMs;
@@ -89,8 +91,8 @@ namespace Keysharp.Internals.Input.MacOS
 				WheelDelta = wheelDelta;
 			}
 
-			internal static ArrayEvent Key(ArrayEventType type, uint vk, uint modifiersLR, bool autoRepeat)
-				=> new(type, vk, modifiersLR, 0, '\0', 0, 0, MouseButton.NoButton, 0, autoRepeat);
+			internal static ArrayEvent Key(ArrayEventType type, uint vk, uint sc, uint modifiersLR, bool autoRepeat)
+				=> new(type, vk, modifiersLR, 0, '\0', 0, 0, MouseButton.NoButton, 0, autoRepeat, sc);
 
 			internal static ArrayEvent Delay(int ms)
 				=> new(ArrayEventType.DelayMs, 0, 0, ms, '\0', 0, 0, MouseButton.NoButton, 0);
@@ -285,7 +287,7 @@ namespace Keysharp.Internals.Input.MacOS
 			}
 
 			// Normal key: record as down/up.
-			AddArrayEvent(ArrayEvent.Key(isKeyUp ? ArrayEventType.KeyUp : ArrayEventType.KeyDown, vk, keyAsModifiersLR,
+			AddArrayEvent(ArrayEvent.Key(isKeyUp ? ArrayEventType.KeyUp : ArrayEventType.KeyDown, vk, sc, keyAsModifiersLR,
 				!isKeyUp && autoRepeat));
 		}
 
@@ -303,7 +305,7 @@ namespace Keysharp.Internals.Input.MacOS
 				st = inputStack.Peek();
 			}
 
-			if (st.Events.Count == 0)
+			if (st.Events.Count == 0 || (UsesSenderProvider && SendEventArrayToProvider()))
 				return;
 
 			var lht = script.HookThread as UnixHookThread;
@@ -312,6 +314,85 @@ namespace Keysharp.Internals.Input.MacOS
 
 			var extraInfo = KeyIgnoreLevel(ThreadAccessors.A_SendLevel);
 			DispatchEventArray(lht, st, extraInfo);
+		}
+
+		protected override bool TryGetSenderEvents(List<SenderEvent> events)
+		{
+			List<ArrayEvent> recorded;
+
+			lock (inputGate)
+			{
+				if (inputStack.Count == 0)
+					return true;
+
+				recorded = inputStack.Peek().Events;
+			}
+
+			var extraInfo = (ulong)KeyIgnoreLevel(ThreadAccessors.A_SendLevel);
+			ScreenRect? desktop = null;
+
+			SenderEvent MoveTo(int x, int y, uint flags = 0, uint data = 0)
+			{
+				var (absoluteX, absoluteY) = ToProviderAbsolute(x, y, desktop ??= Platform.Screen.GetVirtualScreenBounds());
+				return new(true, flags | (uint)(MOUSEEVENTF.MOVE | MOUSEEVENTF.ABSOLUTE | MOUSEEVENTF.VIRTUALDESK),
+					X: absoluteX, Y: absoluteY, MouseData: data, ExtraInfo: extraInfo);
+			}
+
+			foreach (var e in recorded)
+			{
+				switch (e.Type)
+				{
+					case ArrayEventType.KeyDown:
+					case ArrayEventType.KeyUp:
+						// kVK 0 is the A key, so only a failed mapping marks a key without a code.
+						var sc = e.Sc;
+						if (sc == 0 && !KeyCodes.TryMapVkToMacCode(e.Vk, out sc))
+							return false;
+						events.Add(new(false, e.Type == ArrayEventType.KeyUp ? (uint)KEYEVENTF_KEYUP : 0u, (ushort)e.Vk, (ushort)sc, ExtraInfo: extraInfo));
+						break;
+
+					case ArrayEventType.DelayMs:
+						events.Add(new(false, 0, Delay: e.DelayMs));
+						break;
+
+					case ArrayEventType.Text:
+						return false;
+
+					case ArrayEventType.MouseMoveAbs:
+						if (e.X != CoordUnspecified && e.Y != CoordUnspecified)
+							events.Add(MoveTo(e.X, e.Y));
+						break;
+
+					case ArrayEventType.MouseMoveRel:
+						events.Add(new(true, (uint)MOUSEEVENTF.MOVE, X: e.X, Y: e.Y, ExtraInfo: extraInfo));
+						break;
+
+					case ArrayEventType.MousePress:
+					case ArrayEventType.MouseRelease:
+						var (flags, data) = e.Button switch
+						{
+							MouseButton.Button1 => ((uint)MOUSEEVENTF.LEFTDOWN, 0u),
+							MouseButton.Button2 => ((uint)MOUSEEVENTF.RIGHTDOWN, 0u),
+							MouseButton.Button3 => ((uint)MOUSEEVENTF.MIDDLEDOWN, 0u),
+							MouseButton.Button4 => ((uint)MOUSEEVENTF.XDOWN, MouseUtils.XBUTTON1),
+							_ => ((uint)MOUSEEVENTF.XDOWN, MouseUtils.XBUTTON2)
+						};
+						if (e.Type == ArrayEventType.MouseRelease)
+							flags <<= 1; // Each up flag is its down flag shifted left.
+						events.Add(e.X != CoordUnspecified && e.Y != CoordUnspecified
+							? MoveTo(e.X, e.Y, flags, data)
+							: new(true, flags, MouseData: data, ExtraInfo: extraInfo));
+						break;
+
+					case ArrayEventType.MouseWheelV:
+					case ArrayEventType.MouseWheelH:
+						events.Add(new(true, (uint)(e.Type == ArrayEventType.MouseWheelV ? MOUSEEVENTF.WHEEL : MOUSEEVENTF.HWHEEL),
+							MouseData: unchecked((uint)e.WheelDelta), ExtraInfo: extraInfo));
+						break;
+				}
+			}
+
+			return true;
 		}
 
 		protected static void EnsureCoords(ref int x, ref int y)
