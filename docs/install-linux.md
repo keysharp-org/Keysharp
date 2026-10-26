@@ -156,18 +156,18 @@ If it reports `Keysharp channel: deb`, remove the package with:
 sudo apt remove keysharp
 ```
 
-If it reports `Keysharp channel: tar`, download and extract the Keysharp Linux
-archive matching the installed version and architecture from the
-[Releases](https://github.com/keysharp-org/Keysharp/releases) page. Setup removes
-its temporary copy after installation, so you need to download the archive again
-unless you kept one. From the extracted `keysharp-linux-*` directory, run:
+If it reports `Keysharp channel: tar`, run the installed uninstaller:
 
 ```sh
-sudo bash ./uninstall.sh
+sudo /usr/local/share/doc/keysharp/uninstall.sh
 ```
 
-For any other archive installation, run the same uninstaller with the same privilege
-level and `PREFIX` used to install it. A per-user installation does not need `sudo`.
+If the installed uninstaller is absent, download and extract the matching archive
+from [Releases](https://github.com/keysharp-org/Keysharp/releases), then run
+`sudo bash ./uninstall.sh` from the extracted directory.
+
+Use the same privilege level and `PREFIX` used to install it. A per-user
+installation does not need `sudo`.
 Remove NixOS, AUR and other package-manager installations through their owner
 instead.
 

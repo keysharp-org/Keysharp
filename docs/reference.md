@@ -140,6 +140,8 @@ Each command reports service readiness and available operations. The session ser
 
 For the `.deb`, run `sudo apt remove keysharp`. This does not remove either component in the same transaction. Components apt installed as a recommendation are marked automatic, so a later `sudo apt autoremove` can remove one only when Keysharp and every other package have stopped recommending or depending on its ABI. Components installed manually keep their manual state. Permission grants remain under `/var/lib/keysharp-permissions/v1`.
 
+For archive installations, see [Linux uninstallation](install-linux.md#uninstall).
+
 The tarball's uninstaller removes only Keysharp. It always leaves both components installed, because other applications may use them, and it never deletes permission grants. Remove a component separately only after establishing that nothing else needs it:
 
 ```sh
