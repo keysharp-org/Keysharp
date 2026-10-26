@@ -972,8 +972,8 @@ Status legend:
 | SendInput() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sends keystrokes via Input mode. |
 | SendLevel() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sets the send level for generated input. |
 | SendMessage() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The SendMessage function sends a message to a window or control and waits for acknowledgement. |
-| SendMode() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sets the default send mode. "Play" has no journal-playback equivalent on Linux or macOS and is downgraded to "Event" with a one-time warning to stderr; Input and Event behave as documented. A registered sender provider handles Play on every platform. |
-| SendPlay() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sends keystrokes via Play mode. Play mode depends on the Win32 journal-playback hook, which has no equivalent elsewhere: Linux and macOS silently downgrade to Event mode and print a one-time warning to stderr. A registered sender provider handles Play on every platform. |
+| SendMode() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sets the default send mode. Play requires a sender provider on Linux and macOS; otherwise, sends raise UnsupportedError. |
+| SendPlay() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sends via Windows journal playback or a registered sender provider; otherwise raises UnsupportedError. |
 | SendText() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Sends text without translating key names. |
 | SetCapsLockState() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The SetCapsLockState, SetNumLockState and SetScrollLockState functions set the state of the corresponding key. Can also force the key to stay on or off. |
 | SetControlDelay() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The SetControlDelay function sets the delay that will occur after each control-modifying function. |

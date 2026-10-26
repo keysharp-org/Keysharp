@@ -755,6 +755,7 @@ break_twice:;
 		/// user's keystrokes from being interspersed with those being sent.<br/>
 		/// <see cref="SendMode"/> can be used to make <see cref="Send"/> synonymous with <see cref="SendInput"/> or <see cref="SendPlay"/>.
 		/// </summary>
+		/// <exception cref="UnsupportedError">Native Play is unavailable and no sender provider is registered.</exception>
 		public static object SendPlay(object keys)
 		{
 			var script = Script.TheScript;

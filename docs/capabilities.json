@@ -10158,7 +10158,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Sets the default send mode. \"Play\" has no journal-playback equivalent on Linux or macOS and is downgraded to \"Event\" with a one-time warning to stderr; Input and Event behave as documented. A registered sender provider handles Play on every platform.",
+                     "notes":  "Sets the default send mode. Play requires a sender provider on Linux and macOS; otherwise, sends raise UnsupportedError.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -10169,7 +10169,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Sends keystrokes via Play mode. Play mode depends on the Win32 journal-playback hook, which has no equivalent elsewhere: Linux and macOS silently downgrade to Event mode and print a one-time warning to stderr. A registered sender provider handles Play on every platform.",
+                     "notes":  "Sends via Windows journal playback or a registered sender provider; otherwise raises UnsupportedError.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {

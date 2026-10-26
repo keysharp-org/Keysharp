@@ -103,7 +103,7 @@ namespace Keysharp.Internals.Input.Linux
 		internal override int SiEventCount() => eventQueue.Count;
 		internal override int PbEventCount() => 0;
 
-		// No journal-playback hook via uinput/input service; SendPlay is sent as SendEvent (see WarnIfPlayUnsupported).
+		// The input service has no journal-playback equivalent; Play requires a sender provider.
 		protected override bool SupportsPlayMode => false;
 
 		internal override void PutKeybdEventIntoArray(uint keyAsModifiersLR, uint vk, uint sc, uint eventFlags, long extraInfo, bool autoRepeat = false)

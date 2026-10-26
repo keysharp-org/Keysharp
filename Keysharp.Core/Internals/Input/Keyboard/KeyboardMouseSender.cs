@@ -197,19 +197,16 @@ namespace Keysharp.Internals.Input.Keyboard
 		// completely wrong location via signed-integer overflow.
 		protected static short ClampShort(double v) => (short)Math.Clamp((long)v, short.MinValue, short.MaxValue);
 
-		// SendPlay relies on a journal-playback hook that only exists on Windows. Senders without it
-		// override this to false; PerformMouseCommon/SendKeys then surface the silent downgrade-to-Event
-		// once via WarnIfPlayUnsupported so SendPlay scripts don't appear to misbehave with no explanation.
 		protected virtual bool SupportsPlayMode => true;
-		private static bool warnedNoPlayMode;
 
-		protected void WarnIfPlayUnsupported(SendModes mode)
+		private bool ValidateNativeSendMode(SendModes mode)
 		{
-			if (mode == SendModes.Play && !SupportsPlayMode && !warnedNoPlayMode)
-			{
-				warnedNoPlayMode = true;
-				Script.WriteUncaughtErrorToStdErr("Keysharp: SendPlay / SendMode \"Play\" has no journal-playback equivalent on this platform and is sent as SendEvent instead.");
-			}
+			if (mode != SendModes.Play || SupportsPlayMode)
+				return true;
+
+			sendMode = SendModes.Event;
+			_ = Errors.UnsupportedErrorOccurred("SendPlay requires a registered sender provider on this platform.");
+			return false;
 		}
 
 		public string ApplyCase(string typedstr, string hotstr)
@@ -1039,9 +1036,11 @@ namespace Keysharp.Internals.Input.Keyboard
 			var outerBatch = senderBatch;
 			var provider = sendMode == SendModes.Play ? script.SenderProvider.Enter() : null;
 
-			// Journal playback carries only cursor positions, so it cannot send a delta. Platforms without it send Play
-			// through their ordinary event array, which can.
-			if (actionType == Actions.ACT_MOUSEMOVEDELTA && sendMode == SendModes.Play && provider == null && SupportsPlayMode)
+			if (provider == null && !ValidateNativeSendMode(sendMode))
+				return;
+
+			// Journal playback carries only cursor positions, so it cannot send a delta.
+			if (actionType == Actions.ACT_MOUSEMOVEDELTA && sendMode == SendModes.Play && provider == null)
 			{
 				sendMode = SendModes.Event;
 				_ = Errors.UnsupportedErrorOccurred("MouseMove Delta mode requires a sender provider for SendMode Play. Use Event or Input otherwise.");
@@ -1056,7 +1055,6 @@ namespace Keysharp.Internals.Input.Keyboard
 				sendMode = SendModes.Input;
 			}
 
-			WarnIfPlayUnsupported(sendMode);
 			var blockinputPrev = script.KeyboardData.blockInput;
 			var doSelectiveBlockinput = (script.KeyboardData.blockInputMode == ToggleValueType.Mouse
 										 || script.KeyboardData.blockInputMode == ToggleValueType.SendAndMouse)
@@ -1699,6 +1697,9 @@ namespace Keysharp.Internals.Input.Keyboard
 
 			senderBatch = provider != null || outerBatch != null ? new(provider, outerBatch) : null;
 
+			if (!ValidateNativeSendMode(sendModeOrig))
+				return;
+
 			// Might be better to do this prior to changing capslock state.  UPDATE: In v1.0.44.03, the following section
 			// has been moved to the top of the function because:
 			// 1) For ControlSend, GetModifierLRState() might be more accurate if the threads are attached beforehand.
@@ -1903,7 +1904,6 @@ namespace Keysharp.Internals.Input.Keyboard
 			// sent; but the behavior seems inconsistent and might vary depending on OS type, so it seems best
 			// not to rely on it.
 			sendMode = sendModeOrig;
-			WarnIfPlayUnsupported(sendMode);
 			doSelectiveBlockInput = (kbd.blockInputMode == ToggleValueType.Send || kbd.blockInputMode == ToggleValueType.SendAndMouse)
 								&& sendMode == SendModes.Event && targetWindow == 0;
 
