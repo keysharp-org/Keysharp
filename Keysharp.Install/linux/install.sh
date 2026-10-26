@@ -269,6 +269,7 @@ echo "Installing to ${APP_DIR_TARGET} (prefix=${PREFIX})"
 rm -rf -- "${APP_DIR_TARGET}"
 mkdir -p "${APP_DIR_TARGET}" "${BINDIR}"
 cp -a "${APP_DIR_SOURCE}/." "${APP_DIR_TARGET}/"
+ln -sfn ../../share/doc/keysharp/license.txt "${APP_DIR_TARGET}/license.txt"
 
 if [[ "${ROOT_INSTALL}" == "true" ]]; then
 	chown -R root:root "${APP_DIR_TARGET}"
@@ -299,7 +300,10 @@ rewrite_desktop_exec "${SCRIPT_DIR}/keysharp.desktop" "${DESKTOP_DIR}/keysharp.d
 install -Dm644 "${SCRIPT_DIR}/keysharp.xml" "${MIME_DIR}/keysharp.xml"
 install -Dm644 "${SCRIPT_DIR}/Keysharp.png" "${ICON_DIR}/keysharp.png"
 
-install -Dm744 "${SCRIPT_DIR}/uninstall.sh" "${DOC_DIR}/uninstall.sh"
+install -Dm755 "${SCRIPT_DIR}/uninstall.sh" "${DOC_DIR}/uninstall.sh"
+install -Dm644 "${SCRIPT_DIR}/70-keysharp-i2c-uaccess.rules" "${DOC_DIR}/70-keysharp-i2c-uaccess.rules"
+install -Dm644 "${SCRIPT_DIR}/doc/README.md" "${DOC_DIR}/README.md"
+install -Dm644 "${SCRIPT_DIR}/doc/license.txt" "${DOC_DIR}/license.txt"
 
 set_mime_default application/x-keysharp keysharp.desktop
 set_mime_default application/x-keysharp-compiled keysharp.desktop

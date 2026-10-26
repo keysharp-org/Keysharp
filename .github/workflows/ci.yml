@@ -216,6 +216,7 @@ jobs:
           bash Keysharp.Install/linux/uninstall.sh --help >/dev/null
           sh Keysharp.Install/linux/keysharp-linux-setup.sh --help >/dev/null
           bash Keysharp.Install/linux/tests/application-channel-policy.sh
+          bash Keysharp.Install/linux/tests/archive-lifecycle.sh
           bash Keysharp.Install/linux/tests/setup-resolution-policy.sh
 
       # Build the whole solution so tests, benchmarks and tools outside the shipping dependency graph compile too.

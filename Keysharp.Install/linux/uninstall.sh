@@ -43,6 +43,7 @@ fi
 
 XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 APP_DIR_TARGET="${PREFIX}/lib/keysharp"
+DOC_DIR="${PREFIX}/share/doc/keysharp"
 BINDIR="${PREFIX}/bin"
 if [[ "${ROOT_INSTALL}" == "true" ]]; then
   DESKTOP_DIR="/usr/share/applications"
@@ -187,6 +188,9 @@ remove_shared_integration_file "${DESKTOP_DIR}/keysharp.desktop"
 remove_shared_integration_file "${MIME_DIR}/keysharp.xml"
 remove_shared_integration_file "${ICON_DIR}/keysharp.png"
 rm -rf -- "${APP_DIR_TARGET}"
+rm -f -- "${DOC_DIR}/uninstall.sh" "${DOC_DIR}/70-keysharp-i2c-uaccess.rules" \
+  "${DOC_DIR}/README.md" "${DOC_DIR}/license.txt"
+rmdir -- "${DOC_DIR}" 2>/dev/null || true
 
 MIMEAPPS="${DESKTOP_DIR}/mimeapps.list"
 if [[ -f "${MIMEAPPS}" && "${SYSTEM_CHANNEL_PRESENT}" != "true" \

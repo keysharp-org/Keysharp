@@ -146,6 +146,10 @@ stage() {
   mkdir -p "${APP_DIR}"
   cp -a "${PUBLISH_DIR}/Keyview/." "${APP_DIR}/"
   cp -a "${PUBLISH_DIR}/Keysharp/." "${APP_DIR}/"
+  install -Dm644 "${ROOT}/README.md" "${PKG_DIR}/doc/README.md"
+  install -Dm644 "${ROOT}/license.txt" "${PKG_DIR}/doc/license.txt"
+  rm -f -- "${APP_DIR}/license.txt"
+  ln -s ../doc/license.txt "${APP_DIR}/license.txt"
   find "${APP_DIR}" -name '*.pdb' -delete
   relocate_library_scripts
   verify_dash_present
@@ -158,6 +162,7 @@ install_tree() {
   local dest="$1" entry
   install -d "${dest}/usr/lib/keysharp" "${dest}/usr/bin" "${dest}/usr/share/applications"
   cp -a "${APP_DIR}/." "${dest}/usr/lib/keysharp/"
+  ln -sfn ../../share/doc/keysharp/copyright "${dest}/usr/lib/keysharp/license.txt"
   ln -sfn ../lib/keysharp/Keysharp "${dest}/usr/bin/keysharp"
   ln -sfn ../lib/keysharp/Keyview "${dest}/usr/bin/keyview"
   for entry in keysharp keyview; do
@@ -172,6 +177,7 @@ install_tree() {
   # postinst sources the notice, so both install channels print the same text.
   install -Dm644 "${ASSETS_DIR}/component-notice.sh" "${dest}/usr/share/keysharp/component-notice.sh"
   install -Dm644 "${ROOT}/license.txt" "${dest}/usr/share/doc/keysharp/copyright"
+  install -Dm644 "${ROOT}/README.md" "${dest}/usr/share/doc/keysharp/README.md"
 }
 
 build_tarball() {
