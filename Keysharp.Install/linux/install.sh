@@ -24,6 +24,7 @@ fi
 XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 APP_DIR_SOURCE="${SCRIPT_DIR}/app"
 APP_DIR_TARGET="${PREFIX}/lib/keysharp"
+DOC_DIR="${PREFIX}/share/doc/keysharp"
 BINDIR="${PREFIX}/bin"
 if [[ "${ROOT_INSTALL}" == "true" ]]; then
   DESKTOP_DIR="/usr/share/applications"
@@ -297,6 +298,8 @@ rewrite_desktop_exec "${SCRIPT_DIR}/keyview.desktop" "${DESKTOP_DIR}/keyview.des
 rewrite_desktop_exec "${SCRIPT_DIR}/keysharp.desktop" "${DESKTOP_DIR}/keysharp.desktop"
 install -Dm644 "${SCRIPT_DIR}/keysharp.xml" "${MIME_DIR}/keysharp.xml"
 install -Dm644 "${SCRIPT_DIR}/Keysharp.png" "${ICON_DIR}/keysharp.png"
+
+install -Dm744 "${SCRIPT_DIR}/uninstall.sh" "${DOC_DIR}/uninstall.sh"
 
 set_mime_default application/x-keysharp keysharp.desktop
 set_mime_default application/x-keysharp-compiled keysharp.desktop
