@@ -69,7 +69,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 				return task.GetAwaiter().GetResult();
 			}
-			catch (Exception exception)
+			catch (Exception exception) when (!Keysharp.Internals.Flow.TryGetException<Keysharp.Builtins.Flow.UserRequestedExitException>(exception, out _))
 			{
 				WaylandBridgeDiagnostics.Failure(diagnosticLabel, operation,
 					WaylandBridgeDiagnostics.Describe(exception));
@@ -103,7 +103,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				WaylandBridgeDiagnostics.Failure(diagnosticLabel, "ShowImageOverlay",
 					"extension returned false");
 			}
-			catch (Exception exception)
+			catch (Exception exception) when (!Keysharp.Internals.Flow.TryGetException<Keysharp.Builtins.Flow.UserRequestedExitException>(exception, out _))
 			{
 				WaylandBridgeDiagnostics.Failure(diagnosticLabel, "ShowImageOverlay",
 					WaylandBridgeDiagnostics.Describe(exception));
