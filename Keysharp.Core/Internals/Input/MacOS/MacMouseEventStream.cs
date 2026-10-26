@@ -25,8 +25,9 @@ namespace Keysharp.Internals.Input.MacOS
 			internal virtual double GetHoldInterval() => MacNativeInput.GetWarpHoldInterval();
 			internal virtual void SetHoldInterval(double seconds) => MacNativeInput.SetWarpHoldInterval(seconds);
 			internal virtual Rectangle[] GetDisplayBounds() => MacNativeInput.GetDisplayBounds();
-			internal virtual bool PostMove(int x, int y, long extraInfo, MouseButton draggingButton, ulong postTimestamp)
-				=> MacNativeInput.PostMouseMove(x, y, extraInfo, draggingButton, postTimestamp);
+			internal virtual bool PostMove(int x, int y, long extraInfo, MouseButton draggingButton, ulong postTimestamp,
+				(int X, int Y)? delta = null)
+				=> MacNativeInput.PostMouseMove(x, y, extraInfo, draggingButton, postTimestamp, delta);
 			internal virtual bool PostButton(MouseButton button, bool down, int x, int y, long extraInfo, int clickCount, long eventNumber, ulong postTimestamp)
 				=> MacNativeInput.PostMouseButton(button, down, x, y, extraInfo, clickCount, eventNumber, postTimestamp);
 		}
@@ -459,6 +460,9 @@ namespace Keysharp.Internals.Input.MacOS
 		}
 
 		internal bool MoveAbsolute(int destinationX, int destinationY, long extraInfo)
+			=> Move(destinationX, destinationY, extraInfo);
+
+		private bool Move(int destinationX, int destinationY, long extraInfo, (int X, int Y)? delta = null)
 		{
 			lock (sendLock)
 			{
@@ -475,7 +479,7 @@ namespace Keysharp.Internals.Input.MacOS
 					nativeBefore = nativeRevision;
 				}
 				var post = BeginPost(destinationX, destinationY);
-				var posted = sink.PostMove(destinationX, destinationY, extraInfo, draggingButton, post.Stamp);
+				var posted = sink.PostMove(destinationX, destinationY, extraInfo, draggingButton, post.Stamp, delta);
 				if (posted)
 					Posted(destinationX, destinationY);
 				else
@@ -501,6 +505,20 @@ namespace Keysharp.Internals.Input.MacOS
 					destinationY = (int)Math.Clamp((long)y + deltaY, int.MinValue, int.MaxValue);
 				}
 				return MoveAbsolute(destinationX, destinationY, extraInfo);
+			}
+		}
+
+		internal bool MoveDelta(int deltaX, int deltaY, long extraInfo)
+		{
+			lock (sendLock)
+			{
+				if (!TryGetWarpOrigin(out var cursorX, out var cursorY))
+					return false;
+
+				var destinationX = (int)Math.Clamp(Math.Round(cursorX) + deltaX, int.MinValue, int.MaxValue);
+				var destinationY = (int)Math.Clamp(Math.Round(cursorY) + deltaY, int.MinValue, int.MaxValue);
+				// Relative counts remain intact even when the posted cursor location reaches a display edge.
+				return Move(destinationX, destinationY, extraInfo, (deltaX, deltaY));
 			}
 		}
 

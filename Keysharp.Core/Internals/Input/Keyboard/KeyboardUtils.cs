@@ -230,6 +230,7 @@ done
 		// All others are not included in g_act, and are only used for misc. purposes:
 		// ================================================================================
 		, ACT_MOUSEMOVE, ACT_MOUSECLICK, ACT_MOUSECLICKDRAG
+		, ACT_MOUSEMOVEDELTA // Relative input counts rather than a cursor position.
 	};
 
 	internal enum HookType

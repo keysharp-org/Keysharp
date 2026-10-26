@@ -253,6 +253,9 @@ namespace Keysharp.Internals.Input.MacOS
 					case ArrayEventType.MouseMoveRel:
 						_ = mouseStream.MoveRelative(ev.X, ev.Y, extraInfo);
 						break;
+					case ArrayEventType.MouseMoveDelta:
+						_ = mouseStream.MoveDelta(ev.X, ev.Y, extraInfo);
+						break;
 					case ArrayEventType.MouseMoveAbs:
 					{
 						int mx = ev.X, my = ev.Y;
@@ -311,6 +314,19 @@ namespace Keysharp.Internals.Input.MacOS
 
 			using var scope = lht.EnterSendScope();
 			ReplayMacMouseEvent(eventFlags, data, x, y, KeyIgnoreLevel(ThreadAccessors.A_SendLevel));
+		}
+
+		internal override void MouseMoveDelta(int x, int y)
+		{
+			if (x == CoordUnspecified || y == CoordUnspecified)
+				return;
+
+			if (sendMode == SendModes.Event)
+				_ = mouseStream.MoveDelta(x, y, KeyIgnoreLevel(ThreadAccessors.A_SendLevel));
+			else
+				AddArrayEvent(ArrayEvent.MouseMoveDelta(x, y));
+
+			DoMouseDelay();
 		}
 
 		internal override void MouseMove(ref int x, ref int y, ref uint eventFlags, long speed, bool moveOffset)

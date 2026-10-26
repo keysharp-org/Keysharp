@@ -362,6 +362,49 @@ public class MacInputTests
 	}
 
 	[Test, Category("Input")]
+	public void MouseDeltaFields()
+	{
+		var ev = MacNativeInput.CreateMouseEvent(MacNativeInput.kCGEventMouseMoved,
+			new MacNativeInput.CGPoint(99, 0), 0, KeyIgnore, delta: (120, -240));
+		try
+		{
+			Assert.AreNotEqual(nint.Zero, ev);
+			Assert.AreEqual(120, MacNativeInput.CGEventGetIntegerValueField(ev, MacNativeInput.kCGMouseEventDeltaX));
+			Assert.AreEqual(-240, MacNativeInput.CGEventGetIntegerValueField(ev, MacNativeInput.kCGMouseEventDeltaY));
+			var location = MacNativeInput.CGEventGetLocation(ev);
+			Assert.AreEqual((99.0, 0.0), (location.X, location.Y));
+			AssertMetadata(ev, KeyIgnore, MacNativeInput.InjectedEventKind.Mouse);
+		}
+		finally
+		{
+			if (ev != nint.Zero) MacNativeInput.CFRelease(ev);
+		}
+	}
+
+	[TestCase(20, -80)]
+	[TestCase(int.MaxValue, int.MinValue)]
+	[Category("Input")]
+	public void DeltaMouseDisplayClamp(int deltaX, int deltaY)
+	{
+		var sink = new FakeMouseEventSink
+		{
+			LocationX = 90, LocationY = 50, DisplayBounds = [new Rectangle(0, 0, 100, 100)],
+			DeferPostedLocations = true
+		};
+		var stream = new MacMouseEventStream(sink);
+		sink.Stream = stream;
+		stream.ObserveButton(MouseButton.Button1, true, 90, 50, 1, stream.SenderRevision);
+		Assert.IsTrue(stream.MoveDelta(deltaX, deltaY, KeyIgnore));
+		Assert.IsTrue(stream.MoveDelta(deltaX, deltaY, KeyIgnore));
+		Assert.IsTrue(stream.MoveDelta(-10, 10, KeyIgnore));
+
+		CollectionAssert.AreEqual(new[] { (99, 0), (99, 0), (89, 10) }, sink.Moves);
+		CollectionAssert.AreEqual(new (int X, int Y)?[] { (deltaX, deltaY), (deltaX, deltaY), (-10, 10) }, sink.Deltas);
+		CollectionAssert.AreEqual(new[] { MouseButton.Button1, MouseButton.Button1, MouseButton.Button1 }, sink.DragButtons);
+		Assert.IsFalse(sink.ReadPendingCursor, "pending moves must use the posted position instead of the asynchronous cursor");
+	}
+
+	[Test, Category("Input")]
 	public void RelativeMouse()
 	{
 		var sink = new FakeMouseEventSink();
@@ -372,6 +415,7 @@ public class MacInputTests
 		Assert.IsTrue(stream.MoveRelative(7, 4, KeyIgnore));
 		Assert.AreEqual((105, 197), sink.Moves[0]);
 		Assert.AreEqual((112, 201), sink.Moves[1]);
+		CollectionAssert.AreEqual(new (int X, int Y)?[] { null, null }, sink.Deltas);
 	}
 
 	[Test, Category("Input")]
@@ -1322,6 +1366,7 @@ public class MacInputTests
 	{
 		internal readonly List<(MouseButton Button, bool Down, int ClickCount, long EventNumber)> Buttons = new();
 		internal readonly List<(int X, int Y)> Moves = new();
+		internal readonly List<(int X, int Y)?> Deltas = new();
 		internal readonly List<MouseButton> DragButtons = new();
 		internal readonly List<(int X, int Y, double Interval)> Warps = new();
 		internal bool ReadPendingCursor;
@@ -1383,11 +1428,13 @@ public class MacInputTests
 		internal override double GetHoldInterval() => HoldInterval;
 		internal override void SetHoldInterval(double seconds) => HoldInterval = seconds;
 		internal override Rectangle[] GetDisplayBounds() => DisplayBounds;
-		internal override bool PostMove(int x, int y, long extraInfo, MouseButton draggingButton, ulong postTimestamp)
+		internal override bool PostMove(int x, int y, long extraInfo, MouseButton draggingButton, ulong postTimestamp,
+			(int X, int Y)? delta = null)
 		{
 			if (FailMoves-- > 0)
 				return false;
 			Moves.Add((x, y));
+			Deltas.Add(delta);
 			DragButtons.Add(draggingButton);
 			if (DeferPostedLocations)
 				pendingLocations.Enqueue((x, y, postTimestamp));

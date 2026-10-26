@@ -322,17 +322,18 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Moves the mouse cursor.
+		/// Moves the mouse cursor or sends relative mouse input deltas.
 		/// </summary>
 		/// <param name="x">The X and Y coordinates to move the mouse to. Coordinates are relative to the active window's client area unless <see cref="CoordMode"/> was used to change that.</param>
 		/// <param name="y">See <paramref name="x"/>.</param>
 		/// <param name="speed">If omitted, the default speed (as set by <see cref="SetDefaultMouseSpeed"/> or 2 otherwise) will be used. Otherwise, specify the speed to move the<br/>
 		/// mouse in the range 0 (fastest) to 100 (slowest).<br/>
-		/// A speed of 0 will move the mouse instantly.
+		/// A speed of 0 will move the mouse instantly. Delta mode ignores speed.
 		/// </param>
-		/// <param name="relative">If blank or omitted, the X and Y coordinates will be used for absolute positioning. Otherwise, specify the following letter:<br/>
+		/// <param name="relative">If blank or omitted, the X and Y coordinates will be used for absolute positioning. Otherwise, specify one of the following:<br/>
 		///     R: The X and Y coordinates will be treated as offsets from the current mouse position. In other words, the cursor will be moved from its current position<br/>
-		///     by X pixels to the right (left if negative) and Y pixels down (up if negative).
+		///     by X pixels to the right (left if negative) and Y pixels down (up if negative).<br/>
+		///     D or Delta: Sends X and Y as native relative input deltas, independently of cursor position and CoordMode. Play mode on Windows requires a sender provider.
 		/// </param>
 		public static object MouseMove(object x, object y, object speed = null, object relative = null)
 		{
@@ -470,9 +471,12 @@ namespace Keysharp.Builtins
 			// As in AutoHotkey, only the first letter counts, so "R", "Rel" and "Relative" are the same.
 			var moveOffset = relative.Length > 0 && char.ToUpperInvariant(relative[0]) == 'R';
 
-			if (relative.Length > 0 && !moveOffset)
+			if (actionType == Actions.ACT_MOUSEMOVE && relative.Length > 0 && char.ToUpperInvariant(relative[0]) == 'D')
+				actionType = Actions.ACT_MOUSEMOVEDELTA;
+			else if (relative.Length > 0 && !moveOffset)
 			{
-				_ = Errors.ValueErrorOccurred($"Invalid Relative \"{relative}\". Expected R or an empty string.");
+				var choices = actionType == Actions.ACT_MOUSEMOVE ? "R, D (Delta) or an empty string" : "R or an empty string";
+				_ = Errors.ValueErrorOccurred($"Invalid Relative \"{relative}\". Expected {choices}.");
 				return;
 			}
 

@@ -131,7 +131,7 @@
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
                      "macos":  "unknown",
-                     "notes":  "Managed host API registering one ISenderProvider per Script, which receives Play mode's keyboard and mouse events as Input mode would send them, with Play delays. Input it cannot carry, such as Unicode text, goes to the native Input path. The output is asynchronous, so state read straight after a send can lag. Linux and macOS execution and driver and hardware delivery remain unverified.",
+                     "notes":  "Managed host API registering one ISenderProvider per Script, which receives Play mode's keyboard and mouse events as Input mode would send them, with Play delays. MouseMove R uses pixel offsets converted to normalized absolute virtual-desktop coordinates; D preserves signed relative input counts with MOVE and no ABSOLUTE flag. Input it cannot carry, such as Unicode text, goes to the native Input path. The output is asynchronous, so state read straight after a send can lag. Linux and macOS execution and driver and hardware delivery remain unverified.",
                      "tested-by":  "sender-provider.ahk; SenderProviderTests.Registration; SenderProviderTests.OutputMarkers"
                   },
                   {
@@ -8912,13 +8912,13 @@
                  {
                      "category":  "Input/Automation",
                      "feature":  "MouseMove()",
-                     "syntax":  "",
+                     "syntax":  "MouseMove(X, Y, Speed?, Relative?) ; Relative: R/Relative or D/Delta",
                      "windows":  "full",
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The MouseMove function moves the mouse cursor.",
-                     "tested-by":  "Gui/guitest.ks"
+                     "notes":  "Moves the mouse cursor; Keysharp's Relative D/Delta sends X and Y as one relative input report, ignoring Speed and CoordMode, and needs a sender provider under Windows Play.",
+                     "tested-by":  "MouseDeltaTests; sender-provider.ahk; SenderProviderTests.ProviderDelta; MacInputTests.MouseDeltaFields; MacInputTests.DeltaMouseDisplayClamp; MacInputArrayTests.QueuedMouseDelta; Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",

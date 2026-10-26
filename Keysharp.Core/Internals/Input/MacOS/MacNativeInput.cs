@@ -506,8 +506,10 @@ namespace Keysharp.Internals.Input.MacOS
 			return ev;
 		}
 
-		internal static bool PostMouseMove(int x, int y, long extraInfo, MouseButton draggingButton = MouseButton.NoButton, ulong timestamp = 0)
-			=> PostMouseEvent(MouseMoveType(draggingButton), new CGPoint(x, y), ToCGMouseButtonOrZero(draggingButton), extraInfo, timestamp: timestamp);
+		internal static bool PostMouseMove(int x, int y, long extraInfo, MouseButton draggingButton = MouseButton.NoButton,
+			ulong timestamp = 0, (int X, int Y)? delta = null)
+			=> PostMouseEvent(MouseMoveType(draggingButton), new CGPoint(x, y), ToCGMouseButtonOrZero(draggingButton),
+				extraInfo, timestamp: timestamp, delta: delta);
 
 		internal static bool PostMouseButton(MouseButton button, bool down, int x, int y, long extraInfo, int clickCount = 1, long eventNumber = 0, ulong timestamp = 0)
 		{
@@ -572,7 +574,8 @@ namespace Keysharp.Internals.Input.MacOS
 			return ev;
 		}
 
-		internal static nint CreateMouseEvent(uint type, CGPoint point, uint button, long extraInfo, int clickCount = 0, long eventNumber = 0)
+		internal static nint CreateMouseEvent(uint type, CGPoint point, uint button, long extraInfo,
+			int clickCount = 0, long eventNumber = 0, (int X, int Y)? delta = null)
 		{
 			var ev = CGEventCreateMouseEvent(SharedEventSource(), type, point, button);
 
@@ -582,6 +585,11 @@ namespace Keysharp.Internals.Input.MacOS
 					CGEventSetIntegerValueField(ev, kCGMouseEventClickState, clickCount);
 				if (eventNumber != 0)
 					CGEventSetIntegerValueField(ev, kCGMouseEventNumber, eventNumber);
+				if (delta is { } movement)
+				{
+					CGEventSetIntegerValueField(ev, kCGMouseEventDeltaX, movement.X);
+					CGEventSetIntegerValueField(ev, kCGMouseEventDeltaY, movement.Y);
+				}
 				CGEventSetIntegerValueField(ev, kCGEventSourceUserData,
 					EncodeInjectedExtraInfo(extraInfo, InjectedEventKind.Mouse));
 			}
@@ -589,9 +597,10 @@ namespace Keysharp.Internals.Input.MacOS
 			return ev;
 		}
 
-		private static bool PostMouseEvent(uint type, CGPoint point, uint button, long extraInfo, int clickCount = 0, long eventNumber = 0, ulong timestamp = 0)
+		private static bool PostMouseEvent(uint type, CGPoint point, uint button, long extraInfo,
+			int clickCount = 0, long eventNumber = 0, ulong timestamp = 0, (int X, int Y)? delta = null)
 		{
-			var ev = CreateMouseEvent(type, point, button, extraInfo, clickCount, eventNumber);
+			var ev = CreateMouseEvent(type, point, button, extraInfo, clickCount, eventNumber, delta);
 			if (ev != nint.Zero && timestamp != 0)
 				CGEventSetTimestamp(ev, timestamp);
 			return PostAndRelease(ev);

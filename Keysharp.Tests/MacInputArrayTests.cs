@@ -13,10 +13,18 @@ public class MacInputArrayTests : TestRunner
 		internal string DispatchedText { get; private set; }
 		internal bool FailNextModifierQuery { get; set; }
 		internal (int X, int Y)[] DispatchedMousePositions { get; private set; }
+		internal (int X, int Y)[] DispatchedMouseDeltas { get; private set; }
 		internal SendModes CurrentMode => sendMode;
 		internal void SetMode(SendModes mode) => sendMode = mode;
 		internal void StartSend() => OnSendKeysStarting();
 		internal void FinishSend() => OnSendKeysFinished();
+		internal (uint Flags, int X, int Y, ulong ExtraInfo)[] ProviderMouseEvents()
+		{
+			var events = new List<SenderEvent>();
+			if (!TryGetSenderEvents(events))
+				throw new InvalidOperationException("Mouse events could not be translated for the sender provider.");
+			return events.Where(ev => ev.Mouse).Select(ev => (ev.Flags, ev.X, ev.Y, ev.ExtraInfo)).ToArray();
+		}
 
 		internal override uint GetModifierLRState(bool explicitlyGet = false)
 		{
@@ -34,6 +42,8 @@ public class MacInputArrayTests : TestRunner
 			DispatchedText = new string(state.Events.Where(ev => ev.Type == ArrayEventType.Text).Select(ev => ev.Text).ToArray());
 			DispatchedMousePositions = state.Events.Where(ev => ev.Type is ArrayEventType.MouseMoveAbs
 				or ArrayEventType.MousePress or ArrayEventType.MouseRelease).Select(ev => (ev.X, ev.Y)).ToArray();
+			DispatchedMouseDeltas = state.Events.Where(ev => ev.Type == ArrayEventType.MouseMoveDelta)
+				.Select(ev => (ev.X, ev.Y)).ToArray();
 
 			if (ThrowDuringDispatch)
 				throw new InvalidOperationException("deterministic dispatch failure");
@@ -43,6 +53,31 @@ public class MacInputArrayTests : TestRunner
 	private sealed class DisplayMouseSink : MacMouseEventStream.Sink
 	{
 		internal override Rectangle[] GetDisplayBounds() => [new Rectangle(0, 0, 100, 100)];
+	}
+
+	[TestCase(false)]
+	[TestCase(true)]
+	[Category("Input")]
+	public void QueuedMouseDelta(bool reverse)
+	{
+		var sender = new RecordingSender(s, mouseStream: new(new DisplayMouseSink()));
+		sender.SetMode(SendModes.Input);
+		sender.InitEventArray(4, 0);
+		sender.sendInputCursorPos = new POINT(90, 50);
+		try
+		{
+			var delta = reverse ? -120 : 120;
+			sender.MouseMoveDelta(delta, -delta);
+			sender.MouseMoveDelta(-delta, delta);
+			var marker = (ulong)KeyIgnoreLevel(ThreadAccessors.A_SendLevel);
+			CollectionAssert.AreEqual(new[] { (1u, delta, -delta, marker), (1u, -delta, delta, marker) }, sender.ProviderMouseEvents());
+			var finalDelay = -1L;
+			sender.SendEventArray(ref finalDelay, 0);
+			CollectionAssert.AreEqual(new[] { (delta, -delta), (-delta, delta) }, sender.DispatchedMouseDeltas);
+			Assert.IsEmpty(sender.DispatchedMousePositions);
+			Assert.AreEqual((90, 50), (sender.sendInputCursorPos.X, sender.sendInputCursorPos.Y));
+		}
+		finally { sender.AbortEventArray(); }
 	}
 
 	[TestCase(false)]

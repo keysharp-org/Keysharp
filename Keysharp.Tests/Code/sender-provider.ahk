@@ -43,14 +43,41 @@ SendPlay("{LControl down}{vk41sc01E}{LControl up}")
 AssertEq(Harness("Keys"), "48:D,48:U,29:D,30:D,30:U,29:U", A_LineNumber)
 AssertEq(Harness("Native"), "46:D,46:U", A_LineNumber)
 
+; Delta moves reach the provider unchanged, independently of cursor coordinates and speed.
+SendMode("Play")
+for coordinateMode in ["Screen", "Window", "Client"]
+{
+	CoordMode("Mouse", coordinateMode)
+
+	for parameters in [[7, -3, 100, "D"], [-5, 9, -1, "Delta"], [0, 0, 200, "dElTa"]]
+	{
+		MouseMove(parameters*)
+		AssertEq(Harness("Marked"), "marked", A_LineNumber)
+		AssertEq(Harness("Mouse"), Format("1:{}:{}", parameters[1], parameters[2]), A_LineNumber)
+	}
+}
+AssertEq(Harness("Native"), "", A_LineNumber)
+
+Harness("OtherMouseHook", 1)
+SendMode("InputThenPlay")
+MouseMove(-12, 8, 100, "Delta")
+AssertEq(Harness("Marked"), "marked", A_LineNumber)
+AssertEq(Harness("Mouse"), "1:-12:8", A_LineNumber)
+AssertEq(Harness("Native"), "", A_LineNumber)
+Harness("OtherMouseHook", 0)
+
 ; Relative moves go by pixels, from where the send has already moved the cursor or else from the cursor.
+; The cursor is read right before each send, since a live mouse can move it between checks.
 SendMode("Play")
 CoordMode("Mouse", "Screen")
 x := SysGet(76), y := SysGet(77), width := SysGet(78), height := SysGet(79)
 MouseGetPos(&cursorX, &cursorY)
 MouseMove(7, -3, 0, "R")
+AssertEq(Harness("Mouse"), MovedTo(cursorX + 7, cursorY - 3), A_LineNumber)
+MouseGetPos(&cursorX, &cursorY)
 Click(7, -3, 0, "Rel")
-AssertEq(Harness("Mouse"), MovedTo(cursorX + 7, cursorY - 3) "," MovedTo(cursorX + 7, cursorY - 3), A_LineNumber)
+AssertEq(Harness("Mouse"), MovedTo(cursorX + 7, cursorY - 3), A_LineNumber)
+MouseGetPos(&cursorX, &cursorY)
 SendPlay("{Click 7 -3 0 Rel}{Click 7 -3 0 Rel}")
 AssertEq(Harness("Mouse"), MovedTo(cursorX + 7, cursorY - 3) "," MovedTo(cursorX + 14, cursorY - 6), A_LineNumber)
 MouseMove(x + width // 2, y + height // 2, 0)

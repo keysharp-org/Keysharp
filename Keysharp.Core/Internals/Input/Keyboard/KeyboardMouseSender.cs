@@ -858,6 +858,15 @@ namespace Keysharp.Internals.Input.Keyboard
 
 		internal abstract void MouseEvent(uint aEventFlags, uint aData, int aX = CoordUnspecified, int aY = CoordUnspecified);
 
+		internal virtual void MouseMoveDelta(int x, int y)
+		{
+			if (x == CoordUnspecified || y == CoordUnspecified)
+				return;
+
+			MouseEvent((uint)MOUSEEVENTF.MOVE, 0, x, y);
+			DoMouseDelay();
+		}
+
 		/// <summary>
 		/// This function also does DoMouseDelay() for the caller.
 		/// This function converts x and aY for the caller into MOUSEEVENTF_ABSOLUTE coordinates.
@@ -1029,6 +1038,16 @@ namespace Keysharp.Internals.Input.Keyboard
 			// Each send sets its own batch, so a send nested in this one never inherits it.
 			var outerBatch = senderBatch;
 			var provider = sendMode == SendModes.Play ? script.SenderProvider.Enter() : null;
+
+			// Journal playback carries only cursor positions, so it cannot send a delta. Platforms without it send Play
+			// through their ordinary event array, which can.
+			if (actionType == Actions.ACT_MOUSEMOVEDELTA && sendMode == SendModes.Play && provider == null && SupportsPlayMode)
+			{
+				sendMode = SendModes.Event;
+				_ = Errors.UnsupportedErrorOccurred("MouseMove Delta mode requires a sender provider for SendMode Play. Use Event or Input otherwise.");
+				return;
+			}
+
 			senderBatch = provider != null || outerBatch != null ? new(provider, outerBatch) : null;
 
 			if (provider != null)
@@ -1072,6 +1091,10 @@ namespace Keysharp.Internals.Input.Keyboard
 					case Actions.ACT_MOUSEMOVE:
 						var unused = 0u;
 						MouseMove(ref x1, ref y1, ref unused, speed, relative); // Does nothing if coords are invalid.
+						break;
+
+					case Actions.ACT_MOUSEMOVEDELTA:
+						MouseMoveDelta(x1, y1);
 						break;
 
 					case Actions.ACT_MOUSECLICK:

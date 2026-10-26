@@ -28,6 +28,17 @@ public class SenderProviderTests : TestRunner
 		Assert.Throws<ObjectDisposedException>(() => s.RegisterSenderProvider(rejected));
 	}
 
+	[Test, Category("Internal")]
+	public void ProviderDelta()
+	{
+		var provider = new Recorder();
+		using var registration = s.RegisterSenderProvider(provider);
+		Keyboard.SendMode("Play");
+		Keysharp.Builtins.Mouse.MouseMove(7, -3, 0, "D");
+		Assert.That(provider.Mouse.Select(mouse => (mouse.Flags, mouse.X, mouse.Y)), Is.EqualTo(new[] { (1u, 7, -3) }),
+			"each platform's event array hands a delta to the provider as relative input");
+	}
+
 #if WINDOWS
 	[Test]
 	public void Sending() => TestScript("sender-provider", false);
@@ -101,6 +112,7 @@ public class SenderProviderTests : TestRunner
 
 	private static Recorder recorder;
 	private static Sender sender;
+	private static MouseHook mouseHook;
 	private static IDisposable registration;
 
 	[TearDown]
@@ -108,13 +120,23 @@ public class SenderProviderTests : TestRunner
 	{
 		registration?.Dispose();
 		registration = null;
+		mouseHook = null;
 	}
 
 	public static string Install()
 	{
 		var script = Script.TheScript;
-		script.HookThread.kbdMsSender = sender = new Sender(script);
+		script.HookThread.Stop();
+		mouseHook = new MouseHook(script);
+		typeof(Script).GetProperty("HookThread", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(script, mouseHook);
+		mouseHook.kbdMsSender = sender = new Sender(script);
 		registration = script.RegisterSenderProvider(recorder = new Recorder());
+		return "";
+	}
+
+	public static string OtherMouseHook(long Enabled)
+	{
+		mouseHook.OtherMouseHook = Enabled != 0;
 		return "";
 	}
 
@@ -207,6 +229,12 @@ public class SenderProviderTests : TestRunner
 	{
 		internal bool CapsLockOn;
 		internal override bool IsKeyToggledOn(uint vk) => vk == VK_CAPITAL ? CapsLockOn : base.IsKeyToggledOn(vk);
+	}
+
+	private sealed class MouseHook(Script script) : WindowsHookThread(script, "Keysharp.Tests.SenderProvider")
+	{
+		internal bool OtherMouseHook;
+		internal override bool SystemHasAnotherMouseHook() => OtherMouseHook;
 	}
 
 	// Records native sends instead of injecting them, and reports the modifier state they would leave.

@@ -47,6 +47,7 @@ namespace Keysharp.Internals.Input.MacOS
 
 			MouseMoveAbs,
 			MouseMoveRel,
+			MouseMoveDelta,
 			MousePress,
 			MouseRelease,
 			MouseWheelV,
@@ -105,6 +106,9 @@ namespace Keysharp.Internals.Input.MacOS
 
 			internal static ArrayEvent MouseMoveRel(int dx, int dy)
 				=> new(ArrayEventType.MouseMoveRel, 0, 0, 0, '\0', dx, dy, MouseButton.NoButton, 0);
+
+			internal static ArrayEvent MouseMoveDelta(int dx, int dy)
+				=> new(ArrayEventType.MouseMoveDelta, 0, 0, 0, '\0', dx, dy, MouseButton.NoButton, 0);
 
 			internal static ArrayEvent MouseButtonEvent(ArrayEventType type, MouseButton button, int x, int y)
 				=> new(type, 0, 0, 0, '\0', x, y, button, 0);
@@ -364,6 +368,7 @@ namespace Keysharp.Internals.Input.MacOS
 						break;
 
 					case ArrayEventType.MouseMoveRel:
+					case ArrayEventType.MouseMoveDelta:
 						events.Add(new(true, (uint)MOUSEEVENTF.MOVE, X: e.X, Y: e.Y, ExtraInfo: extraInfo));
 						break;
 
