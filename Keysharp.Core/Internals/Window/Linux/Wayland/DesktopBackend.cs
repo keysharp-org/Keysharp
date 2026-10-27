@@ -406,7 +406,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		internal bool TrySetWindowTitle(nint handle, string title)
 			=> TryGetServiceHandle(handle, out var id) && Desktop.SetWindowTitle(id, title);
 
-		internal bool TrySetWindowVisible(nint handle, bool visible)
+		public bool TrySetWindowVisible(nint handle, bool visible)
 			=> TryGetServiceHandle(handle, out var id) && Desktop.SetWindowVisible(id, visible);
 
 		public bool SupportsMouse
