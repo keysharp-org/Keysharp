@@ -39,9 +39,9 @@ namespace Keysharp.Internals.Linux
 			=> Call(Operation.WindowSetTitle,
 				connection => connection.SetTitle(handle, title));
 
-		internal bool SetWindowVisible(ulong handle, bool visible)
-			=> Call(Operation.WindowSetVisible,
-				connection => connection.SetVisible(handle, visible));
+		internal bool SetWindowVisible(ulong handle, bool visible, out Exception failure)
+			=> CallWindow(Operation.WindowSetVisible,
+				connection => connection.SetVisible(handle, visible), out failure);
 
 		internal bool RedrawWindow(ulong handle)
 			=> Call(Operation.WindowRedraw,

@@ -441,6 +441,11 @@ namespace Keysharp.Internals
 			return Unsupported();
 		}
 		public virtual bool TrySetZOrder(nint h, ZOrder z) => Unsupported();
+		public virtual bool TrySetZOrder(nint h, ZOrder z, out Exception failure)
+		{
+			failure = null;
+			return TrySetZOrder(h, z);
+		}
 		public virtual bool TryClose(nint h)
 		{
 #if !WINDOWS
@@ -470,6 +475,16 @@ namespace Keysharp.Internals
 			}
 #endif
 			return Unsupported();
+		}
+		public virtual bool TryHide(nint h, out Exception failure)
+		{
+			failure = null;
+			return TryHide(h);
+		}
+		public virtual bool TryShow(nint h, out Exception failure)
+		{
+			failure = null;
+			return TryShow(h);
 		}
 		public virtual bool TryShow(nint h)
 		{

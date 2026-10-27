@@ -374,17 +374,19 @@ namespace Keysharp.Internals
 		}
 
 		public override bool TrySetZOrder(nint h, ZOrder z)
-		{
-			if (Known(h))
-				return Wayland.TrySetZOrder(h, z);
+			=> TrySetZOrder(h, z, out _);
 
-			if (TryOwnControl(h, out _))
-				return base.TrySetZOrder(h, z);
-			return false;
+		public override bool TrySetZOrder(nint h, ZOrder z, out Exception failure)
+		{
+			failure = null;
+			if (Known(h)) return Wayland.TrySetZOrder(h, z, out failure);
+			return TryOwnControl(h, out _) && base.TrySetZOrder(h, z);
 		}
 
 		public override bool TryHide(nint h) => TrySetVisible(h, false);
 		public override bool TryShow(nint h) => TrySetVisible(h, true);
+		public override bool TryHide(nint h, out Exception failure) => TrySetVisible(h, false, out failure);
+		public override bool TryShow(nint h, out Exception failure) => TrySetVisible(h, true, out failure);
 
 		public override bool TryRedraw(nint h)
 		{
@@ -498,13 +500,13 @@ namespace Keysharp.Internals
 		}
 
 		public override bool TrySetVisible(nint h, bool visible)
-		{
-			if (Known(h))
-				return Wayland.TrySetWindowVisible(h, visible);
+			=> TrySetVisible(h, visible, out _);
 
-			if (TryOwnControl(h, out _))
-				return base.TrySetVisible(h, visible);
-			return false;
+		private bool TrySetVisible(nint h, bool visible, out Exception failure)
+		{
+			failure = null;
+			if (Known(h)) return Wayland.TrySetWindowVisible(h, visible, out failure);
+			return TryOwnControl(h, out _) && base.TrySetVisible(h, visible);
 		}
 
 		public override bool TrySetEnabled(nint h, bool enabled)

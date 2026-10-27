@@ -335,9 +335,19 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				&& Desktop.SetWindowSkipTaskbar(id, skip);
 
 		public virtual bool TrySetZOrder(nint handle, ZOrder z)
-			=> TryGetServiceHandle(handle, out var id)
-				&& (z == ZOrder.Top ? Desktop.RaiseWindow(id)
-					: z == ZOrder.Bottom && Desktop.LowerWindow(id));
+			=> TrySetZOrder(handle, z, out _);
+
+		public virtual bool TrySetZOrder(nint handle, ZOrder z, out Exception failure)
+		{
+			failure = null;
+			if (!TryGetServiceHandle(handle, out var id))
+			{
+				failure = new InvalidOperationException("The desktop service no longer knows that window.");
+				return false;
+			}
+			return z == ZOrder.Top ? Desktop.RaiseWindow(id, out failure)
+				: z == ZOrder.Bottom && Desktop.LowerWindow(id, out failure);
+		}
 
 		public bool TrySetTransparency(nint handle, object alpha)
 		{
@@ -407,7 +417,18 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			=> TryGetServiceHandle(handle, out var id) && Desktop.SetWindowTitle(id, title);
 
 		public bool TrySetWindowVisible(nint handle, bool visible)
-			=> TryGetServiceHandle(handle, out var id) && Desktop.SetWindowVisible(id, visible);
+			=> TrySetWindowVisible(handle, visible, out _);
+
+		public bool TrySetWindowVisible(nint handle, bool visible, out Exception failure)
+		{
+			failure = null;
+			if (!TryGetServiceHandle(handle, out var id))
+			{
+				failure = new InvalidOperationException("The desktop service no longer knows that window.");
+				return false;
+			}
+			return Desktop.SetWindowVisible(id, visible, out failure);
+		}
 
 		public bool SupportsMouse
 			=> Desktop.ProviderSupportsAbsolutePointer();

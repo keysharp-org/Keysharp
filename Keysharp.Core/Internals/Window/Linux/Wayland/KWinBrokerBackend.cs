@@ -13,7 +13,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return false;
 
 			var focused = DesktopClient.Current.FocusWindow(id);
-			_ = focused && DesktopClient.Current.RaiseWindow(id);
+			_ = focused && DesktopClient.Current.RaiseWindow(id, out _);
 			return focused;
 		}
 
