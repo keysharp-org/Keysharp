@@ -38,7 +38,7 @@ namespace Keysharp.Builtins
 
 		public static implicit operator long(RegExMatchInfo r) => r.Pos();
 
-		public object __Get(object name, object args) => name is string s && s.TryParseLong(out long l) && l >= 0 && l <= GroupCount ? this[l] : this[name];
+		public object __Get(object name, object args) => this[name];
 
 		public KeysharpFunc __Enum(object NumberOfVars = null)
 		{
@@ -74,45 +74,40 @@ namespace Keysharp.Builtins
 
 		public string this[params object[] obj] => GetGroup(obj.Length == 0 ? null : obj[0]).Value;
 
-		/// <summary>The group named by null (the whole match), a name, or a number; a miss is an unset Subpattern.</summary>
+		/// <summary>The group named by null (the whole match), a name, or a number, which as in AutoHotkey may be a numeric
+		/// string and is truncated if a Float; a miss is an unset Subpattern.</summary>
 		private Subpattern GetGroup(object key)
 		{
-			if (match != null)
+			if (key == null)
+				return At(0);
+
+			if (!key.TryCoerceLong(out var number))
+				return key is string name ? Named(name) : default;
+
+			return number >= 0 && number < GroupCount ? At((int)number) : default;
+		}
+
+		// As AutoHotkey does, a name matches case-insensitively and the first subpattern so named answers, unless it did
+		// not participate and a later one of the same name did.
+		private Subpattern Named(string name)
+		{
+			var first = -1;
+
+			for (var i = 1; i < GroupCount; i++)
 			{
-				try
-				{
-					if (key == null)
-						return At(0);
+				var g = At(i);
 
-					// A name looked up by name is its own answer; only an ordinal consults the name table.
-					if (key is string s)
-						return new Subpattern(match.Groups[s], s);
+				if (g.Name.Length == 0 || !string.Equals(g.Name, name, StringComparison.OrdinalIgnoreCase))
+					continue;
 
-					var index = Convert.ToInt32(key);
+				if (g.Success)
+					return g;
 
-					if (index >= 0 && index <= match.Groups.Count)
-						return At(index);
-				}
-				catch (ArgumentOutOfRangeException)
-				{
-					return default;
-				}
-
-				return default;
+				if (first < 0)
+					first = i;
 			}
 
-			if (key == null)
-				return new Subpattern(netMatch);
-
-			if (key is string ns)
-				return new Subpattern(netMatch.Groups[ns]);
-
-			var i = Convert.ToInt32(key);
-
-			if (i == 0)
-				return new Subpattern(netMatch);
-
-			return i > 0 && i < netMatch.Groups.Count ? new Subpattern(netMatch.Groups[i]) : default;
+			return first < 0 ? default : At(first);
 		}
 
 		private Subpattern At(int ordinal) =>

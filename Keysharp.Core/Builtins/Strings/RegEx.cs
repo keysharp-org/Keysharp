@@ -5,27 +5,7 @@ namespace Keysharp.Builtins
 		internal readonly Lock locker = new ();
 		internal RegEx.RegexEntry regdkt = [];
 		internal RegEx.RegexEntryCs regdktCs = [];
-		internal ConcurrentLfu<string, Func<PcreMatch, string>> ReplacementCache = new (Caching.DefaultCacheCapacity);
-		internal Func<string, Func<PcreMatch, string>> parseReplace = null;
-
-		internal Func<string, Func<PcreMatch, string>> ParseReplace
-		{
-			get
-			{
-				if (parseReplace == null)
-				{
-					var asm = typeof(PcreRegex).Assembly;
-					// 2) find the internal class by its full name
-					var rpType = asm.GetType("PCRE.Internal.ReplacementPattern", throwOnError: true);
-					var mi = rpType.GetMethod("Parse", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public);
-					parseReplace = (Func<string, Func<PcreMatch, string>>)Delegate.CreateDelegate(
-									   typeof(Func<string, Func<PcreMatch, string>>),
-									   mi);
-				}
-
-				return parseReplace;
-			}
-		}
+		internal ConcurrentLfu<string, Action<PcreMatch, StringBuilder>> ReplacementCache = new (Caching.DefaultCacheCapacity);
 	}
 
 	/// <summary>
@@ -215,7 +195,7 @@ namespace Keysharp.Builtins
 			var rd = TheScript.RegExData;
 			object replaceFunc = null;
 			string replace = null;
-			Func<PcreMatch, string> replaceParser = null;
+			Action<PcreMatch, StringBuilder> replaceParser = null;
 
 			// Any object is taken as a function called with the match, and refused if it cannot be one, as AHK does.
 			if (replacement is Any)
@@ -228,7 +208,7 @@ namespace Keysharp.Builtins
 				if (!replacement.CoerceString(out replace))
 					return DefaultErrorString;
 
-				replaceParser = rd.ReplacementCache.GetOrAdd(replace, rd.ParseReplace);
+				replaceParser = rd.ReplacementCache.GetOrAdd(replace, RegexReplacement.Parse);
 			}
 
 			if (!limit.CoerceInt(out var l, -1) || !startingPos.CoerceInt(out var index, 1))
@@ -285,14 +265,17 @@ namespace Keysharp.Builtins
 				{
 					foreach (var match in exp.regex.Matches(input, index, CalloutHandler(exp, input, haystack, needleRegEx)))
 					{
-						string text;
+						string text = null;
 
-						if (replaceFunc == null)
-							text = replaceParser(match);
-						else if (!Script.InvokeOrNull(replaceFunc, null, new RegExMatchInfo(match, exp)).CoerceString(out text))
+						if (replaceFunc != null && !Script.InvokeOrNull(replaceFunc, null, new RegExMatchInfo(match, exp)).CoerceString(out text))
 							return DefaultErrorString;
 
-						_ = (sb ??= new StringBuilder(input.Length)).Append(input, last, match.Index - last).Append(text);
+						_ = (sb ??= new StringBuilder(input.Length)).Append(input, last, match.Index - last);
+
+						if (replaceFunc == null)
+							replaceParser(match, sb);
+						else
+							_ = sb.Append(text);
 						last = Math.Max(match.Index, match.EndIndex);
 
 						if (++n == l)

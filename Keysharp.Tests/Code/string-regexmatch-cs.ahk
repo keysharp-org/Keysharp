@@ -104,6 +104,11 @@ AssertEq(match.Pos("testname"), 4, A_LineNumber)
 
 AssertEq(match.Name("testname"), "testname", A_LineNumber)
 
+; A subpattern name matches case-insensitively, as a property name does, and Name reports the pattern's spelling.
+AssertEq(match.TESTNAME, "XYZ", A_LineNumber)
+
+AssertEq(match.Name("TESTNAME"), "testname", A_LineNumber)
+
 CheckMatches(match, "0testname", "abcXYZ123XYZ")
 
 RegExMatchCs("C:\Foo\Bar\Baz.txt", "\w+$", &match)
@@ -125,6 +130,8 @@ AssertEq(match[1], "Michiganroad", A_LineNumber)
 AssertEq(match.1, "Michiganroad", A_LineNumber)
 
 AssertEq(match.Name(2), "nr", A_LineNumber)
+
+AssertEq(match["2"], "72", A_LineNumber)
 
 AssertEq(match[2], "72", A_LineNumber)
 

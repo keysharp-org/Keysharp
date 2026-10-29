@@ -110,6 +110,25 @@ AssertEq(match.Pos("testname"), 4, A_LineNumber)
 
 AssertEq(match.Name("testname"), "testname", A_LineNumber)
 
+; A subpattern name matches case-insensitively, as a property name does, and Name reports the pattern's spelling.
+AssertEq(match.TESTNAME, "XYZ", A_LineNumber)
+
+AssertEq(match["TestName"], "XYZ", A_LineNumber)
+
+AssertEq(match.Name("TESTNAME"), "testname", A_LineNumber)
+
+; Of duplicate names, the one which participated answers.
+RegExMatch("b", "(?J)(?<dup>a)|(?<dup>b)", &duplicate)
+
+AssertEq(duplicate["DUP"], "b", A_LineNumber)
+
+; A hyphen beside a class escape in a character class is literal, as in AutoHotkey's PCRE, also beside a one-letter
+; property and in a pattern whose callouts are rewritten too.
+AssertEq(RegExMatch("first.last-x@mail.example.com", "^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$"), 1, A_LineNumber)
+AssertEq(RegExMatch("é-.", "^[\pL-.]+$"), 1, A_LineNumber)
+HyphenCallout(*) => 0
+AssertEq(RegExMatch("a.b-c", "(?CHyphenCallout)^[\w-.]+$"), 1, A_LineNumber)
+
 CheckMatches(match, "0testname", "abcXYZ123XYZ")
 
 RegExMatch("C:\Foo\Bar\Baz.txt", "\w+$", &match)
@@ -131,6 +150,11 @@ AssertEq(match[1], "Michiganroad", A_LineNumber)
 AssertEq(match.1, "Michiganroad", A_LineNumber)
 
 AssertEq(match.Name(2), "nr", A_LineNumber)
+
+AssertEq(match["2"], "72", A_LineNumber)
+
+; Any number or numeric string names a subpattern, a Float truncated, as AutoHotkey converts a parameter.
+AssertEq(match[" 2.9 "] "|" match[2.9] "|" match["0x2"], "72|72|72", A_LineNumber)
 
 AssertEq(match[2], "72", A_LineNumber)
 
