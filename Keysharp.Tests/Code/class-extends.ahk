@@ -752,4 +752,13 @@ Assert(HasBase(wholenumber.Prototype, Integer.Prototype) && HasBase(numericduck.
 Assert(HasBase(filelike.Prototype, File.Prototype) && HasBase(boundlike.Prototype, BoundFunc.Prototype), A_LineNumber)
 Assert(HasBase(menubarlike.Prototype, Menu.Prototype), A_LineNumber)
 
+; As in AHK, a class gets its Call from its own chain, Object's for most and a conversion for String or Integer, never
+; from Class.Prototype, so one descending from Any without a Call of its own cannot be called.
+Assert(!({}.HasOwnProp)(Class.Prototype, "Call") && !HasMethod(Primitive, "Call") && !HasMethod(Class(), "Call"), A_LineNumber)
+Throws(() => Any(), A_LineNumber, MethodError)
+Throws(() => Primitive(), A_LineNumber, MethodError)
+Throws(() => numericduck(), A_LineNumber, MethodError)
+Throws(() => VarRef(), A_LineNumber, MethodError)
+AssertEq(wholenumber("5"), 5, A_LineNumber)
+
 FileAppend "pass", "*"

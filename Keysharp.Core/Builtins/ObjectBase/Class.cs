@@ -63,6 +63,9 @@ namespace Keysharp.Builtins
 
         // Construction relays its arguments straight to __New, so a named argument names one of __New's parameters,
         // not one of Call's (it has none of its own): the container rides the tail of args and binds there.
+        // As in AutoHotkey, a script reaches it only through a class's own Call, such as Object's, and not through
+        // Class.Prototype, so a class with none in its chain, as Primitive and VarRef have none, cannot be called.
+        [PublicHiddenFromUser]
         public object Call(params object[] args)
         {
 			var own = op != null && op.TryGetValue("Prototype", out var desc) ? desc.Value : null;

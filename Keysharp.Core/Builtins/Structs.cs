@@ -136,6 +136,9 @@ namespace Keysharp.Builtins
 		[UserDeclaredName("Ptr")]
 		public class StructPtr(params object[] args) : Struct(args) { }
 
+		// Struct derives from Any, whose classes have no Call, so it carries its own, as AutoHotkey's NewStruct.
+		public static object staticCall(object @this, params object[] args) => @this is Class cls ? cls.Call(args) : Errors.TypeErrorOccurred(@this, typeof(Class));
+
 		public static object staticget_Ptr(object @this) => GetPointerClass(@this);
 
 		public static object staticPtr(object @this, params object[] args) =>

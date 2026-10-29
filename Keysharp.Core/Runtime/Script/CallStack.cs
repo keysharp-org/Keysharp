@@ -19,7 +19,6 @@ namespace Keysharp.Runtime
 
 		// A script constructs an object by calling its class, which reaches the class's Call through Object.Call.
 		private static readonly MethodInfo objectCall = typeof(KeysharpObject).GetMethod(Keywords.ClassStaticPrefix + "Call", BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly);
-		private static readonly MethodInfo classCall = typeof(Class).GetMethod(nameof(Class.Call), BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
 
 		private static readonly ConditionalWeakTable<Exception, Report> remembered = new();
 
@@ -336,7 +335,7 @@ namespace Keysharp.Runtime
 				start--;
 
 			var byScript = errorType != null && start >= 0 && frames[start].Function?.mi is { } constructor
-				&& (constructor == objectCall || constructor == classCall);
+				&& constructor == objectCall;
 
 			if (byScript)
 				start--;

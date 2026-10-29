@@ -93,7 +93,7 @@ MakeCollectable()
 	defined.DefineProp("__Delete", {Call: (*) => __Main.gdefined := 1})
 	DeletedTwice().Clone()
 	Class("DroppedClass", DeletedTwice)
-	VarRef(1)
+	refTarget := 1, droppedRef := &refTarget
 	owner := DeletedStruct()
 	DeletedStruct.At(owner.Ptr)
 	ObjCreateWithDataPtr(DeletedStruct, 0)
