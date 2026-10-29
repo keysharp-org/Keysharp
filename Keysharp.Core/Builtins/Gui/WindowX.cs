@@ -818,20 +818,9 @@ namespace Keysharp.Builtins
 									 object excludeTitle = null,
 									 object excludeText = null)
 		{
-			if (!WinAct(nameof(WinHide), winTitle, winText, excludeTitle, excludeText, Platform.Window.TryHide))
-			{
-#if LINUX
-				if (Platform.Desktop.IsWaylandSession)
-				{
-					if (Keysharp.Internals.Linux.DesktopClient.Current.TryProbeWindowSupport(out _, out var visibility)
-						&& !visibility)
-						return Errors.UnsupportedErrorOccurred("WinHide is unavailable: the desktop service does not support changing foreign-window visibility.");
-
-					return Errors.OSErrorOccurredWithMessage("WinHide failed for a matching window.");
-				}
-#endif
-				return WindowOperationUnsupported(nameof(WinHide));
-			}
+			if (!WinAct(nameof(WinHide), winTitle, winText, excludeTitle, excludeText,
+				Platform.Window.TryHide, out var failure))
+				return WindowOperationFailed(nameof(WinHide), failure);
 
 			return DefaultObject;
 		}
@@ -935,8 +924,8 @@ namespace Keysharp.Builtins
 			DoAction(() =>
 			{
 				if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win
-					&& !Platform.Window.TrySetZOrder(win.Handle, Keysharp.Internals.ZOrder.Bottom))
-					_ = WindowOperationUnsupported(nameof(WinMoveBottom));
+					&& !Platform.Window.TrySetZOrder(win.Handle, Keysharp.Internals.ZOrder.Bottom, out var failure))
+					_ = WindowOperationFailed(nameof(WinMoveBottom), failure);
 			});
 			return DefaultObject;
 		}
@@ -949,8 +938,8 @@ namespace Keysharp.Builtins
 			DoAction(() =>
 			{
 				if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win
-					&& !Platform.Window.TrySetZOrder(win.Handle, Keysharp.Internals.ZOrder.Top))
-					_ = WindowOperationUnsupported(nameof(WinMoveTop));
+					&& !Platform.Window.TrySetZOrder(win.Handle, Keysharp.Internals.ZOrder.Top, out var failure))
+					_ = WindowOperationFailed(nameof(WinMoveTop), failure);
 			});
 			return DefaultObject;
 		}
@@ -1194,8 +1183,9 @@ namespace Keysharp.Builtins
 
 			try
 			{
-				return WinAct(nameof(WinShow), winTitle, winText, excludeTitle, excludeText, Platform.Window.TryShow)
-					   ? DefaultObject : WindowOperationUnsupported(nameof(WinShow));
+				return WinAct(nameof(WinShow), winTitle, winText, excludeTitle, excludeText,
+					Platform.Window.TryShow, out var failure)
+					? DefaultObject : WindowOperationFailed(nameof(WinShow), failure);
 			}
 			finally
 			{
@@ -1291,7 +1281,15 @@ namespace Keysharp.Builtins
 		/// could not act on a window.
 		/// </summary>
 		private static bool WinAct(string name, object winTitle, object winText, object excludeTitle, object excludeText, Func<nint, bool> act)
+			=> WinAct(name, winTitle, winText, excludeTitle, excludeText,
+				(nint h, out Exception failure) => { failure = null; return act(h); }, out _);
+
+		private delegate bool WindowAction(nint handle, out Exception failure);
+
+		private static bool WinAct(string name, object winTitle, object winText, object excludeTitle,
+			object excludeText, WindowAction act, out Exception failure)
 		{
+			failure = null;
 			EnsureWindowControlPermission(name);
 
 			if (WinActTargets(winTitle, winText, excludeTitle, excludeText, out _) is not List<WindowInfoBase> windows)
@@ -1300,7 +1298,10 @@ namespace Keysharp.Builtins
 			var acted = true;
 
 			foreach (var win in windows)
-				acted &= act(win.Handle);
+			{
+				acted &= act(win.Handle, out var currentFailure);
+				failure ??= currentFailure;
+			}
 
 			WindowInfoBase.DoWinDelay();
 			return acted;

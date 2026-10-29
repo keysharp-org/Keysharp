@@ -5,6 +5,24 @@ namespace Keysharp.Tests;
 [TestFixture, Category("Internal"), Category("Curated")]
 public class WaylandTests
 {
+	[TestCase(true)]
+	[TestCase(false)]
+	public void ForeignVisibility(bool supported)
+	{
+		var backend = new VisibilityBackend(supported);
+		var windows = new WaylandWindow(backend);
+		var handle = new nint(42);
+		Assert.That(windows.TryHide(handle), Is.EqualTo(supported));
+		Assert.That(windows.TryShow(handle), Is.EqualTo(supported));
+		Assert.That(windows.TrySetVisible(handle, false), Is.EqualTo(supported));
+		Assert.That(windows.TrySetVisible(handle, true), Is.EqualTo(supported));
+		Assert.That(windows.TrySetVisible(0, true), Is.False);
+		Assert.That(backend.Requests, Is.EqualTo(new[]
+		{
+			(handle, false), (handle, true), (handle, false), (handle, true)
+		}));
+	}
+
 	[Test]
 	public void OverlayMove()
 	{
@@ -397,6 +415,26 @@ public class WaylandTests
 		{
 			Disposed = true;
 			onDispose();
+		}
+	}
+
+	private sealed class VisibilityBackend(bool supported) : IWaylandBackend
+	{
+		public string BackendKey => "visibility-test";
+		public string Name => "visibility-test";
+		internal readonly List<(nint Handle, bool Visible)> Requests = [];
+		public bool IsKnown(nint handle) => handle == new nint(42);
+		public bool TrySetWindowVisible(nint handle, bool visible)
+		{
+			Requests.Add((handle, visible));
+			return supported;
+		}
+		public bool TrySetWindowState(nint handle, FormWindowState state)
+			=> throw new InvalidOperationException("Hiding and showing must not change minimization or maximization.");
+		public bool TryGetCursorPos(out int x, out int y)
+		{
+			x = y = 0;
+			return false;
 		}
 	}
 

@@ -124,10 +124,17 @@ namespace Keysharp.Internals
 		public override bool TryKill(nint h)
 			=> TryOwnControl(h, out _) ? base.TryKill(h) : Broker.TryKillWindow(h);
 		public override bool TrySetZOrder(nint h, ZOrder value)
-			=> TryOwnControl(h, out _) ? base.TrySetZOrder(h, value)
-				: Broker.TrySetZOrder(h, value);
+			=> TrySetZOrder(h, value, out _);
+		public override bool TrySetZOrder(nint h, ZOrder value, out Exception failure)
+		{
+			failure = null;
+			return TryOwnControl(h, out _) ? base.TrySetZOrder(h, value)
+				: Broker.TrySetZOrder(h, value, out failure);
+		}
 		public override bool TryHide(nint h) => TrySetVisible(h, false);
 		public override bool TryShow(nint h) => TrySetVisible(h, true);
+		public override bool TryHide(nint h, out Exception failure) => TrySetVisible(h, false, out failure);
+		public override bool TryShow(nint h, out Exception failure) => TrySetVisible(h, true, out failure);
 		public override bool TryRedraw(nint h)
 			=> TryOwnControl(h, out _) ? base.TryRedraw(h) : Broker.TryRedrawWindow(h);
 		public override bool TrySetState(nint h, FormWindowState state)
@@ -165,7 +172,13 @@ namespace Keysharp.Internals
 		public override bool TrySetTitle(nint h, string title)
 			=> TryOwnControl(h, out _) ? base.TrySetTitle(h, title) : Broker.TrySetWindowTitle(h, title);
 		public override bool TrySetVisible(nint h, bool visible)
-			=> TryOwnControl(h, out _) ? base.TrySetVisible(h, visible) : Broker.TrySetWindowVisible(h, visible);
+			=> TrySetVisible(h, visible, out _);
+		private bool TrySetVisible(nint h, bool visible, out Exception failure)
+		{
+			failure = null;
+			return TryOwnControl(h, out _) ? base.TrySetVisible(h, visible)
+				: Broker.TrySetWindowVisible(h, visible, out failure);
+		}
 		public override bool TrySetEnabled(nint h, bool enabled)
 			=> TryOwnControl(h, out _) && base.TrySetEnabled(h, enabled);
 		public override bool TrySetTransparentColor(nint h, object color)

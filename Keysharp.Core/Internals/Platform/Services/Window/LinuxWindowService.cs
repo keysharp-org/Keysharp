@@ -47,7 +47,10 @@ namespace Keysharp.Internals
 	internal sealed class WaylandWindow : LinuxWindow
 	{
 		private const long WsCaption = 0x00C00000L;
-		private static IWaylandBackend Wayland => WaylandBackend.Current;
+		private readonly IWaylandBackend backend;
+		private IWaylandBackend Wayland => backend ?? WaylandBackend.Current;
+
+		internal WaylandWindow(IWaylandBackend backend = null) => this.backend = backend;
 
 		private bool Backend(nint h, out WaylandWindowInfo info)
 		{
@@ -371,34 +374,19 @@ namespace Keysharp.Internals
 		}
 
 		public override bool TrySetZOrder(nint h, ZOrder z)
-		{
-			if (Known(h))
-				return Wayland.TrySetZOrder(h, z);
+			=> TrySetZOrder(h, z, out _);
 
-			if (TryOwnControl(h, out _))
-				return base.TrySetZOrder(h, z);
-			return false;
+		public override bool TrySetZOrder(nint h, ZOrder z, out Exception failure)
+		{
+			failure = null;
+			if (Known(h)) return Wayland.TrySetZOrder(h, z, out failure);
+			return TryOwnControl(h, out _) && base.TrySetZOrder(h, z);
 		}
 
-		public override bool TryHide(nint h)
-		{
-			if (Known(h))   // membership guard (see TrySetAlwaysOnTop).
-				return Wayland.TrySetWindowState(h, FormWindowState.Minimized);
-
-			if (TryOwnControl(h, out _))
-				return base.TryHide(h);
-			return false;
-		}
-
-		public override bool TryShow(nint h)
-		{
-			if (Known(h))   // membership guard (see TrySetAlwaysOnTop).
-				return Wayland.TrySetWindowState(h, FormWindowState.Normal);
-
-			if (TryOwnControl(h, out _))
-				return base.TryShow(h);
-			return false;
-		}
+		public override bool TryHide(nint h) => TrySetVisible(h, false);
+		public override bool TryShow(nint h) => TrySetVisible(h, true);
+		public override bool TryHide(nint h, out Exception failure) => TrySetVisible(h, false, out failure);
+		public override bool TryShow(nint h, out Exception failure) => TrySetVisible(h, true, out failure);
 
 		public override bool TryRedraw(nint h)
 		{
@@ -512,13 +500,13 @@ namespace Keysharp.Internals
 		}
 
 		public override bool TrySetVisible(nint h, bool visible)
-		{
-			if (Known(h))
-				return Wayland.TrySetWindowState(h, visible ? FormWindowState.Normal : FormWindowState.Minimized);
+			=> TrySetVisible(h, visible, out _);
 
-			if (TryOwnControl(h, out _))
-				return base.TrySetVisible(h, visible);
-			return false;
+		private bool TrySetVisible(nint h, bool visible, out Exception failure)
+		{
+			failure = null;
+			if (Known(h)) return Wayland.TrySetWindowVisible(h, visible, out failure);
+			return TryOwnControl(h, out _) && base.TrySetVisible(h, visible);
 		}
 
 		public override bool TrySetEnabled(nint h, bool enabled)

@@ -18,6 +18,10 @@ namespace Keysharp.Builtins
 		internal static object WindowOperationUnsupported(string commandName)
 			=> Errors.UnsupportedErrorOccurred($"{commandName} is unsupported for this target on {WindowOperationPlatformName()}.");
 
+		internal static object WindowOperationFailed(string commandName, Exception failure)
+			=> failure == null ? WindowOperationUnsupported(commandName)
+				: Errors.OSErrorOccurredWithMessage($"{commandName} failed: {failure.Message}");
+
 		private static string WindowOperationPlatformName()
 		{
 #if WINDOWS

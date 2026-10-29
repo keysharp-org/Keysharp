@@ -5710,7 +5710,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "On Linux, Control* functions are not supported for foreign apps; use the included AtSpi library for cross-process control interaction. COSMIC supplies native listing, active state, geometry, polling-based events, focus, close, minimize, maximize and restore. wlroots compositors can supply listing, active/state facts and the same actions except geometry. Hyprland adds geometry, PID, move/resize, WinMoveTop/WinMoveBottom, hit-testing, window capture, transparency, WinKill and pushed window events through its IPC; a floating window stays above tiled ones, so WinMoveBottom cannot place it beneath them. On other wlroots compositors coordinate hit-testing remains limited without stacking order, and general move/resize is unavailable. macOS currently relies on Accessibility APIs with permission requirements.",
+                     "notes":  "On Linux, Control* functions are not supported for foreign apps; use the included AtSpi library for cross-process control interaction. COSMIC supplies native listing, active state, geometry, focus, close, minimize, maximize and restore, plus native window events when advertised by keysharp-desktop, with polling fallback. wlroots compositors can supply listing, active/state facts and the same actions except geometry. Hyprland adds geometry, PID, move/resize, WinMoveTop/WinMoveBottom, hit-testing, window capture, transparency, WinKill and pushed window events through its IPC; a floating window stays above tiled ones, so WinMoveBottom cannot place it beneath them. On other wlroots compositors coordinate hit-testing remains limited without stacking order, and general move/resize is unavailable. macOS currently relies on Accessibility APIs with permission requirements.",
                      "tested-by":  "WaylandTests.cs"
                  },
                  {
@@ -11527,8 +11527,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Hides the specified window. On Wayland, raises UnsupportedError when the desktop service confirms that foreign-window visibility control is unavailable; an attempted hide that fails for another reason raises OSError. On macOS, windows owned by the calling process are hidden individually; for windows owned by other applications, macOS provides no per-window hide API, so the entire owning application is hidden instead.",
-                     "tested-by":  "Gui/guitest.ks"
+                     "notes":  "Hides the specified window. On Wayland, requires foreign-window visibility control without substituting minimization. On Linux, raises UnsupportedError when visibility control is unavailable for the target window; failures reported by the desktop service, including timeouts, raise OSError. On macOS, windows owned by the calling process are hidden individually; for windows owned by other applications, macOS provides no per-window hide API, so the entire owning application is hidden instead.",
+                     "tested-by":  "Gui/guitest.ks; WaylandTests.ForeignVisibility"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11604,7 +11604,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinMoveBottom function sends the specified window to the bottom of stack; that is, beneath all other windows. On Wayland this is provided by the Keysharp KWin provider or the GNOME/Cinnamon shell extension (compositor-dependent). On macOS, only supported for windows owned by the calling process, via NSWindow.orderBack(); macOS provides no API to lower another process\u0027s window. An unimplemented backend operation raises UnsupportedError.",
+                     "notes":  "The WinMoveBottom function sends the specified window to the bottom of stack; that is, beneath all other windows. On Wayland this is provided by the Keysharp KWin provider or the GNOME/Cinnamon shell extension (compositor-dependent). On macOS, only supported for windows owned by the calling process, via NSWindow.orderBack(); macOS provides no API to lower another process\u0027s window. An unimplemented backend operation raises UnsupportedError. On Linux, failures reported by the desktop service, including timeouts, raise OSError.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -11615,7 +11615,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "full",
-                     "notes":  "The WinMoveTop function brings the specified window to the top of the stack without explicitly activating it. On Wayland this is provided natively on KWin (compositor scripting) or by the Keysharp GNOME or Cinnamon shell extension (compositor-dependent). On macOS this is done via the Accessibility AXRaise action, which raises the window within its owning application without activating that application. An unimplemented backend operation raises UnsupportedError.",
+                     "notes":  "The WinMoveTop function brings the specified window to the top of the stack without explicitly activating it. On Wayland this is provided natively on KWin (compositor scripting) or by the Keysharp GNOME or Cinnamon shell extension (compositor-dependent). On macOS this is done via the Accessibility AXRaise action, which raises the window within its owning application without activating that application. An unimplemented backend operation raises UnsupportedError. On Linux, failures reported by the desktop service, including timeouts, raise OSError.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -11729,8 +11729,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinShow function unhides the specified window. On macOS, windows owned by the calling process are restored individually; for windows owned by other applications, the entire owning application is unhidden (the inverse of WinHide\u0027s fallback). An unimplemented backend operation raises UnsupportedError.",
-                     "tested-by":  "Gui/guitest.ks"
+                     "notes":  "The WinShow function unhides the specified window. On Wayland, requires foreign-window visibility control without substituting restoration. On macOS, windows owned by the calling process are restored individually; for windows owned by other applications, the entire owning application is unhidden (the inverse of WinHide\u0027s fallback). An unimplemented backend operation raises UnsupportedError. On Linux, failures reported by the desktop service, including timeouts, raise OSError.",
+                     "tested-by":  "Gui/guitest.ks; WaylandTests.ForeignVisibility"
                  },
                  {
                      "category":  "Windowing/GUI",

@@ -89,8 +89,10 @@ namespace Keysharp.Internals
 	/// implemented, is not exposed by the current platform/compositor, or no backend-specific fallback exists.</para>
 	/// <para>If an implementation actually attempts a supported native operation and that operation fails, it should
 	/// preserve the existing native/runtime error behavior instead of converting the failure to <c>false</c>. The
-	/// user-facing window built-ins translate unsupported <c>false</c> results into <c>OSError</c>; internal
+	/// user-facing window built-ins translate unsupported <c>false</c> results into <c>UnsupportedError</c>; internal
 	/// best-effort callers may ignore them.</para>
+	/// <para>Overloads with a failure output preserve the error from that call. A false result with no failure
+	/// means unsupported; reporting an attempted failure must not re-probe a backend that may have changed.</para>
 	/// </remarks>
 	internal interface IWindowControl
 	{
@@ -104,10 +106,13 @@ namespace Keysharp.Internals
 		bool TrySetTransparency(nint h, object alpha);
 		bool TryActivate(nint h);
 		bool TrySetZOrder(nint h, ZOrder z);
+		bool TrySetZOrder(nint h, ZOrder z, out Exception failure);
 		bool TryClose(nint h);
 		bool TryKill(nint h);
 		bool TryHide(nint h);
 		bool TryShow(nint h);
+		bool TryHide(nint h, out Exception failure);
+		bool TryShow(nint h, out Exception failure);
 		bool TryRedraw(nint h);
 		bool TryClick(nint h, Point at, uint button, int count);
 		bool TrySetTitle(nint h, string title);

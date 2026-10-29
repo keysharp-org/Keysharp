@@ -157,11 +157,15 @@ namespace Keysharp.Internals.Linux
 				? slowSession : fastSession;
 
 		private bool Call(Operation operation, Func<DesktopConnection, CallResult> request)
-			=> SessionFor(operation).TryUse(operation, request, out _);
+			=> SessionFor(operation).TryUse(operation, request, out _, out _);
 
 		private bool Call(Operation operation, Func<DesktopConnection, CallResult> request,
 			out NativeClientStatus status, NativeClientStatus? suppressedFailure = null)
-			=> SessionFor(operation).TryUse(operation, request, out status, suppressedFailure);
+			=> SessionFor(operation).TryUse(operation, request, out status, out _, suppressedFailure);
+
+		private bool CallWindow(Operation operation, Func<DesktopConnection, CallResult> request,
+			out Exception failure)
+			=> SessionFor(operation).TryUse(operation, request, out _, out failure);
 
 		private static LinuxPermissionScope ScopeFor(Operation operation)
 		{
@@ -328,11 +332,11 @@ namespace Keysharp.Internals.Linux
 		internal bool FocusWindow(ulong handle)
 			=> Call(Operation.WindowFocus, connection => connection.FocusWindow(handle));
 
-		internal bool RaiseWindow(ulong handle)
-			=> Call(Operation.WindowRaise, connection => connection.RaiseWindow(handle));
+		internal bool RaiseWindow(ulong handle, out Exception failure)
+			=> CallWindow(Operation.WindowRaise, connection => connection.RaiseWindow(handle), out failure);
 
-		internal bool LowerWindow(ulong handle)
-			=> Call(Operation.WindowLower, connection => connection.LowerWindow(handle));
+		internal bool LowerWindow(ulong handle, out Exception failure)
+			=> CallWindow(Operation.WindowLower, connection => connection.LowerWindow(handle), out failure);
 
 		internal bool CloseWindow(ulong handle)
 			=> Call(Operation.WindowClose, connection => connection.CloseWindow(handle));
@@ -707,9 +711,10 @@ namespace Keysharp.Internals.Linux
 			internal ulong LeaseId { get { lock (lifecycle) return leaseId; } }
 
 			internal bool TryUse(Operation operation, Func<DesktopConnection, CallResult> request,
-				out NativeClientStatus status, NativeClientStatus? suppressedFailure = null)
+				out NativeClientStatus status, out Exception failure, NativeClientStatus? suppressedFailure = null)
 			{
 				status = NativeClientStatus.Unavailable;
+				failure = null;
 				DesktopConnection current = null;
 				try
 				{
@@ -717,6 +722,7 @@ namespace Keysharp.Internals.Linux
 					if (scope != LinuxPermissionScope.None && service.Permissions.RequestDesktop(scope, false).Status != PermissionStatus.Granted)
 					{
 						status = NativeClientStatus.Denied;
+						failure = new CallResult(status, 0, 0, "The required desktop permission is not granted.", operation.ToString()).Exception;
 						return false;
 					}
 					var lease = service.GetLease();
@@ -725,6 +731,7 @@ namespace Keysharp.Internals.Linux
 					if (scope == LinuxPermissionScope.WindowControl && lease.State.HasWindowState && !lease.State.Windows.WaitReady())
 					{
 						status = NativeClientStatus.Timeout;
+						failure = new CallResult(status, 0, 0, "Window state did not become ready.", operation.ToString()).Exception;
 						return false;
 					}
 					var expectedEpoch = lease.State.Windows.Epoch;
@@ -766,9 +773,15 @@ namespace Keysharp.Internals.Linux
 						if (result.ShouldReconnect) service.capabilities.Forget();
 					}
 					status = result.Status;
-					if (!lease.IsOpen) { status = NativeClientStatus.Revoked; return false; }
+					if (!lease.IsOpen)
+					{
+						status = NativeClientStatus.Revoked;
+						failure = new CallResult(status, 0, 0, "The desktop lease has stopped.", operation.ToString()).Exception;
+						return false;
+					}
 					if (!result.IsSuccess)
 					{
+						failure = status == NativeClientStatus.Unsupported ? null : result.Exception;
 						if (status != suppressedFailure) DebugLine(result.Message);
 						return false;
 					}
@@ -777,12 +790,15 @@ namespace Keysharp.Internals.Linux
 					{
 						lease.State.Resynchronize(1);
 						status = NativeClientStatus.Timeout;
+						failure = new CallResult(status, 0, 0, "Window state did not acknowledge the operation.", operation.ToString()).Exception;
 						return false;
 					}
 					return true;
 				}
 				catch (Exception exception)
 				{
+					failure = exception;
+					status = exception is NativeClientException native ? native.Status : NativeClientStatus.Unavailable;
 					DebugLine($"keysharp-desktop requires client ABI 1.0 / protocol 3: {exception.Message}");
 					Retire(current);
 					service.capabilities.Forget();
@@ -790,7 +806,7 @@ namespace Keysharp.Internals.Linux
 				}
 			}
 
-			internal bool TryOpen() => TryUse(Operation.None, _ => new CallResult(NativeClientStatus.Ok, 0, 0, "", "open"), out _);
+			internal bool TryOpen() => TryUse(Operation.None, _ => new CallResult(NativeClientStatus.Ok, 0, 0, "", "open"), out _, out _);
 
 			internal void Dispose(ulong retiredLease)
 			{
