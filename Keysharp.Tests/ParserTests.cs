@@ -182,6 +182,14 @@ public class ParserTests : TestRunner
 		AssertCompileError("class Invalid {\n static +(Right := 1) => Right\n}", "Static operator '+' parameters cannot be optional, ByRef, variadic, or have defaults");
 	}
 
+	// A class may be declared in a block outside any function, but not inside one, as in AHK.
+	[Test, Category("Parser")]
+	public void ClassInFunction()
+	{
+		AssertCompileError("F() {\n\t{\n\t\tclass C {\n\t\t}\n\t}\n}\n", "Functions cannot contain classes.");
+		AssertCompileError("^a:: {\n\tclass C {\n\t}\n}\n", "Functions cannot contain classes.");
+	}
+
 	[TestCase("=", "!="), TestCase("!=", "="), TestCase("==", "!=="), TestCase("!==", "=="), Category("Parser")]
 	public void OperatorEqualityPairs(string symbol, string partner)
 	{

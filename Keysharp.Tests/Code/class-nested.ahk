@@ -139,4 +139,41 @@ class outerwithshared {
 }
 AssertEq(outerwithshared.inner.Read(), "global _4", A_LineNumber)
 
+; A class declared in a block outside any function is global, as in AHK.
+if (true) {
+    class blockclass {
+        static Value := 7
+        class inner {
+            static Value := 8
+        }
+    }
+}
+{
+    class blockderived extends blockclass {
+    }
+}
+AssertEq(blockclass.Value, 7, A_LineNumber)
+AssertEq(blockclass.inner.Value, 8, A_LineNumber)
+AssertEq(blockderived.Value, 7, A_LineNumber)
+AssertEq(Type(blockderived()), "blockderived", A_LineNumber)
+switch 1 {
+case 1:
+    class caseclass {
+        static Value := 9
+    }
+}
+AssertEq(caseclass.Value, 9, A_LineNumber)
+; It initializes where it is declared, when execution reaches it.
+blockinitorder := ""
+{
+    blockinitorder .= "a"
+    class orderedclass {
+        static __New() {
+            global blockinitorder .= "i"
+        }
+    }
+    blockinitorder .= "b"
+}
+AssertEq(blockinitorder, "aib", A_LineNumber)
+
 FileAppend "pass", "*"

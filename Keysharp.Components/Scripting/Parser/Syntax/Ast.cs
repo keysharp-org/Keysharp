@@ -465,6 +465,7 @@ namespace Keysharp.Parsing.Syntax
 		public List<CSharpDirective> CSharpBlocks;
 		public List<Stmt> StaticInit = new();     // `static x.y := z` member/index-target static initializers (run in static __Init)
 		public List<Stmt> InstanceInit = new();   // `x.y := z` member/index-target instance initializers (run in __Init)
+		public bool InitializesAtSite;            // declared in a block, so its DeclarationSite initializes it
 		public ClassDecl(string name, string baseName, List<ClassField> fields, List<ClassMethod> methods, List<ClassProperty> properties, List<ClassDecl> nested = null, bool isStruct = false)
 		{ Name = name; Base = baseName; Fields = fields; Methods = methods; Properties = properties; Nested = nested ?? new List<ClassDecl>(); IsStruct = isStruct; }
 	}
@@ -478,6 +479,14 @@ namespace Keysharp.Parsing.Syntax
 		public readonly bool Static;       // `static name(){…}` — a non-capturing (module-level) nested function
 		public FunctionDecl(string name, List<Param> ps, Block body, Expr arrowBody, bool isStatic = false)
 		{ Name = name; Params = ps; Body = body; ArrowBody = arrowBody; Static = isStatic; }
+	}
+
+	// Where a function or class declared in a block outside any function was written. The declaration itself moves to
+	// program scope, since it is global; a class still initializes here, when execution reaches it, as in AHK.
+	internal sealed class DeclarationSite : Stmt
+	{
+		public readonly Stmt Declaration;
+		public DeclarationSite(Stmt declaration) => Declaration = declaration;
 	}
 
 	// ---- Debug printer (compact S-expressions, used by tests) -----------------

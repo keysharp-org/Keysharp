@@ -999,7 +999,7 @@ namespace Keysharp.Compilation.Syntax
 					// AHK initializes a class when execution reaches its declaration — model that by referencing the
 					// class slot at that point in the auto-exec, which triggers the lazy Statics[typeof(Class)] init.
 					// Where execution cannot reach the declaration, the class initializes on first use, as in AHK.
-					if (!EndPointUnreachable(auto))
+					if (!cd.InitializesAtSite && !EndPointUnreachable(auto))
 					{
 						auto.Add(Stamp(cd));
 						auto.Add(ExprStmt(Op("MultiStatement", Id(_fields[cd.Name]))));
@@ -1892,9 +1892,13 @@ namespace Keysharp.Compilation.Syntax
 					return labels.ByName[l.Name] is var label && (labels.ComputedGoto || label.Jumped) ? Label(LabelId(label)) : null;
 				case FunctionDecl fd:
 					// A function nested inside another is uniquely named and bound to a local var, so same-named nested functions
-					// in sibling scopes don't collide (see LowerNestedFunction). Top-level functions are module-level methods.
-					if (_scope != null) { _ = LowerNestedFunction(fd); return null; }
-					if (_emittedFuncImpls.Add(NameMangler.FunctionMethod(fd.Name))) _pendingLambdas.Add(LowerFunction(fd));
+					// in sibling scopes don't collide (see LowerNestedFunction). One outside any function is a DeclarationSite.
+					_ = LowerNestedFunction(fd);
+					return null;
+				// The declaration was moved to program scope; a class initializes where it was written, as at top level.
+				case DeclarationSite { Declaration: ClassDecl cd }:
+					return ExprStmt(Op("MultiStatement", Id(_fields[cd.Name])));
+				case DeclarationSite:
 					return null;
 				case StartupDirective:
 				case DirectiveStmt dir when IsLoadTimeDirective(System.Text.Ascii.IsValid(dir.Name) ? dir.Name.ToLowerInvariant() : dir.Name):
@@ -3639,7 +3643,7 @@ namespace Keysharp.Compilation.Syntax
 		// position, and a directive is processed at compile time — none execute in sequence, so they are never
 		// "unreachable" and do not break an unreachable run (e.g. a nested helper `func` defined AFTER a `return`).
 		private static bool IsHoistedOrDirective(Stmt s) =>
-			s is FunctionDecl or ClassDecl or HotkeyDef or HotstringDef or RemapDef or DirectiveStmt;
+			s is FunctionDecl or ClassDecl or DeclarationSite or HotkeyDef or HotstringDef or RemapDef or DirectiveStmt;
 
 		// Unreachable: an executable statement following a Return/Break/Continue/Throw/Goto at the same level. Hoisted
 		// definitions/directives are skipped (never unreachable); a label is a goto target, so it makes flow reachable
@@ -7408,8 +7412,9 @@ namespace Keysharp.Compilation.Syntax
 			SyntaxFactory.ConstructorDeclaration(className).AddModifiers(PublicTok)
 				.WithParameterList(SyntaxFactory.ParameterList(SyntaxFactory.SingletonSeparatedList(
 					SyntaxFactory.Parameter(SyntaxFactory.Identifier("args")).WithType(ObjArrayType).AddModifiers(SyntaxFactory.Token(SyntaxKind.ParamsKeyword)))))
+				// Typed, so a built-in base with other one-argument constructors still resolves to its object[] one.
 				.WithInitializer(SyntaxFactory.ConstructorInitializer(SyntaxKind.BaseConstructorInitializer,
-					SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(Arg(Null)))))
+					SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(Arg(SyntaxFactory.CastExpression(ObjArrayType, Null))))))
 				.WithBody(SyntaxFactory.Block());
 
 		private static ExpressionSyntax IntLit(int n) => SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(n));

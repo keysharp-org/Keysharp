@@ -395,6 +395,67 @@ Throws(() => blockCommentStr/*c*/.5, A_LineNumber)
 
 Throws(() => blockCommentStr .5, A_LineNumber)
 
+;Inside brackets a '*' ending a line multiplies; it is a spread only when a terminator follows the newline.
+
+r1 := [0, 0, 4, 3], r2 := [1, 1, 5, 6]
+overlap := (
+	((r1[3] < r2[3] ? r1[3] : r2[3]) - (r1[1] > r2[1] ? r1[1] : r2[1])) *
+	((r1[4] < r2[4] ? r1[4] : r2[4]) - (r1[2] > r2[2] ? r1[2] : r2[2]))
+)
+
+AssertEq(overlap, 6, A_LineNumber)
+
+spreadCopy := [r1*
+]
+
+AssertEq(spreadCopy.Length, 4, A_LineNumber)
+
+;Outside brackets a line ending in an operator, '*' included, continues onto the next line unless that line cannot
+;continue the expression, as when it starts a control-flow statement.
+
+joinedProduct := 3 *
+	(2)
+
+AssertEq(joinedProduct, 6, A_LineNumber)
+
+spreadSeen := 0
+SpreadRecord(params*) {
+	global spreadSeen := params.Length
+}
+SpreadRecord r1*
+if (spreadSeen != 4)
+	Assert(false, A_LineNumber)
+
+switch 2 {
+case 1:
+	SpreadRecord r2*
+default:
+	SpreadRecord(r2*)
+}
+
+AssertEq(spreadSeen, 4, A_LineNumber)
+
+;A function declared in a block outside any function is global, and a call ending a line does not take the block
+;after it as a function body.
+
+blockFuncResult := BlockDeclaredFunc()
+{
+	BlockDeclaredFunc() => 5
+}
+
+AssertEq(blockFuncResult, 5, A_LineNumber)
+
+;A spaced '% expr %' ends at its second '%', so a statement may continue with a member access.
+
+class DerefTarget {
+	static Hits := 0
+	static Hit() => ++DerefTarget.Hits
+}
+
+% "DerefTarget" %.Hit()
+
+AssertEq(% "DerefTarget" %.Hits, 1, A_LineNumber)
+
 ;Test ending a file with a multiline comment.
 FileAppend "pass", "*"
 

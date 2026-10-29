@@ -1298,18 +1298,18 @@ namespace Keysharp.Parsing.Lexing
 
 		// Finds the offset of the hotkey/hotstring `::` separator on the current line, starting at `from`.
 		// Honors backtick escapes (`` `: `` is a literal colon, not part of a separator) when escapeAware.
-		// Stops (returns -1) at end of line, a whitespace-preceded comment, or — when quotesEndScan — a
+		// Stops (returns -1) at end of line, a whitespace-preceded comment, or — unless rawText — a
 		// string-opening quote (a quote in key position immediately followed by `::` is a single-char
-		// trigger, not a string). A hotstring's trigger is raw text where a quote is just another
-		// character (`::arn't::aren't`), so that scan passes quotesEndScan: false.
-		private int FindSeparator(int from, bool escapeAware, bool allowEmpty, bool quotesEndScan)
+		// trigger, not a string). A hotstring's trigger is raw text where a quote or `/*` is just another
+		// character (`::arn't::aren't`, `:*:/*::`), so that scan passes rawText: true.
+		private int FindSeparator(int from, bool escapeAware, bool allowEmpty, bool rawText)
 		{
 			bool escaped = false;
 			for (int i = from; i < _n; i++)
 			{
 				char c = _s[i];
 				if (c == '\n' || c == '\r') return -1;
-				if (quotesEndScan && (c == '"' || c == '\''))
+				if (!rawText && (c == '"' || c == '\''))
 				{
 					// A quote almost always means the line is an expression and any following `::` is string
 					// content, not a hotkey separator (e.g. `MsgBox("a::b")`, `x := "::"`). The exception is a
@@ -1323,7 +1323,7 @@ namespace Keysharp.Parsing.Lexing
 
 				// A block comment is whitespace, so a `::` inside one is comment text and not a separator
 				// (`x := 1 /* a :: b */`). One that is unterminated or spans lines takes the rest of the line with it.
-				if (!escaped && c == '/' && i + 1 < _n && _s[i + 1] == '*')
+				if (!rawText && !escaped && c == '/' && i + 1 < _n && _s[i + 1] == '*')
 				{
 					var end = _s.IndexOf("*/", i + 2, StringComparison.Ordinal);
 
@@ -1345,8 +1345,8 @@ namespace Keysharp.Parsing.Lexing
 		private bool TryScanHotkey(List<Token> tokens, bool leadingWs)
 		{
 			int start = _pos, sl = _line, sc = _col;
-			int sep = FindSeparator(_pos, escapeAware: true, allowEmpty: false, quotesEndScan: true);
-			if (sep < 0) sep = FindSeparator(_pos, escapeAware: false, allowEmpty: false, quotesEndScan: true);
+			int sep = FindSeparator(_pos, escapeAware: true, allowEmpty: false, rawText: false);
+			if (sep < 0) sep = FindSeparator(_pos, escapeAware: false, allowEmpty: false, rawText: false);
 			if (sep < 0) return false;
 
 			// `sep` indexes the first ':' of the '::' separator. Decide remap (target is a single key) vs hotkey.
@@ -1473,7 +1473,7 @@ namespace Keysharp.Parsing.Lexing
 			if (i >= _n || _s[i] != ':') return false;
 			var opts = _s.AsSpan(_pos + 1, i - (_pos + 1));              // option chars between the two colons
 			int trigStart = i + 1;                                          // after the second ':'
-			int sep = FindSeparator(trigStart, escapeAware: true, allowEmpty: true, quotesEndScan: false);
+			int sep = FindSeparator(trigStart, escapeAware: true, allowEmpty: true, rawText: true);
 			if (sep < 0) return false;
 			int afterSep = sep + 2;
 			string trigTok = _s.Substring(start, sep - start);                // `:opts:trigger` (separator excluded)

@@ -19,6 +19,8 @@ namespace Keysharp.Parsing.Syntax
 		// Directives (e.g. #import) found in expression position, such as inside an object literal `{ #import … }`.
 		// AHK processes directives per physical line regardless of nesting, so these are hoisted to program scope.
 		private readonly List<Stmt> _hoistedStmts = new();
+		// Functions and classes declared in a block outside any function, which are global (see DeclarationSite).
+		private readonly List<Stmt> _programDecls = new();
 		private bool _inFlowCond;     // true while parsing a control-flow header — `(cond){…}` is the body, not an anon block fn
 		// Preprocessor symbols for #if/#elif: the predefined set, plus whatever the caller supplied for this
 		// compilation (`--define:NAME`, or Ks.RunScript's Defines option), and #define adds more. Seeded per Parser
@@ -301,6 +303,7 @@ namespace Keysharp.Parsing.Syntax
 				if (_hoistedStmts.Count > 0) { body.AddRange(_hoistedStmts); _hoistedStmts.Clear(); }
 				for (var i = added; i < body.Count; i++)
 					body[i].Inclusion = inclusion;
+				if (_programDecls.Count > 0) { body.AddRange(_programDecls); _programDecls.Clear(); }
 				if (_pos == p) Advance();  // guarantee progress on error
 				SkipNewlines();
 			}
@@ -317,10 +320,20 @@ namespace Keysharp.Parsing.Syntax
 			SkipNewlines();
 			int line = Current.Line, col = Current.Column;
 			var file = Current.File;
+			var inclusion = Current.Inclusion;
 			var sourceOrder = ++_nextSourceOrder;
 			var s = ParseStatementCore(programScope);
 			if (s != null && s.Line == 0) { s.Line = line; s.Column = col; s.File = file; }
 			if (s != null && s.SourceOrder == 0) s.SourceOrder = sourceOrder;
+
+			if (!programScope && !_inFunction && s is FunctionDecl or ClassDecl)
+			{
+				if (s is ClassDecl cd) cd.InitializesAtSite = true;
+				s.Inclusion = inclusion;
+				_programDecls.Add(s);
+				return new DeclarationSite(s) { Line = s.Line, Column = s.Column, File = s.File, SourceOrder = s.SourceOrder };
+			}
+
 			return s;
 		}
 
@@ -348,8 +361,11 @@ namespace Keysharp.Parsing.Syntax
 			if (AtKeyword("goto")) return ParseGoto();
 			if (AtKeyword("return")) return ParseReturn();
 			if (AtKeyword("local") || AtKeyword("global") || AtKeyword("static")) return ParseDecl();
-			if (AtKeyword("class") && Peek(1).Kind == TokenKind.Identifier) return ParseClass();
-			if (AtKeyword("struct") && Peek(1).Kind == TokenKind.Identifier) return ParseClass(isStruct: true);
+			if ((AtKeyword("class") || AtKeyword("struct")) && Peek(1).Kind == TokenKind.Identifier)
+			{
+				if (_inFunction) Error("Functions cannot contain classes.");
+				return ParseClass(isStruct: AtKeyword("struct"));
+			}
 			// A label: `name:` alone on its own line. The colon must be ADJACENT to the name (no left whitespace) and
 			// end the line — this distinguishes it from a ternary's `: arm` continued on its own line (`false :`).
 			if (At(TokenKind.Identifier) && Peek(1).Kind == TokenKind.Colon && !Peek(1).LeadingWhitespace
@@ -1648,10 +1664,12 @@ namespace Keysharp.Parsing.Syntax
 					SkipNewlines();
 					continue;
 				}
-				var isStatic = AtKeyword("static");
+				// The modifier always precedes a member name or operator, so `Static := false` and `Static => 1` declare
+				// members named Static.
+				var isStatic = AtKeyword("static") && (Peek(1).Kind == TokenKind.Identifier || IsOperatorDeclaration(1));
 				if (isStatic) Advance();
 
-				if (Keysharp.Runtime.OperatorCatalog.Supports(Peek(0).Text) && Peek(1).Kind == TokenKind.LParen)
+				if (IsOperatorDeclaration(0))
 				{
 					var symbolToken = Advance();
 					var symbol = symbolToken.Text;
@@ -1912,6 +1930,9 @@ namespace Keysharp.Parsing.Syntax
 			return args;
 		}
 
+		private bool IsOperatorDeclaration(int k) =>
+			Keysharp.Runtime.OperatorCatalog.Supports(Peek(k).Text) && Peek(k + 1).Kind == TokenKind.LParen;
+
 		private bool IsFunctionDefinition()
 		{
 			if (!At(TokenKind.Identifier)) return false;
@@ -2091,7 +2112,7 @@ namespace Keysharp.Parsing.Syntax
 				}
 
 				// `expr*` spread (argument/array): a trailing '*' before a terminator is not multiplication.
-				if (t.Kind == TokenKind.Star && IsArgTerminator(Peek(1))) break;
+				if (t.Kind == TokenKind.Star && IsSpreadStar()) break;
 
 				var inf = GetInfix(t);
 				if (inf.Prec == 0 || inf.Prec < minPrec)
@@ -2123,21 +2144,42 @@ namespace Keysharp.Parsing.Syntax
 			: target is UnaryExpr { Postfix: false } ue ? new UnaryExpr(ue.Op, AttachAssign(op, ue.Operand, rhs), false)
 			: new AssignExpr(op, target, rhs);
 
-		// Whether a token can start the right side of an auto-concatenation (`a b`).
+		// Whether a token can start the right side of an auto-concatenation (`a b`). Inside `% … %` a spaced '%' is the
+		// closing delimiter, as in `% "Name" %.Show()`.
 		private bool IsImplicitConcatStart(Token t) => t.Kind switch
 		{
-			TokenKind.String or TokenKind.Number or TokenKind.LParen or TokenKind.Percent => true,
+			TokenKind.String or TokenKind.Number or TokenKind.LParen => true,
+			TokenKind.Percent => !_inDerefInner,
 			TokenKind.Identifier => !verbalOps.Contains(t.Text),
 			_ => false
 		};
 
-		// A token that terminates an argument/array element, so a preceding * is a spread marker not multiplication.
-		private static bool IsArgTerminator(Token t) => t.Kind switch
+		// A line ending in an operator continues onto the next, as AutoHotkey's EndsWithOperator does, so a '*' that
+		// ends a line is a spread only when the next line cannot continue the expression: it closes a bracket, starts
+		// with nothing an operand can begin with, or is a control-flow statement, class or label (`default:`). Inside
+		// brackets only the first holds.
+		private bool IsSpreadStar()
 		{
-			TokenKind.RParen or TokenKind.RBracket or TokenKind.RBrace or TokenKind.Comma
-			or TokenKind.Newline or TokenKind.EOF => true,
-			_ => false
-		};
+			var i = 1;
+			while (Peek(i).Kind == TokenKind.Newline) i++;
+			var next = Peek(i);
+
+			if (next.Kind is TokenKind.RParen or TokenKind.RBracket or TokenKind.RBrace or TokenKind.Comma or TokenKind.EOF)
+				return true;
+			if (i == 1 || _groupDepth > 0) return false;
+			if (!CanStartOperand(next)) return true;
+			if (next.Kind != TokenKind.Identifier) return false;
+
+			var after = Peek(i + 1);
+			return statementKeywords.Contains(next.Text) || next.IsKeyword("case")
+				|| (next.IsKeyword("class") || next.IsKeyword("struct")) && after.Kind == TokenKind.Identifier
+				|| after.Kind == TokenKind.Colon && !after.LeadingWhitespace && Peek(i + 2).Kind is TokenKind.Newline or TokenKind.EOF;
+		}
+
+		private static bool CanStartOperand(Token t) => t.Kind is TokenKind.Identifier or TokenKind.Number or TokenKind.String
+			or TokenKind.LParen or TokenKind.LBracket or TokenKind.LBrace or TokenKind.Percent or TokenKind.Minus
+			or TokenKind.Plus or TokenKind.Not or TokenKind.BitNot or TokenKind.BitAnd or TokenKind.PlusPlus
+			or TokenKind.MinusMinus;
 
 		private Expr ParseUnary()
 		{
@@ -2477,11 +2519,12 @@ namespace Keysharp.Parsing.Syntax
 				i++;
 			}
 			else if (!At(TokenKind.LParen)) return false;
-			var next = KindAfterParen(_t, i);
+			// Outside brackets a `{` on a later line opens a block after the call (`x := f()`), not a function body.
+			var next = KindAfterParen(_t, i, skipNewlines: _groupDepth > 0);
 			return next == TokenKind.FatArrow || (next == TokenKind.LBrace && !_inFlowCond);
 		}
 
-		private static TokenKind KindAfterParen(List<Token> tokens, int i)
+		private static TokenKind KindAfterParen(List<Token> tokens, int i, bool skipNewlines = true)
 		{
 			// i is at '('
 			var depth = 0;
@@ -2492,7 +2535,7 @@ namespace Keysharp.Parsing.Syntax
 				else if (k == TokenKind.RParen) { depth--; if (depth == 0) { i++; break; } }
 				else if (k == TokenKind.EOF) return TokenKind.EOF;
 			}
-			while (i < tokens.Count && tokens[i].Kind == TokenKind.Newline) i++;
+			while (skipNewlines && i < tokens.Count && tokens[i].Kind == TokenKind.Newline) i++;
 			return i < tokens.Count ? tokens[i].Kind : TokenKind.EOF;
 		}
 
@@ -2509,6 +2552,7 @@ namespace Keysharp.Parsing.Syntax
 			{ var pTok = Current; RejectReservedName(pTok.Text, pTok, "a parameter name"); ps = new List<Param> { new Param(Advance().Text, null, false, false, false) }; }
 			else
 				ps = ParseParamList();
+			if (_groupDepth > 0) SkipNewlines();
 			if (At(TokenKind.LBrace))   // anonymous block-bodied function `(params) { … }`
 				return new FatArrowExpr(ps, ParseCallable(ParseBlock)) { Name = faName, Line = start.Line, Column = start.Column, File = start.File };
 			Expect(TokenKind.FatArrow, "fat-arrow function");

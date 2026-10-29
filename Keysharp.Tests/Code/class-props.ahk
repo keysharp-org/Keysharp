@@ -471,5 +471,15 @@ DefineProp(HiddenField.Prototype, "Hidden", {Type: Int32, Enumerable: false})
 fieldNames := PropNames(HiddenField())
 Assert(InStr(fieldNames, "Shown,") && !InStr(fieldNames, "Hidden,"), A_LineNumber)
 AssertEq(HiddenField.Prototype.Size, 8, A_LineNumber)
+; `Static` followed by `:=` or `=>` names a member rather than marking one static.
+class StaticNamedMembers {
+	Static := 1
+	static Shared := 2
+	static Static => 3
+}
+staticNamed := StaticNamedMembers()
+AssertEq(staticNamed.Static, 1, A_LineNumber)
+AssertEq(StaticNamedMembers.Shared, 2, A_LineNumber)
+AssertEq(StaticNamedMembers.Static, 3, A_LineNumber)
 
 FileAppend "pass", "*"

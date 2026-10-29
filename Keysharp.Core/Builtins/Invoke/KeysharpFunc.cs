@@ -36,6 +36,8 @@ namespace Keysharp.Builtins
 		// so binding one behaves the same as supplying it at the call.
 		internal Ks.NamedArgs boundnamed;
 
+		public BoundFunc(params object[] args) : base(args) { }
+
 		internal BoundFunc(MethodPropertyHolder m, object[] ba, object o = null)
 			: base(m, o)
 		{
@@ -231,6 +233,8 @@ namespace Keysharp.Builtins
 
 	public class Closure : KeysharpFunc
 	{
+		public Closure(params object[] args) : base(args) { }
+
         internal Closure(Delegate m, object o = null) : base(m, o) { }
     }
 

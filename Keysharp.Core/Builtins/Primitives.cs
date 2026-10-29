@@ -2,6 +2,10 @@ namespace Keysharp.Builtins
 {
 	public class Primitive : Any
 	{
+		// A script class may extend any built-in class, and its constructor chains to this one, as AHK permits
+		// `class Numeric extends Primitive`.
+		public Primitive(params object[] args) : base(args) { }
+
 		internal static bool IsNative(object item) => item is string || item is long || item is double || item is bool;
 		internal static Type MapPrimitiveToNativeType(object item)
 		{
@@ -18,6 +22,8 @@ namespace Keysharp.Builtins
 
 	public class String : Primitive
 	{
+		public String(params object[] args) : base(args) { }
+
 		/// <summary>
 		/// Converts a value to a string.
 		/// </summary>
@@ -102,6 +108,8 @@ namespace Keysharp.Builtins
 
 	public class Number : Primitive
 	{
+		public Number(params object[] args) : base(args) { }
+
 		/// <summary>
 		/// Converts a numeric string to a pure integer or floating-point number.
 		/// </summary>
@@ -136,6 +144,8 @@ namespace Keysharp.Builtins
 
 	public class Integer : Number
 	{
+		public Integer(params object[] args) : base(args) { }
+
 		/// <summary>
 		/// Converts a numeric string or floating-point value to an integer.
 		/// </summary>
@@ -153,6 +163,8 @@ namespace Keysharp.Builtins
 
 	public class Float : Number
 	{
+		public Float(params object[] args) : base(args) { }
+
 		/// <summary>
 		/// Converts a numeric string or integer value to a floating-point number.
 		/// </summary>
@@ -184,6 +196,8 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public class Boolean : Integer
 		{
+			public Boolean(params object[] args) : base(args) { }
+
 			/// <summary>
 			/// Converts a value to a boolean, deciding it exactly as <c>if</c> would.
 			/// </summary>

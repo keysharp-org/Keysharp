@@ -730,4 +730,26 @@ class formreader extends Gui
 }
 AssertEq(formreader.Read(), "global form", A_LineNumber)
 
+; A built-in class can be a base, including the primitive ones and those whose objects only the engine creates.
+class numericduck extends Primitive
+{
+	static Twice(n) => n * 2
+}
+class wholenumber extends Integer
+{
+}
+class filelike extends File
+{
+}
+class boundlike extends BoundFunc
+{
+}
+class menubarlike extends MenuBar
+{
+}
+AssertEq(numericduck.Twice(4), 8, A_LineNumber)
+Assert(HasBase(wholenumber.Prototype, Integer.Prototype) && HasBase(numericduck.Prototype, Primitive.Prototype), A_LineNumber)
+Assert(HasBase(filelike.Prototype, File.Prototype) && HasBase(boundlike.Prototype, BoundFunc.Prototype), A_LineNumber)
+Assert(HasBase(menubarlike.Prototype, Menu.Prototype), A_LineNumber)
+
 FileAppend "pass", "*"

@@ -133,6 +133,11 @@ $Home::
 ::btw::by the way
 ::`/`*::abcd`*`/
 ::bt;w::by the; way
+:*:/*::
+:*:*/::
+{
+	global a
+}
 ;::omg::oh no
 
 a := 123
