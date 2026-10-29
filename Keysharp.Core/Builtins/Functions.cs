@@ -207,7 +207,7 @@ namespace Keysharp.Builtins
 
 		// Include every route Script.InvokeOrNull can use for a nameless call.
 		private static bool IsInvocable(KeysharpObject obj)
-			=> HasMember(obj, "Call") || HasMember(obj, "__Call") || obj is IMetaObject;
+			=> HasMember(obj, "Call") || obj is IMetaObject;
 
 		private static bool HasMember(Any obj, string name) => FindMethod(obj, name) != null;
 

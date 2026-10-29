@@ -487,7 +487,12 @@ namespace Keysharp.Runtime
 			bool isSuper = obj is ITuple superT && superT.Length > 1 && superT[0] is Any;
 			object actualThis = isSuper ? ((ITuple)obj)[1] : obj;
 
-			var mitup = GetMethodOrProperty(obj, methName, -1, checkBase: true, throwIfMissing: false, invokeMeta: true);
+			// As AutoHotkey's IF_BYPASS_METAFUNC, the call form skips __Call: `f()` needs a Call member, which `f.Call()`
+			// can also reach through __Call. An object with dispatch of its own still answers either form.
+			var mitup = GetMethodOrProperty(obj, methName, -1, checkBase: true, throwIfMissing: false, invokeMeta: !nameless);
+
+			if (nameless && mitup.Item2 == null && obj is Any and IMetaObject meta)
+				mitup = (null, meta);
 
 			// Dispatch reports a missing method once and returns its continued-error result to the caller.
 			if (mitup.Item2 == null)
@@ -676,15 +681,6 @@ namespace Keysharp.Runtime
 		public static bool IsCallable(object item)
 		{
 			if (item is KeysharpFunc || item is IMetaObject)
-				return true;
-			else if (item is KeysharpObject kso)
-				return Functions.HasProp(kso, "Call") != 0L || Functions.HasProp(kso, "__Call") != 0L;
-			return false;
-		}
-
-		public static bool IsStrictCallable(object item)
-		{
-			if (item is KeysharpFunc)
 				return true;
 			else if (item is KeysharpObject kso)
 				return Functions.HasProp(kso, "Call") != 0L;

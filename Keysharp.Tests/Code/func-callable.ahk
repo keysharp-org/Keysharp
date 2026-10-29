@@ -171,7 +171,8 @@ Throws(() => OnMessage(0x5555, {}), A_LineNumber, MethodError)
 Throws(() => we.OnMove := {}, A_LineNumber, MethodError)
 Throws(() => ih.OnChar := {}, A_LineNumber, MethodError)
 
-; What Keysharp's call can reach counts as callable: a Call method, or a __Call, which the call falls back to.
+; As in AHK, calling an object needs a Call method: __Call answers relayObj.Call() but not relayObj(), so an object
+; with only __Call is not callable and is refused as a callback.
 class Relay {
 	calls := 0
 	__Call(name, params) {
@@ -180,8 +181,10 @@ class Relay {
 	}
 }
 relayObj := Relay()
-SetTimer(relayObj, -1)
-Sleep 50
+AssertEq(HasMethod(relayObj), 0, A_LineNumber)
+Throws(() => relayObj(), A_LineNumber, MethodError)
+Throws(() => SetTimer(relayObj, -1), A_LineNumber, MethodError)
+relayObj.Call()
 AssertEq(relayObj.calls, 1, A_LineNumber)
 
 ; An object stating its counts is taken to be callable, as AHK takes it, without a Call being looked for.
