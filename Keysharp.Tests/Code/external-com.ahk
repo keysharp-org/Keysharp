@@ -208,4 +208,13 @@ ObjRegisterActive(obj, CLSID, Flags:=0) {
 	cookieJar[obj] := cookie
 }
 
+; Every COM value reports its type, only an interface pointer has type information, and ComValueRef owns __Item.
+bstrValue := ComValue(0x8, "foo")
+AssertEq(ComObjType(bstrValue), 8, A_LineNumber)
+AssertEq(ComObjType(bstrValue, "Name"), "", A_LineNumber)
+AssertEq(ComObjType("text"), "", A_LineNumber)
+refBuffer := Buffer(8), NumPut("Int64", 42, refBuffer)
+int64Ref := ComValue(0x4014, refBuffer.Ptr)
+AssertEq((({}.GetOwnPropDesc)(ComValueRef.Prototype, "__Item").Get)(int64Ref), 42, A_LineNumber)
+
 FileAppend "pass", "*"

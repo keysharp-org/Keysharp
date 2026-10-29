@@ -84,7 +84,7 @@ namespace Keysharp.Builtins
 			if (!CharTestText(value, out var s))
 				return 0L;
 
-			return s?.Length == 0 || s.All(char.IsDigit) ? 1L : 0L;
+			return s?.Length == 0 || s.All(char.IsAsciiDigit) ? 1L : 0L;
 		}
 
 		/// <summary>
@@ -100,14 +100,7 @@ namespace Keysharp.Builtins
 			if (o is double)// || o is float || o is decimal)
 				return 1L;
 
-			double? val;
-
-			if (value is string s)
-				val = s.Trim().ParseDouble(true);
-			else
-				val = o.ParseDouble(true);
-
-			return val.HasValue ? 1L : 0L;
+			return o.ParseDouble(true).HasValue ? 1L : 0L;
 		}
 
 		/// <summary>
@@ -127,14 +120,7 @@ namespace Keysharp.Builtins
 			if (o is double)// || o is float || o is decimal)
 				return 0L;
 
-			long? val;
-
-			if (value is string s)
-				val = s.Trim().ParseLong(false);
-			else
-				val = o.ParseLong(false);
-
-			return val.HasValue ? 1L : 0L;
+			return o.ParseLong(false).HasValue ? 1L : 0L;
 		}
 
 		/// <summary>

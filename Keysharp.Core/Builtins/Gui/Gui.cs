@@ -2342,6 +2342,14 @@ namespace Keysharp.Builtins
 
 		public object AddWebView(object options = null, object text = null) => Add(Keyword_WebView, options, text);
 
+		// Whether an event's source is a GUI or control whose window has been destroyed.
+		internal static bool IsDestroyedEventSource(object source) => source switch
+		{
+			Gui g => g.form is not { IsDisposed: false },
+			Gui.Control c => c.ParentForm is not { IsDisposed: false },
+			_ => false
+		};
+
 		public object Destroy()
 		{
 			//Owned by this window: the icon would otherwise be freed only whenever GC got round to it. The window

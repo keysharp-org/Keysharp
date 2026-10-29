@@ -11,6 +11,13 @@ namespace Keysharp.Builtins.COM
 			set => set_Item(System.Array.Empty<object>(), value);
 		}
 
+		// As in AutoHotkey, ComValueRef.Prototype owns __Item, so its getter and setter can be taken from there.
+		public object __Item
+		{
+			get => __Value;
+			set => __Value = value;
+		}
+
 		object IMetaObject.Get(string name, object[] args)
 		{
 			if ((vt & VarEnum.VT_BYREF) != 0 && name.Equals("__Value", StringComparison.OrdinalIgnoreCase))

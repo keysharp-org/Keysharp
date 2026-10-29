@@ -287,4 +287,15 @@ Throws(() => IsTime(a), A_LineNumber, TypeError)
 
 Throws(() => IsTime(m), A_LineNumber, TypeError)
 
+; Only spaces and tabs may surround a number, as in arithmetic, and only 0 through 9 are digits.
+AssertEq(IsInteger(" 5`t"), 1, A_LineNumber)
+
+AssertEq(IsInteger("5`n"), 0, A_LineNumber)
+
+AssertEq(IsFloat("`r`n1.5"), 0, A_LineNumber)
+
+AssertEq(IsNumber("0x10`v"), 0, A_LineNumber)
+
+AssertEq(IsDigit(Chr(0x663)), 0, A_LineNumber)
+
 FileAppend "pass", "*"

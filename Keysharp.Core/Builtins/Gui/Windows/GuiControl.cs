@@ -335,6 +335,9 @@ namespace Keysharp.Builtins
 
 			public object Move(object x = null, object y = null, object width = null, object height = null)
 			{
+				if (ParentForm is not { IsDisposed: false })
+					return Errors.ErrorOccurred("The control is destroyed.");
+
 				var _x = long.MinValue;
 				var _y = long.MinValue;
 				var w = long.MinValue;

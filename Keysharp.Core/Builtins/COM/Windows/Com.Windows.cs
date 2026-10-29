@@ -317,14 +317,20 @@ namespace Keysharp.Builtins.COM
 				return DefaultObject;
 
 			var s = infoText.ToLower();
-			var co = comObj as ComObject;
 
-			if (s == "" && co != null)
-			{
+			// As in AutoHotkey, every COM value reports its type, so ComObjType(x) != "" tests for one, and only an
+			// interface pointer has type information to report.
+			if (comObj is not ComValue co)
+				return "";
+
+			if (s == "")
 				return (long)co.vt;
-			}
 
 			Reflections.TryGetPtrProperty(comObj, out var comObjAddr);
+
+			if (co.vt is not (VarEnum.VT_DISPATCH or VarEnum.VT_UNKNOWN) || comObjAddr == 0)
+				return "";
+
 			var pUnk = new nint(comObjAddr);
 
 			ITypeInfo typeInfo = null;
@@ -342,7 +348,7 @@ namespace Keysharp.Builtins.COM
 					else if (s == "clsid")
 						s = "iid";
 				}
-				else if (co != null && co.vt == VarEnum.VT_DISPATCH && co.TryGetITypeInfo(out typeInfo))
+				else if (co.vt == VarEnum.VT_DISPATCH && co.TryGetITypeInfo(out typeInfo))
 				{
 				}
 				else if (rcw is IDispatch idisp)

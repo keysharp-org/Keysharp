@@ -286,8 +286,10 @@ namespace Keysharp.Internals.Scripting
 			if (IsEmpty || CurrentScheduler is not { } scheduler)
 				return;
 
-			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0,
-								  () => InvokeHandlers(args, skipUninterruptible: false, allowEmergencyOverflow: false, stopWhen: null, out _));
+			// An event whose GUI was destroyed while it waited is dropped, as AutoHotkey's message loop finds no GUI for it.
+			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => args.Length != 0 && Gui.IsDestroyedEventSource(args[0])
+				? ScriptEventExecutionResult.Dropped
+				: InvokeHandlers(args, skipUninterruptible: false, allowEmergencyOverflow: false, stopWhen: null, out _));
 		}
 
 		/// <summary>

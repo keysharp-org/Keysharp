@@ -50,4 +50,14 @@ StrPut(1.0, duckBuf)
 AssertEq(StrGet(duckBuf), "1.0", A_LineNumber)
 Throws(() => StrPut({}, duckBuf), A_LineNumber, TypeError)
 
+; From a bare address and no length, StrGet reads up to a terminator of the given encoding.
+utf8Text := Chr(0x8F93) Chr(0x5165) Chr(0x6CD5)
+utf8Buf := Buffer(StrPut(utf8Text, "UTF-8"), 0), StrPut(utf8Text, utf8Buf, "UTF-8")
+AssertEq(StrGet(utf8Buf.Ptr + 6, "UTF-8"), Chr(0x6CD5), A_LineNumber)
+
+; Any number is a length, so the Float a division gives counts too.
+floatLenBuf := Buffer(16, 0)
+AssertEq(StrPut("abc", floatLenBuf, 8 / 2), 8, A_LineNumber)
+AssertEq(StrGet(floatLenBuf, 6 / 2), "abc", A_LineNumber)
+
 FileAppend "pass", "*"

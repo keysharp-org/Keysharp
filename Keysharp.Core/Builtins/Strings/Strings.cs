@@ -991,19 +991,12 @@ namespace Keysharp.Builtins
 				if ((length is not null && !length.CoerceLong(out len)) || !Files.TryGetEncoding(encoding, out enc))
 					return "";
 			}
-			else//Second argument could have been either length or encoding.
+			else if (length != null)//Second argument could be either length or encoding. As in AutoHotkey, any number is a length.
 			{
-				var l = length != null ? length.ParseLong() : long.MinValue;
-
-				if (l != null)
-					len = l.Value;
-				else if (length is string encstr)
-				{
-					if (!Files.TryGetEncoding(encstr, out enc))
-						return "";
-				}
-				else
-					enc = Encoding.Unicode;
+				if (length.TryCoerceLong(out var l))
+					len = l;
+				else if (length is string encstr && !Files.TryGetEncoding(encstr, out enc))
+					return "";
 			}
 
 			if (!Reflections.TryGetPtrProperty(source, out var addr))//No usable (non-null) pointer.
@@ -1021,8 +1014,20 @@ namespace Keysharp.Builtins
 				{
 					if (hasSize)
 						len = srcSize;
+					else if (enc == Encoding.Unicode)
+						return Marshal.PtrToStringUni(ptr);
 					else
-						return enc == Encoding.Unicode ? Marshal.PtrToStringUni(ptr) : Marshal.PtrToStringAnsi(ptr);
+					{
+						// The terminator is one zero code unit of the encoding: a byte for UTF-8 or a code page.
+						var unit = enc.GetByteCount("\0");
+						var bytes = (byte*)ptr;
+						var count = 0;
+
+						while (new ReadOnlySpan<byte>(bytes + count, unit).ContainsAnyExcept((byte)0))
+							count += unit;
+
+						return enc.GetString(bytes, count);
+					}
 				}
 
 				//If length is negative, copy exactly the absolute value of len, regardless of 0s. Clamp to buf size of buf.
@@ -1199,11 +1204,11 @@ namespace Keysharp.Builtins
 						// Convert characters to bytes according to target encoding "char" width
 						len = lengthChars * CharSize(encoding);
 					}
-					// 3-parameter with Length (String, Target, Length) – native encoding
-					else if ((obj[2].ParseLong() ?? long.MinValue) is long ll && ll != long.MinValue)
+					// 3-parameter with Length (String, Target, Length) – native encoding. As in AutoHotkey, any number is a
+					// length, so the Float a `/` gives counts too.
+					else if (obj[2].TryCoerceLong(out var lengthChars))
 					{
 						lengthProvided = true;
-						var lengthChars = ll;
 
 						if (lengthChars <= 0)
 							return (long)Errors.ValueErrorOccurred(
