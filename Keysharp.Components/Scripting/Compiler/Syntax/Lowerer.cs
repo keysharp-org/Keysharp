@@ -4001,6 +4001,7 @@ namespace Keysharp.Compilation.Syntax
 					TrackLoadPackageMember(mem);
 					return mem.NullConditional || MayYieldUnset(mem.Target)
 						? NullCondWrap(mem.Target, tt => Op("GetPropertyValue", tt, Str(mem.Name)), mem.NullConditional)
+						: OpensFile(mem.Target) ? ReleasingReceiver(mem.Target, tt => Op("GetPropertyValue", tt, Str(mem.Name)))
 						: Op("GetPropertyValue", LowerExpr(mem.Target), Str(mem.Name));
 				case DynMemberExpr dmem:
 					return MayYieldUnset(dmem)
@@ -4606,6 +4607,8 @@ namespace Keysharp.Compilation.Syntax
 			// A member callee names the member to resolve; a bare callee is the call form `f(args)`, which the
 			// runtime distinguishes by a null name (see Script.InvokeOrNull).
 			ExpressionSyntax[] args;
+			if (c.Callee is MemberExpr fm && OpensFile(fm.Target))
+				return ReleasingReceiver(fm.Target, tt => Op(statement ? "InvokeOrNull" : "Invoke", Cons2(tt, Str(fm.Name), CallArgs())));
 			if (c.Callee is MemberExpr m) args = Cons2(LowerExpr(m.Target), Str(m.Name), CallArgs());
 			else if (c.Callee is DynMemberExpr dm) args = Cons2(LowerExpr(dm.Target), LowerExpr(dm.NameExpr), CallArgs());
 			else args = Cons2(LowerExpr(c.Callee), Null, CallArgs());
@@ -4617,9 +4620,7 @@ namespace Keysharp.Compilation.Syntax
 		// here only where it is written as a literal.
 		private List<Argument> NativeStringArguments(CallExpr call)
 		{
-			// Only a lone argument, as StrPtr takes, or one a literal Str or WStr type precedes can qualify, which rules out
-			// most calls before their callee is resolved.
-			if (!call.Args.Where((a, i) => NakedVariable(a.Value) != null && (call.Args.Count == 1 || i > 0 && IsLiteralStringType(call.Args[i - 1].Value))).Any())
+			if (!call.Args.Where((a, i) => (NakedVariable(a.Value) != null || Unparen(a.Value) is DerefExpr) && AtNativeStringPosition(call, i)).Any())
 				return call.Args;
 
 			var method = NativeCallTarget(call.Callee)?.Builtin;
@@ -4640,7 +4641,9 @@ namespace Keysharp.Compilation.Syntax
 				// A spread makes subsequent type/value positions unknowable until runtime.
 				if (arg.Spread || (arg.IsNamed && !(pairs == 0 && string.Equals(arg.Name, "Value", System.StringComparison.OrdinalIgnoreCase)))) break;
 				if (pairs != 0 && (i <= pairs || ((i - pairs) & 1) == 0 || !IsLiteralStringType(call.Args[i - 1].Value))) continue;
-				if (!IsNativeStringVariable(arg.Value)) continue;
+				// `%name%` is the variable it finds, as AutoHotkey resolves it before the call, unless the function's scope
+				// was built only to read, which IsDerefWrite settles by the callee's spelling.
+				if (Unparen(arg.Value) is DerefExpr deref ? _derefScope == false || MayYieldUnset(deref.Name) : !IsNativeStringVariable(arg.Value)) continue;
 
 				var reference = new UnaryExpr("&", arg.Value, false) { Line = arg.Value.Line, Column = arg.Value.Column, File = arg.Value.File };
 				_ = _implicitRefs.Add(reference);
@@ -4666,6 +4669,11 @@ namespace Keysharp.Compilation.Syntax
 			return temp;
 		}
 
+		// Only a lone argument, as StrPtr takes, or one a literal Str or WStr type precedes can qualify, which rules out
+		// most calls before their callee is resolved.
+		private static bool AtNativeStringPosition(CallExpr call, int i) =>
+			call.Args.Count == 1 || i > 0 && IsLiteralStringType(call.Args[i - 1].Value);
+
 		private static bool IsLiteralStringType(Expr type) => type is LiteralExpr { Kind: LiteralKind.String } literal
 			&& NativeType.Parse(DecodeString(literal.Raw).AsSpan().Trim()) is NativeTypeCode.Str or NativeTypeCode.WStr;
 
@@ -4677,6 +4685,23 @@ namespace Keysharp.Compilation.Syntax
 			AssignExpr assignment => NakedVariable(assignment.Target),
 			_ => null
 		};
+
+		// A File that FileOpen returns straight into a member access is reachable from that access alone, so it is
+		// closed when the access ends, where AutoHotkey's reference count frees it: `FileOpen(p, "w").Write(s)` has
+		// written the file before the next line reads it.
+		private bool OpensFile(Expr target) => target switch
+		{
+			GroupExpr group => OpensFile(group.Inner),
+			CallExpr { NullConditional: false } call => NativeCallTarget(call.Callee)?.Builtin is System.Reflection.MethodInfo { Name: "FileOpen" } method
+				&& method.DeclaringType == typeof(Keysharp.Builtins.Files),
+			_ => false
+		};
+
+		private ExpressionSyntax ReleasingReceiver(Expr target, System.Func<ExpressionSyntax, ExpressionSyntax> access)
+		{
+			var t = NewTemp();
+			return Op("ReleaseTemporary", Assign(Id(t), LowerExpr(target)), access(Id(t)));
+		}
 
 		// Resolve the built-in itself so shadowing names or methods retain their parameter contracts.
 		private NameTarget NativeCallTarget(Expr callee) => callee switch
@@ -6670,10 +6695,14 @@ namespace Keysharp.Compilation.Syntax
 		private static bool IsListVarsTrigger(Expr e) => e is CallExpr c && c.Callee is NameExpr ne && StringComparer.OrdinalIgnoreCase.Equals(ne.Name, "ListVars");
 
 		// An assignment to a dynamically-named variable (`%n% := v` / `%n% op= v`, `%n%++/--`, `&%n%`) — i.e. the scope
-		// needs a WRITER, not just a reader.
+		// needs a WRITER, not just a reader. NativeStringArguments makes `StrPtr(%n%)` and a Str argument `%n%` into `&%n%`.
 		private static bool IsDerefWrite(Expr e) =>
 			(e is AssignExpr a && Unparen(a.Target) is DerefExpr)
-			|| (e is UnaryExpr u && (u.Op == "++" || u.Op == "--" || u.Op == "&") && Unparen(u.Operand) is DerefExpr);
+			|| (e is UnaryExpr u && (u.Op == "++" || u.Op == "--" || u.Op == "&") && Unparen(u.Operand) is DerefExpr)
+			|| (e is CallExpr { Callee: NameExpr callee } c && NativeStringCallees.Contains(callee.Name)
+				&& c.Args.Where((arg, i) => Unparen(arg.Value) is DerefExpr && AtNativeStringPosition(c, i)).Any());
+
+		private static readonly HashSet<string> NativeStringCallees = new(StringComparer.OrdinalIgnoreCase) { "StrPtr", "DllCall", "ComCall" };
 
 		// Parentheses change no target: `&(%n%)` writes as `&%n%` does.
 		private static Expr Unparen(Expr e)

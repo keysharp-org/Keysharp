@@ -533,6 +533,15 @@ try
 	AssertEq(f.ReadLine(), SubStr(filler, 1, 4094) Chr(0xFFFD) emoji, A_LineNumber)
 	AssertEq(f.Pos, 8196, A_LineNumber)
 	f.Close()
+
+	; A File nothing keeps is closed once the access made on it returns, so its writes are on disk and the file is
+	; free on the next line.
+	FileOpen(path, "w").Write("temporary")
+	AssertEq(FileRead(path), "temporary", A_LineNumber)
+	AssertEq(FileOpen(path, "r").Length, 9, A_LineNumber)
+	AssertEq((FileOpen(path, "r")).Read(), "temporary", A_LineNumber)
+	FileDelete(path)
+	Assert(!FileExist(path), A_LineNumber)
 }
 finally
 {

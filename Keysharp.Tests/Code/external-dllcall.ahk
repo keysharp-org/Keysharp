@@ -224,6 +224,16 @@ StaticPtr() {
 }
 AssertEq(StaticPtr(), StaticPtr(), A_LineNumber)
 
+; %ref% and %name% are the variable they find, so they share its address and a Str argument writes back to it.
+derefText := "deref"
+derefRef := &derefText, derefName := "derefText"
+AssertEq(StrPtr(%derefRef%), StrPtr(derefText), A_LineNumber)
+AssertEq(StrPtr(%derefName%), StrPtr(derefText), A_LineNumber)
+RefPtr(ref) => StrPtr(%ref%)
+AssertEq(RefPtr(derefRef), StrPtr(derefText), A_LineNumber)
+DllCall("msvcrt\_wcsupr", "Str", %derefRef%, "CDecl Ptr")
+AssertEq(derefText, "DEREF", A_LineNumber)
+
 ; A property keeps no memory: a reference to one is read once, and written only with what a call changed.
 class CountingHolder {
 	reads := 0, writes := 0, _text := "abc"

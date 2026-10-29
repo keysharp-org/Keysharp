@@ -565,6 +565,16 @@ namespace Keysharp.Runtime
 
 		public static object MultiStatement(params object[] args) => args[ ^ 1];
 
+		// AutoHotkey frees a File nothing references once the access made on it ends, which closes it there. The lowerer
+		// calls this for a File it knows only the one access sees.
+		public static object ReleaseTemporary(object temporary, object result)
+		{
+			if (temporary is KeysharpFile file && !ReferenceEquals(file, result))
+				_ = file.Close();
+
+			return result;
+		}
+
 		public static void InitStaticVariable(ref object variable, string name, Func<object> initFunc)
 		{
 			var initialized = LazyInitializer.EnsureInitialized(ref Script.TheScript.FlowData.initializedUserStaticVariables);
