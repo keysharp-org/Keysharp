@@ -1908,7 +1908,7 @@ namespace Keysharp.Parsing.Syntax
 
 		private Stmt ParseCommandCall()
 		{
-			var callee = ParsePostfix(ParsePrimary());   // name / member / index — no adjacent '(' (ensured by detection)
+			var callee = ParsePostfix(ParsePrimary(), commandName: true);   // name / member / index — no adjacent '(' (ensured by detection)
 			return new ExpressionStmt(new CallExpr(callee, ParseCommandArgs()));
 		}
 
@@ -2207,7 +2207,9 @@ namespace Keysharp.Parsing.Syntax
 			return ParsePostfix(ParsePrimary());
 		}
 
-		private Expr ParsePostfix(Expr e)
+		// A '[' indexes even after a space, as in AutoHotkey (`m ["k"]`), except after a command-style call's name, where it
+		// opens the first argument (`MsgBox [1, 2]`).
+		private Expr ParsePostfix(Expr e, bool commandName = false)
 		{
 			while (true)
 			{
@@ -2230,7 +2232,7 @@ namespace Keysharp.Parsing.Syntax
 				}
 				if (t.Kind == TokenKind.LParen && !t.LeadingWhitespace)
 				{ e = new CallExpr(e, ParseArgs(TokenKind.LParen, TokenKind.RParen)); continue; }
-				if (t.Kind == TokenKind.LBracket && !t.LeadingWhitespace)
+				if (t.Kind == TokenKind.LBracket && !(commandName && t.LeadingWhitespace))
 				{
 					e = new IndexExpr(e, ParseArgs(TokenKind.LBracket, TokenKind.RBracket,
 												   "named arguments are not supported in an index expression; '[]' takes positional arguments only"));

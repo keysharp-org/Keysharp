@@ -435,6 +435,14 @@ default:
 
 AssertEq(spreadSeen, 4, A_LineNumber)
 
+;A '[' indexes after a space too, except after a command-style call's name, where it opens the first argument.
+
+AssertEq(Map("k", 5) ["k"], 5, A_LineNumber)
+
+SpreadRecord [7, 8, 9]
+
+AssertEq(spreadSeen, 1, A_LineNumber)
+
 ;A function declared in a block outside any function is global, and a call ending a line does not take the block
 ;after it as a function body.
 

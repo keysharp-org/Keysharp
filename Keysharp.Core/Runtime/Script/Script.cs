@@ -804,10 +804,21 @@ namespace Keysharp.Runtime
 		/// <summary>
 		/// Will be a generated call within Main which calls into this class to add DLLs.
 		/// </summary>
-		/// <param name="p"></param>
-		/// <param name="s"></param>
-		public void LoadDll(string library, bool throwOnFailure = true)
+		/// <param name="library">The file or directory #DllLoad named, or empty to restore the default search order.</param>
+		/// <param name="throwOnFailure">False when the directive had the *i prefix.</param>
+		/// <param name="directiveDir">The directory of the file containing the directive. A relative library found there
+		/// is loaded from there; otherwise the usual search finds it, as for a compiled script moved elsewhere.</param>
+		public void LoadDll(string library, bool throwOnFailure = true, string directiveDir = null)
 		{
+			if (library.Length != 0 && !string.IsNullOrEmpty(directiveDir) && !Path.IsPathRooted(library))
+			{
+				var beside = Path.Combine(directiveDir, library);
+
+				if (Directory.Exists(beside) || File.Exists(beside)
+						|| !Path.HasExtension(beside) && File.Exists(beside + Keywords.LibraryExtension))
+					library = beside;
+			}
+
 			if (library.Length == 0)
 			{
 				if (!SetDllDirectory(null))//An empty #DllLoad restores the default search order.

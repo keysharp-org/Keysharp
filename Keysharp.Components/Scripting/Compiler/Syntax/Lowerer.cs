@@ -1988,7 +1988,12 @@ namespace Keysharp.Compilation.Syntax
 					var lib = args.Trim('"', '\'');
 					bool ignoreMissing = false;
 					if (lib.StartsWith("*i", System.StringComparison.OrdinalIgnoreCase)) { ignoreMissing = true; lib = lib.AsSpan(2).Trim().Trim("\"'").ToString(); }
-					return ExprStmt(Inv(Access("MainScript.LoadDll"), Str(lib), ignoreMissing ? False : True));
+					// AutoHotkey loads each file with that file's directory current, so a relative path also names a
+					// library beside the file containing the directive.
+					var lineFile = d.File ?? _scriptPath;
+					lib = Parser.ExpandPathVars(lib, _includeDir, lineFile ?? _includeDir, MainScriptPath);
+					var directiveDir = lineFile == null ? null : System.IO.Path.GetDirectoryName(lineFile);
+					return ExprStmt(Inv(Access("MainScript.LoadDll"), Str(lib), ignoreMissing ? False : True, directiveDir == null ? Null : Str(directiveDir)));
 				}
 				// Prescanned blocks are emitted separately; unseen ones are nested in an unsupported scope.
 				case "csharp":
@@ -6375,7 +6380,8 @@ namespace Keysharp.Compilation.Syntax
 			// must match every form the lowering emits a write or DerefRef for; RequireWriter reports a missed one.
 			_derefScope = scope.HasDeref ? scope.HasDerefWrite : null;
 			_derefReferences = scope.HasDerefReference;
-			// Declared here once the body is lowered, which shows the enclosing variables the scope reaches.
+			// Where parameter setup begins. KS_scope goes in front of it once the body is lowered, which shows the enclosing
+			// variables the scope reaches.
 			var scopeAt = body.Count;
 
 			// An omitted optional by-ref parameter acts as a normal local. Its CLR default is null, so give it a private
@@ -6424,7 +6430,7 @@ namespace Keysharp.Compilation.Syntax
 			if (_derefScope != null || scope.HasListVars
 				|| (scope.HasRegex && scope.Visible().Any(v => v.Storage == VarStorage.Closure && scope.Reaches(v))))
 			{
-				body.Insert(scopeAt, LocalDecl(Ty("Keysharp.Runtime.FuncScope"), "KS_scope", Op("EnterScope", NewScope(thisFuncName ?? "", _derefScope == true))));
+				body.Insert(scopeAt++, LocalDecl(Ty("Keysharp.Runtime.FuncScope"), "KS_scope", Op("EnterScope", NewScope(thisFuncName ?? "", _derefScope == true))));
 				setupEnd++;
 			}
 
@@ -6435,8 +6441,9 @@ namespace Keysharp.Compilation.Syntax
 			// Emit fat-arrow local functions for this scope (C# hoists them, so position doesn't matter).
 			body.AddRange(_pendingScopeFuncs);
 			// Bind named nested functions just below the local hoists (so captured locals are definitely-assigned before
-			// a closure is converted to a delegate — C# CS0165) but above the body (so forward-referenced calls work).
-			body.InsertRange(setupEnd + _scopeTemps.Count, _pendingScopeClosureInits);
+			// a closure is converted to a delegate — C# CS0165) but above the parameter defaults and the body, which may
+			// name them, as in AutoHotkey.
+			body.InsertRange(scopeAt + _scopeTemps.Count, _pendingScopeClosureInits);
 			execStart += _pendingScopeClosureInits.Count; execEnd += _pendingScopeClosureInits.Count;
 			declared.AddRange(paramLowers.Select(scope.Find));
 			WrapBodyWithKeepAlive(body, declared, _scopeKeptTemps, execStart, execEnd);

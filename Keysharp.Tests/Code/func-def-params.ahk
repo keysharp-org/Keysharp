@@ -173,4 +173,12 @@ x := Test()
 
 AssertEq(x, "`r`n`t", A_LineNumber)
 
+; A default may name a nested function of the same body, which exists from the start of the call.
+DefaultsToNested(Fn := Doubler) {
+	static Doubler(x) => x * 2
+	return Fn(3)
+}
+
+AssertEq(DefaultsToNested(), 6, A_LineNumber)
+
 FileAppend "pass", "*"
