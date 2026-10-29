@@ -494,10 +494,11 @@ namespace Keysharp.Runtime
 			{
 				return NormalizeEnumerator(mph.CallFunc(obj, [count]), obj, ct);
 			}
-			else if (obj is Any kso)
+			else if (obj is Any || Primitive.IsNative(obj))
 			{
-				// Resolved as a call of __Enum is, so a getter supplies the method when no Call is defined.
-				var (self, target) = Script.GetMethodOrProperty(kso, "__Enum", 1, throwIfMissing: false, invokeMeta: false);
+				// Resolved as a call of __Enum is, so a getter supplies the method when no Call is defined, and a primitive
+				// value finds one its prototype was given.
+				var (self, target) = Script.GetMethodOrProperty(obj, "__Enum", 1, throwIfMissing: false, invokeMeta: false);
 
 				if (target != null)
 					return NormalizeEnumerator(Script.InvokeOrNull(target, null, self, count), obj, ct);

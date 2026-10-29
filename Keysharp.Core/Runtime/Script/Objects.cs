@@ -264,9 +264,10 @@ namespace Keysharp.Runtime
 					if (nestedType.IsDefined(typeof(PublicHiddenFromUser), false))
 						continue;
 
+					// As in AutoHotkey, the getter takes exactly the outer class, and the Call takes it and any arguments.
 					staticInst.DefinePropInternal(GetUserDeclaredName(nestedType) ?? nestedType.Name,
 						new OwnPropsDesc(null,
-							new KeysharpFunc((params object[] args) => script.Vars.Statics[nestedType]),
+							new KeysharpFunc((Func<object, object>)(@this => script.Vars.Statics[nestedType])),
 							null,
 							new KeysharpFunc((object @this, params object[] args) => Script.Invoke(script.Vars.Statics[nestedType], null, args))
 						)
@@ -283,7 +284,11 @@ namespace Keysharp.Runtime
 
 					proto.DefinePropInternal("__Class", new OwnPropsDesc(className));
 
-					_ = Script.InvokeMeta(staticInst, "__Init");
+					// Static initializers run only for the class declaring them, as in AutoHotkey, so a subclass shares the
+					// static properties it inherits. Static __New is inherited and runs for each subclass.
+					if (staticInst.op.ContainsKey("__Init"))
+						_ = Script.InvokeMeta(staticInst, "__Init");
+
 					_ = Script.InvokeMeta(staticInst, "__New");
 				}
 

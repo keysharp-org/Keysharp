@@ -534,4 +534,10 @@ for , emptyValue in emptyProps.OwnProps()
 AssertEq(emptyCount, 0, A_LineNumber)
 Throws(() => ({}).DefineProp("Invalid", {Get: {Call: (This, Owner, *) => 21, MaxParams: "1"}}), A_LineNumber, TypeError)
 
+; Own properties enumerate in AutoHotkey's order: names compared with ASCII letters folded to lower case.
+orderNames := ""
+for name in {zeta: 1, Alpha: 2, _under: 3, beta: 4}.OwnProps()
+	orderNames .= name " "
+AssertEq(orderNames, "_under Alpha beta zeta ", A_LineNumber)
+
 FileAppend "pass", "*"

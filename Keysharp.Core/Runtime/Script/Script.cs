@@ -1928,6 +1928,11 @@ namespace Keysharp.Runtime
 			ClipboardEventManager.Dispatch(changeType);
 		}
 
+		// The native type a built-in type shares with others for rebasing: Class is an Object, and AutoHotkey's BoundFunc,
+		// Closure and Enumerator add no native members to Func, so one rebases to another.
+		internal static Type NativeKind(Type t) =>
+			t == typeof(Class) ? typeof(KeysharpObject) : t.IsSubclassOf(typeof(KeysharpFunc)) ? typeof(KeysharpFunc) : t;
+
 		internal Type GetNativeType(Any obj)
 		{
 				while (obj != null)
@@ -1936,8 +1941,7 @@ namespace Keysharp.Runtime
 				if (!string.Equals(t.Namespace, ProgramNamespace, StringComparison.OrdinalIgnoreCase))
 				{
 					// we found a built-in prototype object
-					if (t == typeof(Class)) return typeof(KeysharpObject);
-					return t;
+					return NativeKind(t);
 				}
 
 					// follow the “base” link:

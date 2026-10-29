@@ -244,4 +244,10 @@ for r in [1, 2]
 AssertEq(x, "orig", A_LineNumber)
 Assert(r is VarRef, A_LineNumber)
 
+; A primitive's prototype may supply __Enum.
+({}.DefineProp)(String.Prototype, "__Enum", {Call: (this, n) => ((&c) => false)})
+for c in "abc"
+	Assert(false, A_LineNumber)
+({}.DeleteProp)(String.Prototype, "__Enum")
+
 FileAppend "pass", "*"

@@ -206,7 +206,8 @@ namespace Keysharp.Builtins
 			if (op is null || !op.Remove(name, out var map)) return DefaultObject;
 			if (op.Count == 0) op = null;
 			OnPropertyChanged(name);
-			return map.Value;
+			// As in AutoHotkey, a value property returns its value, and a dynamic property or typed field an empty string.
+			return map.Value ?? (map.IsEmpty ? DefaultObject : "");
 		}
 
 		// Internal method to set the base and notify children of the change

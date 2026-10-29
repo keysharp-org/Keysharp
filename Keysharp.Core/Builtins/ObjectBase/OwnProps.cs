@@ -11,7 +11,31 @@ namespace Keysharp.Builtins
 
 	internal static class OwnPropsEnumeration
 	{
-		internal static Enumerator CreateEnumerator(object obj, Dictionary<object, object> map, bool getVal)
+		// AutoHotkey keeps an object's own properties sorted by _tcsicmp in the C locale and enumerates them in that order:
+		// ASCII letters fold to lowercase and every other character compares by code unit, so `__Class` precedes `alpha`.
+		internal static readonly IComparer<KeyValuePair<string, object>> NameOrder = Comparer<KeyValuePair<string, object>>.Create((x, y) =>
+		{
+			ReadOnlySpan<char> a = x.Key, b = y.Key;
+			var n = Math.Min(a.Length, b.Length);
+
+			for (var i = 0; i < n; i++)
+			{
+				int c = a[i], d = b[i];
+
+				if ((uint)(c - 'A') <= 'Z' - 'A')
+					c += 'a' - 'A';
+
+				if ((uint)(d - 'A') <= 'Z' - 'A')
+					d += 'a' - 'A';
+
+				if (c != d)
+					return c - d;
+			}
+
+			return a.Length - b.Length;
+		});
+
+		internal static Enumerator CreateEnumerator(object obj, List<KeyValuePair<string, object>> map, bool getVal)
 		{
 			var iter = map.GetEnumerator();
 			(object, object)? evaluated = null;
@@ -64,7 +88,7 @@ namespace Keysharp.Builtins
 			};
 		}
 
-		private static (object, object) GetCurrent(object obj, KeyValuePair<object, object> kv)
+		private static (object, object) GetCurrent(object obj, KeyValuePair<string, object> kv)
 		{
 			if (kv.Value is OwnPropsDesc op)
 			{

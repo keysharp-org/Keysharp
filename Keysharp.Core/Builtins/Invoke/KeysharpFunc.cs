@@ -92,7 +92,11 @@ namespace Keysharp.Builtins
 
 		}
 
+		// Func.Prototype's members reach BoundFunc's overrides, so each is hidden and BoundFunc.Prototype has no members of
+		// its own, as in AutoHotkey.
+		[PublicHiddenFromUser]
 		public override bool IsBuiltIn => false;
+		[PublicHiddenFromUser]
 		public override string Name => "";
 
 		/// <summary>
@@ -133,6 +137,7 @@ namespace Keysharp.Builtins
 		[PublicHiddenFromUser]
 		public override int GetHashCode() => RuntimeHelpers.GetHashCode(this);
 		// `bf.Bind(Name: v)` binds Name on the TARGET, not on Bind itself.
+		[PublicHiddenFromUser]
 		public override KeysharpFunc Bind(params object[] args)
 		{
 			// Named arguments fill a slot chosen by name, not the next hole, so they are kept out of the positional
@@ -162,6 +167,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Calls the target function along with any bound arguments.
 		/// <returns>The return value of the bound function.</returns>
+		[PublicHiddenFromUser]
 		public override object Call(params object[] args) => mi == null ? Script.InvokeOrNull(Inst, mph.Name, CreateArgs(args)) : base.Call(CreateArgs(args));
 
 		[PublicHiddenFromUser]

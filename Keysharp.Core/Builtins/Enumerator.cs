@@ -86,6 +86,8 @@ namespace Keysharp.Builtins
 
 		void IDisposable.Dispose() => dispose?.Invoke();
 
+		// Reached through Func.Prototype.Call, so Enumerator.Prototype has no members of its own, as in AutoHotkey.
+		[PublicHiddenFromUser]
 		public override object Call([ByRef] params object[] args)
 		{
 			try

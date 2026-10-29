@@ -211,6 +211,10 @@ namespace Keysharp.Builtins
 
 		private static bool HasMember(Any obj, string name) => FindMethod(obj, name) != null;
 
+		// The object a value's members come from, as AHK's ParamToObjectOrBase: an object itself, or a primitive's prototype.
+		internal static Any ObjectOrBase(object value) =>
+			value as Any ?? (Primitive.IsNative(value) ? Script.TheScript.Vars.Prototypes[Primitive.MapPrimitiveToNativeType(value)] : null);
+
 		// AHK's Object::GetMethod: the first Call up the chain, or an object value that no getter below it hides. No
 		// getter runs. A primitive value starts from its prototype.
 		private static object FindMethod(object value, string name) => FindMethodAndProperty(value, name).Method;
@@ -219,7 +223,7 @@ namespace Keysharp.Builtins
 		{
 			var getterSeen = false;
 			var property = false;
-			var start = value as Any ?? (Primitive.IsNative(value) ? Script.TheScript.Vars.Prototypes[Primitive.MapPrimitiveToNativeType(value)] : null);
+			var start = ObjectOrBase(value);
 
 			for (var o = start; o != null; o = o.Base)
 			{
@@ -330,7 +334,7 @@ namespace Keysharp.Builtins
 
 			// As AHK's BIF_GetMethod: the method is found as a call would find it and returned as it is stored, and
 			// ParamCount, which omits the implicit this, is checked against it.
-			var method = name == null ? value as Any : FindMethod(value, n);
+			var method = name == null ? ObjectOrBase(value) : FindMethod(value, n);
 
 			if (method == null)
 				return Script.CompatReturnsUnsetForMissing ? null : Errors.MissingMethodErrorOccurred(value, name == null ? "Call" : n);
@@ -355,7 +359,7 @@ namespace Keysharp.Builtins
 			if (!paramCount.CoerceInt(out var count, -1))
 				return 0L;
 
-			var method = name == null ? value as Any : FindMethod(value, n);
+			var method = name == null ? ObjectOrBase(value) : FindMethod(value, n);
 
 			// A COM or CLR object's members are found through its own dispatch.
 			if (method == null && name != null && value is IMetaObject)
@@ -387,7 +391,7 @@ namespace Keysharp.Builtins
 			Any nextBase = null;
 
 			// A primitive answers from its prototype, as AHK's ParamToObjectOrBase does, not from its CLR type.
-			if ((value as Any ?? (Primitive.IsNative(value) ? Script.TheScript.Vars.Prototypes[Primitive.MapPrimitiveToNativeType(value)] : null)) is Any kso)
+			if (ObjectOrBase(value) is Any kso)
 			{
 				if (kso.op != null && kso.op.ContainsKey(n))
 					return 1L;

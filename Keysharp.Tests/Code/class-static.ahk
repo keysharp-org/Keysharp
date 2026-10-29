@@ -165,4 +165,14 @@ NextClassInit() {
 	return ++classInitCount
 }
 
+; A class's static initializers run for it alone, so a subclass shares the static values it inherits.
+class StaticShared {
+	static List := []
+	static Add(Value) => this.List.Push(Value)
+}
+class StaticSharer extends StaticShared {
+}
+StaticSharer.Add(1)
+Assert(!StaticSharer.HasOwnProp("List") && StaticShared.List.Length == 1, A_LineNumber)
+
 FileAppend "pass", "*"

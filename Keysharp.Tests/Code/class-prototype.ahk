@@ -108,4 +108,16 @@ AssertEq(initCount, initBefore, A_LineNumber)
 Assert(!Sub.Prototype.HasOwnProp("Inst"), A_LineNumber)
 AssertEq(Sub().Inst(), "inst", A_LineNumber)
 
+; BoundFunc, Closure and Enumerator add no members to Func, so a closure may take Enumerator's prototype.
+for funcClass in [BoundFunc, Closure, Enumerator]
+	AssertEq(ObjOwnPropCount(funcClass.Prototype), 1, A_LineNumber)
+enumState := {n: 0}
+enumLike := (&v) => (v := ++enumState.n, enumState.n <= 2)
+ObjSetBase(enumLike, Enumerator.Prototype)
+Assert(enumLike is Enumerator, A_LineNumber)
+enumSeen := ""
+for v in enumLike
+	enumSeen .= v
+AssertEq(enumSeen, "12", A_LineNumber)
+
 FileAppend "pass", "*"

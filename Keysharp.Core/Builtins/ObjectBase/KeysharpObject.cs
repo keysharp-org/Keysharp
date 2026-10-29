@@ -100,6 +100,10 @@ namespace Keysharp.Builtins
 
 			for (var i = 0; i < pairs.Length; i += 2)
 			{
+				// As in AutoHotkey, a pair with an unset name or value defines nothing: `{a: (v?)}` omits a.
+				if (pairs[i] == null || pairs[i + 1] == null)
+					continue;
+
 				if (!pairs[i].CoerceString(out var name))
 					return DefaultObject;
 
@@ -218,7 +222,7 @@ namespace Keysharp.Builtins
 			if (@this is not Any obj)
 				return Errors.TypeErrorOccurred(@this, typeof(Any));
 
-			var props = new Dictionary<object, object>();
+			var props = new List<KeyValuePair<string, object>>(obj.op?.Count ?? 0);
 
 			if (obj.op != null)
 			{
@@ -227,10 +231,11 @@ namespace Keysharp.Builtins
 					if (kv.Key == "__Static") //This throws if the value is tried to access because "this" is passed
 						continue;
 
-					props[kv.Key] = kv.Value;
+					props.Add(new(kv.Key, kv.Value));
 				}
 			}
 
+			props.Sort(OwnPropsEnumeration.NameOrder);
 			return OwnPropsEnumeration.CreateEnumerator(obj, props, true);
 		}
 

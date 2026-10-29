@@ -79,17 +79,11 @@ namespace Keysharp.Builtins
 #endif
 
 			var script = Script.TheScript;
-			var current = value as Any;
 
-			if (current == null)
-			{
-				if (!Primitive.IsNative(value))
-					return Errors.TypeErrorOccurred(value, typeof(Any));
+			if (Functions.ObjectOrBase(value) is not Any current)
+				return Errors.TypeErrorOccurred(value, typeof(Any));
 
-				current = script.Vars.Prototypes[Primitive.MapPrimitiveToNativeType(value)];
-			}
-
-			var props = new Dictionary<object, object>();
+			var props = new List<KeyValuePair<string, object>>();
 			var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 			var anyPrototype = script.Vars.Prototypes[typeof(Any)];
 
@@ -98,6 +92,8 @@ namespace Keysharp.Builtins
 			{
 				if (cursor.op == null)
 					continue;
+
+				var levelStart = props.Count;
 
 				// A property is listed when it has a value or a getter the receiver alone satisfies. One that is hidden or
 				// cannot be listed is skipped before it is marked seen, so it does not shadow a base's, as in AutoHotkey.
@@ -113,8 +109,11 @@ namespace Keysharp.Builtins
 						continue;
 
 					if (seen.Add(name))
-						props[name] = desc;
+						props.Add(new(name, desc));
 				}
+
+				// Each object's own properties come in its own order, before those of its base.
+				props.Sort(levelStart, props.Count - levelStart, OwnPropsEnumeration.NameOrder);
 			}
 
 			return OwnPropsEnumeration.CreateEnumerator(value, props, true);
@@ -131,7 +130,6 @@ namespace Keysharp.Builtins
 			var script = Script.TheScript;
 			var objVal = obj as KeysharpObject;
 			var baseObjVal = baseObj as KeysharpObject;
-			var objectProto = script.Vars.Prototypes[typeof(KeysharpObject)];
 
 			// A fixed layout or an external data pointer makes the base read-only. Check Any before narrowing to Object,
 			// because Struct extends Any directly.
@@ -141,27 +139,24 @@ namespace Keysharp.Builtins
 			if (Struct.HasTypedProperties(baseObj as Any))
 				return Errors.ValueErrorOccurred("Invalid base.");
 
-			if (objVal == null || Types.HasBase(objVal, objectProto) == 0)
-				return Errors.ErrorOccurred($"Object of type {obj?.GetType().ToString() ?? "null"} was not of type Object.");
+			if (objVal == null)
+				return Errors.TypeErrorOccurred(obj, typeof(KeysharpObject));
 
-			if (baseObjVal == null || Types.HasBase(baseObjVal, objectProto) == 0)
-				return Errors.ErrorOccurred($"Object of type {baseObj?.GetType().ToString() ?? "null"} was not of type Object.");
+			if (baseObjVal == null)
+				return Errors.TypeErrorOccurred(baseObj, typeof(KeysharpObject));
 
 			// find each object's "native" (built‐in) prototype type
 			var nativeObj = script.GetNativeType(objVal.Base);
 			var nativeBase = script.GetNativeType(baseObjVal);
 			// For Prototype wrappers, use the underlying runtime type carried by Any.type.
 			if (nativeObj == typeof(Prototype))
-				nativeObj = objVal.type;
+				nativeObj = Script.NativeKind(objVal.type);
 			if (nativeBase == typeof(Prototype))
-				nativeBase = baseObjVal.type;
+				nativeBase = Script.NativeKind(baseObjVal.type);
 
-			if (nativeObj != nativeBase)
-				return Errors.ErrorOccurred(
-					$"Cannot rebase: native types differ ({nativeObj.Name} vs {nativeBase.Name}).");
-
-			if (Types.HasBase(baseObjVal, objVal) != 0)
-				return Errors.ErrorOccurred("Cannot rebase: base chain would contain a cycle.");
+			// As AutoHotkey's CanSetBase, a base of another native type or one that would make a loop is invalid.
+			if (nativeObj != nativeBase || Types.HasBase(baseObjVal, objVal) != 0)
+				return Errors.ValueErrorOccurred("Invalid base.");
 
 			objVal.SetBaseInternal(baseObjVal);
 

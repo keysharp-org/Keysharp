@@ -175,5 +175,8 @@ blockinitorder := ""
     blockinitorder .= "b"
 }
 AssertEq(blockinitorder, "aib", A_LineNumber)
+; A nested class is a property whose getter takes the outer class alone, as in AHK.
+nestedgetter := outerwithshared.GetOwnPropDesc("inner").Get
+AssertEq(nestedgetter.MinParams "," nestedgetter.MaxParams "," nestedgetter.IsVariadic, "1,1,0", A_LineNumber)
 
 FileAppend "pass", "*"

@@ -302,4 +302,10 @@ Assert(A_HotIf == firstCriterion, A_LineNumber)
 HotIfWinActive("")
 AssertEq(A_HotIf, "", A_LineNumber)
 
+; Without a name, HasMethod asks whether the value is callable, which a primitive is through its prototype.
+({}.DefineProp)(Integer.Prototype, "Call", {Call: (x) => x})
+Assert(HasMethod(1), A_LineNumber)
+({}.DeleteProp)(Integer.Prototype, "Call")
+Assert(!HasMethod(1), A_LineNumber)
+
 FileAppend "pass", "*"
