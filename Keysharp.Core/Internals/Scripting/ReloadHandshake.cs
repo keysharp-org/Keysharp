@@ -6,6 +6,7 @@ namespace Keysharp.Internals.Scripting
 	{
 		internal const string PredecessorVar = "KEYSHARP_RELOAD_PREDECESSOR";
 		private const int WaitMs = 2000;
+		private const int NonInteractiveWaitMs = 15000;
 #if WINDOWS
 		private const string PredecessorWindowVar = "KEYSHARP_RELOAD_PREDECESSOR_WINDOW";
 		internal const nint ExitByReload = 0x4B53_0001;
@@ -15,6 +16,22 @@ namespace Keysharp.Internals.Scripting
 
 		[DllImport("libc", EntryPoint = "getppid")]
 		private static extern int PosixParentId();
+
+		// The predecessor is this process's parent, so getppid reports its exit exactly, where a polled PID could already be reused.
+		private static bool WaitForPredecessorExit(int pid, int timeoutMs)
+		{
+			var deadline = Environment.TickCount64 + timeoutMs;
+
+			while (PosixParentId() == pid)
+			{
+				if (Environment.TickCount64 >= deadline)
+					return false;
+
+				Thread.Sleep(15);
+			}
+
+			return true;
+		}
 #endif
 
 		internal static Process Start(Script script)
@@ -33,7 +50,7 @@ namespace Keysharp.Internals.Scripting
 			return Process.Start(start) ?? throw new InvalidOperationException("The replacement process did not start.");
 		}
 
-		internal static bool AskPredecessorToExit()
+		internal static bool AskPredecessorToExit(bool errorStdOut)
 		{
 			var value = Environment.GetEnvironmentVariable(PredecessorVar);
 			Environment.SetEnvironmentVariable(PredecessorVar, null);
@@ -63,13 +80,14 @@ namespace Keysharp.Internals.Scripting
 			using (predecessor)
 			{
 #if WINDOWS
-				if (!long.TryParse(windowValue, out var rawWindow) || rawWindow == 0)
-					return false;
+				var asked = false;
 
-				var window = unchecked((nint)rawWindow);
-				_ = WindowsAPI.GetWindowThreadProcessId(window, out var ownerPid);
-				var asked = ownerPid == (uint)pid
-						&& WindowsAPI.PostMessage(window, WindowsAPI.WM_CLOSE, ExitByReload, 0);
+				if (long.TryParse(windowValue, out var rawWindow) && rawWindow != 0)
+				{
+					var window = unchecked((nint)rawWindow);
+					_ = WindowsAPI.GetWindowThreadProcessId(window, out var ownerPid);
+					asked = ownerPid == (uint)pid && WindowsAPI.PostMessage(window, WindowsAPI.WM_CLOSE, ExitByReload, 0);
+				}
 #else
 				var asked = PosixKill(pid, 15) == 0;//SIGTERM cannot carry the reason.
 #endif
@@ -82,18 +100,25 @@ namespace Keysharp.Internals.Scripting
 #endif
 						return true;
 
-					_ = Diagnostics.Debug.WriteLine("Keysharp: could not ask the instance being reloaded to exit.");
+					Console.Error.WriteLine($"Keysharp: could not ask the instance being reloaded (PID {pid}) to exit.");
 					return false;
 				}
 
+				// Nobody answers a dialog without a desktop, and a script routing errors to stderr has asked not to be shown one.
+				var interactive = !Script.IsHeadless && !errorStdOut && Env.FindCommandLineArg("errorstdout") == null;
+				var waitMs = interactive ? WaitMs : NonInteractiveWaitMs;
+
 #if WINDOWS
-				while (!predecessor.WaitForExit(WaitMs))
+				while (!predecessor.WaitForExit(waitMs))
 #else
-				while (!SpinWait.SpinUntil(() => PosixParentId() != pid, WaitMs))
+				while (!WaitForPredecessorExit(pid, waitMs))
 #endif
 				{
-					if (Script.IsHeadless)
+					if (!interactive)
+					{
+						Console.Error.WriteLine($"Keysharp: the instance being reloaded (PID {pid}) did not exit within {waitMs} ms.");
 						return false;
+					}
 
 #if !WINDOWS
 					_ = Script.EnsureEtoApplication();

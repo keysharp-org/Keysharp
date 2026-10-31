@@ -1447,13 +1447,17 @@ namespace Keysharp.Runtime
 		}
 #endif
 
-		public void RunMainWindow(string title, Func<object> userInit, bool _persistent)
+		// errorStdOut: the script declares #ErrorStdOut, which the reload handshake honors before auto-execution applies it.
+		public void RunMainWindow(string title, Func<object> userInit, bool _persistent, bool errorStdOut)
 		{
 			// Compiled and about to run is where AHK has a replacement retire the instance it replaces, late enough
 			// that a script which no longer compiles never costs the running one. Returning ends this process
 			// without running the script, because that instance declined to go.
-			if (!ReloadHandshake.AskPredecessorToExit())
+			if (!ReloadHandshake.AskPredecessorToExit(errorStdOut))
+			{
+				Environment.ExitCode = 2;//AutoHotkey's CRITICAL_ERROR for a replacement which did not run.
 				return;
+			}
 
 			if (IsHeadless)
 			{

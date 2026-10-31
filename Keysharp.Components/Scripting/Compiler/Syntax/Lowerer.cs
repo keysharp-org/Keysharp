@@ -7089,7 +7089,8 @@ namespace Keysharp.Compilation.Syntax
 			// Load after runtime identity/error options, but before JITting auto-exec can resolve package-backed fields.
 			if (EmitPackageLoad() is StatementSyntax loadPackages) tryStmts.Add(loadPackages);
 
-			tryStmts.Add(ExprStmt(Inv(Member(Id("MainScript"), "RunMainWindow"), Member(Id("MainScript"), "ScriptName"), Id(NameMangler.AutoExecMethod), False)));
+			// The reload handshake runs before auto-execution applies #ErrorStdOut, so Main passes the declaration itself.
+			tryStmts.Add(ExprStmt(Inv(Member(Id("MainScript"), "RunMainWindow"), Member(Id("MainScript"), "ScriptName"), Id(NameMangler.AutoExecMethod), False, BoolLit(_errorStdOutActive))));
 			var catchStmts = new List<StatementSyntax>
 			{
 				SyntaxFactory.IfStatement(Op("ReportUncaught", Id("mainex")), SyntaxFactory.ReturnStatement(Access("System.Environment.ExitCode"))),

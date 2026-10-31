@@ -204,6 +204,59 @@ public class RunnerTests : TestRunner
 
 #if WINDOWS
 
+	[Test, Category("Internal"), Apartment(ApartmentState.STA)]
+	public void ReloadWaitTimeout()
+	{
+		var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
+
+		if (!File.Exists(launcher))
+			Assert.Ignore($"launcher not built at {launcher}");
+
+		var script = Path.Combine(Path.GetTempPath(), "keysharp-reload-" + Guid.NewGuid().ToString("N") + ".ahk");
+
+		try
+		{
+			File.WriteAllText(script, "#ErrorStdOut\n#Warn All, StdOut\n#NoTrayIcon\nFileAppend 'replacement-started', '*'\n");
+			// A hidden window in the still-running host accepts the close request without retiring the process.
+			using var predecessorWindow = new Form();
+			var start = new ProcessStartInfo(launcher)
+			{
+				UseShellExecute = false,
+				CreateNoWindow = true,
+				RedirectStandardOutput = true,
+				RedirectStandardError = true,
+				ArgumentList = { script }
+			};
+			start.Environment["KEYSHARP_DAEMON"] = "0";
+			start.Environment["KEYSHARP_FORCE_HEADLESS"] = "0";
+			start.Environment[ReloadHandshake.PredecessorVar] = Environment.ProcessId.ToString();
+			start.Environment["KEYSHARP_RELOAD_PREDECESSOR_WINDOW"] = predecessorWindow.Handle.ToInt64().ToString();
+			var elapsed = Stopwatch.StartNew();
+			using var process = Process.Start(start);
+			var stdout = process.StandardOutput.ReadToEndAsync();
+			var stderr = process.StandardError.ReadToEndAsync();
+
+			try
+			{
+				Assert.That(process.WaitForExit(35000), Is.True, "The replacement must time out without opening a retry dialog.");
+				Assert.That(process.ExitCode, Is.EqualTo(2), "A replacement which did not run exits as a critical error, as in AutoHotkey.");
+				Assert.That(elapsed.Elapsed, Is.GreaterThanOrEqualTo(TimeSpan.FromSeconds(15)));
+				Assert.That(stdout.GetAwaiter().GetResult(), Is.Empty, "The replacement must not execute while the predecessor is alive.");
+				Assert.That(stderr.GetAwaiter().GetResult(), Does.Contain(
+					$"the instance being reloaded (PID {Environment.ProcessId}) did not exit within 15000 ms."));
+			}
+			finally
+			{
+				if (!process.HasExited)
+				{
+					process.Kill(entireProcessTree: true);
+					_ = process.WaitForExit(5000);
+				}
+			}
+		}
+		finally { File.Delete(script); }
+	}
+
 	[Test, Category("Internal")]
 	public void CompileDaemonRejectsUnregisteredServer()
 	{
