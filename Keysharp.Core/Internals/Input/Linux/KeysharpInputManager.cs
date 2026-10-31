@@ -553,7 +553,7 @@ namespace Keysharp.Internals.Input.Linux
 			if (mask != KeysharpInputClient.BlockInputMask.None)
 			{
 				var permission = EnsureOperations(KeysharpInputClient.Operations.BlockInput,
-					"block input", checkOnly: Script.IsHeadless);
+					"block input");
 
 				if (!permission.IsGranted)
 				{
@@ -675,10 +675,8 @@ namespace Keysharp.Internals.Input.Linux
 			return c != null && c.HasOperations(required);
 		}
 
-		internal PermissionResult EnsureOperations(KeysharpInputClient.Operations required,
-			string operation = null, bool forcePrompt = false, bool checkOnly = false)
-			=> Permissions.RequestInputOperations(required,
-				operation ?? "input automation", !checkOnly && !Script.IsHeadless, forcePrompt);
+		internal PermissionResult EnsureOperations(KeysharpInputClient.Operations required, string operation = null)
+			=> Permissions.RequestInputOperations(required, operation ?? "input automation", true, false);
 
 		internal KeysharpInputClient GetAuthorizationLease(string operation, bool rearm, out PermissionResult failure)
 		{

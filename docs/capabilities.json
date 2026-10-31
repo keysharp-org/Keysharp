@@ -455,8 +455,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The #Requires directive displays an error and quits if a version requirement is not met. A version requirement also sets the compatibility mode of the definitions after it, and a module's first one outside functions and classes, in the file that declares the module, sets the module's.",
-                     "tested-by":  "module-compatibility-mode.ahk"
+                     "notes":  "The #Requires directive displays an error and quits if a version requirement is not met. A version requirement also sets the compatibility mode of the definitions after it, and a module's first one outside functions and classes, in the file that declares the module, sets the module's. The capability form requests permissions at startup and exits if one is denied or unsupported; on Linux a foreground controlling terminal can authenticate through polkit\u0027s terminal agent.",
+                     "tested-by":  "module-compatibility-mode.ahk; LinuxServiceSessionTests; LinuxTerminalAuthenticationTests"
                  },
                  {
                      "category":  "Environment/System",
@@ -12113,7 +12113,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Requests or queries the eight canonical platform permissions and returns each status: InputMonitoring, InputControl, WindowMonitoring, WindowControl, ScreenCapture, AudioCapture, CameraCapture, and ClipboardMonitoring. Linux requires keysharp-input for InputMonitoring and keysharp-desktop for the desktop scopes; either helper can manage the shared InputControl grant. On macOS, WindowMonitoring reflects both Accessibility and Screen Recording because foreign window titles require both; WindowControl maps to Accessibility. AudioCapture and CameraCapture are requestable Linux scopes but no current capture operation consumes them."
+                     "notes":  "Requests or queries the eight canonical platform permissions and returns each status: InputMonitoring, InputControl, WindowMonitoring, WindowControl, ScreenCapture, AudioCapture, CameraCapture, and ClipboardMonitoring. Linux requires keysharp-input for InputMonitoring and keysharp-desktop for the desktop scopes; either helper can manage the shared InputControl grant. On Linux a foreground controlling terminal can authenticate through polkit\u0027s terminal agent, so input grants need no display. On macOS, WindowMonitoring reflects both Accessibility and Screen Recording because foreign window titles require both; WindowControl maps to Accessibility. AudioCapture and CameraCapture are requestable Linux scopes but no current capture operation consumes them.",
+                     "tested-by":  "LinuxServiceSessionTests; LinuxTerminalAuthenticationTests"
                  },
                  {
                      "category":  "Interop/Memory",

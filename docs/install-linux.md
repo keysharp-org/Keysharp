@@ -117,6 +117,30 @@ or `system` must be repaired or upgraded through their owning configuration or
 package manager. Avoid mixing package and archive copies of the same project.
 GNOME or Cinnamon extensions may need a logout after installation or upgrade.
 
+### Permission prompts
+
+A foreground process with a controlling terminal can authenticate through polkit's
+terminal agent, `pkttyagent`. Keysharp registers it as a fallback for the duration
+of the request, so an existing graphical agent keeps priority, and polkit reads the
+password itself; neither scripts nor the native components see it. Redirected
+standard input does not matter, since the agent uses the controlling terminal.
+This authorizes input capabilities from a local active console without X11 or
+Wayland. The native service's active-seat and polkit restrictions still apply, so
+an SSH session cannot bypass them, and desktop operations still require a supported
+desktop session. Queries, existing grants, runs without a foreground controlling
+terminal, test hosts and `KEYSHARP_FORCE_HEADLESS=1` never start the helper. The
+Linux installers declare or install the distribution's polkit package, which
+provides it.
+
+Graphical prompts need a polkit authentication agent running in the requesting
+user's graphical session; the polkit system service alone does not start one in a
+standalone compositor. Most desktops supply an agent, and the native components'
+Debian packages recommend `mate-polkit | polkit-1-auth-agent`, which an installed
+desktop provider already satisfies. Otherwise install one through your package
+manager and start it from your desktop or compositor's user-session autostart, not
+as root. When polkit reports that no agent is available, the request fails with an
+error that says so; retry it once the agent is running.
+
 ## Requirements and alternatives
 
 System-wide installation needs root; `--diagnose` and `--dry-run` do not. Setup

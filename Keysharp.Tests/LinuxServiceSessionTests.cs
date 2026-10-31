@@ -8,6 +8,16 @@ public class LinuxServiceSessionTests
 	private sealed class TestPermissions() : LinuxPermissions(new KeysharpInputManager(), new DesktopClient())
 	{
 		private readonly AsyncLocal<Func<bool, bool, PermissionResult>> response = new();
+		internal bool Interactive { get; set; } = true;
+		internal Func<IDisposable> CreateTerminalAgent { get; set; }
+		internal string TerminalError { get; set; }
+		protected override bool CanInteract => Interactive;
+
+		protected override IDisposable StartTerminalAuthentication(out string error)
+		{
+			error = TerminalError;
+			return CreateTerminalAgent?.Invoke();
+		}
 
 		internal PermissionResult Request(LinuxPermissionScope scopes, bool prompt, bool forcePrompt,
 			Func<bool, PermissionResult> authorize)
@@ -25,6 +35,11 @@ public class LinuxServiceSessionTests
 		protected override PermissionResult Authorize(bool inputAuthority, LinuxPermissionScope scopes,
 			KeysharpInputClient.Operations operations, string operation, bool prompt, bool rearm)
 			=> response.Value(inputAuthority, prompt);
+	}
+
+	private sealed class TerminalLease(Action dispose) : IDisposable
+	{
+		public void Dispose() => dispose();
 	}
 
 	[Test]
@@ -184,6 +199,69 @@ public class LinuxServiceSessionTests
 			new((PermissionStatus)desktopStatus, desktopMessage));
 		Assert.That(result.Status, Is.EqualTo((PermissionStatus)desktopStatus));
 		Assert.That(result.Message, Is.EqualTo(expectedMessage));
+	}
+
+	[Test]
+	public void InteractiveAuthorizationOwnsTheTerminalAgentUntilItReturns()
+	{
+		var policy = new TestPermissions();
+		var active = false;
+		var starts = 0;
+		policy.CreateTerminalAgent = () =>
+		{
+			starts++;
+			active = true;
+			return new TerminalLease(() => active = false);
+		};
+		var result = policy.Request(LinuxPermissionScope.InputMonitoring, true, true, prompt =>
+		{
+			Assert.That(active, Is.EqualTo(prompt));
+			return new(prompt ? PermissionStatus.Granted : PermissionStatus.Denied);
+		});
+		Assert.That(result.IsGranted, Is.True);
+		Assert.That(starts, Is.EqualTo(1));
+		Assert.That(active, Is.False);
+		policy.Request(LinuxPermissionScope.InputMonitoring, true, true,
+			_ => new(PermissionStatus.Granted));
+		Assert.That(starts, Is.EqualTo(1), "An existing grant needs no authentication agent.");
+	}
+
+	[TestCase(false, true)]
+	[TestCase(true, false)]
+	public void NoninteractiveRequestsNeverStartAnAgent(bool interactive, bool prompt)
+	{
+		var policy = new TestPermissions { Interactive = interactive };
+		policy.CreateTerminalAgent = () => throw new AssertionException("A noninteractive request started an agent.");
+		var result = policy.Request(LinuxPermissionScope.InputMonitoring, prompt, true, requested =>
+		{
+			Assert.That(requested, Is.False);
+			return new(PermissionStatus.Denied);
+		});
+		Assert.That(result.Status, Is.EqualTo(PermissionStatus.Denied));
+	}
+
+	[TestCase((int)PermissionStatus.Granted, false)]
+	[TestCase((int)PermissionStatus.Denied, false)]
+	[TestCase((int)PermissionStatus.Unsupported, true)]
+	public void TerminalStartupFailureIsReportedOnlyWithoutAnyAgent(int status, bool reported)
+	{
+		var policy = new TestPermissions { TerminalError = "The terminal agent is unavailable." };
+		var result = policy.Request(LinuxPermissionScope.InputMonitoring, true, true,
+			prompt => new(prompt ? (PermissionStatus)status : PermissionStatus.Denied));
+		Assert.That(result.Status, Is.EqualTo((PermissionStatus)status));
+		Assert.That(result.Message.Contains(policy.TerminalError), Is.EqualTo(reported));
+	}
+
+	[Test]
+	public void AuthorizationFailureDisposesTheTerminalAgent()
+	{
+		var disposed = false;
+		var policy = new TestPermissions { CreateTerminalAgent = () => new TerminalLease(() => disposed = true) };
+		Assert.Throws<InvalidOperationException>(() =>
+			policy.Request(LinuxPermissionScope.InputMonitoring, true, true,
+				prompt => prompt ? throw new InvalidOperationException("test authorization failure")
+					: new(PermissionStatus.Denied)));
+		Assert.That(disposed, Is.True);
 	}
 
 	[Test]

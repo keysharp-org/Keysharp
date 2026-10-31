@@ -143,7 +143,7 @@ namespace Keysharp.Runtime
 			}
 		}
 
-		private static bool IsHeadlessForced()
+		internal static bool IsHeadlessForced()
 		{
 			var value = Environment.GetEnvironmentVariable("KEYSHARP_FORCE_HEADLESS");
 			return Options.OnOff(value) ?? false;

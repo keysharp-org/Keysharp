@@ -169,10 +169,10 @@ install_deps() {
   # Keysharp's own runtime dependencies only. Each standalone component brings its
   # own, through its package or its installer.
   local packages_apt=(libx11-6 libxtst6 libxinerama1 libxt6 libx11-xcb1 libxkbcommon-x11-0 libxcb-xtest0 libgtk-3-0 libglib2.0-0 libnotify4 libatspi2.0-0 at-spi2-core pulseaudio-utils)
-  local packages_dnf=(libX11 libXtst libXinerama libXt libxkbcommon-x11 libxcb libX11-xcb gtk3 glib2 libnotify at-spi2-core)
-  local packages_yum=(libX11 libXtst libXinerama libXt libxcb xorg-x11-xkb-utils gtk3 glib2 libnotify at-spi2-core)
-  local packages_zypper=(libX11-6 libXtst6 libXinerama1 libXt6 libxkbcommon-x11-0 libxcb1 gtk3 glib2 libnotify4 at-spi2-core)
-  local packages_pacman=(libx11 libxtst libxinerama libxt libxkbcommon-x11 libxcb gtk3 glib2 libnotify at-spi2-core)
+  local packages_dnf=(libX11 libXtst libXinerama libXt libxkbcommon-x11 libxcb libX11-xcb gtk3 glib2 libnotify at-spi2-core polkit)
+  local packages_yum=(libX11 libXtst libXinerama libXt libxcb xorg-x11-xkb-utils gtk3 glib2 libnotify at-spi2-core polkit)
+  local packages_zypper=(libX11-6 libXtst6 libXinerama1 libXt6 libxkbcommon-x11-0 libxcb1 gtk3 glib2 libnotify4 at-spi2-core polkit)
+  local packages_pacman=(libx11 libxtst libxinerama libxt libxkbcommon-x11 libxcb gtk3 glib2 libnotify at-spi2-core polkit)
 
   if ! has_dotnet10; then
     packages_apt+=("${DOTNET_PACKAGE}")
@@ -184,6 +184,11 @@ install_deps() {
 
   if have_pkg apt-get; then
     apt-get update
+    if apt-cache show polkitd >/dev/null 2>&1; then
+      packages_apt+=(polkitd)
+    else
+      packages_apt+=(policykit-1)
+    fi
     DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages_apt[@]}"
   elif have_pkg dnf; then
     dnf install -y "${packages_dnf[@]}"
@@ -251,6 +256,9 @@ else
   echo "Skipping dependency installation (INSTALL_DEPS=false)."
 fi
 check_dotnet
+if ! have_pkg pkttyagent; then
+  echo "Terminal permission prompts need pkttyagent: install polkitd (or policykit-1) on Debian/Ubuntu, or polkit on other distributions." >&2
+fi
 if [[ "${DEPENDENCIES_ONLY}" == "true" ]]; then
   echo "Keysharp runtime dependencies are ready."
   exit 0

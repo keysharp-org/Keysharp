@@ -23,6 +23,7 @@
   libxtst,
   wayland,
   systemd,
+  polkit,
   bash,
   coreutils,
   eject,
@@ -69,7 +70,7 @@ let
   ];
   # Everything the runtime shells out to: gio (FileRecycle), eject (Drive), findmnt (Drive labels),
   # pactl/paplay (Sound), xinput with awk/grep (device enumeration), ip (net queries), xdg-open/xdg-mime,
-  # systemctl, and the bash those command strings are run through.
+  # systemctl, pkttyagent, and the bash those command strings are run through.
   runtimePrograms = [
     bash
     coreutils
@@ -78,6 +79,7 @@ let
     glib
     gnugrep
     iproute2
+    polkit
     systemd
     util-linux
     xdg-utils

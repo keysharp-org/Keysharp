@@ -71,7 +71,7 @@ namespace Keysharp.Internals.Os
 
 	internal class DefaultPermissionManager : IPermissionManager
 	{
-		protected static bool ResolvePrompt(bool? prompt) => Script.IsHeadless ? false : prompt ?? true;
+		protected virtual bool ResolvePrompt(bool? prompt) => !Script.IsHeadless && (prompt ?? true);
 
 		public virtual PermissionResult RequestInputMonitoring(bool? prompt = null, string operation = null) => new(PermissionStatus.NotApplicable);
 		public virtual PermissionResult RequestInputControl(bool? prompt = null, string operation = null) => new(PermissionStatus.NotApplicable);

@@ -6,6 +6,17 @@ namespace Keysharp.Internals.Linux
 {
 	internal class LinuxPermissions(KeysharpInputManager input, DesktopClient desktop) : DefaultPermissionManager
 	{
+		private static readonly object promptSync = new();
+
+		protected virtual bool CanInteract => !Script.IsTestHost && !Script.IsHeadlessForced()
+			&& (!Script.IsHeadless || LinuxTerminalAuthentication.HasControllingTerminal);
+
+		// RequestPermission applies CanInteract, once it knows authorization is needed at all.
+		protected override bool ResolvePrompt(bool? prompt) => prompt ?? true;
+
+		protected virtual IDisposable StartTerminalAuthentication(out string error)
+			=> LinuxTerminalAuthentication.Start(out error);
+
 		private sealed class AuthorityState
 		{
 			internal readonly object Sync = new();
@@ -21,13 +32,13 @@ namespace Keysharp.Internals.Linux
 		internal PermissionResult RequestPermission(bool inputAuthority, LinuxPermissionScope scopes, bool prompt,
 			bool forcePrompt, string operation, KeysharpInputClient.Operations operations = KeysharpInputClient.Operations.None)
 		{
-			prompt &= !Script.IsHeadless;
 			var state = inputAuthority ? inputState : desktopState;
 			var held = input.AuthorizationLease;
 			if (!forcePrompt && (inputAuthority
 				? held is { IsConnected: true } && (operations != KeysharpInputClient.Operations.None
 					? held.HasOperations(operations) : scopes != LinuxPermissionScope.None && (held.GrantedScopes & scopes) == scopes)
 				: desktop.HasGrant(scopes))) return new(PermissionStatus.Granted);
+			prompt = prompt && CanInteract;
 			if (!prompt && !Monitor.TryEnter(state.Sync))
 				return new(PermissionStatus.Unsupported, "Authorization is currently being requested.");
 			if (prompt) Monitor.Enter(state.Sync);
@@ -39,7 +50,15 @@ namespace Keysharp.Internals.Linux
 				if (!prompt || result.Status != PermissionStatus.Denied) return result;
 				if ((state.Declined & scopes) != 0)
 					return new(PermissionStatus.Denied, "Access was declined for this run. Request the permission explicitly to try again.");
-				result = Authorize(inputAuthority, scopes, operations, operation, true, false);
+				// Both authorities authenticate the same process and share its terminal.
+				lock (promptSync)
+				{
+					using var terminal = StartTerminalAuthentication(out var terminalError);
+					result = Authorize(inputAuthority, scopes, operations, operation, true, false);
+					// A denial came from an agent that prompted; only the lack of any agent needs the terminal diagnosis.
+					if (result.Status == PermissionStatus.Unsupported && !string.IsNullOrEmpty(terminalError))
+						result = new(result.Status, $"{result.Message} {terminalError}".Trim());
+				}
 				if (result.IsGranted) state.Declined &= ~scopes;
 				else if (result.Status == PermissionStatus.Denied) state.Declined |= scopes;
 				return result;
