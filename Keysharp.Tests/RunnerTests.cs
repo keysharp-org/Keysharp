@@ -136,6 +136,131 @@ public class RunnerTests : TestRunner
 		}
 	}
 
+	[TestCase(false), TestCase(true), Category("Internal")]
+	public void AppHostLocatorVersions(bool sdk)
+	{
+		WithAppHostRoot(root =>
+		{
+			_ = WriteAppHostTemplate(root, sdk, "10.0.99");
+			_ = WriteAppHostTemplate(root, sdk, "10.0.100-preview.9");
+			var preview = WriteAppHostTemplate(root, sdk, "10.0.100-preview.10");
+			var candidate = WriteAppHostTemplate(root, sdk, "10.0.100-rc.1");
+			var release = WriteAppHostTemplate(root, sdk, "10.0.100");
+			_ = WriteAppHostTemplate(root, sdk, "100.0.100");
+			_ = WriteAppHostTemplate(root, sdk, "10.bad");
+			var missing = WriteAppHostTemplate(root, sdk, "10.0.999");
+
+			File.Delete(missing);
+			Assert.That(Keysharp.Main.AppHostLocator.Find([root]), Is.EqualTo(release));
+			File.Delete(release);
+			Assert.That(Keysharp.Main.AppHostLocator.Find([root]), Is.EqualTo(candidate));
+			File.Delete(candidate);
+			Assert.That(Keysharp.Main.AppHostLocator.Find([root]), Is.EqualTo(preview));
+		});
+	}
+
+	[Test, Category("Internal")]
+	public void AppHostLocatorSdkMetadata()
+	{
+		WithAppHostRoot(root =>
+		{
+			var fallback = WriteAppHostTemplate(root, true, "10.0.100");
+			var preferred = WriteAppHostTemplate(root, true, "10.0.200");
+			var metadata = Path.Combine(root, "sdk", "10.0.200", "Microsoft.NETCoreSdk.BundledVersions.props");
+			var rid = RuntimeInformation.RuntimeIdentifier;
+			var runtimeRid = $"<NETCoreSdkRuntimeIdentifier>{rid}</NETCoreSdkRuntimeIdentifier>";
+			var portableRid = $"<NETCoreSdkPortableRuntimeIdentifier>{rid}</NETCoreSdkPortableRuntimeIdentifier>";
+
+			File.Delete(metadata);
+			Assert.That(Keysharp.Main.AppHostLocator.Find([root]), Is.EqualTo(fallback));
+
+			foreach (var contents in new[] { "<Project>", "<Project />",
+				$"<Project><PropertyGroup><NETCoreSdkPortableRuntimeIdentifier>other-rid</NETCoreSdkPortableRuntimeIdentifier>{runtimeRid}</PropertyGroup></Project>" })
+			{
+				File.WriteAllText(metadata, contents);
+				Assert.That(Keysharp.Main.AppHostLocator.Find([root]), Is.EqualTo(fallback), contents);
+			}
+
+			foreach (var properties in new[] { runtimeRid,
+				"<NETCoreSdkPortableRuntimeIdentifier />" + runtimeRid,
+				portableRid + "<NETCoreSdkRuntimeIdentifier>other-rid</NETCoreSdkRuntimeIdentifier>" })
+			{
+				File.WriteAllText(metadata, $"<Project><PropertyGroup>{properties}</PropertyGroup></Project>");
+				Assert.That(Keysharp.Main.AppHostLocator.Find([root]), Is.EqualTo(preferred), properties);
+			}
+		});
+	}
+
+	[Test, Category("Internal")]
+	public void AppHostLocatorRoots()
+	{
+		WithAppHostRoot(root =>
+		{
+			var first = Path.Combine(root, "first");
+			var second = Path.Combine(root, "second");
+			_ = WriteAppHostTemplate(first, false, "9.0.100");
+			var fallback = WriteAppHostTemplate(second, true, "10.0.200");
+			Assert.That(Keysharp.Main.AppHostLocator.Find([null, "\0", first, second]), Is.EqualTo(fallback));
+			Assert.That(Keysharp.Main.AppHostLocator.Find([first]), Is.Null);
+			_ = WriteAppHostTemplate(first, true, "10.0.300");
+			var preferred = WriteAppHostTemplate(first, false, "10.0.100");
+			Assert.That(Keysharp.Main.AppHostLocator.Find([first, second]), Is.EqualTo(preferred));
+
+			var variable = $"DOTNET_ROOT_{RuntimeInformation.ProcessArchitecture.ToString().ToUpperInvariant()}";
+			var previous = Environment.GetEnvironmentVariable(variable);
+			var previousRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
+
+			try
+			{
+				Environment.SetEnvironmentVariable(variable, first);
+				Environment.SetEnvironmentVariable("DOTNET_ROOT", second);
+				Assert.That(Keysharp.Main.AppHostLocator.Find(), Is.EqualTo(preferred));
+			}
+			finally
+			{
+				Environment.SetEnvironmentVariable(variable, previous);
+				Environment.SetEnvironmentVariable("DOTNET_ROOT", previousRoot);
+			}
+		});
+	}
+
+	private static string WriteAppHostTemplate(string root, bool sdk, string version)
+	{
+		var rid = RuntimeInformation.RuntimeIdentifier;
+#if WINDOWS
+		var name = "apphost.exe";
+#else
+		var name = "apphost";
+#endif
+		var target = sdk ? Path.Combine(root, "sdk", version, "AppHostTemplate", name)
+			: Path.Combine(root, "packs", $"Microsoft.NETCore.App.Host.{rid}", version, "runtimes", rid, "native", name);
+
+		Directory.CreateDirectory(Path.GetDirectoryName(target));
+		File.WriteAllText(target, "apphost");
+
+		if (sdk)
+			File.WriteAllText(Path.Combine(root, "sdk", version, "Microsoft.NETCoreSdk.BundledVersions.props"),
+				$"<Project><PropertyGroup><NETCoreSdkPortableRuntimeIdentifier>{rid}</NETCoreSdkPortableRuntimeIdentifier></PropertyGroup></Project>");
+
+		return target;
+	}
+
+	private static void WithAppHostRoot(Action<string> action)
+	{
+		var root = Directory.CreateTempSubdirectory("keysharp-apphost-").FullName;
+
+		Assert.That(Path.GetDirectoryName(root), Is.EqualTo(Path.TrimEndingDirectorySeparator(Path.GetFullPath(Path.GetTempPath()))));
+
+		try
+		{
+			action(root);
+		}
+		finally
+		{
+			Directory.Delete(root, true);
+		}
+	}
+
 	[Test, Category("Internal")]
 	public void FingerprintMvid()
 	{

@@ -1333,6 +1333,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		  Outputs a standalone executable that still requires .NET 10 (`.exe` on Windows, no extension on Linux and macOS). `--dest` accepts a file or folder. Runtime and package dependencies are copied beside the output. The script is not run.
 		- `--compile exe-min [--dest <path>] <script>`
 		  Like `exe`, but embeds package files in Scriptname.dll. The script is not run.
+		  Both executable modes need a .NET apphost template matching the running Keysharp process's platform, normally supplied by the .NET 10 SDK. The operating system and CPU architecture must match, as must glibc or musl on Linux. Portable and custom SDK installations are supported through `DOTNET_ROOT_<ARCH>` (such as `DOTNET_ROOT_ARM64`) or `DOTNET_ROOT`; matching host packs, the running .NET installation and standard installation locations are also searched.
 		- `--compile <script>`
 		  Outputs a `.cks` assembly and its package assets. The script is not run. On Windows, a `.cks` cannot be overwritten while it runs; close the script before compiling over it.
 		- `--compile asm [--dest <path|*>] <script>`

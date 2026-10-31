@@ -5,12 +5,6 @@ internal class WindowsHelper
 {
 	internal const uint AttachParentProcess = 0xFFFFFFFF;
 
-	internal static string WindowsHostPackRoot => @$"C:\Program Files\dotnet\packs\Microsoft.NETCore.App.Host.{WindowsHostRid}\";
-
-	// The apphost stamped onto a compiled exe has to match the architecture of the Keysharp that produced
-	// it, since that exe loads the same Keysharp.Core and native dependencies sitting next to it.
-	internal static string WindowsHostRid => RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? "win-arm64" : "win-x64";
-
 	[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
 	[return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
 	internal static extern bool AttachConsole(uint processId);
@@ -91,13 +85,6 @@ internal class WindowsHelper
 	[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
 	[return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
 	internal static extern bool FreeConsole();
-
-	internal static string GetLatestDotNetVersion()
-			=> Directory.GetDirectories(WindowsHostPackRoot)
-		.Select(Path.GetFileName)
-		.Where(x => x.StartsWith(Script.dotNetMajorVersion))
-		.OrderByDescending(x => new Version(x.Contains("-rc", StringComparison.OrdinalIgnoreCase) ? x[..x.IndexOf("-rc", StringComparison.OrdinalIgnoreCase)] : x))
-		.FirstOrDefault();
 
 	internal static int InstallToPath(string path, string[] args)
 	{

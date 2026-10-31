@@ -149,6 +149,11 @@ public static class Program
 
 		try
 		{
+			var appHostPath = AppHostLocator.Find();
+
+			if (appHostPath == null)
+				return Runner.Message($"Could not find a .NET {Script.dotNetMajorVersion} apphost template for {RuntimeInformation.RuntimeIdentifier}. Install the matching .NET SDK, or set DOTNET_ROOT to its installation directory.", true);
+
 			var outputRuntimeConfigPath = Path.ChangeExtension(path, "runtimeconfig.json");
 			var currentRuntimeConfigPath = Path.ChangeExtension(exePath, "runtimeconfig.json");
 			var outputDllPath = path + ".dll";
@@ -159,11 +164,6 @@ public static class Program
 			File.Copy(currentDepsConfigPath, outputDepsConfigPath, true);
 #if LINUX || OSX
 			finalPath = path;
-			var appHostPath = UnixHelper.FindAppHostTemplate();
-
-			if (appHostPath == null)
-				return Runner.Message($"Could not find a .NET {Script.dotNetMajorVersion} apphost template under any dotnet install root, so no executable can be produced. Installing the .NET SDK provides one.", true);
-
 			HostWriter.CreateAppHost(
 				appHostSourceFilePath: appHostPath,
 				appHostDestinationFilePath: finalPath,
@@ -176,14 +176,13 @@ public static class Program
 
 #endif
 #elif WINDOWS
-			var ver = WindowsHelper.GetLatestDotNetVersion();
 			finalPath = $"{path}.exe";
 			// `#App { ConsoleApp: true }` inverts this: it is the PE subsystem field, and it is what makes a shell
 			// wait for the process and hand it the terminal's stdin/stdout. Windows reads it before the process
 			// starts, so it can only be chosen here, at build time - nothing the script does at runtime can change
 			// either behaviour. GUI stays the default so a double-clicked script never flashes a console window.
 			HostWriter.CreateAppHost(
-				appHostSourceFilePath: @$"{WindowsHelper.WindowsHostPackRoot}{ver}\runtimes\{WindowsHelper.WindowsHostRid}\native\apphost.exe",
+				appHostSourceFilePath: appHostPath,
 				appHostDestinationFilePath: finalPath,
 				appBinaryFilePath: $"{namenoext}.dll",
 				windowsGraphicalUserInterface: !exeCompilation.ConsoleApp,
