@@ -519,7 +519,7 @@ namespace Keysharp.Runtime
 		// An item with no value, as AutoHotkey reports it. In v2.1 the expression reading it raises the error, with the index
 		// in brackets as Extra, which AutoHotkey takes from the source and this from the values; before that, the
 		// collection's own getter raised it with the key.
-		private static object UnsetIndexErrorOccurred(object[] index) => CompatReturnsUnsetForMissing
+		private static object UnsetIndexErrorOccurred(object[] index) => RequiresVersion(2, 1)
 			? Errors.UnsetItemErrorOccurred($"[{string.Join(", ", index.Select(key => key is string s ? $"\"{s}\"" : Errors.Describe(key)))}]")
 			: Errors.UnsetItemErrorOccurred(index.Length > 0 ? index[0] : "");
 		// . in ?? context: strict base, allow null result

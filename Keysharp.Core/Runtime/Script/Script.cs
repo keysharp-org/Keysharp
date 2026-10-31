@@ -173,12 +173,10 @@ namespace Keysharp.Runtime
 		internal const int DefaultErrorInt = int.MinValue;
 		internal const long DefaultErrorLong = long.MinValue;
 		internal const string DefaultNewLine = "\n";
-		internal static string DefaultObject => currentCompatibilityReturnsUnsetByDefault ? null : "";
-		// True in v2.1+ compatibility mode, where the item/member accessors the Compatibility Mode docs list
-		// (Array.__Item/Get, Map.__Item/Delete/Get, Object.GetMethod/GetOwnPropDesc, Gui.__Item) return unset (null)
-		// for an absent item instead of throwing (UnsetItemError/IndexError/etc.). This mirrors the caller's
-		// mode, since built-ins carry no [CompatibilityMode] of their own.
-		internal static bool CompatReturnsUnsetForMissing => currentCompatibilityReturnsUnsetByDefault;
+		internal static string DefaultObject => RequiresVersion(2, 1) ? null : "";
+		// Whether the compatibility mode is that of #Requires AutoHotkey v<major>.<minor> or later. Built-ins carry no
+		// [CompatibilityMode] of their own, so inside one this is the mode of the script code which called it.
+		internal static bool RequiresVersion(int major, int minor) => currentCompatibilityLevel >= CompatibilityVersions.Level(major, minor);
 		internal const string DefaultErrorString = "";
 		internal const int INTERVAL_UNSPECIFIED = int.MinValue + 303;
 		internal const int maxEmergencyThreads = 10;
@@ -187,10 +185,7 @@ namespace Keysharp.Runtime
 		internal const int SLEEP_INTERVAL_HALF = SLEEP_INTERVAL / 2;
 		internal static readonly Semver.SemVersion DefaultCompatibilityVersion = new(2, 0, 0);
 		[ThreadStatic]
-		private static Semver.SemVersion currentCompatibilityVersion;
-		[ThreadStatic]
-		private static bool currentCompatibilityReturnsUnsetByDefault;
-		internal Semver.SemVersion CurrentCompatibilityVersion => currentCompatibilityVersion ?? DefaultCompatibilityVersion;
+		internal static int currentCompatibilityLevel;
 		internal CallbackRegistry ClipFunctions = new(threadName: "OnClipboardChange");
 		internal List<object> hotCriterions = [];
 		internal List<object> hotExprs = [];
@@ -1056,12 +1051,6 @@ namespace Keysharp.Runtime
 
 		internal static bool ReturnsUnsetByDefault(Semver.SemVersion version) =>
 			version?.Major > 2 || (version?.Major == 2 && version.Minor >= 1);
-
-		internal void SetCurrentCompatibilityVersion(Semver.SemVersion version)
-		{
-			currentCompatibilityVersion = version ?? DefaultCompatibilityVersion;
-			currentCompatibilityReturnsUnsetByDefault = ReturnsUnsetByDefault(currentCompatibilityVersion);
-		}
 
 		private void InitializeUIThreadContext()
 		{

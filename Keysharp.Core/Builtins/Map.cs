@@ -338,7 +338,7 @@ namespace Keysharp.Builtins
 				return val;
 			}
 
-			return Script.CompatReturnsUnsetForMissing ? null
+			return Script.RequiresVersion(2, 1) ? null
 				: Errors.UnsetItemErrorOccurred(key);
 		}
 
@@ -370,7 +370,7 @@ namespace Keysharp.Builtins
 			if (Script.GetPropertyValueOrNull(this, "Default") is { } fallback)
 				return fallback;
 
-			return Script.CompatReturnsUnsetForMissing ? null
+			return Script.RequiresVersion(2, 1) ? null
 				: Errors.UnsetItemErrorOccurred(k);
 		}
 
@@ -510,7 +510,7 @@ namespace Keysharp.Builtins
 				if (TryGetValue(key, out var val))
 					return val;
 
-				return Script.GetPropertyValueOrNull(this, "Default") ?? (Script.CompatReturnsUnsetForMissing ? null
+				return Script.GetPropertyValueOrNull(this, "Default") ?? (Script.RequiresVersion(2, 1) ? null
 					: Errors.UnsetItemErrorOccurred(key));
 			}
 			set
@@ -519,7 +519,7 @@ namespace Keysharp.Builtins
 				{
 					if (map.Remove(key))
 						enumerableMap = null;
-					else if (!Script.CompatReturnsUnsetForMissing)
+					else if (!Script.RequiresVersion(2, 1))
 						_ = Errors.UnsetItemErrorOccurred(key);
 
 					return;

@@ -18,7 +18,7 @@ public class UIThreadDispatchTests : TestRunner
 		public static long StaticMethod() => Environment.CurrentManagedThreadId;
 
 		[RequiresUIThread]
-		public string Compatibility => Script.TheScript.CurrentCompatibilityVersion.ToString();
+		public string Compatibility => Script.currentCompatibilityLevel.ToString();
 
 		[RequiresUIThread]
 		public long MarkedProperty
@@ -273,25 +273,25 @@ public class UIThreadDispatchTests : TestRunner
 	[TestCase(false), TestCase(true)]
 	public void InvocationPreservesCallerCompatibility(bool methodAccessor)
 	{
-		var previous = s.CurrentCompatibilityVersion;
-		var uiVersion = CompatibilityVersions.ParseVersion("2.0");
-		var workerVersion = CompatibilityVersions.ParseVersion("2.1");
+		var previous = Script.currentCompatibilityLevel;
+		var uiLevel = CompatibilityVersions.Level(2, 0);
+		var workerLevel = CompatibilityVersions.Level(2, 1);
 		var property = typeof(DispatchTarget).GetProperty(nameof(DispatchTarget.Compatibility));
 		var getter = methodAccessor ? new MethodPropertyHolder(property.GetMethod) : new MethodPropertyHolder(property);
-		s.SetCurrentCompatibilityVersion(uiVersion);
+		Script.currentCompatibilityLevel = uiLevel;
 		try
 		{
 			var value = OnWorker(() =>
 			{
-				var workerPrevious = s.CurrentCompatibilityVersion;
-				s.SetCurrentCompatibilityVersion(workerVersion);
+				var workerPrevious = Script.currentCompatibilityLevel;
+				Script.currentCompatibilityLevel = workerLevel;
 				try { return getter.CallFunc(new DispatchTarget(), []); }
-				finally { s.SetCurrentCompatibilityVersion(workerPrevious); }
+				finally { Script.currentCompatibilityLevel = workerPrevious; }
 			});
-			Assert.That(value, Is.EqualTo(workerVersion.ToString()));
-			Assert.That(s.CurrentCompatibilityVersion, Is.EqualTo(uiVersion));
+			Assert.That(value, Is.EqualTo(workerLevel.ToString()));
+			Assert.That(Script.currentCompatibilityLevel, Is.EqualTo(uiLevel));
 		}
-		finally { s.SetCurrentCompatibilityVersion(previous); }
+		finally { Script.currentCompatibilityLevel = previous; }
 	}
 
 #if WINDOWS

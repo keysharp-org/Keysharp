@@ -4298,7 +4298,7 @@ namespace Keysharp.Builtins
 					}
 				}
 
-				return Script.CompatReturnsUnsetForMissing ? null
+				return Script.RequiresVersion(2, 1) ? null
 					: Errors.ErrorOccurred($"No controls matched the handle, name, text, ClassNN or NetClassNN {controlName}.");
 			}
 		}

@@ -25,17 +25,34 @@ public partial class MiscTests : TestRunner
 	public void OptionalMetadata() => Assert.IsTrue(TestScript("misc-optional-metadata", false));
 
 	[Test, Category("Internal"), Category("Curated")]
+	public void CompatibilityLevels()
+	{
+		static int Level(string version) => new CompatibilityModeAttribute(version).Level;
+
+		// A thread which has not set a mode starts at 0, which has to be v2.0.
+		Assert.That(Level("2.0.0"), Is.Zero);
+		Assert.That(Level(""), Is.Zero);
+		Assert.That(Level("2.1-alpha.37"), Is.EqualTo(CompatibilityVersions.Level(2, 1)));
+		Assert.That(Level("2.1.0"), Is.GreaterThan(Level("2.0.0")));
+		Assert.That(Level("2.2"), Is.GreaterThan(Level("2.1")));
+		Assert.That(Level("3.0"), Is.GreaterThan(Level("2.65535")));
+
+		foreach (var version in new[] { "1.1", "2.65536", "2.99999999999", "99999999999" })
+			Assert.Throws<ArgumentOutOfRangeException>(() => Level(version), version);
+	}
+
+	[Test, Category("Internal"), Category("Curated")]
 	public void MetadataSnapshots()
 	{
 		var monitor = new Ks.KeysharpMonitor(default, 1, DisplayDetails.Empty);
 		var external = new Ks.KeysharpMonitor(default, 1, new DisplayDetails { IsInternal = false });
 		var session = Ks.Audio.Session.Wrap(null, default);
-		var original = s.CurrentCompatibilityVersion;
+		var original = Script.currentCompatibilityLevel;
 		try
 		{
 			foreach (var unset in new[] { false, true, false })
 			{
-				s.SetCurrentCompatibilityVersion(new Semver.SemVersion(2, unset ? 1 : 0, 0));
+				Script.currentCompatibilityLevel = CompatibilityVersions.Level(2, unset ? 1 : 0);
 				Assert.That(new object[] { monitor.Name, monitor.Model, monitor.Manufacturer, monitor.Serial,
 					monitor.Id, monitor.Adapter, monitor.Connection, monitor.Dpi, monitor.PhysicalWidth,
 					monitor.PhysicalHeight, monitor.RefreshRate, monitor.IsInternal, session.Device,
@@ -44,7 +61,7 @@ public partial class MiscTests : TestRunner
 				Assert.That(new object[] { monitor.IsPrimary, external.IsInternal, session.IsSystemSounds }, Is.All.EqualTo(false));
 			}
 		}
-		finally { s.SetCurrentCompatibilityVersion(original); }
+		finally { Script.currentCompatibilityLevel = original; }
 	}
 
 #if WINDOWS

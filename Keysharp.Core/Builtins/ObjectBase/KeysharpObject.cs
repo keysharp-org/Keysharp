@@ -161,7 +161,7 @@ namespace Keysharp.Builtins
 			if (obj is Module module && module.TryGetProperty(nameVal, [], out var val))
 				return KeysharpObject.staticCall(TheScript.Vars.Statics[typeof(KeysharpObject)], ["value", val]);
 
-			return Script.CompatReturnsUnsetForMissing ? null
+			return Script.RequiresVersion(2, 1) ? null
 				: Errors.PropertyErrorOccurred($"Object did not have an OwnProp named {nameVal}.");
 		}
 

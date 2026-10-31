@@ -83,13 +83,13 @@ namespace Keysharp.Runtime
 		{
 			var script = TheScript;
 			var borrowed = Current.Copy();
-			var compatibility = script.CurrentCompatibilityVersion;
+			var compatibility = Script.currentCompatibilityLevel;
 			return script.InvokeOnUIThread(() =>
 			{
 				var previous = current;
-				var previousCompatibility = script.CurrentCompatibilityVersion;
+				var previousCompatibility = Script.currentCompatibilityLevel;
 				current = borrowed;
-				script.SetCurrentCompatibilityVersion(compatibility);
+				Script.currentCompatibilityLevel = compatibility;
 
 				try
 				{
@@ -102,7 +102,7 @@ namespace Keysharp.Runtime
 				finally
 				{
 					current = previous;
-					script.SetCurrentCompatibilityVersion(previousCompatibility);
+					Script.currentCompatibilityLevel = previousCompatibility;
 				}
 			});
 		}
@@ -273,7 +273,7 @@ namespace Keysharp.Runtime
 			if (Module == null && script.Vars?.DefaultModuleType is { } defaultType)
 			{
 				Module = ModuleData.GetOrCreate(defaultType);
-				script.SetCurrentCompatibilityVersion(Module.CompatibilityVersion);
+				Script.currentCompatibilityLevel = Module.CompatibilityLevel;
 			}
 
 			return Module;
@@ -306,10 +306,9 @@ namespace Keysharp.Runtime
 			var stack = Current;
 			var depth = stack.Push(MethodPropertyHolder.GetOrAdd(section.Method));
 			var previous = stack.Module;
-			var script = TheScript;
-			var previousCompatibility = script.CurrentCompatibilityVersion;
+			var previousCompatibility = Script.currentCompatibilityLevel;
 			stack.Module = ModuleData.GetOrCreate(module);
-			script.SetCurrentCompatibilityVersion(stack.Module.CompatibilityVersion);
+			Script.currentCompatibilityLevel = stack.Module.CompatibilityLevel;
 
 			try
 			{
@@ -323,7 +322,7 @@ namespace Keysharp.Runtime
 			{
 				stack.Pop(depth);
 				stack.Module = previous;
-				script.SetCurrentCompatibilityVersion(previousCompatibility);
+				Script.currentCompatibilityLevel = previousCompatibility;
 			}
 		}
 

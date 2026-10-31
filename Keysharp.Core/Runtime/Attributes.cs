@@ -11,15 +11,27 @@ namespace Keysharp.Runtime
 	[AttributeUsage(AttributeTargets.Class | AttributeTargets.Method, Inherited = false)]
 	public sealed class CompatibilityModeAttribute : Attribute
 	{
-		public Semver.SemVersion Version { get; }
+		public int Level { get; }
 
-		public CompatibilityModeAttribute(string version) => Version = CompatibilityVersions.ParseVersion(version);
-
-		public override string ToString() => Version.ToString();
+		public CompatibilityModeAttribute(string version) => Level = CompatibilityVersions.ParseLevel(version);
 	}
 
 	internal static class CompatibilityVersions
 	{
+		// Major and minor relative to v2.0, so a thread which has not set a mode reads as the default.
+		internal static int Level(int major, int minor) => (major - 2) << 16 | minor;
+
+		// The one place a version enters the runtime, so nothing later has to consider one which does not fit a level.
+		internal static int ParseLevel(string version)
+		{
+			var parsed = ParseVersion(version);
+
+			if (parsed.Major < 2 || parsed.Major > short.MaxValue || parsed.Minor > ushort.MaxValue)
+				throw new ArgumentOutOfRangeException(nameof(version), version, "Not a compatibility version.");
+
+			return Level((int)parsed.Major, (int)parsed.Minor);
+		}
+
 		internal static Semver.SemVersion ParseVersion(string version)
 		{
 			var text = TrimVersionPrefix(version).ToString();

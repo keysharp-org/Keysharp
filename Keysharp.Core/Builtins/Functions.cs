@@ -337,7 +337,7 @@ namespace Keysharp.Builtins
 			var method = name == null ? ObjectOrBase(value) : FindMethod(value, n);
 
 			if (method == null)
-				return Script.CompatReturnsUnsetForMissing ? null : Errors.MissingMethodErrorOccurred(value, name == null ? "Call" : n);
+				return Script.RequiresVersion(2, 1) ? null : Errors.MissingMethodErrorOccurred(value, name == null ? "Call" : n);
 
 			var argCount = paramCount == null ? -1 : count + (name != null ? 1 : 0);
 			return ValidateFunctor(method, argCount) ? method : DefaultObject;

@@ -35,7 +35,7 @@ namespace Keysharp.Internals.Invoke
 		internal readonly PropertyInfo pi;
 		internal readonly FieldInfo fi;
 		internal readonly Type moduleType;
-		internal readonly Semver.SemVersion compatibilityVersion;
+		internal readonly int? compatibilityLevel;
 		private Action<object, object> setProp;
 		internal Action<object, object> SetProp
 		{
@@ -417,7 +417,7 @@ namespace Keysharp.Internals.Invoke
 		public MethodPropertyHolder(MethodInfo m)
 		{
 			mi = m;
-			compatibilityVersion = mi.GetCustomAttribute<Keysharp.Runtime.CompatibilityModeAttribute>()?.Version;
+			compatibilityLevel = mi.GetCustomAttribute<Keysharp.Runtime.CompatibilityModeAttribute>()?.Level;
 			moduleType = !mi.IsStatic && typeof(Keysharp.Runtime.Module).IsAssignableFrom(mi.DeclaringType)
 				&& mi.DeclaringType.Assembly == typeof(Keysharp.Runtime.Module).Assembly ? null : ResolveModuleType(mi.DeclaringType);
 			// Ks and Ahk derive from Module so #import has something to bind against, but their members are builtins.
@@ -497,9 +497,9 @@ namespace Keysharp.Internals.Invoke
 		public MethodPropertyHolder(PropertyInfo p)
 		{
 			pi = p;
-			compatibilityVersion = (pi.GetCustomAttribute<Keysharp.Runtime.CompatibilityModeAttribute>()
+			compatibilityLevel = (pi.GetCustomAttribute<Keysharp.Runtime.CompatibilityModeAttribute>()
 				?? pi.GetMethod?.GetCustomAttribute<Keysharp.Runtime.CompatibilityModeAttribute>()
-				?? pi.SetMethod?.GetCustomAttribute<Keysharp.Runtime.CompatibilityModeAttribute>())?.Version;
+				?? pi.SetMethod?.GetCustomAttribute<Keysharp.Runtime.CompatibilityModeAttribute>())?.Level;
 			moduleType = ResolveModuleType(pi.DeclaringType);
 			parameters = pi.GetIndexParameters();
 			ParamLength = parameters.Length;
@@ -675,7 +675,7 @@ namespace Keysharp.Internals.Invoke
 			var core = CompileCore(mph);
 			// A script function runs under its own module and compatibility version; a builtin keeps its caller's.
 			var module = mph.InScriptModule ? ModuleData.GetOrCreate(mph.moduleType) : null;
-			var compatibility = mph.compatibilityVersion;
+			var compatibility = mph.compatibilityLevel;
 			var scoped = module != null || compatibility != null;
 
 			return NormalInvoke;
@@ -738,20 +738,20 @@ namespace Keysharp.Internals.Invoke
 				var stack = CallStack.Current;
 				var depth = stack.Push(mph);
 				ModuleData previousModule = null;
-				Semver.SemVersion previousCompatibility = null;
+				int? previousCompatibility = null;
 				var switched = false;
 
 				if (scoped)
 				{
 					previousModule = stack.ModuleOrDefault(TheScript);
 					switched = module != null && !ReferenceEquals(previousModule, module);
-					previousCompatibility = switched || compatibility != null ? TheScript.CurrentCompatibilityVersion : null;
+					previousCompatibility = switched || compatibility != null ? Script.currentCompatibilityLevel : null;
 
 					if (switched)
 						stack.Module = module;
 
 					if (switched || compatibility != null)
-						TheScript.SetCurrentCompatibilityVersion(compatibility ?? module.CompatibilityVersion);
+						Script.currentCompatibilityLevel = compatibility ?? module.CompatibilityLevel;
 				}
 
 				try
@@ -769,7 +769,7 @@ namespace Keysharp.Internals.Invoke
 					if (switched)
 						stack.Module = previousModule;
 					if (previousCompatibility != null)
-						TheScript.SetCurrentCompatibilityVersion(previousCompatibility);
+						Script.currentCompatibilityLevel = previousCompatibility.Value;
 				}
 			};
 		}

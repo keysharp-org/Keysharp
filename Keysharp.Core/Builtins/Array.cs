@@ -149,7 +149,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 
 	private bool TryConvertIndex(object index, out int converted, string method = null, bool inserting = false, string what = null)
 	{
-		var strict = Script.CompatReturnsUnsetForMissing;
+		var strict = Script.RequiresVersion(2, 1);
 		var numeric = index.TryCoerceLong(out var value, allowFloat: !strict);
 		converted = -1;
 		if (numeric)
@@ -453,7 +453,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 		else if (Script.GetPropertyValueOrNull(this, "Default") is { } fallback)
 			return fallback;
 		else
-			return Script.CompatReturnsUnsetForMissing ? null
+			return Script.RequiresVersion(2, 1) ? null
 				: Errors.UnsetItemErrorOccurred(index);
 	}
 

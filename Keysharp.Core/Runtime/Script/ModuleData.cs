@@ -9,13 +9,13 @@ namespace Keysharp.Runtime
 		private static readonly ConcurrentDictionary<System.Type, ModuleData> cache = new ();
 
 		internal System.Type ModuleType { get; }
-		internal readonly Semver.SemVersion CompatibilityVersion;
+		internal readonly int CompatibilityLevel;
 		public ModuleVars Vars { get; }
 
 		public ModuleData(System.Type moduleType)
 		{
 			ModuleType = moduleType ?? throw new System.ArgumentNullException(nameof(moduleType));
-			CompatibilityVersion = ModuleType.GetCustomAttribute<CompatibilityModeAttribute>()?.Version;
+			CompatibilityLevel = ModuleType.GetCustomAttribute<CompatibilityModeAttribute>()?.Level ?? 0;
 			Vars = new ModuleVars(ModuleType);
 		}
 
