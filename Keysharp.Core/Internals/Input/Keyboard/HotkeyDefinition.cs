@@ -1060,6 +1060,66 @@ namespace Keysharp.Internals.Input.Keyboard
                     return ResultType.Fail;
 			}
 
+			var onOff = HOTKEY_ID_INVALID;
+			bool? buffer = null, suspendExempt = null;
+			int? priority = null, maxThreads = null, inputLevel = null;
+			var optionText = options.AsSpan();
+
+			// Reject the entire option string before changing a hotkey or its callback.
+			for (var i = 0; i < optionText.Length;)
+			{
+				var option = optionText[i++];
+				switch (option is >= 'a' and <= 'z' ? (char)(option - ('a' - 'A')) : option)
+				{
+					case 'O':
+						if (optionText[i..].StartsWith("n", StringComparison.OrdinalIgnoreCase))
+						{
+							i++;
+							onOff = HOTKEY_ID_ON;
+						}
+						else if (optionText[i..].StartsWith("ff", StringComparison.OrdinalIgnoreCase))
+						{
+							i += 2;
+							onOff = HOTKEY_ID_OFF;
+						}
+						else
+							return (ResultType)Errors.InvalidParameterErrorOccurred(3, "Hotkey", options, ResultType.Fail);
+						break;
+					case 'B':
+					case 'S':
+						var enabled = i == optionText.Length || optionText[i] != '0';
+						if (optionText[i - 1] is 'B' or 'b')
+							buffer = enabled;
+						else
+							suspendExempt = enabled;
+						if (i < optionText.Length && optionText[i] is '0' or '1')
+							i++;
+						break;
+					case 'P':
+						// Read decimal digits only: a following letter starts another option. No digits means zero.
+						priority = ReadOptionInteger(optionText, ref i);
+						break;
+					case 'T':
+						var threads = ReadOptionInteger(optionText, ref i);
+						if (threads < 1 || threads > Script.maxThreadsLimit)
+							return (ResultType)Errors.InvalidParameterErrorOccurred(3, "Hotkey", options, ResultType.Fail);
+						// The per-hotkey limit cannot exceed the total thread capacity.
+						maxThreads = (int)Math.Min((uint)threads, script.MaxThreadsTotal);
+						break;
+					case 'I':
+						var level = ReadOptionInteger(optionText, ref i);
+						if (!KeyboardMouseSender.SendLevelIsValid(level))
+							return (ResultType)Errors.InvalidParameterErrorOccurred(3, "Hotkey", options, ResultType.Fail);
+						inputLevel = level;
+						break;
+					case ' ':
+					case '\t':
+						break;
+					default:
+						return (ResultType)Errors.InvalidParameterErrorOccurred(3, "Hotkey", options, ResultType.Fail);
+				}
+			}
+
 			uint noSuppress = 0;
 			bool hook_is_mandatory = false;
 			var hk = FindEquivalentHotkey(script, hotkeyName, ref noSuppress, ref hook_is_mandatory); // NULL if not found.
@@ -1082,19 +1142,7 @@ namespace Keysharp.Internals.Input.Keyboard
 						// onto some "default variant" such as the global variant (if any).
 						return (ResultType)Errors.ValueErrorOccurred("Nonexistent hotkey variant(IfWin).", hotkeyName, ResultType.Fail);
 
-					if (hookAction == HOTKEY_ID_TOGGLE)
-						hookAction = hk.hookAction != 0
-									 ? hk.parentEnabled ? HOTKEY_ID_OFF : HOTKEY_ID_ON // Enable/disable parent hotkey (due to alt-tab being a global hotkey).
-									 : binding.IsActive ? HOTKEY_ID_OFF : HOTKEY_ID_ON; // Enable/disable individual variant.
-
-					if (hookAction == HOTKEY_ID_ON)
-					{
-						if (hk.hookAction != 0 ? hk.EnableParent() : hk.Enable(binding))
-							updateAllHotkeys = true; // Do it this way so that any previous "true" value isn't lost.
-					}
-					else if (hk.hookAction != 0 ? hk.DisableParent() : hk.Disable(binding))
-						updateAllHotkeys = true; // Do it this way so that any previous "true" value isn't lost.
-
+					onOff = hookAction;
 					break;
 
 				default: // _hookAction is 0 or an AltTab action.  COMMAND: Hotkey, Name, Callback|AltTabAction
@@ -1213,110 +1261,68 @@ namespace Keysharp.Internals.Input.Keyboard
 			if (!(binding != null || hk.hookAction != 0)) // mHookAction (alt-tab) hotkeys don't need a variant that matches the current criteria.
 				return (ResultType)Errors.ValueErrorOccurred("Nonexistent hotkey variant (IfWin).", hotkeyName, ResultType.Fail);
 
-			// Below relies on the fact that either variant or hk.mHookAction (or both) is now non-zero.
-			// Specifically, when an existing hotkey was changed to become an alt-tab hotkey, above, there will sometimes
-			// be a NULL variant (depending on whether there happens to be a variant in the hotkey that matches the current criteria).
-
-			// If aOptions is blank, any new hotkey or variant created above will have used the current values of
-			// g_MaxThreadsBuffer, etc.
-			if (!string.IsNullOrEmpty(options))
+			// Below relies on either a matching variant or an alt-tab action. Changing an existing hotkey to an
+			// alt-tab action does not require a variant matching the current criteria, so variant can be null.
+			// Unspecified settings retain the defaults used when creating a variant, or an existing variant's settings.
+			if (variant != null)
 			{
-				for (var i = 0; i < options.Length; ++i)
+				if (buffer.HasValue)
+					variant.maxThreadsBuffer = buffer.Value;
+				if (suspendExempt.HasValue)
+					variant.suspendExempt = suspendExempt.Value;
+				if (priority.HasValue)
+					variant.priority = priority.Value;
+				if (maxThreads.HasValue)
+					variant.maxThreads = (uint)maxThreads.Value;
+				if (inputLevel.HasValue)
 				{
-					switch (char.ToUpper(options[i]))
+					if (inputLevel.Value != 0 && !hk.keybdHookMandatory)
 					{
-						case 'O': // v1.0.38.02.
-						{
-							if (options.AsSpan(i).StartsWith("On", StringComparison.OrdinalIgnoreCase)) // Full validation for maintainability.
-							{
-								++i; // Omit the 'N' from further consideration in case it ever becomes a valid option letter.
-
-								if (hk.hookAction != 0 ? hk.EnableParent() : hk.Enable(binding)) // Under these conditions, earlier logic has ensured variant is non-NULL.
-									updateAllHotkeys = true; // Do it this way so that any previous "true" value isn't lost.
-							}
-							else if (options.AsSpan(i).StartsWith("Off", StringComparison.OrdinalIgnoreCase))
-							{
-								i += 2; // Omit the letters of the word from further consideration in case "f" ever becomes a valid option letter.
-
-								if (hk.hookAction != 0 ? hk.DisableParent() : hk.Disable(binding)) // Under these conditions, earlier logic has ensured variant is non-NULL.
-									updateAllHotkeys = true; // Do it this way so that any previous "true" value isn't lost.
-
-								if (variantWasJustCreated) // This variant (and possibly its parent hotkey) was just created above.
-									updateAllHotkeys = false; // Override the "true" that was set (either right above *or* anywhere earlier) because this new hotkey/variant won't affect other hotkeys.
-							}
-						}
-						break;
-
-						case 'B':
-						{
-							if (variant != null)
-								variant.maxThreadsBuffer = !options.AsSpan(i + 1).StartsWith('0'); // i.e. if the text ends or something other than '0' follows.
-						}
-						break;
-
-						// For options such as P & T: only the decimal digits after the letter, since a letter which follows is
-						// another option (as B is in P0x01B), and 0 when there are none, as AutoHotkey reads them.
-						case 'P':
-						{
-							if (variant != null)
-								variant.priority = int.TryParse(options.AsSpan(i + 1).BeginNums(allowSign: true), out var val) ? val : 0;
-						}
-						break;
-
-						case 'S':
-						{
-							if (variant != null)
-								variant.suspendExempt = !options.AsSpan(i + 1).StartsWith('0');
-						}
-						break;
-
-						case 'T':
-							if (variant != null)
-							{
-								variant.maxThreads = uint.TryParse(options.AsSpan(i + 1).BeginNums(), out var val) ? val : 0;
-
-								if (variant.maxThreads > script.MaxThreadsTotal) // To avoid array overflow, this limit must by obeyed except where otherwise documented.
-									// Older comment: Keep this limited to prevent stack overflow due to too many pseudo-
-									variant.maxThreads = script.MaxThreadsTotal;
-								else if (variant.maxThreads < 1)
-									variant.maxThreads = 1;
-							}
-
-							break;
-
-						case 'I':
-							if (variant != null)
-							{
-								var newInputLevel = long.TryParse(options.AsSpan(i + 1).BeginNums(allowSign: true), out var level) ? level : 0;
-
-								if (KeyboardMouseSender.SendLevelIsValid(newInputLevel))
-								{
-									if (newInputLevel != 0 && !hk.keybdHookMandatory)
-									{
-										// For simplicity, a hotkey requires the hook if any of its variants have a non-zero
-										// input level, even if those variants are disabled.  The same is done for the tilde
-										// prefix above and in AddVariant(); see there for more comments.
-										hk.keybdHookMandatory = true;
-										updateAllHotkeys = true;
-									}
-
-									variant.inputLevel = newInputLevel;
-								}
-							}
-
-							break;
-							// Otherwise: Ignore other characters, such as the digits that comprise the number after the T option.
+						// For simplicity, a hotkey requires the hook if any of its variants have a non-zero
+						// input level, even if those variants are disabled. The same is done for the tilde
+						// prefix above and in AddVariant(); see there for more comments.
+						hk.keybdHookMandatory = true;
+						updateAllHotkeys = true;
 					}
-
-					while (i < options.Length && Types.IsSpace(options[i]) == 0)
-						i++;
+					variant.inputLevel = inputLevel.Value;
 				}
+			}
+
+			if (onOff == HOTKEY_ID_TOGGLE)
+				onOff = (hk.hookAction != 0 ? hk.parentEnabled : binding.IsActive) ? HOTKEY_ID_OFF : HOTKEY_ID_ON;
+			// Preserve any refresh already requested while creating or updating the hotkey.
+			if (onOff == HOTKEY_ID_ON)
+				updateAllHotkeys |= hk.hookAction != 0 ? hk.EnableParent() : hk.Enable(binding);
+			else if (onOff == HOTKEY_ID_OFF)
+			{
+				updateAllHotkeys |= hk.hookAction != 0 ? hk.DisableParent() : hk.Disable(binding);
+				if (variantWasJustCreated)
+					// A newly created disabled variant cannot affect other hotkeys, so no refresh is needed.
+					updateAllHotkeys = false;
 			}
 
 			if (updateAllHotkeys)
 				_ = ManifestAllHotkeysHotstringsHooks(script); // See its comments for why it's done in so many of the above situations.
 
 			return ResultType.Ok;
+		}
+
+		private static int ReadOptionInteger(ReadOnlySpan<char> text, ref int offset)
+		{
+			var i = offset;
+			while (i < text.Length && text[i] is ' ' or '\t' or '\r' or '\n' or '\v' or '\f')
+				i++;
+			var negative = i < text.Length && text[i] == '-';
+			if (i < text.Length && text[i] is '+' or '-')
+				i++;
+			var digits = i;
+			long value = 0;
+			while (i < text.Length && text[i] is >= '0' and <= '9')
+				value = Math.Min(2147483648L, value * 10 + text[i++] - '0');
+			if (i == digits)
+				return 0;
+			offset = i;
+			return negative ? (int)-value : (int)Math.Min(int.MaxValue, value);
 		}
 
 		/// <summary>
