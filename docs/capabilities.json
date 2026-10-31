@@ -6754,8 +6754,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Creates, modifies, enables or disables hotkeys. Options may be concatenated; invalid options raise ValueError before a callback, hotkey or setting is changed.",
-                     "tested-by":  "Manual comparison with AutoHotkey 2.0.31"
+                     "notes":  "Creates, modifies, enables or disables hotkeys. Options may be concatenated; invalid options raise ValueError before a callback, hotkey or setting is changed. A nonexistent hotkey or variant raises TargetError.",
+                     "tested-by":  "directive-misc.ahk"
                  },
                  {
                      "category":  "Automation",

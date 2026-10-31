@@ -77,7 +77,11 @@ for InvalidOption in ["X", "O", "T0", "T256", "I101", "B2", "P-"]
 Hotkey("F5", , "T2P-3B0S1I100")
 ; An invalid option leaves no hotkey behind.
 Throws(() => Hotkey("F21", (*) => 0, "X"), A_LineNumber, ValueError)
-Throws(() => Hotkey("F21", , "On"), A_LineNumber, ValueError)
+Throws(() => Hotkey("F21", , "On"), A_LineNumber, TargetError)
+Throws(() => Hotkey("F21", "NoSuchHotkey"), A_LineNumber, ValueError)
+HotIfWinActive("no window has this title")
+Throws(() => Hotkey("F5", , "P1"), A_LineNumber, TargetError)
+HotIfWinActive()
 
 FileAppend "pass", "*"
 

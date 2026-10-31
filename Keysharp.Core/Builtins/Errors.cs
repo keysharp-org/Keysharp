@@ -365,6 +365,16 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
+		/// Internal helper to handle target errors with the value as Extra. Throws a <see cref="TargetError"/> or returns <see cref="DefaultObject"/>.
+		/// </summary>
+		[StackTraceHidden]
+		internal static object TargetErrorOccurred(string text, object val, object ret)
+		{
+			Error err;
+			return ErrorOccurred(err = new TargetError(text, null, val)) ? throw err : ret ?? DefaultObject;
+		}
+
+		/// <summary>
 		/// Internal helper to handle timeouts. Throws a <see cref="TimeoutError"/> or returns <see cref="DefaultObject"/>.
 		/// </summary>
 		[StackTraceHidden]

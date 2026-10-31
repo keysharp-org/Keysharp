@@ -1134,13 +1134,13 @@ namespace Keysharp.Internals.Input.Keyboard
 				case HOTKEY_ID_OFF:
 				case HOTKEY_ID_TOGGLE:
 					if (hk == null)
-						return (ResultType)Errors.ValueErrorOccurred("Nonexistent hotkey.", hotkeyName, ResultType.Fail);
+						return (ResultType)Errors.TargetErrorOccurred("Nonexistent hotkey.", hotkeyName, ResultType.Fail);
 
 					if (!(binding != null || hk.hookAction != 0)) // hookAction (alt-tab) hotkeys don't need a variant that matches the current criteria.
 						// To avoid ambiguity and also allow the script to use error handling to detect whether a variant
 						// already exists, it seems best to strictly require a matching variant rather than falling back
 						// onto some "default variant" such as the global variant (if any).
-						return (ResultType)Errors.ValueErrorOccurred("Nonexistent hotkey variant(IfWin).", hotkeyName, ResultType.Fail);
+						return (ResultType)Errors.TargetErrorOccurred("Nonexistent hotkey variant (HotIf).", hotkeyName, ResultType.Fail);
 
 					onOff = hookAction;
 					break;
@@ -1153,7 +1153,7 @@ namespace Keysharp.Internals.Input.Keyboard
 						else // Create hotkey: Hotkey Name, Callback [, Options]
 						{
 							if (callback == null) // Caller is trying to set new aOptions for a nonexistent hotkey.
-								return (ResultType)Errors.ValueErrorOccurred("Nonexistent hotkey.", hotkeyName, ResultType.Fail);
+								return (ResultType)Errors.TargetErrorOccurred("Nonexistent hotkey.", hotkeyName, ResultType.Fail);
 
 							hk = AddHotkey(script, callback, 0, hotkeyName, ref noSuppress);
 						}
@@ -1259,7 +1259,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			// Hotkey, Name,, Options  ; Where name exists as a hotkey, but the right variant doesn't yet exist.
 			// If it catches anything else, that could be a bug, so this error message will help spot it.
 			if (!(binding != null || hk.hookAction != 0)) // mHookAction (alt-tab) hotkeys don't need a variant that matches the current criteria.
-				return (ResultType)Errors.ValueErrorOccurred("Nonexistent hotkey variant (IfWin).", hotkeyName, ResultType.Fail);
+				return (ResultType)Errors.TargetErrorOccurred("Nonexistent hotkey variant (HotIf).", hotkeyName, ResultType.Fail);
 
 			// Below relies on either a matching variant or an alt-tab action. Changing an existing hotkey to an
 			// alt-tab action does not require a variant matching the current criteria, so variant can be null.

@@ -238,7 +238,8 @@ namespace Keysharp.Builtins
 		///     Tn: Specify the letter T followed by a the number of threads to allow for this hotkey as described in #MaxThreadsPerHotkey. For example: T5.
 		///     In (InputLevel): Specify the letter I (or i) followed by the hotkey's input level. For example: I1.
 		/// </param>
-		/// <exception cref="Error">Throws an <see cref="Error"/> exception if an invalid function object or name is specified.</exception>
+		/// <exception cref="ValueError">Throws a <see cref="ValueError"/> exception if an invalid action name or option is specified.</exception>
+		/// <exception cref="TargetError">Throws a <see cref="TargetError"/> exception if the hotkey or its variant does not exist.</exception>
 		public static object Hotkey(object keyName, object action = null, object options = null)
 		{
 			var script = Script.TheScript;
@@ -289,7 +290,7 @@ namespace Keysharp.Builtins
 break_twice:;
 
 					if (fo == null)
-						return Errors.ErrorOccurred($"Unable to find existing hotkey handler: {label}. A callback is passed as a function object.");
+						return Errors.InvalidParameterErrorOccurred(2, "Hotkey", label);
 				}
 
 				if (fo == null)
