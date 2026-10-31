@@ -105,14 +105,14 @@ AssertEq(buf.Ptr + 8, ret, A_LineNumber)
 ret := NumPut("float", 1.2345, buf)
 b1 := NumGet(buf, 0, "float")
 
-AssertEq(b1, 1.2345, A_LineNumber)
+AssertEq(b1, 1.2345000505447388, A_LineNumber)
 	
 AssertEq(buf.Ptr + 4, ret, A_LineNumber)
 
 ret :=NumPut("float", -1.2345, buf)
 b1 := NumGet(buf, 0, "float")
 
-AssertEq(b1, -1.2345, A_LineNumber)
+AssertEq(b1, -1.2345000505447388, A_LineNumber)
 	
 AssertEq(buf.Ptr + 4, ret, A_LineNumber)
 

@@ -130,6 +130,14 @@ AssertEq(DllCall(typedCb, "float", 1.5, "float", 2.25, "float"), 3.75, A_LineNum
 AssertEq(DllCall(typedCb, Float32, Float32(1.5), Float32, Float32(2.25), Float32), 3.75, A_LineNumber)
 CallbackFree(typedCb)
 
+floatArgumentCb := CallbackCreate(value => value, "Fast", [Float32, Float64])
+AssertEq(DllCall(floatArgumentCb, "float", 0.1, "double"), 0.10000000149011612, A_LineNumber)
+CallbackFree(floatArgumentCb)
+
+floatReturnCb := CallbackCreate(() => 0.1, "Fast", [Float32])
+AssertEq(DllCall(floatReturnCb, "float"), 0.10000000149011612, A_LineNumber)
+CallbackFree(floatReturnCb)
+
 ; An integer parameter type must arrive as an Integer, not a Float.
 intCb := CallbackCreate(v => Type(v) = "Integer" ? v : -1, "Fast", [Int32, Int32])
 AssertEq(DllCall(intCb, Int32, 30, Int32), 30, A_LineNumber)

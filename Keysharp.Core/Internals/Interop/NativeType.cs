@@ -127,7 +127,7 @@ namespace Keysharp.Internals.Interop
 
 				case NativeTypeCode.Double: return Unsafe.ReadUnaligned<double>(p);
 
-				case NativeTypeCode.Float: return WidenFloat(Unsafe.ReadUnaligned<float>(p));
+				case NativeTypeCode.Float: return (double)Unsafe.ReadUnaligned<float>(p);
 
 				//A string output slot holds the address of a string, so it dereferences to the string itself,
 				//with StrGet's guard against a null or implausibly low address. None of them are freed: as
@@ -212,24 +212,6 @@ namespace Keysharp.Internals.Interop
 			}
 
 			return true;
-		}
-
-		/// <summary>
-		/// Widens a float to the double a script sees. Going through the shortest text that reads back as the
-		/// same float keeps the decimal a script prints ("1.2345"), where a plain cast would carry the binary
-		/// error of the narrower type into every digit (1.2344999313354492). Formatting into stack space keeps
-		/// this allocation-free, and invariant on both sides makes the round trip independent of the locale.
-		/// </summary>
-		internal static double WidenFloat(float value)
-		{
-			// Below 2^24 every integral float is exact, and so is its plain cast.
-			if (MathF.Abs(value) < 16777216f && value == MathF.Truncate(value))
-				return value;
-
-			Span<char> text = stackalloc char[32];
-			return value.TryFormat(text, out var written, default, CultureInfo.InvariantCulture)
-				   ? double.Parse(text[..written], NumberStyles.Float, CultureInfo.InvariantCulture)
-				   : value;
 		}
 
 		// The first character is compared inline, and every name here is lower case, so a candidate that cannot

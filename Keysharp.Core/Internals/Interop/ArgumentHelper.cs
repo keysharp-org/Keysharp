@@ -663,8 +663,7 @@ namespace Keysharp.Internals.Interop
 
 				case NativeTypeCode.UChar: return (long)unchecked((byte)value);
 
-				//Widened the same way NumGet widens a float, so 1.2345f comes back as 1.2345.
-				case NativeTypeCode.Float: return NativeType.WidenFloat(BitConverter.Int32BitsToSingle(unchecked((int)value)));
+				case NativeTypeCode.Float: return (double)BitConverter.Int32BitsToSingle(unchecked((int)value));
 
 				case NativeTypeCode.Double: return BitConverter.Int64BitsToDouble(value);
 

@@ -3606,7 +3606,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Creates a native callback address which redirects to a script function. Supports both parameter-count callbacks and typed parameter/return signatures on every platform.",
+                     "notes":  "Creates a native callback address which redirects to a script function. Supports both parameter-count callbacks and typed parameter/return signatures on every platform. Float32 arguments preserve their exact binary value when widened to the script\u0027s Float.",
                      "tested-by":  "external-callbackcreate.ahk"
                  },
                  {
@@ -4841,7 +4841,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Calls native functions; supports numeric type classes and void returns. Structured arrays pass by address but cannot be returned.",
+                     "notes":  "Calls native functions; supports numeric type classes and void returns. Structured arrays pass by address but cannot be returned. Native Float32 values preserve their exact binary value when widened to the script\u0027s Float.",
                      "tested-by":  "external-dllcall.ahk; struct-array.ahk; struct-basic.ahk"
                  },
                  {
@@ -8961,7 +8961,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The NumGet function returns the binary number stored at the specified address+offset. The type is a name or a numeric type class such as UInt32; one which does not name a number raises a ValueError, and a name is matched in full where AutoHotkey reads only its first character.",
+                     "notes":  "The NumGet function returns the binary number stored at the specified address+offset. The type is a name or a numeric type class such as UInt32; one which does not name a number raises a ValueError, and a name is matched in full where AutoHotkey reads only its first character. Native Float32 values preserve their exact binary value when widened to the script\u0027s Float.",
                      "tested-by":  "external-numput-numget.ahk; external-callbackcreate.ahk"
                  },
                  {
@@ -11873,7 +11873,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Predefined numeric struct type for typed fields and native calls."
+                     "notes":  "Predefined numeric struct type for typed fields and native calls. Reads preserve the exact binary value when widened to the script\u0027s Float.",
+                     "tested-by":  "struct-basic.ahk; external-numput-numget.ahk; external-dllcall.ahk; external-callbackcreate.ahk"
                  },
                  {
                      "category":  "Interop/Memory",

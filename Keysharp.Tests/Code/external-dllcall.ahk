@@ -385,10 +385,10 @@ AssertEq(dest, 1, A_LineNumber)
 ; Ensure float* gets properly written to and can be read back as a double.
 
 src := Buffer(4)
-NumPut("float", 1.0, src)
+NumPut("float", 0.1, src)
 dest := 1.1
 DllCall("Kernel32\RtlMoveMemory", "float*", &dest, "Ptr", src, "Int", 4)
-AssertEq(dest, 1.0, A_LineNumber)
+AssertEq(dest, 0.10000000149011612, A_LineNumber)
 
 ; This tests the regular DllCall() and the CallDel() path using ComArgumentHelper.
 ; I don't know what it's supposed to be doing or how it works, but it appears to be

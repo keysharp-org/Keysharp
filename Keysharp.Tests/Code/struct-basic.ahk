@@ -371,10 +371,10 @@ try
 catch
     Assert(false, A_LineNumber)
 
-; A Float32 field widens as NumGet does, to the shortest decimal that reads back as the same float.
+; A Float32 field preserves the binary value, as NumGet does.
 floatField := FLOAT_FIELD()
 floatField.f := 1.2345
-AssertEq(floatField.f, 1.2345, A_LineNumber)
+AssertEq(floatField.f, 1.2345000505447388, A_LineNumber)
 AssertEq(floatField.f, NumGet(floatField.Ptr, "Float"), A_LineNumber)
 
 ; Property type strings and typeless (byte-count) types were both removed. [v2.1-alpha.30]

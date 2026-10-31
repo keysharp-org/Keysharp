@@ -763,7 +763,7 @@ namespace Keysharp.Builtins
 				case StructPrimitiveKind.UInt16: return (long)(ushort)slot;
 				case StructPrimitiveKind.Int32: return (long)(int)slot;
 				case StructPrimitiveKind.UInt32: return (long)(uint)slot;
-				case StructPrimitiveKind.Float32: return NativeType.WidenFloat(BitConverter.Int32BitsToSingle((int)slot));
+				case StructPrimitiveKind.Float32: return (double)BitConverter.Int32BitsToSingle((int)slot);
 				case StructPrimitiveKind.Float64: return BitConverter.Int64BitsToDouble(slot);
 				case StructPrimitiveKind.Int64:
 				case StructPrimitiveKind.Ptr: return slot;// Already the whole slot.
@@ -1294,7 +1294,7 @@ namespace Keysharp.Builtins
 				StructPrimitiveKind.UInt32 => (long)Unsafe.ReadUnaligned<uint>(ptr),
 				StructPrimitiveKind.Int64 => Unsafe.ReadUnaligned<long>(ptr),
 				StructPrimitiveKind.Ptr => Unsafe.ReadUnaligned<nint>(ptr).ToInt64(),
-				StructPrimitiveKind.Float32 => NativeType.WidenFloat(Unsafe.ReadUnaligned<float>(ptr)),
+				StructPrimitiveKind.Float32 => (double)Unsafe.ReadUnaligned<float>(ptr),
 				StructPrimitiveKind.Float64 => Unsafe.ReadUnaligned<double>(ptr),
 				_ => DefaultObject
 			};
