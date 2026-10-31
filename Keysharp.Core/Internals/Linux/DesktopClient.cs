@@ -606,7 +606,10 @@ namespace Keysharp.Internals.Linux
 			string Operation)
 		{
 			internal bool IsSuccess => Status == NativeClientStatus.Ok;
-			internal bool ShouldReconnect => Status is NativeClientStatus.Unavailable or NativeClientStatus.Timeout;
+			internal bool IsAuthenticationAgentUnavailable => Status == NativeClientStatus.Unavailable
+				&& Detail == NativeClientErrorDetail.NoAuthenticationAgent;
+			internal bool ShouldReconnect => Status == NativeClientStatus.Timeout
+				|| Status == NativeClientStatus.Unavailable && !IsAuthenticationAgentUnavailable;
 			internal bool IsExpectedPollTimeout
 				=> Status == NativeClientStatus.Timeout && SystemError == 0;
 			internal string Message => NativeClientException.BuildMessage("keysharp-desktop",

@@ -32,11 +32,19 @@ namespace Keysharp.Internals.Linux
 		Internal = 255,
 	}
 
+	// Shared native detail codes; other values remain service-specific.
+	internal static class NativeClientErrorDetail
+	{
+		internal const uint NoAuthenticationAgent = 0x00010000;
+	}
+
 	internal sealed class NativeClientException : IOException
 	{
 		internal NativeClientStatus Status { get; }
 		internal uint Detail { get; }
 		internal int SystemError { get; }
+		internal bool IsAuthenticationAgentUnavailable => Status == NativeClientStatus.Unavailable
+			&& Detail == NativeClientErrorDetail.NoAuthenticationAgent;
 
 		internal NativeClientException(string component, string operation,
 			NativeClientStatus status, uint detail, int systemError, string diagnostic)

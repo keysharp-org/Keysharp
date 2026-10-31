@@ -59,6 +59,10 @@ namespace Keysharp.Internals.Linux
 				return lease.IsConnected && ReferenceEquals(input.AuthorizationLease, lease)
 					? result : new(PermissionStatus.Unsupported, "The keysharp-input session has stopped.");
 			}
+			catch (NativeClientException ex) when (ex.IsAuthenticationAgentUnavailable)
+			{
+				return new(PermissionStatus.Unsupported, ex.Message);
+			}
 			catch (Exception ex) when (KeysharpInputManager.IsTransportException(ex))
 			{
 				input.HandleConnectionLost(lease);
@@ -98,8 +102,12 @@ namespace Keysharp.Internals.Linux
 		{
 			var result = RequestPermission(true, LinuxPermissionScope.InputControl, ResolvePrompt(prompt), prompt == true,
 				operation ?? "keyboard/mouse control");
-			return result.Status == PermissionStatus.Unsupported
-				? RequestDesktop(LinuxPermissionScope.InputControl, ResolvePrompt(prompt), prompt == true) : result;
+			if (result.Status != PermissionStatus.Unsupported) return result;
+			var fallback = RequestDesktop(LinuxPermissionScope.InputControl, ResolvePrompt(prompt), prompt == true);
+			if (fallback.Status != PermissionStatus.Unsupported || string.IsNullOrEmpty(result.Message)
+				|| result.Message == fallback.Message) return fallback;
+			return string.IsNullOrEmpty(fallback.Message) ? result
+				: new(PermissionStatus.Unsupported, $"{result.Message} {fallback.Message}");
 		}
 
 		public override PermissionResult RequestScreenCapture(bool? prompt = null, string operation = null)

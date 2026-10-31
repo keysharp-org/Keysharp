@@ -59,23 +59,29 @@ public class DesktopBrokerTests
 		}
 	}
 
-	[TestCase((int)NativeClientStatus.Ok, 0, false, false)]
-	[TestCase((int)NativeClientStatus.Unavailable, 0, true, false)]
-	[TestCase((int)NativeClientStatus.Timeout, 110, true, false)]
-	[TestCase((int)NativeClientStatus.Timeout, 0, true, true)]
-	[TestCase((int)NativeClientStatus.Denied, 13, false, false)]
-	[TestCase((int)NativeClientStatus.Revoked, 0, false, false)]
+	[TestCase((int)NativeClientStatus.Ok, 0u, 0, false, false, false)]
+	[TestCase((int)NativeClientStatus.Unavailable, 0u, 0, true, false, false)]
+	[TestCase((int)NativeClientStatus.Unavailable, 0x00010001u, 0, true, false, false)]
+	[TestCase((int)NativeClientStatus.Unavailable, NativeClientErrorDetail.NoAuthenticationAgent, 0, false, false, true)]
+	[TestCase((int)NativeClientStatus.Timeout, NativeClientErrorDetail.NoAuthenticationAgent, 110, true, false, false)]
+	[TestCase((int)NativeClientStatus.Timeout, 0u, 110, true, false, false)]
+	[TestCase((int)NativeClientStatus.Timeout, 0u, 0, true, true, false)]
+	[TestCase((int)NativeClientStatus.Denied, 0u, 13, false, false, false)]
+	[TestCase((int)NativeClientStatus.Revoked, 0u, 0, false, false, false)]
 	public void NativeResultDistinguishesConnectionFailuresFromPollTimeouts(
-		int statusCode, int systemError, bool shouldReconnect,
-		bool isExpectedPollTimeout)
+		int statusCode, uint detail, int systemError, bool shouldReconnect,
+		bool isExpectedPollTimeout, bool isAuthenticationAgentUnavailable)
 	{
-		var result = new DesktopClient.CallResult((NativeClientStatus)statusCode, 0, systemError,
+		var result = new DesktopClient.CallResult((NativeClientStatus)statusCode, detail, systemError,
 			string.Empty, "test operation");
 
         using (Assert.EnterMultipleScope())
         {
 			Assert.That(result.ShouldReconnect, Is.EqualTo(shouldReconnect));
 			Assert.That(result.IsExpectedPollTimeout, Is.EqualTo(isExpectedPollTimeout));
+			Assert.That(result.IsAuthenticationAgentUnavailable, Is.EqualTo(isAuthenticationAgentUnavailable));
+			Assert.That(((NativeClientException)result.Exception).IsAuthenticationAgentUnavailable,
+				Is.EqualTo(isAuthenticationAgentUnavailable));
 		}
 	}
 

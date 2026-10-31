@@ -7,18 +7,24 @@ public class LinuxServiceSessionTests
 {
 	private sealed class TestPermissions() : LinuxPermissions(new KeysharpInputManager(), new DesktopClient())
 	{
-		private readonly AsyncLocal<Func<bool, PermissionResult>> response = new();
+		private readonly AsyncLocal<Func<bool, bool, PermissionResult>> response = new();
 
 		internal PermissionResult Request(LinuxPermissionScope scopes, bool prompt, bool forcePrompt,
 			Func<bool, PermissionResult> authorize)
 		{
-			response.Value = authorize;
+			response.Value = (_, requested) => authorize(requested);
 			return RequestPermission(false, scopes, prompt, forcePrompt, "test authorization");
+		}
+
+		internal PermissionResult RequestControl(PermissionResult inputResult, PermissionResult desktopResult)
+		{
+			response.Value = (inputAuthority, _) => inputAuthority ? inputResult : desktopResult;
+			return RequestInputControl(false);
 		}
 
 		protected override PermissionResult Authorize(bool inputAuthority, LinuxPermissionScope scopes,
 			KeysharpInputClient.Operations operations, string operation, bool prompt, bool rearm)
-			=> response.Value(prompt);
+			=> response.Value(inputAuthority, prompt);
 	}
 
 	[Test]
@@ -137,6 +143,47 @@ public class LinuxServiceSessionTests
 		Assert.That(prompts, Is.EqualTo(2));
 		policy.Request(scope, false, true, Authorize);
 		Assert.That(prompts, Is.EqualTo(2), "A noninteractive request must never prompt, including an explicit retry.");
+	}
+
+	[Test]
+	public void MissingAgentRemainsRetryable()
+	{
+		const string message = "No polkit authentication agent is available for this session.";
+		var policy = new TestPermissions();
+		var prompts = 0;
+		PermissionResult Authorize(bool prompt)
+		{
+			if (!prompt) return new(PermissionStatus.Denied);
+			return ++prompts < 3
+				? new(PermissionStatus.Unsupported, message)
+				: new(PermissionStatus.Granted);
+		}
+		const LinuxPermissionScope scope = LinuxPermissionScope.InputMonitoring;
+		for (var attempt = 0; attempt < 2; attempt++)
+		{
+			var result = policy.Request(scope, true, false, Authorize);
+			Assert.That(result.Status, Is.EqualTo(PermissionStatus.Unsupported));
+			Assert.That(result.Message, Is.EqualTo(message));
+		}
+		Assert.That(policy.Request(scope, true, false, Authorize).IsGranted, Is.True);
+		Assert.That(prompts, Is.EqualTo(3));
+	}
+
+	[TestCase((int)PermissionStatus.Unsupported, "No authentication agent.", "Desktop unavailable.", "No authentication agent. Desktop unavailable.")]
+	[TestCase((int)PermissionStatus.Unsupported, "No authentication agent.", "No authentication agent.", "No authentication agent.")]
+	[TestCase((int)PermissionStatus.Unsupported, "", "Desktop unavailable.", "Desktop unavailable.")]
+	[TestCase((int)PermissionStatus.Unsupported, "No authentication agent.", "", "No authentication agent.")]
+	[TestCase((int)PermissionStatus.Unsupported, "", "", "")]
+	[TestCase((int)PermissionStatus.Granted, "No authentication agent.", "", "")]
+	[TestCase((int)PermissionStatus.Denied, "No authentication agent.", "Access declined.", "Access declined.")]
+	public void InputControlFallbackPreservesUnavailableDiagnostics(int desktopStatus, string inputMessage,
+		string desktopMessage, string expectedMessage)
+	{
+		var policy = new TestPermissions();
+		var result = policy.RequestControl(new(PermissionStatus.Unsupported, inputMessage),
+			new((PermissionStatus)desktopStatus, desktopMessage));
+		Assert.That(result.Status, Is.EqualTo((PermissionStatus)desktopStatus));
+		Assert.That(result.Message, Is.EqualTo(expectedMessage));
 	}
 
 	[Test]
