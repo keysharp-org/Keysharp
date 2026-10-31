@@ -29,17 +29,9 @@ namespace Keysharp.Internals.Images
 			return (a << 24) | (r << 16) | (g << 8) | b;
 		}
 
-		internal static Icon IconFromByteArray(byte[] bytes, bool deferFrames = false)
+		internal static Icon IconFromByteArray(byte[] bytes)
 		{
 			using var stream = new MemoryStream(bytes, writable: false);
-#if LINUX
-			if (deferFrames)
-			{
-				var handler = new Eto.GtkSharp.Drawing.IconHandler();
-				handler.CreateDeferred(stream);
-				return new Icon(handler);
-			}
-#endif
 			return new Icon(stream);
 		}
 

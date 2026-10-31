@@ -261,7 +261,7 @@ namespace Keysharp.Runtime
 
 #endif
 				return _normalIcon ??= ImageHelper.WithStockTrayImage(
-					ImageHelper.IconFromByteArray(Keysharp.Internals.Properties.Resources.Keysharp_ico, deferFrames: true), "Keysharp.png");
+					ImageHelper.IconFromByteArray(Keysharp.Internals.Properties.Resources.Keysharp_ico), "Keysharp.png");
 			}
 		}
 		//The icon loaded by TraySetIcon, null while the script still uses its default icon. As in AHK, it is also worn
@@ -328,9 +328,9 @@ namespace Keysharp.Runtime
 		//manifest's tray-specific icon when one was declared, else the script icon like AHK.
 		internal Icon trayDefaultIcon => customIcon ?? manifestTrayIcon ?? scriptIcon;
 		private Icon _pausedIcon;
-		internal Icon pausedIcon => _pausedIcon ??= ImageHelper.IconFromByteArray(Keysharp.Internals.Properties.Resources.Keysharp_p_ico, deferFrames: true);
+		internal Icon pausedIcon => _pausedIcon ??= ImageHelper.IconFromByteArray(Keysharp.Internals.Properties.Resources.Keysharp_p_ico);
 		private Icon _suspendedIcon;
-		internal Icon suspendedIcon => _suspendedIcon ??= ImageHelper.IconFromByteArray(Keysharp.Internals.Properties.Resources.Keysharp_s_ico, deferFrames: true);
+		internal Icon suspendedIcon => _suspendedIcon ??= ImageHelper.IconFromByteArray(Keysharp.Internals.Properties.Resources.Keysharp_s_ico);
 		internal bool persistent;
 		internal nint playbackHook = 0;
 		internal DateTime priorHotkeyStartTime = DateTime.UtcNow;
