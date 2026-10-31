@@ -2,6 +2,70 @@ namespace Keysharp.Tests;
 
 public class FileAndDirTests : TestRunner
 {
+	// The bytes a standard stream receives are only observable from outside the process.
+	[Test, Category("FileAndDir")]
+	public void StandardStreamEncoding()
+	{
+		var launcher = Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "Keysharp.exe" : "Keysharp");
+
+		if (!File.Exists(launcher))
+			Assert.Ignore($"launcher not built at {launcher}");
+
+		var dir = Path.Combine(Path.GetTempPath(), "ks_stdstream_" + Guid.NewGuid().ToString("N"));
+		_ = Directory.CreateDirectory(dir);
+
+		try
+		{
+			var script = Path.Combine(dir, "t.ahk");
+			File.WriteAllText(script, """
+				#NoTrayIcon
+				#ErrorStdOut
+				FileEncoding("UTF-8")
+				for target in ["*", "**"]
+				{
+					FileAppend(Chr(233) "`n", target, "UTF-8")
+					FileAppend(Chr(233) "`n", target, "UTF-16")
+					FileAppend(Chr(233) "`n", target, "CP1252")
+					FileAppend(Chr(233) "`n", target, "RAW")
+					FileAppend(Chr(233) "`n", target)
+					FileAppend(Chr(233) "`n", target, "UTF-8 `n")
+				}
+				""");
+			var start = new ProcessStartInfo(launcher)
+			{
+				UseShellExecute = false,
+				CreateNoWindow = true,
+				RedirectStandardOutput = true,
+				RedirectStandardError = true,
+				ArgumentList = { script }
+			};
+			start.Environment["KEYSHARP_DAEMON"] = "0";
+			start.Environment["KEYSHARP_FORCE_HEADLESS"] = "1";
+			using var process = Process.Start(start);
+			using var stdout = new MemoryStream();
+			using var stderr = new MemoryStream();
+			var readOutput = process.StandardOutput.BaseStream.CopyToAsync(stdout);
+			var readError = process.StandardError.BaseStream.CopyToAsync(stderr);
+
+			if (!process.WaitForExit(30000))
+			{
+				process.Kill(entireProcessTree: true);
+				Assert.Fail("the script did not exit");
+			}
+
+			System.Threading.Tasks.Task.WaitAll(readOutput, readError);
+			Assert.That(process.ExitCode, Is.Zero, Encoding.UTF8.GetString(stderr.ToArray()));
+			byte[] expected = [0xC3, 0xA9, 0x0A, 0xE9, 0, 0x0A, 0, 0xE9, 0x0A,
+				0xE9, 0, 0x0A, 0, 0xC3, 0xA9, 0x0A, 0xC3, 0xA9, 0x0D, 0x0A];
+			Assert.That(stdout.ToArray(), Is.EqualTo(expected));
+			Assert.That(stderr.ToArray(), Is.EqualTo(expected));
+		}
+		finally
+		{
+			Directory.Delete(dir, true);
+		}
+	}
+
 	[Test, Category("FileAndDir")]
 	public void DirCopy() => Assert.IsTrue(TestScript("file-dircopy", false));
 

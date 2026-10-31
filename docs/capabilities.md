@@ -529,7 +529,7 @@ Status legend:
 | File.WriteDouble() / File.WriteFloat() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes an IEEE floating-point value. |
 | File.WriteInt() / File.WriteUInt() / File.WriteInt64() / File.WriteShort() / File.WriteUShort() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes a binary integer of the requested width and signedness. |
 | File.WriteLine() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes text followed by a line ending. |
-| FileAppend() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes text or binary data to the end of a file (first creating the file, if necessary). |
+| FileAppend() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes text or binary data to the end of a file (first creating the file, if necessary). Writing to stdout (*) or stderr (**) uses the requested encoding, without a byte order mark. |
 | FileCopy() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Copies one or more files. |
 | FileCreateShortcut() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Windows creates .lnk files. Linux and macOS create symbolic links or freedesktop .desktop launchers; Windows-only icon-number, hotkey, and run-state metadata is not represented, and macOS aliases are not created. |
 | FileCreateTemp() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates an empty temporary file and returns its full path. |

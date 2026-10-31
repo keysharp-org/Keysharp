@@ -5224,8 +5224,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Writes text or binary data to the end of a file (first creating the file, if necessary).",
-                     "tested-by":  "assign-dyn-var.ahk"
+                     "notes":  "Writes text or binary data to the end of a file (first creating the file, if necessary). Writing to stdout (*) or stderr (**) uses the requested encoding, without a byte order mark.",
+                     "tested-by":  "file-fileappend.ahk; FileAndDirTests.StandardStreamEncoding"
                  },
                  {
                      "category":  "FileSystem",

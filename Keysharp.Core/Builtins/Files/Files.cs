@@ -14,6 +14,9 @@ namespace Keysharp.Builtins
 	{
 		private static readonly SearchValues<char> wildcardsSv = SearchValues.Create("*?");
 		private static readonly SearchValues<char> fileOptionSeparators = SearchValues.Create(" \t\n");
+		// Opened on first use: a GUI-subsystem process that touches the console before the script allocates one is
+		// pinned to the null stream.
+		private static Stream standardOutput, standardError;
 #if OSX
 		private static readonly char[] dirSeparators = [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar];
 #endif
@@ -23,6 +26,27 @@ namespace Keysharp.Builtins
 				return;
 
 			_ = Script.TheScript.Permissions.EnsureFileAccess(path, access, operation: operation);
+		}
+
+		private static void WriteStandardStream(string value, Encoding encoding, bool error)
+		{
+			var stream = error ? standardError : standardOutput;
+
+			if (stream == null)
+			{
+				// Encoded bytes reach the process's own streams only when the process is Keysharp's: the launcher or a
+				// compiled script. A test host or an embedding application may have replaced Console.Out with a capture.
+				if (Assembly.GetEntryAssembly() is not { } entry
+						|| entry != Script.TheScript.ProgramType?.Assembly && entry.GetName().Name != "Keysharp")
+				{
+					(error ? Console.Error : Console.Out).Write(value);
+					return;
+				}
+
+				stream = error ? standardError = Console.OpenStandardError() : standardOutput = Console.OpenStandardOutput();
+			}
+
+			stream.Write(encoding == null ? MemoryMarshal.AsBytes(value.AsSpan()) : encoding.GetBytes(value));
 		}
 
 		/// <summary>
@@ -86,9 +110,9 @@ namespace Keysharp.Builtins
 
 			var crlf = opts.Contains('\n');
 			var target = info?.filename ?? file;
-			var console = target switch { "*" => Console.Out, "**" => Console.Error, _ => null };
+			var isStandardStream = target is "*" or "**";
 
-			if (console != null && t is not string)
+			if (isStandardStream && t is not string)
 				return Errors.TypeErrorOccurred(t, typeof(string));
 
 			if (target.Length == 0)
@@ -98,7 +122,7 @@ namespace Keysharp.Builtins
 
 			try
 			{
-				if (console != null)
+				if (isStandardStream)
 				{
 					var s = (string)t;
 #if DEBUG
@@ -107,7 +131,7 @@ namespace Keysharp.Builtins
 						_ = Diagnostics.Debug.WriteLine(s);
 
 #endif
-					console.Write(crlf && encoding != null ? TextStream.InsertCarriageReturns(s, '\0') : s);
+					WriteStandardStream(crlf && encoding != null ? TextStream.InsertCarriageReturns(s, '\0') : s, encoding, target == "**");
 				}
 				// The loop owns, and closes when it ends, only an output file it opened, never a standard stream.
 				else if (info != null)
