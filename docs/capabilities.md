@@ -302,7 +302,7 @@ Status legend:
 | Array | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Ordered collection object. In v2.1 mode, index access, Get, Has, Delete, InsertAt and RemoveAt require an integer index and reject Float or nonnumeric values with TypeError; integer strings are accepted. v2.0 mode retains Float truncation and its index error categories. |
 | Array.__Enum() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Enumerates values or index/value pairs; omitted or zero NumberOfVars adapts to the outputs, while 1 or 2 fixes the mode and argument count. |
 | Array.__Item | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Indexer property for getting or setting array elements. In v2.1 mode, a non-integer index raises TypeError; an integer outside the bounds raises IndexError. |
-| Array.__New() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Constructs a new Array object. |
+| Array.__New() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Appends items to the array. Repeated calls preserve existing elements and active enumeration; a call without arguments leaves the contents unchanged. |
 | Array.Capacity | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the reserved element capacity. |
 | Array.Clone() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a shallow copy of an array. An instance created by ObjCreateWithDataPtr raises TypeError. |
 | Array.Contains() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-specific Array method. Omitting the value searches for an element which has no value. |

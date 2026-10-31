@@ -212,33 +212,22 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 			switch (args[0])
 			{
 				case ICollection<object> values:
-					Copy(values);
+					array.AddRange(values);
 					break;
 				case IEnumerable e when e is not string and not Any:
-					array = new (e.Cast<object>()); // enumerate once
-					if (array.Count < capacity) array.Capacity = capacity;
+					array.AddRange(e.Cast<object>().ToArray()); // Materialize before appending in case the source enumerates this array.
 					break;
 				default:
-					Copy(args);
+					array.AddRange(args);
 					break;
 			}
 		}
 		else
 		{
-			Copy(args);
+			array.AddRange(args);
 		}
 
 		return DefaultObject;
-
-		void Copy(ICollection<object> values)
-		{
-			if (array.Count != 0)
-				array = new (Math.Max(capacity, values.Count));
-			else
-				array.Capacity = Math.Max(capacity, values.Count);
-
-			array.AddRange(values);
-		}
 	}
 
 	internal override List<Any> GetEnumerableMembersOrEmpty()

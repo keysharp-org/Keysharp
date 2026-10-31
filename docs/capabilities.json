@@ -3211,7 +3211,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Constructs a new Array object.",
+                     "notes":  "Appends items to the array. Repeated calls preserve existing elements and active enumeration; a call without arguments leaves the contents unchanged.",
                      "tested-by":  "collections-array.ahk"
                  },
                  {

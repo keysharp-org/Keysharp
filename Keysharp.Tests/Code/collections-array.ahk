@@ -917,4 +917,22 @@ CheckIntegerIndices() {
 }
 CheckIntegerIndices()
 
+CheckArrayInitialization() {
+    initialized := [1, 2]
+    cursor := initialized.__Enum(1)
+    Assert(cursor(&entry), A_LineNumber)
+    AssertEq(entry, 1, A_LineNumber)
+    initialized.__New(3, 4)
+    initialized.__New()
+    AssertEq(initialized.Length, 4, A_LineNumber)
+    for expected in [2, 3, 4] {
+        Assert(cursor(&entry), A_LineNumber)
+        AssertEq(entry, expected, A_LineNumber)
+    }
+    Assert(!cursor(&entry), A_LineNumber)
+    nested := [5, 6]
+    initialized.__New(nested)
+    Assert(initialized[5] == nested, A_LineNumber)
+}
+CheckArrayInitialization()
 FileAppend "pass", "*"
