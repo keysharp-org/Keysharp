@@ -7,6 +7,40 @@ public class GuiTests : TestRunner
 
 #if WINDOWS
 	[TestCase(false), TestCase(true), Category("Gui"), Apartment(ApartmentState.STA)]
+	public void HwndCriterionDoesNotWaitForUi(bool methodGetter)
+	{
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+		try
+		{
+			var expected = gui.form.Handle.ToInt64();
+			Assert.That(expected, Is.Not.Zero);
+			var getter = new MethodPropertyHolder(typeof(Gui).GetProperty(nameof(Gui.Hwnd)).GetMethod);
+			var criterion = new KeysharpFunc((Func<object, object>)(_ => methodGetter
+				? getter.CallFunc(gui, []) : Script.GetPropertyValue(gui, nameof(Gui.Hwnd))));
+			using var executor = new HotCriterionExecutor(s, 1);
+			// Execute waits without pumping the UI, so a marshalled getter would time out.
+			var status = executor.Execute(criterion, HotCriterionEnum.IfCallback, "F24", null,
+				Stopwatch.GetTimestamp() + Stopwatch.Frequency * 2, out var handle, out var error);
+			Assert.That(status, Is.EqualTo(CriterionExecutionStatus.Completed), error?.ToString());
+			Assert.That(handle, Is.EqualTo(expected));
+			_ = gui.Hide();
+			Assert.That(gui.Hwnd, Is.EqualTo(expected));
+			var duringRecreate = 0L;
+			gui.form.HandleDestroyed += (_, _) => duringRecreate = gui.form.CachedHwnd;
+			typeof(System.Windows.Forms.Control).GetMethod("RecreateHandle", BindingFlags.Instance | BindingFlags.NonPublic)
+				.Invoke(gui.form, null);
+			Assert.That(duringRecreate, Is.EqualTo(expected));
+			Assert.That(gui.Hwnd, Is.EqualTo(gui.form.Handle.ToInt64()));
+		}
+		finally { _ = gui.Destroy(); }
+
+		using var scope = Keysharp.Runtime.Flow.EnterTry();
+		Assert.IsInstanceOf<Error>(Assert.Throws<KeysharpException>(() =>
+			Script.GetPropertyValue(gui, nameof(Gui.Hwnd))).UserError);
+	}
+
+	[TestCase(false), TestCase(true), Category("Gui"), Apartment(ApartmentState.STA)]
 	public void TrayMenuLazyInitialization(bool allowMainWindow)
 	{
 		SkipIfUiInitializationBlocked("Building a tray menu needs a usable UI toolkit.");

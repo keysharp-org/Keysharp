@@ -163,7 +163,8 @@ child := Gui("+Parent" host.Hwnd)
 ownedHwnd := owned2.Hwnd, childHwnd := child.Hwnd
 host.Destroy()
 Assert(!GuiFromHwnd(ownedHwnd) && !GuiFromHwnd(childHwnd), A_LineNumber)
-Assert(!DllCall("IsWindow", "Ptr", owned2.Hwnd), A_LineNumber)   ; Not made again.
+Assert(!DllCall("IsWindow", "Ptr", ownedHwnd), A_LineNumber)   ; Not made again.
+Throws(() => owned2.Hwnd, A_LineNumber, Error)
 owned2.Destroy()
 
 ; A window shown without a position is centered in the primary monitor's work area.

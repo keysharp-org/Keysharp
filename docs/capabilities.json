@@ -6359,8 +6359,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Native window handle of the GUI. On macOS this is the window-server ID (CGWindowID), validated against CoreGraphics at creation and retained while hidden or minimized; window queries, point queries and WinEvent callbacks use the same ID.",
-                     "tested-by":  "gui-window-from-point.ahk; Gui/guitest.ks"
+                     "notes":  "Reads the cached native window handle without waiting for the UI thread. Hidden windows retain their handle; a destroyed GUI raises Error. On macOS this is the window-server ID (CGWindowID), validated against CoreGraphics at creation and retained while hidden or minimized; window queries, point queries and WinEvent callbacks use the same ID.",
+                     "tested-by":  "GuiTests.HwndCriterionDoesNotWaitForUi; gui-window-from-point.ahk; Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",

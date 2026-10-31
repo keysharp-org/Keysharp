@@ -5,6 +5,8 @@ namespace Keysharp.Builtins
 	public class KeysharpForm : Form
 	{
 		internal Script OwnerScript { get; }
+		private long cachedHwnd;
+		internal long CachedHwnd => Volatile.Read(ref cachedHwnd);
 
 		public bool AllowShowDisplay = true;
 		internal CallbackRegistry closedHandlers;
@@ -432,6 +434,7 @@ namespace Keysharp.Builtins
 		// -SysMenu). Riding HandleCreated catches all of them, including the ones after the window is already up.
 		protected override void OnHandleCreated(EventArgs e)
 		{
+			Volatile.Write(ref cachedHwnd, Handle.ToInt64());
 			base.OnHandleCreated(e);
 
 			if (roundedCorners)
@@ -443,6 +446,10 @@ namespace Keysharp.Builtins
 		// its window is gone, as a destroyed Gui's form is, since disposing it in the middle of its destruction is not safe.
 		protected override void OnHandleDestroyed(EventArgs e)
 		{
+			// A recreated window keeps its Gui, so a reader on another thread must not see it as destroyed meanwhile.
+			if (!RecreatingHandle)
+				Volatile.Write(ref cachedHwnd, 0L);
+
 			base.OnHandleDestroyed(e);
 
 			if (closingFromDestroy || RecreatingHandle || Disposing || OwnerScript.IsTearingDown || Tag is not WeakReference<Gui>)
@@ -607,6 +614,7 @@ namespace Keysharp.Builtins
 
 			allGuiHwnds[handle] = gui;
 			registeredHwnd = handle;
+			Volatile.Write(ref cachedHwnd, handle);
 		}
 
 		internal void ClearThis(bool isClosing = true)
@@ -618,6 +626,7 @@ namespace Keysharp.Builtins
 			var script = OwnerScript;
 			if (isClosing)
 			{
+				Volatile.Write(ref cachedHwnd, 0L);
 				_ = script.GuiData.allGuiHwnds.TryRemove(handle, out _);
 				registeredHwnd = 0;
 				script.PostToUIThread(GC.Collect);

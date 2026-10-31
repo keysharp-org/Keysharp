@@ -150,7 +150,14 @@ namespace Keysharp.Builtins
 
 		public object FocusedCtrl => form.ActiveControl ?? (object)DefaultObject;
 
-		public long Hwnd => form.Handle;
+		public long Hwnd
+		{
+			get
+			{
+				var handle = form?.CachedHwnd ?? 0L;
+				return handle != 0 ? handle : (long)Errors.ErrorOccurred("Gui has no window.", 0L);
+			}
+		}
 
 		/// <summary>Backing pixels per GUI coordinate unit.</summary>
 #if WINDOWS

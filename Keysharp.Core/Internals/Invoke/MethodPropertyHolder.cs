@@ -443,7 +443,8 @@ namespace Keysharp.Internals.Invoke
 
             IsStatic = mi.IsStatic;
 			IsStaticFunc = mi.Attributes.HasFlag(MethodAttributes.Static);
-			isGuiType = Gui.IsGuiType(mi.DeclaringType);
+			isGuiType = Gui.IsGuiType(mi.DeclaringType)
+				&& !(mi.DeclaringType == typeof(Gui) && mi.Name == "get_" + nameof(Gui.Hwnd));
 			IsCompilerGenerated = mi.DeclaringType.IsDefined(typeof(CompilerGeneratedAttribute), inherit: false);
 			var hasHiddenThis = !IsStatic && !IsCompilerGenerated;
 			if (hasHiddenThis) // Built-in instance method, so account for the implicit "this"
@@ -517,7 +518,9 @@ namespace Keysharp.Internals.Invoke
 				?? pi.GetMethod?.GetCustomAttribute<Keysharp.Runtime.CompatibilityModeAttribute>()
 				?? pi.SetMethod?.GetCustomAttribute<Keysharp.Runtime.CompatibilityModeAttribute>())?.Version;
 			moduleType = ResolveModuleType(pi.DeclaringType);
-			isGuiType = Gui.IsGuiType(pi.DeclaringType);
+			// Hwnd reads a cached scalar; hook criteria must not wait for the UI thread they interrupt.
+			isGuiType = Gui.IsGuiType(pi.DeclaringType)
+				&& !(pi.DeclaringType == typeof(Gui) && pi.Name == nameof(Gui.Hwnd));
 			parameters = pi.GetIndexParameters();
 			ParamLength = parameters.Length;
 			MinParams = MaxParams = ParamLength;
