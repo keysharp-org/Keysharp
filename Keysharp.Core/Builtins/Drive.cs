@@ -119,8 +119,6 @@ namespace Keysharp.Builtins
 			{
 				if (type.HasValue)
 				{
-					if (i == 0) continue; // performance hack: skip A:\\
-
 					try
 					{
 						if (drives[i].DriveType == type.Value)

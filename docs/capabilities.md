@@ -474,7 +474,7 @@ Status legend:
 | DriveGetCapacity() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the total capacity of the drive which contains the specified path, in megabytes. |
 | DriveGetFileSystem() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the type of the specified drive's file system. |
 | DriveGetLabel() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the volume label of the specified drive. |
-| DriveGetList() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a string of letters, one character for each drive letter in the system. |
+| DriveGetList() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns drive letters on Windows and semicolon-separated drive paths on Linux/macOS. A type filter includes every matching drive, including the first discovered drive. |
 | DriveGetSerial() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the volume serial number of the specified drive. |
 | DriveGetSpaceFree() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The DriveGetSpaceFree function returns the free disk space of the drive which contains the specified path, in megabytes. |
 | DriveGetStatus() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the status of the drive which contains the specified path. |

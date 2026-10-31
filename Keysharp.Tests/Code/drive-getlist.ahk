@@ -1,12 +1,20 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 #Include <assert>
 
 val := DriveGetList()
 			
 #if WINDOWS
-	AssertEq(SubStr(val, 1, 1), "C", A_LineNumber)
+	first := SubStr(val, 1, 1)
+	driveType := DriveGetType(first . ":\")
+	Assert(driveType != "", A_LineNumber)
+	Assert(InStr(DriveGetList(driveType), first), A_LineNumber)
 #else
-	AssertEq(SubStr(val, 1, 1), "/", A_LineNumber)
+	first := StrSplit(val, ";")[1]
+	driveType := DriveGetType(first)
+	Assert(driveType != "", A_LineNumber)
+	Assert(InStr(";" . DriveGetList(driveType) . ";", ";" . first . ";"), A_LineNumber)
 #endif
 
 FileAppend "pass", "*"

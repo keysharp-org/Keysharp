@@ -4907,8 +4907,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns a string of letters, one character for each drive letter in the system.",
-                     "tested-by":  "drive-getlist.ahk"
+                     "notes":  "Returns drive letters on Windows and semicolon-separated drive paths on Linux/macOS. A type filter includes every matching drive, including the first discovered drive.",
+                     "tested-by":  "DriveTests.DriveGetList (drive-getlist.ahk)"
                  },
                  {
                      "category":  "Core Language",
