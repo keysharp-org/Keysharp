@@ -70,6 +70,7 @@ namespace Keysharp.Builtins
 		private static T RunInterruptibleUIDialog<T>(Func<T> func)
 		{
 			var script = Script.TheScript;
+			// Scope the caller's pseudo-thread before dispatching; the UI thread has its own interruptibility state.
 			return RunInterruptibleDialog(() => script.InvokeOnUIThread(func));
 		}
 

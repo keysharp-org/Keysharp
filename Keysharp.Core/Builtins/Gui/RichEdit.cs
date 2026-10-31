@@ -241,6 +241,7 @@ namespace Keysharp.Builtins
 		/// the same text <c>Value</c> returns - one character per line break, whatever a saved file holds.
 		/// A position of 0 means "the current selection" wherever a range is asked for.</para>
 		/// </summary>
+		[RequiresUIThread]
 		public class RichEdit : Gui.Control
 		{
 			//The control's text as its own character offsets index it, plus where each line starts in it.

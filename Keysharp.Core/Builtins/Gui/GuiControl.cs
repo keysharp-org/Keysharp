@@ -134,6 +134,7 @@ namespace Keysharp.Builtins
 			/// <summary>
 			/// Registers a function to be called when the control raises the named event.
 			/// </summary>
+			[RequiresUIThread]
 			public object OnEvent(object eventName, object callback, object addRemove = null)
 			{
 				if (!eventName.CoerceString(out var eventText))
@@ -280,6 +281,7 @@ namespace Keysharp.Builtins
 			/// Off Windows there is no native message queue, so only the input messages EtoMessageSource
 			/// synthesizes are ever delivered here; see OnMessage() for that set.
 			/// </remarks>
+			[RequiresUIThread]
 			public object OnMessage(object msgNumber, object callback, object addRemove = null)
 			{
 				if (!msgNumber.CoerceLong(out var msg))
@@ -359,15 +361,18 @@ namespace Keysharp.Builtins
 			/// </summary>
 			public object ToClr() => ManagedInvoke.WrapManaged(_control);
 
+			[RequiresUIThread]
 			public object Enabled
 			{
 				get => _control.Enabled;
 				set => _control.Enabled = Options.OnOff(value) ?? false;
 			}
 
+			[RequiresUIThread]
 			public object Focused => _control.Focused;
 
 
+			[RequiresUIThread]
 			public object Name
 			{
 				get => _control.Name;
@@ -378,12 +383,14 @@ namespace Keysharp.Builtins
 
 			public string Type => typename;
 
+			[RequiresUIThread]
 			public object Visible
 			{
 				get => _control.Visible;
 				set => _control.Visible = Options.OnOff(value) ?? false;
 			}
 
+			[RequiresUIThread]
 			public object BackColor
 			{
 				get => (_control.BackColor.ToArgb() & 0x00FFFFFF).ToString("X6");
@@ -403,12 +410,14 @@ namespace Keysharp.Builtins
 				}
 			}
 
+			[RequiresUIThread]
 			public object Focus()
 			{
 				_control?.Focus();
 				return DefaultObject;
 			}
 
+			[RequiresUIThread]
 			public object GetClientPos([Optional()][DefaultParameterValue(null)] object outX,
 									   [Optional()][DefaultParameterValue(null)] object outY,
 									   [Optional()][DefaultParameterValue(null)] object outWidth,
@@ -418,6 +427,7 @@ namespace Keysharp.Builtins
 				return DefaultObject;
 			}
 
+			[RequiresUIThread]
 			public object GetPos([Optional()][DefaultParameterValue(null)] object outX,
 								 [Optional()][DefaultParameterValue(null)] object outY,
 								 [Optional()][DefaultParameterValue(null)] object outWidth,
@@ -431,6 +441,7 @@ namespace Keysharp.Builtins
 			/// This control's font as a <see cref="Ks.Font"/>. Reading returns a detached copy; assigning
 			/// applies only the properties the font sets. See <see cref="Gui.Font"/>.
 			/// </summary>
+			[RequiresUIThread]
 			public object Font
 			{
 				get => Ks.Font.FromControl(_control);
@@ -444,6 +455,7 @@ namespace Keysharp.Builtins
 				}
 			}
 
+			[RequiresUIThread]
 			public object SetFont(object options = null, object fontName = null)
 			{
 				if (Conversions.ParseFontOptions(options is Ks.Font f ? f.fontOptions : options, fontName) is { } fontOptions)

@@ -8,6 +8,7 @@ namespace Keysharp.Builtins
 	/// Menu objects are used to define, modify and display popup menus. <see cref="Menu()"/>, <see cref="MenuFromHandle"/><br/>
 	/// and <see cref="A_TrayMenu"/> return an object of this type.
 	/// </summary>
+	[RequiresUIThread]
 	public class Menu : KeysharpObject
 	{
 		/// <summary>
@@ -796,49 +797,46 @@ namespace Keysharp.Builtins
 			// default of true (AHK's aWait.value_or(temp_modeless)). Passing false retains the non-blocking form.
 			var shouldWait = wait.Ab(true);
 
-			Script.TheScript.InvokeOnUIThread(() =>
-			{
-				_ = GetCursorPos(out POINT def);
-				var _x = xVal;
-				var _y = yVal;
-				if (x != null || y != null) CoordToScreen(ref _x, ref _y, Builtins.CoordMode.Menu);
-				if (x == null) _x = def.X;
-				if (y == null) _y = def.Y;
-				var pt = new Point(_x, _y);
+			_ = GetCursorPos(out POINT def);
+			var _x = xVal;
+			var _y = yVal;
+			if (x != null || y != null) CoordToScreen(ref _x, ref _y, Builtins.CoordMode.Menu);
+			if (x == null) _x = def.X;
+			if (y == null) _y = def.Y;
+			var pt = new Point(_x, _y);
 #if !WINDOWS
-				// Non-WinForms backends don't raise Opened, so mark the menu visible here (the ctor's Closed handler
-				// clears it). WinForms uses Opened/Closed for this and needs nothing extra.
-				Script.TheScript.SetMenuVisible(menuId, true);
+			// Non-WinForms backends don't raise Opened, so mark the menu visible here (the ctor's Closed handler
+			// clears it). WinForms uses Opened/Closed for this and needs nothing extra.
+			Script.TheScript.SetMenuVisible(menuId, true);
 #endif
 
-				if (!shouldWait)
-				{
-					MenuItem.Show(pt);
-					return;
-				}
+			if (!shouldWait)
+			{
+				MenuItem.Show(pt);
+				return DefaultObject;
+			}
 
-				var closed = false;
+			var closed = false;
 
 #if WINDOWS
-				ToolStripDropDownClosedEventHandler handler = (_, _) => closed = true;
+			ToolStripDropDownClosedEventHandler handler = (_, _) => closed = true;
 #else
-				EventHandler<EventArgs> handler = (_, _) => closed = true;
+			EventHandler<EventArgs> handler = (_, _) => closed = true;
 #endif
-				try
-				{
-					MenuItem.Closed += handler;
-					MenuItem.Show(pt);
+			try
+			{
+				MenuItem.Closed += handler;
+				MenuItem.Show(pt);
 #if WINDOWS
-					Keysharp.Internals.Flow.WaitUntil(() => closed || MenuItem.IsDisposed || !MenuItem.Visible);
+				Keysharp.Internals.Flow.WaitUntil(() => closed || MenuItem.IsDisposed || !MenuItem.Visible);
 #else
-					Keysharp.Internals.Flow.WaitUntil(() => closed);
+				Keysharp.Internals.Flow.WaitUntil(() => closed);
 #endif
-				}
-				finally
-				{
-					MenuItem.Closed -= handler;
-				}
-			});
+			}
+			finally
+			{
+				MenuItem.Closed -= handler;
+			}
 			return DefaultObject;
 		}
 

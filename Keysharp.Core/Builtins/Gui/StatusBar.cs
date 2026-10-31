@@ -6,6 +6,7 @@ namespace Keysharp.Builtins
 		/// The holder for a StatusBar control. Parts are 1-based. The semantics are shared; each toolkit's half, the
 		/// partial members at the end, is in Windows/StatusBar.cs and Unix/StatusBar.cs.
 		/// </summary>
+		[RequiresUIThread]
 		public partial class StatusBar
 		{
 			private KeysharpStatusStrip Strip => (KeysharpStatusStrip)Ctrl;

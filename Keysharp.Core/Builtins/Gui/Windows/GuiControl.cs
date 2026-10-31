@@ -5,15 +5,19 @@ namespace Keysharp.Builtins
 	{
 		public partial class Control : KeysharpObject
 		{
+			[RequiresUIThread]
 			public string ClassNN => WindowQuery.CreateWindow(_control.Handle) is WindowInfoBase wi ? wi.ClassNN : "";
 
 
 			public object Gui => gui.TryGetTarget(out var g) ? g : Errors.ErrorOccurred("GUI control's parent GUI is no longer available.");
 
+			[RequiresUIThread]
 			public long Hwnd => _control.Handle.ToInt64();
 
+			[RequiresUIThread]
 			public string NetClassNN => WindowQuery.CreateWindow(_control.Handle) is WindowInfoBase wi ? wi.NetClassNN : "";
 
+			[RequiresUIThread]
 			public object Parent
 			{
 				// A control's parent is either the container control holding it (a GroupBox or Tab page) or the
@@ -30,6 +34,7 @@ namespace Keysharp.Builtins
 				}
 			}
 
+			[RequiresUIThread]
 			public object Text
 			{
 				get
@@ -85,6 +90,7 @@ namespace Keysharp.Builtins
 				}
 			}
 
+			[RequiresUIThread]
 			public object Value
 			{
 				get
@@ -333,6 +339,7 @@ namespace Keysharp.Builtins
 				_control.LostFocus += _control_LostFocus;
 			}
 
+			[RequiresUIThread]
 			public object Move(object x = null, object y = null, object width = null, object height = null)
 			{
 				if (ParentForm is not { IsDisposed: false })
@@ -367,6 +374,7 @@ namespace Keysharp.Builtins
 				return DefaultObject;
 			}
 
+			[RequiresUIThread]
 			public object OnCommand(object notifyCode, object callback, object addRemove = null)
 			{
 				if (!notifyCode.CoerceLong(out var code))
@@ -376,6 +384,7 @@ namespace Keysharp.Builtins
 			}
 
 
+			[RequiresUIThread]
 			public object OnNotify(object notifyCode, object callback, object addRemove = null)
 			{
 				if (!notifyCode.CoerceLong(out var code))
@@ -384,6 +393,7 @@ namespace Keysharp.Builtins
 				return HandleOnCommandNotify(code, callback, addRemove, 2, ref notifyHandlers);
 			}
 
+			[RequiresUIThread]
 			public object Opt(object options)
 			{
 				if (gui == null || !gui.TryGetTarget(out var g))
@@ -735,6 +745,7 @@ namespace Keysharp.Builtins
 				return DefaultObject;
 			}
 
+			[RequiresUIThread]
 			public object Redraw()
 			{
 				_control.Refresh();

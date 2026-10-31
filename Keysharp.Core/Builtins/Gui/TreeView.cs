@@ -10,6 +10,7 @@ namespace Keysharp.Builtins
 		/// is in Windows/TreeView.cs and Unix/TreeView.cs. Every walk through the tree goes through that
 		/// half's links, since on Windows only the native control knows the order a sort leaves.
 		/// </summary>
+		[RequiresUIThread]
 		public partial class TreeView
 		{
 			/// <summary>

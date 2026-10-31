@@ -13,34 +13,15 @@ namespace Keysharp.Internals.Invoke
 		public Func<object, object[], object> _callFunc;
 		public Func<object, object[], object> CallFunc => _callFunc ??= CreateCallFunc();
 
-		// Isolate the GUI lambda's closure so a cached lookup does not allocate it.
 		private Func<object, object[], object> CreateCallFunc()
 		{
-			var del = DelegateFactory.CreateDelegate(this);
-			if (!isGuiType) return del;
-
-			return (inst, args) =>
-			{
-				var ctrl = (inst ?? args[0]).GetControl();
-				var caller = CallStack.Current;
-				var callerThread = Environment.CurrentManagedThreadId;
-				var compatibility = TheScript.CurrentCompatibilityVersion;
-				return ctrl.CheckedInvoke(() => Environment.CurrentManagedThreadId == callerThread
-					? del(inst, args)
-					: CallStack.InvokeIn(caller.Copy(), compatibility, del, inst, args), true);
-			};
+			var call = DelegateFactory.CreateDelegate(this);
+			return mi != null && RequiresUIThread(mi, AccessorProperty()) ? OnUIThread(call) : call;
 		}
 
-		// A property sent to the UI thread must report its caller's stack and compatibility mode.
-		private static object InvokeGuiProperty(Control ctrl, Func<object> work)
-		{
-			var caller = CallStack.Current;
-			var callerThread = Environment.CurrentManagedThreadId;
-			var compatibility = TheScript.CurrentCompatibilityVersion;
-			return ctrl.CheckedInvoke(() => Environment.CurrentManagedThreadId == callerThread
-				? work()
-				: CallStack.InvokeIn(caller.Copy(), compatibility, static (target, _) => ((Func<object>)target)(), work, null), true);
-		}
+		/// <summary>A member marked <c>[RequiresUIThread]</c> as a script calls it: inline on the UI thread, else marshaled there.</summary>
+		private static Func<object, object[], object> OnUIThread(Func<object, object[], object> call) =>
+			(inst, args) => TheScript.IsOnMainThread ? call(inst, args) : CallStack.InvokeOnUIThread(call, inst, args);
 
 		/// <summary>Whether this is declared in a script's module, whose module and compatibility version it runs under.</summary>
 		internal readonly bool InScriptModule;
@@ -64,7 +45,6 @@ namespace Keysharp.Internals.Invoke
 		// Checking writability must not compile accessors while discovering module variables.
 		internal bool HasSetter => fi != null ? !fi.IsInitOnly && !fi.IsLiteral : setProp != null;
 		internal readonly bool anyOptional;
-		internal readonly bool isGuiType;
 		internal readonly bool isSetter;
 		internal readonly int variadicParamIndex = -1;
 		internal readonly int[] requiredIdx;
@@ -145,6 +125,11 @@ namespace Keysharp.Internals.Invoke
 				   ? mi.DeclaringType?.GetProperties(flags).FirstOrDefault(p => p.GetMethod == mi || p.SetMethod == mi)
 				   : null;
 		}
+
+		private static bool RequiresUIThread(MethodInfo method, PropertyInfo property) =>
+			method?.IsDefined(typeof(RequiresUIThreadAttribute), false) == true
+			|| property?.IsDefined(typeof(RequiresUIThreadAttribute), false) == true
+			|| (method?.DeclaringType ?? property?.DeclaringType)?.IsDefined(typeof(RequiresUIThreadAttribute), false) == true;
 
 		/// <summary>The bare script name of a property: our own static prefix off, C#'s indexer name mapped to AHK's.</summary>
 		private static string PropertyScriptName(PropertyInfo property)
@@ -443,8 +428,6 @@ namespace Keysharp.Internals.Invoke
 
             IsStatic = mi.IsStatic;
 			IsStaticFunc = mi.Attributes.HasFlag(MethodAttributes.Static);
-			isGuiType = Gui.IsGuiType(mi.DeclaringType)
-				&& !(mi.DeclaringType == typeof(Gui) && mi.Name == "get_" + nameof(Gui.Hwnd));
 			IsCompilerGenerated = mi.DeclaringType.IsDefined(typeof(CompilerGeneratedAttribute), inherit: false);
 			var hasHiddenThis = !IsStatic && !IsCompilerGenerated;
 			if (hasHiddenThis) // Built-in instance method, so account for the implicit "this"
@@ -518,9 +501,6 @@ namespace Keysharp.Internals.Invoke
 				?? pi.GetMethod?.GetCustomAttribute<Keysharp.Runtime.CompatibilityModeAttribute>()
 				?? pi.SetMethod?.GetCustomAttribute<Keysharp.Runtime.CompatibilityModeAttribute>())?.Version;
 			moduleType = ResolveModuleType(pi.DeclaringType);
-			// Hwnd reads a cached scalar; hook criteria must not wait for the UI thread they interrupt.
-			isGuiType = Gui.IsGuiType(pi.DeclaringType)
-				&& !(pi.DeclaringType == typeof(Gui) && pi.Name == nameof(Gui.Hwnd));
 			parameters = pi.GetIndexParameters();
 			ParamLength = parameters.Length;
 			MinParams = MaxParams = ParamLength;
@@ -535,106 +515,37 @@ namespace Keysharp.Internals.Invoke
 			var canRead = HasScriptGetter(pi);
 			var canWrite = HasScriptSetter(pi);
 
-			if ((pi.GetMethod ?? pi.SetMethod)?.IsStatic == true)
+			IsStaticProp = (pi.GetMethod ?? pi.SetMethod)?.IsStatic == true;
+			var isStatic = IsStaticProp;
+
+			if (canRead)
 			{
-				IsStaticProp = true;
-
-				if (isGuiType)
+				_callFunc = (inst, args) =>
 				{
-					if (canRead)
-					{
-						_callFunc = (inst, obj) =>//Gui calls aren't worth optimizing further.
-						{
-							var ctrl = (inst ?? obj[0]).GetControl();//If it's a gui control, then invoke on the gui thread.
-							var ret = InvokeGuiProperty(ctrl, () => pi.GetValueUnwrapped(null));
-
-							return normalize ? ArgCoercer.NormalizeScalar(ret) : ret;
-						};
-					}
-					// Coerce on the calling thread, so a conversion TypeError is raised there rather than marshaled.
-					// This is what makes `gui.MarginX := 5.5` survivable: reflection's own binder is stricter than the
-					// script language and rejects a Float for the Int64 property with an ArgumentException, which is
-					// not a KeysharpException and so killed the process past any try/catch.
-					if (canWrite)
-					{
-						SetProp = (inst, arg) =>
-						{
-							if (!ArgCoercer.TryCoerceValue(arg, pi.PropertyType, inlineMarked, out arg))
-								return;
-
-							var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
-							_ = InvokeGuiProperty(ctrl, () => { pi.SetValueUnwrapped(null, arg); return null; });
-						};
-					}
-				}
-				else
-				{
-					if (canRead)
-					{
-						if (normalize)
-							_callFunc = (inst, obj) => ArgCoercer.NormalizeScalar(pi.GetValueUnwrapped(null));
-						else
-							_callFunc = (inst, obj) => pi.GetValueUnwrapped(null);
-					}
-
-					if (canWrite)
-						SetProp = coerce
-							? (inst, obj) =>
-							{
-								if (ArgCoercer.TryCoerceValue(obj, pi.PropertyType, inlineMarked, out var value))
-									pi.SetValueUnwrapped(null, value);
-							}
-							: (inst, obj) => pi.SetValueUnwrapped(null, obj);
-				}
+					var ret = pi.GetValueUnwrapped(isStatic ? null : inst ?? (args is { Length: > 0 } ? args[0] : null));
+					return normalize ? ArgCoercer.NormalizeScalar(ret) : ret;
+				};
+				if (RequiresUIThread(pi.GetMethod, pi))
+					_callFunc = OnUIThread(_callFunc);
 			}
-			else
+
+			if (canWrite)
 			{
-				if (isGuiType)
+				var uiSet = RequiresUIThread(pi.SetMethod, pi)
+					? (Func<object, object[], object>)((inst, args) => { pi.SetValueUnwrapped(inst, args[0]); return null; })
+					: null;
+				// Convert on the caller so conversion hooks and continuable errors stay on that thread.
+				SetProp = (inst, value) =>
 				{
-					if (canRead)
-					{
-						_callFunc = (inst, args) =>
-						{
-							var ctrl = (inst ?? args[0]).GetControl();//If it's a gui control, then invoke on the gui thread.
-							var ret = InvokeGuiProperty(ctrl, () => pi.GetValueUnwrapped(inst ?? args[0]));
+					if (coerce && !ArgCoercer.TryCoerceValue(value, pi.PropertyType, inlineMarked, out value))
+						return;
 
-							return normalize ? ArgCoercer.NormalizeScalar(ret) : ret;
-						};
-					}
-					// See the static branch above for why the coercion happens here rather than inside CheckedInvoke.
-					if (canWrite)
-					{
-						SetProp = (inst, obj) =>
-						{
-							if (!ArgCoercer.TryCoerceValue(obj, pi.PropertyType, inlineMarked, out obj))
-								return;
-
-							var ctrl = inst.GetControl();//If it's a gui control, then invoke on the gui thread.
-							_ = InvokeGuiProperty(ctrl, () => { pi.SetValueUnwrapped(inst, obj); return null; });
-						};
-					}
-				}
-				else
-				{
-					if (canRead)
-					{
-						if (normalize)
-							_callFunc = (inst, obj) => ArgCoercer.NormalizeScalar(pi.GetValueUnwrapped(inst));
-						else
-							_callFunc = (inst, obj) => pi.GetValueUnwrapped(inst);
-					}
-
-					// Property lookup collects every property of a type. Reflection avoids compiling setters
-					// that an Any-derived builtin's prototype dispatch may never use.
-					if (canWrite)
-						SetProp = coerce
-							? (inst, obj) =>
-							{
-								if (ArgCoercer.TryCoerceValue(obj, pi.PropertyType, inlineMarked, out var value))
-									pi.SetValueUnwrapped(inst, value);
-							}
-							: pi.SetValueUnwrapped;
-				}
+					var target = isStatic ? null : inst;
+					if (uiSet != null && !TheScript.IsOnMainThread)
+						_ = CallStack.InvokeOnUIThread(uiSet, target, [value]);
+					else
+						pi.SetValueUnwrapped(target, value);
+				};
 			}
 
 			if (!canRead)
@@ -671,7 +582,6 @@ namespace Keysharp.Internals.Invoke
 			fi = f;
 			moduleType = ResolveModuleType(fi.DeclaringType);
 			IsStatic = fi.IsStatic;
-			isGuiType = Gui.IsGuiType(fi.DeclaringType);
 			parameters = System.Array.Empty<ParameterInfo>();
 			ParamLength = 0;
 			MinParams = MaxParams = 0;

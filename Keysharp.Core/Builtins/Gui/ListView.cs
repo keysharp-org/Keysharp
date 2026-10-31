@@ -141,6 +141,7 @@ namespace Keysharp.Builtins
 		/// options name them. The semantics, the columns' sorting attributes among them, are shared; each toolkit's
 		/// half, the partial members at the end, is in Windows/ListView.cs and Unix/ListView.cs.
 		/// </summary>
+		[RequiresUIThread]
 		public partial class ListView
 		{
 			/// <summary>

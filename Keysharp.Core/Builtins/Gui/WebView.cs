@@ -31,6 +31,7 @@ namespace Keysharp.Builtins
 			/// to it; a value which is not an absolute URL is taken as a file path, as AutoHotkey's ActiveX
 			/// browser control does.
 			/// </summary>
+			[RequiresUIThread]
 			public object Url
 			{
 				get
@@ -48,18 +49,22 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>The title of the page currently shown, or "" when it has none.</summary>
+			[RequiresUIThread]
 			public object DocumentTitle => Web?.DocumentTitle ?? "";
 
 			/// <summary>Whether <see cref="GoBack"/> has a previous page to return to.</summary>
+			[RequiresUIThread]
 			public object CanGoBack => Web?.CanGoBack ?? false;
 
 			/// <summary>Whether <see cref="GoForward"/> has a next page to move on to.</summary>
+			[RequiresUIThread]
 			public object CanGoForward => Web?.CanGoForward ?? false;
 
 			/// <summary>
 			/// Whether right-clicking the page shows the browser's own context menu. On by default, matching
 			/// what each platform's browser does when embedded anywhere else.
 			/// </summary>
+			[RequiresUIThread]
 			public object BrowserContextMenuEnabled
 			{
 				get => Web?.BrowserContextMenuEnabled ?? false;
@@ -86,6 +91,7 @@ namespace Keysharp.Builtins
 			};
 
 			/// <summary>Returns to the previous page in this control's history, if there is one.</summary>
+			[RequiresUIThread]
 			public object GoBack()
 			{
 				if (Web?.CanGoBack == true)
@@ -95,6 +101,7 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>Moves on to the next page in this control's history, if there is one.</summary>
+			[RequiresUIThread]
 			public object GoForward()
 			{
 				if (Web?.CanGoForward == true)
@@ -104,6 +111,7 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>Stops loading the page currently being fetched.</summary>
+			[RequiresUIThread]
 			public object Stop()
 			{
 				Web?.Stop();
@@ -111,6 +119,7 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>Loads the current page again.</summary>
+			[RequiresUIThread]
 			public object Reload()
 			{
 				Web?.Reload();
@@ -121,6 +130,7 @@ namespace Keysharp.Builtins
 			/// Runs JavaScript in the current page and returns its result as a string.
 			/// </summary>
 			/// <param name="script">The script to run. It runs as a function body, so it may use <c>return</c>.</param>
+			[RequiresUIThread]
 			public object ExecuteScript(object script)
 			{
 				if (Web is not { } web)
@@ -137,6 +147,7 @@ namespace Keysharp.Builtins
 			/// waiting for it.
 			/// </summary>
 			/// <param name="script">The script to run. It runs as a function body, so it may use <c>return</c>.</param>
+			[RequiresUIThread]
 			public object ExecuteScriptAsync(object script)
 			{
 				if (Web is not { } web)
@@ -154,6 +165,7 @@ namespace Keysharp.Builtins
 			/// <param name="html">The document to show.</param>
 			/// <param name="baseUrl">If omitted, relative links and resources in <paramref name="html"/> do not
 			/// resolve. Otherwise the URL or directory they resolve against.</param>
+			[RequiresUIThread]
 			public object LoadHtml(object html, object baseUrl = null)
 			{
 				if (Web == null)
@@ -167,6 +179,7 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>Shows the browser's print dialog for the current page.</summary>
+			[RequiresUIThread]
 			public object ShowPrintDialog()
 			{
 				Web?.ShowPrintDialog();

@@ -6,8 +6,8 @@ public class GuiTests : TestRunner
 	private const string MsgBoxTitle = "this is a sample title";
 
 #if WINDOWS
-	[TestCase(false), TestCase(true), Category("Gui"), Apartment(ApartmentState.STA)]
-	public void HwndCriterionDoesNotWaitForUi(bool methodGetter)
+	[TestCase(0), TestCase(1), TestCase(2), Category("Gui"), Apartment(ApartmentState.STA)]
+	public void HwndCriterionDoesNotWaitForUi(int getterKind)
 	{
 		var gui = new Gui(System.Array.Empty<object>());
 		_ = gui.__New();
@@ -15,9 +15,10 @@ public class GuiTests : TestRunner
 		{
 			var expected = gui.form.Handle.ToInt64();
 			Assert.That(expected, Is.Not.Zero);
-			var getter = new MethodPropertyHolder(typeof(Gui).GetProperty(nameof(Gui.Hwnd)).GetMethod);
-			var criterion = new KeysharpFunc((Func<object, object>)(_ => methodGetter
-				? getter.CallFunc(gui, []) : Script.GetPropertyValue(gui, nameof(Gui.Hwnd))));
+			var property = typeof(Gui).GetProperty(nameof(Gui.Hwnd));
+			var getter = getterKind == 1 ? new MethodPropertyHolder(property.GetMethod) : new MethodPropertyHolder(property);
+			var criterion = new KeysharpFunc((Func<object, object>)(_ => getterKind == 0
+				? Script.GetPropertyValue(gui, nameof(Gui.Hwnd)) : getter.CallFunc(gui, [])));
 			using var executor = new HotCriterionExecutor(s, 1);
 			// Execute waits without pumping the UI, so a marshalled getter would time out.
 			var status = executor.Execute(criterion, HotCriterionEnum.IfCallback, "F24", null,

@@ -3,6 +3,7 @@ namespace Keysharp.Builtins
 	public partial class Gui
 	{
 		/// <summary>The holder for a DateTime control.</summary>
+		[RequiresUIThread]
 		public partial class DateTime
 		{
 			/// <summary>Sets the display format: ShortDate, LongDate, Time, or a custom format string.</summary>

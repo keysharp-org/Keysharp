@@ -75,28 +75,36 @@ namespace Keysharp.Runtime
 			return new CallStack(owner, Fill(copy, Depth)) { Depth = Depth, Module = Module };
 		}
 
-		internal static object InvokeIn(CallStack borrowed, Semver.SemVersion compatibility,
-			Func<object, object[], object> call, object instance, object[] args)
+		/// <summary>
+		/// Runs a call on the script's UI thread under a copy of the caller's stack and its compatibility version, which
+		/// a member marked <c>[RequiresUIThread]</c> needs when another thread calls it.
+		/// </summary>
+		internal static object InvokeOnUIThread(Func<object, object[], object> call, object instance, object[] args)
 		{
-			var previous = current;
 			var script = TheScript;
-			var previousCompatibility = script.CurrentCompatibilityVersion;
-			current = borrowed;
-			script.SetCurrentCompatibilityVersion(compatibility);
+			var borrowed = Current.Copy();
+			var compatibility = script.CurrentCompatibilityVersion;
+			return script.InvokeOnUIThread(() =>
+			{
+				var previous = current;
+				var previousCompatibility = script.CurrentCompatibilityVersion;
+				current = borrowed;
+				script.SetCurrentCompatibilityVersion(compatibility);
 
-			try
-			{
-				return call(instance, args);
-			}
-			catch (Exception ex) when (RememberAndPass(ex))
-			{
-				throw;
-			}
-			finally
-			{
-				current = previous;
-				script.SetCurrentCompatibilityVersion(previousCompatibility);
-			}
+				try
+				{
+					return call(instance, args);
+				}
+				catch (Exception ex) when (RememberAndPass(ex))
+				{
+					throw;
+				}
+				finally
+				{
+					current = previous;
+					script.SetCurrentCompatibilityVersion(previousCompatibility);
+				}
+			});
 		}
 
 		/// <summary>

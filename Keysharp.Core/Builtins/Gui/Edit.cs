@@ -6,6 +6,7 @@ namespace Keysharp.Builtins
 		/// The holder for an Edit control. Each toolkit's half of its members is in Windows/Edit.cs and
 		/// Unix/Edit.cs.
 		/// </summary>
+		[RequiresUIThread]
 		public partial class Edit
 		{
 			/// <summary>
@@ -22,6 +23,7 @@ namespace Keysharp.Builtins
 			private partial void ShowCue(string text, bool whenFocused);
 		}
 
+		[RequiresUIThread]
 		public partial class ComboBox
 		{
 			/// <summary>Shows a cue text while the combo box's field is empty.</summary>

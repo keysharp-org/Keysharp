@@ -5,6 +5,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The base of the controls holding a list of items: ListBox, DDL, ComboBox and Tab, as in AutoHotkey.
 		/// </summary>
+		[RequiresUIThread]
 		public partial class List
 		{
 			/// <summary>
@@ -228,6 +229,7 @@ namespace Keysharp.Builtins
 			private partial void RemoveTab(KeysharpTabControl tc, int index);
 		}
 
+		[RequiresUIThread]
 		public partial class Tab
 		{
 			/// <summary>

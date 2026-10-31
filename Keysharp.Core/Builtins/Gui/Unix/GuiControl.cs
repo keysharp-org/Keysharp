@@ -11,12 +11,15 @@ namespace Keysharp.Builtins
 			private KeysharpListView.ListViewItem listViewFocus;
 			private bool listViewCheckClickActive;
 			private bool listViewMouseSelectPending;
+			[RequiresUIThread]
 			public string ClassNN => _control is Window && WindowQuery.CreateWindow(_control.Handle) is WindowInfoBase wi ? wi.ClassNN : "";
 
 			public object Gui => gui != null && gui.TryGetTarget(out var g) ? g : Errors.ErrorOccurred("GUI control's parent GUI is no longer available.");
 
+			[RequiresUIThread]
 			public long Hwnd => _control is Eto.Widget w ? w.Handle.ToInt64() : 0L;
 
+			[RequiresUIThread]
 			public string NetClassNN
 			{
 				get
@@ -27,6 +30,7 @@ namespace Keysharp.Builtins
 				}
 			}
 
+			[RequiresUIThread]
 			public object Parent
 			{
 				// A control's parent is either the container control holding it (a GroupBox or Tab page) or the
@@ -45,6 +49,7 @@ namespace Keysharp.Builtins
 				}
 			}
 
+			[RequiresUIThread]
 			public object Text
 			{
 				get
@@ -105,6 +110,7 @@ namespace Keysharp.Builtins
 				}
 			}
 
+			[RequiresUIThread]
 			public object Value
 			{
 				get
@@ -373,6 +379,7 @@ namespace Keysharp.Builtins
 				_control.KeyDown += _control_KeyDown;
 			}
 
+			[RequiresUIThread]
 			public object Move(object x = null, object y = null, object width = null, object height = null)
 			{
 				if (_control == null)
@@ -394,12 +401,14 @@ namespace Keysharp.Builtins
 
 			//WM_COMMAND and WM_NOTIFY are Win32 concepts with no Eto/GTK/Cocoa equivalent, so this is accepted
 			//(so a cross-platform script still loads) but never fires.
+			[RequiresUIThread]
 			public object OnCommand(object notifyCode, object callback, object addRemove = null) => CheckUnfired(callback, addRemove, 1);
 
 			//Boxed, because the shared GuiHelper.CallMessageHandler consumes the Windows overload's object
 			//return, and that one carries the WM_COMMAND/WM_NOTIFY reflection this platform has no use for.
 			internal object InvokeMessageHandlers(ref Message m) => InvokeWindowMessageHandlers(ref m);
 
+			[RequiresUIThread]
 			public object OnNotify(object notifyCode, object callback, object addRemove = null) => CheckUnfired(callback, addRemove, 2);
 
 			//Checked as Windows checks it, so a registration refused there is refused here too.
@@ -411,6 +420,7 @@ namespace Keysharp.Builtins
 				_ = KeysharpForm.CheckedHandler(callback, g.form, addRemove, argCount, out _);
 				return DefaultObject;
 			}
+			[RequiresUIThread]
 			public object Opt(object options)
 			{
 				if (gui == null || !gui.TryGetTarget(out var g))
@@ -723,6 +733,7 @@ namespace Keysharp.Builtins
 					edit.KeyDown += Builtins.Gui.SuppressCtrlAKeyDown;
 			}
 
+			[RequiresUIThread]
 			public object Redraw()
 			{
 				_control.Invalidate();

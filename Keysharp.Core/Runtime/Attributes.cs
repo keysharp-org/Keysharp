@@ -185,6 +185,14 @@ namespace Keysharp.Runtime
 	public sealed class VariadicAttribute : Attribute { }
 
 	/// <summary>
+	/// Marks a script-facing member which must run on the UI thread: a call from any other thread is marshaled there,
+	/// synchronously. On a class it covers the methods and property accessors the type itself declares, across its
+	/// partial declarations, not inherited members or those a subclass adds. A direct C# call bypasses it.
+	/// </summary>
+	[AttributeUsage(AttributeTargets.Class | AttributeTargets.Method | AttributeTargets.Property, Inherited = false)]
+	internal sealed class RequiresUIThreadAttribute : Attribute { }
+
+	/// <summary>
 	/// Marks a class member (method or property accessor) as belonging to the class's static object
 	/// rather than its prototype, independent of the emitted C# identifier. This is an alternative to the
 	/// <see cref="Keywords.ClassStaticPrefix"/> name prefix: a member carrying <c>[Static]</c> is registered

@@ -21,14 +21,6 @@ namespace Keysharp.Builtins
 		public TabPage CurrentTab;
 		public KeysharpForm form;
 
-		internal static Type[] GuiTypes =
-			[
-				typeof(Gui),
-				typeof(Gui.Control),
-				typeof(Menu),
-				typeof(Control)//Add native control and form types just to be safe.
-			];
-
 		internal Dictionary<object, object> controls = [];
 		// AHK's mDefaultDPIResize: the GUI-level "+/-DPIResize" only supplies the default for controls added
 		// afterward, so toggling it never retroactively changes controls that already exist.
@@ -70,6 +62,7 @@ namespace Keysharp.Builtins
 #endif
 		private bool showCalled = false;
 
+		[RequiresUIThread]
 		public object BackColor
 		{
 			get => (form.BackColor.ToArgb() & 0x00FFFFFF).ToString("X6");
@@ -148,6 +141,7 @@ namespace Keysharp.Builtins
 			}
 		}
 
+		[RequiresUIThread]
 		public object FocusedCtrl => form.ActiveControl ?? (object)DefaultObject;
 
 		public long Hwnd
@@ -161,8 +155,10 @@ namespace Keysharp.Builtins
 
 		/// <summary>Backing pixels per GUI coordinate unit.</summary>
 #if WINDOWS
+		[RequiresUIThread]
 		public double PixelScale => DpiScale;
 #else
+		[RequiresUIThread]
 		public double PixelScale => Keysharp.Internals.ScaleFactor.Normalize(form.LogicalPixelSize);
 #endif
 
@@ -170,6 +166,7 @@ namespace Keysharp.Builtins
 		/// The backing toolkit window as an ordinary <c>Ks.Clr</c> object. Its concrete type is platform-dependent
 		/// and unspecified; changes made through it bypass this class's own state and event wiring.
 		/// </summary>
+		[RequiresUIThread]
 		public object ToClr()
 		{
 			EnsureMainWindowControls();
@@ -183,6 +180,7 @@ namespace Keysharp.Builtins
 		}
 
 		//The margins are kept in pixels, in form.Margin, and scaled by the Gui's DPI on the way in and out, as in AHK.
+		[RequiresUIThread]
 		public long MarginX
 		{
 			get
@@ -198,6 +196,7 @@ namespace Keysharp.Builtins
 			}
 		}
 
+		[RequiresUIThread]
 		public long MarginY
 		{
 			get
@@ -213,6 +212,7 @@ namespace Keysharp.Builtins
 			}
 		}
 
+		[RequiresUIThread]
 		public object MenuBar
 		{
 			get => menuBar ?? (object)DefaultObject;
@@ -263,6 +263,7 @@ namespace Keysharp.Builtins
 			}
 		}
 
+		[RequiresUIThread]
 		public object Name
 		{
 			get => form.Name;
@@ -271,6 +272,7 @@ namespace Keysharp.Builtins
 
 		internal KeysharpForm ParentForm => form.FindParent<KeysharpForm>();
 
+		[RequiresUIThread]
 		public object Title
 		{
 			get => form.Text;
@@ -281,6 +283,7 @@ namespace Keysharp.Builtins
 			}
 		}
 
+		[RequiresUIThread]
 		public object Visible
 		{
 			get => form.Visible;
@@ -381,6 +384,7 @@ namespace Keysharp.Builtins
 			});
 		}
 
+		[RequiresUIThread]
 		public KeysharpFunc __Enum(object NumberOfVars = null)
 		{
 			if (!NumberOfVars.CoerceInt(out var c))
@@ -514,6 +518,7 @@ namespace Keysharp.Builtins
 			return true;
 		}
 
+		[RequiresUIThread]
 		public object Add(object controlType, object options = null, object text = null)
 		{
 			if (!controlType.CoerceString(out var typeo) || !options.CoerceString(out var optionsStr))
@@ -2292,61 +2297,90 @@ namespace Keysharp.Builtins
 			bool IsTextLike(Forms.Control control) => control is KeysharpLabel || control is KeysharpLinkLabel;
 		}
 
+		[RequiresUIThread]
 		public object AddActiveX(object options = null, object text = null) => Add(Keyword_ActiveX, options, text);
 
+		[RequiresUIThread]
 		public object AddButton(object options = null, object text = null) => Add(Keyword_Button, options, text);
 
+		[RequiresUIThread]
 		public object AddCheckbox(object options = null, object text = null) => Add(Keyword_CheckBox, options, text);
 
+		[RequiresUIThread]
 		public object AddComboBox(object options = null, object text = null) => Add(Keyword_ComboBox, options, text);
 
+		[RequiresUIThread]
 		public object AddCustom(object options = null, object text = null) => Add(Keyword_Custom, options, text);
 
+		[RequiresUIThread]
 		public object AddDateTime(object options = null, object text = null) => Add(Keyword_DateTime, options, text);
 
+		[RequiresUIThread]
 		public object AddDDL(object options = null, object text = null) => Add(Keyword_DropDownList, options, text);
 
+		[RequiresUIThread]
 		public object AddDropDownList(object options = null, object text = null) => Add(Keyword_DropDownList, options, text);
 
+		[RequiresUIThread]
 		public object AddEdit(object options = null, object text = null) => Add(Keyword_Edit, options, text);
 
+		[RequiresUIThread]
 		public object AddGroupBox(object options = null, object text = null) => Add(Keyword_GroupBox, options, text);
 
+		[RequiresUIThread]
 		public object AddHotKey(object options = null, object text = null) => Add(Keyword_Hotkey, options, text);
 
+		[RequiresUIThread]
 		public object AddLink(object options = null, object text = null) => Add(Keyword_Link, options, text);
 
+		[RequiresUIThread]
 		public object AddListBox(object options = null, object text = null) => Add(Keyword_ListBox, options, text);
 
+		[RequiresUIThread]
 		public object AddListView(object options = null, object text = null) => Add(Keyword_ListView, options, text);
 
+		[RequiresUIThread]
 		public object AddMonthCal(object options = null, object text = null) => Add(Keyword_MonthCal, options, text);
 
+		[RequiresUIThread]
 		public object AddPic(object options = null, object text = null) => Add(Keyword_Picture, options, text);
 
+		[RequiresUIThread]
 		public object AddPicture(object options = null, object text = null) => Add(Keyword_Picture, options, text);
 
+		[RequiresUIThread]
 		public object AddProgress(object options = null, object text = null) => Add(Keyword_Progress, options, text);
 
+		[RequiresUIThread]
 		public object AddRadio(object options = null, object text = null) => Add(Keyword_Radio, options, text);
 
+		[RequiresUIThread]
 		public object AddRichEdit(object options = null, object text = null) => Add(Keyword_Rich_Edit, options, text);
 
+		[RequiresUIThread]
 		public object AddSlider(object options = null, object text = null) => Add(Keyword_Slider, options, text);
 
+		[RequiresUIThread]
 		public object AddStatusBar(object options = null, object text = null) => Add(Keyword_StatusBar, options, text);
 
+		[RequiresUIThread]
 		public object AddTab(object options = null, object text = null) => Add(Keyword_Tab, options, text);
 		// Just for compatibility
+		[RequiresUIThread]
 		public object AddTab2(object options = null, object text = null) => Add(Keyword_Tab, options, text);
+		[RequiresUIThread]
 		public object AddTab3(object options = null, object text = null) => Add(Keyword_Tab, options, text);
 
+		[RequiresUIThread]
 		public object AddText(object options = null, object text = null) => Add(Keyword_Text, options, text);
 
+		[RequiresUIThread]
 		public object AddTreeView(object options = null, object text = null) => Add(Keyword_TreeView, options, text);
 
+		[RequiresUIThread]
 		public object AddUpDown(object options = null, object text = null) => Add(Keyword_UpDown, options, text);
 
+		[RequiresUIThread]
 		public object AddWebView(object options = null, object text = null) => Add(Keyword_WebView, options, text);
 
 		// Whether an event's source is a GUI or control whose window has been destroyed.
@@ -2357,6 +2391,7 @@ namespace Keysharp.Builtins
 			_ => false
 		};
 
+		[RequiresUIThread]
 		public object Destroy()
 		{
 			//Owned by this window: the icon would otherwise be freed only whenever GC got round to it. The window
@@ -2372,6 +2407,7 @@ namespace Keysharp.Builtins
 			return result;
 		}
 
+		[RequiresUIThread]
 		public object Flash(object blink)
 		{
 #if WINDOWS
@@ -2380,6 +2416,7 @@ namespace Keysharp.Builtins
 			return DefaultObject;
 		}
 
+		[RequiresUIThread]
 		public object GetClientPos([Optional()][DefaultParameterValue(null)] object x,
 								   [Optional()][DefaultParameterValue(null)] object y,
 								   [Optional()][DefaultParameterValue(null)] object width,
@@ -2391,18 +2428,21 @@ namespace Keysharp.Builtins
 
 		IEnumerator<(object, object)> IEnumerable<(object, object)>.GetEnumerator() => CreateEnumerator(2);
 
+		[RequiresUIThread]
 		public object GetPos([Optional()][DefaultParameterValue(null)] object x, [Optional()][DefaultParameterValue(null)] object y, [Optional()][DefaultParameterValue(null)] object width, [Optional()][DefaultParameterValue(null)] object height)
 		{
 			Gui.Control.GetPos(form, DpiScale, x, y, width, height);
 			return DefaultObject;
 		}
 
+		[RequiresUIThread]
 		public object Hide()
 		{
 			form.Hide();
 			return DefaultObject;
 		}
 
+		[RequiresUIThread]
 		public object Maximize()
 		{
 			var result = form.WindowState = FormWindowState.Maximized;
@@ -2410,6 +2450,7 @@ namespace Keysharp.Builtins
 			return result;
 		}
 
+		[RequiresUIThread]
 		public object Minimize()
 		{
 			var result = form.WindowState = FormWindowState.Minimized;
@@ -2433,6 +2474,7 @@ namespace Keysharp.Builtins
 #endif
 		}
 
+		[RequiresUIThread]
 		public object Move(object x = null, object y = null, object width = null, object height = null)
 		{
 			int xVal = int.MinValue, yVal = int.MinValue, widthVal = int.MinValue, heightVal = int.MinValue;
@@ -2479,6 +2521,7 @@ namespace Keysharp.Builtins
 			return DefaultObject;
 		}
 
+		[RequiresUIThread]
 		public object OnEvent(object eventName, object callback, object addRemove = null) => form.OnEvent(eventName, callback, addRemove);
 
 		/// <summary>
@@ -2494,6 +2537,7 @@ namespace Keysharp.Builtins
 		/// Off Windows there is no native message queue, so only the input messages EtoMessageSource
 		/// synthesizes from the toolkit's own events are ever delivered here; see OnMessage() for that set.
 		/// </remarks>
+		[RequiresUIThread]
 		public object OnMessage(object msgNumber, object callback, object addRemove = null)
 		{
 			// Called with (Gui, wParam, lParam, Msg).
@@ -2549,6 +2593,7 @@ namespace Keysharp.Builtins
 			return true;
 		}
 
+		[RequiresUIThread]
 		public object Opt(object options)
 		{
 			if (!options.CoerceString(out var optionsVal))
@@ -2939,6 +2984,7 @@ namespace Keysharp.Builtins
 		}
 #endif
 
+		[RequiresUIThread]
 		public object Restore()
 		{
 			ResumeAddLayout();//This can put a hidden window back on screen without going through Show().
@@ -2955,6 +3001,7 @@ namespace Keysharp.Builtins
 		/// detached copy; assigning applies only the properties the font sets, so a font carrying nothing
 		/// but a family swaps the family and leaves the size alone.
 		/// </summary>
+		[RequiresUIThread]
 		public object Font
 		{
 			get
@@ -2973,6 +3020,7 @@ namespace Keysharp.Builtins
 			}
 		}
 
+		[RequiresUIThread]
 		public object SetFont(object options = null, object fontName = null)
 		{
 			EnsureMainWindowControls();
@@ -2986,6 +3034,7 @@ namespace Keysharp.Builtins
 		/// The borrowed native handle for the GUI's current default font: an HFONT on Windows, a
 		/// PangoFontDescription* on Linux and an NSFont* on macOS.
 		/// </summary>
+		[RequiresUIThread]
 		public object FontHandle
 		{
 			get
@@ -3010,6 +3059,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public object Icon
 		{
+			[RequiresUIThread]
 			get
 			{
 				//A snapshot of the frame the window shows at its preferred size, not the icon itself: an Image holds
@@ -3107,6 +3157,7 @@ namespace Keysharp.Builtins
 			return DefaultObject;
 		}
 
+		[RequiresUIThread]
 		public object Show(object options = null)
 		{
 			EnsureMainWindowControls();
@@ -3503,6 +3554,7 @@ namespace Keysharp.Builtins
 		}
 
 #endif
+        [RequiresUIThread]
         public KeysharpObject Submit(object hide = null)
 		{
 			EnsureMainWindowControls();
@@ -3593,6 +3645,7 @@ namespace Keysharp.Builtins
 			return result;
 		}
 
+		[RequiresUIThread]
 		public object UseGroup(object groupBox = null)
 		{
 			if (groupBox is Gui.Control gctrl && gctrl.Ctrl is KeysharpGroupBox gb)
@@ -3725,8 +3778,6 @@ namespace Keysharp.Builtins
 		}
 
 		internal static float GetFontPixels(Font font) => font.GetHeight((float)A_ScreenDPI);
-
-		internal static bool IsGuiType(Type type) => GuiTypes.Any(t => t.IsAssignableFrom(type));
 
 		//AHK lets Checked/Hidden/Disabled be followed by an optional 1/0/-1 so a script can pass a stored flag
 		//straight through ("Hidden" VarContainingOne). A suffix which evaluates to zero flips the sign, so
@@ -4204,6 +4255,7 @@ namespace Keysharp.Builtins
 					ktc.AdjustSize(dpiscale, gc.requestedSize);
 		}
 
+		[RequiresUIThread]
 		public object this[object controlName]
 		{
 			get
