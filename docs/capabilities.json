@@ -7881,8 +7881,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Reads though a file one line at a time. Optionally supports an output file, which can then be used with FileAppend with no filename argument. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding.",
-                     "tested-by":  "flow-loop-read.ahk"
+                     "notes":  "Reads a file one line at a time using A_FileEncoding when the input opens; a detected byte order mark overrides that encoding. Optionally supports an output file, which can then be used with FileAppend with no filename argument. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding.",
+                     "tested-by":  "FlowTests.FlowLoopRead (flow-loop-read.ahk)"
                  },
                  {
                      "category":  "Flow/Expressions",

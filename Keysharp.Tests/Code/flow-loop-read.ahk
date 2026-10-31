@@ -43,6 +43,33 @@ Loop Read "../../../Keysharp.Tests/Code/test-text-file-out.txt"
 
 FileDelete "../../../Keysharp.Tests/Code/test-text-file-out.txt"
 
+; Files without a BOM use FileEncoding; a BOM overrides that setting.
+encodingPath := A_Temp . "/keysharp-loop-read-" . Random(1, 2147483647) . ".txt"
+while FileExist(encodingPath)
+	encodingPath := A_Temp . "/keysharp-loop-read-" . Random(1, 2147483647) . ".txt"
+savedEncoding := A_FileEncoding
+try
+{
+	for encoding in ["CP1252", "UTF-16-RAW", "UTF-8", "UTF-16"]
+	{
+		FileAppend("caf" . Chr(233) . "`n" . Chr(8364), encodingPath, encoding)
+		FileEncoding(encoding = "UTF-8" || encoding = "UTF-16" ? "CP1252" : encoding)
+		lines := []
+		Loop Read encodingPath
+			lines.Push(A_LoopReadLine)
+		AssertEq(lines.Length, 2, A_LineNumber)
+		AssertEq(lines[1], "caf" . Chr(233), A_LineNumber)
+		AssertEq(lines[2], Chr(8364), A_LineNumber)
+		FileDelete(encodingPath)
+	}
+}
+finally
+{
+	FileEncoding(savedEncoding)
+	if FileExist(encodingPath)
+		FileDelete(encodingPath)
+}
+
 ; A missing file raises OSError, unless an Else handles it.
 ReadMissing() {
 	Loop Read "missing-loop-read-input.txt"

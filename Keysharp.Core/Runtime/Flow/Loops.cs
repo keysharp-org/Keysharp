@@ -322,7 +322,7 @@ namespace Keysharp.Runtime
 
 			try
 			{
-				reader = File.OpenText(input);
+				reader = new StreamReader(input, ThreadAccessors.A_FileEncodingRaw, true);
 			}
 			catch (Exception ex) when (hasElse && ex is FileNotFoundException or DirectoryNotFoundException)
 			{
