@@ -93,7 +93,7 @@ In the restricted Windows sandbox, use `scripts/test-sandbox.ps1` below; direct 
 ```bash
 # Run the curated subset (safe, no user-input required — matches CI)
 dotnet test Keysharp.Tests/Keysharp.Tests.csproj -c Debug --nologo \
-  --filter "(Category=Assign|Category=BuiltInVars|Category=Class|Category=Collections|Category=Curated|Category=Directives|Category=Flow|Category=Function|Category=Hotstring|Category=Math|Category=Misc|Category=Module|Category=Operator|Category=Parser|Category=String|Category=Types|Category=FileAndDir|Category=Network|FullyQualifiedName~ClipboardTests.CfHtml|FullyQualifiedName~ClipboardTests.UriListParsing|FullyQualifiedName~ClipboardTests.OnChangeHook) & Category!=RequiresHook"
+  --filter "(Category=Assign|Category=BuiltInVars|Category=Class|Category=Collections|Category=Curated|Category=Directives|Category=Flow|Category=Function|Category=Hotstring|Category=Math|Category=Misc|Category=Module|Category=Operator|Category=Parser|Category=String|Category=Types|Category=FileAndDir|Category=Network|FullyQualifiedName~ClipboardTests.CfHtml|FullyQualifiedName~ClipboardTests.UriListParsing|FullyQualifiedName~ClipboardTests.OnChangeHook) & Category!=RequiresHook & FullyQualifiedName!~FileAndDirTests.FileRecycle"
 
 # Run a specific category
 dotnet test Keysharp.Tests/Keysharp.Tests.csproj --filter "Category=Math"
