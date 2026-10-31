@@ -2288,11 +2288,15 @@ LoadPic(*) {
 #endif
 #endif
 	Sleep(2000)
-	MyFirstPic.Value := ""
+	; Destroy Pictures can run during the Sleep and empty these variables.
+	if (MyFirstPic != "")
+		MyFirstPic.Value := ""
 #if WINDOWS
-	MySecondPic.Value := ""
+	if (MySecondPic != "")
+		MySecondPic.Value := ""
 #if X64
-	MyThirdPic.Value := ""
+	if (MyThirdPic != "")
+		MyThirdPic.Value := ""
 #endif
 #endif
 	Tab.UseTab()
@@ -2303,6 +2307,8 @@ LoadPic(*) {
 DestroyPic(*)
 {
 	global MyFirstPic, MySecondPic, MyThirdPic
+	if (MyFirstPic = "")
+		return
 	DllCall("DestroyWindow", "Ptr", MyFirstPic.Hwnd)
 	DllCall("DestroyWindow", "Ptr", MySecondPic.Hwnd)
 	MyFirstPic := ""
