@@ -182,39 +182,13 @@ namespace Keysharp.Internals.Threading
 		}
 
 		/// <summary>
-		/// The default file encoding to use.
+		/// The configured file encoding. Null represents CP0.
 		/// </summary>
-		internal static object A_FileEncoding
+		internal static Encoding A_FileEncoding
 		{
-			get
-			{
-				var fileEncoding = A_FileEncodingRaw;
-				var val = fileEncoding.BodyName;
-
-				if (fileEncoding is UnicodeEncoding ue)
-				{
-					if (ue.GetPreamble().Length == 0)
-						val += "-raw";
-				}
-				else if (fileEncoding is UTF8Encoding u8)
-				{
-					if (u8.GetPreamble().Length == 0)
-						val += "-raw";
-				}
-
-				return val;
-			}
-			set
-			{
-				if (value is Encoding enc || Files.TryGetEncoding(value, out enc))
-					Script.TheScript.Threads.CurrentThread.configData.fileEncoding = enc;
-			}
+			get => Script.TheScript.Threads.CurrentThread.configData.fileEncoding;
+			set => Script.TheScript.Threads.CurrentThread.configData.fileEncoding = value;
 		}
-
-		/// <summary>
-		/// Wrapper to retrieve the file encoding as an <see cref="Encoding"/> object.
-		/// </summary>
-		internal static Encoding A_FileEncodingRaw => Script.TheScript.Threads.CurrentThread.configData.fileEncoding;
 
 		/// <summary>
 		/// The delay in milliseconds between SendEvent keystrokes.

@@ -1811,7 +1811,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Sets or returns the encoding used for reading and writing files. This differs from AHK in that it only supports ASCII (ascii), UTF-8 (utf-8/utf8-raw) or Unicode (utf-16/utf16-raw or unicode). ASCII will always return us-ascii because that is the name of the encoding in C#.",
+                     "notes":  "Sets or returns the default file encoding, initially CP0. Reports UTF-8, UTF-8-RAW, UTF-16, UTF-16-RAW or CPnnn, preserving CP0 as the system default.",
                      "tested-by":  "file-fileencoding.ahk"
                  },
                  {
@@ -5268,7 +5268,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Sets the default encoding for FileRead, Loop Read, FileAppend, and FileOpen. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding.",
+                     "notes":  "Sets the default encoding and returns the previous setting. The encoding argument is required; an empty string or zero selects CP0 (the system ANSI encoding). Invalid names raise ValueError.",
                      "tested-by":  "file-fileencoding.ahk"
                  },
                  {
@@ -5389,8 +5389,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Platform statuses inherited from curated \u0027File and directory operations\u0027; per-function validation pending. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding.",
-                     "tested-by":  "external-com.ahk"
+                     "notes":  "Platform statuses inherited from curated \u0027File and directory operations\u0027; per-function validation pending. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. An omitted encoding uses A_FileEncoding; an explicit empty string uses the system ANSI encoding.",
+                     "tested-by":  "external-com.ahk; file-fileopen.ahk"
                  },
                  {
                      "category":  "FileSystem",
@@ -5420,7 +5420,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets or sets the encoding used by text read and write members."
+                     "notes":  "Gets or sets the encoding used by text read and write members. An empty string selects CP0; the getter reports its resolved code page, without a -RAW suffix.",
+                     "tested-by":  "file-fileopen.ahk"
                  },
                  {
                      "category":  "FileSystem",
@@ -10581,8 +10582,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Copies a string from a memory address or buffer, optionally converting it from a given code page. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding.",
-                     "tested-by":  "external-dllcall.ahk"
+                     "notes":  "Copies a string from a memory address or buffer, optionally converting it from a given code page. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. An explicit empty encoding selects the system ANSI code page; omission retains native UTF-16.",
+                     "tested-by":  "external-dllcall.ahk; string-strputstrget.ahk"
                  },
                  {
                      "category":  "Interop/Memory",
@@ -10701,7 +10702,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Writes string data to a buffer/address using specified encoding. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding.",
+                     "notes":  "Writes string data to a buffer/address using specified encoding. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. An explicit empty encoding selects the system ANSI code page; omission retains native UTF-16.",
                      "tested-by":  "string-strputstrget.ahk"
                  },
                  {

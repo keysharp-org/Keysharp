@@ -162,7 +162,7 @@ Status legend:
 | A_EndChar | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_EventInfo | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_EventInfo.Device | 🟡 Partial | 🟡 Partial | 🟡 Partial | 🟡 Partial | Identified native Linux events and managed hook-provider events expose an Input descriptor instead of a numeric DeviceId. Zero or unavailable event IDs omit Device. Metadata is resolved on first Device access; reading other event properties does not query devices. The descriptor retains its originating source. Native Windows and macOS hooks do not identify devices. Driver and hardware delivery remain unverified. |
-| A_FileEncoding | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets or returns the encoding used for reading and writing files. This differs from AHK in that it only supports ASCII (ascii), UTF-8 (utf-8/utf8-raw) or Unicode (utf-16/utf16-raw or unicode). ASCII will always return us-ascii because that is the name of the encoding in C#. |
+| A_FileEncoding | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets or returns the default file encoding, initially CP0. Reports UTF-8, UTF-8-RAW, UTF-16, UTF-16-RAW or CPnnn, preserving CP0 as the system default. |
 | A_GuiTheme | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets/sets the application-wide GUI theme. Accepted values: Classic, System, Dark. System selects the operating-system theme; Eto follows later system-theme changes, while WinForms resolves the setting when it is applied. Classic selects the Eto light theme on Linux and macOS. |
 | A_HotIf | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_HotIfTimeout | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the timeout for evaluating #HotIf criteria. |
@@ -511,7 +511,7 @@ Status legend:
 | File and directory operations | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | macOS recycle/trash and privacy-scoped file access still evolving. |
 | File.AtEOF | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Whether the read position is at end of input. |
 | File.Close() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Closes the file or stream. |
-| File.Encoding | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the encoding used by text read and write members. |
+| File.Encoding | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the encoding used by text read and write members. An empty string selects CP0; the getter reports its resolved code page, without a -RAW suffix. |
 | File.Flush() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Flushes pending buffered output. |
 | File.Handle | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | OS file handle for path-backed files; 0 for memory-backed files. |
 | File.Length | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets stream length. |
@@ -534,7 +534,7 @@ Status legend:
 | FileCreateShortcut() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Windows creates .lnk files. Linux and macOS create symbolic links or freedesktop .desktop launchers; Windows-only icon-number, hotkey, and run-state metadata is not represented, and macOS aliases are not created. |
 | FileCreateTemp() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates an empty temporary file and returns its full path. |
 | FileDelete() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Deletes one or more files. |
-| FileEncoding() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the default encoding for FileRead, Loop Read, FileAppend, and FileOpen. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. |
+| FileEncoding() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the default encoding and returns the previous setting. The encoding argument is required; an empty string or zero selects CP0 (the system ANSI encoding). Invalid names raise ValueError. |
 | FileExist() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Checks for the existence of a file or folder and returns its attributes. Bare filenames and wildcard patterns resolve against A_WorkingDir. |
 | FileFullPath() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns absolute normalized full path. |
 | FileGetAttrib() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reports whether a file or folder is read-only, hidden, etc. |
@@ -544,7 +544,7 @@ Status legend:
 | FileGetVersion() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Retrieves the version of a file. Version metadata availability differs by platform file formats. |
 | FileInstall() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Extracts the #App Files payload matching Source's canonical script-relative key; otherwise it uses live script-relative FileCopy semantics, and copying onto itself is a no-op. Dest's parent must exist, Overwrite=false atomically preserves existing files, and only the final Files list—not FileInstall calls—selects artifact payloads. |
 | FileMove() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Moves or renames one or more files. |
-| FileOpen() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform statuses inherited from curated 'File and directory operations'; per-function validation pending. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. |
+| FileOpen() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform statuses inherited from curated 'File and directory operations'; per-function validation pending. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. An omitted encoding uses A_FileEncoding; an explicit empty string uses the system ANSI encoding. |
 | FileRead() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the contents of a file. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. |
 | FileRecycle() | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | Windows uses the recycle bin and Linux uses the freedesktop Trash through GIO. macOS currently moves only to the user ~/.Trash folder, without per-volume trash or Finder Put Back metadata. |
 | FileRecycleEmpty() | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | Windows empties the recycle bin and Linux empties the freedesktop Trash through GIO. macOS currently empties only the user ~/.Trash folder, not per-volume trash folders. |
@@ -1011,7 +1011,7 @@ Status legend:
 | StatusBarGetText() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Retrieves text from a native Win32 status bar control. No non-Windows status-bar accessibility backend is implemented. |
 | StatusBarWait() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Waits for native Win32 status-bar text and depends on StatusBarGetText; no non-Windows status-bar accessibility backend is implemented. |
 | StrCompare() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Compares two strings alphabetically. Note this supports local, human readable comparison as well. |
-| StrGet() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Copies a string from a memory address or buffer, optionally converting it from a given code page. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. |
+| StrGet() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Copies a string from a memory address or buffer, optionally converting it from a given code page. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. An explicit empty encoding selects the system ANSI code page; omission retains native UTF-16. |
 | String.EndsWith() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns whether a string ends with the specified suffix. The CaseSense parameter matches InStr's, so Locale folds case one character at a time. |
 | String.Length | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns the number of characters in the string. |
 | String.StartsWith() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns whether a string starts with the specified prefix. The CaseSense parameter matches InStr's, so Locale folds case one character at a time. |
@@ -1020,7 +1020,7 @@ Status legend:
 | StrLen() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the count of how many characters are in a string. |
 | StrLower() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Converts a string to lowercase. |
 | StrPtr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the address of memory a variable keeps for native code, stable while its value fits, or of a pinned copy of any other string, which lasts as long as the string does. |
-| StrPut() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes string data to a buffer/address using specified encoding. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. |
+| StrPut() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes string data to a buffer/address using specified encoding. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. An explicit empty encoding selects the system ANSI code page; omission retains native UTF-16. |
 | StrReplace() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Replaces occurrences of a substring and returns the updated string. |
 | StrSplit() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Separates a string into an array of substrings using the specified delimiters, or into characters. |
 | StrTitle() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The StrLower, StrUpper and StrTitle functions convert a string to lowercase, uppercase or title case. |

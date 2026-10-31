@@ -973,8 +973,8 @@ namespace Keysharp.Builtins
 		/// <param name="encoding">If omitted, the string is simply copied without any conversion taking place.<br/>
 		/// Otherwise, specify the source encoding; for example, "UTF-8", "UTF-16" or "CP936".<br/>
 		/// For numeric identifiers, the prefix "CP" can be omitted only in 3-parameter mode.<br/>
-		/// Specify an empty string to use the native UTF-16 encoding, where AutoHotkey uses the system default<br/>
-		/// ANSI code page. A name which cannot be resolved raises a <see cref="ValueError"/>.
+		/// An empty string selects the system default ANSI code page.<br/>
+		/// A name which cannot be resolved raises a <see cref="ValueError"/>.
 		/// </param>
 		/// <returns>This function returns the copied or converted string. If the source encoding was specified correctly,<br/>
 		/// the return value always uses the native encoding.
@@ -1139,8 +1139,8 @@ namespace Keysharp.Builtins
 		/// <param name="encoding">If omitted, the string is simply copied or measured without any conversion taking place.<br/>
 		/// Otherwise, specify the target encoding; for example, "UTF-8", "UTF-16" or "CP936".<br/>
 		/// For numeric identifiers, the prefix "CP" can be omitted only in 4-parameter mode.<br/>
-		/// Specify an empty string to use the native UTF-16 encoding, where AutoHotkey uses the system default<br/>
-		/// ANSI code page. A name which cannot be resolved raises a <see cref="ValueError"/>.
+		/// An empty string selects the system default ANSI code page.<br/>
+		/// A name which cannot be resolved raises a <see cref="ValueError"/>.
 		/// </param>
 		/// <returns>In 4- or 3-parameter mode, this function returns the number of bytes written.<br/>
 		/// In 2-parameter mode, this function returns the required buffer size in bytes, including space for the null-terminator.

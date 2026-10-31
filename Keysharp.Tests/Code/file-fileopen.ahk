@@ -8,7 +8,10 @@ path := "./testfileobject1.txt"
 if (FileExist(path) != "")
 	FileDelete(path)
 
-f := FileOpen(path, "rw") ; Simplest first, read/write.
+previousEncoding := FileEncoding("UTF-16")
+f := FileOpen(path, "rw", "") ; An explicit empty encoding selects CP0, independent of A_FileEncoding.
+FileEncoding(previousEncoding)
+Assert(f.Encoding != "CP0" && f.Encoding != "UTF-16", A_LineNumber)
 w := "testing"
 count := f.WriteLine(w)
 f.Seek(0) ; Test seeking from beginning.

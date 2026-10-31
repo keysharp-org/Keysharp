@@ -103,7 +103,7 @@ namespace Keysharp.Builtins
 
 			var info = filename == null ? Loops.Peek(LoopType.File) : null;
 			// Null means RAW; a Buffer gets a BOM only when an encoding is specified.
-			var encoding = t is string ? ThreadAccessors.A_FileEncodingRaw : null;
+			var encoding = t is string ? ThreadAccessors.A_FileEncoding ?? NativeType.AnsiEncoding : null;
 
 			if (info?.outputStream == null && !TryParseFileOptions(opts, false, ref encoding, out _))
 				return DefaultObject;
@@ -421,10 +421,11 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Sets the default encoding for <see cref="FileRead"/>, <see cref="LoopRead"/>, <see cref="FileAppend"/>, and <see cref="FileOpen"/>.
+		/// Sets the default encoding for <see cref="FileRead"/>, <see cref="LoopRead"/>, <see cref="FileAppend"/>, and <see cref="FileOpen"/>,
+		/// returning the previous one.
 		/// </summary>
 		/// <param name="encoding">Specify one of the following values:<br/>
-		/// or empty string: The system default ANSI code page.See remarks below.<br/>
+		/// CP0 or empty string: The system default ANSI code page. See remarks below.<br/>
 		/// UTF-8: Unicode UTF-8, equivalent to CP65001.<br/>
 		/// UTF-8-RAW: As above, but no byte order mark is written when a new file is created.<br/>
 		/// UTF-16: Unicode UTF-16 with little endian byte order, equivalent to CP1200.<br/>
@@ -432,21 +433,14 @@ namespace Keysharp.Builtins
 		/// CPnnn: A code page with numeric identifier nnn. See Code Page Identifiers.<br/>
 		/// nnn: A numeric code page identifier.
 		/// </param>
-		public static object FileEncoding(object encoding = null)
+		public static object FileEncoding(object encoding)
 		{
 			var prev = A_FileEncoding;
 
-			if (!encoding.CoerceString(out var s))
+			if (!TryGetFileEncoding(encoding, out var enc))
 				return DefaultObject;
 
-			if (s != "")
-			{
-				if (!TryGetEncoding(s, out var enc))
-					return DefaultObject;
-
-				ThreadAccessors.A_FileEncoding = enc;
-			}
-
+			ThreadAccessors.A_FileEncoding = enc;
 			return prev;
 		}
 
@@ -984,7 +978,7 @@ namespace Keysharp.Builtins
 		/// <param name="flags">Either a string of characters indicating the desired access mode followed by other options (with optional spaces or tabs in between);<br/>
 		/// or a combination (sum) of numeric flags.
 		/// </param>
-		/// <param name="encoding">If omitted or blank, the default encoding (as set by FileEncoding) will be used.<br/>
+		/// <param name="encoding">If omitted, the default encoding (as set by FileEncoding) will be used. An empty string selects CP0.<br/>
 		/// Otherwise, specify the encoding or code page to use for text I/O, e.g. "UTF-8", "UTF-16", "CP936" or 936.<br/>
 		/// If the file contains a UTF-8 or UTF-16 byte order mark(BOM), or if the h(handle) flag is used,<br/>
 		/// this parameter and the default encoding will be ignored, unless the file is being opened with write-only access (i.e.the previous contents of the file are being discarded).
@@ -996,7 +990,7 @@ namespace Keysharp.Builtins
 		{
 			ThreadAccessors.A_LastError = 0;
 
-			if (!filename.CoerceString(out var file) || !TryGetEncoding(encoding, ThreadAccessors.A_FileEncodingRaw, out var enc))
+			if (!filename.CoerceString(out var file) || !TryGetEncoding(encoding, (encoding == null ? ThreadAccessors.A_FileEncoding : null) ?? NativeType.AnsiEncoding, out var enc))
 				return DefaultObject;
 
 			// A number is AutoHotkey's flag values summed.
@@ -1079,7 +1073,7 @@ namespace Keysharp.Builtins
 				return Errors.ValueErrorOccurred("FileRead requires a file name.");
 
 			// Null means RAW.
-			var encoding = ThreadAccessors.A_FileEncodingRaw;
+			var encoding = ThreadAccessors.A_FileEncoding ?? NativeType.AnsiEncoding;
 
 			if (!TryParseFileOptions(opts, true, ref encoding, out var max))
 				return DefaultObject;
@@ -1493,7 +1487,7 @@ namespace Keysharp.Builtins
 		}
 
 		private static TextStream OpenForAppend(string path, Encoding encoding, bool crlf) =>
-			TextStream.Open(path, TextStreamMode.Append, FileShare.Read, encoding ?? ThreadAccessors.A_FileEncodingRaw, crlf ? TextStream.EolCrlf : 0, encoding != null);
+			TextStream.Open(path, TextStreamMode.Append, FileShare.Read, encoding ?? ThreadAccessors.A_FileEncoding ?? NativeType.AnsiEncoding, crlf ? TextStream.EolCrlf : 0, encoding != null);
 
 		// `n can appear without a separating space. Null encoding means RAW.
 		private static bool TryParseFileOptions(string options, bool takesMax, ref Encoding encoding, out long maxBytes)
@@ -1580,10 +1574,17 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// As <see cref="TryGetEncoding(object, Encoding, out Encoding)"/>, with empty or unset meaning the native UTF-16
-		/// encoding.
+		/// Parses the file encoding setting, preserving CP0 as null.
 		/// </summary>
-		internal static bool TryGetEncoding(object s, out Encoding encoding) => TryGetEncoding(s, Encoding.Unicode, out encoding);
+		internal static bool TryGetFileEncoding(object value, out Encoding encoding) =>
+			TryGetEncoding(value, null, resolveAnsi: false, out encoding);
+
+		/// <summary>
+		/// As <see cref="TryGetEncoding(object, Encoding, out Encoding)"/> for a dedicated encoding parameter:
+		/// omitted means native UTF-16, and an explicit empty name means CP0.
+		/// </summary>
+		internal static bool TryGetEncoding(object s, out Encoding encoding) =>
+			TryGetEncoding(s, s == null ? Encoding.Unicode : NativeType.AnsiEncoding, out encoding);
 
 		/// <summary>
 		/// Resolves an encoding name to an <see cref="Encoding"/>, falling back to the caller's default when the script
@@ -1600,7 +1601,10 @@ namespace Keysharp.Builtins
 		/// does not have.</exception>
 		/// <remarks>A name which cannot be resolved is never quietly substituted: the caller would then read or
 		/// write the wrong bytes and have no way to notice.</remarks>
-		internal static bool TryGetEncoding(object s, Encoding def, out Encoding encoding)
+		internal static bool TryGetEncoding(object s, Encoding def, out Encoding encoding) =>
+			TryGetEncoding(s, def, resolveAnsi: true, out encoding);
+
+		private static bool TryGetEncoding(object s, Encoding def, bool resolveAnsi, out Encoding encoding)
 		{
 			encoding = null;
 
@@ -1635,7 +1639,7 @@ namespace Keysharp.Builtins
 			{
 				try
 				{
-					encoding = Encoding.GetEncoding(cp);
+					encoding = cp == 0 && !resolveAnsi ? null : Encoding.GetEncoding(cp);
 					return true;
 				}
 				catch

@@ -37,7 +37,7 @@ namespace Keysharp.Internals.Threading
 		internal long defaultMouseSpeed = 2L;
 		internal bool detectHiddenText = true;
 		internal bool detectHiddenWindows;
-		internal Encoding fileEncoding = Encoding.Default;
+		internal Encoding fileEncoding;//Null preserves CP0 instead of its resolved code page.
 		internal long keyDelay = 10L;
 		internal long keyDelayPlay = -1L;
 		internal long keyDuration = -1L;

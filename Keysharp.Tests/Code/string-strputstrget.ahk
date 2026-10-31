@@ -1,4 +1,6 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 #Include <assert>
 
 buf := Buffer(32)
@@ -28,6 +30,11 @@ AssertEq(s, gotten, A_LineNumber)
 gotten := StrGet(buf, StrLen(s) - 2, "ASCII")
 
 AssertEq(SubStr(s, 1, StrLen(s) - 2), gotten, A_LineNumber)
+
+AssertEq(StrPut(s, ""), StrPut(s, "CP0"), A_LineNumber)
+StrPut(s, buf, "")
+AssertEq(StrGet(buf, "CP0"), s, A_LineNumber)
+AssertEq(StrGet(buf, ""), s, A_LineNumber)
 
 ; A length of 0 yields an empty string, not a number. [v2.1-alpha.30]
 gotten := StrGet(buf, 0, "UTF-8")

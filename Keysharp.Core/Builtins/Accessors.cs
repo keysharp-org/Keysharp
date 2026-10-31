@@ -394,12 +394,26 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public static object A_FileEncoding
 		{
-			get => ThreadAccessors.A_FileEncoding;
+			get
+			{
+				var encoding = ThreadAccessors.A_FileEncoding;
 
+				if (encoding == null)
+					return "CP0";
+
+				var suffix = encoding.Preamble.IsEmpty ? "-RAW" : "";
+
+				return encoding.CodePage switch
+				{
+					65001 => "UTF-8" + suffix,
+					1200 => "UTF-16" + suffix,
+					var codePage => "CP" + codePage.ToString(CultureInfo.InvariantCulture)
+				};
+			}
 			set
 			{
-				if (Files.TryGetEncoding(value, out var val))
-					ThreadAccessors.A_FileEncoding = val;
+				if (Files.TryGetFileEncoding(value, out var encoding))
+					ThreadAccessors.A_FileEncoding = encoding;
 			}
 		}
 
@@ -1551,7 +1565,7 @@ namespace Keysharp.Builtins
 		internal static long DefaultMouseSpeedDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.defaultMouseSpeed;
 		internal static bool DetectHiddenTextDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.detectHiddenText;
 		internal static bool DetectHiddenWindowsDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.detectHiddenWindows;
-		internal static Encoding FileEncodingDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.fileEncoding;
+		internal static Encoding FileEncodingDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.fileEncoding ?? NativeType.AnsiEncoding;
 		internal static long KeyDelayDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.keyDelay;
 		internal static long KeyDelayPlayDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.keyDelayPlay;
 		internal static long KeyDurationDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.keyDuration;
