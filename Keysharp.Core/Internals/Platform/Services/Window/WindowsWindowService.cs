@@ -304,18 +304,8 @@ namespace Keysharp.Internals
 
 		public override bool TryKill(nint h)
 		{
-			_ = TryClose(h);
-
-			// Give a responsive app time to process WM_CLOSE and shut down gracefully (saving prompts, etc.)
-			// before escalating to a hard TerminateProcess. AHK waits ~500ms; poll with a real delay so we
-			// don't force-kill a healthy window that simply hasn't pumped its message queue yet. Use the
-			// pump-aware sleep (like Mac's TryKill and the rest of this file) so WinKill on our own pump thread
-			// keeps timers/hotkeys running AND lets the script's own window actually dispatch the WM_CLOSE it
-			// was posted — a plain Thread.Sleep would starve that dispatch and hard-kill our own process.
-			for (var waited = 0; GetExists(h) && waited < 500; waited += 10)
-				Flow.SleepWithoutInterruption(10);
-
-			if (!GetExists(h))
+			// As in AutoHotkey, only a window which does not answer is forced. One which answers may stay open, as a Gui does.
+			if (WindowsAPI.SendMessageTimeout(h, WindowsAPI.WM_CLOSE, 0, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, 500, out _) != 0)
 				return true;
 
 			var pid = (uint)GetPid(h);

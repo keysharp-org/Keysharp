@@ -11539,7 +11539,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The WinKill function forces the specified window to close. On Wayland a real force-kill is provided by the Keysharp GNOME or Cinnamon shell extension or, on Hyprland, by keysharp-desktop; there the window is first asked to close and its process is forced only if the window remains after about 500 ms. Other Wayland compositors receive only a graceful close request.",
-                     "tested-by":  "Gui/guitest.ks"
+                     "tested-by":  "window-functions.ahk; Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",

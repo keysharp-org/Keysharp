@@ -429,6 +429,13 @@ Assert(!(ControlGetStyle(styleButton) & WS_DISABLED), A_LineNumber)
 styleGui.Destroy()
 #endif
 
+; WinKill forces only a window which does not answer, and a Gui answers by hiding.
+killTarget := Gui()
+killTarget.Show("NA w100 h50")
+WinKill(killTarget)
+DetectHiddenWindows true
+Assert(WinExist(killTarget), A_LineNumber)
+
 FileAppend "pass", "*"
 ExitApp()
 
