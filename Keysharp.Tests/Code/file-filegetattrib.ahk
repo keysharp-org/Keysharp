@@ -1,7 +1,10 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
+#Include <testpaths>
 
-path := "../../../Keysharp.Tests/Code/DirCopy"
+path := TestFixturePath("DirCopy")
 val := FileGetAttrib(path)
 
 AssertEq(val, "D", A_LineNumber)

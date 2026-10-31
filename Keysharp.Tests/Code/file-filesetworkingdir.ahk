@@ -1,11 +1,14 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 
 #import KS { FileFullPath }
 #Include <assert>
+#Include <testpaths>
 ; #Include %A_ScriptDir%/header.ahk
 
 origdir := A_WorkingDir
-dir := "../../../Keysharp.Tests/Code/DirCopy"
+dir := TestFixturePath("DirCopy")
 fullpath := FileFullPath(dir)
 SetWorkingDir(fullpath)
 

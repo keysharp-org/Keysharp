@@ -1,7 +1,10 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 
 #import KS { FileFullPath }
 #Include <assert>
+#Include <testpaths>
 ; #Include %A_ScriptDir%/header.ahk
 
 if (DirExist("./FileGetShortcut"))
@@ -10,9 +13,11 @@ if (DirExist("./FileGetShortcut"))
 if (FileExist("./testshortcut.lnk"))
 	FileDelete("./testshortcut.lnk")
 
-path := A_ScriptDir . "/"
+path := TestFixturePath()
+iconPath := "./FileGetShortcut/Keysharp.ico"
 dir := path . "DirCopy"
 DirCopy(dir, "./FileGetShortcut/")
+FileCopy(TestFixturePath("../../assets/Keysharp.ico"), iconPath)
 SplitPath(FileFullPath("./FileGetShortcut/file1.txt"), , &fullpath)
 
 #if LINUX
@@ -43,9 +48,9 @@ if (FileExist("./testshortcut.lnk"))
 #endif
 
 #if WINDOWS
-	FileCreateShortcut("./FileGetShortcut/file1.txt", "./testshortcut.lnk", fullpath, "", "TestDescription", "../../../assets/Keysharp.ico", "")
+	FileCreateShortcut("./FileGetShortcut/file1.txt", "./testshortcut.lnk", fullpath, "", "TestDescription", iconPath, "")
 #else
-	FileCreateShortcut("./FileGetShortcut/file1.txt", "./testshortcut.lnk", fullpath, "", "TestDescription", "../../../assets/Keysharp.ico", 2)
+	FileCreateShortcut("./FileGetShortcut/file1.txt", "./testshortcut.lnk", fullpath, "", "TestDescription", iconPath, 2)
 #endif
 
 Assert(FileExist("./testshortcut.lnk"), A_LineNumber)
@@ -74,7 +79,7 @@ AssertEq("TestDescription", outDescription, A_LineNumber)
 
 AssertEq("", outArgs, A_LineNumber)
 
-expectedIcon := "../../../assets/Keysharp.ico"
+expectedIcon := iconPath
 #if LINUX || OSX
 expectedIcon := FileFullPath(expectedIcon)
 #endif

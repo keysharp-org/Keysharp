@@ -1,10 +1,13 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
+#Include <testpaths>
 
 if (DirExist("./FileRecycleEmpty"))
 	DirDelete("./FileRecycleEmpty", true)
 
-dir := "../../../Keysharp.Tests/Code/DirCopy"
+dir := TestFixturePath("DirCopy")
 DirCreate("./FileRecycleEmpty")
 FileCopy(dir . "/*", "./FileRecycleEmpty/")
 

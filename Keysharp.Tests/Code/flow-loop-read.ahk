@@ -3,12 +3,13 @@
 #Warn All, StdOut
 #Warn LocalSameAsGlobal, Off
 #Include <assert>
+#Include <testpaths>
 
 x := ""
 
 ; MsgBox(A_WorkingDir)
 
-Loop Read "../../../Keysharp.Tests/Code/test-text-file.txt"
+Loop Read TestFixturePath("test-text-file.txt")
 {
 	x .= A_LoopReadLine
 }
@@ -16,32 +17,40 @@ Loop Read "../../../Keysharp.Tests/Code/test-text-file.txt"
 AssertEq(x, "this is line 1another lineline 3", A_LineNumber)
 
 x := ""
-try FileDelete "../../../Keysharp.Tests/Code/test-text-file-out.txt"
+outputPath := A_Temp . "/keysharp-loop-read-output-" . Random(1, 2147483647) . ".txt"
+while FileExist(outputPath)
+	outputPath := A_Temp . "/keysharp-loop-read-output-" . Random(1, 2147483647) . ".txt"
 
-Loop Read "../../../Keysharp.Tests/Code/test-text-file.txt", "../../../Keysharp.Tests/Code/test-text-file-out.txt" ; this is a comment
+try
 {
-	y := Random()
-	x .= A_LoopReadLine
-	x .= y
-	z := A_LoopReadLine
-	z .= y
-	FileAppend(z)
+	Loop Read TestFixturePath("test-text-file.txt"), outputPath ; this is a comment
+	{
+		y := Random()
+		x .= A_LoopReadLine
+		x .= y
+		z := A_LoopReadLine
+		z .= y
+		FileAppend(z)
+	}
+
+	z := ""
+
+	Loop Read  outputPath ; another comment
+	{
+		z.= A_LoopReadLine
+	}
+
+	AssertEq(x, z, A_LineNumber)
+
+	; Leaving the loop early closes the file.
+	Loop Read outputPath
+		break
 }
-
-z := ""
-
-Loop Read  "../../../Keysharp.Tests/Code/test-text-file-out.txt" ; another comment
+finally
 {
-	z.= A_LoopReadLine
+	if FileExist(outputPath)
+		FileDelete outputPath
 }
-
-AssertEq(x, z, A_LineNumber)
-
-; Leaving the loop early closes the file.
-Loop Read "../../../Keysharp.Tests/Code/test-text-file-out.txt"
-	break
-
-FileDelete "../../../Keysharp.Tests/Code/test-text-file-out.txt"
 
 ; Files without a BOM use FileEncoding; a BOM overrides that setting.
 encodingPath := A_Temp . "/keysharp-loop-read-" . Random(1, 2147483647) . ".txt"
@@ -87,7 +96,7 @@ else
 AssertEq(x, "else", A_LineNumber)
 
 ; An output file of * is standard output, which the loop leaves open.
-Loop Read "../../../Keysharp.Tests/Code/test-text-file.txt", "*"
+Loop Read TestFixturePath("test-text-file.txt"), "*"
 	FileAppend ""
 
 FileAppend "pass", "*"

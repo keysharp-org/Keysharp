@@ -8,7 +8,7 @@ namespace Keysharp.Tests;
 public class IconInternals : TestRunner
 {
 	private static string Asset(string name)
-		=> Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "assets", name));
+		=> Path.Combine(RepositoryRoot, "assets", name);
 
 	/// <summary>
 	/// The point of LoadIconSet over LoadImage: a multi-size .ico keeps all of its frames, so the toolkit can

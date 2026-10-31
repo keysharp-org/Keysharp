@@ -2,6 +2,7 @@
 #Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
+#Include <testpaths>
 
 if (DirExist("./FileMove"))
 	DirDelete("./FileMove", true)
@@ -10,7 +11,7 @@ if (DirExist("./FileMove2"))
 	DirDelete("./FileMove2", true)
 
 DirCreate("./FileMove")
-path := "../../../Keysharp.Tests/Code/"
+path := TestFixturePath()
 dir := path . "DirCopy"
 FileCopy(dir . "/*", "./FileMove/")
 	

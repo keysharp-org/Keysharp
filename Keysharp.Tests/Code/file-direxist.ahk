@@ -2,11 +2,12 @@
 #Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
+#Include <testpaths>
 
 if (DirExist("./DirExist"))
 	DirDelete("./DirExist", true)
 
-path := "../../../Keysharp.Tests/Code/"
+path := TestFixturePath()
 dir := "./DirExist/SubDir1/SubDir2/SubDir3"
 DirCreate(dir)
 

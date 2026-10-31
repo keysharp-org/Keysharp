@@ -2,12 +2,13 @@
 #Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
+#Include <testpaths>
 #Import Ks { A_DirSeparator }
 
 if (DirExist("./FileSetTime"))
 	DirDelete("./FileSetTime", true)
 
-dir := "../../../Keysharp.Tests/Code/DirCopy"
+dir := TestFixturePath("DirCopy")
 DirCopy(dir, "./FileSetTime")
 
 Assert(DirExist("./FileSetTime"), A_LineNumber)

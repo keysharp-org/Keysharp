@@ -57,7 +57,7 @@ public partial class HotstringTests : TestRunner
 	{
 		string val;
 		HotstringDefinition hs1, hs2;
-		var filename = string.Format("..{0}..{0}..{0}Keysharp.Tests{0}HotstringTests.txt", Path.DirectorySeparatorChar);
+		var filename = Path.Combine(RepositoryRoot, "Keysharp.Tests", "HotstringTests.txt");
 		var hotstrings = File.ReadLines(filename);
 		var delimiters = new char[] { ',' };
 		hsm.ClearHotstrings();

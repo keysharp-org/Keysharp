@@ -2,8 +2,9 @@
 #Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
+#Include <testpaths>
 
-path := "../../../Keysharp.Tests/Code/"
+path := TestFixturePath()
 dir := path . "DirCopy/file1.txt"
 text := FileRead(dir)
 

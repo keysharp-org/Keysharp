@@ -2,12 +2,13 @@
 #Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
+#Include <testpaths>
 #Import Ks { A_DirSeparator }
 
 if (DirExist("./FileSetAttrib"))
 	DirDelete("./FileSetAttrib", true)
 
-dir := "../../../Keysharp.Tests/Code/DirCopy"
+dir := TestFixturePath("DirCopy")
 DirCreate("./FileSetAttrib")
 DirCopy(dir, "./FileSetAttrib", true)
 

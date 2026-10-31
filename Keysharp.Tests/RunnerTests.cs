@@ -5,6 +5,30 @@ namespace Keysharp.Tests;
 
 public class RunnerTests : TestRunner
 {
+	[TestCase("net10.0"), TestCase("net10.0/osx-arm64"), TestCase("net10.0-windows/win-arm64")]
+	[Category("Internal"), Category("Curated")]
+	public void FixtureRoot(string outputDirectory)
+	{
+		var output = Path.Combine(RepositoryRoot, "bin", "Debug", outputDirectory);
+		Assert.That(FindRepositoryRoot(output), Is.EqualTo(RepositoryRoot));
+	}
+
+	[Test, Category("Internal"), Category("Curated")]
+	public void FixturePathsOutsideWorkingDirectory()
+	{
+		var workingDirectory = Directory.GetCurrentDirectory();
+
+		try
+		{
+			Directory.SetCurrentDirectory(Path.GetTempPath());
+			Assert.IsTrue(TestScript("file-filegetsize", true));
+		}
+		finally
+		{
+			Directory.SetCurrentDirectory(workingDirectory);
+		}
+	}
+
 	[TestCase(true), TestCase(false), Category("Internal"), Category("Curated")]
 	public void CompilationContextLifetime(bool execute)
 	{

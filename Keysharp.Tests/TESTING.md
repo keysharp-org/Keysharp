@@ -13,6 +13,10 @@ New test scripts must include both directives below so failures cannot open a mo
 #Warn All, StdOut
 ```
 
+For input fixtures under `Code/`, include `<testpaths>` and use `TestFixturePath("DirCopy/file1.txt")`.
+The helper resolves paths from its own source file, so it also works when the test body is compiled from text inside a function wrapper.
+Keep generated output in temporary files with cleanup, rather than writing into the fixture directory. Do not assume a working directory or a fixed depth below `bin/`.
+
 ### Assertions
 
 A script is silent while it succeeds and writes a single `pass` once it reaches its end. The runner accepts

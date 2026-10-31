@@ -2,24 +2,25 @@
 #Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
+#Include <testpaths>
 
 if (DirExist("./DirCopy2"))
 	DirDelete("./DirCopy2", true)
 
-DirCopy("../../../Keysharp.Tests/Code/DirCopy", "./DirCopy2")
+DirCopy(TestFixturePath("DirCopy"), "./DirCopy2")
 VerifyAndDelete(false)
 
-DirCopy("../../../Keysharp.Tests/Code/DirCopy", "./DirCopy2", true)
+DirCopy(TestFixturePath("DirCopy"), "./DirCopy2", true)
 VerifyAndDelete(true)
 
-DirCopy("../../../Keysharp.Tests/Code/DirCopy/DirCopy.zip", "./DirCopy2", true)
+DirCopy(TestFixturePath("DirCopy/DirCopy.zip"), "./DirCopy2", true)
 VerifyAndDelete(false)
 
 b := false
 
 try
 {
-    DirCopy("../../../Keysharp.Tests/Code/DirCopy/DirCopy.zip", "./DirCopy2", false)
+    DirCopy(TestFixturePath("DirCopy/DirCopy.zip"), "./DirCopy2", false)
 }
 catch
 {

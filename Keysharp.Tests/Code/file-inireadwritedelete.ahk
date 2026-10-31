@@ -2,11 +2,12 @@
 #Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
+#Include <testpaths>
 
 if (FileExist("./testini2.ini"))
 	FileDelete("./testini2.ini")
 
-dir := "../../../Keysharp.Tests/Code/testini.ini"
+dir := TestFixturePath("testini.ini")
 FileCopy(dir, "./testini2.ini", true)
 
 Assert(FileExist("./testini2.ini"), A_LineNumber)
