@@ -353,7 +353,8 @@ public class RunnerTests : TestRunner
 
 #if WINDOWS
 
-	[Test, Category("Internal"), Apartment(ApartmentState.STA)]
+	// The host accepts the replacement's request without exiting, as a busy or vetoing predecessor would.
+	[Test, Category("Internal")]
 	public void ReloadWaitTimeout()
 	{
 		var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
@@ -366,8 +367,8 @@ public class RunnerTests : TestRunner
 		try
 		{
 			File.WriteAllText(script, "#ErrorStdOut\n#Warn All, StdOut\n#NoTrayIcon\nFileAppend 'replacement-started', '*'\n");
-			// A hidden window in the still-running host accepts the close request without retiring the process.
-			using var predecessorWindow = new Form();
+			using var requests = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
+			using var cancellation = new CancellationTokenSource();
 			var start = new ProcessStartInfo(launcher)
 			{
 				UseShellExecute = false,
@@ -378,24 +379,29 @@ public class RunnerTests : TestRunner
 			};
 			start.Environment["KEYSHARP_DAEMON"] = "0";
 			start.Environment["KEYSHARP_FORCE_HEADLESS"] = "0";
-			start.Environment[ReloadHandshake.PredecessorVar] = Environment.ProcessId.ToString();
-			start.Environment["KEYSHARP_RELOAD_PREDECESSOR_WINDOW"] = predecessorWindow.Handle.ToInt64().ToString();
-			var elapsed = Stopwatch.StartNew();
+			start.Environment[ReloadHandshake.HandshakeVar] = $"{Environment.ProcessId},{requests.GetClientHandleAsString()}";
 			using var process = Process.Start(start);
+			requests.DisposeLocalCopyOfClientHandle();
 			var stdout = process.StandardOutput.ReadToEndAsync();
 			var stderr = process.StandardError.ReadToEndAsync();
 
 			try
 			{
+				var request = new byte[1];
+				var asked = requests.ReadAsync(request, 0, 1, cancellation.Token);
+				Assert.That(asked.Wait(30000) && asked.Result == 1 && request[0] == 1, Is.True, "The replacement asks once it is compiled and about to run.");
+				var elapsed = Stopwatch.StartNew();
+
 				Assert.That(process.WaitForExit(35000), Is.True, "The replacement must time out without opening a retry dialog.");
 				Assert.That(process.ExitCode, Is.EqualTo(2), "A replacement which did not run exits as a critical error, as in AutoHotkey.");
-				Assert.That(elapsed.Elapsed, Is.GreaterThanOrEqualTo(TimeSpan.FromSeconds(15)));
+				// The child starts waiting before the host observes its request; allow scheduling delay at this boundary.
+				Assert.That(elapsed.Elapsed, Is.GreaterThanOrEqualTo(TimeSpan.FromSeconds(14)));
 				Assert.That(stdout.GetAwaiter().GetResult(), Is.Empty, "The replacement must not execute while the predecessor is alive.");
-				Assert.That(stderr.GetAwaiter().GetResult(), Does.Contain(
-					$"the instance being reloaded (PID {Environment.ProcessId}) did not exit within 15000 ms."));
+				Assert.That(stderr.GetAwaiter().GetResult(), Does.Contain("did not exit within 15000 ms."));
 			}
 			finally
 			{
+				cancellation.Cancel();
 				if (!process.HasExited)
 				{
 					process.Kill(entireProcessTree: true);

@@ -472,7 +472,7 @@ namespace Keysharp.Internals.Scripting
 			{
 				var result = ExecuteOnce(command);
 
-				if (result != RetryCompilation || Environment.GetEnvironmentVariable(ReloadHandshake.PredecessorVar) == null)
+				if (result != RetryCompilation || Environment.GetEnvironmentVariable(ReloadHandshake.HandshakeVar) == null)
 					return result;
 
 				if (command.Kind == CliCommandKind.Error)
@@ -1236,8 +1236,8 @@ namespace Keysharp.Internals.Scripting
 		// The compile-time error dialog can relaunch before a script exists to call Flow.Reload().
 		private static int RestartCurrentProcess()
 		{
-			// Recompile in the same process so a Reload replacement remains the outgoing script's child.
-			if (Environment.GetEnvironmentVariable(ReloadHandshake.PredecessorVar) != null)
+			// Recompile in this process so it remains the predecessor's child and keeps its inherited request pipe.
+			if (Environment.GetEnvironmentVariable(ReloadHandshake.HandshakeVar) != null)
 				return RetryCompilation;
 
 			try

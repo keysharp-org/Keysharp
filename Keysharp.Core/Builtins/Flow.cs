@@ -278,38 +278,20 @@ namespace Keysharp.Builtins
 			if (script.scriptPath == "*" || script.hasExited)//A script read from stdin has no file to relaunch.
 				return DefaultObject;
 
-#if WINDOWS
-			if (Script.IsHeadless || script.mainWindow == null)
-			{
-				script.PostToUIThread(() =>
-				{
-					if (!Keysharp.Internals.Flow.ExitAppInternal(script, ExitReasons.Reload, null, false) && script.hasExited)
-						Application.Restart();
-				});
-				return DefaultObject;
-			}
-#endif
 			var fd = script.FlowData;
+			var handshake = new ReloadHandshake(script);
 
-			if (Interlocked.CompareExchange(ref fd.reloadPending, 1, 0) != 0)
+			// One replacement at a time; it clears the slot when it exits.
+			if (Interlocked.CompareExchange(ref fd.pendingReload, handshake, null) != null)
 				return DefaultObject;
-
-			Process replacement = null;
 
 			try
 			{
-				replacement = ReloadHandshake.Start(script);
-				replacement.Exited += (_, _) =>
-				{
-					Volatile.Write(ref fd.reloadPending, 0);
-					replacement.Dispose();
-				};
-				replacement.EnableRaisingEvents = true;
+				handshake.Start();
 			}
 			catch (Exception ex)
 			{
-				Volatile.Write(ref fd.reloadPending, 0);
-				replacement?.Dispose();
+				handshake.Dispose();
 				return Errors.ErrorOccurred($"Reload failed: {ex.Message}");
 			}
 
@@ -547,8 +529,7 @@ namespace Keysharp.Builtins
 
 		internal ScriptTimerManager timers;
 
-		internal int reloadPending;
-		internal bool ReloadInProgress => Volatile.Read(ref reloadPending) != 0;
+		internal ReloadHandshake pendingReload;
 
 		public void Dispose()
 		{

@@ -1,23 +1,31 @@
+using System.IO.Pipes;
 using Keysharp.Builtins;
 
 namespace Keysharp.Internals.Scripting
 {
-	internal static class ReloadHandshake
+	// The replacement asks to retire its predecessor only after compiling. The pipe carries the request;
+	// waiting for the process itself keeps replacement execution after the predecessor's entire teardown.
+	internal sealed class ReloadHandshake : IDisposable
 	{
-		internal const string PredecessorVar = "KEYSHARP_RELOAD_PREDECESSOR";
+		internal const string HandshakeVar = "KEYSHARP_RELOAD_HANDSHAKE";
+		private const byte RetireRequest = 1;
 		private const int WaitMs = 2000;
 		private const int NonInteractiveWaitMs = 15000;
-#if WINDOWS
-		private const string PredecessorWindowVar = "KEYSHARP_RELOAD_PREDECESSOR_WINDOW";
-		internal const nint ExitByReload = 0x4B53_0001;
-#else
-		[DllImport("libc", EntryPoint = "kill", SetLastError = true)]
-		private static extern int PosixKill(int pid, int signal);
+		private readonly Lock gate = new();
+		private readonly Script script;
+		private AnonymousPipeServerStream requests;
+		private Process replacement;
+		private CancellationTokenSource cancellation;
+		private ScriptEventScheduler.PendingCallbackRegistration pending;
+		private bool disposed;
 
+		internal ReloadHandshake(Script script) => this.script = script;
+
+#if !WINDOWS
 		[DllImport("libc", EntryPoint = "getppid")]
 		private static extern int PosixParentId();
 
-		// The predecessor is this process's parent, so getppid reports its exit exactly, where a polled PID could already be reused.
+		// The predecessor is this process's parent, so getppid reports its exit even if its PID is reused.
 		private static bool WaitForPredecessorExit(int pid, int timeoutMs)
 		{
 			var deadline = Environment.TickCount64 + timeoutMs;
@@ -34,98 +42,196 @@ namespace Keysharp.Internals.Scripting
 		}
 #endif
 
-		internal static Process Start(Script script)
+		internal void Start()
 		{
-#if WINDOWS
-			if (script.mainWindow == null)
-				throw new InvalidOperationException("The running script has no main window to close.");
-#endif
-			var start = Runner.CreateRestartStartInfo();
-			start.WorkingDirectory = Accessors.A_InitialWorkingDir;
+			var registration = script.MainEventScheduler.RegisterPendingCallback(Dispose)
+				?? throw new ObjectDisposedException(nameof(Script));
 
-			start.Environment[PredecessorVar] = Environment.ProcessId.ToString();
-#if WINDOWS
-			start.Environment[PredecessorWindowVar] = script.MainWindowHandle.ToInt64().ToString();
-#endif
-			return Process.Start(start) ?? throw new InvalidOperationException("The replacement process did not start.");
+			try
+			{
+				Process process;
+
+				lock (gate)
+				{
+					ObjectDisposedException.ThrowIf(disposed, this);
+					pending = registration;
+					registration = null;
+					cancellation = new();
+					requests = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
+					var start = Runner.CreateRestartStartInfo();
+					start.WorkingDirectory = Accessors.A_InitialWorkingDir;
+					start.Environment[HandshakeVar] = $"{Environment.ProcessId},{requests.GetClientHandleAsString()}";
+					process = replacement = Process.Start(start) ?? throw new InvalidOperationException("The replacement process did not start.");
+					requests.DisposeLocalCopyOfClientHandle();
+					process.Exited += (_, _) => Dispose();
+					_ = AwaitRequestAsync(requests, cancellation.Token);
+				}
+
+				// Enabling events can call Dispose synchronously if the child has already exited.
+				try
+				{
+					process.EnableRaisingEvents = true;
+				}
+				catch (InvalidOperationException) when (Volatile.Read(ref disposed))
+				{
+				}
+			}
+			finally
+			{
+				registration?.Dispose();
+			}
+		}
+
+		private async Task AwaitRequestAsync(AnonymousPipeServerStream requests, CancellationToken token)
+		{
+			var request = new byte[1];
+
+			try
+			{
+				if (await requests.ReadAsync(request, 0, 1, token).ConfigureAwait(false) == 1 && request[0] == RetireRequest)
+					_ = script.MainEventScheduler.EnqueueCallback(Retire, ScriptEventQueue.Interactive);
+			}
+			catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException)
+			{
+				// Process exit or scheduler teardown cancels a request which never arrived.
+			}
+		}
+
+		private void Retire()
+		{
+			// HasExited can raise Exited synchronously, so it must not run under the cleanup lock.
+			try
+			{
+				if (replacement.HasExited)
+					return;
+			}
+			catch (InvalidOperationException)
+			{
+				return;//Cleanup has already disposed the process.
+			}
+
+			lock (gate)
+			{
+				// A request can outlive a replacement which timed out while the main thread was busy.
+				if (disposed || script.IsDisposed || script.hasExited || script.FlowData.exitReason != null
+						|| Volatile.Read(ref script.FlowData.pendingReload) != this)
+					return;
+			}
+
+			_ = Keysharp.Internals.Flow.ExitAppInternal(script, Keysharp.Builtins.Flow.ExitReasons.Reload, null, false);
+		}
+
+		public void Dispose()
+		{
+			lock (gate)
+			{
+				if (disposed)
+					return;
+
+				disposed = true;
+				_ = Interlocked.CompareExchange(ref script.FlowData.pendingReload, null, this);
+			}
+
+			// Scheduler teardown calls this under its own lock. Release the registration outside ours.
+			cancellation?.Cancel();
+			requests?.Dispose();
+			replacement?.Dispose();
+			cancellation?.Dispose();
+			pending?.Dispose();
 		}
 
 		internal static bool AskPredecessorToExit(bool errorStdOut)
 		{
-			var value = Environment.GetEnvironmentVariable(PredecessorVar);
-			Environment.SetEnvironmentVariable(PredecessorVar, null);
-#if WINDOWS
-			var windowValue = Environment.GetEnvironmentVariable(PredecessorWindowVar);
-			Environment.SetEnvironmentVariable(PredecessorWindowVar, null);
-#endif
-			if (!int.TryParse(value, out var pid))
+			var value = Environment.GetEnvironmentVariable(HandshakeVar);
+			Environment.SetEnvironmentVariable(HandshakeVar, null);
+
+			if (value == null)
 				return true;
 
-#if !WINDOWS
-			// A live predecessor is still this process's parent; a reused PID must not be signaled.
-			if (PosixParentId() != pid)
-				return true;
-#endif
-			Process predecessor;
+			var comma = value.IndexOf(',');
+
+			if (comma < 0 || !int.TryParse(value.AsSpan(0, comma), out var pid) || pid <= 0)
+			{
+				Console.Error.WriteLine("Keysharp: invalid reload handshake.");
+				return false;
+			}
 
 			try
 			{
-				predecessor = Process.GetProcessById(pid);
-			}
-			catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
-			{
-				return true;//The old instance has already exited.
-			}
-
-			using (predecessor)
-			{
+				using var requests = new AnonymousPipeClientStream(PipeDirection.Out, value[(comma + 1)..]);
 #if WINDOWS
-				var asked = false;
+				Process predecessor;
 
-				if (long.TryParse(windowValue, out var rawWindow) && rawWindow != 0)
+				try
 				{
-					var window = unchecked((nint)rawWindow);
-					_ = WindowsAPI.GetWindowThreadProcessId(window, out var ownerPid);
-					asked = ownerPid == (uint)pid && WindowsAPI.PostMessage(window, WindowsAPI.WM_CLOSE, ExitByReload, 0);
+					predecessor = Process.GetProcessById(pid);
 				}
-#else
-				var asked = PosixKill(pid, 15) == 0;//SIGTERM cannot carry the reason.
-#endif
-				if (!asked)
+				catch (ArgumentException)
 				{
-#if WINDOWS
-					if (predecessor.HasExited)
-#else
-					if (PosixParentId() != pid)
-#endif
-						return true;
-
-					Console.Error.WriteLine($"Keysharp: could not ask the instance being reloaded (PID {pid}) to exit.");
-					return false;
+					return true;//The old instance has already exited.
 				}
 
-				// Nobody answers a dialog without a desktop, and a script routing errors to stderr has asked not to be shown one.
-				var interactive = !Script.IsHeadless && !errorStdOut && Env.FindCommandLineArg("errorstdout") == null;
-				var waitMs = interactive ? WaitMs : NonInteractiveWaitMs;
-
-#if WINDOWS
-				while (!predecessor.WaitForExit(waitMs))
-#else
-				while (!WaitForPredecessorExit(pid, waitMs))
-#endif
+				using (predecessor)
 				{
-					if (!interactive)
+					try
 					{
-						Console.Error.WriteLine($"Keysharp: the instance being reloaded (PID {pid}) did not exit within {waitMs} ms.");
+						// Capture its identity before sending the request; waiting must not reopen a reused PID.
+						_ = predecessor.SafeHandle;
+					}
+					catch (InvalidOperationException)
+					{
+						return true;
+					}
+#else
+				{
+					if (PosixParentId() != pid)
+						return true;
+#endif
+					try
+					{
+						requests.WriteByte(RetireRequest);
+					}
+					catch (IOException)
+					{
+#if WINDOWS
+						if (predecessor.HasExited)
+#else
+						if (PosixParentId() != pid)
+#endif
+							return true;
+
+						Console.Error.WriteLine($"Keysharp: could not ask the instance being reloaded (PID {pid}) to exit.");
 						return false;
 					}
 
-#if !WINDOWS
-					_ = Script.EnsureEtoApplication();
+					// Headless runs and scripts routing errors to stderr cannot use a retry dialog.
+					var interactive = !Script.IsHeadless && !errorStdOut && Env.FindCommandLineArg("errorstdout") == null;
+					var waitMs = interactive ? WaitMs : NonInteractiveWaitMs;
+
+#if WINDOWS
+					while (!predecessor.WaitForExit(waitMs))
+#else
+					while (!WaitForPredecessorExit(pid, waitMs))
 #endif
-					if (Dialogs.MsgBox("Could not close the previous instance of this script.  Keep waiting?", null, "YesNo") != "Yes")
-						return false;
+					{
+						if (!interactive)
+						{
+							Console.Error.WriteLine($"Keysharp: the instance being reloaded (PID {pid}) did not exit within {waitMs} ms.");
+							return false;
+						}
+
+#if !WINDOWS
+						_ = Script.EnsureEtoApplication();
+#endif
+						if (Dialogs.MsgBox("Could not close the previous instance of this script.  Keep waiting?", null, "YesNo") != "Yes")
+							return false;
+					}
 				}
+			}
+			catch (Exception ex) when (ex is ArgumentException or IOException or System.ComponentModel.Win32Exception)
+			{
+				Console.Error.WriteLine($"Keysharp: could not reach the instance being reloaded: {ex.Message}");
+				return false;
 			}
 
 			return true;

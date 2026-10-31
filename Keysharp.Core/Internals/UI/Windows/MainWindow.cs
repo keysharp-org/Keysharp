@@ -332,12 +332,10 @@ namespace Keysharp.Internals.UI.Windows
 					m.Result = 0;
 					return;
 
-				// A close that did not come from the window's own chrome: a script's WinClose, a tool ending the
-				// task, or a Reload's replacement. As in AHK it exits, for the reason the sender put in wParam.
+				// A close that did not come from the window's own chrome: a script's WinClose or a tool ending the
+				// task. As in AHK it exits.
 				case WindowsAPI.WM_CLOSE:
-					_ = Keysharp.Internals.Flow.ExitAppInternal(OwnerScript,
-							m.WParam == ReloadHandshake.ExitByReload ? Keysharp.Builtins.Flow.ExitReasons.Reload : Keysharp.Builtins.Flow.ExitReasons.Close,
-							null, false);
+					_ = Keysharp.Internals.Flow.ExitAppInternal(OwnerScript, Keysharp.Builtins.Flow.ExitReasons.Close, null, false);
 
 					m.Result = 0;
 					return;//A veto leaves it open; an accepted exit already closed it during Script.Dispose.

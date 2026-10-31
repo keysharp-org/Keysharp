@@ -913,7 +913,7 @@ namespace Keysharp.Runtime
 
 			// A replacement launched by Reload retires the instance it replaces through the handshake, so the
 			// single-instance policy must not act on it as well: Prompt would ask about that very instance.
-			if (Environment.GetEnvironmentVariable(ReloadHandshake.PredecessorVar) != null)
+			if (Environment.GetEnvironmentVariable(ReloadHandshake.HandshakeVar) != null)
 				return false;
 
 			if (Env.FindCommandLineArg("force") != null || Env.FindCommandLineArg("f") != null)
@@ -1410,8 +1410,7 @@ namespace Keysharp.Runtime
 						return;
 
 					context.Cancel = true;
-					var reason = FlowData.ReloadInProgress ? Keysharp.Builtins.Flow.ExitReasons.Reload : Keysharp.Builtins.Flow.ExitReasons.Close;
-					pendingTerminationSignals.Enqueue(reason);
+					pendingTerminationSignals.Enqueue(Keysharp.Builtins.Flow.ExitReasons.Close);
 
 					if (Interlocked.CompareExchange(ref acceptedTerminationSignal, 1, 0) == 0)
 						_ = mainEventScheduler.EnqueueCallback(ProcessTerminationSignals, ScriptEventQueue.Interactive);
@@ -1452,7 +1451,7 @@ namespace Keysharp.Runtime
 		{
 			// Compiled and about to run is where AHK has a replacement retire the instance it replaces, late enough
 			// that a script which no longer compiles never costs the running one. Returning ends this process
-			// without running the script, because that instance declined to go.
+			// without running the script if the handoff fails or the old instance does not exit.
 			if (!ReloadHandshake.AskPredecessorToExit(errorStdOut))
 			{
 				Environment.ExitCode = 2;//AutoHotkey's CRITICAL_ERROR for a replacement which did not run.
