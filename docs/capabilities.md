@@ -754,7 +754,7 @@ Status legend:
 | IsSet() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The IsSet operator and IsSetRef function return a non-zero number if the specified variable has been assigned a value. |
 | IsSetRef() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The IsSet operator and IsSetRef function return a non-zero number if the specified variable has been assigned a value. |
 | IsSpace() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns true if a string contains only whitespace. |
-| IsTime() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns true if a value is a valid time/date string. |
+| IsTime() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Validates an ASCII timestamp with an even length from 4 to 14 digits, year 1601 through 9999, and valid date/time fields. Omitted fields default to January, day 1 and midnight. Trailing spaces and tabs count toward the length, as in AutoHotkey. Arguments other than a string or StringBuffer raise TypeError. |
 | IsUpper() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns true if a string is uppercase. |
 | IsXDigit() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns true if a string contains only hexadecimal digits. |
 | Json | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Encodes script values as JSON and decodes JSON into script values. Indent pretty-prints, CaseSense sets the key comparison of every decoded Map, and a JSON null decodes to unset unless NullValue names a stand-in for it. A Boolean is written as true/false where the Integer 1 is written as 1. |

@@ -7464,7 +7464,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns true if a value is a valid time/date string.",
+                     "notes":  "Validates an ASCII timestamp with an even length from 4 to 14 digits, year 1601 through 9999, and valid date/time fields. Omitted fields default to January, day 1 and midnight. Trailing spaces and tabs count toward the length, as in AutoHotkey. Arguments other than a string or StringBuffer raise TypeError.",
                      "tested-by":  "misc-is.ahk"
                  },
                  {

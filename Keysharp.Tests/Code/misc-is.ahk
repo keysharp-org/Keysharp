@@ -287,6 +287,19 @@ Throws(() => IsTime(a), A_LineNumber, TypeError)
 
 Throws(() => IsTime(m), A_LineNumber, TypeError)
 
+Throws(() => IsTime(2024), A_LineNumber, TypeError)
+
+Throws(() => IsTime(2024.0), A_LineNumber, TypeError)
+
+AssertEq(IsTime(StringBuffer("2024")), 1, A_LineNumber)
+
+; AutoHotkey allows trailing spaces and tabs: each field parses the digits it has, and the length counts them.
+for stamp in ["1601", "9999", "20240229", "20000229", "2024012 ", "2024013`t", "20240101  ", "2024010112  ", "2024" Chr(0) "xx"]
+	AssertEq(IsTime(stamp), 1, A_LineNumber)
+
+for stamp in ["", "1600", "0000", "20241", "2024010100000000", " 2024", "2024 ", "2024  ", "202401  ", "2024020 ", "  2024", "+20240", "0x2024", "2024 1", "2024`n", "2023-01-01", "202400", "20240100", "20230229", "19000229", "20240101240000", "20240101236000", "20240101235960", Chr(0xFF12) "024"]
+	AssertEq(IsTime(stamp), 0, A_LineNumber)
+
 ; Only spaces and tabs may surround a number, as in arithmetic, and only 0 through 9 are digits.
 AssertEq(IsInteger(" 5`t"), 1, A_LineNumber)
 

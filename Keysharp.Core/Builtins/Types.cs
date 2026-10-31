@@ -224,27 +224,39 @@ namespace Keysharp.Builtins
 		/// <returns>1 if value is a valid date-time stamp, else 0.</returns>
 		public static long IsTime(object value)
 		{
-			if (!CharTestText(value, out var s))
-				return 0L;
-
-			DateTime dt;
-
-			try
+			if (value is not (string or Ks.StringBuffer))
 			{
-				dt = Conversions.ToDateTime(s);
-
-				if (dt == DateTime.MinValue)
-					return 0L;
-			}
-			catch
-			{
+				_ = Errors.TypeErrorOccurred(value, typeof(string));
 				return 0L;
 			}
 
-			var y = DateTime.Now.Year;
-			int[] t = [y / 100, y % 100, 1, 1, 0, 0, 0, 0];
-			var tempdt = new DateTime(t[1], t[2], t[3], t[4], t[5], t[6], CultureInfo.CurrentCulture.Calendar);//Will be wrong if parsing totally failed.
-			return dt != tempdt ? 1L : 0L;
+			if (!value.CoerceString(out var s))
+				return 0L;
+
+			var text = s.AsSpan();
+			var terminator = text.IndexOf('\0');
+			if (terminator >= 0)
+				text = text[..terminator];
+
+			// The length counts trailing spaces and tabs, which AutoHotkey allows: each field parses the digits it has.
+			var digits = text.TrimEnd(" \t");
+			if (text.Length is < 4 or > 14 || (text.Length & 1) != 0 || digits.Length < 4 || digits.ContainsAnyExceptInRange('0', '9'))
+				return 0L;
+
+			var year = Field(digits, 0) * 100 + Field(digits, 2);
+			var month = text.Length >= 6 ? Field(digits, 4) : 1;
+			var day = text.Length >= 8 ? Field(digits, 6) : 1;
+			var hour = text.Length >= 10 ? Field(digits, 8) : 0;
+			var minute = text.Length >= 12 ? Field(digits, 10) : 0;
+			var second = text.Length >= 14 ? Field(digits, 12) : 0;
+			return year >= 1601 && month is >= 1 and <= 12
+				&& day >= 1 && day <= DateTime.DaysInMonth(year, month)
+				&& hour < 24 && minute < 60 && second < 60 ? 1L : 0L;
+
+			static int Field(ReadOnlySpan<char> digits, int offset) =>
+				offset >= digits.Length ? 0
+				: offset + 1 == digits.Length ? digits[offset] - '0'
+				: (digits[offset] - '0') * 10 + digits[offset + 1] - '0';
 		}
 
 		/// <summary>
