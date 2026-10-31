@@ -810,7 +810,7 @@ Status legend:
 | Map.Delete() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Deletes a key/value pair and returns its value. A missing key raises UnsetItemError, or returns unset in v2.1 compatibility mode. |
 | Map.Get() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets a value by key with optional fallback default. |
 | Map.Has() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns whether a dictionary contains a value, even an empty one, for the given key. |
-| Map.Set() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets zero or more items. |
+| Map.Set() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets key/value pairs and returns the map. No arguments preserve existing entries; odd argument counts raise Error before mutation, and pairs with an unset key or value are skipped. |
 | Map.ToString() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns the map as [key: value, ...], formatted as Array.ToString() formats its elements. |
 | Max() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the larger of two numbers. If either is not numeric, the empty string is returned. The largest value of an array is computed if one is passed in. |
 | MemberError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |

@@ -8068,7 +8068,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Sets zero or more items.",
+                     "notes":  "Sets key/value pairs and returns the map. No arguments preserve existing entries; odd argument counts raise Error before mutation, and pairs with an unset key or value are skipped.",
                      "tested-by":  "collections-map.ahk"
                  },
                  {

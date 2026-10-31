@@ -394,6 +394,7 @@ naProbe := NamedArgs("k", 5)
 Assert((naProbe is NamedArgs) && (naProbe is Object), A_LineNumber)
 Assert(naProbe["k"] == 5 && naProbe.Has("k"), A_LineNumber)
 AssertEq(f3("A", NamedArgs()), "A/B/C", A_LineNumber)  ; an empty container is legal and binds nothing
+Assert(!NamedArgs("b", unset).Has("b"), A_LineNumber)  ; an unset name is the same as omitting it, as in Map
 Throws(() => Type(naProbe), A_LineNumber)                 ; a trailing container names Type's parameter -- by design
 Throws(() => NamedArgs("a"), A_LineNumber)                ; a dangling name, like Object()
 

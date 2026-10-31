@@ -52,17 +52,13 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>
-			/// Stores the pairs. A lone <see cref="Map"/> argument is copied rather than handed to
-			/// <c>Map.Set</c>, which would adopt its dictionary by reference and overwrite the case mode pinned
-			/// above with the source's -- leaving a container that shares another object's names and matches them
-			/// case-sensitively. Everything else uses Map's own handling.
+			/// Stores the pairs, or copies the entries of a lone <see cref="Map"/> argument. Everything else
+			/// uses Map's own handling.
 			/// </summary>
 			private void Fill(object[] nameValuePairs)
 			{
 				if (nameValuePairs is [Map source])
 				{
-					_ = Set(null);
-
 					foreach (var (name, value) in source)
 						this[name] = value;
 

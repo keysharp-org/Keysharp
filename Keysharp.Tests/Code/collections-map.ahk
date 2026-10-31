@@ -186,14 +186,29 @@ val := m.Count
 Assert(val = 3, A_LineNumber)
 
 m.Clear()
-m.Set("one", 1, "two", 2, "three", 3, "fourbad")
+Throws(() => m.Set("one", 1, "two", 2, "three", 3, "fourbad"), A_LineNumber, Error)
 val := m.Count
 
-Assert(val = 3, A_LineNumber)
+AssertEq(val, 0, A_LineNumber)
+
+m := Map("keep", 1)
+Assert(m.Set() == m, A_LineNumber)
+AssertEq(m.Count, 1, A_LineNumber)
+Throws(() => m.Set(["a", 1]), A_LineNumber, Error)
+Throws(() => Map(["a", 1]), A_LineNumber, Error)
+Throws(() => Map("a", 1, "odd"), A_LineNumber, Error)
+m.Set("skip", unset, unset, 3, "ok", 4)
+AssertEq(m.Count, 2, A_LineNumber)
+Assert(!m.Has("skip"), A_LineNumber)
+m.Set("ok", unset)
+AssertEq(m["ok"], 4, A_LineNumber)
+Assert(m.Set("ok", 5, "last", 6) == m, A_LineNumber)
+AssertEq(m["ok"], 5, A_LineNumber)
+AssertEq(m["last"], 6, A_LineNumber)
 
 m.Clear()
 arr := ["one", 1, "two", 2, "three", 3]
-m.Set(arr)
+m.Set(arr*)
 val := m.Count
 
 Assert(val = 3, A_LineNumber)
@@ -214,7 +229,7 @@ val := m.Count
 
 Assert(val = 3, A_LineNumber)
 
-m := Map( ["one", 1, "two", 2, "three", 3] )
+m := Map( ["one", 1, "two", 2, "three", 3]* )
 val := m.Count
 
 Assert(val = 3, A_LineNumber)

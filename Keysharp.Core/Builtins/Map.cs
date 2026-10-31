@@ -252,13 +252,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Initializes a new instance of the <see cref="Map"/> class.
 		/// </summary>
-		/// <param name="args">An array of values to initialize the map with.<br/>
-		/// This can be one of several values:<br/>
-		///     null: creates an empty map.<br/>
-		///     object[] or <see cref="Array"/>: adds every two elements as a key,value pair to the underlying map.<br/>
-		///     <see cref="Map"/>: assigns the map directly to the underlying dictionary as well as the case sense mode.<br/>
-		///     <see cref="Dictionary{object, object}"/>: assigns the dictionary directly to the underlying dictionary.
-		/// </param>
+		/// <param name="args">Alternating keys and values. An empty array creates an empty map.</param>
 		/// <returns>Empty string, unused.</returns>
 		public override object __New(params object[] args)
 		{
@@ -394,73 +388,23 @@ namespace Keysharp.Builtins
 		public bool Has(object key) => map.ContainsKey(key);
 
 		/// <summary>
-		/// Sets zero or more items.
-		/// The items can be either an <see cref="Array"/>, a <see cref="DictionaryBase{object,object}"/>, or an object[].
+		/// Sets zero or more key/value pairs, skipping pairs containing an unset key or value.
 		/// </summary>
 		/// <param name="args">The values to set, arranged as key,value,key2,value2,etc...</param>
-		/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if values was not of a supported type.</exception>
+		/// <exception cref="Error">The number of arguments is odd.</exception>
 		public Map Set(params object[] args)
 		{
-			if (enumerableMap != null)
-				enumerableMap = null;
+			var count = args?.Length ?? 0;
 
-			if (args == null || args.Length == 0)
+			if ((count & 1) != 0)
 			{
-				map.Clear();
+				_ = Errors.ErrorOccurred("Invalid number of parameters.");
+				return this;
 			}
-			else
-			{
-				if (args.Length == 1)
-				{
-					if (args[0] is Map m)
-					{
-						map = m.map;
-						caseSense = m.caseSense;
-					}
-					else if (args[0] is Dictionary<object, object> dkt)
-					{
-						map = dkt;
-					}
-					else if (args[0] is Array temp)
-					{
-						var count = (temp.Count / 2) * 2;//Do not flatten here because the caller may want a map of maps, or a map of arrays.
 
-						for (var i = 0; i < count - 1; i += 2)
-							Insert(temp.array[i], temp.array[i + 1]);//Access the underlying ArrayList directly for performance.
-					}
-					else if (args[0] is Dictionary<string, object> tempm)
-					{
-						foreach (var kv in tempm)
-							Insert(kv.Key, kv.Value);
-					}
-					else if (args[0] is IEnumerable ie && ie is not string)
-					{
-						bool isKey = true;
-						object key = null;
-
-						foreach (var k in ie)
-						{
-							if (isKey)
-								key = k;
-							else
-								Insert(key, k);
-
-							isKey = !isKey;
-						}
-					}
-					else
-					{
-						_ = Errors.ValueErrorOccurred($"Improper object type of {args[0].GetType()} passed to Map constructor.");
-					}
-				}
-				else
-				{
-					var count = (args.Length / 2) * 2;
-
-					for (var i = 0; i < count; i += 2)
-						Insert(args[i], args[i + 1]);
-				}
-			}
+			for (var i = 0; i < count; i += 2)
+				if (args[i] != null && args[i + 1] != null)
+					Insert(args[i], args[i + 1]);
 
 			return this;
 		}

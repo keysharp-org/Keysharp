@@ -7,7 +7,6 @@ public class ConstructionBench : BaseTest
 {
 	private readonly object[] values = [1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L];
 	private readonly object[] pairs = ["One", 1L, "Two", 2L, "Three", 3L, "Four", 4L];
-	private readonly Dictionary<object, object> dictionary = new() { ["One"] = 1L, ["Two"] = 2L };
 	private object[] foreign = null!;
 	private object arrayClass = null!, mapClass = null!;
 	private InputHook hook = null!;
@@ -41,9 +40,6 @@ public class ConstructionBench : BaseTest
 
 	[Benchmark]
 	public object MapCaseInsensitive() => new CaseInsensitiveMap(pairs);
-
-	[Benchmark]
-	public object MapAdoptDictionary() => new Map(dictionary);
 
 	[Benchmark]
 	public object NamedArguments() => new Ks.NamedArgs(pairs);
