@@ -20,7 +20,7 @@ public static long TakeList(List<string> l) => l.Count;
 
 public static bool IsListObject(object value) => value is List<string>;
 
-public static bool IsManagedInstance(Keysharp.Builtins.Ks.Clr.ManagedInstance value) => value != null;
+public static bool IsClrInstance(Keysharp.Builtins.Ks.Clr.Instance value) => value != null;
 
 public static object BoxedInt() => 7;                                    // an Int32 hiding in an object return
 
@@ -84,7 +84,7 @@ public static long SumValues(IDictionary<object, object> d)
 
 public static bool AddViaDictionary(IDictionary<object, object> d) { d.Add("added", 9L); return d.ContainsKey("added"); }
 
-public static bool NativeIsSame(Keysharp.Builtins.Ks.Clr.ManagedInstance wrapper, object raw) => ReferenceEquals(wrapper.Native, raw);
+public static bool NativeIsSame(Keysharp.Builtins.Ks.Clr.Instance wrapper, object raw) => ReferenceEquals(wrapper.Native, raw);
 
 public static string BytesToBase64(byte[] bytes) => System.Convert.ToBase64String(bytes);
 
@@ -123,7 +123,7 @@ class Meas
 
 ; A declared CLR return type reaches the script wrapped, with Ks.Clr's member-access semantics.
 l := MakeList()
-Assert(IsManagedInstance(l), A_LineNumber)
+Assert(IsClrInstance(l), A_LineNumber)
 AssertEq(l.Count, 2, A_LineNumber)
 AssertEq(l[1], "b", A_LineNumber)
 getterHolder := {}
@@ -137,11 +137,11 @@ Assert(IsListObject(l), A_LineNumber)
 
 ; Ordinary AHK calls and generated globals preserve the wrapper; only marked CLR boundaries unwrap it.
 Identity(value) => value
-Assert(IsManagedInstance(Identity(l)), A_LineNumber)
+Assert(IsClrInstance(Identity(l)), A_LineNumber)
 global PlainHolder := ""
 plainHolderName := "PlainHolder"
 %plainHolderName% := l
-Assert(IsManagedInstance(%plainHolderName%), A_LineNumber)
+Assert(IsClrInstance(%plainHolderName%), A_LineNumber)
 
 ; An `object` return holding a narrow numeric widens to a script Integer instead of leaking a boxed Int32.
 AssertEq(Type(BoxedInt()), "Integer", A_LineNumber)
@@ -175,7 +175,7 @@ AssertEq(DayValue(%storedDayName%), 5, A_LineNumber)
 ; A non-variadic object[] is wrapped on return and unwrapped when its declared parameter receives it.
 AssertEq(TakeObjects(Objects()), 2, A_LineNumber)
 
-; A Type becomes a constructible ManagedType, exactly as Ks.Clr hands one out.
+; A Type becomes a constructible Clr.Type, exactly as Ks.Clr hands one out.
 sb := SbType()("hello")
 sb.Append("!")
 AssertEq(sb.ToString(), "hello!", A_LineNumber)
@@ -208,7 +208,7 @@ AssertEq(%sname%.Count, 1, A_LineNumber)
 
 ; An object-typed inline field is distinct from generated object fields and follows the CLR boundary.
 objectSlotName := "ObjectSlot"
-Assert(IsManagedInstance(%objectSlotName%), A_LineNumber)
+Assert(IsClrInstance(%objectSlotName%), A_LineNumber)
 AssertEq(%objectSlotName%.ToString(), "field", A_LineNumber)
 
 ; ...and a wrapped value written back through the store unwraps into them.
@@ -293,11 +293,12 @@ Assert(AddViaDictionary(dict), A_LineNumber)
 AssertEq(dict["added"], 9, A_LineNumber)
 
 ; Clr.Wrap is the Ks.Clr view of a script collection, and Native hands inline C# the raw object back.
-Assert(IsManagedInstance(Clr.Wrap(dict)), A_LineNumber)
+Assert(IsClrInstance(Clr.Wrap(dict)), A_LineNumber)
 AssertEq(Clr.Wrap(dict).Count, 3, A_LineNumber)
+AssertEq(Type(Clr.Wrap(dict)), "Clr.Instance", A_LineNumber)
 Assert(NativeIsSame(Clr.Wrap(dict), dict), A_LineNumber)
 arr2 := [10, 20]
-Assert(IsManagedInstance(Clr.Wrap(arr2)), A_LineNumber)
+Assert(IsClrInstance(Clr.Wrap(arr2)), A_LineNumber)
 Assert(NativeIsSame(Clr.Wrap(arr2), arr2), A_LineNumber)
 
 ; Wrapping something which is already a Clr view is the identity, so a second Wrap does not build a
@@ -318,7 +319,7 @@ ScribbleSpan(hiBuf)
 AssertEq(NumGet(hiBuf, 0, "UChar"), 0xFE, A_LineNumber)
 
 ; A byte[] return is still a wrapped CLR array, and unwraps back into a byte[] parameter.
-Assert(IsManagedInstance(ThreeBytes()), A_LineNumber)
+Assert(IsClrInstance(ThreeBytes()), A_LineNumber)
 AssertEq(ByteCount(ThreeBytes()), 3, A_LineNumber)
 
 ; Any script object exposing Ptr and Size is accepted by byte-array and byte-span parameters.

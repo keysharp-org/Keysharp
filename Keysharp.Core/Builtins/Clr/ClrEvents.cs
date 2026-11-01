@@ -8,8 +8,8 @@ namespace Keysharp.Builtins
 													| BindingFlags.Instance | BindingFlags.Static | BindingFlags.IgnoreCase;
 
 			/// <summary>
-			/// A live CLR event subscription. Returned by <c>OnEvent</c> on a <see cref="ManagedInstance"/> (instance
-			/// events) or a <see cref="ManagedType"/> (static events, e.g. Microsoft.Win32.SystemEvents).
+			/// A live CLR event subscription. Returned by <c>OnEvent</c> on a <see cref="Clr.Instance"/> (instance
+			/// events) or a <see cref="Clr.Type"/> (static events, e.g. Microsoft.Win32.SystemEvents).
 			/// <para>
 			/// Holding the subscription is what makes detaching reliable. Removing a handler through the CLR requires
 			/// the *same* Delegate instance that was added, and one is built per call from the script function object,
@@ -20,11 +20,11 @@ namespace Keysharp.Builtins
 			public sealed class EventSubscription : EventHook
 			{
 				private readonly object instance;                  // null for a static event
-				private readonly Type declaringType;
+				private readonly System.Type declaringType;
 				private readonly EventInfo eventInfo;
 				private readonly object scriptTarget;
 
-				internal EventSubscription(object instance, Type type, EventInfo eventInfo, object callback, object scriptTarget)
+				internal EventSubscription(object instance, System.Type type, EventInfo eventInfo, object callback, object scriptTarget)
 					: base(callback)
 				{
 					this.instance = instance;
@@ -36,7 +36,7 @@ namespace Keysharp.Builtins
 				/// <summary>The event this subscription is attached to.</summary>
 				public string EventName => eventInfo.Name;
 
-				/// <summary>The ManagedInstance or ManagedType the subscription is attached to.</summary>
+				/// <summary>The Clr.Instance or Clr.Type the subscription is attached to.</summary>
 				public object Target => scriptTarget;
 
 				// Each run attaches a delegate of its own when registered.
@@ -61,7 +61,7 @@ namespace Keysharp.Builtins
 			/// If a CLR type genuinely declares a member called <c>OnEvent</c>, this wins.
 			/// </para>
 			/// </summary>
-			private static bool TryEventCall(object instance, Type type, object scriptTarget, string name, object[] args, out object result)
+			private static bool TryEventCall(object instance, System.Type type, object scriptTarget, string name, object[] args, out object result)
 			{
 				result = null;
 
@@ -103,10 +103,10 @@ namespace Keysharp.Builtins
 			}
 
 			/// <summary>
-			/// Subscribes <paramref name="callback"/> to <paramref name="ev"/>. Shared by ManagedInstance (instance
-			/// events, <paramref name="instance"/> non-null) and ManagedType (static events).
+			/// Subscribes <paramref name="callback"/> to <paramref name="ev"/>. Shared by Clr.Instance (instance
+			/// events, <paramref name="instance"/> non-null) and Clr.Type (static events).
 			/// </summary>
-			private static object Subscribe(object instance, Type type, object scriptTarget, EventInfo ev, object callback)
+			private static object Subscribe(object instance, System.Type type, object scriptTarget, EventInfo ev, object callback)
 			{
 				var argCount = ev.EventHandlerType?.GetMethod("Invoke")?.GetParameters().Length ?? 0;
 

@@ -1052,7 +1052,7 @@ namespace Keysharp.Builtins
 								break;
 
 							case "handler":
-								if ((value as Clr.ManagedInstance)?.Native is not HttpMessageHandler handler)
+								if ((value as Clr.Instance)?.Native is not HttpMessageHandler handler)
 								{
 									_ = Errors.TypeErrorOccurred(value, typeof(HttpMessageHandler));
 									return null;

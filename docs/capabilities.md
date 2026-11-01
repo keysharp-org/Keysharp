@@ -373,20 +373,20 @@ Status legend:
 | ClipboardAll() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | Captures and restores all advertised clipboard formats on Windows, X11, and macOS. The Wayland extension fallback can restore only one selected MIME representation at a time. |
 | ClipCursor() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Confines physical cursor movement to a screen-coordinate rectangle with exclusive right/bottom edges; call without arguments to release. Coordinates ignore CoordMode Mouse. Artificial cursor movement is allowed. Enforcing the boundary observes and suppresses motion, so it requires InputMonitoring and InputControl; releasing it never requests permission. Linux requires keysharp-input and uses suppress-and-warp-back enforcement, so the cursor may briefly cross the boundary. Wayland also requires a compositor backend that can query and move the global cursor. macOS maps the two capabilities to Input Monitoring and Accessibility. |
 | ClipWait() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Waits until the native platform clipboard contains data. |
+| Clr | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The platform-independent CLR interop class for loading and invoking .NET types. Buffer and Ptr/Size objects are accepted by byte[] and byte-span parameters. |
+| Clr.Assembly | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform-independent wrapper for a loaded managed assembly. |
 | Clr.GetNamespaceName() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the namespace name for a managed wrapper or type; implemented by the shared managed runtime. |
+| Clr.GetType() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Resolves managed types through the platform-independent CLR interop surface. |
 | Clr.GetTypeName() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the type name for a managed wrapper or object; implemented by the shared managed runtime. |
 | Clr.Hooks | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | An Array of every running CLR event subscription this script made, in start order, mixing instance and static events. A snapshot. |
+| Clr.Instance | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform-independent managed object instance wrapper. |
+| Clr.Instance.__Enum() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Enumerates members exposed by the platform-independent managed instance wrapper. |
+| Clr.Instance.OnEvent() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Subscribes Callback to an instance event, or a Clr.Type's static event, and runs it on the subscribing thread. Returns a started Clr.EventSubscription that Stop() detaches and Start() re-attaches; it does not keep the script running. |
 | Clr.Load() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Loads a managed assembly for CLR interop through the shared .NET runtime. |
 | Clr.LoadPackage() | 🟢 Full | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | Keysharp-only runtime NuGet package loading. Calls accumulate and report version conflicts. Prefer #Package when the dependency is known at compile time. Windows verified. |
-| Clr.ManagedAssembly | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform-independent wrapper for a loaded managed assembly. |
-| Clr.ManagedInstance | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform-independent managed object instance wrapper. |
-| Clr.ManagedInstance.__Enum() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Enumerates members exposed by the platform-independent managed instance wrapper. |
-| Clr.ManagedInstance.OnEvent() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Subscribes Callback to an instance event, or a ManagedType's static event, and runs it on the subscribing thread. Returns a started Clr.EventSubscription that Stop() detaches and Start() re-attaches; it does not keep the script running. |
-| Clr.ManagedNamespace | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform-independent managed namespace wrapper used for type resolution. |
-| Clr.ManagedType | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform-independent managed type wrapper for reflection and invocation. |
-| Clr.Type() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Resolves managed types through the platform-independent CLR interop surface. |
+| Clr.Namespace | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform-independent managed namespace wrapper used for type resolution. |
+| Clr.Type | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Platform-independent managed type wrapper for reflection and invocation. |
 | Clr.Wrap() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | A value as an ordinary Ks.Clr object, so its own full CLR surface is reachable late-bound -- this is how an Array reaches its IList members and a Map its IDictionary ones. The result is always a view over the value itself; to reach the .NET object a builtin is a facade over, call that type's own ToClr(), which exists only on the types which have one. Wrapping something already wrapped is the identity. |
-| Clr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates the platform-independent CLR interop facade for loading and invoking .NET types. Buffer and Ptr/Size objects are accepted by byte[] and byte-span parameters. |
 | Collect() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Requests a .NET garbage collection without waiting for finalizers, so __Delete can still run later. |
 | COM APIs | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | Real COM on Windows; the same late-bound surface is backed by D-Bus on Linux and by Apple Events on macOS, so target strings and member names differ per platform. The macOS backend is implemented but not yet verified on hardware. Functions that need vtables, reference counts or raw pointers throw off Windows. |
 | ComCall() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ComCall function calls a native COM interface method by index. A return type of 'void' means the call returns no value, and string arguments behave as for DllCall. |
@@ -882,8 +882,8 @@ Status legend:
 | ObjBindMethod() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The ObjBindMethod function creates a BoundFunc object which calls a method of a given object. |
 | ObjCreateWithDataPtr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a directly constructible Object or Struct instance with an external data pointer, without calling __Init, __New or static Call. Enables __Delete without freeing the external memory; ObjSetDataPtr can rebind it. Typed properties remain restricted to struct classes. |
 | Object.__Ref() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a property-reference (PropRef) object. |
-| Object() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a new Object; optional key/value arguments initialize own properties. |
 | Object.Clone() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a shallow copy of an Object, Array or Map, with independent own properties and container storage. Contained objects remain shared. Instances created by ObjCreateWithDataPtr raise TypeError. |
+| Object() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a new Object; optional key/value arguments initialize own properties. |
 | ObjFromPtr() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Retrieves the managed object for an IUnknown pointer, or creates a native COM wrapper which takes ownership of the supplied native reference. Returning a managed object does not consume a native reference. |
 | ObjFromPtrAddRef() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Retrieves the managed object for an IUnknown pointer, or creates a native COM wrapper which owns an additional native reference. Returning a managed object does not add a native reference. The caller retains ownership of any reference it supplied. |
 | ObjGetBase | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the value's base object. Differs in that it only returns the name of the base type as a string. |
@@ -1035,6 +1035,7 @@ Status legend:
 | Switch | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Selects one case branch based on a value/expression. |
 | SysGet() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Gets system information. Non-Windows builds implement monitor dimensions/count, mouse presence/buttons, network state and selected session metrics; Win32-only system metrics have no portable equivalent and are not implemented. |
 | SysGetIPAddresses() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The SysGetIPAddresses function returns an array of the system's IPv4 addresses. |
+| ZeroDivisionError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
 | Tan() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the tangent of a number. |
 | Tanh() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the hyperbolic tangent of a number. |
 | TargetError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
@@ -1144,4 +1145,3 @@ Status legend:
 | WinWaitActive() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | The WinWaitActive and WinWaitNotActive functions wait until the specified window is active or not active. |
 | WinWaitClose() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | The WinWaitClose function waits until no matching windows can be found. |
 | WinWaitNotActive() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | The WinWaitActive and WinWaitNotActive functions wait until the specified window is active or not active. |
-| ZeroDivisionError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |

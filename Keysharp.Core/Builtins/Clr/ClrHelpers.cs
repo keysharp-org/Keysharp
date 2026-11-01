@@ -304,11 +304,11 @@ namespace Keysharp.Builtins
 		{
 			switch (o)
 			{
-				case Clr.ManagedType mt:
+				case Clr.Type mt:
 					type = mt._type;
 					return true;
 
-				case Clr.ManagedInstance mi:
+				case Clr.Instance mi:
 					type = mi._type;
 					return true;
 
@@ -469,7 +469,7 @@ namespace Keysharp.Builtins
 
 		/// <summary>
 		/// Every namespace and namespace prefix seen while indexing. A namespace walk that has left the map is
-		/// provably dead, which is what lets <see cref="Ks.Clr.ManagedNamespace"/> report a wrong type path at the
+		/// provably dead, which is what lets <see cref="Ks.Clr.Namespace"/> report a wrong type path at the
 		/// point the path goes wrong instead of silently yielding a node that stringifies to the dotted name.
 		/// </summary>
 		internal static bool IsKnownNamespace(string ns)
@@ -1261,12 +1261,12 @@ namespace Keysharp.Builtins
 				if (penalizeComparerForCallable && IsCallableLike(arg) && IsComparerLike(pt)) { score += 5; /* keep evaluating */ }
 
 				// Managed wrappers
-				if (arg is Clr.ManagedInstance mi)
+				if (arg is Clr.Instance mi)
 				{
 					if (pt == mi._type) { score += 0; continue; }
 					if (pt.IsAssignableFrom(mi._type)) { score += 1; continue; }
 				}
-				if (arg is Clr.ManagedType)
+				if (arg is Clr.Type)
 				{
 					if (pt == typeof(Type) || pt.IsAssignableFrom(typeof(Type))) { score += 0; continue; }
 				}
@@ -1473,18 +1473,18 @@ namespace Keysharp.Builtins
 				target = target.GetElementType();
 
 			// unwrap our proxies when targeting CLR
-			if (value is Clr.ManagedType mt)
+			if (value is Clr.Type mt)
 			{
 				if (target == null || target == typeof(Type))
 					return Converted(mt._type, out result);
 			}
-			if (value is Clr.ManagedInstance mi)
+			if (value is Clr.Instance mi)
 			{
 				if (target == null) return Converted(mi._instance, out result);
 				return TryConvertScalarToCLR(mi._instance, target, out result);
 			}
 			// A Ks.Task hands its underlying task to a Task-shaped parameter, so a script task can go back into
-			// Task.WhenAll and friends. Unlike ManagedInstance it stays wrapped for an untyped slot: a Ks.Task
+			// Task.WhenAll and friends. Unlike Clr.Instance it stays wrapped for an untyped slot: a Ks.Task
 			// is a script object in its own right, and an `object` parameter should receive it as one.
 			if (value is Ks.KeysharpTask kst && target != null && target != typeof(object) && target.IsInstanceOfType(kst.Underlying))
 				return Converted(kst.Underlying, out result);
@@ -1562,7 +1562,7 @@ namespace Keysharp.Builtins
 		/// applies. This is what Clr.Wrap over a Ks.Task hands back, so the raw task surface stays reachable.
 		/// </summary>
 		internal static object WrapManaged(object value) =>
-			value == null ? null : new Clr.ManagedInstance(value.GetType(), value);
+			value == null ? null : new Clr.Instance(value.GetType(), value);
 
 		internal static object ConvertOut(object value)
 		{
@@ -1571,11 +1571,11 @@ namespace Keysharp.Builtins
 			// The types a script already has, first: between them they are the overwhelming majority of returns.
 			if (value is string or bool or long or double or Any) return value;
 
-			if (value is Type t) return new Clr.ManagedType(t);
+			if (value is Type t) return new Clr.Type(t);
 
 			// A task becomes Ks.Task so Ks.Clr and #CSharp agree on what work-in-flight looks like, and so
 			// `.Result` is a snapshot rather than a hard block that would freeze the message loop. One isinst,
-			// on a path that was already allocating a ManagedInstance. ValueTask is a struct and is deliberately
+			// on a path that was already allocating a Clr.Instance. ValueTask is a struct and is deliberately
 			// left alone here; Await() and the Task() constructor accept it.
 			if (value is Task task) return Ks.KeysharpTask.Wrap(task);
 
@@ -1585,8 +1585,8 @@ namespace Keysharp.Builtins
 			// is told apart here.
 			var widened = ArgCoercer.NormalizeScalar(value);
 
-			// Wrap any CLR object as a ManagedInstance for AHK-like behavior
-			return ReferenceEquals(widened, value) ? new Clr.ManagedInstance(value.GetType(), value) : widened;
+			// Wrap any CLR object as a Clr.Instance for AHK-like behavior
+			return ReferenceEquals(widened, value) ? new Clr.Instance(value.GetType(), value) : widened;
 		}
 
 		// -------- Overload group cache --------

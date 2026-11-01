@@ -95,7 +95,13 @@ namespace Keysharp.Internals.Invoke
 			var rd = script.ReflectionsData;
 
 			foreach (var t in builtinTypes.Value)
-				rd.stringToTypes[Script.GetUserDeclaredName(t) ?? t.Name] = t;
+			{
+				var name = Script.GetUserDeclaredName(t) ?? t.Name;
+
+				// A nested class is reached through its container, so it must not take a global class's name (Clr.Object, Object).
+				if (!t.IsNested || !rd.stringToTypes.TryGetValue(name, out var existing) || !Script.IsGlobalClass(existing))
+					rd.stringToTypes[name] = t;
+			}
 
 			// Runtime.Ahk is intentionally outside Keysharp.Builtins, but parser import resolution
 			// still needs it to support `import AHK`.

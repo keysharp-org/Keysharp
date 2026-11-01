@@ -10,15 +10,15 @@ namespace Keysharp.Builtins
 				if (!assemblyOrPath.CoerceString(out var s))
 					return DefaultObject;
 
-				Assembly asm;
+				System.Reflection.Assembly asm;
 
 				// A miss used to throw FileNotFoundException straight out of here, past any script try/catch, killing
 				// the pseudo-thread -- so "load this if it exists" was unwriteable. Mapping it makes probing possible.
 				try
 				{
 					asm = s.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) || s.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
-						  ? Assembly.LoadFrom(s)
-						  : Assembly.Load(s);
+						  ? System.Reflection.Assembly.LoadFrom(s)
+						  : System.Reflection.Assembly.Load(s);
 				}
 				catch (Exception ex)
 				{
@@ -32,8 +32,8 @@ namespace Keysharp.Builtins
 				return s.Contains('.')
 					   || !asm.GetName().Name.Equals(s, StringComparison.OrdinalIgnoreCase)
 					   || !TypeResolver.IsKnownNamespaceIn([asm], s)
-					? new ManagedAssembly(asm)
-					: new ManagedNamespace([asm], s);
+					? new Assembly(asm)
+					: new Namespace([asm], s);
 			}
 
 			/// <summary>
@@ -51,7 +51,7 @@ namespace Keysharp.Builtins
 			/// <param name="version">Omitted for the newest stable release; otherwise the same forms
 			/// <c>#Package</c> accepts — partial (<c>13</c>), exact (<c>13.0.3</c>) or bounded (<c>&gt;=13.0 &lt;14</c>).</param>
 			/// <param name="optional">When true, an unavailable package yields an empty return instead of an error.</param>
-			/// <returns>A ManagedAssembly over the package's own assemblies — so its types are reachable directly from
+			/// <returns>A Clr.Assembly over the package's own assemblies — so its types are reachable directly from
 			/// the return value as well as through <c>Clr</c> — or unset (an empty string under
 			/// <c>#Requires AutoHotkey v2.0</c>) when an optional package was unavailable.</returns>
 			public static object staticLoadPackage(object @this, object name, object version = null, object optional = null)
@@ -67,7 +67,7 @@ namespace Keysharp.Builtins
 				if (asms == null || asms.Length == 0)
 					return DefaultObject;   // optional and unavailable
 
-				return new ManagedAssembly(asms);
+				return new Assembly(asms);
 			}
 
 			public static object static__Get(object @this, object name, object args)
@@ -78,24 +78,24 @@ namespace Keysharp.Builtins
 				var type = TypeResolver.Resolve(namestr);
 
 				if (type != null)
-					return new ManagedType(type);
+					return new Type(type);
 
 				if (!TypeResolver.IsKnownNamespace(namestr))
 					return Errors.ErrorOccurred($"'{namestr}' is neither a type nor a namespace in the loaded assemblies.");
 
-				return new ManagedNamespace([], namestr);
+				return new Namespace([], namestr);
 			}
 
 			// Still keep these for direct access if someone prefers:
-			public static object staticType(object @this, object value)
+			public static object staticGetType(object @this, object typeName)
 			{
-				if (!value.CoerceString(out var name))
+				if (!typeName.CoerceString(out var name))
 					return DefaultObject;
 
 				var t = TypeResolver.Resolve(name);
 				if (t == null)
 					return Errors.ErrorOccurred($"Type not found: {name}");
-				return new ManagedType(t);
+				return new Type(t);
 			}
 
 			/// <summary>
@@ -111,25 +111,25 @@ namespace Keysharp.Builtins
 			/// <param name="value">The value to view as a CLR object.</param>
 			/// <returns>A <c>Ks.Clr</c> object over it.</returns>
 			public static object staticWrap(object @this, object value)
-				=> value is ManagedObject ? value : ManagedInvoke.WrapManaged(value);
+				=> value is Object ? value : ManagedInvoke.WrapManaged(value);
 
-			public static object staticGetNamespaceName(object @this, object managedNamespace)
+			public static object staticGetNamespaceName(object @this, object @namespace)
 			{
-				var ns = managedNamespace as ManagedNamespace;
+				var ns = @namespace as Namespace;
 				if (ns == null)
-					return Errors.ErrorOccurred("The provided argument was not a ManagedNamespace object.");
+					return Errors.ErrorOccurred("The provided argument was not a Clr.Namespace object.");
 				return ns._ns;
 			}
 
-			public static object staticGetTypeName(object @this, object managedType)
+			public static object staticGetTypeName(object @this, object type)
 			{
-				var mt = managedType as ManagedType;
+				var mt = type as Type;
 				if (mt == null)
-					return Errors.ErrorOccurred("The provided argument was not a ManagedType object.");
+					return Errors.ErrorOccurred("The provided argument was not a Clr.Type object.");
 				return mt._type.FullName;
 			}
 
-			public class ManagedObject : Any, IMetaObject
+			public class Object : Any, IMetaObject
 			{
 				object IMetaObject.Get(string name, object[] args) => Get(name, args);
 				internal virtual object Get(string name, object[] args) =>
@@ -158,18 +158,18 @@ namespace Keysharp.Builtins
 					Errors.ErrorOccurred($"set_Item not implemented on type {GetType().FullName}.");
 			}
 
-			public sealed class ManagedAssembly : ManagedObject
+			public sealed class Assembly : Object
 			{
-				internal readonly Assembly[] _assemblies;
+				internal readonly System.Reflection.Assembly[] _assemblies;
 
-				public ManagedAssembly(params Assembly[] assemblies) => _assemblies = assemblies;
+				public Assembly(params System.Reflection.Assembly[] assemblies) => _assemblies = assemblies;
 
 				internal override object Get(string name, object[] args)
 				{
 					// Prefer unique simple-name in preferred assemblies.
 					if (TypeResolver.TryResolveSimpleNameUnique(name, _assemblies, out var t, out var ambiguous, globalFallback: false))
 					{
-						return new Clr.ManagedType(t);
+						return new Clr.Type(t);
 					}
 					if (ambiguous)
 					{
@@ -180,12 +180,12 @@ namespace Keysharp.Builtins
 					// assembly: on macOS, Eto's MonoMac.Libraries+System is the process's only type called "System",
 					// so the global index below answers Clr.Load("System.Net.Http").System with it.
 					if (TypeResolver.IsKnownNamespaceIn(_assemblies, name))
-						return new Clr.ManagedNamespace(_assemblies, name);
+						return new Clr.Namespace(_assemblies, name);
 
 					// Then any unique type elsewhere in the process.
 					if (TypeResolver.TryResolveSimpleNameUnique(name, null, out t, out ambiguous))
 					{
-						return new Clr.ManagedType(t);
+						return new Clr.Type(t);
 					}
 					if (ambiguous)
 					{
@@ -198,7 +198,7 @@ namespace Keysharp.Builtins
 					if (!TypeResolver.IsKnownNamespace(name))
 						return Errors.ErrorOccurred($"'{name}' is neither a type nor a namespace in these assemblies.");
 
-					return new Clr.ManagedNamespace(_assemblies, name);
+					return new Clr.Namespace(_assemblies, name);
 				}
 
 				internal override object Call(string name, object[] args)
@@ -218,24 +218,24 @@ namespace Keysharp.Builtins
 					if (args.Length == 0)
 					{
 						var ci = t.GetConstructor(System.Type.EmptyTypes);
-						if (ci != null) return new Clr.ManagedInstance(t, Activator.CreateInstance(t));
-						if (t.IsValueType) return new Clr.ManagedInstance(t, Activator.CreateInstance(t));
-						return new Clr.ManagedType(t);
+						if (ci != null) return new Clr.Instance(t, Activator.CreateInstance(t));
+						if (t.IsValueType) return new Clr.Instance(t, Activator.CreateInstance(t));
+						return new Clr.Type(t);
 					}
 
 					var inArgs = ManagedInvoke.ConvertInArgs(t, args);
-					var res = ActivatorUtil.CreateInstanceOrError(t, inArgs, inst => new Clr.ManagedInstance(t, inst));
+					var res = ActivatorUtil.CreateInstanceOrError(t, inArgs, inst => new Clr.Instance(t, inst));
 					if (res == null) return DefaultObject;
-					return (Clr.ManagedInstance)res;
+					return (Clr.Instance)res;
 				}
 			}
 
-			public sealed class ManagedNamespace : ManagedObject
+			public sealed class Namespace : Object
 			{
-				internal readonly Assembly[] _assemblies; // preferred set for TypeResolver
+				internal readonly System.Reflection.Assembly[] _assemblies; // preferred set for TypeResolver
 				internal readonly string _ns;             // accumulated namespace root/prefix
 
-				public ManagedNamespace(Assembly[] assemblies, string ns)
+				public Namespace(System.Reflection.Assembly[] assemblies, string ns)
 				{
 					_assemblies = assemblies;
 					_ns = ns ?? "";
@@ -257,14 +257,14 @@ namespace Keysharp.Builtins
 						{
 							try
 							{
-								var typeArgs = new Type[args.Length];
+								var typeArgs = new System.Type[args.Length];
 
 								for (var i = 0; i < args.Length; i++)
 									if (!TypeResolver.TryResolveTypeArg(args[i], out typeArgs[i]))
 										return DefaultObject;
 
 								var closed = genDef.MakeGenericType(typeArgs);
-								return new ManagedType(closed);
+								return new Type(closed);
 							}
 							catch (ArgumentException ex)
 							{
@@ -277,7 +277,7 @@ namespace Keysharp.Builtins
 					// Try exact, non-generic type by full name, preferring the assemblies user loaded.
 					var t2 = TypeResolver.Resolve(full, _assemblies);
 					if (t2 != null)
-						return new ManagedType(t2);
+						return new Type(t2);
 
 					// Keep walking only while the path could still reach a type. A walk that has left every known
 					// namespace can never resolve, and continuing it is how a typo used to survive all the way to a
@@ -285,7 +285,7 @@ namespace Keysharp.Builtins
 					if (!TypeResolver.IsKnownNamespace(full))
 						return Errors.ErrorOccurred($"'{full}' is neither a type nor a namespace in the loaded assemblies.");
 
-					return new ManagedNamespace(_assemblies, full);
+					return new Namespace(_assemblies, full);
 				}
 
 				internal override object Call(string name, object[] args)
@@ -305,23 +305,23 @@ namespace Keysharp.Builtins
 						// Prefer real parameterless constructor
 						var ci = t.GetConstructor(System.Type.EmptyTypes);
 						if (ci != null)
-							return new ManagedInstance(t, Activator.CreateInstance(t));
+							return new Instance(t, Activator.CreateInstance(t));
 
 						// Value-type sugar: default(T)
 						if (t.IsValueType)
-							return new ManagedInstance(t, Activator.CreateInstance(t));
+							return new Instance(t, Activator.CreateInstance(t));
 
 						// No ctor: return the type node for static access
-						return new ManagedType(t);
+						return new Type(t);
 					}
 
 					// First, try real constructors (DateTime, TimeSpan, Guid, etc.).
 					try
 					{
 						var inArgs = ManagedInvoke.ConvertInArgs(t, args);
-						var res = ActivatorUtil.CreateInstanceOrError(t, inArgs, inst => new Clr.ManagedInstance(t, inst));
+						var res = ActivatorUtil.CreateInstanceOrError(t, inArgs, inst => new Clr.Instance(t, inst));
 						if (res == null) return DefaultObject;
-						return (Clr.ManagedInstance)res;
+						return (Clr.Instance)res;
 					}
 					catch (MissingMethodException)
 					{
@@ -332,7 +332,7 @@ namespace Keysharp.Builtins
 					if (t.IsValueType)
 					{
 						if (args.Length == 1)
-							return ManagedInvoke.TryCoerceToType(args[0], t, out var boxed) ? new ManagedInstance(t, boxed) : DefaultObject;
+							return ManagedInvoke.TryCoerceToType(args[0], t, out var boxed) ? new Instance(t, boxed) : DefaultObject;
 					}
 
 					return Errors.ErrorOccurred($"Constructor on type '{t.FullName}' not found for {args.Length} argument(s).");
@@ -352,11 +352,11 @@ namespace Keysharp.Builtins
 				}
 			}
 
-			public sealed class ManagedType : ManagedObject
+			public sealed class Type : Object
 			{
-				internal readonly Type _type;
+				internal readonly System.Type _type;
 
-				public ManagedType(Type type) => _type = type ?? throw new ArgumentNullException(nameof(type));
+				public Type(System.Type type) => _type = type ?? throw new ArgumentNullException(nameof(type));
 
 				internal override object Call(string name, object[] args)
 				{
@@ -366,20 +366,20 @@ namespace Keysharp.Builtins
 						if (typeof(Delegate).IsAssignableFrom(_type))
 						{
 							var res = ClrDelegateFactory.BuildManagedDelegateNode(_type, args);
-							if (res is ManagedInstance) return res;
-							return res; // already an error node if not ManagedInstance
+							if (res is Instance) return res;
+							return res; // already an error node if not Instance
 						}
 
 						// 1) Try real ctors first
 						try
 						{
 							if (args.Length == 0)
-								return new ManagedInstance(_type, Activator.CreateInstance(_type));
+								return new Instance(_type, Activator.CreateInstance(_type));
 
 							var inArgs = ManagedInvoke.ConvertInArgs(_type, args);
-							var res = ActivatorUtil.CreateInstanceOrError(_type, inArgs, inst => new ManagedInstance(_type, inst));
+							var res = ActivatorUtil.CreateInstanceOrError(_type, inArgs, inst => new Instance(_type, inst));
 							if (res == null) return res;
-							return (ManagedInstance)res;
+							return (Instance)res;
 						}
 						catch (MissingMethodException)
 						{
@@ -387,10 +387,10 @@ namespace Keysharp.Builtins
 							if (_type.IsValueType)
 							{
 								if (args.Length == 0)
-									return new ManagedInstance(_type, Activator.CreateInstance(_type)); // default(T)
+									return new Instance(_type, Activator.CreateInstance(_type)); // default(T)
 
 								if (args.Length == 1)
-									return ManagedInvoke.TryCoerceToType(args[0], _type, out var boxed) ? new ManagedInstance(_type, boxed) : DefaultObject;
+									return ManagedInvoke.TryCoerceToType(args[0], _type, out var boxed) ? new Instance(_type, boxed) : DefaultObject;
 							}
 							return Errors.ErrorOccurred($"Constructor on type '{_type.FullName}' not found for {args.Length} argument(s).");
 						}
@@ -421,14 +421,14 @@ namespace Keysharp.Builtins
 
 					try
 					{
-						var types = new Type[typeArgs.Length];
+						var types = new System.Type[typeArgs.Length];
 
 						for (var i = 0; i < typeArgs.Length; i++)
 							if (!TypeResolver.TryResolveTypeArg(typeArgs[i], out types[i]))
 								return DefaultObject;
 
 						var closed = _type.MakeGenericType(types);
-						return new ManagedType(closed);
+						return new Type(closed);
 					}
 					catch (ArgumentException ex)
 					{
@@ -440,18 +440,18 @@ namespace Keysharp.Builtins
 				public override string ToString() => _type.ToString();
 			}
 
-			public sealed class ManagedInstance : ManagedObject
+			public sealed class Instance : Object
 			{
-				internal readonly Type _type;
+				internal readonly System.Type _type;
 				internal object _instance;
 
 				/// <summary>
 				/// The wrapped CLR object itself, for inline C# (<c>#CSharp</c>) code holding a wrapper. Script
-				/// member access on a ManagedInstance dispatches to the payload, so this is unreachable from script.
+				/// member access on a Clr.Instance dispatches to the payload, so this is unreachable from script.
 				/// </summary>
 				public object Native => _instance;
 
-				public ManagedInstance(Type type, object instance) { _type = type; _instance = instance; }
+				public Instance(System.Type type, object instance) { _type = type; _instance = instance; }
 
 				// Instance method call: obj.Method(args...)
 				internal override object Call(string name, object[] args)
@@ -493,7 +493,7 @@ namespace Keysharp.Builtins
 				public override string ToString() => _instance.ToString();
 			}
 
-			private static Enumerator CreateEnumerator(ManagedInstance instance, int count)
+			private static Enumerator CreateEnumerator(Instance instance, int count)
 			{
 				object source;
 				MethodInfo moveNextMethod = null;
@@ -600,7 +600,7 @@ namespace Keysharp.Builtins
 				});
 			}
 
-			private static readonly ConcurrentDictionary<Type, (PropertyInfo Key, PropertyInfo Value)> PairGetters = new();
+			private static readonly ConcurrentDictionary<System.Type, (PropertyInfo Key, PropertyInfo Value)> PairGetters = new();
 
 			private static object[] TryDecompose(object current)
 			{

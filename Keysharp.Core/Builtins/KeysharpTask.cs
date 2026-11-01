@@ -635,7 +635,7 @@ namespace Keysharp.Builtins
 				}
 			}
 
-			/// <summary>Accepts a Task, a wrapper, a ValueTask or a ManagedInstance over any of those.</summary>
+			/// <summary>Accepts a Task, a wrapper, a ValueTask or a Clr.Instance over any of those.</summary>
 			internal static Task FromScriptValue(object value)
 			{
 				switch (value)
@@ -646,7 +646,7 @@ namespace Keysharp.Builtins
 					case Task t:
 						return t;
 
-					case Clr.ManagedInstance mi:
+					case Clr.Instance mi:
 						return mi._instance is Task inner ? inner : AsTaskOrNull(mi._instance);
 				}
 

@@ -5,8 +5,11 @@
 
 ; AutoHotkey has no DelegateHolder or Prototype class, so neither is a global name.
 Assert(IsSet(Array) && IsSet(ArgumentError) && !IsSet(Dialogs)
-	&& !IsSet(List) && !IsSet(Highlight) && !IsSet(ManagedType)
+	&& !IsSet(List) && !IsSet(Highlight) && !IsSet(Instance)
 	&& IsSet(InputHook) && !IsSet(DelegateHolder) && !IsSet(Prototype), A_LineNumber)
+
+; A class nested in Clr does not take the name of the global class it shares a name with.
+AssertEq(Object.Prototype.__Class, "Object", A_LineNumber)
 
 ; A module is not a class and the Ks module is not part of the global namespace, so without an import a
 ; dynamic reference resolves neither it nor a class it declares.
@@ -71,7 +74,7 @@ if !(Gui.List && Gui.WebView)
 #import KS { Clr, Highlight }
 
 ; An imported name resolves dynamically as well, the module's own name included.
-if !(IsSet(Clr) && IsSet(Highlight) && Clr.ManagedType && %"Highlight"% == Highlight && %"KS"%.Clr == Clr)
+if !(IsSet(Clr) && IsSet(Highlight) && Clr.Type && Clr.Object.Prototype.__Class == "Clr.Object" && %"Highlight"% == Highlight && %"KS"%.Clr == Clr)
 	FileAppend "fail line " A_LineNumber "`n", "*"
 
 FileAppend "pass", "*"

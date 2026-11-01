@@ -107,7 +107,7 @@ namespace Keysharp.Internals.Invoke
 		{
 			if (target == typeof(byte[]))
 			{
-				if (value is Ks.Clr.ManagedInstance mi)
+				if (value is Ks.Clr.Instance mi)
 					value = mi._instance;
 
 				if (value is Keysharp.Builtins.Buffer
@@ -133,7 +133,7 @@ namespace Keysharp.Internals.Invoke
 
 		internal static unsafe bool TryCoerceByteSpan(object value, out Span<byte> result)
 		{
-			if (value is Ks.Clr.ManagedInstance mi)
+			if (value is Ks.Clr.Instance mi)
 				value = mi._instance;
 
 			result = default;
@@ -182,8 +182,8 @@ namespace Keysharp.Internals.Invoke
 		{
 			// A proxy can only have been meant as its payload here. This is not the boundary-only unwrapping
 			// TryCoerceBoundaryCast does: an enum parameter, unlike an `object` or reference one, has no reading in
-			// which a ManagedInstance is itself the argument.
-			if (value is Ks.Clr.ManagedInstance mi)
+			// which a Clr.Instance is itself the argument.
+			if (value is Ks.Clr.Instance mi)
 				value = mi._instance;
 
 			if (target.IsInstanceOfType(value))
@@ -227,19 +227,19 @@ namespace Keysharp.Internals.Invoke
 		/// <summary>Unwraps managed proxies at an explicit CLR boundary.</summary>
 		internal static bool TryCoerceBoundaryCast(object value, Type target, out object result)
 		{
-			// ManagedInstance represents its payload even for an object slot. ManagedType remains a script object for
+			// Clr.Instance represents its payload even for an object slot. Clr.Type remains a script object for
 			// object, matching Ks.Clr, and unwraps only for Type-compatible targets.
-			if (value is Ks.Clr.ManagedInstance mi && (target == typeof(object) || target.IsInstanceOfType(mi._instance)))
+			if (value is Ks.Clr.Instance mi && (target == typeof(object) || target.IsInstanceOfType(mi._instance)))
 				result = mi._instance;
 			else if (value == null || target.IsInstanceOfType(value))
 				result = value;
 			// Ks.Task is the script's face on a CLR Task, so an inline member declaring a Task parameter must
-			// receive the task itself. `object` deliberately keeps the wrapper -- the same call ManagedInstance
-			// makes above is reversed here, because a Ks.Task is itself a script object while a ManagedInstance is only
+			// receive the task itself. `object` deliberately keeps the wrapper -- the same call Clr.Instance
+			// makes above is reversed here, because a Ks.Task is itself a script object while a Clr.Instance is only
 			// a view of one.
 			else if (value is Ks.KeysharpTask kt && target.IsInstanceOfType(kt.Underlying))
 				result = kt.Underlying;
-			else if (value is Ks.Clr.ManagedType mt && target.IsInstanceOfType(mt._type))
+			else if (value is Ks.Clr.Type mt && target.IsInstanceOfType(mt._type))
 				result = mt._type;
 			else
 			{
@@ -466,7 +466,7 @@ namespace Keysharp.Internals.Invoke
 		/// <summary>
 		/// Wraps <paramref name="value"/> in <c>ManagedInvoke.ConvertOut</c>, the same policy <c>Ks.Clr</c>
 		/// applies to a value leaving CLR code for a script: scalars pass, narrow numerics widen, a
-		/// <c>Type</c> becomes a <c>ManagedType</c>, and any other CLR object a <c>ManagedInstance</c>.
+		/// <c>Type</c> becomes a <c>Clr.Type</c>, and any other CLR object a <c>Clr.Instance</c>.
 		/// </summary>
 		internal static Expression ConvertOut(Expression value) =>
 			Expression.Call(convertOutMethod, Expression.Convert(value, typeof(object)));

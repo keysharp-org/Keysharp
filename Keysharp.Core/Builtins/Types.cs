@@ -328,6 +328,10 @@ namespace Keysharp.Builtins
 			if (value is Keysharp.Runtime.Module)
 				return "Module";
 
+			// A Clr wrapper forwards member access to the object it holds, so __Class cannot name it.
+			if (value is Ks.Clr.Object)
+				return "Clr." + value.GetType().Name;
+
 			// This must never throw: Type also names values in error messages and ListVars output, where an
 			// exception would replace the diagnostic being reported. Any failure falls back to the CLR name.
 			try

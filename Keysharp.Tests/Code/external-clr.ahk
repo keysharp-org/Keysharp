@@ -123,9 +123,10 @@ AssertEq(directSb.ToString(), "Hello via CLR.__Get", A_LineNumber)
 ; 16) CLR root static type via static __Get
 AssertEq(Clr.System.Math.Sqrt(16.0), 4.0, A_LineNumber)
 
-; 17) Clr.Type(...) + Clr.GetTypeName(...)
-mathType := Clr.Type("System.Math")
+; 17) Clr.GetType(...) + Clr.GetTypeName(...)
+mathType := Clr.GetType("System.Math")
 AssertEq(Clr.GetTypeName(mathType), "System.Math", A_LineNumber)
+AssertEq(Type(mathType), "Clr.Type", A_LineNumber)
 
 ; 18) Clr.GetNamespaceName(...) on a namespace node
 AssertEq(Clr.GetNamespaceName(System.Collections), "System.Collections", A_LineNumber)
@@ -197,7 +198,7 @@ sb2 := System.Text.StringBuilder("Hello")
 sb2.Length := 3
 AssertEq(sb2.ToString(), "Hel", A_LineNumber)
 
-; 38) GetType() round-trips to a ManagedType
+; 38) GetType() round-trips to a Clr.Type
 AssertEq(Clr.GetTypeName(sb2.GetType()), "System.Text.StringBuilder", A_LineNumber)
 
 ; 39) Generic Dictionary<string,int> indexer set/get

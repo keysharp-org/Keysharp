@@ -3828,13 +3828,13 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "Clr()",
+                     "feature":  "Clr",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Creates the platform-independent CLR interop facade for loading and invoking .NET types. Buffer and Ptr/Size objects are accepted by byte[] and byte-span parameters.",
+                     "notes":  "The platform-independent CLR interop class for loading and invoking .NET types. Buffer and Ptr/Size objects are accepted by byte[] and byte-span parameters.",
                      "tested-by":  "external-clr.ahk; directive-csharp-clr.ahk"
                  },
                  {
@@ -3892,7 +3892,7 @@
                  },
                  {
                      "category":  "Interop/Memory",
-                     "feature":  "Clr.ManagedAssembly",
+                     "feature":  "Clr.Assembly",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
@@ -3902,7 +3902,7 @@
                  },
                  {
                      "category":  "Interop/Memory",
-                     "feature":  "Clr.ManagedInstance",
+                     "feature":  "Clr.Instance",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
@@ -3912,7 +3912,7 @@
                  },
                  {
                      "category":  "Interop/Memory",
-                     "feature":  "Clr.ManagedInstance.__Enum()",
+                     "feature":  "Clr.Instance.__Enum()",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
@@ -3922,13 +3922,13 @@
                  },
                  {
                      "category":  "Interop/Memory",
-                     "feature":  "Clr.ManagedInstance.OnEvent()",
+                     "feature":  "Clr.Instance.OnEvent()",
                      "syntax":  "sub := obj.OnEvent(\"Name\", Callback)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Subscribes Callback to an instance event, or a ManagedType's static event, and runs it on the subscribing thread. Returns a started Clr.EventSubscription that Stop() detaches and Start() re-attaches; it does not keep the script running.",
+                     "notes":  "Subscribes Callback to an instance event, or a Clr.Type's static event, and runs it on the subscribing thread. Returns a started Clr.EventSubscription that Stop() detaches and Start() re-attaches; it does not keep the script running.",
                      "tested-by":  "directive-csharp-events.ahk"
                  },
                  {
@@ -3944,7 +3944,7 @@
                  },
                  {
                      "category":  "Interop/Memory",
-                     "feature":  "Clr.ManagedNamespace",
+                     "feature":  "Clr.Namespace",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
@@ -3954,7 +3954,7 @@
                  },
                  {
                      "category":  "Interop/Memory",
-                     "feature":  "Clr.Type()",
+                     "feature":  "Clr.GetType()",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",
@@ -3964,7 +3964,7 @@
                  },
                  {
                      "category":  "Interop/Memory",
-                     "feature":  "Clr.ManagedType",
+                     "feature":  "Clr.Type",
                      "syntax":  "",
                      "windows":  "full",
                      "linux_x11":  "full",

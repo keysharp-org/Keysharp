@@ -273,8 +273,8 @@ namespace Keysharp.Builtins
 				if (Refs.DeclaresValue(arg) && Refs.GetValueOrNull(arg) is object v)
 					arg = v;
 
-				if (arg is Clr.ManagedInstance mi) return mi._type;
-				if (arg is Clr.ManagedType) return typeof(Type);
+				if (arg is Clr.Instance mi) return mi._type;
+				if (arg is Clr.Type) return typeof(Type);
 #if WINDOWS
 				if (arg is ComValue) return typeof(IntPtr);
 #endif
@@ -410,8 +410,8 @@ namespace Keysharp.Builtins
 		/// Supports:
 		///   1) (callable)                    -> FromKeysharpFunc
 		///   2) (target, "InstanceMethod")    -> CreateDelegate on instance
-		///   3) (ManagedType/Type, "Static")  -> CreateDelegate on type (static)
-		/// Returns ManagedInstance(delegateType, delegate) or an Error node.
+		///   3) (Clr.Type/Type, "Static")  -> CreateDelegate on type (static)
+		/// Returns Clr.Instance(delegateType, delegate) or an Error node.
 		/// </summary>
 		internal static object BuildManagedDelegateNode(Type delegateType, object[] argv)
 		{
@@ -425,37 +425,37 @@ namespace Keysharp.Builtins
 					{
 						// if already assignable, just wrap
 						if (delegateType.IsInstanceOfType(existing))
-							return new Clr.ManagedInstance(delegateType, existing);
+							return new Clr.Instance(delegateType, existing);
 
 						// try to adapt using DynamicInvoke-compatible thunk
 						var adapted = Delegate.CreateDelegate(delegateType, existing.Target, existing.Method.Name, /*ignoreCase*/ false, /*throwOnBindFailure*/ false);
 						if (adapted != null)
-							return new Clr.ManagedInstance(delegateType, adapted);
+							return new Clr.Instance(delegateType, adapted);
 					}
 
 					var del = ClrDelegateMarshaler.FromKeysharpFunc(delegateType, arg);
-					return new Clr.ManagedInstance(delegateType, del);
+					return new Clr.Instance(delegateType, del);
 				}
 
 				// 2) two args with method name string
 				if (argv.Length == 2 && argv[1] is string mname)
 				{
-					// (ManagedType/Type, "StaticMethod")
-					if (argv[0] is Clr.ManagedType mt)
+					// (Clr.Type/Type, "StaticMethod")
+					if (argv[0] is Clr.Type mt)
 					{
 						var del = Delegate.CreateDelegate(delegateType, mt._type, mname, /*ignoreCase*/ true, /*throwOnBindFailure*/ true);
-						return new Clr.ManagedInstance(delegateType, del);
+						return new Clr.Instance(delegateType, del);
 					}
 					if (argv[0] is Type tt)
 					{
 						var del = Delegate.CreateDelegate(delegateType, tt, mname, /*ignoreCase*/ true, /*throwOnBindFailure*/ true);
-						return new Clr.ManagedInstance(delegateType, del);
+						return new Clr.Instance(delegateType, del);
 					}
 
 					// (targetInstance, "InstanceMethod")
-					var target = argv[0] is Clr.ManagedInstance mi ? mi._instance : argv[0];
+					var target = argv[0] is Clr.Instance mi ? mi._instance : argv[0];
 					var del2 = Delegate.CreateDelegate(delegateType, target, mname, /*ignoreCase*/ true);
-					return new Clr.ManagedInstance(delegateType, del2);
+					return new Clr.Instance(delegateType, del2);
 				}
 
 				return Errors.ErrorOccurred($"Cannot construct delegate '{delegateType.FullName}' from {argv.Length} argument(s).");

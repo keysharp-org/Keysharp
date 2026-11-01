@@ -864,8 +864,8 @@ namespace Keysharp.Internals.Invoke
 			}
 
 			// An inline member's return crosses the CLR->script boundary, so a declared CLR type -- or an
-			// `object` return holding one -- takes the same out-conversion Ks.Clr applies (ManagedInstance/
-			// ManagedType wrapping, numeric widening) instead of leaking a raw CLR object into the script.
+			// `object` return holding one -- takes the same out-conversion Ks.Clr applies (Clr.Instance/
+			// Clr.Type wrapping, numeric widening) instead of leaking a raw CLR object into the script.
 			// A member whose declared type cannot leak keeps the compile-time-only NormalizeReturn path.
 			Expression body =
 				mi.ReturnType == typeof(void)
