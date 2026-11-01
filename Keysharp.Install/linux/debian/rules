@@ -24,7 +24,7 @@ export KEYSHARP_DAEMON := 0
 ifneq ($(wildcard vendor/nuget),)
 export RestoreSources := $(CURDIR)/vendor/nuget
 export NuGetAudit := false
-export EtoRoot := $(CURDIR)/vendor/Eto
+export ETO_ROOT := $(CURDIR)/vendor/Eto
 export KpmSourceDir := $(CURDIR)/vendor/KPM
 endif
 

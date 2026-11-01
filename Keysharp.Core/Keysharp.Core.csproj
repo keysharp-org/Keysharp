@@ -50,11 +50,11 @@
 -->
 		<!-- This custom branch fixes a bug with image functions not working if a tray menu is created in Linux,
 		as well as allows implementing the MsgBox timeout feature. Available here: https://github.com/keysharp-org/Eto/tree/MessgeBoxShowAsync  -->
-		<ProjectReference Include="$(EtoRoot)/src/Eto/Eto.csproj" />
+		<ProjectReference Include="$(ETO_ROOT)/src/Eto/Eto.csproj" />
 	</ItemGroup>
 
 	<ItemGroup Condition="$([MSBuild]::IsOSPlatform('Linux'))">
-		<ProjectReference Include="$(EtoRoot)/src/Eto.Gtk/Eto.Gtk.csproj" />
+		<ProjectReference Include="$(ETO_ROOT)/src/Eto.Gtk/Eto.Gtk.csproj" />
 		<!-- Pinned exactly: floating resolves 0.90.0, which carries advisory GHSA-xrw6-gwf8-vvr9.
 		     The Generator is build-time only (PrivateAssets), so it adds no runtime dependency. -->
 		<PackageReference Include="Tmds.DBus.Protocol" Version="0.95.1" />
@@ -70,8 +70,8 @@
 	</ItemGroup>
 
 	<ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
-		<ProjectReference Include="$(EtoRoot)/src/Eto.Mac/Eto.Mac64.csproj" />
-		<ProjectReference Include="$(EtoRoot)/lib/monomac/src/MonoMac.csproj" />
+		<ProjectReference Include="$(ETO_ROOT)/src/Eto.Mac/Eto.Mac64.csproj" />
+		<ProjectReference Include="$(ETO_ROOT)/lib/monomac/src/MonoMac.csproj" />
 		<Compile Remove="Internals\Input\Linux\**\*.cs" />
 		<Compile Remove="Internals\Mapper\Linux\**\*.cs" />
 		<Compile Remove="Internals\Input\Hooks\Linux\**\*.cs" />

@@ -88,14 +88,14 @@
               ++ keysharp.passthru.runtimePrograms;
             LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath keysharp.passthru.runtimeLibraries;
             shellHook = ''
-              if [[ -z "''${EtoRoot:-}" ]]; then
-                export EtoRoot="''${XDG_CACHE_HOME:-$HOME/.cache}/keysharp/${etoCacheKey}"
-                if [[ ! -f "$EtoRoot/.keysharp-source-complete" ]]; then
-                  mkdir -p "$EtoRoot"
-                  chmod -R u+w "$EtoRoot"
-                  cp -R ${eto}/. "$EtoRoot/"
-                  chmod -R u+w "$EtoRoot"
-                  touch "$EtoRoot/.keysharp-source-complete"
+              if [[ -z "''${ETO_ROOT:-}" ]]; then
+                export ETO_ROOT="''${XDG_CACHE_HOME:-$HOME/.cache}/keysharp/${etoCacheKey}"
+                if [[ ! -f "$ETO_ROOT/.keysharp-source-complete" ]]; then
+                  mkdir -p "$ETO_ROOT"
+                  chmod -R u+w "$ETO_ROOT"
+                  cp -R ${eto}/. "$ETO_ROOT/"
+                  chmod -R u+w "$ETO_ROOT"
+                  touch "$ETO_ROOT/.keysharp-source-complete"
                 fi
               fi
             '';

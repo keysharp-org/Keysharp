@@ -46,6 +46,9 @@ Run the packaging script on the target operating system and architecture:
 | Linux | `bash Keysharp.Install/package-linux.sh` | Archive and Debian package in `dist/` |
 | macOS | `bash Keysharp.Install/package-macos.sh` | PKG and DMG in `dist/` |
 
+For Linux and macOS packaging, set `ETO_ROOT` to use an Eto checkout outside `../Eto`,
+for example `ETO_ROOT="/path/to/Eto" bash Keysharp.Install/package-macos.sh`.
+
 Windows packaging restores WiX from NuGet. On Linux, generating the Debian package
 requires `dpkg-dev`; the Launchpad source uploads are described in
 [Keysharp.Install/ppa/README.md](../Keysharp.Install/ppa/README.md).

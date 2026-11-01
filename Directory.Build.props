@@ -7,8 +7,8 @@
     <InformationalVersion Condition="'$(InformationalVersion)' == ''">$(KeysharpVersion)</InformationalVersion>
 
     <!-- The normal checkout keeps the Keysharp Eto fork beside this repository. Packaging systems whose
-         dependency sources live elsewhere can override EtoRoot without patching every project reference. -->
-    <EtoRoot Condition="'$(EtoRoot)' == ''">$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', 'Eto'))</EtoRoot>
+         dependency sources live elsewhere can override ETO_ROOT without patching every project reference. -->
+    <ETO_ROOT Condition="'$(ETO_ROOT)' == ''">$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', 'Eto'))</ETO_ROOT>
 
     <!-- Normalize source paths embedded in PDBs so build-machine absolute paths
          (e.g. /home/<user>/...) don't leak into shipped binaries and stack traces -->
@@ -110,6 +110,6 @@
     <Error Text="Keysharp and Keyview publish output is always RID-specific. Publish with a runtime identifier, for example: dotnet publish $(MSBuildProjectName)/$(MSBuildProjectName).csproj -c Release -r win-x64" />
   </Target>
 
-  <Import Project="$(EtoRoot)/src/Eto.Mac/build/Mac.props"
-          Condition="$([MSBuild]::IsOSPlatform('OSX')) AND ('$(MSBuildProjectName)' == 'Keysharp' OR '$(MSBuildProjectName)' == 'Keyview' OR '$(MSBuildProjectName)' == 'Keysharp.OutputTest') AND Exists('$(EtoRoot)/src/Eto.Mac/build/Mac.props')" />
+  <Import Project="$(ETO_ROOT)/src/Eto.Mac/build/Mac.props"
+          Condition="$([MSBuild]::IsOSPlatform('OSX')) AND ('$(MSBuildProjectName)' == 'Keysharp' OR '$(MSBuildProjectName)' == 'Keyview' OR '$(MSBuildProjectName)' == 'Keysharp.OutputTest') AND Exists('$(ETO_ROOT)/src/Eto.Mac/build/Mac.props')" />
 </Project>

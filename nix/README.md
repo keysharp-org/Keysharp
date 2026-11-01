@@ -71,7 +71,7 @@ The development shell uses the locked Eto revision by default. To build against 
 sibling checkout instead:
 
 ```sh
-EtoRoot="$PWD/../Eto" nix develop
+ETO_ROOT="$PWD/../Eto" nix develop
 ```
 
 For a Nix package build against that checkout without updating the committed lock:

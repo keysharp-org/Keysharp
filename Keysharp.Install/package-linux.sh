@@ -19,7 +19,7 @@ dist/keysharp_<version>_<arch>.deb.
   -h, --help         Show this help.
 
 RID, VERSION and CONFIG select the build. KEYSHARP_DIST_DIR replaces dist/,
-and EtoRoot names the Eto checkout when it is not ../Eto.
+and ETO_ROOT names the Eto checkout when it is not ../Eto.
 EOF
 }
 
@@ -74,13 +74,13 @@ STAGING_DIR="${DIST_DIR}/staging/${RID}"
 PKG_DIR="${STAGING_DIR}/${PKG_NAME}"
 APP_DIR="${PKG_DIR}/app"
 
-ETO_DIR="$(if cd "${EtoRoot:-${ROOT}/../Eto}" 2>/dev/null; then pwd; fi)"
+ETO_DIR="$(if cd "${ETO_ROOT:-${ROOT}/../Eto}" 2>/dev/null; then pwd; fi)"
 PATH_MAP="${ROOT}=/_/keysharp"
 # One RID and one Eto target framework, so restore fetches nothing the package does not ship.
 DOTNET_ARGS=(-p:Configuration="${CONFIG}" -p:RuntimeIdentifiers="${RID}" -p:TargetFrameworkOverride=net10.0 --nologo)
 if [[ -n "${ETO_DIR}" ]]; then
   PATH_MAP="${PATH_MAP}%2c${ETO_DIR}=/_/Eto"
-  DOTNET_ARGS+=(-p:EtoRoot="${ETO_DIR}")
+  DOTNET_ARGS+=(-p:ETO_ROOT="${ETO_DIR}")
 fi
 
 restore() {

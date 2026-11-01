@@ -6,7 +6,7 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG="${CONFIG:-Release}"
 DIST_DIR="${ROOT}/dist"
-ETO_DIR="$(cd "${ROOT}/../Eto" 2>/dev/null && pwd || true)"
+ETO_DIR="$(if cd "${ETO_ROOT:-${ROOT}/../Eto}" 2>/dev/null; then pwd; fi)"
 PATH_MAP="${ROOT}=/_/keysharp"
 if [[ -n "${ETO_DIR}" ]]; then
   PATH_MAP="${PATH_MAP}%2c${ETO_DIR}=/_/Eto"
@@ -109,6 +109,9 @@ require_tool() {
 validate_inputs() {
   [[ "${RID}" == "osx-arm64" || "${RID}" == "osx-x64" ]] || die "Unsupported RID '${RID}'. Use osx-arm64 or osx-x64."
   [[ -n "${VERSION}" ]] || die "Unable to determine package version. Set VERSION explicitly."
+  if ! is_true "${SKIP_PUBLISH}"; then
+    [[ -n "${ETO_DIR}" && -f "${ETO_DIR}/src/Eto.Mac/Eto.Mac64.csproj" ]] || die "Eto macOS project not found in '${ETO_ROOT:-${ROOT}/../Eto}'. Set ETO_ROOT to the Keysharp Eto checkout."
+  fi
   require_tool dotnet
   require_tool pkgbuild
   require_tool productbuild
@@ -157,6 +160,7 @@ publish_projects() {
       -p:KeysharpVersion="${VERSION}" \
       -p:Deterministic=true \
       -p:ContinuousIntegrationBuild=true \
+      -p:ETO_ROOT="${ETO_DIR}" \
       '-p:AppHostDotNetSearch="AppRelative;EnvironmentVariable;Global"' \
       -p:AppHostRelativeDotNet="${APPHOST_DOTNET}" \
       -p:PathMap="${PATH_MAP}"

@@ -16,7 +16,7 @@ trap 'rm -rf -- "${work}"' EXIT
 cp -a "${tree}" "${work}/src"
 export NUGET_PACKAGES="${work}/packages" DOTNET_NOLOGO=1 DOTNET_CLI_TELEMETRY_OPTOUT=1 MSBUILDDISABLENODEREUSE=1
 for rid in linux-x64 linux-arm64; do
-  RID="${rid}" EtoRoot="${work}/src/vendor/Eto" KEYSHARP_DIST_DIR="${work}/dist" \
+  RID="${rid}" ETO_ROOT="${work}/src/vendor/Eto" KEYSHARP_DIST_DIR="${work}/dist" \
     bash "${work}/src/Keysharp.Install/package-linux.sh" --restore
 done
 dotnet restore "${work}/src/vendor/KPM/src/KPM.Core/KPM.Core.csproj" -p:Configuration=Release --nologo

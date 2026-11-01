@@ -60,6 +60,6 @@
 
   <Import Project="Keysharp.Components/Scripting/Compiler/ReadyToRun.targets" />
 
-  <Import Project="$(EtoRoot)/src/Eto.Mac/build/Mac.targets"
-          Condition="$([MSBuild]::IsOSPlatform('OSX')) AND ('$(MSBuildProjectName)' == 'Keysharp' OR '$(MSBuildProjectName)' == 'Keyview' OR '$(MSBuildProjectName)' == 'Keysharp.OutputTest') AND Exists('$(EtoRoot)/src/Eto.Mac/build/Mac.targets')" />
+  <Import Project="$(ETO_ROOT)/src/Eto.Mac/build/Mac.targets"
+          Condition="$([MSBuild]::IsOSPlatform('OSX')) AND ('$(MSBuildProjectName)' == 'Keysharp' OR '$(MSBuildProjectName)' == 'Keyview' OR '$(MSBuildProjectName)' == 'Keysharp.OutputTest') AND Exists('$(ETO_ROOT)/src/Eto.Mac/build/Mac.targets')" />
 </Project>
