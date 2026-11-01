@@ -120,7 +120,8 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// <summary>
 	/// Clones the instance as well as the internal container.
 	/// </summary>
-	public new object Clone()
+	[PublicHiddenFromUser]
+	public override object Clone()
 	{
 		if (Objects.HasExternalDataPointer(this))
 			return Errors.TypeErrorOccurred("An object holding structured data cannot be cloned.");

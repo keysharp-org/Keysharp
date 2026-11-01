@@ -122,11 +122,11 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Returns a copy of the object, with its own copy of each own property. As in AutoHotkey, an object of a built-in
-		/// type holding a native resource or structured data raises a TypeError instead.
+		/// Returns a shallow copy of the object, its own properties and any Array or Map storage.
+		/// An object holding a native resource or structured data raises a TypeError instead.
 		/// </summary>
 		/// <returns>A cloned copy of the object.</returns>
-		public object Clone() => this is IDisposable or InputHook || Objects.HasExternalDataPointer(this)
+		public virtual object Clone() => this is IDisposable or InputHook || Objects.HasExternalDataPointer(this)
 			? Errors.TypeErrorOccurred("An object holding native data cannot be cloned.")
 			: MemberwiseClone();
 

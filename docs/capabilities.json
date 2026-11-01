@@ -3227,17 +3227,6 @@
                  },
                  {
                      "category":  "Collections",
-                     "feature":  "Array.Clone()",
-                     "syntax":  "arr.Clone()",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Returns a shallow copy of an array. An instance created by ObjCreateWithDataPtr raises TypeError.",
-                     "tested-by":  "collections-array.ahk; struct-pack.ahk"
-                 },
-                 {
-                     "category":  "Collections",
                      "feature":  "Array.Contains()",
                      "syntax":  "arr.Contains(value)",
                      "windows":  "full",
@@ -7997,17 +7986,6 @@
                  },
                  {
                      "category":  "Collections",
-                     "feature":  "Map.Clone()",
-                     "syntax":  "m.Clone()",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Returns a shallow copy of all of the values and keys of the map. An instance created by ObjCreateWithDataPtr raises TypeError.",
-                     "tested-by":  "collections-map.ahk; struct-pack.ahk"
-                 },
-                 {
-                     "category":  "Collections",
                      "feature":  "Map.Count",
                      "syntax":  "m.Count",
                      "windows":  "full",
@@ -9017,6 +8995,17 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Returns a property-reference (PropRef) object."
+                 },
+                 {
+                     "category":  "Collections",
+                     "feature":  "Object.Clone()",
+                     "syntax":  "obj.Clone() / Object.Prototype.Clone.Call(obj)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Returns a shallow copy of an Object, Array or Map, with independent own properties and container storage. Contained objects remain shared. Instances created by ObjCreateWithDataPtr raise TypeError.",
+                     "tested-by":  "collections-object.ahk; collections-array.ahk; collections-map.ahk; struct-pack.ahk"
                  },
                  {
                      "category":  "Collections",

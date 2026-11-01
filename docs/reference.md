@@ -809,6 +809,8 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ `Map`:
 		+ Float keys remain Float keys in both compatibility modes, distinct from Integer and String keys: `1`, `1.0` and `"1.0"` can identify separate entries. AutoHotkey converts Float keys to String in v2.0 mode and rejects them with `TypeError` in v2.1-alpha.35's v2.1 mode.
 		+ `ToString() => String`: Returns the map as `[key: value, ...]`, its keys and values formatted as `Array.ToString()` formats elements.
+	+ `Object`:
+		+ `Clone()` also copies array elements and map entries into independent storage; contained objects remain shared. AutoHotkey raises `TypeError` for `Object.Prototype.Clone.Call(ArrayOrMap)`.
 	+ `String`:
 		+ `Length`: The number of characters in the string.
 		+ `StartsWith(Token [, CaseSense]) => Boolean` and `EndsWith(Token [, CaseSense]) => Boolean`: Determines whether the string begins or ends with a given string.

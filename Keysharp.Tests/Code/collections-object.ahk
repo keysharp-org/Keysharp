@@ -1,3 +1,5 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
 
@@ -64,5 +66,49 @@ AssertEq(ObjOwnPropCount(LiteralOf()), 1, A_LineNumber)
 dynamicHolder := {}
 dynamicHolder.DefineProp("p", {Get: (this) => 1})
 AssertEq(dynamicHolder.DeleteProp("p"), "", A_LineNumber)
+
+for proto in [Array.Prototype, Map.Prototype]
+{
+	Assert(!proto.HasOwnProp("Clone"), A_LineNumber)
+	AssertEq(proto.Clone.Name, "Object.Prototype.Clone", A_LineNumber)
+}
+
+; A script Clone override can delegate to Object.Clone without sharing native storage or recursing.
+class CloneArray extends Array
+{
+	Clone() => Object.Prototype.Clone.Call(this)
+}
+
+class CloneMap extends Map
+{
+	Clone() => Object.Prototype.Clone.Call(this)
+}
+
+mapSource := CloneMap()
+mapSource.CaseSense := "Off"
+mapSource.Default := "fallback"
+mapSource.Set(1, 1, 2, {Value: 2}, "Key", 3)
+
+for original in [CloneArray(1, {Value: 2}), mapSource]
+{
+	original.Note := "original"
+	original.Capacity := 32
+	copy := original.Clone()
+	Assert(copy !== original && Type(copy) == Type(original) && ObjGetBase(copy) == ObjGetBase(original), A_LineNumber)
+	AssertEq(copy.Capacity, original.Capacity, A_LineNumber)
+	copy[1] := 8
+	copy.Note := "copy"
+	AssertEq(original[1], 1, A_LineNumber)
+	AssertEq(original.Note, "original", A_LineNumber)
+	Assert(copy[2] == original[2], A_LineNumber)
+
+	if copy is Map
+	{
+		AssertEq(copy["KEY"], 3, A_LineNumber)
+		AssertEq(copy["missing"], "fallback", A_LineNumber)
+	}
+}
+
+Throws(() => Object.Prototype.Clone.Call(Buffer(1)), A_LineNumber, TypeError)
 
 FileAppend "pass", "*"

@@ -304,7 +304,6 @@ Status legend:
 | Array.__Item | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Indexer property for getting or setting array elements. In v2.1 mode, a non-integer index raises TypeError; an integer outside the bounds raises IndexError. |
 | Array.__New() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Appends items to the array. Repeated calls preserve existing elements and active enumeration; a call without arguments leaves the contents unchanged. |
 | Array.Capacity | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the reserved element capacity. |
-| Array.Clone() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a shallow copy of an array. An instance created by ObjCreateWithDataPtr raises TypeError. |
 | Array.Contains() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp-specific Array method. Omitting the value searches for an element which has no value. |
 | Array.Default | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Default value returned for missing indexes. |
 | Array.Delete() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Unsets an element and returns its previous value. In v2.1 mode, a non-integer index raises TypeError; an integer outside the bounds raises ValueError. |
@@ -804,7 +803,6 @@ Status legend:
 | Map.Capacity | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets or sets the internal capacity for map entries. |
 | Map.CaseSense | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves or sets the map's case sensitivity setting. |
 | Map.Clear() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Clears all key/value pairs in a map. |
-| Map.Clone() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a shallow copy of all of the values and keys of the map. An instance created by ObjCreateWithDataPtr raises TypeError. |
 | Map.Count | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Number of key/value pairs in the map. |
 | Map.Default | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Default value returned for missing keys. |
 | Map.Delete() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Deletes a key/value pair and returns its value. A missing key raises UnsetItemError, or returns unset in v2.1 compatibility mode. |
@@ -885,6 +883,7 @@ Status legend:
 | ObjCreateWithDataPtr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a directly constructible Object or Struct instance with an external data pointer, without calling __Init, __New or static Call. Enables __Delete without freeing the external memory; ObjSetDataPtr can rebind it. Typed properties remain restricted to struct classes. |
 | Object.__Ref() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a property-reference (PropRef) object. |
 | Object() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a new Object; optional key/value arguments initialize own properties. |
+| Object.Clone() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns a shallow copy of an Object, Array or Map, with independent own properties and container storage. Contained objects remain shared. Instances created by ObjCreateWithDataPtr raise TypeError. |
 | ObjFromPtr() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Retrieves the managed object for an IUnknown pointer, or creates a native COM wrapper which takes ownership of the supplied native reference. Returning a managed object does not consume a native reference. |
 | ObjFromPtrAddRef() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Retrieves the managed object for an IUnknown pointer, or creates a native COM wrapper which owns an additional native reference. Returning a managed object does not add a native reference. The caller retains ownership of any reference it supplied. |
 | ObjGetBase | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the value's base object. Differs in that it only returns the name of the base type as a string. |
