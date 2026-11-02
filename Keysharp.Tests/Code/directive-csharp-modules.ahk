@@ -11,6 +11,8 @@
 #import RenamedChain { ExportedField as ForwardedField, Callable as ForwardedCall }
 #import NestedBuiltin
 #import WildcardBuiltin
+#import CycleTarget
+#import CycleReader
 #Include <assert>
 
 nestedOwn() {
@@ -61,6 +63,13 @@ AssertEq(NestedBuiltin.ThroughScript(), "  7", A_LineNumber)
 AssertEq(WildcardBuiltin.ThroughBridge(), 1, A_LineNumber)
 AssertEq(WildcardBuiltin.ThroughScript(), 1, A_LineNumber)
 AssertEq(WildcardBuiltin.ThroughNestedBridge(), "  7", A_LineNumber)
+; Inline C# running during an import cycle finds a built-in however it reaches one, before the imports of its module are read.
+AssertEq(Type(CycleReader.Bridge), "Func", A_LineNumber)
+AssertEq(Type(CycleReader.ModuleBridge), "Module", A_LineNumber)
+AssertEq(CycleReader.Named, "  7", A_LineNumber)
+AssertEq(CycleReader.Member, 1, A_LineNumber)
+AssertEq(CycleReader.GlobalName, 2, A_LineNumber)
+AssertEq(Type(CycleReader.Scoped), "Module", A_LineNumber)
 
 #CSharp
 public static object Own() => "main";
@@ -158,3 +167,42 @@ public static object ThroughBridge() => Keysharp.Runtime.Script.Invoke(cosh, nul
 public static object ThroughNestedBridge() => Keysharp.Runtime.Script.Invoke(dotnet, "Format", "{1,3}", 7L);
 #EndCSharp
 ThroughScript() => Cosh(0)
+
+#Module CycleReader
+#Import CycleTarget
+#CSharp
+// An error leaving a type initializer would stop the run from ending, so it comes back as the value the script checks.
+private static object Read(System.Func<object> read)
+{
+    try { return read(); }
+    catch (System.Exception e) { return e.Message; }
+}
+public static object Bridge = Read(CycleTarget.ReadBridge);
+public static object ModuleBridge = Read(CycleTarget.ReadModuleBridge);
+public static object Named = Read(CycleTarget.ReadNamed);
+public static object Member = Read(CycleTarget.ReadMember);
+public static object GlobalName = Read(CycleTarget.ReadGlobal);
+public static object Scoped = Read(CycleTarget.ReadScoped);
+#EndCSharp
+
+#Module CycleTarget
+#Import CycleReader
+#Import Ks
+#Import Ks:DotNet as Whole
+#Import Ks:DotNet { Format }
+#Import Ks { DotNet as Net }
+NamedFunction() => Format("{1,3}", 7)
+MemberFunction() => Ks.Cosh(0)
+GlobalFunction() => StrLen("ab")
+ScopedFunction() {
+    #Import Ks:DotNet as Inner
+    return Inner
+}
+#CSharp
+public static object ReadBridge() => format;
+public static object ReadModuleBridge() => net;
+public static object ReadNamed() => FN_Namedfunction();
+public static object ReadMember() => FN_Memberfunction();
+public static object ReadGlobal() => FN_Globalfunction();
+public static object ReadScoped() => FN_Scopedfunction();
+#EndCSharp

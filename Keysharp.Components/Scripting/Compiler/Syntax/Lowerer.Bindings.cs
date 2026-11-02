@@ -33,8 +33,24 @@ namespace Keysharp.Compilation.Syntax
 		private static ExpressionSyntax BindingOwner(MemberBinding target) => SyntaxFactory.TypeOfExpression(Ty(target.Owner));
 
 		private ExpressionSyntax MemberRead(MemberBinding target) => target.Storage == ModuleBindingKind.Class ? TypeSingleton(target.Owner) : target.Inline
-			? Inv(Access("Keysharp.Builtins.Misc.MemberGet"), BindingOwner(target), Str(target.Member), BindingKind(target.Storage))
+			? MemberGet(target)
+			: IsBuiltinConstant(target) ? BuiltinFieldRef(target.Builtin)
 			: target.Builtin != null ? BindMember(target.Builtin) : Access(target.Owner + "." + target.Member);
+
+		private static ExpressionSyntax MemberGet(MemberBinding target) =>
+			Inv(Access("Keysharp.Builtins.Misc.MemberGet"), BindingOwner(target), target.Member == null ? Null : Str(target.Member), BindingKind(target.Storage));
+
+		private static bool IsBuiltinConstant(MemberBinding target) =>
+			target is { Builtin: not null, Storage: ModuleBindingKind.Function or ModuleBindingKind.Module };
+
+		// What only a wildcard or inline C# reaches is read without a field, as one for each such member would cost them all
+		// at startup, read or not. A script's reference by name reads the field, through MemberRead.
+		private ExpressionSyntax FieldlessMemberRead(MemberBinding target)
+		{
+			if (!IsBuiltinConstant(target)) return MemberRead(target);
+			TrackRuntimeComponent(target.Builtin as System.Reflection.MethodInfo);
+			return MemberGet(target);
+		}
 
 		private ExpressionSyntax MemberWrite(MemberBinding target, ExpressionSyntax value) => target.Inline
 			? Inv(Access("Keysharp.Builtins.Misc.MemberSet"), BindingOwner(target), target.Member == null ? Null : Str(target.Member), BindingKind(target.Storage), value)
@@ -374,6 +390,12 @@ namespace Keysharp.Compilation.Syntax
 		{
 			_boundModule = module;
 			foreach (var import in module.ModuleBindings) RecordModuleImport(import);
+			// Every reference to a built-in module reads a whole-module import's field where the module has one, except `@this`,
+			// which would be read as a method's receiver.
+			foreach (var (name, import) in module.NamedBindings)
+				if (import.Bound.Member == null && BuiltinModuleType(import.Bound.Source) is { } type && NameMangler.Global(name) is var field and not "@this"
+					&& _fields.TryAdd(BuiltinFieldKey(type), field))
+					_functionFields.Add(field);
 			var bridges = new List<MemberDeclarationSyntax>();
 			foreach (var (name, target) in module.Bindings)
 			{
@@ -383,17 +405,17 @@ namespace Keysharp.Compilation.Syntax
 				var bound = direct?.Bound ?? new ImportRef(target.Module == null ? AhkSource : new(target.Module), target.Name, target.Constant, name);
 				bound = bound with { Constant = target.Constant, Name = direct?.Bound.Name ?? name };
 				_importMembers[name] = bound;
-				_fields[name] = NameMangler.Global(name);
+				var id = _fields[name] = NameMangler.Global(name);
 				if (direct?.Bound.Member == null && direct != null)
 				{
 					var source = direct.Bound.Source;
-					_fieldDecls.Add(Declared(ConstantField(NameMangler.Global(name), ModuleObjectExpr(source)), name));
+					// A built-in module's comes first, as BuiltinField's does.
+					_fieldDecls.Insert(BuiltinModuleType(source) != null ? 0 : _fieldDecls.Count, Declared(ConstantField(id, ModuleObjectExpr(source)), name));
 					continue;
 				}
 				if (_inlineBlocks?.Any(block => block.Module == module.CodeName) == true)
 				{
-					var id = NameMangler.Global(name);
-					var property = ObjArrowProp(id, MemberRead(target));
+					var property = ObjArrowProp(id, FieldlessMemberRead(target));
 					if (target.Constant == null)
 						property = property.WithExpressionBody(null).WithSemicolonToken(default)
 							.WithAccessorList(SyntaxFactory.AccessorList(SyntaxFactory.List(new[]
@@ -403,6 +425,10 @@ namespace Keysharp.Compilation.Syntax
 							})));
 					bridges.Add(property.AddAttributeLists(Attr("Keysharp.Runtime.PublicHiddenFromUser")));
 				}
+				// The name belongs to the import, as a conflicting declaration in the module is an error, so it can name the
+				// field. `@this` would be read as a method's receiver, and in a module with #CSharp blocks the bridge above has it.
+				else if (IsBuiltinConstant(target) && id != "@this")
+					_fields.TryAdd(BuiltinFieldKey(target.Builtin), id);
 			}
 			return bridges;
 		}

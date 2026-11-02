@@ -659,6 +659,261 @@ public partial class ModuleTests : TestRunner
 		}
 	}
 
+	// What a script lowers to, the only place a cached field shows, as a run cannot tell one from a lookup. Whatever the
+	// script, no function body builds a built-in's function or module object: only a field's initializer does.
+	// Only compile takes the code through Roslyn, for a case where what C# accepts is the point, as a compile costs far more.
+	private static string GeneratedCode(string source, string[] contains = null, string[] absent = null, bool compile = false)
+	{
+		var code = PrettyPrinter.Print(Lowered(source).Unit);
+		if (compile)
+		{
+			var (bytes, text, _) = new CompilerHelper().CompileCodeToByteArray(source, "module_generated", null, false, true, ScriptCompilationOutput.InMemory, sourceIsFile: false);
+			Assert.That(bytes, Is.Not.Null, text);
+		}
+		foreach (var line in code.Split('\n'))
+			if (line.Contains("Functions.Func((System.Delegate)Keysharp.Builtins.") || line.Contains("Misc.ModuleObject("))
+				Assert.That(line.Trim(), Does.Match(@"^(public|private) static (readonly )?object @?\w+ = "), source);
+		foreach (var text in contains ?? [])
+			Assert.That(code, Does.Contain(text), source);
+		foreach (var text in absent ?? [])
+			Assert.That(code, Does.Not.Contain(text), source);
+		return code;
+	}
+
+	private static ScriptCompilationResult Lowered(string source)
+	{
+		var compilation = new CompilerHelper().CreateCompilationUnitFromFile(source, "module_generated", sourceIsFile: false);
+		Assert.That(compilation.Errors.HasErrors, Is.False, () => source + CompilerHelper.GetCompilerErrors(compilation.Errors).Item1);
+		return compilation;
+	}
+
+	private const string BuiltinFunc = "Keysharp.Builtins.Functions.Func((System.Delegate)Keysharp.Builtins.";
+	private const string Invoke = "Keysharp.Runtime.Script.Invoke(";
+	private const string InvokeOrNull = "Keysharp.Runtime.Script.InvokeOrNull(";
+	private const string InvokeAs = "Keysharp.Runtime.Script.InvokeAs(";
+	private const string MainModule = "Keysharp.CompiledMain.Program.__Main.";
+	private const string OtherF = "Keysharp.CompiledMain.Program.Other.f";
+
+	private static string CachedFunc(string field, string target) => $"private static readonly object {field} = {BuiltinFunc}{target});";
+
+	private static string CachedModule(string field, string target) =>
+		$"private static readonly object {field} = Keysharp.Builtins.Misc.ModuleObject(typeof(Keysharp.Builtins.{target}));";
+
+	// A named import of a built-in holds the function in a field under its own name, as a global built-in does.
+	[Test, Category("Module"), Category("Internal")]
+	public void NamedImportField()
+	{
+		GeneratedCode("#import Ks:Dotnet { Format }\nMsgBox Format(\"{1}\", 1)\n",
+			[CachedFunc("format", "Ks.DotNet.Format"), $"{InvokeOrNull}msgbox, null, {Invoke}format, null, \"{{1}}\", 1L));"], compile: true);
+		foreach (var source in new[] { "#Import Ks { Cosh }\nx := Cosh(1)\n", "#Import Ks { * }\nx := Cosh(1)\n" })
+			GeneratedCode(source, [CachedFunc("cosh", "Ks.Cosh"), $"{Invoke}cosh, null, 1L)"]);
+		GeneratedCode("#Import Ks { Cosh as Hyperbolic }\nx := Hyperbolic(1)\n", [CachedFunc("hyperbolic", "Ks.Cosh"), $"{InvokeAs}hyperbolic, \"Hyperbolic\", 1L)"]);
+		// Two names for one function share its field.
+		GeneratedCode("#Import Ks { Cosh, Cosh as Hyperbolic }\nx := Hyperbolic(1)\ny := Cosh(2)\n",
+			[CachedFunc("cosh", "Ks.Cosh"), $"{InvokeAs}cosh, \"Hyperbolic\", 1L)", $"{Invoke}cosh, null, 2L)"], ["hyperbolic ="]);
+		GeneratedCode("#Import AHK { StrLen as Length }\nx := Length(\"a\")\n", [CachedFunc("length", "Strings.StrLen"), $"{InvokeAs}length, \"Length\", \"a\")"]);
+		// A variable's function is known only at run time, so its call passes along the name written, and a statement needs no name.
+		GeneratedCode("Foo(Callback) {\nx := Callback(1)\nCallback(2)\nreturn x\n}\n", [$"{InvokeAs}Callback, \"Callback\", 1L)", "InvokeOrNull(Callback, null, 2L)"]);
+		// A name C# reserves is escaped as any module field's.
+		GeneratedCode("#Import Ks { Cosh as event }\nx := event(1)\nFoo(event) {\nreturn Ks.Cosh(event)\n}\n#Import Ks\n",
+			[CachedFunc("@event", "Ks.Cosh"), $"{InvokeAs}@event, \"event\", 1L)", $"return {Invoke}{MainModule}@event, null, @event);"], compile: true);
+	}
+
+	// A member call on a chain of constants invokes that function's field, naming no member.
+	[Test, Category("Module"), Category("Internal")]
+	public void MemberCallField()
+	{
+		GeneratedCode("#Import Ks\nx := Ks.Cosh(1)\n", [CachedFunc("KS_Ks_Cosh", "Ks.Cosh"), $"{Invoke}KS_Ks_Cosh, null, 1L)"]);
+		// A statement discards the result, and no variable named like the member changes the target.
+		GeneratedCode("#Import Ks\nCosh := 5\nKs.Cosh(1)\n", [$"{InvokeOrNull}KS_Ks_Cosh, null, 1L);"]);
+
+		foreach (var source in new[]
+		{
+			"#Import Ks\nx := Ks.DotNet.Format(\"{1}\", 1)\n",
+			"#Import Ks:DotNet\nx := DotNet.Format(\"{1}\", 1)\n",
+			"#Import Ks { DotNet as N }\nx := (N).Format(\"{1}\", 1)\n",
+			"#Import Ks { * }\nx := DotNet.Format(\"{1}\", 1)\n",
+			"#Import Relay\nx := Relay.DotNet.Format(\"{1}\", 1)\n#Module Relay\n#Import Export Ks:DotNet\n",
+		})
+			GeneratedCode(source, [CachedFunc("KS_Ks_DotNet_Format", "Ks.DotNet.Format"), $"{Invoke}KS_Ks_DotNet_Format, null, \"{{1}}\", 1L)"], [", \"Format\", \"{1}\""]);
+
+		// It reuses the field a module-level import names, whichever reference comes first.
+		GeneratedCode("#Import Ks:DotNet { Format }\nx := DotNet.Format(\"{1}\", 1)\ny := Format(\"{1}\", 2)\n",
+			[CachedFunc("format", "Ks.DotNet.Format"), $"{Invoke}format, null, \"{{1}}\", 1L)", $"{Invoke}format, null, \"{{1}}\", 2L)"], ["KS_Ks_DotNet_Format"]);
+		// And the field a global built-in has, whichever reference comes first.
+		GeneratedCode("#Import AHK\nx := StrLen(\"a\")\ny := AHK.StrLen(\"ab\")\n",
+			[CachedFunc("strlen", "Strings.StrLen"), $"{Invoke}strlen, null, \"a\")", $"{Invoke}strlen, null, \"ab\")"], ["KS_Strings_StrLen"]);
+		GeneratedCode("#Import AHK\nx := AHK.StrLen(\"a\")\ny := StrLen(\"ab\")\n",
+			[CachedFunc("KS_Strings_StrLen", "Strings.StrLen"), $"{Invoke}KS_Strings_StrLen, null, \"a\")", $"{Invoke}KS_Strings_StrLen, null, \"ab\")"], ["object strlen ="]);
+
+		// An exported function has the module's own field, reached however the module holds it.
+		GeneratedCode("#Import Other\nx := Other.F()\ny := Other.Nested.F()\nOther.F()\n#Module Other\n#Import Other:Nested\nF() => 1\n#Module Other:Nested\nF() => 2\n",
+			[$"{Invoke}{OtherF}, null)", $"{InvokeOrNull}{OtherF}, null);",
+				$"{Invoke}Keysharp.CompiledMain.Program.{Keysharp.Compilation.Syntax.NameMangler.ModuleClass("Other:Nested")}.f, null)"], [", \"F\")", ", \"Nested\")"]);
+		GeneratedCode("#Import Relay\nx := Relay.F()\ny := Relay.G()\nz := Relay.H()\n#Module Relay\n#Import Export Other { * }\n#Import Other { F as G }\n#Import Other { F as H }\n#Module Other\nF() => 1\n",
+			[$"{Invoke}{OtherF}, null)"], ["relay, \"F\"", "relay, \"G\"", "relay, \"H\""]);
+		GeneratedCode("#Import __Main\nx := __Main.F()\nF() => 1\n", [$"{Invoke}{MainModule}f, null)"], [", \"F\")"]);
+
+		// Another spelling of its name takes the same field, and says how it was written only where a no-value error can name it.
+		GeneratedCode("#Import Relay\nx := Relay.G()\nRelay.G()\ny := (Relay.G()?)\nz := Relay.G() ?? 1\nArrow() => Relay.G()\n#Module Relay\n#Import Other { F as G }\n#Module Other\nF() => 1\n",
+			[$".x = {InvokeAs}{OtherF}, \"G\");", $"\t{InvokeOrNull}{OtherF}, null);", $".y = ({InvokeOrNull}{OtherF}, null));", $"{InvokeOrNull}{OtherF}, null)) ?? 1L", $"return {InvokeOrNull}{OtherF}, null);"], ["relay, \"G\""]);
+		GeneratedCode("#Import Ks\nx := Ks.COSH(1)\n", [CachedFunc("KS_Ks_Cosh", "Ks.Cosh"), $"{InvokeAs}KS_Ks_Cosh, \"COSH\", 1L)"]);
+
+		// The AHK module's functions are the global built-ins, which a script's own #Module AHK can replace.
+		GeneratedCode("#Import AHK\nx := AHK.StrLen(\"a\")\n#Module AHK\nStrLen(s) => 1\n", [$"{Invoke}Keysharp.CompiledMain.Program.AHK.strlen, null, \"a\")"], [BuiltinFunc + "Strings.StrLen"]);
+
+		// The arguments take the path a named import's do.
+		GeneratedCode("#Import Ks:DotNet\nf := [1]\nx := DotNet.Format(f*)\ny := DotNet.RegExMatch(\"a\", NeedleRegEx: \"b\")\nz := DotNet.RegExMatch(\"a\", \"b\", &m)\n",
+			[$"{Invoke}KS_Ks_DotNet_Format, null, ", "KS_Ks_DotNet_RegExMatch, null, \"a\", Keysharp.Runtime.Script.NamedArgs(\"NeedleRegEx\", \"b\"))"]);
+	}
+
+	// A reference with no module-level name goes by its target, and one with a name reaches the field past a local or member.
+	[Test, Category("Module"), Category("Internal")]
+	public void ScopedImportField()
+	{
+		foreach (var source in new[] { "Foo() {\n#Import Ks { Cosh }\nreturn Cosh(1)\n}\n", "Foo() {\n#Import Ks { * }\nreturn Cosh(1)\n}\n" })
+			GeneratedCode(source, [CachedFunc("KS_Ks_Cosh", "Ks.Cosh"), $"return {Invoke}KS_Ks_Cosh, null, 1L);"]);
+		GeneratedCode("class C {\n#Import Ks { Sinh }\nstatic G(a) {\nreturn Sinh(a)\n}\n}\n", [CachedFunc("KS_Ks_Sinh", "Ks.Sinh"), $"return {Invoke}KS_Ks_Sinh, null, a);"]);
+		GeneratedCode("Foo() {\n#Import Ks { Cosh as Shared }\nreturn Shared(1)\n}\nBar() {\n#Import Ks { Sinh as Shared }\nreturn Shared(1)\n}\n",
+			[CachedFunc("KS_Ks_Cosh", "Ks.Cosh"), CachedFunc("KS_Ks_Sinh", "Ks.Sinh"), $"return {InvokeAs}KS_Ks_Cosh, \"Shared\", 1L);", $"return {InvokeAs}KS_Ks_Sinh, \"Shared\", 1L);"]);
+		GeneratedCode("#Import Ks { Cosh }\nFoo() {\n#Import Ks { Cosh as Scoped }\nreturn Scoped(1)\n}\n", [CachedFunc("cosh", "Ks.Cosh"), $"return {InvokeAs}cosh, \"Scoped\", 1L);"], ["KS_Ks_Cosh"]);
+		GeneratedCode("Foo() {\n#Import Other { F }\nreturn F()\n}\n#Module Other\nF() => 1\n", [$"return {Invoke}{OtherF}, null);"]);
+
+		// A C# local of the field's name would capture a simple name, the enclosing function's too.
+		GeneratedCode("#Import Ks:DotNet { Format }\n#Import Ks\nFoo(Format) {\nreturn Ks.DotNet.Format(\"{1}\", Format)\n}\n",
+			[$"return {Invoke}{MainModule}format, null, \"{{1}}\", Format);"]);
+		GeneratedCode("#Import Ks\nFoo(KS_Ks_Cosh) {\nreturn Ks.Cosh(KS_Ks_Cosh)\n}\n", [$"return {Invoke}{MainModule}KS_Ks_Cosh, null, KS_Ks_Cosh);"]);
+		GeneratedCode("#Import Ks\nFoo() {\nlocal KS_Ks_Cosh := 1\nNested() {\nreturn Ks.Cosh(1)\n}\nreturn Nested() KS_Ks_Cosh\n}\n", [$"return {Invoke}{MainModule}KS_Ks_Cosh, null, 1L);"]);
+		// A class member of that name would too, and a method's name is no field's.
+		GeneratedCode("#Import Ks { Cosh as op }\nclass C {\nstatic G() {\nreturn op(1)\n}\n}\n", [$"return {InvokeAs}{MainModule}op, \"op\", 1L);"]);
+		GeneratedCode("#Import Ks:DotNet { Format }\n#Import Ks\nclass C {\nFormat(a) {\nreturn Format(a)\n}\nKs() {\nreturn Ks.DotNet.Format(1)\n}\n}\n",
+			[$"return {Invoke}format, null, a);", $"return {Invoke}format, null, 1L);"]);
+		// `this` is a method's receiver, whatever an import of that name binds.
+		GeneratedCode("#Import Ks as this\nclass C {\nG() {\nreturn this.Name()\n}\n}\n", [$"return {Invoke}@this, \"Name\");"]);
+		GeneratedCode("#Import Ks\n#Import Ks { Sinh as this }\nclass C {\nG() {\nreturn Ks.Sinh(1)\n}\n}\n", [$"return {Invoke}KS_Ks_Sinh, null, 1L);"], ["object @this ="]);
+		// So a whole-module import of that name, which has the field, serves no other reference, in a method or an arrow in one.
+		GeneratedCode("#Import Ks\n#Import Ks:DotNet as this\nclass C {\nG() {\nreturn Ks.DotNet\n}\nH() {\n#Import Ks:DotNet as Inner\nreturn Inner\n}\nI() {\nreturn () => Ks.DotNet\n}\n}\n",
+			[CachedModule("KS_Ks_DotNet", "Ks.DotNet"), "return KS_Ks_DotNet;"], ["return @this;"], compile: true);
+		// A module named like a field has a class of another name, which C# requires of a type and its member.
+		GeneratedCode("#Import KS_Ks_Cosh\n#Module KS_Ks_Cosh\n#Import Ks\nx := Ks.Cosh(1)\n", [CachedFunc("KS_Ks_Cosh", "Ks.Cosh")], compile: true);
+	}
+
+	// A built-in module object is cached as a function is, and a whole-module import's field serves every reference to it.
+	[Test, Category("Module"), Category("Internal")]
+	public void ModuleObjectField()
+	{
+		GeneratedCode("#Import Ks { DotNet }\nx := DotNet\n", [CachedModule("dotnet", "Ks.DotNet"), ".x = dotnet;"]);
+		GeneratedCode("#Import Ks\nx := Ks.DotNet\n", [CachedModule("KS_Ks_DotNet", "Ks.DotNet"), ".x = KS_Ks_DotNet;"]);
+		foreach (var source in new[] { "Foo() {\n#Import Ks:DotNet\nreturn DotNet\n}\n", "Foo() {\n#Import Ks { DotNet as Scoped }\nreturn Scoped\n}\n" })
+			GeneratedCode(source, [CachedModule("KS_Ks_DotNet", "Ks.DotNet"), "return KS_Ks_DotNet;"]);
+		GeneratedCode("Foo() {\n#Import AHK\nreturn AHK\n}\n", ["private static readonly object KS_Keysharp_Runtime_Ahk = Keysharp.Builtins.Misc.ModuleObject(typeof(Keysharp.Runtime.Ahk));", "return KS_Keysharp_Runtime_Ahk;"]);
+		GeneratedCode("#Import Ks\n#Import Ks { DotNet }\n#Import Ks:DotNet as Whole\nx := Ks.DotNet\ny := DotNet\nFoo() {\n#Import Ks:DotNet\nreturn DotNet\n}\n",
+			[".x = whole;", ".y = whole;", "return whole;"], ["KS_Ks_DotNet", "object dotnet ="]);
+		GeneratedCode("#Import Ks:DotNet\nx := DotNet\nFoo(DotNet) {\n#Import Ks { DotNet as Other }\nreturn Other\n}\n", [".x = " + MainModule + "dotnet;", $"return {MainModule}dotnet;"]);
+	}
+
+	// In a module with #CSharp blocks a bridge has the import's name, so the field has its target's, and nothing takes a field
+	// until a script reference names it: a bridge reads the member without one, as a wildcard's dynamic name does.
+	[Test, Category("Module"), Category("Internal")]
+	public void InlineModuleField()
+	{
+		const string Inline = "#CSharp\npublic static object Through() => format;\n#EndCSharp\n";
+		const string FormatBridge = "public static object format => Keysharp.Builtins.Misc.MemberGet(typeof(Keysharp.Builtins.Ks.DotNet), \"Format\", Keysharp.Runtime.ModuleBindingKind.Function);";
+		GeneratedCode("#Import Ks:DotNet { Format }\nx := Format(\"{1}\", 1)\n" + Inline,
+			[CachedFunc("KS_Ks_DotNet_Format", "Ks.DotNet.Format"), FormatBridge, $"{Invoke}KS_Ks_DotNet_Format, null, \"{{1}}\", 1L)"], ["object format = "], compile: true);
+		GeneratedCode("#Import Ks:DotNet { Format }\n" + Inline, [FormatBridge], ["KS_Ks_DotNet_Format"]);
+		const string MemberBridge = "public static object member => Keysharp.Builtins.Misc.MemberGet(typeof(Keysharp.Builtins.Ks.DotNet), null, Keysharp.Runtime.ModuleBindingKind.Module);";
+		GeneratedCode("#Import Ks { DotNet as Member }\n#Import Ks:DotNet as Whole\n#CSharp\npublic static object Through() => member;\n#EndCSharp\n", [MemberBridge], ["KS_Ks_DotNet"]);
+		// A whole-module import's field serves a script's reference here too.
+		GeneratedCode("#Import Ks { DotNet as Member }\n#Import Ks:DotNet as Whole\nx := Member\n#CSharp\npublic static object Through() => member;\n#EndCSharp\n", [MemberBridge, ".x = whole;"], ["KS_Ks_DotNet"]);
+		GeneratedCode("#Import Ks { * }\n#CSharp\npublic static object Through() => cosh;\n#EndCSharp\n",
+			["public static object cosh => Keysharp.Builtins.Misc.MemberGet(typeof(Keysharp.Builtins.Ks), \"Cosh\", Keysharp.Runtime.ModuleBindingKind.Function);"], ["KS_Ks_Cosh ="]);
+		GeneratedCode("#Import Ks { * }\nx := Cosh(1)\n#CSharp\npublic static object Through() => cosh;\n#EndCSharp\n", [CachedFunc("KS_Ks_Cosh", "Ks.Cosh"), $"{Invoke}KS_Ks_Cosh, null, 1L)"], [BuiltinFunc + "Ks.Sinh"]);
+		// A name of that form is a method's to take where no field has it.
+		GeneratedCode("#Import Ks\n#CSharp\npublic static object KS_Ks_Cosh() => 1;\n#EndCSharp\n", compile: true);
+	}
+
+	// What the receiver answers at run time stays a lookup: what can change, what has no field, and what only it can resolve.
+	[Test, Category("Module"), Category("Internal")]
+	public void MemberCallStaysDynamic()
+	{
+		const string OtherObject = MainModule + "other";
+
+		foreach (var (source, dynamicCall) in new[]
+		{
+			("#Import Ks\nFoo(Ks) {\nreturn Ks.Cosh(1)\n}\n", "Invoke(Ks, \"Cosh\", 1L)"),
+			("#Import Ks\nFoo() {\nKs := 1\nNested() {\nreturn Ks.Cosh(1)\n}\nreturn Nested()\n}\n", "Invoke(Ks, \"Cosh\", 1L)"),
+			("#Import Ks\nx := Ks.%\"Cosh\"%(1)\n", "Invoke(" + MainModule + "ks, \"Cosh\", 1L)"),
+			("#Import Ks\nx := (Ks?).Cosh(1)\n", "\"Cosh\", 1L)"),
+			("#Import Ks\nx := Ks.HasProp(\"a\")\n", "\"HasProp\", \"a\")"),
+			("#Import Ks\nx := Ks.HashMap()\n", "\"HashMap\")"),
+			("#Import Ks\nx := Ks.DotNet()\n", "\"DotNet\")"),
+			("#Import Ks\nx := Ks.NoSuch()\n", "\"NoSuch\")"),
+		})
+			GeneratedCode(source, [dynamicCall], ["KS_Ks_Cosh ="]);
+
+		foreach (var (source, member) in new[]
+		{
+			("#Import Other\nx := Other.V()\n#Module Other\nV := 1\n", "V"),
+			("#Import Other\nx := Other.K()\n#Module Other\nclass K {\n}\n", "K"),
+			("#Import Other\nx := Other.Cs()\n#Module Other\n#CSharp\npublic static object Cs() => 1;\n#EndCSharp\n", "Cs"),
+			("#Import Other\nx := Other.Nested()\n#Module Other\n#Import Other:Nested\n#Module Other:Nested\n", "Nested"),
+		})
+			GeneratedCode(source, [$"{OtherObject}, \"{member}\""]);
+	}
+
+	// An import nothing names costs nothing at startup, and a dynamic name through a wildcard reaches its member without a field.
+	[Test, Category("Module"), Category("Internal")]
+	public void UnusedImportHasNoField()
+	{
+		foreach (var source in new[]
+		{
+			"#Import Ks { Cosh }\n",
+			"#Import Ks:DotNet { Format }\n",
+			"#Import Ks { * }\n",
+			"Foo() {\n#Import Ks { Cosh }\nreturn 1\n}\n",
+			"class C {\n#Import Ks { Cosh }\n}\n",
+			"#Import Ks { * }\nFoo(Name) => %Name%\n",
+			"#Import Ks { Cosh, Sinh as Hyperbolic }\n#CSharp\npublic static object One() => 1;\n#EndCSharp\n",
+			"#Import Ks { * }\n#CSharp\npublic static object One() => 1;\n#EndCSharp\n",
+		})
+			GeneratedCode(source, [], ["Functions.Func((System.Delegate)Keysharp.Builtins.Ks", "KS_Ks_"]);
+		foreach (var source in new[] { "#Import Ks { DotNet }\n", "Foo() {\n#Import Ks:DotNet\nreturn 1\n}\n", "#Import Ks { DotNet as Net }\n#CSharp\npublic static object One() => 1;\n#EndCSharp\n" })
+			GeneratedCode(source, [], ["Misc.ModuleObject(typeof(Keysharp.Builtins.Ks.DotNet))"]);
+		// `#Import AHK { * }` reaches hundreds of functions, whose fields a dynamic name does not ask for.
+		GeneratedCode("#Import AHK { * }\nFoo(Name) => %Name%\n", [], ["KS_Strings_StrLen", "object strlen ="]);
+	}
+
+	// A compiled program carries what any reference to a run-time compile needs, a field shared with another reference or not.
+	[Test, Category("Module")]
+	public void FieldsTrackComponents()
+	{
+		foreach (var source in new[]
+		{
+			"#Import Ks { RunScript }\n",
+			"#Import Ks { * }\nRunScript(\"x := 1\")\n",
+			"Foo() {\n#Import Ks { RunScript }\nreturn RunScript(\"x := 1\")\n}\n",
+			"#Import Ks\nKs.RunScript(\"x := 1\")\n",
+			"#Import Ks\nKs?.RunScript(\"x := 1\")\n",
+			"#Import Ks\nf := Ks.RunScript\n",
+			"#Import Relay\nRelay.RunScript(\"x := 1\")\n#Module Relay\n#Import Export Ks { RunScript }\n",
+			"#Import Ks { * }\nFoo(Name) => %Name%\n",
+			"#Import Ks { * }\n#CSharp\npublic static object Through() => runscript;\n#EndCSharp\n",
+		})
+			Assert.That(Lowered(source).RequiredComponents, Has.Member("compiler"), source);
+	}
+
+	// A field takes a method group, which an overload or a generic method could not be, so a member call depends on this.
+	[Test, Category("Module"), Category("Internal")]
+	public void BuiltinModuleFunctionsCompile()
+	{
+		var script = new StringBuilder("#Import Ks\n#Import Ks:DotNet\nFoo() {\n");
+		foreach (var (receiver, type) in new[] { ("Ks", typeof(Keysharp.Builtins.Ks)), ("DotNet", typeof(Keysharp.Builtins.Ks.DotNet)) })
+			foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly).Where(method => !method.IsSpecialName))
+				_ = script.Append(receiver).Append('.').Append(Script.GetUserDeclaredName(method) ?? method.Name).Append("()\n");
+		_ = GeneratedCode(script.Append("}\n").ToString(), compile: true);
+	}
+
 	// A script's own Ks is an ordinary module, so a path through it finds its own child, whichever directive comes first.
 	[TestCase("#Module Ks\nValue := \"parent\"\n#Module Ks:DotNet\nValue := \"child\"\n")]
 	[TestCase("#Module Ks:DotNet\nValue := \"child\"\n#Module Ks\nValue := \"parent\"\n")]

@@ -1328,6 +1328,10 @@ public class DirectiveTests : TestRunner
 					"globalcol", "collides with a variable or function the script declares", line: 4);
 			Rejects("#NoTrayIcon\n#CSharp\nstatic long AutoExecSection;\n#EndCSharp\nx := 1\n",
 					"reserved", "is a name Keysharp generates");
+			Rejects("#NoTrayIcon\n#Import Ks\nx := Ks.Cosh(1)\n#CSharp\npublic static object KS_Ks_Cosh() => 1;\n#EndCSharp\n",
+					"cachedfield", "is a name Keysharp generates");
+			Rejects("#NoTrayIcon\n#Import Ks\nx := Ks.Cosh(1)\n#CSharp\n[UserDeclaredName(\"Other\")] private static long KS_Ks_Cosh;\n#EndCSharp\n",
+					"renamedcachedfield", "is a name Keysharp generates");
 			Rejects("#NoTrayIcon\nf() => 1\n#CSharp\npublic static long F() => 2;\n#EndCSharp\nx := 1\n",
 					"funccol", "declared both as a script function");
 			Rejects("#NoTrayIcon\nf() => 1\n#CSharp\n[UserDeclaredName(\"F\")] public static long DifferentClrName() => 2;\n#EndCSharp\nx := 1\n",

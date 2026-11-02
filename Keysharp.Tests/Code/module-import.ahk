@@ -210,6 +210,62 @@ AssertEq(ObjBindMethod(DotNet, "Format", "{1,3}")(7), "  7", A_LineNumber)
 AssertEq(ApplyFunction(DotNet.Format, "{1,3}", 7), "  7", A_LineNumber)
 
 
+; ---- a member call binds its arguments as a named import of the function does, with the same results and errors
+#Import CallForms
+#Import CallForms { Two, Bump }
+#Import CallRelay
+
+CallOutcome(Call) {
+    try
+        return Call()
+    catch Any as callError
+        return Described(callError)
+}
+SameOutcome(Named, Member, Expected, Line) {
+    AssertEq(CallOutcome(Named), Expected, Line)
+    AssertEq(CallOutcome(Member), Expected, Line)
+}
+SameOutcome(() => NetMatch(), () => DotNet.RegExMatch(), "ArgumentError: Too few parameters passed to function. [RegExMatch]", A_LineNumber)
+SameOutcome(() => NetMatch("ab", "b", , 1, 2), () => Ks.DotNet.RegExMatch("ab", "b", , 1, 2), "Error: Too many parameters passed to function. [RegExMatch]", A_LineNumber)
+netFormatArgs := ["{1,3}", 7]
+SameOutcome(() => NetFormat(netFormatArgs*), () => Ks.DotNet.Format(netFormatArgs*), "  7", A_LineNumber)
+SameOutcome(() => NetMatch(Haystack: "ab", NeedleRegEx: "b"), () => NetByPath.RegExMatch(Haystack: "ab", NeedleRegEx: "b"), 2, A_LineNumber)
+SameOutcome(() => NetFormat(FormatStr: "a"), () => DotNet.Format(FormatStr: "a"), "a", A_LineNumber)
+SameOutcome(() => NetReplace(Haystack: "ab", NeedleRegEx: "a", Replacement: "x"), () => Ks.DotNet.RegExReplace(Haystack: "ab", NeedleRegEx: "a", Replacement: "x"), "xb", A_LineNumber)
+SameOutcome(() => NetMatch("ab", %"Needle"%: "b"), () => NetByMember.RegExMatch("ab", %"Needle"%: "b"),
+    "ValueError: 'Needle' is not a parameter of RegExMatch. Its named parameters are: Haystack, NeedleRegEx, OutputVar, StartingPos. []", A_LineNumber)
+SameOutcome(() => (NetMatch("ab", "b", &netByRef), netByRef[0]), () => (Ks.DotNet.RegExMatch("ab", "b", &netByRef), netByRef[0]), "b", A_LineNumber)
+SameOutcome(() => Two(), () => CallForms.Two(), "ArgumentError: Missing a required parameter. [A]", A_LineNumber)
+SameOutcome(() => Two(1, 2, 3), () => CallForms.Two(1, 2, 3), "Error: Too many parameters passed to function. [Two]", A_LineNumber)
+SameOutcome(() => Two(1, %"Nope"%: 2), () => CallForms.Two(1, %"Nope"%: 2),
+    "ValueError: 'Nope' is not a parameter of Two. Its named parameters are: A, B. []", A_LineNumber)
+callFormValue := 1
+Bump(&callFormValue)
+CallForms.Bump(&callFormValue)
+AssertEq(callFormValue, 3, A_LineNumber)
+
+; It reaches a function however the module holds it, and any other receiver or member is asked at run time.
+AssertEq(CallRelay.Two(1, 2), "1,2", A_LineNumber)
+AssertEq(CallRelay.Renamed(1, 2), "1,2", A_LineNumber)
+AssertEq(CallForms.Holder(1, 2), "1,2", A_LineNumber)
+CallForms.Holder := (A, B) => "replaced"
+AssertEq(CallForms.Holder(1, 2), "replaced", A_LineNumber)
+Assert(CallForms.Thing() is CallForms.Thing, A_LineNumber)
+Assert(CallForms.HasProp("__Ref") && !CallForms.HasProp("Two") && Ks.HasProp("__Ref"), A_LineNumber)
+AssertEq(Ks.%"Cosh"%(0), 1, A_LineNumber)
+AssertEq((Ks).Cosh(0), 1, A_LineNumber)
+Throws(() => Ks?.Nope(), A_LineNumber, MethodError)
+AssertEq(Ks?.Cosh(0), 1, A_LineNumber)
+
+; A local or parameter named like the module is the receiver, and one named like a field leaves the field reachable.
+MemberOfParameter(Ks) => Ks.Cosh(1)
+MemberOfLocal() {
+    local Ks := {Cosh: (this, Value) => "local " Value}
+    return Ks.Cosh(1)
+}
+AssertEq(MemberOfParameter({Cosh: (this, Value) => "parameter " Value}), "parameter 1", A_LineNumber)
+AssertEq(MemberOfLocal(), "local 1", A_LineNumber)
+
 ; ---- a nested built-in module is a read-only member, and not callable
 Assert(Ks.__Ref("DotNet").__Value == DotNet, A_LineNumber)
 Assert(&Ks.DotNet == Ks.__Ref("DotNet") && &Ks.DotNet.Format == DotNet.__Ref("Format"), A_LineNumber)
@@ -254,6 +310,27 @@ AssertEq(NetNamed.RegExReplace("ab", "a", "x", &netCount), "xb", A_LineNumber)
 AssertEq(netCount, 1, A_LineNumber)
 AssertEq(NetNamed.FormatIt("{1,3}", 7), "  7", A_LineNumber)
 AssertEq(NetNoImport.FormatIt("{1:03d}", 7), "007", A_LineNumber)
+; A function is one object from every module, and a local or class member cannot take the place of the field holding it.
+ScopedNetValue() {
+    #Import Ks:DotNet { Format }
+    return Format
+}
+Assert(SameFunc(NetNamed.Format, NetFormat) && SameFunc(NetNamed.FormatValue(), NetFormat) && SameFunc(ScopedNetValue(), NetFormat), A_LineNumber)
+AssertEq(NetNamed.ParameterLikeModule({DotNet: {Format: (this, Value) => "parameter " Value}}), "parameter 7", A_LineNumber)
+AssertEq(NetNamed.Holder().Format("{1,3}", 7), "  7", A_LineNumber)
+AssertEq(NetNamed.Holder().Ks(), "  7", A_LineNumber)
+AssertEq(NetNamed.Holder().Op(), 1, A_LineNumber)
+; An import may be named this, though in a method that name is the receiver, and a function's field does not take it.
+#Import ImportNamedThis
+#Import FunctionNamedThis
+
+AssertEq(ImportNamedThis.Read(), 1, A_LineNumber)
+AssertEq(ImportNamedThis.Holder().ReadCosh(), "receiver", A_LineNumber)
+AssertEq(FunctionNamedThis.Holder().Read(), 0, A_LineNumber)
+; Nor does a whole module's field of that name answer another route to the module from a method.
+#Import ModuleNamedThis
+
+Assert(ModuleNamedThis.Holder().Net() == DotNet && ModuleNamedThis.Holder().Scoped() == DotNet && ModuleNamedThis.Holder().Arrow()() == DotNet, A_LineNumber)
 
 ; ---- with no script module named AHK and no unknown member of it, the built-in module itself answers a wildcard
 #Import AhkRelay
@@ -447,12 +524,54 @@ Dynamic(Name) => %Name%
 
 #Module NetNamed
 #Warn All, StdOut
+#Import Ks
 #Import Ks:DotNet { Format, RegExMatch, RegExReplace }
 Match(Haystack, Needle) {
     RegExMatch(Haystack, Needle, &found)
     return found[0]
 }
 FormatIt(Text, Value) => Format(Text, Value)
+FormatValue() => Format
+ParameterLikeModule(Ks) => Ks.DotNet.Format(7)
+#Import Ks { Cosh as op }
+class Holder {
+    ; A bare name is the module's whatever the class declares, and op is a member every object has in C#.
+    Format(Text, Value) => Format(Text, Value)
+    Ks() => Ks.DotNet.Format("{1,3}", 7)
+    Op() => op(0)
+}
+
+#Module ImportNamedThis
+#Warn All, StdOut
+#Import Ks as this
+Read() => this.Cosh(0)
+class Holder {
+    ReadCosh() => this.Cosh(0)
+    Cosh(Value) => "receiver"
+}
+
+#Module FunctionNamedThis
+#Warn All, StdOut
+#Import Ks
+#Import Ks { Sinh as this }
+class Holder {
+    Read() => Ks.Sinh(0)
+}
+
+#Module ModuleNamedThis
+#Warn All, StdOut
+#Import Ks
+#Import Ks:DotNet as this
+class Holder {
+    Net() => Ks.DotNet
+    Scoped() {
+        #Import Ks:DotNet as Inner
+        return Inner
+    }
+    Arrow() {
+        return () => Ks.DotNet
+    }
+}
 
 #Module AhkRelay
 #Warn All, StdOut
@@ -534,3 +653,14 @@ FormatIt(Text, Value) => Format(Text, Value)
 #Import KsExportRelay { * }
 CoshIt(Value) => Cosh(Value)
 Net() => DotNet
+
+#Module CallForms
+Two(A, B) => A "," B
+Bump(&Value) => Value++
+Holder := Two
+class Thing {
+}
+
+#Module CallRelay
+#Import Export CallForms { * }
+#Import CallForms { Two as Renamed }

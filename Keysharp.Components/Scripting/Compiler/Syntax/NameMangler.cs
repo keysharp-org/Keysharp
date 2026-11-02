@@ -55,6 +55,7 @@ namespace Keysharp.Compilation.Syntax
 				&& !moduleName.StartsWith(pathPrefix, System.StringComparison.Ordinal)
 				&& !moduleName.StartsWith("__KSFile", System.StringComparison.Ordinal)
 				&& !moduleName.StartsWith(Keywords.StaticLocalFieldPrefix, System.StringComparison.Ordinal)
+				&& !moduleName.StartsWith(Keywords.InternalPrefix, System.StringComparison.Ordinal)
 				&& !ReservedTypeNames.Contains(moduleName))
 				return moduleName;
 
@@ -83,7 +84,7 @@ namespace Keysharp.Compilation.Syntax
 			new(System.StringComparer.Ordinal)
 			{
 				"System", "Keysharp", "Program", "MainScript", "__Main",
-				EntryPointMethod, AutoExecMethod, StartupMethod, OperatorManifestField, "KS_module"
+				EntryPointMethod, AutoExecMethod, StartupMethod, OperatorManifestField
 			};
 		private static string AvoidReserved(string csName) => ReservedTypeNames.Contains(csName) ? csName + "_KS" : csName;
 

@@ -428,6 +428,15 @@ namespace Keysharp.Runtime
 				? fn.mph.CallFunc(fn.Inst, parameters)
 				: DispatchCall(obj, meth, parameters);
 
+		/// <summary>
+		/// Calls <paramref name="function"/> in the call form, for a compiled call spelling its name otherwise: an alias,
+		/// another case or a variable. A result the caller needs and does not get is an error naming it as written, as
+		/// AutoHotkey reports the text of the call.
+		/// </summary>
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public static object InvokeAs(object function, string written, params object[] parameters) =>
+			InvokeOrNull(function, null, parameters) ?? UnsetResultErrorOccurred(function, written);
+
 		[MethodImpl(MethodImplOptions.NoInlining)]
 		private static object UnsetResultErrorOccurred(object obj, object meth) =>
 			Errors.ErrorOccurred(new UnsetError("No value was returned.", null,

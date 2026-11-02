@@ -14,6 +14,8 @@
 #import IncludedParent
 #import LocalParent
 #import KS { CompileScript }
+#import Compat21
+#import CompatAlias
 #Include <assert>
 
 threw := false
@@ -194,6 +196,68 @@ catch UnsetError
 	threw := true
 
 Assert(threw, A_LineNumber)
+
+; A member call of a function gives no value as a named import's call does: an error only where the value is needed.
+MemberNeedsValue() {
+	value := Compat21.NoReturn21()
+}
+MemberIgnoresValue() {
+	Compat21.NoReturn21()
+	AssertEq(Compat21.NoReturn21() ?? "default", "default", A_LineNumber)
+}
+AssertError(MemberNeedsValue, "UnsetError: No value was returned. [NoReturn21]", A_LineNumber)
+AssertError(MemberIgnoresValue, "none", A_LineNumber)
+
+; The error names the member as written, however the function is declared, and no other route is affected by that.
+MemberOtherCase() {
+	value := Compat21.noreturn21()
+}
+MemberAlias() {
+	value := CompatAlias.Renamed()
+}
+MemberNestedAlias() {
+	value := CompatAlias.Nested.RENAMED()
+}
+MemberAliasIgnoresValue() {
+	Compat21.noreturn21()
+	CompatAlias.Renamed()
+	AssertEq(CompatAlias.Renamed() ?? "default", "default", A_LineNumber)
+	value := (CompatAlias.Renamed()?)
+	Assert(!IsSet(value), A_LineNumber)
+	Assert(!IsSet(CompatAlias.Renamed()), A_LineNumber)
+	arrow := () => CompatAlias.Renamed()
+	arrow()
+	AssertEq(arrow() ?? "default", "default", A_LineNumber)
+}
+AssertError(MemberOtherCase, "UnsetError: No value was returned. [noreturn21]", A_LineNumber)
+AssertError(MemberAlias, "UnsetError: No value was returned. [Renamed]", A_LineNumber)
+AssertError(MemberNestedAlias, "UnsetError: No value was returned. [RENAMED]", A_LineNumber)
+AssertError(MemberAliasIgnoresValue, "none", A_LineNumber)
+
+; A bare call names the function as written too, an alias, another case or a variable holding it.
+#import Compat21 { NoReturn21 as Aliased21 }
+BareAlias() {
+	value := Aliased21()
+}
+BareOtherCase() {
+	value := noreturn21()
+}
+BareVariable() {
+	Held := NoReturn21
+	value := Held()
+}
+BareIgnoresValue() {
+	Held := NoReturn21
+	Aliased21()
+	Held()
+	AssertEq(Aliased21() ?? "default", "default", A_LineNumber)
+	AssertEq(Held() ?? "default", "default", A_LineNumber)
+	Assert(!IsSet(Aliased21()), A_LineNumber)
+}
+AssertError(BareAlias, "UnsetError: No value was returned. [Aliased21]", A_LineNumber)
+AssertError(BareOtherCase, "UnsetError: No value was returned. [noreturn21]", A_LineNumber)
+AssertError(BareVariable, "UnsetError: No value was returned. [Held]", A_LineNumber)
+AssertError(BareIgnoresValue, "none", A_LineNumber)
 
 ; v2.1 mode: absent item/member accessors return unset instead of throwing
 ; (Array.Get unset element, Map.__Item/Get/Delete, Object.GetMethod/GetOwnPropDesc).
@@ -485,6 +549,13 @@ NoReturnNested20() {
 #Requires AutoHotkey v2.1-alpha
 NoReturnNested21() {
 }
+
+#Module CompatAlias
+#Import Compat21 { NoReturn21 as Renamed }
+#Import CompatAlias:Nested
+
+#Module CompatAlias:Nested
+#Import Compat21 { NoReturn21 as Renamed }
 
 #Module IncludedParent:Child
 

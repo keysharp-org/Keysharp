@@ -57,7 +57,7 @@ namespace Keysharp.Compilation.Syntax
 		private string _currentClassPath;
 		private string _currentClassUserPath;
 		// The member names of the class being lowered, its enclosing classes and their bases that could hide a module
-		// field's simple name (see ModuleFieldRef); null keeps every module field qualified. _classChainNames holds each
+		// field's simple name (see ModuleField); null keeps every module field qualified. _classChainNames holds each
 		// lowered class's own and inherited ones for the classes that extend it.
 		private HashSet<string> _classMemberNames;
 		private readonly Dictionary<ClassDecl, HashSet<string>> _classChainNames = new(ReferenceEqualityComparer.Instance);
@@ -686,8 +686,8 @@ namespace Keysharp.Compilation.Syntax
 		// built-in one, whose object stays the Ahk meta-object.
 		private static Type BuiltinModuleType(ModuleSource source) => source.IsAhk ? typeof(Keysharp.Runtime.Ahk) : source.BuiltinType;
 
-		// A built-in member as an expression: a method as a Func, a class as its singleton, a module as its object, a property as
-		// an access.
+		// A built-in member as an expression: a method as a Func, a class as its singleton, a nested module as the module
+		// object, a property as an access. A function or module object read from a function body goes through BuiltinFieldRef.
 		private ExpressionSyntax BindMember(System.Reflection.MemberInfo member)
 		{
 			switch (member)
@@ -1273,7 +1273,8 @@ namespace Keysharp.Compilation.Syntax
 					Diag($"{NodeAnchor(im)}#Import: module not found: {modName}");
 					continue;
 				}
-				ExpressionSyntax ModuleObj() => ModuleObjectExpr(source);
+				// A built-in module's object is cached in a field.
+				ExpressionSyntax ModuleObj() => BuiltinModuleType(source) is { } type ? BuiltinFieldRef(type) : ModuleObjectExpr(source);
 
 				// Each name keeps the spelling it is imported by.
 				if (im.BindingName is { } bound)
@@ -1401,10 +1402,13 @@ namespace Keysharp.Compilation.Syntax
 			if (ImportedTarget(lower) is { Inline: true } inline) return _fields[lower] = inline.Member ?? NameMangler.Global(lower);
 
 			var id = ImportedTarget(lower)?.Member ?? NameMangler.Global(lower);
+			var resolved = ResolveModuleName(lower);
+			if (resolved.Global is System.Reflection.MethodInfo function)
+				return _fields[lower] = BuiltinField(function, id);
 			_fields[lower] = id;
 			// A variable the module declares shadows a built-in of its name and starts unset, and a global the module only
 			// reads has no declaration to spell it, so a run-time error names it as written.
-			_fieldDecls.Add(ResolveModuleName(lower) switch
+			_fieldDecls.Add(resolved switch
 			{
 				{ Function: { } func } => Declared(ConstantField(id, FuncBind(NameMangler.FunctionMethod(func),
 					_userFuncDeclByLower.GetValueOrDefault(lower)?.Params)), func),
@@ -1419,16 +1423,25 @@ namespace Keysharp.Compilation.Syntax
 		private static MemberDeclarationSyntax Declared(MemberDeclarationSyntax member, string name) =>
 			member.AddAttributeLists(Attr("Keysharp.Runtime.UserDeclaredName", Str(name)));
 
-		// A built-in class the lowering itself uses, such as Object for an object literal, cached under a key and a field name
-		// no script variable has, so a variable named like the class does not replace it.
-		private string EnsureTypeField(string typeFullName, string name)
+		// Where the field caching a built-in function or module object is registered in _fields, a key no script name has.
+		private static string BuiltinFieldKey(System.Reflection.MemberInfo member) =>
+			"#" + (member is Type type ? type.FullName : member.DeclaringType.FullName + "." + member.Name).Replace('+', '.');
+
+		// One field per built-in function or module object, declared on first reference so an import nothing names costs nothing
+		// and no function body builds one. A module-level import or global name names it (see EmitBoundImports); anything else goes
+		// by its target, under a name no module variable has, since those are lowercase.
+		private string BuiltinField(System.Reflection.MemberInfo member, string name = null)
 		{
-			var key = "#" + name;
-			if (_fields.TryGetValue(key, out var id)) return id;
-			_fields[key] = id = "KS_" + name;
-			_fieldDecls.Add(AmbientField(id, TypeSingleton(typeFullName)));
+			var key = BuiltinFieldKey(member);
+			if (!_fields.TryGetValue(key, out var id))
+				_fields[key] = id = name ?? "KS_" + key[1..].Replace("Keysharp.Builtins.", "").Replace('.', '_');
+			// First, as reading an import of a script module can start its initializer, whose inline C# can call back into this one.
+			if (_functionFields.Add(id))
+				_fieldDecls.Insert(0, AmbientField(id, BindMember(member)).AddModifiers(SyntaxFactory.Token(SyntaxKind.ReadOnlyKeyword)));
 			return id;
 		}
+
+		private ExpressionSyntax BuiltinFieldRef(System.Reflection.MemberInfo member) => ModuleField(BuiltinField(member));
 
 		// A function or import the module binds is readonly, which is what makes the runtime reject writing it; a class binds
 		// as a property without a setter.
@@ -1760,17 +1773,19 @@ namespace Keysharp.Compilation.Syntax
 			}
 		}
 
-		// A module field's simple name binds through the module class every class is nested in, unless an enclosing
-		// function's local or a member of an enclosing class or its bases has the same C# name: then it is qualified as
-		// `Program.<Module>.<field>`.
 		private ExpressionSyntax ModuleFieldRef(string lower)
 		{
 			if (ImportedTarget(lower) is { } target && (target.Inline || _boundModule?.OwnBindings.ContainsKey(lower) != true))
 				return MemberRead(target);
-			var gf = EnsureGlobalField(lower);
-			return _scope?.Parent?.DeclaresCsLocal(lower) == true || _currentClassPath != null && ClassMemberHides(gf)
-				? Access("Program." + _currentModuleClass + "." + gf) : Id(gf);
+			return ModuleField(EnsureGlobalField(lower));
 		}
+
+		// A module field's simple name binds through the module class every class is nested in, unless a local of this or an
+		// enclosing function or a member of an enclosing class or its bases has the same C# name: then it is qualified as
+		// `Program.<Module>.<field>`.
+		private ExpressionSyntax ModuleField(string field) =>
+			_scope?.DeclaresCsLocal(field[0] == '@' ? field[1..] : field) == true || _currentClassPath != null && ClassMemberHides(field)
+				? Access("Program." + _currentModuleClass + "." + field) : Id(field);
 
 		private bool ClassMemberHides(string field) =>
 			_classMemberNames == null || _classMemberNames.Contains(field[0] == '@' ? field[1..] : field);
@@ -2908,7 +2923,8 @@ namespace Keysharp.Compilation.Syntax
 		{
 			foreach (var n in DeclaredNames(m))
 			{
-				if (_startupModules.Contains(module) && StringComparer.OrdinalIgnoreCase.Equals(n, NameMangler.StartupMethod))
+				if (_startupModules.Contains(module) && StringComparer.OrdinalIgnoreCase.Equals(n, NameMangler.StartupMethod)
+					|| n.StartsWith(Keywords.InternalPrefix, System.StringComparison.Ordinal) && _moduleGlobals?.TryGetValue(module, out var fields) == true && fields.Contains(n))
 				{
 					Diag($"{at}#CSharp: '{n}' is a name Keysharp generates into this class; rename it");
 					continue;
@@ -3928,6 +3944,7 @@ namespace Keysharp.Compilation.Syntax
 				// A chain permits only operands followed by ? to be unset.
 				case MemberExpr mem:
 					TrackLoadPackageMember(mem);
+					if (ConstantMember(mem) is { } constant) return constant;
 					return mem.NullConditional || MayYieldUnset(mem.Target)
 						? NullCondWrap(mem.Target, tt => Op("GetPropertyValue", tt, Str(mem.Name)), mem.NullConditional)
 						: OpensFile(mem.Target) ? ReleasingReceiver(mem.Target, tt => Op("GetPropertyValue", tt, Str(mem.Name)))
@@ -4376,6 +4393,10 @@ namespace Keysharp.Compilation.Syntax
 				return e;
 			if ((map ?? IsSetOrNull).TryGetValue(ma.Name.Identifier.Text, out var orNull))
 				return inv.WithExpression(ma.WithName(SyntaxFactory.IdentifierName(orNull)));
+			// The name InvokeAs carries is for the error this form does not raise.
+			if (ma.Name.Identifier.Text == "InvokeAs")
+				return inv.WithExpression(ma.WithName(SyntaxFactory.IdentifierName("InvokeOrNull")))
+					.WithArgumentList(inv.ArgumentList.WithArguments(inv.ArgumentList.Arguments.Replace(inv.ArgumentList.Arguments[1], SyntaxFactory.Argument(Null))));
 			if (ma.Name.Identifier.Text == "MultiStatement" && inv.ArgumentList.Arguments.Count > 0)
 			{
 				var args = inv.ArgumentList.Arguments;
@@ -4526,7 +4547,10 @@ namespace Keysharp.Compilation.Syntax
 
 			// `obj?.M(args)` (null-conditional method) / `obj?.()` (null-conditional call): evaluate the target once;
 			// if unset, short-circuit to null without evaluating the call (or its args). Matches the canonical chain.
-			if (c.Callee is MemberExpr mc && (mc.NullConditional || MayYieldUnset(mc.Target)))
+			// A chain of constant module names cannot be unset, so what it names needs no lookup or check.
+			var constant = c.Callee is MemberExpr && HasImports ? NativeCallTarget(c.Callee) : null;
+			var field = FunctionField(constant);
+			if (c.Callee is MemberExpr mc && field == null && (mc.NullConditional || MayYieldUnset(mc.Target)))
 				return NullCondWrap(mc.Target, tt => Op(statement ? "InvokeOrNull" : "Invoke", Cons2(tt, Str(mc.Name), CallArgs())), mc.NullConditional);
 			if (c.Callee is DynMemberExpr dmc && MayYieldUnset(dmc))
 				return DynMemberWrap(dmc, (tt, name) => Op(statement ? "InvokeOrNull" : "Invoke", Cons2(tt, name, CallArgs())));
@@ -4538,11 +4562,52 @@ namespace Keysharp.Compilation.Syntax
 			ExpressionSyntax[] args;
 			if (c.Callee is MemberExpr fm && OpensFile(fm.Target))
 				return ReleasingReceiver(fm.Target, tt => Op(statement ? "InvokeOrNull" : "Invoke", Cons2(tt, Str(fm.Name), CallArgs())));
-			if (c.Callee is MemberExpr m) args = Cons2(LowerExpr(m.Target), Str(m.Name), CallArgs());
+			// A no-value error names the callee as written, so a spelling other than the function's goes along, unless a statement
+			// discards the value.
+			if (c.Callee is MemberExpr m)
+			{
+				if (field != null && !statement && m.Name != FunctionName(constant)) return Op("InvokeAs", Cons2(field, Str(m.Name), CallArgs()));
+				args = field != null ? Cons2(field, Null, CallArgs()) : Cons2(LowerExpr(m.Target), Str(m.Name), CallArgs());
+			}
 			else if (c.Callee is DynMemberExpr dm) args = Cons2(LowerExpr(dm.Target), LowerExpr(dm.NameExpr), CallArgs());
+			else if (c.Callee is NameExpr bare && !statement && WrittenOtherwise(bare)) return Op("InvokeAs", Cons2(LowerExpr(bare), Str(bare.Name), CallArgs()));
 			else args = Cons2(LowerExpr(c.Callee), Null, CallArgs());
 			return Op(statement ? "InvokeOrNull" : "Invoke", args);
 		}
+
+		// A variable's function is known only at run time, so its name goes along too.
+		private bool WrittenOtherwise(NameExpr callee) => !IsValueKeyword(callee.Name) && ResolveTarget(callee.Name) switch
+		{
+			null => true,
+			var target => FunctionName(target) is { } name && name != callee.Name
+		};
+
+		private static string FunctionName(NameTarget target) => target switch
+		{
+			{ Decl: FunctionDecl function } => function.Name,
+			{ Builtin: System.Reflection.MethodInfo method } => Script.GetUserDeclaredName(method) ?? method.Name,
+			_ => null
+		};
+
+		// Only an import makes a name constant, and most scripts have none, which spares them resolving every receiver twice.
+		private bool HasImports => _importMembers.Count != 0 || _importScopes.Count != 0 || _ahkModule != null;
+
+		// The field holding the function a chain of constants reaches, which a read-only module name cannot change, so a call
+		// need not look it up. Null for what only the receiver can answer: a variable, a class, a property, a #CSharp member, a
+		// name the module does not declare and a hidden built-in, which a dynamic lookup does not find.
+		private ExpressionSyntax FunctionField(NameTarget target) => target switch
+		{
+			{ Module: { } module, Decl: FunctionDecl function } => Access(ModuleOwner(module) + "." + NameMangler.Global(function.Name)),
+			{ Builtin: System.Reflection.MethodInfo method } when !method.IsDefined(typeof(PublicHiddenFromUser), false) => BuiltinFieldRef(method),
+			_ => null
+		};
+
+		// `Ks.DotNet` or `Ks.Cosh`: a built-in nested module or a function is as constant as the chain reaching it.
+		private ExpressionSyntax ConstantMember(MemberExpr member) => !HasImports ? null : NativeCallTarget(member) switch
+		{
+			{ Builtin: Type type } when typeof(Keysharp.Runtime.Module).IsAssignableFrom(type) => BuiltinFieldRef(type),
+			var target => FunctionField(target)
+		};
 
 		// AutoHotkey hands DllCall and ComCall a naked variable itself where a Str or WStr type precedes it, and StrPtr
 		// likewise, so native code can write to the variable: those arguments are passed by reference. The type is known
@@ -4632,10 +4697,11 @@ namespace Keysharp.Compilation.Syntax
 			return Op("ReleaseTemporary", Assign(Id(t), LowerExpr(target)), access(Id(t)));
 		}
 
-		// Resolve the built-in itself so shadowing names or methods retain their parameter contracts.
+		// Resolve the built-in itself so shadowing names or methods retain their parameter contracts. A value keyword is
+		// never what an import of that name binds: `this` in a method is the receiver.
 		private NameTarget NativeCallTarget(Expr callee) => callee switch
 		{
-			NameExpr name => ResolveTarget(name.Name),
+			NameExpr name => IsValueKeyword(name.Name) ? null : ResolveTarget(name.Name),
 			MemberExpr member => MemberTarget(NativeCallTarget(member.Target), member.Name),
 			GroupExpr group => NativeCallTarget(group.Inner),
 			_ => null
@@ -5570,7 +5636,8 @@ namespace Keysharp.Compilation.Syntax
 			return names;
 		});
 
-		// A module field's C# name has no ASCII capital (NameMangler.Global), so a name with one cannot hide it.
+		// A module field's C# name has no ASCII capital (NameMangler.Global), or a KS_ prefix no class member has (BuiltinField),
+		// so a name with one cannot hide it.
 		private static bool CanHideModuleField(string name) => !name.AsSpan().ContainsAnyInRange('A', 'Z');
 
 		private MemberDeclarationSyntax LowerClass(ClassDecl c)
@@ -6559,7 +6626,7 @@ namespace Keysharp.Compilation.Syntax
 			void ImportArm(string key, ImportBinding binding, bool wildcard)
 			{
 				var writable = binding.Writable && (!wildcard || binding.Bound.Source?.Script != null);
-				Arm(key, binding.Read(), writable ? binding.Write(Id("KS_val")) : null,
+				Arm(key, wildcard && binding.Target is { } target ? FieldlessMemberRead(target) : binding.Read(), writable ? binding.Write(Id("KS_val")) : null,
 					!wildcard || writable ? binding.Bound.Name ?? key : null, writable ? VarKind.Global : VarKind.Constant,
 					_derefReferences && writable && binding.Target != null ? MemberReference(binding.Target) : null);
 			}
