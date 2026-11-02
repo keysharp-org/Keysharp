@@ -165,7 +165,7 @@ namespace Keysharp.Compilation.Syntax
 		private static readonly Semver.SemVersion[] CompatCandidates = { new(2, 0, 0), new(2, 1, 0) };
 		private Semver.SemVersion _moduleCompat = Keysharp.Runtime.Script.DefaultCompatibilityVersion;   // current module's mode
 		private Semver.SemVersion _currentCompat = Keysharp.Runtime.Script.DefaultCompatibilityVersion;  // current scope's mode
-		private readonly Dictionary<Stmt, Semver.SemVersion> _definitionCompat = new();   // see MapDefinitionModes
+		private readonly Dictionary<Stmt, Semver.SemVersion> _definitionCompat = new();   // see PartitionModules
 		private string _currentModuleClass = "__Main";   // the module class being lowered — used to qualify module-level
 														 // field references from inside a (nested) class method (`Program.<Mod>.field`)
 		// Hotkey/hotstring/remap support: callbacks in their declaring module and the DHHR list
@@ -431,6 +431,8 @@ namespace Keysharp.Compilation.Syntax
 			public bool IsAhk;
 			public string Dir;   // directory of the source file this module came from (for "importing file dir first")
 			public int MainInclusion = -1;   // the #Include splice holding the module's first own #Module directive, or a root's file
+			public Semver.SemVersion Compat;   // the mode of its startup code, null until its first own #Module directive
+			public bool CompatSet;   // a #Requires set Compat, so a later one does not
 			public readonly HashSet<string> GlobalDeclarations = new(StringComparer.OrdinalIgnoreCase);   // named by a global declaration at any depth
 			public List<Stmt> Body = new();
 			// Top-level and control-flow imports bind in the module; callable/class imports retain their lexical scope.
@@ -649,18 +651,13 @@ namespace Keysharp.Compilation.Syntax
 
 			var execOrder = ComputeExecOrder(mods);
 
-			// __Main's mode is the script-wide default that other modules inherit; each module may override it with its own
-			// `#Requires`.
-			Semver.SemVersion globalCompat = null;
-
 			var moduleClasses = new List<MemberDeclarationSyntax>();
 			foreach (var m in mods)
 			{
 				ClearPerModuleState();
 				_currentModuleClass = m.CodeName;
-				var inherited = globalCompat ?? Keysharp.Runtime.Script.DefaultCompatibilityVersion;
-				_moduleCompat = MapDefinitionModes(m.Body, inherited, m.MainInclusion) ?? inherited;
-				globalCompat ??= _moduleCompat;
+				// A parent created only for a child has no directive of its own.
+				_moduleCompat = m.Compat ?? m.Group.Root.Compat;
 				_currentCompat = _moduleCompat;
 				RegisterInlineFunctionsFor(m.CodeName);
 				_moduleOwnVars = m.DirectVariables;
@@ -1030,35 +1027,6 @@ namespace Keysharp.Compilation.Syntax
 
 		private static Semver.SemVersion RequiresMode(Stmt s) =>
 			s is DirectiveStmt d && StringComparer.OrdinalIgnoreCase.Equals(d.Name, "Requires") ? MapRequires(d.Args) : null;
-
-		/// <summary>
-		/// Gives each top-level definition the mode of the version directives before it in its own inclusion of its file,
-		/// and returns the module's own mode: that of its first directive in <paramref name="mainInclusion"/>, or null.
-		/// The main inclusion and a file's own start in <paramref name="initial"/>, and any other in the mode its includer
-		/// had at the #Include, so a directive in an included file ends with that inclusion. [v2.1-alpha.34+]
-		/// </summary>
-		private Semver.SemVersion MapDefinitionModes(List<Stmt> body, Semver.SemVersion initial, int mainInclusion)
-		{
-			_definitionCompat.Clear();
-			Semver.SemVersion moduleMode = null;
-			var modes = new Dictionary<int, Semver.SemVersion> { [mainInclusion] = initial };
-
-			// An inclusion's statements directly follow its #Include, so when the first is met its includer is still in
-			// the mode it had there.
-			Semver.SemVersion ModeOf(int inclusion) => modes.TryGetValue(inclusion, out var mode) ? mode
-				: modes[inclusion] = _includeParents[inclusion] < 0 ? initial : ModeOf(_includeParents[inclusion]);
-
-			foreach (var s in body)
-			{
-				if (RequiresMode(s) is { } mode)
-				{
-					modes[s.Inclusion] = mode;
-					if (s.Inclusion == mainInclusion) moduleMode ??= mode;
-				}
-				else if (s is FunctionDecl or ClassDecl or HotkeyDef or HotstringDef) _definitionCompat[s] = ModeOf(s.Inclusion);
-			}
-			return moduleMode;
-		}
 
 		// The default/implicit return value for the current scope: unset (null) under v2.1+, "" under v2.0.
 		private ExpressionSyntax DefaultReturnExpr() =>

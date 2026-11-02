@@ -1019,10 +1019,8 @@ namespace Keysharp.Parsing.Syntax
 			scriptDir ??= System.IO.Path.GetDirectoryName(_mainScriptPath) ?? _includeDir;
 			var moduleFile = sourceTokens.Count > 0 ? sourceTokens[0].File : null;
 			var scopes = new Stack<(bool Definition, bool BackCompat)>();
-			var modules = new Dictionary<string, (bool BackCompat, string File, bool Set)>(StringComparer.OrdinalIgnoreCase)
-			{
-				["__Init"] = (true, moduleFile, false)
-			};
+			var (rootBackCompat, rootBackCompatSet) = (true, false);
+			var knownModules = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "__Init", "__Main", "AHK" };
 			var outp = new List<Token>(sourceTokens.Count);
 			var includeDepth = 0;
 
@@ -1178,22 +1176,20 @@ namespace Keysharp.Parsing.Syntax
 						if (i + 2 < src.Count && nameTok.IsKeyword("requires") && RequiresBackCompat(src[i + 2].Text) is { } compatible)
 						{
 							backCompat = compatible;
-							var mode = modules[module];
-							if (!mode.Set && SourcePathComparer.Equals(mode.File, t.File) && !scopes.Any(scope => scope.Definition))
-								modules[module] = (compatible, mode.File, true);
+							if (!rootBackCompatSet && module.Equals("__Init", StringComparison.OrdinalIgnoreCase) && SourcePathComparer.Equals(moduleFile, t.File) && !scopes.Any(scope => scope.Definition))
+								(rootBackCompat, rootBackCompatSet) = (compatible, true);
 						}
 						else if (i + 2 < src.Count && nameTok.IsKeyword("module"))
 						{
 							var argument = src[i + 2].Text;
 							if (argument.Equals("__Main", StringComparison.OrdinalIgnoreCase) && SourcePathComparer.Equals(moduleFile, _mainScriptPath)) argument = "__Init";
-							// A nested module has a mode of its own, so its whole name is the key.
+							// A nested module is a module of its own, so its whole name is the key.
 							for (var k = i + 3; k + 1 < src.Count && src[k].Kind == TokenKind.Colon && !src[k].LeadingWhitespace
 								&& src[k + 1].Kind == TokenKind.Identifier && !src[k + 1].LeadingWhitespace; k += 2)
 								argument += ":" + src[k + 1].Text;
-							if (!modules.TryGetValue(argument, out var mode))
-								modules[argument] = mode = (modules["__Init"].BackCompat, t.File, false);
+							// Only creating a module changes the mode, not reopening one.
+							if (knownModules.Add(argument)) backCompat = rootBackCompat;
 							module = argument;
-							backCompat = mode.BackCompat;
 						}
 
 						if (nameTok.IsKeyword("errorstdout"))

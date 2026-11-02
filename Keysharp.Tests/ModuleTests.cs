@@ -309,11 +309,29 @@ public partial class ModuleTests : TestRunner
 				    } catch UnsetError
 				        return "v2.1"
 				}
-				AssertEq(DefinedMode(Helpers.ThroughInclude), "v2.0", A_LineNumber)
-				; Only a #Requires in the file that declares a module sets the module's mode.
-				AssertEq(Helpers.Startup, "v2.1", A_LineNumber)
+				; A #Requires in an #Include reaches what that file includes and ends with it.
+				AssertEq(DefinedMode(Helpers.ThroughInclude), "v2.1", A_LineNumber)
+				; A #Module takes the mode of the file holding it, and only a #Requires in that file sets the module's mode.
+				AssertEq(Helpers.Startup, "v2.0", A_LineNumber)
 				; As in AutoHotkey, this file's #Requires does not reach __Main's section of another file.
 				AssertEq(DefinedMode(MainSectionInLib), "v2.0", A_LineNumber)
+				; A file starts in v2.0 mode whatever imports it, and a #Module takes the mode of its own file's root.
+				#Import "Plain" as Plain
+				#Import "Plain:Sibling" as PlainSibling
+				AssertEq(DefinedMode(Plain.F), "v2.0", A_LineNumber)
+				AssertEq(Plain.Startup, "v2.0", A_LineNumber)
+				AssertEq(DefinedMode(PlainSibling.F), "v2.0", A_LineNumber)
+				AssertEq(PlainSibling.Startup, "v2.0", A_LineNumber)
+				; A file's #Requires reaches a section of __Main after it, which leaves __Main's own mode alone.
+				#Import "Carrying"
+				AssertEq(DefinedMode(CarriedIntoMain), "v2.1", A_LineNumber)
+				; Reopening a module keeps the load-time mode of the directive before it, in the file holding them.
+				#Import "Reopening" as Reopening
+				#Import "Reopening:Other" as ReopenedOther
+				AssertEq(DefinedMode(Reopening.BeforeOther), "v2.1", A_LineNumber)
+				AssertEq(DefinedMode(Reopening.AfterOther), "v2.0", A_LineNumber)
+				AssertEq(Reopening.Startup, "v2.1", A_LineNumber)
+				AssertEq(ReopenedOther.Startup, "v2.0", A_LineNumber)
 				FileAppend "pass", "*"
 				"""),
 			("Lib.ahk", $$"""
@@ -325,8 +343,35 @@ public partial class ModuleTests : TestRunner
 				MainSectionInLib() {
 				}
 				"""),
-			("Reopener.ahk", "#Module __Main:Helpers\n#Requires AutoHotkey v2.0\n"),
-			("Part.ahk", "#Requires AutoHotkey v2.0\n#Include \"Deep.ahk\"\n"),
+			("Plain.ahk", $$"""
+				F() {
+				}
+				{{StartupProbe}}
+				#Module Sibling
+				F() {
+				}
+				{{StartupProbe}}
+				"""),
+			("Carrying.ahk", """
+				#Requires AutoHotkey v2.1-alpha
+				#Module __Main
+				CarriedIntoMain() {
+				}
+				"""),
+			("Reopening.ahk", $$"""
+				#Requires AutoHotkey v2.1-alpha
+				BeforeOther() {
+				}
+				{{StartupProbe}}
+				#Module Other
+				#Requires AutoHotkey v2.0
+				{{StartupProbe}}
+				#Module __Init
+				AfterOther() {
+				}
+				"""),
+			("Reopener.ahk", "#Module __Main:Helpers\n#Requires AutoHotkey v2.1-alpha\n"),
+			("Part.ahk", "#Requires AutoHotkey v2.1-alpha\n#Include \"Deep.ahk\"\n"),
 			("Deep.ahk", "ThroughInclude() {\n}\n"),
 		]);
 	}

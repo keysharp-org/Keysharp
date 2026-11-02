@@ -127,6 +127,7 @@ namespace Keysharp.Compilation.Syntax
 				if (StringComparer.OrdinalIgnoreCase.Equals(segments[0], "AHK"))
 				{
 					module.IsAhk = true;
+					module.Compat = Script.DefaultCompatibilityVersion;   // it exists already, so its directive only reopens it
 					module.CodeName = "AHK";
 					_ahkModule = module;
 				}
@@ -147,10 +148,21 @@ namespace Keysharp.Compilation.Syntax
 		{
 			var mods = new List<ModInfo> { group.Root };
 			var current = group.Root;
+			current.Compat = Script.DefaultCompatibilityVersion;
+			// The mode a definition takes, as AutoHotkey's load-time mBackCompatMode: a file starts in v2.0 mode whatever imports
+			// it, an #Include in the mode its includer had there, and the end of an #Include restores that. Only creating a module
+			// changes it, not reopening one.
+			var modes = new Dictionary<int, Semver.SemVersion>();
+			Semver.SemVersion ModeOf(int inclusion) => modes.TryGetValue(inclusion, out var mode) ? mode
+				: modes[inclusion] = _includeParents[inclusion] < 0 ? Script.DefaultCompatibilityVersion : ModeOf(_includeParents[inclusion]);
+
 			foreach (var statement in body)
 			{
 				if (statement is DirectiveStmt directive && StringComparer.OrdinalIgnoreCase.Equals(directive.Name, "Module"))
+				{
 					current = DeclareModule(directive, body, group, mods) ?? current;
+					if (current.Compat == null) modes[directive.Inclusion] = current.Compat = group.Root.Compat;
+				}
 				else if (statement is ImportDirective import)
 				{
 					current.ModuleBindings.Add(import);
@@ -161,6 +173,13 @@ namespace Keysharp.Compilation.Syntax
 					current.Body.Add(statement);
 					CollectNestedImports(statement, current.ModuleBindings);
 					CollectStatements(statement, current.AllImports);
+					if (RequiresMode(statement) is { } required)
+					{
+						modes[statement.Inclusion] = required;
+						// Only the file declaring a module sets the module's own mode, as IsFileMain has it.
+						if (!current.CompatSet && statement.Inclusion == current.MainInclusion) (current.Compat, current.CompatSet) = (required, true);
+					}
+					else if (statement is FunctionDecl or ClassDecl or HotkeyDef or HotstringDef) _definitionCompat[statement] = ModeOf(statement.Inclusion);
 				}
 			}
 			return mods;
