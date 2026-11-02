@@ -12,10 +12,16 @@ MainReady := 1
 #import Z
 #import Late as LateMod
 #import UntilTail
+#import NestedOrderTail
+#import ChildFirst:Child as ChildFirstChild
 
 ; ---- Dependency execution: Z imports W and captures WState
 a := Z.ObservedW()
 AssertEq(a, "W executed", A_LineNumber)
+
+; ---- A parent importing its nested module runs after it, however they are declared; nesting alone adds no order
+AssertEq(NestedOrderTail.Observed, "child,parent", A_LineNumber)
+AssertEq(ChildFirstChild.ObservedParent, "parent ran", A_LineNumber)
 
 ; ---- Late imports __Main, so __Main executes before Late.
 ; Late exports functions that should be callable even before Late body has run.
@@ -48,6 +54,27 @@ ObservedW() => Observed
 GetMainReady() => Main.MainReady
 GetLateBodyRan() => (IsSet(LateBodyRan) ? LateBodyRan : "")
 LateBodyRan := 1
+
+; Modules run from the last declared unless an import says otherwise. NestedOrderTail, declared after both, reaches
+; NestedOrder first, so only NestedOrder's import of its child can run the child before it.
+#Module NestedOrder:Child
+Ran := "child"
+
+#Module NestedOrder
+#import NestedOrder:Child
+Ran := Child.Ran ",parent"
+
+#Module NestedOrderTail
+#import NestedOrder
+Observed := NestedOrder.Ran
+
+; The child imports its parent here, against the default order.
+#Module ChildFirst
+Ran := "parent ran"
+
+#Module ChildFirst:Child
+#import ChildFirst
+ObservedParent := ChildFirst.Ran
 
 #Module UntilTail
 Count := 0

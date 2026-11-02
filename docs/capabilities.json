@@ -289,12 +289,12 @@
                  {
                      "category":  "Environment/System",
                      "feature":  "#Import",
-                     "syntax":  "#Import [Export] ModuleName [as Alias] [{ Name [as Alias], * }]",
+                     "syntax":  "#Import [Export] ModuleName[:Nested] [as Alias] [{ Name [as Alias], * }]",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Imports modules or names with shared variable storage. Function imports are lexical and reject the Export modifier and conflicting declarations in the same scope, including locals and parameters; class and block imports are Keysharp extensions. Lookup searches the directive file directory, module directory and main script directory, then AhkLibPath or the default library directories. Relative AhkLibPath entries and A_LineFile use the module root file.",
+                     "notes":  "Imports modules or names with shared variable storage. Function imports are lexical and reject the Export modifier and conflicting declarations in the same scope, including locals and parameters; class and block imports are Keysharp extensions. Lookup searches the directive file directory, module directory and main script directory, then AhkLibPath or the default library directories. Relative AhkLibPath entries and A_LineFile use the module root file. A:B names a nested module, quoted or not, a Keysharp extension.",
                      "tested-by":  "module-export.ahk; module-basic.ahk; module-import.ahk; module-scoped-import.ahk; module-object-members.ahk; module-extends.ahk; module-wildcard-own-vars.ahk; ModuleTests.FileIdentity; ModuleTests.SearchPaths; ModuleTests.ImportDiagnostics; directive-csharp-modules.ahk; ParserTests.DistinctCaseModuleSearchDirectories"
                  },
                  {
@@ -376,13 +376,13 @@
                  {
                      "category":  "Environment/System",
                      "feature":  "#Module",
-                     "syntax":  "#Module ModuleName",
+                     "syntax":  "#Module ModuleName[:Nested]",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Starts or reopens a file-local module; names use Unicode ordinal case-insensitive comparison.",
-                     "tested-by":  "module-basic.ahk; ModuleTests.FileIdentity"
+                     "notes":  "Starts or reopens a file-local module; names use Unicode ordinal case-insensitive comparison. A:B declares a nested module, a Keysharp extension.",
+                     "tested-by":  "module-basic.ahk; module-import.ahk; module-object-members.ahk; ModuleTests.FileIdentity"
                  },
                  {
                      "category":  "Core Language",

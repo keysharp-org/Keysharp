@@ -20,12 +20,13 @@ namespace Keysharp.Compilation.Syntax
 		private bool _bindingsSealed;
 
 		private static string ModuleOwner(ModInfo module) => "Program." + module.CodeName;
+		// What a `{ * }` import of the module can supply.
 		private IEnumerable<string> ExportNames(ModuleSource source) => source.Script is { } module
-			? source.IsAhk ? module.ExportNames.Concat(BuiltinExportKinds("AHK").Keys.Where(name => ExportsMember(module, name))) : module.ExportNames
-			: BuiltinExportKinds(source.Builtin).Keys;
+			? source.IsAhk ? module.ExportNames.Concat(AhkMemberNames().Where(name => ExportsMember(module, name))) : module.ExportNames
+			: source.BuiltinType == typeof(Ahk) ? AhkMemberNames() : BuiltinMemberNames(source.BuiltinType);
 		private static bool ExportsMember(ModInfo module, string name) => module.ExportNames.Contains(name)
 			|| module.IsAhk && !module.OwnBindings.ContainsKey(name) && !module.NamedBindings.ContainsKey(name)
-				&& BuiltinMember("AHK", true, name) != null;
+				&& AhkMember(name) != null;
 		private static ExpressionSyntax BindingKind(ModuleBindingKind kind) => Access("Keysharp.Runtime.ModuleBindingKind." + kind);
 		private static ExpressionSyntax BindingOwner(MemberBinding target) => SyntaxFactory.TypeOfExpression(Ty(target.Owner));
 
@@ -71,7 +72,7 @@ namespace Keysharp.Compilation.Syntax
 			foreach (var module in modules)
 			foreach (var import in module.AllImports.OrderBy(item => item.SourceOrder))
 			{
-				if (import.Module.Length == 0 && !import.Quoted) continue;
+				if (import.IsNameless) continue;
 				ActivateErrorStdOutBefore(module.Body, import.SourceOrder);
 				var source = ImportSource(import);
 				if (source == null)
@@ -80,7 +81,7 @@ namespace Keysharp.Compilation.Syntax
 					Diag($"{NodeAnchor(import)}#Import: Invalid import: *");
 				else if (source.Script == null && !source.IsAhk)
 					foreach (var (name, _) in NamedImports(import.Named))
-						if (name != "*" && BuiltinMember(source.Builtin, false, name) == null)
+						if (name != "*" && FindModuleMember(source.BuiltinType, name) == null)
 							Diag($"{NodeAnchor(import)}#Import: module '{import.Module}' has no exported member named '{name}'");
 			}
 		}
@@ -90,7 +91,7 @@ namespace Keysharp.Compilation.Syntax
 			// Unknown named AHK imports introduce storage in that module, as ordinary script-module imports do.
 			if (_ahkModule == null && modules.SelectMany(m => m.AllImports).Any(import =>
 				ImportSource(import)?.IsAhk == true
-				&& NamedImports(import.Named).Any(item => item.Name != "*" && BuiltinMember("AHK", true, item.Name) == null)))
+				&& NamedImports(import.Named).Any(item => item.Name != "*" && AhkMember(item.Name) == null)))
 			{
 				_ahkModule = new ModInfo { Name = "AHK", CodeName = "AHK", Dir = _includeDir, Group = _mainGroup, IsAhk = true };
 				modules.Add(_ahkModule);
@@ -109,22 +110,14 @@ namespace Keysharp.Compilation.Syntax
 					if (name != null) namedDeclarations.TryAdd(name, statement);
 				}
 				var locals = CollectLocalDeclNames(declarations);
-				var globals = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-				foreach (var statement in module.Body)
-					VisitScope(statement, node =>
-					{
-						if (node is DeclStmt { Keyword: "global" } declaration)
-							foreach (var item in declaration.Items)
-								if (DeclItemName(item) is { } declared) globals.Add(declared);
-					});
 				foreach (var import in module.ModuleBindings.OrderBy(im => im.SourceOrder))
 				{
-					if (import.Module.Length == 0 && !import.Quoted) continue;
+					if (import.IsNameless) continue;
 					void Add(string name, string member)
 					{
-						if (locals.Contains(name) || globals.Contains(name) || module.InlineMembers?.Contains(name) == true)
+						if (locals.Contains(name) || module.GlobalDeclarations.Contains(name) || module.InlineMembers?.Contains(name) == true)
 						{
-							Diag($"{NodeAnchor(import)}This import declaration conflicts with an existing declaration: {name}");
+							Diag($"{NodeAnchor(import)}This import declaration conflicts with an existing {(module.GlobalDeclarations.Contains(name) ? "global variable" : "declaration")}: {name}");
 							return;
 						}
 						var binding = new ModuleImport(new(ImportSource(import), member, null, name), import);
@@ -137,8 +130,7 @@ namespace Keysharp.Compilation.Syntax
 						}
 						module.NamedBindings.Add(name, binding);
 					}
-					if (import.Alias != null) Add(import.Alias, null);
-					else if (!import.Quoted) Add(ImportBindingName(import.Module), null);
+					if (import.BindingName != null) Add(import.BindingName, null);
 					foreach (var (name, alias) in NamedImports(import.Named))
 						if (name != "*") Add(alias, name);
 				}
@@ -187,7 +179,7 @@ namespace Keysharp.Compilation.Syntax
 					if (ImportSource(import)?.Script is { } source)
 						foreach (var (name, _) in NamedImports(import.Named))
 							if (name != "*" && !source.OwnBindings.ContainsKey(name) && !source.NamedBindings.ContainsKey(name)
-								&& !(source.IsAhk && BuiltinMember("AHK", true, name) != null))
+								&& !(source.IsAhk && AhkMember(name) != null))
 							{
 								source.OwnBindings[name] = new(ModuleOwner(source), NameMangler.Global(name), ModuleBindingKind.Field,
 									ExportK.Variable, name, Module: source, Synthetic: true);
@@ -261,7 +253,7 @@ namespace Keysharp.Compilation.Syntax
 		{
 			if (source == null) return null;
 			if (source.Script is not { } module)
-				return BuiltinMember(source.Builtin, source.IsAhk, name) is { } builtin
+				return BuiltinMember(source.BuiltinType, name) is { } builtin
 					? BuiltinBindingTarget(builtin) : null;
 			if (module.Bindings.TryGetValue(name, out var cached)) return cached;
 			if (module.OwnBindings.TryGetValue(name, out var own) && !own.Synthetic) return own;
@@ -292,14 +284,14 @@ namespace Keysharp.Compilation.Syntax
 						var importedSource = ImportSource(import);
 						if (importedSource.Script is { } script ? !ExportsMember(script, name)
 							: !importedSource.IsAhk && !import.ReExport
-								&& (!Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(importedSource.Builtin, out var type) || !BuiltinWildcardSupplies(type, name))) continue;
+								&& !BuiltinWildcardSupplies(importedSource.BuiltinType, name)) continue;
 						if (ResolveMemberBinding(importedSource, name, visiting: visiting, wildcard: true) is { } target)
 						{
 							selectedWildcard?.Invoke(import);
 							return Remember(target);
 						}
 					}
-				if (source.IsAhk && BuiltinMember("AHK", true, name) is { } ahk)
+				if (source.IsAhk && AhkMember(name) is { } ahk)
 					return BuiltinBindingTarget(ahk);
 				if (own != null) return own;
 				if (!create || !_bindingsSealed) return null;
@@ -385,8 +377,7 @@ namespace Keysharp.Compilation.Syntax
 				if (direct?.Bound.Member == null && direct != null)
 				{
 					var source = direct.Bound.Source;
-					var value = ModuleObjectExpr(source);
-					if (value != null) _fieldDecls.Add(Declared(ConstantField(NameMangler.Global(name), value), name));
+					_fieldDecls.Add(Declared(ConstantField(NameMangler.Global(name), ModuleObjectExpr(source)), name));
 					continue;
 				}
 				if (_inlineBlocks?.Any(block => block.Module == module.CodeName) == true)

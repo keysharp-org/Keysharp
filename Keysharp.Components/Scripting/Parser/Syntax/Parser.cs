@@ -257,6 +257,12 @@ namespace Keysharp.Parsing.Syntax
 		private static readonly System.Collections.Generic.HashSet<string> reservedNames =
 			new(statementKeywords, System.StringComparer.OrdinalIgnoreCase) { "case" };
 
+		// What AutoHotkey's Var::ValidateName refuses as a module name: the words above, its word operators, True, False and Throw.
+		private static readonly System.Collections.Generic.HashSet<string> reservedWords =
+			new(reservedNames, System.StringComparer.OrdinalIgnoreCase) { "or", "and", "not", "is", "IsSet", "super", "as", "contains", "in", "unset", "True", "False", "Throw" };
+
+		internal static bool IsReservedWord(string name) => reservedWords.Contains(name);
+
 		// Rejects a reserved word used where a name is expected (e.g. `x := return`, `a return` auto-concat, `class for`).
 		private void RejectReservedName(string name, Token at, string role)
 		{
@@ -670,6 +676,9 @@ namespace Keysharp.Parsing.Syntax
 			if (name.Equals("errorstdout", System.StringComparison.OrdinalIgnoreCase))
 				_errorStdOut = true;
 
+			if (name.Equals("module", System.StringComparison.OrdinalIgnoreCase) && !programScope)
+				ErrorAt(dirToken, "#Module is only allowed at the top level");
+
 			if (name.Equals("startup", System.StringComparison.OrdinalIgnoreCase))
 			{
 				if (!programScope)
@@ -882,6 +891,14 @@ namespace Keysharp.Parsing.Syntax
 					&& toks[i].Kind == TokenKind.Slash && !toks[i].LeadingWhitespace
 					&& toks[i + 1].Kind == TokenKind.Identifier && !toks[i + 1].LeadingWhitespace)
 				{
+					module += toks[i++].Text;
+					module += toks[i++].Text;
+				}
+				while (i < toks.Count && toks[i].Kind is TokenKind.Colon or TokenKind.DoubleColon)
+				{
+					if (toks[i].Kind == TokenKind.DoubleColon || toks[i].LeadingWhitespace || i + 1 == toks.Count
+						|| toks[i + 1].Kind != TokenKind.Identifier || toks[i + 1].LeadingWhitespace)
+						ErrorAt(toks[i], "a nested module name is written A:B, with no spaces around the colon");
 					module += toks[i++].Text;
 					module += toks[i++].Text;
 				}
@@ -1169,6 +1186,10 @@ namespace Keysharp.Parsing.Syntax
 						{
 							var argument = src[i + 2].Text;
 							if (argument.Equals("__Main", StringComparison.OrdinalIgnoreCase) && SourcePathComparer.Equals(moduleFile, _mainScriptPath)) argument = "__Init";
+							// A nested module has a mode of its own, so its whole name is the key.
+							for (var k = i + 3; k + 1 < src.Count && src[k].Kind == TokenKind.Colon && !src[k].LeadingWhitespace
+								&& src[k + 1].Kind == TokenKind.Identifier && !src[k + 1].LeadingWhitespace; k += 2)
+								argument += ":" + src[k + 1].Text;
 							if (!modules.TryGetValue(argument, out var mode))
 								modules[argument] = mode = (modules["__Init"].BackCompat, t.File, false);
 							module = argument;
@@ -1647,8 +1668,6 @@ namespace Keysharp.Parsing.Syntax
 					else if (dir is ImportDirective imp) classImports.Add(imp);
 					// Keep class members with their declaring class.
 					else if (dir is CSharpDirective cs) (classCSharp ??= []).Add(cs);
-					else if (dir.Name.Equals("Module", System.StringComparison.OrdinalIgnoreCase))
-						Error("#Module is only allowed at the top level, not inside a class body");
 					// Everything else is hoisted to program scope rather than dropped, exactly as a directive found in
 					// expression position is. A class body has nowhere to put a statement, but the directive still has
 					// to be SEEN: dropping it silently discarded a #Warning or #Error written to be read, and let a

@@ -8,7 +8,11 @@
 #import InheritMain { NoReturnInherited }
 #import ClassMode { ClassNoReturn }
 #import CompatKeysharp { NoReturnKeysharp }
+#import CompatNested:Old { NoReturnNested20 }
+#import CompatNested:New { NoReturnNested21 }
 #import IncludedModule
+#import IncludedParent
+#import LocalParent
 #import KS { CompileScript }
 #Include <assert>
 
@@ -334,6 +338,14 @@ AssertEq(DefinedMode(HotstringNoReturn20.Bind("::ksmodecheck")), "v2.0", A_LineN
 x := ClassScoped20().NoReturn()
 Assert(IsSet(x) && x == "", A_LineNumber)
 
+; A nested module has a mode of its own, whatever its sibling's.
+AssertEq(DefinedMode(NoReturnNested20), "v2.0", A_LineNumber)
+AssertEq(DefinedMode(NoReturnNested21), "v2.1", A_LineNumber)
+
+; A parent's own #Module decides where its #Requires counts, wherever a child's directive created it.
+AssertEq(IncludedParent.StartupMode, "v2.0", A_LineNumber)
+AssertEq(LocalParent.StartupMode, "v2.0", A_LineNumber)
+
 try {
 	Map().Get("absent")
 	startupMode := "v2.1"
@@ -464,5 +476,25 @@ ClassNoReturn() {
 	return c.NoReturn()
 }
 
-; Kept last, so that no later line of this script falls inside the module the file declares.
+#Module CompatNested:Old
+#Requires AutoHotkey v2.0
+NoReturnNested20() {
+}
+
+#Module CompatNested:New
+#Requires AutoHotkey v2.1-alpha
+NoReturnNested21() {
+}
+
+#Module IncludedParent:Child
+
+; Only a #Module follows, so that no later line of this script falls inside a module the file declares.
 #Include Lib/compat_mode_include.ahk
+
+#Module LocalParent
+#Requires AutoHotkey v2.0
+try {
+	Map().Get("absent")
+	StartupMode := "v2.1"
+} catch
+	StartupMode := "v2.0"

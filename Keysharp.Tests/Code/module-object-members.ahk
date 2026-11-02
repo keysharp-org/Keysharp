@@ -19,6 +19,11 @@
 #Import AhkAssignmentShadow
 #Import AhkDeclarationShadow
 #Import BuiltinNameAlias
+#Import Parent
+#Import Parent:Child
+#Import Parent:Unexposed
+#Import Parent:SameName as SameNamedChild
+#Import Parent:Typed
 #Include <assert>
 
 #CSharp
@@ -225,6 +230,31 @@ AssertEq(heldReference "," heldSource, "7,1", A_LineNumber)
 virtualValue := {__Value: 9}
 Assert(&%virtualValue% == virtualValue && (&virtualValue).__Value == virtualValue, A_LineNumber)
 
+; A nested module is a member of its parent only when the parent imports it, as a constant.
+AssertEq(Type(Child), "Module", A_LineNumber)
+Assert(Parent.Child == Child, A_LineNumber)
+AssertEq(Parent.Child.Deep.F(), "deep", A_LineNumber)
+AssertEq(Parent.Same(), "parent", A_LineNumber)
+AssertEq(Parent.Child.Same(), "child", A_LineNumber)
+AssertEq(Child.Same(), "child", A_LineNumber)
+Throws(() => Parent.Unexposed, A_LineNumber, PropertyError)
+AssertEq(Unexposed.Value, "reached by path", A_LineNumber)
+Throws(() => Child(), A_LineNumber, MethodError)
+Throws(() => String(Child), A_LineNumber, MethodError)
+
+; Nesting is ownership, not scope: neither sees the other's names, and a child may import its parent.
+Assert(!Parent.SeesChildValue() && !Child.SeesParentValue(), A_LineNumber)
+Assert(Child.Up == Parent, A_LineNumber)
+AssertEq(Child.Up.ParentValue, "parent", A_LineNumber)
+
+; Declaring a nested module takes no name from its parent.
+AssertEq(Parent.SameName, "variable", A_LineNumber)
+AssertEq(SameNamedChild.Value, "module", A_LineNumber)
+
+; Inline C# belongs to the nested module that holds it.
+Typed.Number := "6"
+AssertEq(Typed.Twice(), 12, A_LineNumber)
+
 class Delayed {
     static Token := this.InitializeClass()
     static InitializeClass() {
@@ -259,7 +289,7 @@ ToString() => "printable"
 #Import Members { Count as AliasCount, F as ImportedFunction }
 #Import AHK { A_WorkingDir as Directory, StrLen as Length, Array as Sequence }
 DynamicRef(Name) {
-	global AliasCount
+	global
 	return &%Name%
 }
 
@@ -339,3 +369,32 @@ ScopedRef() {
     #Import Members { Count as A_WorkingDir }
     return &A_WorkingDir
 }
+
+#Module Parent
+#Import Parent:Child
+ParentValue := "parent"
+SameName := "variable"
+SeesChildValue() => IsSet(ChildValue) || IsSet(%"ChildValue"%)
+Same() => "parent"
+
+#Module Parent:Child
+#Import Parent as Up
+#Import Parent:Child:Deep
+ChildValue := "child"
+SeesParentValue() => IsSet(ParentValue) || IsSet(%"ParentValue"%)
+Same() => "child"
+
+#Module Parent:Child:Deep
+F() => "deep"
+
+#Module Parent:Unexposed
+Value := "reached by path"
+
+#Module Parent:SameName
+Value := "module"
+
+#Module Parent:Typed
+#CSharp
+public static long Number { get; set; } = 1;
+public static object Twice() => Number * 2;
+#EndCSharp

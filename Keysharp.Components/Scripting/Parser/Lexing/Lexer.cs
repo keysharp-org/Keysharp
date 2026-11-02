@@ -141,7 +141,7 @@ namespace Keysharp.Parsing.Lexing
 		// characters such as emoji are valid. Only digits are disallowed as the FIRST character (a leading digit is a
 		// number). `c >= 0x80` (not char.IsLetter) is what AHK uses, so non-ASCII symbols (€, ①, …) are allowed too.
 		private static bool IsIdentStart(char c) => c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c >= (char)0x80;
-		private static bool IsIdentPart(char c) => IsIdentStart(c) || (c >= '0' && c <= '9');
+		internal static bool IsIdentPart(char c) => IsIdentStart(c) || (c >= '0' && c <= '9');
 		// A character that ends a numeric literal in AHK (EXPR_OPERAND_TERMINATORS, script.h:815). '%' opens a
 		// dynamic member name and '!'/'~' would leave their operand unconsumed, so neither is included here.
 		private static bool IsOperandTerminator(char c) =>
@@ -261,7 +261,7 @@ namespace Keysharp.Parsing.Lexing
 					// Capture C# before other line-start scanners can interpret its body.
 					if (TryScanCSharpBlock(tokens, leadingWs)) { leadingWs = false; continue; }
 					if (TryScanRawDirective(tokens, leadingWs)) { leadingWs = false; continue; }
-					if (TryScanHot(tokens, leadingWs)) { leadingWs = false; continue; }
+					if (!AtModuleDirective() && TryScanHot(tokens, leadingWs)) { leadingWs = false; continue; }
 				}
 
 				int tl = _line, tc = _col, to = _pos;
@@ -1279,6 +1279,11 @@ namespace Keysharp.Parsing.Lexing
 				else if (opts[k] is 't' or 'T' or 'r' or 'R') _hsRawDefault = !(k + 1 < opts.Length && opts[k + 1] == '0');
 			}
 		}
+
+		// `Module A` is no key, so AutoHotkey's hotkey check rejects `#Module A::B` and the line is read as a directive with a
+		// malformed module name.
+		private bool AtModuleDirective() => Cur == '#' && _pos + 7 < _n && _s[_pos + 7] is ' ' or '\t'
+			&& (_s.AsSpan(_pos, 7).Equals("#Module", StringComparison.OrdinalIgnoreCase) || _s.AsSpan(_pos, 7).Equals("#Import", StringComparison.OrdinalIgnoreCase));
 
 		// At a logical line start, try to recognise a hotkey (`^!a::…`), remap (`a::b`), or hotstring
 		// (`:opts:trigger::…`). On success emits the appropriate token(s) and returns true; otherwise

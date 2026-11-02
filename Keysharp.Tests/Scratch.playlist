@@ -55,9 +55,9 @@
                       </Rule>
                     </Rule>
                     <Rule Match="All">
-                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ModuleTests.ModuleInClass" />
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ModuleTests.ModuleBelowTopLevel" />
                       <Rule Match="Any">
-                        <Property Name="DisplayName" Value="ModuleInClass" />
+                        <Property Name="DisplayName" Value="ModuleBelowTopLevel" />
                       </Rule>
                     </Rule>
                     <Rule Match="All">

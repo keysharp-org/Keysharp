@@ -13,20 +13,19 @@ namespace Keysharp.Compilation.Syntax
 			public int Index;
 			public ModInfo Root;
 			public List<string> SearchPath;
-			public IReadOnlyList<int> IncludeParents = [];   // see ProgramNode.IncludeParents
 			public readonly Dictionary<string, ModInfo> Names = new(StringComparer.OrdinalIgnoreCase);
 		}
 
-		private sealed record ModuleSource(ModInfo Script = null, string Builtin = null)
+		private sealed record ModuleSource(ModInfo Script = null, Type BuiltinType = null)
 		{
-			public string Name => Script?.Name ?? Builtin;
-			public bool IsAhk => Script?.IsAhk ?? StringComparer.OrdinalIgnoreCase.Equals(Builtin, "AHK");
+			public bool IsAhk => Script?.IsAhk ?? BuiltinType == typeof(Ahk);
 		}
 
 		private ModuleGroup _mainGroup;
 		private ModInfo _ahkModule;
 		private readonly Dictionary<string, ModuleGroup> _moduleFiles = new(SourcePathComparer);
 		private readonly Dictionary<ImportDirective, ModuleSource> _importModules = new();
+		private readonly List<int> _includeParents = [];   // by inclusion, see AppendInclusions
 		private long _lastSourceOrder;
 
 		private void AppendSourceOrder(ProgramNode program)
@@ -48,8 +47,19 @@ namespace Keysharp.Compilation.Syntax
 			_lastSourceOrder += highest;
 		}
 
+		// Each file numbers its #Include splices from zero but a module's body can span files, so the numbers are made unique
+		// across the script. Returns the number of the file's own splice, which has no parent.
+		private int AppendInclusions(ProgramNode program)
+		{
+			var root = _includeParents.Count;
+			_includeParents.Add(-1);
+			foreach (var parent in program.IncludeParents) _includeParents.Add(parent + root);
+			foreach (var statement in program.Body) statement.Inclusion += root;
+			return root;
+		}
+
 		private ModuleSource ImportSource(ImportDirective directive) => _importModules.GetValueOrDefault(directive);
-		private ModuleSource AhkSource => new(_ahkModule, _ahkModule == null ? "AHK" : null);
+		private ModuleSource AhkSource => new(_ahkModule, _ahkModule == null ? typeof(Ahk) : null);
 
 		private ModuleSource FindNamedModule(ModuleGroup group, string name)
 		{
@@ -58,7 +68,79 @@ namespace Keysharp.Compilation.Syntax
 			if (StringComparer.OrdinalIgnoreCase.Equals(name, "AHK")) return AhkSource;
 			if (group.Names.TryGetValue(name, out var module)) return new(module);
 			return Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(name, out var type)
-				&& typeof(Module).IsAssignableFrom(type) ? new(Builtin: Script.GetUserDeclaredName(type) ?? type.Name) : null;
+				&& typeof(Module).IsAssignableFrom(type) ? new(BuiltinType: type) : null;
+		}
+
+		// The child a script declared with `#Module Parent:Name`, or a nested type of a built-in module.
+		private static ModuleSource NestedChild(ModuleSource parent, string name) => parent?.Script is { } script
+			? script.Nested.TryGetValue(name, out var child) ? new(child) : null
+			: parent?.BuiltinType is { } builtin && FindModuleMember(builtin, name) is Type nested && typeof(Module).IsAssignableFrom(nested) ? new(BuiltinType: nested) : null;
+
+		// AutoHotkey's Var::ValidateName, for a module name or one segment of a nested one.
+		private static string ModuleNameError(string name) =>
+			char.IsAsciiDigit(name[0]) ? $"This module name starts with a number, which is not allowed: \"{name}\""
+			: !IsIdentifierText(name) ? $"The following module name contains an illegal character: \"{name}\""
+			: Parser.IsReservedWord(name) ? $"The following reserved word must not be used as a module name: \"{name}\""
+			: null;
+
+		// Whether a #Module directive in this body names `name` itself, which makes it the group's own module however late.
+		private static bool DeclaresModule(List<Stmt> body, string name) => body.Any(statement => statement is DirectiveStmt directive
+			&& StringComparer.OrdinalIgnoreCase.Equals(directive.Name, "Module")
+			&& StringComparer.OrdinalIgnoreCase.Equals((directive.Args ?? "").Trim(), name));
+
+		// The module a #Module directive names, reopened or created with any parent it lacks, or null when the name is
+		// rejected. A nested module belongs to its parent's group but is not one of its names: only its parent finds it.
+		private ModInfo DeclareModule(DirectiveStmt directive, List<Stmt> body, ModuleGroup group, List<ModInfo> mods)
+		{
+			var name = (directive.Args ?? "").Trim();
+			var segments = name.Split(':');
+			var first = FindNamedModule(group, segments[0]);
+			var error = name.Length == 0 ? "Parameter #1 required."
+				: segments.Length > 1 && segments.Any(segment => segment.Length == 0 || segment[0] == ' ' || segment[^1] == ' ')
+					? "a nested module name is written A:B, with no spaces around the colon"
+				: segments.Select(ModuleNameError).FirstOrDefault(message => message != null)
+					?? (segments.Length > 1 && (first is { IsAhk: true } || first is { Script: null } && !DeclaresModule(body, segments[0]))
+						? "a built-in module cannot be a parent: " + segments[0] : null);
+			if (error != null)
+			{
+				ActivateErrorStdOutBefore(body, directive.SourceOrder);
+				Diag(NodeAnchor(directive) + error);
+				return null;
+			}
+
+			ModInfo Create(string segment, ModInfo parent)
+			{
+				var owner = parent?.Group ?? group;
+				// A file's root goes by the path that first imported it, which does not belong in its children's names.
+				var qualified = parent == null ? segment : (parent == owner.Root && owner != _mainGroup ? "__Init" : parent.Name) + ":" + segment;
+				var created = new ModInfo { Name = qualified, Group = owner, Dir = System.IO.Path.GetDirectoryName(owner.Path) ?? _includeDir,
+					CodeName = owner == _mainGroup ? NameMangler.ModuleClass(qualified) : "__KSFile" + owner.Index + "_" + NameMangler.ModuleClass(qualified) };
+				mods.Add(created);
+				return created;
+			}
+
+			var module = first?.Script;
+			if (module == null)
+			{
+				module = Create(segments[0], null);
+				group.Names.Add(segments[0], module);
+				if (StringComparer.OrdinalIgnoreCase.Equals(segments[0], "AHK"))
+				{
+					module.IsAhk = true;
+					module.CodeName = "AHK";
+					_ahkModule = module;
+				}
+			}
+			foreach (var segment in segments.Skip(1))
+			{
+				if (!module.Nested.TryGetValue(segment, out var child))
+					module.Nested.Add(segment, child = Create(segment, module));
+				module = child;
+			}
+			// A parent created for a child takes this from its own directive, which can be in another splice than the child's.
+			if (module.MainInclusion < 0) module.MainInclusion = directive.Inclusion;
+			if (!mods.Contains(module)) mods.Add(module);
+			return module;
 		}
 
 		private List<ModInfo> PartitionModules(List<Stmt> body, ModuleGroup group)
@@ -68,20 +150,7 @@ namespace Keysharp.Compilation.Syntax
 			foreach (var statement in body)
 			{
 				if (statement is DirectiveStmt directive && StringComparer.OrdinalIgnoreCase.Equals(directive.Name, "Module"))
-				{
-					var name = (directive.Args ?? "").Trim();
-					current = FindNamedModule(group, name)?.Script;
-					if (current == null)
-					{
-						current = new ModInfo { Name = name, Group = group, Dir = System.IO.Path.GetDirectoryName(group.Path) ?? _includeDir, MainInclusion = directive.Inclusion,
-							IsAhk = StringComparer.OrdinalIgnoreCase.Equals(name, "AHK"),
-							CodeName = StringComparer.OrdinalIgnoreCase.Equals(name, "AHK") ? "AHK"
-								: group == _mainGroup ? NameMangler.ModuleClass(name) : "__KSFile" + group.Index + "_" + NameMangler.ModuleClass(name) };
-						group.Names.Add(name, current);
-						if (StringComparer.OrdinalIgnoreCase.Equals(name, "AHK")) _ahkModule = current;
-					}
-					if (!mods.Contains(current)) mods.Add(current);
-				}
+					current = DeclareModule(directive, body, group, mods) ?? current;
 				else if (statement is ImportDirective import)
 				{
 					current.ModuleBindings.Add(import);
@@ -105,22 +174,25 @@ namespace Keysharp.Compilation.Syntax
 				{
 					if (_importModules.ContainsKey(import)) continue;
 					ActivateErrorStdOutBefore(module.Body, import.SourceOrder);
-					var path = import.Module;
-					string submodule = null;
-					var colon = path.LastIndexOf(':');
-					if (colon >= 0 && (colon == path.Length - 1 || IsModuleSuffix(path.AsSpan(colon + 1))))
-					{
-						submodule = path[(colon + 1)..];
-						path = path[..colon];
-					}
-					var source = submodule == null ? FindNamedModule(module.Group, path) : null;
+					var (path, segments) = SplitModuleSpecifier(import.Module);
+					// A nested path resolves only where a nested child exists, which an AutoHotkey script cannot declare, so what
+					// it writes reaches its file.
+					var source = segments.Aggregate(FindNamedModule(module.Group, path), NestedChild);
 					if (source == null)
 					{
 						var group = module.Group;
 						if (path.Length > 0)
 						{
-							var localDir = import.File == null ? module.Dir : System.IO.Path.GetDirectoryName(import.File);
-							var file = ResolveModuleFile(path, localDir ?? _includeDir, module.Group);
+							var localDir = (import.File == null ? module.Dir : System.IO.Path.GetDirectoryName(import.File)) ?? _includeDir;
+							var file = ResolveModuleFile(path, localDir, module.Group);
+							// AutoHotkey splits only at the last colon, so a head naming no file can be part of a path: "C:Lib:Sub" is the
+							// file C:Lib.
+							while (file == null && segments.Length > 1)
+							{
+								path += ":" + segments[0];
+								segments = segments[1..];
+								file = ResolveModuleFile(path, localDir, module.Group);
+							}
 							if (file == null) { _importModules[import] = null; continue; }
 							file = System.IO.Path.GetFullPath(file);
 							if (!_moduleFiles.TryGetValue(file, out group))
@@ -140,7 +212,7 @@ namespace Keysharp.Compilation.Syntax
 									if (diagnostics.Count > 0) continue;
 									AppendSourceOrder(program);
 									AddSourceTexts(file, text, program);
-									group.IncludeParents = program.IncludeParents;
+									group.Root.MainInclusion = AppendInclusions(program);
 									foreach (var discovered in PartitionModules(program.Body, group))
 									{
 										if (!mods.Contains(discovered)) mods.Add(discovered);
@@ -151,17 +223,33 @@ namespace Keysharp.Compilation.Syntax
 								catch (System.Exception error) { Diag($"#Import: failed to read module '{path}' from {System.IO.Path.GetFileName(file)}: {error.Message}"); }
 							}
 						}
-						if (source == null) source = submodule == null ? new(group.Root) : FindNamedModule(group, submodule);
+						source = segments.Length == 0 ? new(group.Root)
+							: segments.Skip(1).Aggregate(NestedChild(new(group.Root), segments[0]) ?? FindNamedModule(group, segments[0]), NestedChild);
 					}
 					_importModules[import] = source;
 				}
 		}
 
-		private static bool IsModuleSuffix(System.ReadOnlySpan<char> name)
+		// Splits a specifier into the head and the module names after it: colons are taken from the right while the text
+		// after each is an identifier, or nothing after a trailing colon. A colon that fails belongs to the head, which may
+		// be a file path.
+		private static (string Head, string[] Segments) SplitModuleSpecifier(string specifier)
+		{
+			var head = specifier.Length;
+			for (var colon = specifier.LastIndexOf(':'); colon >= 0; colon = colon > 0 ? specifier.LastIndexOf(':', colon - 1) : -1)
+			{
+				var text = specifier.AsSpan(colon + 1, head - colon - 1);
+				if (!IsIdentifierText(text) && !(text.IsEmpty && head == specifier.Length)) break;
+				head = colon;
+			}
+			return head == specifier.Length ? (specifier, []) : (specifier[..head], specifier[(head + 1)..].Split(':'));
+		}
+
+		private static bool IsIdentifierText(System.ReadOnlySpan<char> name)
 		{
 			if (name.IsEmpty) return false;
 			foreach (var character in name)
-				if (character < 128 && !(char.IsAsciiLetterOrDigit(character) || character == '_')) return false;
+				if (!Keysharp.Parsing.Lexing.Lexer.IsIdentPart(character)) return false;
 			return true;
 		}
 

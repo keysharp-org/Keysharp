@@ -339,12 +339,19 @@ namespace Keysharp.Parsing.Syntax
 	internal sealed class ImportDirective : DirectiveStmt
 	{
 		public readonly string Module;
-		public readonly string Alias;
+		public readonly string BindingName;   // what the module object is bound to, or null
 		public readonly string Named;
-		public readonly bool Quoted;
+		public readonly bool IsNameless;   // a bare `#Import`, which does nothing
 		public readonly bool ReExport;
 		public ImportDirective(string args, string module, string alias, string named, bool quoted, bool reExport)
-			: base("import", args) { Module = module; Alias = alias; Named = named; Quoted = quoted; ReExport = reExport; }
+			: base("import", args)
+		{
+			Module = module; Named = named; ReExport = reExport;
+			IsNameless = module.Length == 0 && !quoted;
+			// A path import such as `#Import Lib/OCR` binds its leaf, as a nested one such as `#Import Other:Nested` does.
+			var bound = alias ?? (quoted ? null : module[(module.AsSpan().LastIndexOfAny('/', '\\', ':') + 1)..]);
+			BindingName = string.IsNullOrEmpty(bound) ? null : bound;
+		}
 	}
 
 	internal sealed class CSharpDirective : DirectiveStmt

@@ -20,6 +20,7 @@
 #import "VariableBridge" { Bridged as TopBridged }
 #import RelaySource
 #import Export { Literal as LiteralExport }
+#import Export:Inner as ExportInner
 #Import CreatedSource { Missing as CreatedAlias }
 #Import CreatedSource
 #Import CreatedConsumer
@@ -34,6 +35,8 @@
 #Import CycleC { X as CycleCX }
 #Import AHK { StrLen as SeededLength, MissingAhkExport }
 #Import BuiltinRelay { StrLen as ForwardedLength }
+#Import NestedOwner
+#Import NestedOwner { * }
 
 ; quoted module import should not add module name unless alias is given
 #import "Q"
@@ -89,9 +92,16 @@ Assert(!IsSet(MissingAhkExport), A_LineNumber)
 Assert(ForwardedLength == SeededLength, A_LineNumber)
 AssertEq(ForwardedLength("abc"), 3, A_LineNumber)
 
+; ---- a nested module reaches a wildcard consumer only through #Import Export, though its parent has both as members
+AssertEq(Type(ExportedChild), "Module", A_LineNumber)
+AssertEq(ExportedChild.Value, "exported", A_LineNumber)
+Assert(!IsSet(UnexportedChild), A_LineNumber)
+AssertEq(NestedOwner.UnexportedChild.Value, "unexported", A_LineNumber)
+
 ; ---- Export can be a literal module name when no second module specifier follows it
 AssertEq(LiteralExport(), "literal Export module", A_LineNumber)
 AssertEq(Export.Literal(), "literal Export module", A_LineNumber)
+AssertEq(ExportInner.Value, "nested in Export", A_LineNumber)
 
 ; A named import creates an unset source variable before wildcard re-exports are bound.
 Assert(!IsSet(CreatedAlias), A_LineNumber)
@@ -225,3 +235,16 @@ DynamicIsSet(Name) => IsSet(%Name%)
 
 #Module BuiltinRelay
 #Import Export AHK { * }
+
+#Module NestedOwner
+#Import Export NestedOwner:ExportedChild
+#Import NestedOwner:UnexportedChild
+
+#Module NestedOwner:ExportedChild
+Value := "exported"
+
+#Module NestedOwner:UnexportedChild
+Value := "unexported"
+
+#Module Export:Inner
+Value := "nested in Export"

@@ -110,6 +110,59 @@ Assert(niv == 99 && nlv == 55, A_LineNumber)
 #import "FuncGlobals" { fgTheme as fgt }
 Assert(cb == 7 && fgt == "dark", A_LineNumber)
 
+; ---- a nested module is named by its path: unquoted it binds the leaf or an alias, quoted only an alias
+#Import Outer:Nested
+#Import Outer:Nested:Deep
+#Import Outer:Nested as NestedAlias
+#Import outer:NESTED as MixedCaseNested
+#Import "Outer:Nested" as QuotedNested
+#Import "Outer:Nested:Deep"
+#Import "Outer:Nested" { NestedValue as QuotedNestedValue }
+#Import Outer:Nested:Deep { DeepFn, DeepFn as RenamedDeepFn }
+
+AssertEq(Type(Nested), "Module", A_LineNumber)
+Assert(Nested == NestedAlias && Nested == MixedCaseNested && Nested == QuotedNested, A_LineNumber)
+AssertEq(Nested.NestedValue, 10, A_LineNumber)
+AssertEq(QuotedNestedValue, 10, A_LineNumber)
+AssertEq(Deep.DeepFn(), "deep", A_LineNumber)
+AssertEq(DeepFn(), "deep", A_LineNumber)
+AssertEq(RenamedDeepFn(), "deep", A_LineNumber)
+
+; ---- importing a nested module binds nothing for its parent
+#Import UnboundParent:Leaf
+
+AssertEq(Leaf.Value, 3, A_LineNumber)
+a := IsSet(UnboundParent)
+AssertEq(a, false, A_LineNumber)
+
+; ---- a parent may be declared later than its child, or be a pure namespace with no #Module of its own
+#Import Outer
+#Import Utils
+#Import Utils:Strings
+#Import Utils:Files
+
+AssertEq(Outer.DeclaredLater, 1, A_LineNumber)
+AssertEq(Type(Utils), "Module", A_LineNumber)
+AssertEq(Files.Kind, "files", A_LineNumber)
+
+; ---- reopening a nested module is case-insensitive and keeps adding to it
+AssertEq(Strings.Upper("a") Strings.Lower("B"), "Ab", A_LineNumber)
+AssertEq(Strings.Order, "first,second", A_LineNumber)
+
+; ---- __Main and __Init can be parents, and a child of the main file's __Init is the same module as one of __Main
+#Import __Main:Helpers
+#Import __Init:Helpers as SameHelpers
+
+Assert(Helpers == SameHelpers, A_LineNumber)
+AssertEq(Helpers.HelperValue, 5, A_LineNumber)
+AssertEq(Helpers.Reopened, 6, A_LineNumber)
+
+; ---- a nested name of the same spelling as a top-level one is a different module
+#Import Y:X as NestedX
+
+AssertEq(NestedX.Calculate(), "nested", A_LineNumber)
+AssertEq(CalculateX(), 2, A_LineNumber)
+
 FileAppend "pass", "*"
 
 #Module X
@@ -156,3 +209,35 @@ InitFG()
 InitFG() {
     global fgTheme := "dark"
 }
+
+#Module Outer:Nested:Deep
+DeepFn() => "deep"
+
+#Module Outer:Nested
+NestedValue := 10
+
+#Module Outer
+DeclaredLater := 1
+
+#Module Utils:Strings
+Order := "first"
+Upper(Text) => StrUpper(Text)
+
+#Module Utils:Files
+Kind := "files"
+
+#Module UTILS:strings
+Order .= ",second"
+Lower(Text) => StrLower(Text)
+
+#Module __Main:Helpers
+HelperValue := 5
+
+#Module __Init:Helpers
+Reopened := 6
+
+#Module Y:X
+Calculate() => "nested"
+
+#Module UnboundParent:Leaf
+Value := 3

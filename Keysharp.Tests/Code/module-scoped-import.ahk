@@ -333,6 +333,31 @@ AssertEq(FnNestedWildcardReads(), "0,42,0", A_LineNumber)
 AssertEq(BeforeModuleWildcard(), "helper,helper", A_LineNumber)
 AssertEq(AfterModuleWildcard(), "1.0,1.0", A_LineNumber)
 
+; A nested module and its members import into a function or class like any other, binding the leaf or an alias.
+FnNestedModule() {
+    #import ScopedOuter:ScopedInner
+    #import ScopedOuter:ScopedInner as InnerAlias
+    #import ScopedOuter:ScopedInner { InnerFn, InnerValue as RenamedValue }
+    #import "ScopedOuter:ScopedInner" { InnerFn as QuotedFn }
+    RenamedValue := "written"
+    return ScopedInner.InnerFn() "," InnerAlias.InnerValue "," InnerFn() "," QuotedFn()
+}
+AssertEq(FnNestedModule(), "inner,written,inner,inner", A_LineNumber)
+Assert(!IsSet(ScopedInner), A_LineNumber)
+
+FnNestedWildcard() {
+    #import ScopedOuter:ScopedInner { * }
+    return InnerFn()
+}
+AssertEq(FnNestedWildcard(), "inner", A_LineNumber)
+
+class WithNestedImport {
+    #import ScopedOuter:ScopedInner { InnerFn }
+    #import ScopedOuter:ScopedInner
+    static Compute() => InnerFn() "," ScopedInner.InnerFn()
+}
+AssertEq(WithNestedImport.Compute(), "inner,inner", A_LineNumber)
+
 FileAppend "pass", "*"
 
 #Module ScopedImportOrder
@@ -350,3 +375,7 @@ AfterModuleWildcard() {
 
 #Module ScopedBuiltinRelay
 #Import Export AHK { A_WorkingDir as Directory }
+
+#Module ScopedOuter:ScopedInner
+InnerValue := "initial"
+InnerFn() => "inner"

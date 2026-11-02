@@ -424,12 +424,14 @@ namespace Keysharp.Compilation.Syntax
 		private enum ExportK { Function, Variable, Type, Module }
 		private sealed class ModInfo
 		{
-			public string Name;
+			public string Name;   // the qualified name of a nested module, Other:Nested
 			public string CodeName;
 			public ModuleGroup Group;
+			public Dictionary<string, ModInfo> Nested = new(StringComparer.OrdinalIgnoreCase);   // keyed by leaf name
 			public bool IsAhk;
 			public string Dir;   // directory of the source file this module came from (for "importing file dir first")
-			public int MainInclusion;   // the #Include splice holding a named module's first #Module directive
+			public int MainInclusion = -1;   // the #Include splice holding the module's first own #Module directive, or a root's file
+			public readonly HashSet<string> GlobalDeclarations = new(StringComparer.OrdinalIgnoreCase);   // named by a global declaration at any depth
 			public List<Stmt> Body = new();
 			// Top-level and control-flow imports bind in the module; callable/class imports retain their lexical scope.
 			public List<ImportDirective> ModuleBindings = new();
@@ -448,14 +450,6 @@ namespace Keysharp.Compilation.Syntax
 		// File names tried for a module reference, Keysharp-native first then AHK-compatible.
 		private static readonly string[] moduleExts = { ".ks", ".ahk" };
 		private static readonly string[] moduleInitNames = { "__Init.ks", "__Init.ahk" };
-
-		// The local name introduced by a bare unquoted import. A path import such as `#import Lib/OCR` binds its leaf
-		// (`OCR`), while the full specifier remains the module identity used for file lookup and generated type mapping.
-		private static string ImportBindingName(string modName)
-		{
-			var sep = System.Math.Max(modName.LastIndexOf('/'), modName.LastIndexOf('\\'));
-			return sep >= 0 ? modName.Substring(sep + 1) : modName;
-		}
 
 		private static IEnumerable<(string Name, string Alias)> NamedImports(string names)
 		{
@@ -550,17 +544,17 @@ namespace Keysharp.Compilation.Syntax
 			var spellings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 			CollectSpellings(m.Body, null, spellings);
 			foreach (var name in assigned) Declare(spellings.TryGetValue(name, out var spelling) ? spelling : name);
-			// A global declaration in a function declares the module's variable as one at the top level does, and exports it
-			// unless it names an import, which only #Import Export forwards.
+			// A global declaration in a function declares the module's variable as one at the top level does.
 			var declarations = new List<DeclStmt>();
 			foreach (var s in m.Body) CollectStatements(s, declarations);
 			foreach (var d in declarations)
 				if (d.Keyword == "global")
 					foreach (var item in d.Items)
-						if (DeclItemName(item) is { } name && !IsBuiltinVariable(name))
+						if (DeclItemName(item) is { } name)
 						{
-							m.DirectVariables.Add(name);
-							if (!m.ModuleBindings.Any(im => ImportBinds(im, name, out _))) m.Exports.TryAdd(name, ExportK.Variable);
+							Declare(name);
+							// As AutoHotkey's FindOrAddVar does while the script loads, before any import resolves.
+							if (!IsBuiltinVariable(name)) m.GlobalDeclarations.Add(name);
 						}
 		}
 
@@ -599,42 +593,11 @@ namespace Keysharp.Compilation.Syntax
 			_ = AnyNode(arrow, AddName);
 		}
 
-		// Whether an import binds `name` explicitly: as the module alias or bare leaf name (member null), or as a named
-		// alias (member the name it imports).
-		private static bool ImportBinds(ImportDirective im, string name, out string member)
+		private static IEnumerable<string> AhkMemberNames()
 		{
-			member = null;
-
-			if (StringComparer.OrdinalIgnoreCase.Equals(name, im.Alias ?? (!im.Quoted ? ImportBindingName(im.Module) : null)))
-				return true;
-
-			foreach (var (imported, alias) in NamedImports(im.Named))
-				if (imported != "*" && StringComparer.OrdinalIgnoreCase.Equals(alias, name))
-				{
-					member = imported;
-					return true;
-				}
-
-			return false;
-		}
-
-		private static Dictionary<string, ExportK> BuiltinExportKinds(string module)
-		{
-			var exports = new Dictionary<string, ExportK>(StringComparer.OrdinalIgnoreCase);
-			var rd = Script.TheScript.ReflectionsData;
-			if (StringComparer.OrdinalIgnoreCase.Equals(module, "AHK"))
-			{
-				foreach (var name in rd.flatPublicStaticMethods.Keys) exports[name] = ExportK.Function;
-				foreach (var name in rd.flatPublicStaticProperties.Keys) exports[name] = ExportK.Variable;
-				foreach (var (name, globalType) in rd.stringToTypes)
-					if (Script.IsGlobalClass(globalType)) exports[name] = ExportK.Type;
-				return exports;
-			}
-			if (!rd.stringToTypes.TryGetValue(module, out var type) || !typeof(Keysharp.Runtime.Module).IsAssignableFrom(type))
-				return exports;
-			foreach (var name in BuiltinMemberNames(type))
-				exports[name] = FindModuleMember(type, name) switch { System.Reflection.PropertyInfo => ExportK.Variable, Type => ExportK.Type, _ => ExportK.Function };
-			return exports;
+			var data = Script.TheScript.ReflectionsData;
+			return data.flatPublicStaticMethods.Keys.Concat(data.flatPublicStaticProperties.Keys)
+				.Concat(data.stringToTypes.Where(entry => Script.IsGlobalClass(entry.Value)).Select(entry => entry.Key)).Distinct(StringComparer.OrdinalIgnoreCase);
 		}
 
 		private void ClearPerModuleState()
@@ -652,8 +615,8 @@ namespace Keysharp.Compilation.Syntax
 		private CompilationUnitSyntax BuildMultiModule(ProgramNode prog, string name)
 		{
 			AppendSourceOrder(prog);
-			_mainGroup = new ModuleGroup { Path = MainScriptPath, IncludeParents = prog.IncludeParents };
-			_mainGroup.Root = new ModInfo { Name = "__Main", CodeName = "__Main", Group = _mainGroup, Dir = _includeDir };
+			_mainGroup = new ModuleGroup { Path = MainScriptPath };
+			_mainGroup.Root = new ModInfo { Name = "__Main", CodeName = "__Main", Group = _mainGroup, Dir = _includeDir, MainInclusion = AppendInclusions(prog) };
 			if (MainScriptPath != null) _moduleFiles[System.IO.Path.GetFullPath(MainScriptPath)] = _mainGroup;
 			var mods = PartitionModules(prog.Body, _mainGroup);
 			LoadFileModules(mods);
@@ -696,7 +659,7 @@ namespace Keysharp.Compilation.Syntax
 				ClearPerModuleState();
 				_currentModuleClass = m.CodeName;
 				var inherited = globalCompat ?? Keysharp.Runtime.Script.DefaultCompatibilityVersion;
-				_moduleCompat = MapDefinitionModes(m.Body, inherited, m.MainInclusion, m.Group.IncludeParents) ?? inherited;
+				_moduleCompat = MapDefinitionModes(m.Body, inherited, m.MainInclusion) ?? inherited;
 				globalCompat ??= _moduleCompat;
 				_currentCompat = _moduleCompat;
 				RegisterInlineFunctionsFor(m.CodeName);
@@ -713,22 +676,18 @@ namespace Keysharp.Compilation.Syntax
 			return AssembleProgram(name, moduleClasses, execOrder);
 		}
 
-		// The value of a whole-module import.
-		// Script modules → `new Program.<Mod>()`; the built-in catch-all AHK module → the Ahk meta-object;
-		// a built-in Module type (Ks, …) → `new <Type>()`. All derive from Module and implement IMetaObject, so member
-		// access and method calls (`Ks.Cosh(0)`) dispatch through Get/Call — a Statics *class* singleton would not.
-		// Returns null if the name is not a known module.
-		private ExpressionSyntax ModuleObjectExpr(ModuleSource source)
-		{
-			if (source == null) return null;
-			if (source.IsAhk) return Inv(Access("Keysharp.Builtins.Misc.ModuleObject"), SyntaxFactory.TypeOfExpression(Ty("Keysharp.Runtime.Ahk")));
-			if (source.Script is { } module) return Access(ModuleOwner(module) + ".KS_module");
-			return Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(source.Builtin, out var t)
-				&& typeof(Keysharp.Runtime.Module).IsAssignableFrom(t)
-				? Inv(Access("Keysharp.Builtins.Misc.ModuleObject"), SyntaxFactory.TypeOfExpression(Ty(t.FullName.Replace('+', '.')))) : null;
-		}
+		// The value of a whole-module import: a script module's KS_module, the built-in AHK module's Ahk meta-object, or a built-in
+		// Module type's object. All derive from Module and implement IMetaObject, so member access and method calls dispatch
+		// through Get/Call, which a Statics class singleton would not.
+		private ExpressionSyntax ModuleObjectExpr(ModuleSource source) =>
+			BuiltinModuleType(source) is { } type ? BindMember(type) : Access(ModuleOwner(source.Script) + ".KS_module");
 
-		// A built-in member as an expression: a method as a Func, a class as its singleton, a property as an access.
+		// The run-time type answering for a built-in module, or null for a script's. A script's own #Module AHK adds to the
+		// built-in one, whose object stays the Ahk meta-object.
+		private static Type BuiltinModuleType(ModuleSource source) => source.IsAhk ? typeof(Keysharp.Runtime.Ahk) : source.BuiltinType;
+
+		// A built-in member as an expression: a method as a Func, a class as its singleton, a module as its object, a property as
+		// an access.
 		private ExpressionSyntax BindMember(System.Reflection.MemberInfo member)
 		{
 			switch (member)
@@ -737,6 +696,8 @@ namespace Keysharp.Compilation.Syntax
 					TrackRuntimeComponent(method);
 					return FuncBind(method.DeclaringType.FullName.Replace('+', '.') + "." + method.Name);
 				case Type type:
+					if (typeof(Module).IsAssignableFrom(type))
+						return Inv(Access("Keysharp.Builtins.Misc.ModuleObject"), SyntaxFactory.TypeOfExpression(Ty(type.FullName.Replace('+', '.'))));
 					if (type.IsDefined(typeof(ExperimentalAttribute), false))
 						_ = _experimentalTypes.Add(type);
 					return TypeSingleton(type.FullName.Replace('+', '.'));
@@ -783,14 +744,14 @@ namespace Keysharp.Compilation.Syntax
 			_ => "Func"
 		};
 
-		// The member a built-in module binds `member` to: for the catch-all AHK module a built-in variable, function or
-		// class, and otherwise what the module type declares.
-		private static System.Reflection.MemberInfo BuiltinMember(string modName, bool isAhk, string member)
+		// The member a built-in module binds `member` to.
+		private static System.Reflection.MemberInfo BuiltinMember(Type module, string member) =>
+			module == typeof(Keysharp.Runtime.Ahk) ? AhkMember(member) : FindModuleMember(module, member);
+
+		// The member the catch-all AHK module binds `member` to: a built-in variable, function or class.
+		private static System.Reflection.MemberInfo AhkMember(string member)
 		{
 			var rd = Script.TheScript.ReflectionsData;
-
-			if (!isAhk)
-				return rd.stringToTypes.TryGetValue(modName, out var modType) ? FindModuleMember(modType, member) : null;
 
 			if (rd.flatPublicStaticProperties.TryGetValue(member, out var prop))
 				return prop;
@@ -863,16 +824,8 @@ namespace Keysharp.Compilation.Syntax
 
 		// What `member` of a module names, or the module object when member is null. A custom `#Module AHK` export,
 		// a variable included, wins over the built-in of the same name, as it does when imported.
-		private NameTarget ModuleTarget(ModuleSource source, string member)
-		{
-			if (member == null)
-			{
-				if (source.IsAhk) return BuiltinTarget(typeof(Keysharp.Runtime.Ahk));
-				if (source.Script is { } script) return new(script);
-				return Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(source.Builtin, out var type) ? BuiltinTarget(type) : null;
-			}
-			return BindingTarget(ResolveMemberBinding(source, member));
-		}
+		private NameTarget ModuleTarget(ModuleSource source, string member) => member != null ? BindingTarget(ResolveMemberBinding(source, member))
+			: BuiltinModuleType(source) is { } type ? BuiltinTarget(type) : new(source.Script);
 
 		private NameTarget BindingTarget(MemberBinding target) => target == null ? null
 			: target.Builtin != null ? BuiltinTarget(target.Builtin)
@@ -1081,10 +1034,10 @@ namespace Keysharp.Compilation.Syntax
 		/// <summary>
 		/// Gives each top-level definition the mode of the version directives before it in its own inclusion of its file,
 		/// and returns the module's own mode: that of its first directive in <paramref name="mainInclusion"/>, or null.
-		/// The main inclusion starts in <paramref name="initial"/>, and any other in the mode its includer had at the
-		/// #Include, so a directive in an included file ends with that inclusion. [v2.1-alpha.34+]
+		/// The main inclusion and a file's own start in <paramref name="initial"/>, and any other in the mode its includer
+		/// had at the #Include, so a directive in an included file ends with that inclusion. [v2.1-alpha.34+]
 		/// </summary>
-		private Semver.SemVersion MapDefinitionModes(List<Stmt> body, Semver.SemVersion initial, int mainInclusion, IReadOnlyList<int> includeParents)
+		private Semver.SemVersion MapDefinitionModes(List<Stmt> body, Semver.SemVersion initial, int mainInclusion)
 		{
 			_definitionCompat.Clear();
 			Semver.SemVersion moduleMode = null;
@@ -1093,7 +1046,7 @@ namespace Keysharp.Compilation.Syntax
 			// An inclusion's statements directly follow its #Include, so when the first is met its includer is still in
 			// the mode it had there.
 			Semver.SemVersion ModeOf(int inclusion) => modes.TryGetValue(inclusion, out var mode) ? mode
-				: modes[inclusion] = inclusion == 0 ? initial : ModeOf(includeParents[inclusion - 1]);
+				: modes[inclusion] = _includeParents[inclusion] < 0 ? initial : ModeOf(_includeParents[inclusion]);
 
 			foreach (var s in body)
 			{
@@ -1120,7 +1073,7 @@ namespace Keysharp.Compilation.Syntax
 		// Whether a `{ * }` import of a built-in module supplies `name`: the module declares it, and no global built-in
 		// of that name takes precedence (see Bind and EnsureGlobalField).
 		private static bool BuiltinWildcardSupplies(Type module, string name) =>
-			!name.StartsWith('_') && BuiltinMember("AHK", true, name) == null && FindModuleMember(module, name) != null;
+			!name.StartsWith('_') && AhkMember(name) == null && FindModuleMember(module, name) != null;
 
 		// ---- scoped (function/class) import frames ----
 
@@ -1158,8 +1111,7 @@ namespace Keysharp.Compilation.Syntax
 
 		private void RecordModuleImport(ImportDirective directive)
 		{
-			if (directive.Alias != null) _moduleExplicitImports.Add(directive.Alias);
-			else if (!directive.Quoted) _moduleExplicitImports.Add(ImportBindingName(directive.Module));
+			if (directive.BindingName != null) _moduleExplicitImports.Add(directive.BindingName);
 			foreach (var (name, alias) in NamedImports(directive.Named))
 				if (name == "*") _moduleWildcards.Add(MakeWildcard(directive));
 				else _moduleExplicitImports.Add(alias);
@@ -1314,9 +1266,8 @@ namespace Keysharp.Compilation.Syntax
 			}
 			foreach (var im in imports)
 			{
-				var (modName, alias, named, quoted) = (im.Module, im.Alias, im.Named, im.Quoted);
-				if (modName.Length == 0 && !quoted) continue;
-				var source = ImportSource(im);
+				if (im.IsNameless) continue;
+				var (modName, source) = (im.Module, ImportSource(im));
 				if (source == null)
 				{
 					Diag($"{NodeAnchor(im)}#Import: module not found: {modName}");
@@ -1324,13 +1275,13 @@ namespace Keysharp.Compilation.Syntax
 				}
 				ExpressionSyntax ModuleObj() => ModuleObjectExpr(source);
 
-				// `as Alias` binds the module object. Each name keeps the spelling it is imported by.
-				if (alias != null)
-					Add(alias, ModuleObjectBinding(source, alias, ModuleObj), im);
+				// Each name keeps the spelling it is imported by.
+				if (im.BindingName is { } bound)
+					Add(bound, ModuleObjectBinding(source, bound, ModuleObj), im);
 				// Named `{ a, b as c, * }`.
-				if (named != null)
+				if (im.Named != null)
 				{
-					foreach (var (impName, impAlias) in NamedImports(named))
+					foreach (var (impName, impAlias) in NamedImports(im.Named))
 					{
 						if (impName == "*") { Frame().Wildcards.Add(MakeWildcard(im)); continue; }
 						var b = ScopedMemberBinding(modName, impName, im);
@@ -1341,9 +1292,6 @@ namespace Keysharp.Compilation.Syntax
 						}
 					}
 				}
-				// A bare unquoted import binds the module object.
-				if (alias == null && !quoted)
-					Add(ImportBindingName(modName), ModuleObjectBinding(source, ImportBindingName(modName), ModuleObj), im);
 			}
 			return scope;
 		}
@@ -1393,7 +1341,7 @@ namespace Keysharp.Compilation.Syntax
 				{
 					if (ExportsMember(script, lower)) b = ResolvedImportBinding(wc.Source, lower, lower);
 				}
-				else if (BuiltinMember(wc.Source.Name, wc.Source.IsAhk, lower) != null)
+				else if (BuiltinMember(wc.Source.BuiltinType, lower) != null)
 					b = ResolvedImportBinding(wc.Source, lower, lower);
 				if (b != null) { wc.Hits[lower] = b; binding = b; return true; }
 			}
@@ -1408,29 +1356,16 @@ namespace Keysharp.Compilation.Syntax
 		{
 			foreach (var im in imports)
 			{
-				var (modName, alias, named, quoted) = (im.Module, im.Alias, im.Named, im.Quoted);
-				if (modName.Length == 0 && !quoted) continue;
-				if (alias != null) into.Add(alias);
+				if (im.IsNameless) continue;
+				if (im.BindingName != null) into.Add(im.BindingName);
 				var source = ImportSource(im);
-				bool isAhk = source?.IsAhk == true;
-				var script = source?.Script;
-				bool isScript = script != null;
-				System.Type builtinType = null;
-				if (!isScript && !isAhk && source != null) Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(source.Builtin, out builtinType);
-				if (named != null)
+				foreach (var (name, importAlias) in NamedImports(im.Named))
 				{
-					foreach (var (name, importAlias) in NamedImports(named))
-					{
-						if (name == "*")
-						{
-							if (isScript) { foreach (var k in ExportNames(source)) if (!k.StartsWith('_')) into.Add(k); }
-							else if (builtinType != null) foreach (var nm in BuiltinMemberNames(builtinType)) into.Add(nm);
-							continue;   // an AHK `{ * }` provides every global — those already never warn
-						}
-						into.Add(importAlias);
-					}
+					if (name != "*") into.Add(importAlias);
+					else if (source?.Script != null) { foreach (var k in ExportNames(source)) if (!k.StartsWith('_')) into.Add(k); }
+					// An AHK `{ * }` provides every global, which never warn already.
+					else if (source?.IsAhk == false && source.BuiltinType != null) foreach (var nm in BuiltinMemberNames(source.BuiltinType)) into.Add(nm);
 				}
-				if (alias == null && !quoted) into.Add(ImportBindingName(modName));
 			}
 		}
 
@@ -3763,7 +3698,7 @@ namespace Keysharp.Compilation.Syntax
 			// Registered fields include effective imports; only owned module variables need assignment analysis.
 			if (_fields.ContainsKey(lower))
 				return moduleVariable = _moduleOwnVars.Contains(lower);
-			return BuiltinMember("AHK", true, lower) == null && ImportedTarget(lower) == null;
+			return AhkMember(lower) == null && ImportedTarget(lower) == null;
 		}
 
 		// Recurses into nested scopes; function, method, property and lambda bodies own their scopes.
