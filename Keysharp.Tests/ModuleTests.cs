@@ -31,6 +31,8 @@ public partial class ModuleTests : TestRunner
 			("#Import Other { OtherF }\nclass X extends OtherF {\n}\n#Module Other\nOtherF() => 1\n", "OtherF"),
 			// An import that renames the class leaves its own name unbound in the importing module.
 			("#Import Relay\nclass X extends Relay.OtherClass {\n}\n#Module Relay\n#Import Other { OtherClass as Renamed }\n#Module Other\nclass OtherClass {\n}\n", "Relay.OtherClass"),
+			// A module is not a class, however it is named.
+			("#Import Ks\nclass X extends Ks.DotNet {\n}\n", "Ks.DotNet"),
 		})
 			AssertDiagnostic(src, "Invalid base class", name);
 
@@ -137,6 +139,11 @@ public partial class ModuleTests : TestRunner
 				#Import "main.ahk:OwnRootChild" as OwnRootChildByPath
 				#Import BareFile
 				#Import __Main:FromFile
+				#Import DotNet as UserDotNet
+				#Import Ks as BuiltinKs
+				#Import Ks:DotNet as BuiltinDotNet
+				#Import "Ks:DotNet" as QuotedDotNet
+				#Import "Ks.ahk:DotNet" as FileDotNet
 				#Include "Included/Importer.ahk"
 
 				Assert(Left == LeftAgain && Left == LeftInit && Left == LeftEmpty, A_LineNumber)
@@ -179,6 +186,11 @@ public partial class ModuleTests : TestRunner
 				AssertEq(BareFile.Value, 909, A_LineNumber)
 				AssertEq(FromFile.Value, 404, A_LineNumber)
 				AssertEq(Left.MainChildValue, 808, A_LineNumber)
+				; A nested built-in is no bare name, so a user's own file is found by one, and the built-in wins over Ks.ahk.
+				AssertEq(UserDotNet.Value, 1001, A_LineNumber)
+				AssertEq(BuiltinDotNet.Format("{1,3}", 7), "  7", A_LineNumber)
+				Assert(BuiltinDotNet == BuiltinKs.DotNet && BuiltinDotNet == QuotedDotNet, A_LineNumber)
+				AssertEq(FileDotNet.Value, 1002, A_LineNumber)
 				FileAppend "pass", "*"
 
 				ReadSelf() {
@@ -257,6 +269,8 @@ public partial class ModuleTests : TestRunner
 			("AHK.ahk", "Value := 505\n"),
 			("Other.ahk", "#Module Sub\nValue := 606\n#Module Sub:Deep\nValue := 616\n"),
 			("BareFile.ahk", "Value := 909\n"),
+			("DotNet.ahk", "Value := 1001\n"),
+			("Ks.ahk", "#Module DotNet\nValue := 1002\n"),
 			("Included/Importer.ahk", "#Import \"IncludedTarget\" as RelativeTarget\n"),
 			("Included/IncludedTarget.ahk", "Value := 55\n"),
 		};
@@ -445,10 +459,13 @@ public partial class ModuleTests : TestRunner
 			"#Import Source { Value as Shared }\nclass Shared {\n}\n#Module Source\nValue := 1\n",
 			"#Import Source { Value as Shared }\nglobal Shared\n#Module Source\nValue := 1\n",
 			"#Import Source { Value as Shared }\n#Import Relay { Alias as Shared }\n#Module Source\nValue := 1\n#Module Relay\n#Import Source { Value as Alias }\n",
+			"#Import Ks:DotNet as Shared\n#Import Ks as Shared\n",
+			"#Import Ks:DotNet { Format as Shared }\n#Import Ks { DotNet as Shared }\n",
 			"#Import Other { Nested as Shared }\n#Import Other:Nested as Shared\n#Module Other\n#Import Other:Nested\n#Module Other:Nested\n",
 			// A global declaration at any depth declares the module's variable, which the import then conflicts with.
 			"#Import Source { Value as Shared }\nFoo() {\nglobal Shared\n}\n#Module Source\nValue := 1\n",
 			"#Import Source { Value as Shared }\nclass Holder {\nstatic Foo() {\nglobal Shared\n}\n}\n#Module Source\nValue := 1\n",
+			"#Import Ks:DotNet as Shared\nFoo() {\nglobal Shared\nreturn Shared\n}\n",
 		})
 		{
 			var conflicts = LoweringDiagnostics.Diagnostics(source);
@@ -465,6 +482,8 @@ public partial class ModuleTests : TestRunner
 		Assert.IsEmpty(LoweringDiagnostics.Diagnostics(
 			"#Import Source { Value as Shared }\n#Import source { vAlUe as sHaReD }\n#Module Source\nValue := 1\n"),
 			"repeating the same explicit binding must remain valid");
+		Assert.IsEmpty(LoweringDiagnostics.Diagnostics("#Import Ks:DotNet { Format, RegExMatch }\n#Import Ks { DotNet }\n#Import Ks:DotNet\nDotNet.Format(\"{1}\", 1)\n"),
+			"a path and a member of the parent bind one nested module");
 		// A global declaration of a built-in variable names the built-in, so it declares nothing for an import to meet.
 		Assert.IsEmpty(LoweringDiagnostics.Diagnostics("#Import Source { Value as A_WorkingDir }\nFoo() {\nglobal A_WorkingDir\n}\n#Module Source\nValue := 1\n"),
 			"a global declaration of a built-in variable must not conflict with an import");
@@ -525,6 +544,12 @@ public partial class ModuleTests : TestRunner
 			// A child of a module is not found through a trailing colon or from the group's root.
 			("#Import \"Other:Nested:\"\n#Module Other:Nested\n", "Other:Nested:"),
 			("#Import \":Nested\"\n#Module Other:Nested\n", ":Nested"),
+			// A built-in's nested module has only its path, and only the module declaring it is its parent.
+			("#Import DotNet\n", "DotNet"),
+			("#Import AHK:DotNet\n", "AHK:DotNet"),
+			("#Import Ks:DotNet:Nope\n", "Ks:DotNet:Nope"),
+			// A script's own Ks takes the name from the built-in, so only its own children are found through it.
+			("#Import Ks:DotNet\n#Module Ks\n", "Ks:DotNet"),
 		})
 			AssertDiagnostic(source, "#Import: module not found: " + specifier);
 
@@ -544,6 +569,7 @@ public partial class ModuleTests : TestRunner
 			("#Module AHK:X\n", "a built-in module cannot be a parent: AHK"),
 			("#Module AHK\n#Module AHK:X\n", "a built-in module cannot be a parent: AHK"),
 			("#Module Ks:X\n", "a built-in module cannot be a parent: Ks"),
+			("#Module Ks:DotNet\n", "a built-in module cannot be a parent: Ks"),
 			("#Module 1a\n", "This module name starts with a number, which is not allowed: \"1a\""),
 			("#Module X:1a\n", "This module name starts with a number, which is not allowed: \"1a\""),
 			("#Module a-b\n", "The following module name contains an illegal character: \"a-b\""),
@@ -576,6 +602,11 @@ public partial class ModuleTests : TestRunner
 			("#Import Ks\nFoo() {\nglobal\nKs := 1\n}\n", "This Module cannot be used as an output variable: Ks"),
 			("#Import Other:Nested\nNested := 1\n#Module Other:Nested\n", "This Module cannot be used as an output variable: Nested"),
 			("#Module Other\n#Import Other:Nested\nNested() => 1\n#Module Other:Nested\n", "This import declaration conflicts with an existing declaration: Nested"),
+			("#Import Ks:DotNet\nDotNet := 1\n", "This Module cannot be used as an output variable: DotNet"),
+			("#Import Ks { DotNet }\nDotNet := 1\n", "This Module cannot be used as an output variable: DotNet"),
+			("#Import Ks:DotNet { Format }\nFormat := 1\n", "This Func cannot be used as an output variable: Format"),
+			("#Import Ks:DotNet { Format }\nFormat(x) => x\n", "This import declaration conflicts with an existing declaration: Format"),
+			("#Import Ks:DotNet\nx := DotNet.Format(\"{1}\", 1)\nFoo() {\nglobal DotNet\nreturn DotNet\n}\n", "This import declaration conflicts with an existing global variable: DotNet"),
 		})
 			AssertDiagnostic(source, message);
 		Assert.IsEmpty(LoweringDiagnostics.Diagnostics("#Module Other\nNested() => 1\n#Module Other:Nested\n"),
@@ -596,6 +627,36 @@ public partial class ModuleTests : TestRunner
 		// A name the module does not expose is rejected, and the diagnostic names the offending member.
 		AssertDiagnostic("#import \"Ks\" { NotARealKsMember123 }\n", "has no exported member", "NotARealKsMember123");
 		AssertDiagnostic("#Import Ks { A_InputLevel }\n", "has no exported member", "A_InputLevel");
+
+		// The members of a nested module are checked as those of any built-in module, and Ks has no member of these names.
+		Assert.IsEmpty(LoweringDiagnostics.Diagnostics("#Import Ks:DotNet { Format, RegExMatch, RegExReplace }\n"), "the members of Ks:DotNet should import");
+		Assert.IsEmpty(LoweringDiagnostics.Diagnostics("#Import Ks { DotNet }\n"), "a nested module is a member of its parent");
+		foreach (var (source, member) in new[]
+		{
+			("#Import Ks:DotNet { Nope }\n", "Nope"),
+			("#Import Ks { FormatCs }\n", "FormatCs"),
+		})
+			AssertDiagnostic(source, "has no exported member", member);
+	}
+
+	// A script sees only what a global name finds, and Keyview's highlighter reads these tables. No class sits in a nested
+	// built-in module yet, so no script reaches the container check either.
+	[Test, Category("Module"), Category("Internal")]
+	public void NestedBuiltinTables()
+	{
+		var dotNet = typeof(Keysharp.Builtins.Ks.DotNet);
+		var tables = s.ReflectionsData;
+		Assert.IsFalse(tables.flatPublicStaticMethods.Values.Any(method => method.DeclaringType == dotNet));
+		Assert.IsFalse(tables.stringToTypes.Values.Contains(dotNet));
+		Assert.IsTrue(Script.IsModuleContainer(dotNet, s));
+
+		// A named import replaces the global function, so a call naming its arguments has to mean the same through either.
+		foreach (var (name, owner) in new[] { ("Format", typeof(Keysharp.Builtins.Strings)), ("RegExMatch", typeof(Keysharp.Builtins.RegEx)), ("RegExReplace", typeof(Keysharp.Builtins.RegEx)) })
+		{
+			Assert.That(tables.flatPublicStaticMethods[name].DeclaringType, Is.EqualTo(owner));
+			Assert.That(dotNet.GetMethod(name).GetParameters().Select(parameter => parameter.Name),
+				Is.EqualTo(tables.flatPublicStaticMethods[name].GetParameters().Select(parameter => parameter.Name)), name);
+		}
 	}
 
 	// A script's own Ks is an ordinary module, so a path through it finds its own child, whichever directive comes first.
@@ -608,6 +669,19 @@ public partial class ModuleTests : TestRunner
 			+ "AssertEq(Ks.Value, \"parent\", A_LineNumber)\nAssertEq(DotNet.Value, \"child\", A_LineNumber)\n"
 			+ "Throws(() => Ks.Cosh, A_LineNumber, PropertyError)\nFileAppend \"pass\", \"*\"\n" + modules, "module_own_ks", true, false);
 		Assert.That(output.Trim(), Is.EqualTo("pass"), output);
+	}
+
+	// ListVars opens a window, so the text it shows is read directly. A module is listed by its qualified name.
+	[Test, Category("Module"), Category("Internal")]
+	public void ListVarsNamesModules()
+	{
+		var output = RunScript("#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\n#Import AHK\n#Import Ks:DotNet\n#Import Other:Nested\nFileAppend \"pass\", \"*\"\n#Module Other:Nested\n",
+			"module_listvars", true, false);
+		Assert.That(output.Trim(), Is.EqualTo("pass"), output);
+		var listed = Keysharp.Builtins.Debug.GetVars(false);
+		Assert.That(listed, Does.Contain("DotNet: Ks:DotNet (Module)"));
+		Assert.That(listed, Does.Contain("Nested: Other:Nested (Module)"));
+		Assert.That(listed, Does.Contain("AHK: AHK (Module)"));
 	}
 
 	[Test, Category("Module")]

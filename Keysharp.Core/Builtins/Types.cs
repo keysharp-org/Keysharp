@@ -324,10 +324,6 @@ namespace Keysharp.Builtins
 				case double: return "Float";
 			}
 
-			// Every module object is an instance of Module, whichever module it is.
-			if (value is Keysharp.Runtime.Module)
-				return "Module";
-
 			// A Clr wrapper forwards member access to the object it holds, so __Class cannot name it.
 			if (value is Ks.Clr.Object)
 				return "Clr." + value.GetType().Name;
@@ -366,6 +362,10 @@ namespace Keysharp.Builtins
 		{
 			if (type == null)
 				return "unset";
+
+			// Every module object is an instance of Module, whichever module it is.
+			if (typeof(Keysharp.Runtime.Module).IsAssignableFrom(type))
+				return "Module";
 
 			try
 			{

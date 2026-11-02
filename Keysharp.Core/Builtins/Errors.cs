@@ -443,6 +443,7 @@ namespace Keysharp.Builtins
 				or float or double or decimal or Enum => ScalarText(value),
 			Array or Map => Script.FormatCollection(value, false),
 			KeysharpFunc { Name.Length: > 0 } f => f.Name,
+			Keysharp.Runtime.Module module => module.ToString(),
 			Ks.StringBuffer sb => sb.Text,
 			_ => Types.TypeName(value.GetType())
 		};

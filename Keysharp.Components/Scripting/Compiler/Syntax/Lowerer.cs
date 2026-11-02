@@ -1070,10 +1070,10 @@ namespace Keysharp.Compilation.Syntax
 				? new[] { Attr("Keysharp.Runtime.CompatibilityMode", Str(_currentCompat.ToString())) }
 				: System.Array.Empty<AttributeListSyntax>();
 
-		// Whether a `{ * }` import of a built-in module supplies `name`: the module declares it, and no global built-in
-		// of that name takes precedence (see Bind and EnsureGlobalField).
-		private static bool BuiltinWildcardSupplies(Type module, string name) =>
-			!name.StartsWith('_') && AhkMember(name) == null && FindModuleMember(module, name) != null;
+		// Whether a `{ * }` import of a built-in module supplies `name`: the AHK module supplies the global built-ins, and
+		// another a name it declares where no global built-in of that name takes precedence (see Bind and EnsureGlobalField).
+		private static bool BuiltinWildcardSupplies(Type module, string name) => module == typeof(Keysharp.Runtime.Ahk)
+			? AhkMember(name) != null : !name.StartsWith('_') && AhkMember(name) == null && FindModuleMember(module, name) != null;
 
 		// ---- scoped (function/class) import frames ----
 
@@ -1336,13 +1336,7 @@ namespace Keysharp.Compilation.Syntax
 			foreach (var wc in ScopedWildcards())
 			{
 				if (wc.Hits.TryGetValue(lower, out binding)) return true;
-				ImportBinding b = null;
-				if (wc.Source.Script is { } script)
-				{
-					if (ExportsMember(script, lower)) b = ResolvedImportBinding(wc.Source, lower, lower);
-				}
-				else if (BuiltinMember(wc.Source.BuiltinType, lower) != null)
-					b = ResolvedImportBinding(wc.Source, lower, lower);
+				var b = WildcardSupplies(wc.Source, lower) ? ResolvedImportBinding(wc.Source, lower, lower) : null;
 				if (b != null) { wc.Hits[lower] = b; binding = b; return true; }
 			}
 			return false;

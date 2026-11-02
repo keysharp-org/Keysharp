@@ -100,10 +100,21 @@ namespace Keysharp.Runtime
 
 		void IMetaObject.set_Item(object[] indexArgs, object value) => _ = Errors.MissingPropertyErrorOccurred(this, "__Item");
 
-		public override string ToString() => Script.GetUserDeclaredName(GetType()) ?? GetType().Name;
+		// A script module's [UserDeclaredName] holds its qualified name, and a nested built-in's comes from its declaring types.
+		public override string ToString()
+		{
+			var type = GetType();
+			var name = Script.GetUserDeclaredName(type) ?? type.Name;
+
+			while ((type = type.DeclaringType) != null && typeof(Module).IsAssignableFrom(type))
+				name = (Script.GetUserDeclaredName(type) ?? type.Name) + ":" + name;
+
+			return name;
+		}
 	}
 
 	/// <summary>The AHK module, which holds the built-in variables, functions and classes.</summary>
+	[UserDeclaredName("AHK")]
 	public class Ahk : Module
 	{
 		public Ahk(params object[] args) : base(args) { }

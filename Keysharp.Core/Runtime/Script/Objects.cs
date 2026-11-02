@@ -299,11 +299,11 @@ namespace Keysharp.Runtime
 			});
         }
 
-		// A module holds classes without naming them: the built-in Ks and Ahk sit at the top level, a generated
-		// script module inside the program type.
+		// A module holds classes without naming them: the built-in Ks and Ahk sit at the top level, a nested built-in
+		// module in its parent, and a generated script module inside the program type.
 		internal static bool IsModuleContainer(Type type, Script script) =>
 			typeof(Module).IsAssignableFrom(type)
-			&& (type.DeclaringType == null || type.DeclaringType == script.ProgramType);
+			&& (type.DeclaringType == null || type.DeclaringType == script.ProgramType || IsModuleContainer(type.DeclaringType, script));
 
 		/// <summary>
 		/// Whether a type belongs to a script-visible class rather than a module or generated program type.

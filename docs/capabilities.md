@@ -468,6 +468,9 @@ Status legend:
 | DirMove() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Moves a folder along with all its sub-folders and files. It can also rename a folder. |
 | DirSelect() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Displays the native folder-selection dialog on every platform. Some legacy Windows folder-dialog option flags have no portable equivalent. |
 | DllCall() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Calls native functions; supports numeric type classes and void returns. Structured arrays pass by address but cannot be returned. Native Float32 values preserve their exact binary value when widened to the script's Float. |
+| DotNet.Format() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats text using .NET composite format placeholders (1-based indexing adaptation). |
+| DotNet.RegExMatch() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Runs a .NET regex match and returns match details. |
+| DotNet.RegExReplace() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Runs a .NET regex replace. |
 | Download() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Downloads a resource to a file over http, https or ftp, streamed rather than buffered, waiting while pumping so timers and the GUI stay alive. Only the *0 cache flag is supported. An FTP login is anonymous unless the URL carries userinfo credentials, and a directory URL saves the server LIST output. A gopher URL raises a ValueError. |
 | DriveEject() | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | Ejects or retracts the tray of the specified CD/DVD drive. |
 | DriveGetCapacity() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the total capacity of the drive which contains the specified path, in megabytes. |
@@ -559,7 +562,6 @@ Status legend:
 | For | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Iterates over enumerable values or key/value pairs. |
 | Foreign window management (non-Keysharp apps) | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | On Linux, Control* functions are not supported for foreign apps; use the included AtSpi library for cross-process control interaction. COSMIC supplies native listing, active state, geometry, focus, close, minimize, maximize and restore, plus native window events when advertised by keysharp-desktop, with polling fallback. wlroots compositors can supply listing, active/state facts and the same actions except geometry. Hyprland adds geometry, PID, move/resize, WinMoveTop/WinMoveBottom, hit-testing, window capture, transparency, WinKill and pushed window events through its IPC; a floating window stays above tiled ones, so WinMoveBottom cannot place it beneath them. On other wlroots compositors coordinate hit-testing remains limited without stacking order, and general move/resize is unavailable. macOS currently relies on Accessibility APIs with permission requirements. |
 | Format() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats text by substituting placeholders with argument values. |
-| FormatCs() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats text using C#-style format placeholders (1-based indexing adaptation). |
 | FormatTime | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats a datetime string according to the parameters. Supports all V2 functionality except for the Dn and Tn options. If you want to specify a specific format, do it in the format parameter. |
 | Func | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Function object type. A callback is passed as a function object, with %"Name"% resolving a name known only at run time to one. |
 | Func.IsBuiltIn | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Whether the function itself is built-in. BoundFunc objects always return false, even when binding a built-in function with no arguments. |
@@ -938,10 +940,8 @@ Status legend:
 | RegDelete | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Deletes a value from the registry. |
 | RegDeleteKey() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Deletes a key from the registry. |
 | RegExMatch() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Searches a string for a regular expression match. When there is no match the output variable is left unset (blank in v2.0 compatibility mode). |
-| RegExMatchCs() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Runs .NET/C# regex match and returns match details. |
 | RegExMatchInfo | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | RegExMatch result. Direct construction, including subclasses using the default Call, raises ValueError. __Enum([NumberOfVars]) includes the whole match at 0; omitted or zero adapts to value or name/index-and-value outputs, while 1 or 2 fixes the mode and argument count. |
 | RegExReplace() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Replaces text matching a regular expression pattern. |
-| RegExReplaceCs() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Runs .NET/C# regex replace. |
 | Registry APIs | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Windows Registry APIs are Windows-only. |
 | RegRead() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Reads a value from the registry. Supports REG_QWORD in addition to the other types. |
 | RegWrite | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Writes a value to the registry. Supports REG_QWORD in addition to the other types. |

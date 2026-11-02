@@ -4,7 +4,7 @@ namespace Keysharp.Builtins
 	{
 		internal readonly Lock locker = new ();
 		internal RegEx.RegexEntry regdkt = [];
-		internal RegEx.RegexEntryCs regdktCs = [];
+		internal RegEx.RegexEntryDotNet regdktDotNet = [];
 		internal ConcurrentLfu<string, Action<PcreMatch, StringBuilder>> ReplacementCache = new (Caching.DefaultCacheCapacity);
 	}
 
@@ -54,7 +54,7 @@ namespace Keysharp.Builtins
 			var regdkt = script.RegExData.regdkt;
 
 			//Compiling (and JIT-compiling) a PCRE pattern is expensive, so cache the last 100 compiled
-			//patterns keyed by the needle, mirroring RegExMatchCs and AutoHotkey. The compiled RegexHolder
+			//patterns keyed by the needle, mirroring DotNet.RegExMatch and AutoHotkey. The compiled RegexHolder
 			//is immutable and safe to share across calls/threads; matching happens outside the lock.
 			lock (script.RegExData.locker)//KeyedCollection is not threadsafe, and we need insertion order to evict the oldest.
 			{

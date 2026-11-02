@@ -76,13 +76,13 @@ public partial class StringTests : TestRunner
 	public void RegExMatch() => Assert.IsTrue(TestScript("string-regexmatch", false));
 
 	[Test, Category("String")]
-	public void RegExMatchCs() => Assert.IsTrue(TestScript("string-regexmatch-cs", false));
+	public void RegExMatchDotNet() => Assert.IsTrue(TestScript("string-regexmatch-dotnet", false));
 
 	[Test, Category("String")]
 	public void RegExReplace() => Assert.IsTrue(TestScript("string-regexreplace", true));
 
 	[Test, Category("String")]
-	public void RegExReplaceCs() => Assert.IsTrue(TestScript("string-regexreplace-cs", true));
+	public void RegExReplaceDotNet() => Assert.IsTrue(TestScript("string-regexreplace-dotnet", true));
 
 	[Test, Category("String")]
 	public void RTrim() => Assert.IsTrue(TestScript("string-rtrim", true));

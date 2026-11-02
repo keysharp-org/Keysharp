@@ -9,6 +9,8 @@
 #import Fast { vIsIbLeFiElD as RenamedField, LogicalProperty as RenamedProperty, VisibleCall as RenamedCall, VisibleKind as RenamedClass }
 #import Fast { ScriptDerived as RenamedScriptClass }
 #import RenamedChain { ExportedField as ForwardedField, Callable as ForwardedCall }
+#import NestedBuiltin
+#import WildcardBuiltin
 #Include <assert>
 
 nestedOwn() {
@@ -53,6 +55,12 @@ LocalVisible := 4
 AssertEq(ReadLocalRaw(), 4, A_LineNumber)
 AssertEq(lowerlocal(), 12, A_LineNumber)
 AssertEq(NamedVisible(Text: "named"), "named", A_LineNumber)
+AssertEq(NestedBuiltin.ThroughMember(), "  7", A_LineNumber)
+AssertEq(NestedBuiltin.ThroughFunction(), "  7", A_LineNumber)
+AssertEq(NestedBuiltin.ThroughScript(), "  7", A_LineNumber)
+AssertEq(WildcardBuiltin.ThroughBridge(), 1, A_LineNumber)
+AssertEq(WildcardBuiltin.ThroughScript(), 1, A_LineNumber)
+AssertEq(WildcardBuiltin.ThroughNestedBridge(), "  7", A_LineNumber)
 
 #CSharp
 public static object Own() => "main";
@@ -133,3 +141,20 @@ public static object ForeignMarked() => "not-a-keysharp-export";
 
 #Module RenamedChain
 #Import Export Fast { VisibleField as ExportedField, VisibleCall as Callable }
+
+#Module NestedBuiltin
+#Import Ks { DotNet as Member }
+#Import Ks:DotNet { Format }
+#CSharp
+public static object ThroughMember() => Keysharp.Runtime.Script.Invoke(member, "Format", "{1,3}", 7L);
+public static object ThroughFunction() => Keysharp.Runtime.Script.Invoke(format, null, "{1,3}", 7L);
+#EndCSharp
+ThroughScript() => Format("{1,3}", 7)
+
+#Module WildcardBuiltin
+#Import Ks { * }
+#CSharp
+public static object ThroughBridge() => Keysharp.Runtime.Script.Invoke(cosh, null, 0L);
+public static object ThroughNestedBridge() => Keysharp.Runtime.Script.Invoke(dotnet, "Format", "{1,3}", 7L);
+#EndCSharp
+ThroughScript() => Cosh(0)

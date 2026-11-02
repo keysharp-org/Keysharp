@@ -96,6 +96,10 @@ namespace Keysharp.Internals.Invoke
 
 			foreach (var t in builtinTypes.Value)
 			{
+				// A nested module is reached through its parent, so no bare name finds it (Ks.DotNet, DotNet).
+				if (t.IsNested && typeof(Module).IsAssignableFrom(t))
+					continue;
+
 				var name = Script.GetUserDeclaredName(t) ?? t.Name;
 
 				// A nested class is reached through its container, so it must not take a global class's name (Clr.Object, Object).

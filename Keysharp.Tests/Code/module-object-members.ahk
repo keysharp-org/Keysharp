@@ -45,9 +45,21 @@ Throws(() => String(Members), A_LineNumber, MethodError)
 ; Where a string is expected, a module is what its ToString function returns, and one without that function a TypeError.
 Throws(() => "" Members, A_LineNumber, TypeError)
 AssertEq("<" Printable ">", "<printable>", A_LineNumber)
+; An error calls any module a Module, as Type does, and names one only where it describes the value.
+AssertError(() => Members.NoSuch, 'PropertyError: This value of type "Module" has no property named "NoSuch". []', A_LineNumber)
+AssertError(() => Members.NoSuch(), 'MethodError: This value of type "Module" has no method named "NoSuch". []', A_LineNumber)
+AssertError(() => "" Members, "TypeError: Expected a String but got a Module. []", A_LineNumber)
+AssignGlobal(Name) {
+    global
+    %Name% := 1
+}
+AssertError(() => AssignGlobal("Members"), "Error: This Module cannot be assigned a value. [Members]", A_LineNumber)
+AssertError(() => Map().CaseSense := Members, 'ValueError: Unknown CaseSense "Members". Expected On, Off, Locale, 1, 0, True or False. []', A_LineNumber)
 AssertError(() => Members.Unassigned, "UnsetError: This global variable has not been assigned a value. [Unassigned]", A_LineNumber)
 AssertError(() => Members.UNASSIGNED, "UnsetError: This global variable has not been assigned a value. [Unassigned]", A_LineNumber)
 AssertError(() => Members.F := 1, "Error: This Func cannot be assigned a value. [F]", A_LineNumber)
+; The AHK module goes by the name scripts import.
+AssertError(() => Map().CaseSense := AHK, 'ValueError: Unknown CaseSense "AHK". Expected On, Off, Locale, 1, 0, True or False. []', A_LineNumber)
 
 ; A variable is found by its name however it is spelled, one shaped like a Windows constant included.
 AssertEq(Members.MB_OK, 0, A_LineNumber)
@@ -239,6 +251,7 @@ AssertEq(Parent.Child.Same(), "child", A_LineNumber)
 AssertEq(Child.Same(), "child", A_LineNumber)
 Throws(() => Parent.Unexposed, A_LineNumber, PropertyError)
 AssertEq(Unexposed.Value, "reached by path", A_LineNumber)
+AssertError(() => Parent.Child := 1, "Error: This Module cannot be assigned a value. [Child]", A_LineNumber)
 Throws(() => Child(), A_LineNumber, MethodError)
 Throws(() => String(Child), A_LineNumber, MethodError)
 

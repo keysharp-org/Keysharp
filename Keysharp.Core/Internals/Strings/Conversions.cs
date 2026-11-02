@@ -527,7 +527,7 @@ namespace Keysharp.Internals.Strings
 			}
 		}
 
-		internal static RegexWithTag ParseRegExCs(string exp, bool reverse = false)
+		internal static RegexWithTag ParseRegExDotNet(string exp, bool reverse = false)
 		{
 			var opts = reverse ? RegexOptions.RightToLeft : RegexOptions.None;
 			opts |= RegexOptions.Compiled;
@@ -537,7 +537,7 @@ namespace Keysharp.Internals.Strings
 			{
 				var span = exp.AsSpan(0, optionsLength - 1);
 				var substr = exp.Substring(optionsLength);
-				opts |= ToRegexOptionsCs(span);
+				opts |= ToRegexOptionsDotNet(span);
 
 				if (span.Contains('A'))
 				{
@@ -794,7 +794,7 @@ namespace Keysharp.Internals.Strings
 		}
 
 		// The .NET engine takes i, m, s and x; the prefix's other AutoHotkey options have no counterpart there.
-		internal static RegexOptions ToRegexOptionsCs(ReadOnlySpan<char> sequence)
+		internal static RegexOptions ToRegexOptionsDotNet(ReadOnlySpan<char> sequence)
 		{
 			var options = RegexOptions.None;
 

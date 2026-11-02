@@ -11,7 +11,7 @@ namespace Keysharp.Runtime
 		internal List<(string, bool)> preloadedDlls = [];
 		internal DateTime startTime = DateTime.UtcNow;
 		private readonly ConcurrentDictionary<Type, ModuleScope> modules = new();
-		// Physical members use (declaring type, CLR name); classes use (class type, null).
+		// Physical members use (declaring type, CLR name); classes and nested built-in modules use (their type, null).
 		internal readonly ConcurrentDictionary<(Type, string), VarRef> VariableRefs = new();
 		private readonly Type[] programModules;
 		// Defensive fallback for a script with no modules at all (the generated program always has the main module,
@@ -76,7 +76,7 @@ namespace Keysharp.Runtime
 				if (builtin)
 				{
 					foreach (var nested in type.GetNestedTypes(BindingFlags.Public)
-						.Where(t => !Struct.IsAutoPointerClass(t) && !IsModuleType(t) && typeof(Any).IsAssignableFrom(t)
+						.Where(t => !Struct.IsAutoPointerClass(t) && typeof(Any).IsAssignableFrom(t)
 							&& !t.IsDefined(typeof(PublicHiddenFromUser), false)))
 						Variables[Script.GetUserDeclaredName(nested) ?? nested.Name] = ScriptVar.Class(nested);
 					foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)
@@ -208,7 +208,7 @@ namespace Keysharp.Runtime
 		internal static ScriptVar ResolveMember(Type owner, string member, ModuleBindingKind kind)
 		{
 			const BindingFlags flags = BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly;
-			if (owner != null && (kind == ModuleBindingKind.Class || !string.IsNullOrEmpty(member)))
+			if (owner != null && (kind is ModuleBindingKind.Class or ModuleBindingKind.Module || !string.IsNullOrEmpty(member)))
 			{
 				switch (kind)
 				{
@@ -233,6 +233,7 @@ namespace Keysharp.Runtime
 						}
 						break;
 					case ModuleBindingKind.Class when typeof(Any).IsAssignableFrom(owner):
+					case ModuleBindingKind.Module when IsModuleType(owner):
 						return ScriptVar.Class(owner);
 				}
 			}
@@ -241,7 +242,7 @@ namespace Keysharp.Runtime
 		}
 
 		internal VarRef MemberReference(Type owner, string member, ModuleBindingKind kind) =>
-			VariableRefs.GetOrAdd((owner, kind == ModuleBindingKind.Class ? null : member),
+			VariableRefs.GetOrAdd((owner, kind is ModuleBindingKind.Class or ModuleBindingKind.Module ? null : member),
 				static (_, target) => ResolveMember(target.owner, target.member, target.kind).CreateReference(target.member ?? target.owner.Name), (owner, member, kind));
 
 		internal static string ExtractStaticLocalUserName(string staticFieldName, string funcName = null)

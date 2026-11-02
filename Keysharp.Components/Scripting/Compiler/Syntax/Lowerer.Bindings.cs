@@ -23,10 +23,12 @@ namespace Keysharp.Compilation.Syntax
 		// What a `{ * }` import of the module can supply.
 		private IEnumerable<string> ExportNames(ModuleSource source) => source.Script is { } module
 			? source.IsAhk ? module.ExportNames.Concat(AhkMemberNames().Where(name => ExportsMember(module, name))) : module.ExportNames
-			: source.BuiltinType == typeof(Ahk) ? AhkMemberNames() : BuiltinMemberNames(source.BuiltinType);
+			: (source.BuiltinType == typeof(Ahk) ? AhkMemberNames() : BuiltinMemberNames(source.BuiltinType)).Where(name => BuiltinWildcardSupplies(source.BuiltinType, name));
 		private static bool ExportsMember(ModInfo module, string name) => module.ExportNames.Contains(name)
 			|| module.IsAhk && !module.OwnBindings.ContainsKey(name) && !module.NamedBindings.ContainsKey(name)
 				&& AhkMember(name) != null;
+		private static bool WildcardSupplies(ModuleSource source, string name) =>
+			source.Script is { } script ? ExportsMember(script, name) : BuiltinWildcardSupplies(source.BuiltinType, name);
 		private static ExpressionSyntax BindingKind(ModuleBindingKind kind) => Access("Keysharp.Runtime.ModuleBindingKind." + kind);
 		private static ExpressionSyntax BindingOwner(MemberBinding target) => SyntaxFactory.TypeOfExpression(Ty(target.Owner));
 
@@ -55,16 +57,19 @@ namespace Keysharp.Compilation.Syntax
 
 		private static MemberBinding BuiltinBindingTarget(System.Reflection.MemberInfo member)
 		{
+			var type = member as Type;
+			var module = typeof(Module).IsAssignableFrom(type) ? type : null;
 			var kind = member switch
 			{
 				System.Reflection.PropertyInfo => ModuleBindingKind.BuiltinVariable,
-				Type => ModuleBindingKind.Class,
+				Type => module != null ? ModuleBindingKind.Module : ModuleBindingKind.Class,
 				_ => ModuleBindingKind.Function
 			};
-			return new(member is Type type ? type.FullName.Replace('+', '.') : member.DeclaringType.FullName.Replace('+', '.'),
-				member is Type ? null : member.Name, kind,
-				member is Type ? ExportK.Type : member is System.Reflection.PropertyInfo ? ExportK.Variable : ExportK.Function,
-				Script.GetUserDeclaredName(member) ?? member.Name, ConstantOf(member), Builtin: member);
+			return new(type != null ? type.FullName.Replace('+', '.') : member.DeclaringType.FullName.Replace('+', '.'),
+				type != null ? null : member.Name, kind,
+				module != null ? ExportK.Module : type != null ? ExportK.Type : member is System.Reflection.PropertyInfo ? ExportK.Variable : ExportK.Function,
+				Script.GetUserDeclaredName(member) ?? member.Name, ConstantOf(member), Builtin: member,
+				ImportedModule: module != null ? new(BuiltinType: module) : null);
 		}
 
 		private void ValidateModuleImports(List<ModInfo> modules)
@@ -245,8 +250,15 @@ namespace Keysharp.Compilation.Syntax
 			}
 		}
 
-		private static bool SameImport(ImportRef left, ImportRef right) =>
-			left.Source == right.Source && StringComparer.OrdinalIgnoreCase.Equals(left.Member, right.Member);
+		private static bool SameImport(ImportRef left, ImportRef right)
+		{
+			// `#Import Ks { DotNet }` binds the one module `#Import Ks:DotNet` does.
+			static ImportRef Whole(ImportRef import) => import.Source?.BuiltinType != null && import.Member != null
+				&& NestedChild(import.Source, import.Member) is { } child ? import with { Source = child, Member = null } : import;
+
+			(left, right) = (Whole(left), Whole(right));
+			return left.Source == right.Source && StringComparer.OrdinalIgnoreCase.Equals(left.Member, right.Member);
+		}
 
 		private MemberBinding ResolveMemberBinding(ModuleSource source, string name, bool create = false, ImportDirective at = null,
 			List<(ModInfo, string)> visiting = null, bool wildcard = false, Action<ImportDirective> selectedWildcard = null)
@@ -282,9 +294,7 @@ namespace Keysharp.Compilation.Syntax
 					{
 						if (!NamedImports(import.Named).Any(item => item.Name == "*")) continue;
 						var importedSource = ImportSource(import);
-						if (importedSource.Script is { } script ? !ExportsMember(script, name)
-							: !importedSource.IsAhk && !import.ReExport
-								&& !BuiltinWildcardSupplies(importedSource.BuiltinType, name)) continue;
+						if (!WildcardSupplies(importedSource, name)) continue;
 						if (ResolveMemberBinding(importedSource, name, visiting: visiting, wildcard: true) is { } target)
 						{
 							selectedWildcard?.Invoke(import);

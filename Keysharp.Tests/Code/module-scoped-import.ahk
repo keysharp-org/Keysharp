@@ -358,6 +358,23 @@ class WithNestedImport {
 }
 AssertEq(WithNestedImport.Compute(), "inner,inner", A_LineNumber)
 
+; A built-in module reached from a function or class is the one module object, as a value or a member call's receiver.
+FnBuiltinModule() {
+    #import KS:DotNet
+    return [DotNet, DotNet.Format("{1,3}", 7)]
+}
+FnBuiltinMember() {
+    #import KS { DotNet as Scoped }
+    return [Scoped, Scoped.Format("{1,3}", 7)]
+}
+class WithBuiltinModule {
+    #import KS:DotNet
+    static Value := DotNet
+    static Compute() => DotNet.Format("{1,3}", 7)
+}
+Assert(FnBuiltinModule()[1] == Ks.DotNet && FnBuiltinMember()[1] == Ks.DotNet && WithBuiltinModule.Value == Ks.DotNet, A_LineNumber)
+AssertEq(FnBuiltinModule()[2] FnBuiltinMember()[2] WithBuiltinModule.Compute(), "  7  7  7", A_LineNumber)
+
 FileAppend "pass", "*"
 
 #Module ScopedImportOrder

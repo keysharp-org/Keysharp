@@ -2018,9 +2018,9 @@
                       </Rule>
                     </Rule>
                     <Rule Match="All">
-                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.StringTests.RegExMatchCs" />
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.StringTests.RegExMatchDotNet" />
                       <Rule Match="Any">
-                        <Property Name="DisplayName" Value="RegExMatchCs" />
+                        <Property Name="DisplayName" Value="RegExMatchDotNet" />
                       </Rule>
                     </Rule>
                     <Rule Match="All">
@@ -2030,9 +2030,9 @@
                       </Rule>
                     </Rule>
                     <Rule Match="All">
-                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.StringTests.RegExReplaceCs" />
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.StringTests.RegExReplaceDotNet" />
                       <Rule Match="Any">
-                        <Property Name="DisplayName" Value="RegExReplaceCs" />
+                        <Property Name="DisplayName" Value="RegExReplaceDotNet" />
                       </Rule>
                     </Rule>
                     <Rule Match="All">

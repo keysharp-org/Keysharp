@@ -157,7 +157,8 @@ namespace Keysharp.Runtime
 		Property,
 		BuiltinVariable,
 		Function,
-		Class
+		Class,
+		Module
 	}
 
 	/// <summary>The terminal declaration an imported module name denotes, without introducing storage.</summary>

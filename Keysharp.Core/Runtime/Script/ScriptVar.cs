@@ -33,11 +33,12 @@ namespace Keysharp.Runtime
 
 		internal static ScriptVar Function(MethodInfo method) => new(method);
 
+		// A class or a module, which Get and IsClass tell apart by the type.
 		internal static ScriptVar Class(Type type) => new(type);
 
 		internal bool Exists => storage != null;
 		private bool IsWritable => builtin != null ? MethodPropertyHolder.HasScriptSetter(builtin) : holder?.HasSetter == true;
-		private bool IsClass => classType != null || holder?.pi != null && !holder.HasSetter
+		private bool IsClass => classType != null && !typeof(Module).IsAssignableFrom(classType) || holder?.pi != null && !holder.HasSetter
 			&& typeof(Module).IsAssignableFrom(holder.pi.DeclaringType) && holder.pi.DeclaringType.Assembly != typeof(Module).Assembly
 			&& !holder.pi.IsDefined(typeof(InlineCSharpAttribute), false);
 
@@ -52,6 +53,7 @@ namespace Keysharp.Runtime
 			MethodPropertyHolder member => member.CallFunc(null, null),
 			PropertyInfo property => MethodPropertyHolder.GetOrAdd(property).CallFunc(null, null),
 			MethodInfo method => Functions.MethodFunction(method),
+			Type type when typeof(Module).IsAssignableFrom(type) => Script.TheScript.Vars.ModuleObject(type),
 			Type type when Script.TheScript.Vars.Statics.TryGetValue(type, out var cls) => cls,
 			_ => null
 		};

@@ -4,7 +4,7 @@ namespace Keysharp.Builtins
 {
 	/// <summary>
 	/// The match object both regex engines hand back: <see cref="RegEx.RegExMatch"/> over PCRE and
-	/// <c>Ks.RegExMatchCs</c> over .NET. Which engine produced it is not observable — the members mean the same
+	/// <c>Ks.DotNet.RegExMatch</c> over .NET. Which engine produced it is not observable — the members mean the same
 	/// thing either way, following AutoHotkey: <c>Count</c> excludes the whole match, <c>Name</c> is empty for an
 	/// unnamed subpattern, and a subpattern that did not participate reads as an empty string at position 0.
 	/// </summary>

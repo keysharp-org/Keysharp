@@ -1,6 +1,8 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 
-#import KS { FormatCs }
+#Import Ks:DotNet
 #Include <assert>
 ; Test 1: Basic number formatting.
 s := Format("{1}", 123)
@@ -71,13 +73,13 @@ AssertEq(s, "0X1.FE00000000000P+7", A_LineNumber)
 s := Format("{:p}", 255)
 AssertEq(s, "00000000000000FF", A_LineNumber)
 
-s := FormatCs("{1}", 123)
+AssertEq(DotNet.Format("{1}", 123), "123", A_LineNumber)
 
 ; Test 15: Signed hexadecimal double-precision floating-point value.
 s := Format("{:a}", 255)
 AssertEq(s, "0x1.fe00000000000p+7", A_LineNumber)
 	
-s := FormatCs("{1}", 123.456)
+AssertEq(StrLen(DotNet.Format("{1}", 123.456)), 7, A_LineNumber)
 
 ; Test 16: Memory address in hexadecimal digits.
 s := Format("{:p}", 255)
@@ -121,5 +123,30 @@ AssertEq(Format("{1}", "abc"), "abc", A_LineNumber)
 
 ; T title-cases as StrTitle does: only whitespace starts a word.
 AssertEq(Format("{:T}", "hello-world ALL"), "Hello-world All", A_LineNumber)
+
+; Test 19: Ks:DotNet holds the .NET flavour, which is string.Format() with 1-based indexes.
+AssertEq(DotNet.Format("{1,5}|{2:D3}", "a", 7), "    a|007", A_LineNumber)
+; A format string .NET rejects raises an error a script can catch, which names the string.
+Throws(() => DotNet.Format("{5}", 1), A_LineNumber, ValueError)
+try
+	DotNet.Format("{5}", 1)
+catch as formatError
+	AssertEq(formatError.Extra, "{5}", A_LineNumber)
+
+; A named import replaces the global Format in the scope holding it, and nowhere else.
+FormatImported(Text, Value) {
+	#Import Ks:DotNet { Format }
+	return Format(Text, Value)
+}
+FormatGlobal(Text, Value) => Format(Text, Value)
+AssertEq(FormatImported("{1,3}", 7), "  7", A_LineNumber)
+AssertEq(FormatGlobal("{1:03d}", 7), "007", A_LineNumber)
+
+; A wildcard supplies no name a global built-in has, so the global Format stays.
+FormatWildcard(Text, Value) {
+	#Import Ks:DotNet { * }
+	return Format(Text, Value)
+}
+AssertEq(FormatWildcard("{1:03d}", 7), "007", A_LineNumber)
 
 FileAppend "pass", "*"

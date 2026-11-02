@@ -66,7 +66,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Regular-expression not-match operator.",
-                     "tested-by":  "string-regexmatch-cs.ahk"
+                     "tested-by":  "string-regexmatch.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -1128,7 +1128,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Regex match operator",
-                     "tested-by":  "string-regexmatch-cs.ahk"
+                     "tested-by":  "string-regexmatch.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -5727,14 +5727,14 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "FormatCs()",
-                     "syntax":  "",
+                     "feature":  "DotNet.Format()",
+                     "syntax":  "#Import Ks:DotNet { Format }",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Formats text using C#-style format placeholders (1-based indexing adaptation).",
-                     "tested-by":  "string-format.ahk"
+                     "notes":  "Formats text using .NET composite format placeholders (1-based indexing adaptation).",
+                     "tested-by":  "string-format.ahk; module-import.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -9903,14 +9903,14 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "RegExMatchCs()",
-                     "syntax":  "",
+                     "feature":  "DotNet.RegExMatch()",
+                     "syntax":  "#Import Ks:DotNet { RegExMatch }",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Runs .NET/C# regex match and returns match details.",
-                     "tested-by":  "string-regexmatch-cs.ahk"
+                     "notes":  "Runs a .NET regex match and returns match details.",
+                     "tested-by":  "string-regexmatch-dotnet.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -9936,14 +9936,14 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "RegExReplaceCs()",
-                     "syntax":  "",
+                     "feature":  "DotNet.RegExReplace()",
+                     "syntax":  "#Import Ks:DotNet { RegExReplace }",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Runs .NET/C# regex replace.",
-                     "tested-by":  "string-regexreplace-cs.ahk"
+                     "notes":  "Runs a .NET regex replace.",
+                     "tested-by":  "string-regexreplace-dotnet.ahk"
                  },
                  {
                      "category":  "System/OS",

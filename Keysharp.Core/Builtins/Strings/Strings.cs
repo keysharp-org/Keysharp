@@ -7,19 +7,6 @@ namespace Keysharp.Builtins
 {
 	public partial class Ks
 	{
-		private static readonly object[] nullPlaceholder = [null];
-
-		/// <summary>
-		/// Formats a string using the same syntax used by string.Format(), except it uses 1-based indexing.
-		/// This is made available for users who prefer standard C# style formatting over the AHK
-		/// style used in Format().
-		/// <see cref="https://learn.microsoft.com/en-us/dotnet/api/system.string.format"/>
-		/// </summary>
-		/// <param name="str">The format string.</param>
-		/// <param name="args">The arguments to pass to the format string.</param>
-		/// <returns>The newly formatted string.</returns>
-		public static string FormatCs(object str, params object[] args) => str.CoerceString(out var format) ? string.Format(format, nullPlaceholder.Concat(args)) : "";
-
 		/// <summary>
 		/// Makes all line endings in a string match the value passed in, or the default newline (DefaultNewLine).
 		/// </summary>

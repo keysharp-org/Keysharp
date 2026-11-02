@@ -16,6 +16,12 @@ AssertEq(Object.Prototype.__Class, "Object", A_LineNumber)
 Throws(() => %"Ks"%, A_LineNumber)
 Throws(() => %"HashMap"%, A_LineNumber)
 
+; Neither is a module nested in it, nor does that module's Format displace the global one.
+Assert(!IsSet(DotNet), A_LineNumber)
+Throws(() => %"DotNet"%, A_LineNumber)
+AssertEq(Format("{1:03d}", 7), "007", A_LineNumber)
+AssertEq(%"Format"%("{1:03d}", 7), "007", A_LineNumber)
+
 InputHook.Prototype.DefineProp("ExtensionValue", {Get: (this) => 41})
 input := InputHook()
 

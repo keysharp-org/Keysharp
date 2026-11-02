@@ -183,7 +183,7 @@ namespace Keysharp.Internals.Invoke
 
 			var emittedName = mi.Name;
 			var declaringType = mi.DeclaringType;
-			var isCompiledProgramContainer = declaringType != null && (declaringType == moduleType
+			var isCompiledProgramContainer = declaringType != null && (InScriptModule && declaringType == moduleType
 				|| declaringType.Name == Keywords.MainClassName && declaringType.Namespace == Keywords.MainNamespaceName);
 			if (isCompiledProgramContainer && declaredName == null
 					&& !mi.Name.StartsWith(Keywords.TopLevelFunctionPrefix, StringComparison.Ordinal)
