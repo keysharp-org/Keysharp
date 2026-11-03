@@ -7512,23 +7512,7 @@ namespace Keysharp.Compilation.Syntax
 			catch { return false; }
 		}
 
-		private static string DecodeString(string raw)
-		{
-			if (raw.Length < 2) return "";
-			var inner = raw.AsSpan(1, raw.Length - 2);
-			var sb = new System.Text.StringBuilder(inner.Length);
-			for (var i = 0; i < inner.Length; i++)
-			{
-				var ch = inner[i];
-				if (ch == '`' && i + 1 < inner.Length)
-				{
-					var n = inner[++i];
-					sb.Append(n switch { 'n' => '\n', 't' => '\t', 'r' => '\r', 'b' => '\b', 'f' => '\f', 'v' => '\v', 's' => ' ', 'a' => '\a', _ => n });
-				}
-				else sb.Append(ch);
-			}
-			return sb.ToString();
-		}
+		private static string DecodeString(string raw) => raw.Length < 2 ? "" : Parser.DecodeEscapes(raw.AsSpan(1, raw.Length - 2));
 
 		private static ExpressionSyntax[] Cons(ExpressionSyntax head, List<ExpressionSyntax> tail)
 		{

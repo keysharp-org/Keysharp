@@ -376,6 +376,34 @@ public partial class ModuleTests : TestRunner
 		]);
 	}
 
+	// AutoHotkey reads an unquoted name by its identifier characters and converts escape sequences in a quoted path.
+	[Test, Category("Module")]
+	public void ImportNameForms()
+	{
+		RunFiles(TempRoot("import-forms"), "module_import_forms",
+		[
+			("main.ahk", $$"""
+				#NoTrayIcon
+				#ErrorStdOut
+				#Warn All, StdOut
+				#Include "{{Path.Combine(path, "Lib", "assert.ahk")}}"
+				#Import 7zip as Seven
+				#Import 7zip
+				#Import Other as 1x
+				#Import "Esc`;aped" as Escaped
+				#Import Export as
+				AssertEq(Seven.Value, 7, A_LineNumber)
+				AssertEq(Escaped.Value, "escaped", A_LineNumber)
+				AssertEq(%"as"%.Value, "as", A_LineNumber)
+				FileAppend "pass", "*"
+				#Module Other
+				"""),
+			("7zip.ahk", "Value := 7\n"),
+			("Esc;aped.ahk", "Value := \"escaped\"\n"),
+			("as.ahk", "Value := \"as\"\n"),
+		]);
+	}
+
 	[Test, Category("Module")]
 	public void SearchPaths()
 	{

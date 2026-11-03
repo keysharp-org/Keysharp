@@ -348,9 +348,10 @@ namespace Keysharp.Parsing.Syntax
 		{
 			Module = module; Named = named; ReExport = reExport;
 			IsNameless = module.Length == 0 && !quoted;
-			// A path import such as `#Import Lib/OCR` binds its leaf, as a nested one such as `#Import Other:Nested` does.
+			// A path import such as `#Import Lib/OCR` binds its leaf, as a nested one such as `#Import Other:Nested` does. A name
+			// starting with a digit binds nothing, as in AutoHotkey no script could name such a variable.
 			var bound = alias ?? (quoted ? null : module[(module.AsSpan().LastIndexOfAny('/', '\\', ':') + 1)..]);
-			BindingName = string.IsNullOrEmpty(bound) ? null : bound;
+			BindingName = string.IsNullOrEmpty(bound) || char.IsAsciiDigit(bound[0]) ? null : bound;
 		}
 	}
 

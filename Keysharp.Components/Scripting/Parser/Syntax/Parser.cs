@@ -876,15 +876,24 @@ namespace Keysharp.Parsing.Syntax
 			if (!_inFunction && toks.Count > 1 && toks[0].IsKeyword("Export")
 				&& toks[1].LeadingWhitespace
 				&& toks[1].Kind != TokenKind.LBrace
-				&& !toks[1].IsKeyword("as"))
+				&& !(toks[1].IsKeyword("as") && toks.Count > 2 && toks[2].LeadingWhitespace))
 			{
 				reExport = true;
 				i++;
 			}
-			if (toks[i].Kind == TokenKind.String) { quoted = true; module = Unquote(toks[i++].Text); }
-			else if (toks[i].Kind == TokenKind.Identifier)
+			bool Word(Token token) => (token.Kind is TokenKind.Identifier or TokenKind.Number) && token.Text.All(Lexing.Lexer.IsIdentPart);
+			string ReadName()
 			{
-				module = toks[i++].Text;
+				if (i >= toks.Count || !Word(toks[i]))
+					ErrorAt(i < toks.Count ? toks[i] : toks[^1], "expected a name in #import member list");
+				var result = toks[i++].Text;
+				while (i < toks.Count && !toks[i].LeadingWhitespace && Word(toks[i])) result += toks[i++].Text;
+				return result;
+			}
+			if (toks[i].Kind == TokenKind.String) { quoted = true; module = DecodeEscapes(Unquote(toks[i++].Text)); }
+			else if (Word(toks[i]))
+			{
+				module = ReadName();
 				// An unquoted module specifier may be a slash-separated relative path (`Lib/OCR`). Require adjacency
 				// around each slash so ordinary trailing expressions such as `Mod / value` remain invalid directives.
 				while (i + 1 < toks.Count
@@ -907,23 +916,13 @@ namespace Keysharp.Parsing.Syntax
 			if (i < toks.Count && toks[i].IsKeyword("as"))
 			{
 				i++;
-				if (i < toks.Count && toks[i].Kind == TokenKind.Identifier) alias = toks[i++].Text;
+				if (i < toks.Count && Word(toks[i])) alias = ReadName();
 				else ErrorAt(i < toks.Count ? toks[i] : toks[^1], "expected an alias name after 'as' in #import");
 			}
 			if (i < toks.Count && toks[i].Kind == TokenKind.LBrace)
 			{
 				i++;
 				var entries = new List<string>();
-				bool Word(Token token) => (token.Kind is TokenKind.Identifier or TokenKind.Number)
-					&& token.Text.All(c => char.IsAsciiLetterOrDigit(c) || c == '_' || c >= 0x80);
-				string ReadName()
-				{
-					if (i >= toks.Count || !Word(toks[i]))
-						ErrorAt(i < toks.Count ? toks[i] : toks[^1], "expected a name in #import member list");
-					var result = toks[i++].Text;
-					while (i < toks.Count && !toks[i].LeadingWhitespace && Word(toks[i])) result += toks[i++].Text;
-					return result;
-				}
 				while (i < toks.Count && toks[i].Kind != TokenKind.RBrace)
 				{
 					// AutoHotkey permits empty entries and numeric names in a member list.
@@ -951,6 +950,23 @@ namespace Keysharp.Parsing.Syntax
 		// Strips a matching pair of surrounding quotes (' or ") from a string-token's text.
 		private static string Unquote(string s) =>
 			s.Length >= 2 && (s[0] == '"' || s[0] == '\'') && s[^1] == s[0] ? s.Substring(1, s.Length - 2) : s;
+
+		// Converts a string's escape sequences, as AutoHotkey's ConvertEscapeSequences does.
+		internal static string DecodeEscapes(System.ReadOnlySpan<char> text)
+		{
+			var sb = new System.Text.StringBuilder(text.Length);
+			for (var i = 0; i < text.Length; i++)
+			{
+				var ch = text[i];
+				if (ch == '`' && i + 1 < text.Length)
+				{
+					var n = text[++i];
+					sb.Append(n switch { 'n' => '\n', 't' => '\t', 'r' => '\r', 'b' => '\b', 'f' => '\f', 'v' => '\v', 's' => ' ', 'a' => '\a', _ => n });
+				}
+				else sb.Append(ch);
+			}
+			return sb.ToString();
+		}
 
 		// Maximum comma-separated arguments a directive accepts (at paren/bracket/brace depth 0). -1 means the rest of
 		// the line is a single literal value (a path, message, version, or option string) where commas are literal
