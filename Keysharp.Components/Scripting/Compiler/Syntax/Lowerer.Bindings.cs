@@ -114,7 +114,7 @@ namespace Keysharp.Compilation.Syntax
 				ImportSource(import)?.IsAhk == true
 				&& NamedImports(import.Named).Any(item => item.Name != "*" && AhkMember(item.Name) == null)))
 			{
-				_ahkModule = new ModInfo { Name = "AHK", CodeName = "AHK", Dir = _includeDir, Group = _mainGroup, IsAhk = true };
+				_ahkModule = new ModInfo { Name = "AHK", ClassName = "AHK", Dir = _includeDir, Group = _mainGroup, IsAhk = true };
 				modules.Add(_ahkModule);
 				_mainGroup.Names["AHK"] = _ahkModule;
 			}

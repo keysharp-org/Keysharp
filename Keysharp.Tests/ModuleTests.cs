@@ -822,7 +822,7 @@ public partial class ModuleTests : TestRunner
 		// An exported function has the module's own field, reached however the module holds it.
 		GeneratedCode("#Import Other\nx := Other.F()\ny := Other.Nested.F()\nOther.F()\n#Module Other\n#Import Other:Nested\nF() => 1\n#Module Other:Nested\nF() => 2\n",
 			[$"{Invoke}{OtherF}, null)", $"{InvokeOrNull}{OtherF}, null);",
-				$"{Invoke}Keysharp.CompiledMain.Program.{Keysharp.Compilation.Syntax.NameMangler.ModuleClass("Other:Nested")}.f, null)"], [", \"F\")", ", \"Nested\")"]);
+				$"{Invoke}Keysharp.CompiledMain.Program.Other.Nested.f, null)"], [", \"F\")", ", \"Nested\")"]);
 		GeneratedCode("#Import Relay\nx := Relay.F()\ny := Relay.G()\nz := Relay.H()\n#Module Relay\n#Import Export Other { * }\n#Import Other { F as G }\n#Import Other { F as H }\n#Module Other\nF() => 1\n",
 			[$"{Invoke}{OtherF}, null)"], ["relay, \"F\"", "relay, \"G\"", "relay, \"H\""]);
 		GeneratedCode("#Import __Main\nx := __Main.F()\nF() => 1\n", [$"{Invoke}{MainModule}f, null)"], [", \"F\")"]);
@@ -838,6 +838,16 @@ public partial class ModuleTests : TestRunner
 		// The arguments take the path a named import's do.
 		GeneratedCode("#Import Ks:DotNet\nf := [1]\nx := DotNet.Format(f*)\ny := DotNet.RegExMatch(\"a\", NeedleRegEx: \"b\")\nz := DotNet.RegExMatch(\"a\", \"b\", &m)\n",
 			[$"{Invoke}KS_Ks_DotNet_Format, null, ", "KS_Ks_DotNet_RegExMatch, null, \"a\", Keysharp.Runtime.Script.NamedArgs(\"NeedleRegEx\", \"b\"))"]);
+	}
+
+	// A nested module's class is declared inside its parent's, and a module's class has a name none of its own or its
+	// parent's members can take.
+	[Test, Category("Module"), Category("Internal")]
+	public void NestedModuleClass()
+	{
+		GeneratedCode("#Import other:nested\nx := nested.F()\n#Module other:nested\nF() => 2\n", ["Program.Other.Nested.f, null)"]);
+		GeneratedCode("#Import Other:Nested\nx := Nested.F()\n#Module Other\nclass Nested {\n}\n#Module Other:Nested\nF() => 2\n",
+			["Program.Other.__KSPath_004E_0065_0073_0074_0065_0064.f, null)"], compile: true);
 	}
 
 	// A reference with no module-level name goes by its target, and one with a name reaches the field past a local or member.

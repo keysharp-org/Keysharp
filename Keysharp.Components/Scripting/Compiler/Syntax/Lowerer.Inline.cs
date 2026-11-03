@@ -95,12 +95,17 @@ namespace Keysharp.Compilation.Syntax
 			_inlineFacts = new(ReferenceEqualityComparer.Instance);
 			var declarations = new List<SyntaxNode>();
 			var trees = new List<SyntaxTree>();
+			// A nested module's class is declared inside its parents', as in the final compilation.
+			static MemberDeclarationSyntax ModulePart(ModInfo module, IEnumerable<MemberDeclarationSyntax> members)
+			{
+				var part = SyntaxFactory.ClassDeclaration(module.ClassName).AddModifiers(PublicTok, PartialTok).WithMembers(SyntaxFactory.List(members));
+				return module.Parent == null ? part : ModulePart(module.Parent, [part]);
+			}
 			foreach (var module in _inlineModules)
 			{
 				var members = new List<MemberDeclarationSyntax>
 				{
-					SyntaxFactory.ClassDeclaration(module.CodeName).AddModifiers(PublicTok, PartialTok)
-						.WithMembers(SyntaxFactory.List<MemberDeclarationSyntax>(module.Body.OfType<ClassDecl>().Select(InlineScriptClassSkeleton)))
+					ModulePart(module, module.Body.OfType<ClassDecl>().Select(InlineScriptClassSkeleton))
 				};
 				var usings = new HashSet<string>(StringComparer.Ordinal)
 				{
@@ -124,12 +129,10 @@ namespace Keysharp.Compilation.Syntax
 							});
 						blockMembers.Add(FreezeConditionals(annotated));
 					}
-					var owner = SyntaxFactory.ClassDeclaration(module.CodeName)
-						.AddModifiers(PublicTok, PartialTok);
 					var nested = blockMembers;
 					foreach (var part in (path?.Split('.') ?? []).Reverse())
 						nested = [SyntaxFactory.ClassDeclaration(part).AddModifiers(PublicTok, PartialTok).WithMembers(SyntaxFactory.List(nested))];
-					members.Add(owner.WithMembers(SyntaxFactory.List(nested)));
+					members.Add(ModulePart(module, nested));
 				}
 				var program = SyntaxFactory.ClassDeclaration("Program").AddModifiers(PublicTok, PartialTok)
 					.WithMembers(SyntaxFactory.List(members));

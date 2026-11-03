@@ -102,10 +102,11 @@ namespace Keysharp.Runtime
 
 		void IMetaObject.set_Item(object[] indexArgs, object value) => _ = Errors.MissingPropertyErrorOccurred(this, "__Item");
 
-		// A script module's [UserDeclaredName] holds its qualified name, and a nested built-in's comes from its declaring types.
-		public override string ToString()
+		public override string ToString() => QualifiedName(GetType());
+
+		// A nested module, a script's or a built-in, takes its path from the modules declaring it.
+		internal static string QualifiedName(Type type)
 		{
-			var type = GetType();
 			var name = Script.GetUserDeclaredName(type) ?? type.Name;
 
 			while ((type = type.DeclaringType) != null && typeof(Module).IsAssignableFrom(type))

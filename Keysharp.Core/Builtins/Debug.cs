@@ -140,7 +140,7 @@ namespace Keysharp.Builtins
 			_ = sb.AppendLine($"**Global variables**\n");
 			foreach (var moduleKv in script.Vars.AllModuleVars)
 			{
-				_ = sb.AppendLine($"{Script.GetUserDeclaredName(moduleKv.Key) ?? moduleKv.Key.Name}:");
+				_ = sb.AppendLine($"{Keysharp.Runtime.Module.QualifiedName(moduleKv.Key)}:");
 				foreach (var fieldKv in moduleKv.Value.OrderBy(kv => kv.Key))
 					PropPrinter.Print(fieldKv.Value.Get(), fieldKv.Key, sb);
 				_ = sb.AppendLine();

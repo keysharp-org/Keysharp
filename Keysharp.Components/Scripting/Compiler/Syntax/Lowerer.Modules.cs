@@ -113,8 +113,9 @@ namespace Keysharp.Compilation.Syntax
 				var owner = parent?.Group ?? group;
 				// A file's root goes by the path that first imported it, which does not belong in its children's names.
 				var qualified = parent == null ? segment : (parent == owner.Root && owner != _mainGroup ? "__Init" : parent.Name) + ":" + segment;
-				var created = new ModInfo { Name = qualified, Group = owner, Dir = System.IO.Path.GetDirectoryName(owner.Path) ?? _includeDir,
-					CodeName = owner == _mainGroup ? NameMangler.ModuleClass(qualified) : "__KSFile" + owner.Index + "_" + NameMangler.ModuleClass(qualified) };
+				// A nested module's class is named once its parent's members are known.
+				var created = new ModInfo { Name = qualified, Parent = parent, Group = owner, Dir = System.IO.Path.GetDirectoryName(owner.Path) ?? _includeDir,
+					ClassName = parent != null ? null : owner == _mainGroup ? NameMangler.ModuleClass(qualified) : "__KSFile" + owner.Index + "_" + NameMangler.ModuleClass(qualified) };
 				mods.Add(created);
 				return created;
 			}
@@ -128,7 +129,7 @@ namespace Keysharp.Compilation.Syntax
 				{
 					module.IsAhk = true;
 					module.Compat = Script.DefaultCompatibilityVersion;   // it exists already, so its directive only reopens it
-					module.CodeName = "AHK";
+					module.ClassName = "AHK";
 					_ahkModule = module;
 				}
 			}
@@ -217,7 +218,7 @@ namespace Keysharp.Compilation.Syntax
 							if (!_moduleFiles.TryGetValue(file, out group))
 							{
 								group = new ModuleGroup { Path = file, Index = _moduleFiles.Count + 1 };
-								group.Root = new ModInfo { Name = path, CodeName = "__KSFile" + group.Index + "___Init", Group = group,
+								group.Root = new ModInfo { Name = path, ClassName = "__KSFile" + group.Index + "___Init", Group = group,
 									Dir = System.IO.Path.GetDirectoryName(file) };
 								_moduleFiles.Add(file, group);
 								try
