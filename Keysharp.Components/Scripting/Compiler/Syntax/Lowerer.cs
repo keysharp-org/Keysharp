@@ -629,15 +629,14 @@ namespace Keysharp.Compilation.Syntax
 			ValidateModuleImports(mods);
 			if (Diagnostics.Count > 0) return null;   // an imported module file failed to parse — surface that, not a later "module not found"
 			// An enclosing module precedes the modules its class declares, so its exports and class name are known when one of
-			// them is named, as are those of each module named before it in the same class.
+			// them is named. Modules one class declares differ in name, so their classes do.
 			static bool DeclaresClass(ModInfo module, string type) =>
 				module.Exports.Any(export => export.Value == ExportK.Type && NameMangler.ClassType(export.Key) == type);
 			foreach (var module in mods)
 			{
 				ScanExports(module);
 				module.ClassName ??= NameMangler.ModuleClass(module.DeclaredName, type => DeclaresClass(module, type)
-					|| module.Enclosing is { } enclosing && (type == enclosing.ClassName || DeclaresClass(enclosing, type))
-					|| mods.Any(other => other.Enclosing == module.Enclosing && other.ClassName == type));
+					|| module.Enclosing is { } enclosing && (type == enclosing.ClassName || DeclaresClass(enclosing, type)));
 			}
 
 			// An imported module file's statements never reach prog.Body, so its top-level `#Package` directives are

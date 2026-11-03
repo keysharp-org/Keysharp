@@ -130,9 +130,9 @@ public partial class ModuleTests : TestRunner
 				#Import "Right/Outer.ahk:Other:Nested" as RightNested
 				#Import "{{Path.Combine(root, "Left", "Outer.ahk")}}:Inner:Deep" as RootedDeep
 				#Import "Other:Sub" as OtherFileSub
-				#Import "{{drive}}Other:Sub" as DriveRelativeSub
-				#Import "{{drive}}Other:Sub:Deep" as DriveRelativeDeep
-				#Import "{{drive}}BareFile:" as DriveRelativeRoot
+				#Import "{{drive}}Other.ahk:Sub" as DriveRelativeSub
+				#Import "{{drive}}Other.ahk:Sub:Deep" as DriveRelativeDeep
+				#Import "{{drive}}BareFile.ahk:" as DriveRelativeRoot
 				#Import Other:Nested as OwnNested
 				#Import ":OwnRootChild" as OwnRootChild
 				#Import __Main:OwnRootChild as SameOwnRootChild
@@ -172,6 +172,7 @@ public partial class ModuleTests : TestRunner
 				AssertEq(LeftRootChild.Value, 121, A_LineNumber)
 				AssertEq(LeftGrandchild.Value, 122, A_LineNumber)
 				AssertEq(Left.Child.Value, 121, A_LineNumber)
+				Assert(Left.SameChild, A_LineNumber)
 				AssertEq(LeftNested.Value, 131, A_LineNumber)
 				AssertEq(RightNested.Value, 232, A_LineNumber)
 				Assert(LeftNested != RightNested && LeftNested != OwnNested, A_LineNumber)
@@ -219,10 +220,12 @@ public partial class ModuleTests : TestRunner
 				#Import Shared as Dependency
 				#Import ":Inner" as LocalInner
 				#Import __Init:RootChild as Child
+				#Import RootChild as BareChild
 				#Import __Main:OwnRootChild as MainChild
 				Value := Dependency.Value
 				InnerValue := LocalInner.Value
 				MainChildValue := MainChild.Value
+				SameChild := Child == BareChild
 
 				#Module Inner
 				Value := 101
@@ -275,6 +278,23 @@ public partial class ModuleTests : TestRunner
 			("Included/IncludedTarget.ahk", "Value := 55\n"),
 		};
 		RunFiles(root, "module_file_identity", files);
+
+		// A specifier ending in names is modules whatever files exist, so a drive-relative path needs its extension.
+		if (drive.Length == 0) return;
+		var workingDirectory = Environment.CurrentDirectory;
+		try
+		{
+			_ = Directory.CreateDirectory(root);
+			File.WriteAllText(Path.Combine(root, "Other.ahk"), "#Module Sub\nValue := 606\n");
+			Environment.CurrentDirectory = root;
+			AssertDiagnostic($"#Import \"{drive}Other:Sub\" as Sub\n", "module not found");
+		}
+		finally
+		{
+			Environment.CurrentDirectory = workingDirectory;
+			try { Directory.Delete(root, true); }
+			catch { }
+		}
 	}
 
 	[Test, Category("Module")]

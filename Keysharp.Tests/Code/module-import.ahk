@@ -149,11 +149,12 @@ AssertEq(Files.Kind, "files", A_LineNumber)
 AssertEq(Strings.Upper("a") Strings.Lower("B"), "Ab", A_LineNumber)
 AssertEq(Strings.Order, "first,second", A_LineNumber)
 
-; ---- __Main and __Init can be parents, and a child of the main file's __Init is the same module as one of __Main
+; ---- __Main:Name and __Init:Name are the file's module Name
 #Import __Main:Helpers
 #Import __Init:Helpers as SameHelpers
+#Import Helpers as BareHelpers
 
-Assert(Helpers == SameHelpers, A_LineNumber)
+Assert(Helpers == SameHelpers && Helpers == BareHelpers, A_LineNumber)
 AssertEq(Helpers.HelperValue, 5, A_LineNumber)
 AssertEq(Helpers.Reopened, 6, A_LineNumber)
 

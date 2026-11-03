@@ -80,9 +80,11 @@ namespace Keysharp.Compilation.Syntax
 				&& typeof(Module).IsAssignableFrom(type) ? new(BuiltinType: type) : null;
 		}
 
-		// The child a script declared with `#Module Parent:Name`, or a nested type of a built-in module.
+		// The child a script declared with `#Module Parent:Name`, a file's module under the file's initial module, or a nested
+		// type of a built-in module.
 		private static ModuleSource NestedChild(ModuleSource parent, string name) => parent?.Script is { } script
-			? script.Nested.TryGetValue(name, out var child) ? new(child) : null
+			? script.Nested.TryGetValue(name, out var child) || script == script.Group.Root && script.Group.Names.TryGetValue(name, out child)
+				? new(child) : null
 			: parent?.BuiltinType is { } builtin && FindModuleMember(builtin, name) is Type nested && typeof(Module).IsAssignableFrom(nested) ? new(BuiltinType: nested) : null;
 
 		// AutoHotkey's Var::ValidateName, for a module name or one segment of a nested one.
@@ -103,13 +105,17 @@ namespace Keysharp.Compilation.Syntax
 		{
 			var name = (directive.Args ?? "").Trim();
 			var segments = name.Split(':');
-			var first = FindNamedModule(group, segments[0]);
 			var error = name.Length == 0 ? "Parameter #1 required."
 				: segments.Length > 1 && segments.Any(segment => segment.Length == 0 || segment[0] == ' ' || segment[^1] == ' ')
 					? "a nested module name is written A:B, with no spaces around the colon"
-				: segments.Select(ModuleNameError).FirstOrDefault(message => message != null)
-					?? (segments.Length > 1 && (first is { IsAhk: true } || first is { Script: null } && !DeclaresModule(body, segments[0]))
-						? "a built-in module cannot be a parent: " + segments[0] : null);
+				: segments.Select(ModuleNameError).FirstOrDefault(message => message != null);
+			// A file's initial module holds the file's modules, so `__Init:Name` and `__Main:Name` are that file's module Name,
+			// as "Path:Name" is from another file.
+			while (error == null && segments.Length > 1 && FindNamedModule(group, segments[0])?.Script is { } root && root == root.Group.Root)
+				(group, segments) = (root.Group, segments[1..]);
+			var first = FindNamedModule(group, segments[0]);
+			error ??= segments.Length > 1 && (first is { IsAhk: true } || first is { Script: null } && !DeclaresModule(body, segments[0]))
+				? "a built-in module cannot be a parent: " + segments[0] : null;
 			if (error != null)
 			{
 				ActivateErrorStdOutBefore(body, directive.SourceOrder);
@@ -120,10 +126,9 @@ namespace Keysharp.Compilation.Syntax
 			ModInfo Create(string segment, ModInfo parent)
 			{
 				var owner = parent?.Group ?? group;
-				// A file's root goes by the path that first imported it, which does not belong in its children's names.
-				var qualified = parent == null ? segment : (parent == owner.Root && owner != _mainGroup ? "__Init" : parent.Name) + ":" + segment;
 				// The class is named once every module's members are known.
-				var created = new ModInfo { Name = qualified, Enclosing = parent ?? (owner == _mainGroup ? null : owner.Root), Group = owner,
+				var created = new ModInfo { Name = parent == null ? segment : parent.Name + ":" + segment,
+					Enclosing = parent ?? (owner == _mainGroup ? null : owner.Root), Group = owner,
 					Dir = System.IO.Path.GetDirectoryName(owner.Path) ?? _includeDir };
 				mods.Add(created);
 				return created;
@@ -214,14 +219,6 @@ namespace Keysharp.Compilation.Syntax
 						{
 							var localDir = (import.File == null ? module.Dir : System.IO.Path.GetDirectoryName(import.File)) ?? _includeDir;
 							var file = ResolveModuleFile(path, localDir, module.Group);
-							// AutoHotkey splits only at the last colon, so a head naming no file can be part of a path: "C:Lib:Sub" is the
-							// file C:Lib.
-							while (file == null && segments.Length > 1)
-							{
-								path += ":" + segments[0];
-								segments = segments[1..];
-								file = ResolveModuleFile(path, localDir, module.Group);
-							}
 							if (file == null) { _importModules[import] = null; continue; }
 							file = System.IO.Path.GetFullPath(file);
 							if (!_moduleFiles.TryGetValue(file, out group))
@@ -260,8 +257,8 @@ namespace Keysharp.Compilation.Syntax
 		}
 
 		// Splits a specifier into the head and the module names after it: colons are taken from the right while the text
-		// after each is an identifier, or nothing after a trailing colon. A colon that fails belongs to the head, which may
-		// be a file path.
+		// after each is an identifier, or nothing after a trailing colon, as AutoHotkey takes its one. The rest is the head,
+		// whatever files exist, so a path ending in `:name` is written with its extension ("C:Lib.ahk:Sub").
 		private static (string Head, string[] Segments) SplitModuleSpecifier(string specifier)
 		{
 			var head = specifier.Length;
