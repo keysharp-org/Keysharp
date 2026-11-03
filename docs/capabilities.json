@@ -5612,7 +5612,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "partial",
-                     "notes":  "Windows empties the recycle bin and Linux empties the freedesktop Trash through GIO. macOS currently empties only the user ~/.Trash folder, not per-volume trash folders.",
+                     "notes":  "Windows empties the recycle bin and Linux empties the freedesktop Trash through GIO. Linux requires the gio tool, GVfs trash backend and a session D-Bus connection; these are optional feature prerequisites installed separately (libglib2.0-bin and gvfs on Debian/Ubuntu). macOS currently empties only the user ~/.Trash folder, not per-volume trash folders.",
                      "tested-by":  "file-filerecycleempty.ahk"
                  },
                  {

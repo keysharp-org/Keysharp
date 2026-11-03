@@ -109,6 +109,8 @@ Keysharp recommends the virtual packages `keysharp-input-client-abi-1` and `keys
 
 The `.deb` recommends WebKitGTK (`libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37`) for `Gui.WebView`, so a normal `apt install` brings the version available for the distribution. The tarball and `keysharp-linux-setup.sh` do not install WebKitGTK; install the available package separately if a script uses `WebView`.
 
+`FileRecycle()` invokes the system `gio` tool. `FileRecycleEmpty()` also requires the GVfs trash backend and a session D-Bus connection. These are optional feature prerequisites, installed separately when a script uses these functions: `libglib2.0-bin` provides `gio` on Debian/Ubuntu, and `gvfs` provides the trash backend.
+
 #### Keysharp on its own
 
 The Keysharp `.deb` and tarball contain Keysharp alone; apt also installs available
