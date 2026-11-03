@@ -752,6 +752,32 @@ Assert(HasBase(wholenumber.Prototype, Integer.Prototype) && HasBase(numericduck.
 Assert(HasBase(filelike.Prototype, File.Prototype) && HasBase(boundlike.Prototype, BoundFunc.Prototype), A_LineNumber)
 Assert(HasBase(menubarlike.Prototype, Menu.Prototype), A_LineNumber)
 
+; An extends, a super and a catch name a class as a global does, past a nested class of the same name.
+class shadowedbase
+{
+	Who() => "global"
+}
+class shadowing
+{
+	class shadowedbase
+	{
+		Who() => "nested"
+	}
+	class sub extends shadowedbase
+	{
+		Who() => "sub of " super.Who()
+	}
+	static Caught()
+	{
+		try
+			throw shadowedbase()
+		catch shadowedbase as caught
+			return caught.Who()
+	}
+}
+AssertEq(shadowing.sub().Who(), "sub of global", A_LineNumber)
+AssertEq(shadowing.Caught(), "global", A_LineNumber)
+
 ; As in AHK, a class gets its Call from its own chain, Object's for most and a conversion for String or Integer, never
 ; from Class.Prototype, so one descending from Any without a Call of its own cannot be called.
 Assert(!({}.HasOwnProp)(Class.Prototype, "Call") && !HasMethod(Primitive, "Call") && !HasMethod(Class(), "Call"), A_LineNumber)

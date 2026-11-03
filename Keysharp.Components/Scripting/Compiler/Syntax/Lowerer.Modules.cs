@@ -10,7 +10,6 @@ namespace Keysharp.Compilation.Syntax
 		private sealed class ModuleGroup
 		{
 			public string Path;
-			public int Index;
 			public ModInfo Root;
 			public List<string> SearchPath;
 			public readonly Dictionary<string, ModInfo> Names = new(StringComparer.OrdinalIgnoreCase);
@@ -27,6 +26,16 @@ namespace Keysharp.Compilation.Syntax
 		private readonly Dictionary<ImportDirective, ModuleSource> _importModules = new();
 		private readonly List<int> _includeParents = [];   // by inclusion, see AppendInclusions
 		private long _lastSourceOrder;
+
+		// An imported file's initial module is named for its file, numbered only when another file has taken the name. A
+		// file's group joins _moduleFiles once it is named.
+		private string FileModuleClass(string file)
+		{
+			var name = NameMangler.FileModuleClass(System.IO.Path.GetFileNameWithoutExtension(file));
+			var unique = name;
+			for (var number = 2; _moduleFiles.Values.Any(group => group.Root.ClassName == unique); number++) unique = name + "_" + number;
+			return unique;
+		}
 
 		private void AppendSourceOrder(ProgramNode program)
 		{
@@ -113,9 +122,9 @@ namespace Keysharp.Compilation.Syntax
 				var owner = parent?.Group ?? group;
 				// A file's root goes by the path that first imported it, which does not belong in its children's names.
 				var qualified = parent == null ? segment : (parent == owner.Root && owner != _mainGroup ? "__Init" : parent.Name) + ":" + segment;
-				// A nested module's class is named once its parent's members are known.
-				var created = new ModInfo { Name = qualified, Parent = parent, Group = owner, Dir = System.IO.Path.GetDirectoryName(owner.Path) ?? _includeDir,
-					ClassName = parent != null ? null : owner == _mainGroup ? NameMangler.ModuleClass(qualified) : "__KSFile" + owner.Index + "_" + NameMangler.ModuleClass(qualified) };
+				// The class is named once every module's members are known.
+				var created = new ModInfo { Name = qualified, Enclosing = parent ?? (owner == _mainGroup ? null : owner.Root), Group = owner,
+					Dir = System.IO.Path.GetDirectoryName(owner.Path) ?? _includeDir };
 				mods.Add(created);
 				return created;
 			}
@@ -129,7 +138,7 @@ namespace Keysharp.Compilation.Syntax
 				{
 					module.IsAhk = true;
 					module.Compat = Script.DefaultCompatibilityVersion;   // it exists already, so its directive only reopens it
-					module.ClassName = "AHK";
+					(module.ClassName, module.Enclosing) = ("AHK", null);
 					_ahkModule = module;
 				}
 			}
@@ -217,8 +226,8 @@ namespace Keysharp.Compilation.Syntax
 							file = System.IO.Path.GetFullPath(file);
 							if (!_moduleFiles.TryGetValue(file, out group))
 							{
-								group = new ModuleGroup { Path = file, Index = _moduleFiles.Count + 1 };
-								group.Root = new ModInfo { Name = path, ClassName = "__KSFile" + group.Index + "___Init", Group = group,
+								group = new ModuleGroup { Path = file };
+								group.Root = new ModInfo { Name = path, ClassName = FileModuleClass(file), Group = group,
 									Dir = System.IO.Path.GetDirectoryName(file) };
 								_moduleFiles.Add(file, group);
 								try

@@ -829,7 +829,7 @@ public partial class ModuleTests : TestRunner
 
 		// Another spelling of its name takes the same field, and says how it was written only where a no-value error can name it.
 		GeneratedCode("#Import Relay\nx := Relay.G()\nRelay.G()\ny := (Relay.G()?)\nz := Relay.G() ?? 1\nArrow() => Relay.G()\n#Module Relay\n#Import Other { F as G }\n#Module Other\nF() => 1\n",
-			[$".x = {InvokeAs}{OtherF}, \"G\");", $"\t{InvokeOrNull}{OtherF}, null);", $".y = ({InvokeOrNull}{OtherF}, null));", $"{InvokeOrNull}{OtherF}, null)) ?? 1L", $"return {InvokeOrNull}{OtherF}, null);"], ["relay, \"G\""]);
+			[$"\tx = {InvokeAs}{OtherF}, \"G\");", $"\t{InvokeOrNull}{OtherF}, null);", $"\ty = ({InvokeOrNull}{OtherF}, null));", $"{InvokeOrNull}{OtherF}, null)) ?? 1L", $"return {InvokeOrNull}{OtherF}, null);"], ["relay, \"G\""]);
 		GeneratedCode("#Import Ks\nx := Ks.COSH(1)\n", [CachedFunc("KS_Ks_Cosh", "Ks.Cosh"), $"{InvokeAs}KS_Ks_Cosh, \"COSH\", 1L)"]);
 
 		// The AHK module's functions are the global built-ins, which a script's own #Module AHK can replace.
@@ -885,14 +885,14 @@ public partial class ModuleTests : TestRunner
 	[Test, Category("Module"), Category("Internal")]
 	public void ModuleObjectField()
 	{
-		GeneratedCode("#Import Ks { DotNet }\nx := DotNet\n", [CachedModule("dotnet", "Ks.DotNet"), ".x = dotnet;"]);
-		GeneratedCode("#Import Ks\nx := Ks.DotNet\n", [CachedModule("KS_Ks_DotNet", "Ks.DotNet"), ".x = KS_Ks_DotNet;"]);
+		GeneratedCode("#Import Ks { DotNet }\nx := DotNet\n", [CachedModule("dotnet", "Ks.DotNet"), "\tx = dotnet;"]);
+		GeneratedCode("#Import Ks\nx := Ks.DotNet\n", [CachedModule("KS_Ks_DotNet", "Ks.DotNet"), "\tx = KS_Ks_DotNet;"]);
 		foreach (var source in new[] { "Foo() {\n#Import Ks:DotNet\nreturn DotNet\n}\n", "Foo() {\n#Import Ks { DotNet as Scoped }\nreturn Scoped\n}\n" })
 			GeneratedCode(source, [CachedModule("KS_Ks_DotNet", "Ks.DotNet"), "return KS_Ks_DotNet;"]);
 		GeneratedCode("Foo() {\n#Import AHK\nreturn AHK\n}\n", ["private static readonly object KS_Keysharp_Runtime_Ahk = Keysharp.Builtins.Misc.ModuleObject(typeof(Keysharp.Runtime.Ahk));", "return KS_Keysharp_Runtime_Ahk;"]);
 		GeneratedCode("#Import Ks\n#Import Ks { DotNet }\n#Import Ks:DotNet as Whole\nx := Ks.DotNet\ny := DotNet\nFoo() {\n#Import Ks:DotNet\nreturn DotNet\n}\n",
-			[".x = whole;", ".y = whole;", "return whole;"], ["KS_Ks_DotNet", "object dotnet ="]);
-		GeneratedCode("#Import Ks:DotNet\nx := DotNet\nFoo(DotNet) {\n#Import Ks { DotNet as Other }\nreturn Other\n}\n", [".x = " + MainModule + "dotnet;", $"return {MainModule}dotnet;"]);
+			["\tx = whole;", "\ty = whole;", "return whole;"], ["KS_Ks_DotNet", "object dotnet ="]);
+		GeneratedCode("#Import Ks:DotNet\nx := DotNet\nFoo(DotNet) {\n#Import Ks { DotNet as Other }\nreturn Other\n}\n", ["\tx = " + MainModule + "dotnet;", $"return {MainModule}dotnet;"]);
 	}
 
 	// In a module with #CSharp blocks a bridge has the import's name, so the field has its target's, and nothing takes a field
@@ -908,7 +908,7 @@ public partial class ModuleTests : TestRunner
 		const string MemberBridge = "public static object member => Keysharp.Builtins.Misc.MemberGet(typeof(Keysharp.Builtins.Ks.DotNet), null, Keysharp.Runtime.ModuleBindingKind.Module);";
 		GeneratedCode("#Import Ks { DotNet as Member }\n#Import Ks:DotNet as Whole\n#CSharp\npublic static object Through() => member;\n#EndCSharp\n", [MemberBridge], ["KS_Ks_DotNet"]);
 		// A whole-module import's field serves a script's reference here too.
-		GeneratedCode("#Import Ks { DotNet as Member }\n#Import Ks:DotNet as Whole\nx := Member\n#CSharp\npublic static object Through() => member;\n#EndCSharp\n", [MemberBridge, ".x = whole;"], ["KS_Ks_DotNet"]);
+		GeneratedCode("#Import Ks { DotNet as Member }\n#Import Ks:DotNet as Whole\nx := Member\n#CSharp\npublic static object Through() => member;\n#EndCSharp\n", [MemberBridge, "\tx = whole;"], ["KS_Ks_DotNet"]);
 		GeneratedCode("#Import Ks { * }\n#CSharp\npublic static object Through() => cosh;\n#EndCSharp\n",
 			["public static object cosh => Keysharp.Builtins.Misc.MemberGet(typeof(Keysharp.Builtins.Ks), \"Cosh\", Keysharp.Runtime.ModuleBindingKind.Function);"], ["KS_Ks_Cosh ="]);
 		GeneratedCode("#Import Ks { * }\nx := Cosh(1)\n#CSharp\npublic static object Through() => cosh;\n#EndCSharp\n", [CachedFunc("KS_Ks_Cosh", "Ks.Cosh"), $"{Invoke}KS_Ks_Cosh, null, 1L)"], [BuiltinFunc + "Ks.Sinh"]);

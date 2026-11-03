@@ -1358,6 +1358,8 @@ public class DirectiveTests : TestRunner
 					"nonstatic", "must be 'static' to be callable", line: 3);
 			Rejects("#NoTrayIcon\nx := 1\n#Module M\n#CSharp\npublic static long M() => 1;\n#EndCSharp\n",
 					"modname", "its module's exact name", line: 5);
+			Rejects("#NoTrayIcon\nx := 1\n#Module M:Inner\n#CSharp\npublic static long Inner() => 1;\n#EndCSharp\n",
+					"nestedmodname", "its module's exact name", line: 5);
 			// The spelled-out forms get the keyword verdicts — the boundary check is by WRITTEN name, so
 			// `System.Char` must not slip past what `char` is rejected for.
 			Rejects("#NoTrayIcon\n#CSharp\npublic static System.Char Ch() => 'x';\n#EndCSharp\nx := 1\n",

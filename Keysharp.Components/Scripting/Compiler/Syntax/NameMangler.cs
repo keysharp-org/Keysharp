@@ -45,24 +45,29 @@ namespace Keysharp.Compilation.Syntax
 			return typeName == AsciiLower(name) ? typeName + "_KS" : AvoidReserved(typeName);
 		}
 
-		/// <summary>Module C# class name, which a nested module's is inside its parent's. A name with no uppercase ASCII letter
-		/// gets its first one uppercased, so no lowercased field of the module or its parent can share it. A name the encoding,
-		/// a function, a hotkey callback or another generated member could take, or one <paramref name="taken"/> reports, uses
-		/// the collision-resistant encoding. The synthesized default module <c>__Main</c> is exempt.</summary>
-		public static string ModuleClass(string moduleName, System.Func<string, bool> taken = null)
+		/// <summary>Module C# class name. A name with no uppercase ASCII letter gets its first one uppercased, so no lowercased
+		/// field of the module or its enclosing one can share it. A name with no ASCII letter, one a generated member could
+		/// take, or one <paramref name="taken"/> reports uses the collision-resistant encoding.</summary>
+		public static string ModuleClass(string moduleName, System.Func<string, bool> taken)
 		{
-			if (moduleName == "__Main") return "__Main";
 			var name = moduleName;
-			if (!name.AsSpan().ContainsAnyInRange('A', 'Z') && name.AsSpan().IndexOfAnyInRange('a', 'z') is var at and >= 0)
-				name = name[..at] + (char)(name[at] - ('a' - 'A')) + name[(at + 1)..];
-			return name.AsSpan().ContainsAnyInRange('A', 'Z') && IsTextIdentifier(name)
-				&& !name.StartsWith("__", System.StringComparison.Ordinal)
-				&& !name.StartsWith(Keywords.TopLevelFunctionPrefix, System.StringComparison.Ordinal)
-				&& !name.StartsWith(Keywords.InternalPrefix, System.StringComparison.Ordinal)
-				&& !name.StartsWith(Keywords.StaticLocalFieldPrefix, System.StringComparison.Ordinal)
-				&& !ReservedTypeNames.Contains(name) && taken?.Invoke(name) != true
-				? name : Encode(moduleName, "__KSPath");
+			if (!name.AsSpan().ContainsAnyInRange('A', 'Z'))
+			{
+				var at = name.AsSpan().IndexOfAnyInRange('a', 'z');
+				if (at < 0) return Encode(moduleName, "__KSPath");
+				name = name[..at] + char.ToUpperInvariant(name[at]) + name[(at + 1)..];
+			}
+			return IsTextIdentifier(name) && !GeneratedPrefixes.Any(prefix => name.StartsWith(prefix, System.StringComparison.Ordinal))
+				&& !ReservedTypeNames.Contains(name) && !taken(name) ? name : Encode(moduleName, "__KSPath");
 		}
+
+		// What a module class's own members start with: hotkey callbacks and encoded names, functions, internals, static locals.
+		private static readonly string[] GeneratedPrefixes = ["__", Keywords.TopLevelFunctionPrefix, Keywords.InternalPrefix, Keywords.StaticLocalFieldPrefix];
+
+		/// <summary>The class of an imported file's initial module: the file's name after a prefix no module class has, each
+		/// character an identifier cannot take replaced with an underscore.</summary>
+		public static string FileModuleClass(string fileName) => "__KSFile_" + string.Concat(fileName.Select(c =>
+			SyntaxFacts.IsIdentifierPartCharacter(c) && char.GetUnicodeCategory(c) != UnicodeCategory.Format ? c : '_'));
 
 		// C# removes formatting characters when it lexes a textual identifier.
 		private static bool IsTextIdentifier(string name) => SyntaxFacts.IsValidIdentifier(name)
@@ -79,13 +84,13 @@ namespace Keysharp.Compilation.Syntax
 		}
 
 		// Framework namespace roots and generated structural identifiers, which inline C# and parts of the generated code
-		// name bare. Conflicting class names get a "_KS" suffix, which TitleCase cannot produce. Module names keep their
-		// case, so conflicts use the collision-resistant encoding in ModuleClass instead. [UserDeclaredName] retains the
-		// original AHK name.
+		// name bare, and the module classes the runtime finds by name. Conflicting class names get a "_KS" suffix, which
+		// TitleCase cannot produce; module classes use the collision-resistant encoding in ModuleClass instead.
+		// [UserDeclaredName] retains the original AHK name.
 		private static readonly System.Collections.Generic.HashSet<string> ReservedTypeNames =
 			new(System.StringComparer.Ordinal)
 			{
-				"System", "Keysharp", "Program", "MainScript", "__Main",
+				"System", "Keysharp", "Program", "MainScript", "__Main", "AHK",
 				EntryPointMethod, AutoExecMethod, StartupMethod, OperatorManifestField
 			};
 		private static string AvoidReserved(string csName) => ReservedTypeNames.Contains(csName) ? csName + "_KS" : csName;

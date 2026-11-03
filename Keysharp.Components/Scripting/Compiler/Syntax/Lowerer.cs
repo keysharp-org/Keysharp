@@ -175,7 +175,7 @@ namespace Keysharp.Compilation.Syntax
 		private readonly List<(long SourceOrder, StatementSyntax Statement)> _moduleDhhr = new();
 		private readonly List<StatementSyntax> _dhhrPrelude = new();
 		private readonly HashSet<string> _startupModules = new(System.StringComparer.Ordinal);
-		private const string DeclarationSuspendExemptVariable = "__suspendExempt";
+		private const string DeclarationSuspendExemptVariable = "KS_suspendExempt";
 		// The variable is declared only when a registration reads it, and #SuspendExempt assigns it only then, as Roslyn
 		// reports a variable which is assigned but never read.
 		private bool _suspendExemptRead;
@@ -425,10 +425,11 @@ namespace Keysharp.Compilation.Syntax
 		private sealed class ModInfo
 		{
 			public string Name;   // the qualified name of a nested module, Other:Nested
-			public ModInfo Parent;
-			public string ClassName;   // the C# class, declared inside its parent's for a nested module
-			public string CodeName => Parent == null ? ClassName : Parent.CodeName + "." + ClassName;   // the class's path from Program
-			public string DeclaredName => Parent == null ? Name : Name[(Name.LastIndexOf(':') + 1)..];
+			// The module whose class declares this one's: its parent, or an imported file's initial module for the file's others.
+			public ModInfo Enclosing;
+			public string ClassName;
+			public string CodeName => Enclosing == null ? ClassName : Enclosing.CodeName + "." + ClassName;   // the class's path from Program
+			public string DeclaredName => Enclosing == null ? Name : Name[(Name.LastIndexOf(':') + 1)..];
 			public ModuleGroup Group;
 			public Dictionary<string, ModInfo> Nested = new(StringComparer.OrdinalIgnoreCase);   // keyed by leaf name
 			public bool IsAhk;
@@ -627,17 +628,16 @@ namespace Keysharp.Compilation.Syntax
 			LoadFileModules(mods);
 			ValidateModuleImports(mods);
 			if (Diagnostics.Count > 0) return null;   // an imported module file failed to parse — surface that, not a later "module not found"
-			foreach (var module in mods) ScanExports(module);
-			// A parent precedes its nested modules, so each class name below is final when a child checks against it.
+			// An enclosing module precedes the modules its class declares, so its exports and class name are known when one of
+			// them is named, as are those of each module named before it in the same class.
 			static bool DeclaresClass(ModInfo module, string type) =>
 				module.Exports.Any(export => export.Value == ExportK.Type && NameMangler.ClassType(export.Key) == type);
 			foreach (var module in mods)
 			{
-				if (module.Parent != null)
-					module.ClassName = NameMangler.ModuleClass(module.DeclaredName,
-						type => type == module.Parent.ClassName || DeclaresClass(module.Parent, type) || DeclaresClass(module, type));
-				else if (module.Group == _mainGroup && !module.IsAhk)
-					module.ClassName = NameMangler.ModuleClass(module.Name, type => DeclaresClass(module, type));
+				ScanExports(module);
+				module.ClassName ??= NameMangler.ModuleClass(module.DeclaredName, type => DeclaresClass(module, type)
+					|| module.Enclosing is { } enclosing && (type == enclosing.ClassName || DeclaresClass(enclosing, type))
+					|| mods.Any(other => other.Enclosing == module.Enclosing && other.ClassName == type));
 			}
 
 			// An imported module file's statements never reach prog.Body, so its top-level `#Package` directives are
@@ -676,10 +676,10 @@ namespace Keysharp.Compilation.Syntax
 				moduleClasses[m] = BuildModuleClass(m, _fieldDecls, members, _pendingLambdas,
 					_hotMembers, auto, importMembers, _moduleCompat, LabelsAttribute());
 			}
-			// A nested module's class is declared inside its parent's, as a built-in nested module's is.
-			ClassDeclarationSyntax WithNested(ModInfo module) =>
-				moduleClasses[module].AddMembers([.. mods.Where(child => child.Parent == module).Select(WithNested)]);
-			return AssembleProgram(name, [.. mods.Where(module => module.Parent == null).Select(WithNested)], execOrder);
+			var enclosed = mods.ToLookup(module => module.Enclosing);
+			ClassDeclarationSyntax WithNested(ModInfo module) => enclosed[module].Any()
+				? moduleClasses[module].AddMembers([.. enclosed[module].Select(WithNested)]) : moduleClasses[module];
+			return AssembleProgram(name, [.. enclosed[null].Select(WithNested)], execOrder);
 		}
 
 		// The value of a whole-module import: a script module's KS_module, the built-in AHK module's Ahk meta-object, or a built-in
@@ -1383,22 +1383,22 @@ namespace Keysharp.Compilation.Syntax
 			if (resolved.Global is System.Reflection.MethodInfo function)
 				return _fields[lower] = BuiltinField(function, id);
 			_fields[lower] = id;
-			// A variable the module declares shadows a built-in of its name and starts unset, and a global the module only
-			// reads has no declaration to spell it, so a run-time error names it as written.
+			// A variable the module declares shadows a built-in of its name and starts unset, and one the module only reads is
+			// spelled as it is first referenced, where AutoHotkey creates it.
 			_fieldDecls.Add(resolved switch
 			{
 				{ Function: { } func } => Declared(ConstantField(id, FuncBind(NameMangler.FunctionMethod(func),
 					_userFuncDeclByLower.GetValueOrDefault(lower)?.Params)), func),
 				{ Variable: { } declared } => Declared(ObjField(id, Null), declared),
 				{ Global: { } global } => AmbientField(id, BindMember(global)),
-				_ => ObjField(id, Null)
+				_ => Declared(ObjField(id, Null), lower)
 			});
 			return id;
 		}
 
-		// A module member carries the name scripts know it by, as its C# name is lowercased, for errors and ListVars.
-		private static MemberDeclarationSyntax Declared(MemberDeclarationSyntax member, string name) =>
-			member.AddAttributeLists(Attr("Keysharp.Runtime.UserDeclaredName", Str(name)));
+		// A module member carries the name scripts know it by, for errors and ListVars, where its C# name is not that name.
+		private static MemberDeclarationSyntax Declared(MemberDeclarationSyntax member, string name) => DeclaredNames(member) is [var own] && own == name
+			? member : member.AddAttributeLists(Attr("Keysharp.Runtime.UserDeclaredName", Str(name)));
 
 		// Where the field caching a built-in function or module object is registered in _fields, a key no script name has.
 		private static string BuiltinFieldKey(System.Reflection.MemberInfo member) =>
@@ -1414,7 +1414,7 @@ namespace Keysharp.Compilation.Syntax
 				_fields[key] = id = name ?? "KS_" + key[1..].Replace("Keysharp.Builtins.", "").Replace('.', '_');
 			// First, as reading an import of a script module can start its initializer, whose inline C# can call back into this one.
 			if (_functionFields.Add(id))
-				_fieldDecls.Insert(0, AmbientField(id, BindMember(member)).AddModifiers(SyntaxFactory.Token(SyntaxKind.ReadOnlyKeyword)));
+				_fieldDecls.Insert(0, AmbientField(id, BindMember(member)));
 			return id;
 		}
 
@@ -1427,7 +1427,7 @@ namespace Keysharp.Compilation.Syntax
 
 		// A field caching an ambient built-in is private, so reflection cannot mistake it for a module variable.
 		private static MemberDeclarationSyntax AmbientField(string id, ExpressionSyntax init) =>
-			ObjField(id, init).WithModifiers(SyntaxFactory.TokenList(PrivateTok, StaticTok));
+			ObjField(id, init).WithModifiers(SyntaxFactory.TokenList(PrivateTok, StaticTok, SyntaxFactory.Token(SyntaxKind.ReadOnlyKeyword)));
 
 		// What a write to a bare name reaches: Read reads the name and Write stores a value in it.
 		private readonly record struct WriteTarget(ExpressionSyntax Read, Func<ExpressionSyntax, ExpressionSyntax> Write);
@@ -1489,8 +1489,9 @@ namespace Keysharp.Compilation.Syntax
 
 			if (constant == null)
 			{
+				// A write takes the form a read of the name has.
 				var target = NameRef(lower, writing);
-				var member = ResolvedReferenceTarget(lower, binding);
+				var member = ResolvedReferenceTarget(lower, binding) is { } bound && ReadsThroughMember(bound, lower) ? bound : null;
 				return new(target, value => member != null ? MemberWrite(member, value) : Assign(target, value));
 			}
 
@@ -1537,13 +1538,13 @@ namespace Keysharp.Compilation.Syntax
 		private (string Type, string Field, string Name)? StaticField(string lower, ScopeVar variable, bool writing = true)
 		{
 			if (variable.Storage == VarStorage.Static)
-				return variable.Field == null ? null : ("Program." + CurrentTypePath, variable.Field, variable.Owner.Spelling(lower));
+				return variable.Field == null ? null : (CurrentTypePath, variable.Field, variable.Owner.Spelling(lower));
 			var binding = Bind(lower, writing);
 			if (variable.Storage is not (VarStorage.Global or VarStorage.None)
 				|| binding.Kind is not (NameKind.ScopeVariable or NameKind.ModuleField or NameKind.ScopedImport)) return null;
 			if (ResolvedReferenceTarget(lower, binding) is { } target)
 				return target.Storage == ModuleBindingKind.Field ? (target.Owner, target.Member, target.Name) : null;
-			return ("Program." + _currentModuleClass, EnsureGlobalField(lower), _moduleOwnVars.TryGetValue(lower, out var name) ? name : null);
+			return (CurrentModuleOwner, EnsureGlobalField(lower), _moduleOwnVars.TryGetValue(lower, out var name) ? name : null);
 		}
 
 		// Naming an enclosing callable's local, by-ref parameter or nested function reaches into its frame from every
@@ -1752,17 +1753,20 @@ namespace Keysharp.Compilation.Syntax
 
 		private ExpressionSyntax ModuleFieldRef(string lower)
 		{
-			if (ImportedTarget(lower) is { } target && (target.Inline || _boundModule?.OwnBindings.ContainsKey(lower) != true))
+			if (ImportedTarget(lower) is { } target && ReadsThroughMember(target, lower))
 				return MemberRead(target);
 			return ModuleField(EnsureGlobalField(lower));
 		}
+
+		// Whether a name is reached through what it binds rather than as the module's own field.
+		private bool ReadsThroughMember(MemberBinding target, string lower) => target.Inline || _boundModule?.OwnBindings.ContainsKey(lower) != true;
 
 		// A module field's simple name binds through the module class every class is nested in, unless a local of this or an
 		// enclosing function or a member of an enclosing class or its bases has the same C# name: then it is qualified as
 		// `Program.<Module>.<field>`.
 		private ExpressionSyntax ModuleField(string field) =>
 			_scope?.DeclaresCsLocal(field[0] == '@' ? field[1..] : field) == true || _currentClassPath != null && ClassMemberHides(field)
-				? Access("Program." + _currentModuleClass + "." + field) : Id(field);
+				? Access(CurrentModuleOwner + "." + field) : Id(field);
 
 		private bool ClassMemberHides(string field) =>
 			_classMemberNames == null || _classMemberNames.Contains(field[0] == '@' ? field[1..] : field);
@@ -2898,6 +2902,8 @@ namespace Keysharp.Compilation.Syntax
 
 		private void CheckInlineNameCollision(MemberDeclarationSyntax m, string module, bool isFunction, string at)
 		{
+			// The module is a class's path from Program, whose last part names the class the members join.
+			var className = module[(module.LastIndexOf('.') + 1)..];
 			foreach (var n in DeclaredNames(m))
 			{
 				if (_startupModules.Contains(module) && StringComparer.OrdinalIgnoreCase.Equals(n, NameMangler.StartupMethod)
@@ -2909,7 +2915,7 @@ namespace Keysharp.Compilation.Syntax
 				if (isFunction)
 				{
 					// Module functions may use script names, but not their generated binding names.
-					if (n.Equals(module, System.StringComparison.Ordinal))
+					if (n.Equals(className, System.StringComparison.Ordinal))
 						Diag($"{at}#CSharp: a public method cannot have its module's exact name ('{n}') — the generated module class "
 							 + "is named that, and C# forbids a member named like its enclosing type. Choose a different CLR name "
 							 + "and use UserDeclaredName if the script-visible name must stay the same.");
@@ -2919,7 +2925,7 @@ namespace Keysharp.Compilation.Syntax
 				var visible = InlineDeclaredName(m, n);
 				if (_moduleGlobals?.TryGetValue(module, out var globals) == true && globals.Contains(visible))
 					Diag($"{at}#CSharp: '{visible}' collides with a variable or function the script declares; rename one of them");
-				else if (Keywords.InlineReservedModuleNames.Contains(n) || StringComparer.OrdinalIgnoreCase.Equals(n, module))
+				else if (Keywords.InlineReservedModuleNames.Contains(n) || StringComparer.OrdinalIgnoreCase.Equals(n, className))
 					Diag($"{at}#CSharp: '{n}' is a name Keysharp generates into this class; rename it");
 			}
 		}
@@ -3205,10 +3211,7 @@ namespace Keysharp.Compilation.Syntax
 
 				foreach (var emission in emissions)
 				{
-					_ = sb.AppendLine("public partial class Program");
-					_ = sb.AppendLine("{");
-					// A nested module's class sits inside its parents', and a class block's inside the module's.
-					var parts = emission.ClassPath == null ? module.Split('.') : [.. module.Split('.'), .. emission.ClassPath.Split('.')];
+					var parts = ("Program." + (emission.ClassPath == null ? module : module + "." + emission.ClassPath)).Split('.');
 
 					foreach (var part in parts)
 					{
@@ -3220,8 +3223,6 @@ namespace Keysharp.Compilation.Syntax
 
 					for (var i = parts.Length - 1; i >= 0; i--)
 						_ = sb.AppendLine("}");
-
-					_ = sb.AppendLine("}");
 				}
 
 				_ = sb.AppendLine("}");
@@ -5540,7 +5541,9 @@ namespace Keysharp.Compilation.Syntax
 		{
 			var lower = outerLower == null ? c.Name : outerLower + "." + c.Name;
 			var typeName = outerType == null ? NameMangler.ClassType(c.Name) : outerType + "." + NameMangler.ClassType(c.Name);
-			if (!_userClassByLower.TryAdd(lower, typeName) || _userFuncByLower.ContainsKey(lower))
+			// Rooted, as an `extends` or `catch` inside a class with a nested class of the same name still names this one,
+			// which AutoHotkey resolves globally.
+			if (!_userClassByLower.TryAdd(lower, CurrentModuleOwner + "." + typeName) || _userFuncByLower.ContainsKey(lower))
 			{
 				Diag($"{NodeAnchor(c)}This class declaration conflicts with an existing declaration: {c.Name}");
 				return;
@@ -5673,7 +5676,7 @@ namespace Keysharp.Compilation.Syntax
 			_ = memberTypeNames.Add(typeName);
 			foreach (var m in c.Methods) members.Add(LowerMethod(m, memberTypeNames));
 			_scratchCaseSensitiveHashStrings.Return(memberTypeNames);
-			var operatorType = "Program." + CurrentTypePath;
+			var operatorType = CurrentTypePath;
 			var instanceOperators = _scratchListExpressions.Get();
 			var staticOperators = _scratchListExpressions.Get();
 			foreach (var method in c.Methods.Where(m => m.IsOperator))
@@ -6133,7 +6136,7 @@ namespace Keysharp.Compilation.Syntax
 			{
 				var text = ExpandCopilotDeclarationAlias(ProcessTriggerText(trig), out _);
 				AddDhhr(hk, ExprStmt(Inv(Access("Keysharp.Runtime.Keyboard.HotkeyDefinition.AddHotkey"),
-					FuncBind("Program." + _currentModuleClass + "." + fnName, hk.Func?.Params), UintZero, Str(text), SuspendExempt())));
+					FuncBind(CurrentModuleOwner + "." + fnName, hk.Func?.Params), UintZero, Str(text), SuspendExempt())));
 			}
 		}
 
@@ -6156,7 +6159,7 @@ namespace Keysharp.Compilation.Syntax
 					var block = hs.Body as Block ?? new Block(new List<Stmt> { hs.Body ?? new Block(new List<Stmt>()) });
 					fnName = EmitHotCallback(block, "__Hotstring_" + (++_hotCount));
 				}
-				funcArg = FuncBind("Program." + _currentModuleClass + "." + fnName, hs.Func?.Params);
+				funcArg = FuncBind(CurrentModuleOwner + "." + fnName, hs.Func?.Params);
 			}
 			foreach (var trig in hs.Triggers)
 			{
@@ -6228,7 +6231,7 @@ namespace Keysharp.Compilation.Syntax
 			{
 				new ReturnStmt(cond) { Line = d.Line, Column = d.Column, File = d.File }
 			}), "__HotIf_" + (++_hotCount));
-			AddDhhr(d, ExprStmt(Inv(Access("Keysharp.Builtins.Keyboard.HotIf"), FuncBind("Program." + _currentModuleClass + "." + fnName))));
+			AddDhhr(d, ExprStmt(Inv(Access("Keysharp.Builtins.Keyboard.HotIf"), FuncBind(CurrentModuleOwner + "." + fnName))));
 		}
 
 		// Re-parses a directive's reconstructed expression argument (e.g. a `#HotIf` condition) back into an Expr,
@@ -6583,7 +6586,7 @@ namespace Keysharp.Compilation.Syntax
 					case VarStorage.Static:
 						var value = Id(variable.Field);
 						var staticReference = !_derefReferences ? null : Inv(Access("Keysharp.Builtins.Misc.MakeVarRef"),
-							FieldRefGS("Program." + CurrentTypePath, variable.Field, value, Assign(value, Id("KS_value"))), Str(name));
+							FieldRefGS(CurrentTypePath, variable.Field, value, Assign(value, Id("KS_value"))), Str(name));
 						Var(variable, value, own ? variable.Owner.Kinds[variable.Key] : VarKind.Static, staticReference);
 						break;
 					case VarStorage.Global:
@@ -6928,9 +6931,6 @@ namespace Keysharp.Compilation.Syntax
 			List<MemberDeclarationSyntax> hotMembers, List<StatementSyntax> autoStmts, List<MemberDeclarationSyntax> importMembers,
 			Semver.SemVersion compat = null, AttributeListSyntax[] labels = null)
 		{
-			// The C# class name is the module's own name, disambiguated if it shadows a framework/structural root or a member;
-			// [UserDeclaredName] restores the script's spelling, and a nested module's path comes from its declaring classes.
-			var csName = module.CodeName;
 			var className = module.ClassName;
 			var mm = new List<MemberDeclarationSyntax>();
 			// Initialize the shared object before import fields so circular imports retain its identity.
@@ -6955,7 +6955,7 @@ namespace Keysharp.Compilation.Syntax
 							foreach (var item in declaration.Items)
 								if (DeclItemName(item) is { } declared) globals.Add(declared);
 					});
-				(_moduleGlobals ??= new(System.StringComparer.Ordinal))[csName] = globals;
+				(_moduleGlobals ??= new(System.StringComparer.Ordinal))[module.CodeName] = globals;
 			}
 			mm.AddRange(members);
 			if (lambdas != null) mm.AddRange(lambdas);
@@ -6966,9 +6966,8 @@ namespace Keysharp.Compilation.Syntax
 				.AddModifiers(PublicTok).WithBaseList(BaseList("Keysharp.Runtime.Module"))
 				.AddAttributeLists(Attr("Keysharp.Runtime.CompatibilityMode", Str((compat ?? Keysharp.Runtime.Script.DefaultCompatibilityVersion).ToString())))
 				.WithMembers(SyntaxFactory.List(mm));
-			// The inline tree declares a nested module's class inside partial declarations of its parents.
-			if (_inlineBlocks?.Any(b => b.Module == csName || b.Module.StartsWith(csName + ".", StringComparison.Ordinal)) == true)
-				decl = decl.AddModifiers(PartialTok);
+			// The inline tree adds to a module class, and to its enclosing ones, as it does to Program.
+			if (_inlineBlocks != null) decl = decl.AddModifiers(PartialTok);
 			if (className != module.DeclaredName) decl = decl.AddAttributeLists(Attr("Keysharp.Runtime.UserDeclaredName", Str(module.DeclaredName)));
 			return AddBindingMetadata(decl, _boundModule);
 		}
@@ -7380,8 +7379,9 @@ namespace Keysharp.Compilation.Syntax
 			}
 		}
 
-		// The C# type being lowered, below Program: the module class, then the nested class path within it.
-		private string CurrentTypePath => _currentClassPath == null ? _currentModuleClass : _currentModuleClass + "." + _currentClassPath;
+		// The module class being lowered and the C# type within it, rooted at Program so no enclosing class can hide them.
+		private string CurrentModuleOwner => "Program." + _currentModuleClass;
+		private string CurrentTypePath => _currentClassPath == null ? CurrentModuleOwner : CurrentModuleOwner + "." + _currentClassPath;
 
 		private static FieldDeclarationSyntax ObjField(string name, ExpressionSyntax init) =>
 			SyntaxFactory.FieldDeclaration(SyntaxFactory.VariableDeclaration(ObjType).AddVariables(

@@ -31,7 +31,8 @@ namespace Keysharp.Runtime
 		{
 			this.script = script ?? throw new ArgumentNullException(nameof(script));
 			var flags = BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public;
-			// A nested module's class is declared inside its parent's.
+			// A module class can be declared inside another: a nested module's in its parent's, and an imported file's other
+			// modules' in the file's initial module's.
 			var found = new List<Type>();
 			void AddModules(Type[] types)
 			{
@@ -44,7 +45,7 @@ namespace Keysharp.Runtime
 			}
 			if (script.ProgramType != null) AddModules(script.ProgramType.GetNestedTypes(flags));
 			programModules = [.. found];
-			ahkModuleType = programModules.FirstOrDefault(type => type.Name == "AHK" && type.DeclaringType == script.ProgramType);
+			ahkModuleType = programModules.FirstOrDefault(type => type.Name == "AHK");
 
 			foreach (var type in programModules)
 				modules[type] = new(type);

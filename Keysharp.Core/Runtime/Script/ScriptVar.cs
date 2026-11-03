@@ -73,13 +73,11 @@ namespace Keysharp.Runtime
 		}
 
 		/// <summary>
-		/// The name an error gives, as AutoHotkey names it: a script module member's or a constant's declared spelling, else
-		/// as written, as for a built-in variable or a global the module only reads.
+		/// The name an error gives, as AutoHotkey names it: a module member's or a constant's declared spelling, which is its
+		/// own name unless [UserDeclaredName] gives another, else as written, as for a built-in variable.
 		/// </summary>
 		internal string DeclaredName(string written) =>
-			holder != null ? Script.GetUserDeclaredName(holder.memberInfo) ?? written
-			: function != null ? Script.GetUserDeclaredName(function) ?? function.Name
-			: classType != null ? Script.GetUserDeclaredName(classType) ?? classType.Name : written;
+			(holder?.memberInfo ?? (MemberInfo)function ?? classType) is { } member ? Script.GetUserDeclaredName(member) ?? member.Name : written;
 
 		/// <summary>Writes a variable <see cref="RequireWritable"/> accepted.</summary>
 		internal void Set(object value)

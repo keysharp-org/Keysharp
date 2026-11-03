@@ -95,17 +95,20 @@ namespace Keysharp.Compilation.Syntax
 			_inlineFacts = new(ReferenceEqualityComparer.Instance);
 			var declarations = new List<SyntaxNode>();
 			var trees = new List<SyntaxTree>();
-			// A nested module's class is declared inside its parents', as in the final compilation.
-			static MemberDeclarationSyntax ModulePart(ModInfo module, IEnumerable<MemberDeclarationSyntax> members)
+			// Partial declarations of each class along a path from Program, the innermost holding the members.
+			static ClassDeclarationSyntax Nest(string path, IEnumerable<MemberDeclarationSyntax> members)
 			{
-				var part = SyntaxFactory.ClassDeclaration(module.ClassName).AddModifiers(PublicTok, PartialTok).WithMembers(SyntaxFactory.List(members));
-				return module.Parent == null ? part : ModulePart(module.Parent, [part]);
+				var parts = path.Split('.');
+				var nested = SyntaxFactory.ClassDeclaration(parts[^1]).AddModifiers(PublicTok, PartialTok).WithMembers(SyntaxFactory.List(members));
+				for (var i = parts.Length - 2; i >= 0; i--)
+					nested = SyntaxFactory.ClassDeclaration(parts[i]).AddModifiers(PublicTok, PartialTok).AddMembers(nested);
+				return nested;
 			}
 			foreach (var module in _inlineModules)
 			{
 				var members = new List<MemberDeclarationSyntax>
 				{
-					ModulePart(module, module.Body.OfType<ClassDecl>().Select(InlineScriptClassSkeleton))
+					Nest(module.CodeName, module.Body.OfType<ClassDecl>().Select(InlineScriptClassSkeleton))
 				};
 				var usings = new HashSet<string>(StringComparer.Ordinal)
 				{
@@ -129,10 +132,7 @@ namespace Keysharp.Compilation.Syntax
 							});
 						blockMembers.Add(FreezeConditionals(annotated));
 					}
-					var nested = blockMembers;
-					foreach (var part in (path?.Split('.') ?? []).Reverse())
-						nested = [SyntaxFactory.ClassDeclaration(part).AddModifiers(PublicTok, PartialTok).WithMembers(SyntaxFactory.List(nested))];
-					members.Add(ModulePart(module, nested));
+					members.Add(Nest(path == null ? module.CodeName : module.CodeName + "." + path, blockMembers));
 				}
 				var program = SyntaxFactory.ClassDeclaration("Program").AddModifiers(PublicTok, PartialTok)
 					.WithMembers(SyntaxFactory.List(members));

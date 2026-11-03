@@ -57,6 +57,7 @@ AssertError(() => AssignGlobal("Members"), "Error: This Module cannot be assigne
 AssertError(() => Map().CaseSense := Members, 'ValueError: Unknown CaseSense "Members". Expected On, Off, Locale, 1, 0, True or False. []', A_LineNumber)
 AssertError(() => Members.Unassigned, "UnsetError: This global variable has not been assigned a value. [Unassigned]", A_LineNumber)
 AssertError(() => Members.UNASSIGNED, "UnsetError: This global variable has not been assigned a value. [Unassigned]", A_LineNumber)
+AssertError(() => Members.UNSPELLED, "UnsetError: This global variable has not been assigned a value. [unspelled]", A_LineNumber)
 AssertError(() => Members.F := 1, "Error: This Func cannot be assigned a value. [F]", A_LineNumber)
 ; A module is neither the Object these functions take nor a class, and the AHK module goes by the name scripts import.
 AssertError(() => ObjOwnProps(Members), "TypeError: Expected an Object but got a Module. []", A_LineNumber)
@@ -310,7 +311,7 @@ EventRef() {
     global Event
     return &Event
 }
-global Unassigned
+global Unassigned, unspelled
 MB_OK := 0
 F() => "f"
 ReadOk() => %"mb_OK"%
