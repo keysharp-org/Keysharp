@@ -211,9 +211,10 @@ namespace Keysharp.Builtins
 
 		private static bool HasMember(Any obj, string name) => FindMethod(obj, name) != null;
 
-		// The object a value's members come from, as AHK's ParamToObjectOrBase: an object itself, or a primitive's prototype.
-		internal static Any ObjectOrBase(object value) =>
-			value as Any ?? (Primitive.IsNative(value) ? Script.TheScript.Vars.Prototypes[Primitive.MapPrimitiveToNativeType(value)] : null);
+		// The object a value's members come from, as AHK's ParamToObjectOrBase: an object itself, or the prototype of a primitive
+		// or of a module, which answers for its own names only when invoked.
+		internal static Any ObjectOrBase(object value) => value is Module module ? module.Base
+			: value as Any ?? (Primitive.IsNative(value) ? Script.TheScript.Vars.Prototypes[Primitive.MapPrimitiveToNativeType(value)] : null);
 
 		// AHK's Object::GetMethod: the first Call up the chain, or an object value that no getter below it hides. No
 		// getter runs. A primitive value starts from its prototype.
@@ -429,7 +430,8 @@ namespace Keysharp.Builtins
 				return DefaultObject;
 
 			if (obj is Any)
-				return new BoundFunc(new MethodPropertyHolder(n), args, o);
+				// A null name calls a module itself, where the name Call would find a function of the module.
+				return new BoundFunc(new MethodPropertyHolder(method == null && obj is Module ? null : n), args, o);
 			else if (Reflections.FindAndCacheMethod(o.GetType(), n, -1) is MethodPropertyHolder mph && mph.mi != null)
 				return new BoundFunc(mph, [obj, .. args], o);
 

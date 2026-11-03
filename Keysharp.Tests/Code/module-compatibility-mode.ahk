@@ -234,6 +234,18 @@ AssertError(MemberAlias, "UnsetError: No value was returned. [Renamed]", A_LineN
 AssertError(MemberNestedAlias, "UnsetError: No value was returned. [RENAMED]", A_LineNumber)
 AssertError(MemberAliasIgnoresValue, "none", A_LineNumber)
 
+; A callable object a module holds is applied the same way, so only a use of the missing result raises.
+MemberObjectNeedsValue() {
+	value := Compat21.SilentObject()
+}
+MemberObjectIgnoresValue() {
+	Compat21.SilentObject()
+	holder := Compat21
+	AssertEq(holder.SilentObject() ?? "default", "default", A_LineNumber)
+}
+AssertError(MemberObjectNeedsValue, "UnsetError: No value was returned. [SilentObject]", A_LineNumber)
+AssertError(MemberObjectIgnoresValue, "none", A_LineNumber)
+
 ; A bare call names the function as written too, an alias, another case or a variable holding it.
 #import Compat21 { NoReturn21 as Aliased21 }
 BareAlias() {
@@ -442,6 +454,11 @@ HotstringNoReturn20(ThisHotkey) {
 
 #Module Compat21
 #Requires AutoHotkey v2.1-alpha
+class SilentCallable {
+	Call() {
+	}
+}
+SilentObject := SilentCallable()
 NoReturn21() {
 }
 EmptyReturn21() {

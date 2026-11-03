@@ -58,7 +58,14 @@ AssertError(() => Map().CaseSense := Members, 'ValueError: Unknown CaseSense "Me
 AssertError(() => Members.Unassigned, "UnsetError: This global variable has not been assigned a value. [Unassigned]", A_LineNumber)
 AssertError(() => Members.UNASSIGNED, "UnsetError: This global variable has not been assigned a value. [Unassigned]", A_LineNumber)
 AssertError(() => Members.F := 1, "Error: This Func cannot be assigned a value. [F]", A_LineNumber)
-; The AHK module goes by the name scripts import.
+; A module is neither the Object these functions take nor a class, and the AHK module goes by the name scripts import.
+AssertError(() => ObjOwnProps(Members), "TypeError: Expected an Object but got a Module. []", A_LineNumber)
+AssertError(() => ObjHasOwnProp(Members, "Count"), "TypeError: Expected an Object but got a Module. []", A_LineNumber)
+AssertError(() => ObjOwnPropCount(Members), "TypeError: Expected an Object but got a Module. []", A_LineNumber)
+AssertError(() => DefineProp(Members, "Extra", {Value: 1}), "ValueError: Parameter #1 of DefineProp is invalid. []", A_LineNumber)
+AssertError(() => Object.Prototype.DeleteProp.Call(Members, "Count"), "TypeError: Expected an Object but got a Module. []", A_LineNumber)
+AssertError(() => Object.Prototype.GetOwnPropDesc.Call(Members, "Count"), "TypeError: Expected an Object but got a Module. []", A_LineNumber)
+AssertError(() => 1 is Members, "TypeError: Expected a Class but got a Module. []", A_LineNumber)
 AssertError(() => Map().CaseSense := AHK, 'ValueError: Unknown CaseSense "AHK". Expected On, Off, Locale, 1, 0, True or False. []', A_LineNumber)
 
 ; A variable is found by its name however it is spelled, one shaped like a Windows constant included.
@@ -126,6 +133,10 @@ AssertEq(moduleRefMethod.MinParams, 2, A_LineNumber)
 AssertEq(moduleRefMethod.MaxParams, 2, A_LineNumber)
 Assert(moduleRefMethod(Members, "Count") == moduleRef, A_LineNumber)
 Assert(moduleRefMethod == GetMethod(AHK, "__Ref"), A_LineNumber)
+; These ask a module's prototype, which has no Call and none of the module's names.
+Assert(!HasMethod(Members), A_LineNumber)
+Throws(() => GetMethod(Members), A_LineNumber, MethodError)
+Assert(!HasMethod(Members, "F") && !HasProp(Members, "Count") && HasProp(Members, "__Ref"), A_LineNumber)
 moduleRef.__Value := 10
 AssertEq(Members.Count, 10, A_LineNumber)
 Members.Count := 20
@@ -254,6 +265,18 @@ AssertEq(Unexposed.Value, "reached by path", A_LineNumber)
 AssertError(() => Parent.Child := 1, "Error: This Module cannot be assigned a value. [Child]", A_LineNumber)
 Throws(() => Child(), A_LineNumber, MethodError)
 Throws(() => String(Child), A_LineNumber, MethodError)
+
+; A call of a module has no name to look up, so it asks the prototype, and a function named Call answers only by name.
+childHolder := Child
+AssertEq(childHolder.Call(), "named", A_LineNumber)
+anyDefineProp := {}.DefineProp, anyDeleteProp := {}.DeleteProp
+anyDefineProp(Any.Prototype, "Call", {Call: (this, Params*) => "prototype"})
+childCalled := Child()
+childBound := ObjBindMethod(Child)()
+anyDeleteProp(Any.Prototype, "Call")
+AssertEq(childCalled, "prototype", A_LineNumber)
+AssertEq(childBound, "prototype", A_LineNumber)
+AssertEq(ObjBindMethod(Child, "Call")(), "named", A_LineNumber)
 
 ; Nesting is ownership, not scope: neither sees the other's names, and a child may import its parent.
 Assert(!Parent.SeesChildValue() && !Child.SeesParentValue(), A_LineNumber)
@@ -396,6 +419,7 @@ Same() => "parent"
 ChildValue := "child"
 SeesParentValue() => IsSet(ParentValue) || IsSet(%"ParentValue"%)
 Same() => "child"
+Call() => "named"
 
 #Module Parent:Child:Deep
 F() => "deep"

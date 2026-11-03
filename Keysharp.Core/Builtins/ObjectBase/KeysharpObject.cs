@@ -134,7 +134,7 @@ namespace Keysharp.Builtins
 
 		public static object DeleteProp(object @this, object name)
 		{
-			if (@this is not Any target)
+			if (@this is not Any target || target is not (KeysharpObject or Struct))
 				return Errors.TypeErrorOccurred(@this, typeof(Any));
 
 			if (!name.CoerceString(out var nameVal))
@@ -145,7 +145,7 @@ namespace Keysharp.Builtins
 
 		public static object GetOwnPropDesc(object @this, object name)
 		{
-			if (@this is not Any obj)
+			if (@this is not Any obj || obj is not (KeysharpObject or Struct))
 				return Errors.TypeErrorOccurred(@this, typeof(Any));
 
 			if (!name.CoerceString(out var nameVal))
@@ -156,11 +156,7 @@ namespace Keysharp.Builtins
 				return dynProp.GetDesc();
 			}
 
-			// Only own properties, as AHK looks only at the object's own fields: nothing inherited, and no getter runs. A
-			// module serves its members outside the own-property table.
-			if (obj is Module module && module.TryGetProperty(nameVal, [], out var val))
-				return KeysharpObject.staticCall(TheScript.Vars.Statics[typeof(KeysharpObject)], ["value", val]);
-
+			// Only own properties, as AHK looks only at the object's own fields: nothing inherited, and no getter runs.
 			return Script.RequiresVersion(2, 1) ? null
 				: Errors.PropertyErrorOccurred($"Object did not have an OwnProp named {nameVal}.");
 		}
@@ -179,7 +175,7 @@ namespace Keysharp.Builtins
 		{
 			// Reached with a primitive receiver through the free function ObjHasOwnProp, which — unlike the method
 			// form — has no prototype lookup to fail first.
-			if (@this is not Any obj)
+			if (@this is not Any obj || obj is not (KeysharpObject or Struct))
 				return (long)Errors.TypeErrorOccurred(@this, typeof(Any), 0L);
 
 			if (!name.CoerceString(out var nameVal))
@@ -194,7 +190,7 @@ namespace Keysharp.Builtins
 		// The implementation behind ObjOwnPropCount, which accepts any value, so a primitive reaches here.
 		internal static long OwnPropCount(object @this)
 		{
-			if (@this is not Any obj)
+			if (@this is not Any obj || obj is not (KeysharpObject or Struct))
 				return (long)Errors.TypeErrorOccurred(@this, typeof(Any), 0L);
 
 			var ct = 0L;
@@ -219,7 +215,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public static object OwnProps(object @this)
 		{
-			if (@this is not Any obj)
+			if (@this is not Any obj || obj is not (KeysharpObject or Struct))
 				return Errors.TypeErrorOccurred(@this, typeof(Any));
 
 			var props = new List<KeyValuePair<string, object>>(obj.op?.Count ?? 0);

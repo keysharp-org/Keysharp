@@ -195,11 +195,13 @@ namespace Keysharp.Builtins
 		{
 			var (function, nameIndex) = isMethod ? ("Object.Prototype.DefineProp", 1) : ("DefineProp", 2);
 
-			if (obj is Struct)
-				return Errors.TypeErrorOccurred(obj, typeof(KeysharpObject));
+			// As in AutoHotkey, the function rejects a non-Object as an invalid parameter and the method with a TypeError, as both
+			// forms reject a struct, which cannot own properties.
+			if (!isMethod && obj is not (KeysharpObject or Struct))
+				return Errors.InvalidParameterErrorOccurred(1, function, obj);
 
-			if (obj is not Any target)
-				return Errors.ArgumentErrorOccurred(obj, 1);
+			if (obj is not KeysharpObject target)
+				return Errors.TypeErrorOccurred(obj, typeof(KeysharpObject));
 
 			if (!name.CoerceString(out var nameVal))
 				return DefaultObject;

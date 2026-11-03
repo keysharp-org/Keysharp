@@ -71,22 +71,24 @@ namespace Keysharp.Runtime
 
 		object IMetaObject.Call(string name, object[] args) => TryCall(name, args, out var result) ? result : Errors.MissingMethodErrorOccurred(this, name);
 
-		/// <summary>Calls <paramref name="name"/> if the module declares it or its prototype has it, and returns whether it did.</summary>
+		/// <summary>
+		/// Calls <paramref name="name"/> if the module declares it or its prototype has it, and returns whether it did. A null
+		/// name is a call of the module itself, which asks only the prototype for Call, as in AutoHotkey.
+		/// </summary>
 		internal bool TryCall(string name, object[] args, out object result)
 		{
 			args ??= System.Array.Empty<object>();
 
-			if (TryGetMember(name, out var m))
+			if (name != null && TryGetMember(name, out var m))
 			{
 				var target = m.Get();
-				result = target is KeysharpFunc fn ? fn.Call(args)
-						 : target == null ? Errors.VarUnsetErrorOccurred(null, m.DeclaredName(name))
-						 : Script.Invoke(target, null, args);
+				// As a named import's call does, so a function's own Call answers and the expression decides whether a missing result is an error.
+				result = target == null ? Errors.VarUnsetErrorOccurred(null, m.DeclaredName(name)) : Script.InvokeOrNull(target, null, args);
 				return true;
 			}
 
 			// The methods every value has, such as HasProp, come from the prototype.
-			if (Script.GetMethodOrProperty(this, name, -1, throwIfMissing: false, invokeMeta: false).Item2 is KeysharpFunc method)
+			if (Script.GetMethodOrProperty(this, name ?? "Call", -1, throwIfMissing: false, invokeMeta: false).Item2 is KeysharpFunc method)
 			{
 				result = method.CallInst(this, args);
 				return true;

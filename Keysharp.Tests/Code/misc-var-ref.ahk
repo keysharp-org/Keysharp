@@ -103,11 +103,13 @@ Throws(() => IsSetRef(Map()), A_LineNumber, TypeError)
 Throws(() => IsSetRef("a string"), A_LineNumber, TypeError)
 Throws(() => IsSetRef(VRef()), A_LineNumber, TypeError)   ; implements __Value, but is not a reference
 
-; --- 6. DefineProp on a plain VarRef is honored, not bypassed ------------------
+; --- 6. A VarRef is not an Object, so it owns no properties --------------------
 u := "original"
 ru := &u
-DefineProp(ru, "__Value", { get: (this) => "redefined" })
-AssertEq(ru.__Value, "redefined", A_LineNumber)
+Throws(() => DefineProp(ru, "__Value", {Get: (this) => "redefined"}), A_LineNumber, ValueError)
+Throws(() => ({}.DefineProp)(ru, "__Value", {Get: (this) => "redefined"}), A_LineNumber, TypeError)
+Throws(() => ObjOwnProps(ru), A_LineNumber, TypeError)
+AssertEq(ru.__Value, "original", A_LineNumber)
 
 ; --- 7. A PropRef is a reference wherever a VarRef is -------------------------
 class Holder {

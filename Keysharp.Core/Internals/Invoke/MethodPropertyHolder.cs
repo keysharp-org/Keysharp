@@ -145,7 +145,7 @@ namespace Keysharp.Internals.Invoke
 		private string BuildName()
 		{
 			if (mi == null)
-				return pi?.Name ?? fi?.Name ?? "";
+				return pi?.Name ?? fi?.Name;
 
 			if (GetUserDeclaredName(mi) is { } declaredName)
 				return declaredName;

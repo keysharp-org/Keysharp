@@ -257,6 +257,15 @@ AssertEq((Ks).Cosh(0), 1, A_LineNumber)
 Throws(() => Ks?.Nope(), A_LineNumber, MethodError)
 AssertEq(Ks?.Cosh(0), 1, A_LineNumber)
 
+; A call of a function with a Call of its own runs that, as AutoHotkey's does however the function is reached.
+#Import CallForms { Answer }
+
+Answer.DefineProp("Call", {Call: (this, Params*) => "own Call"})
+callFormsHolder := CallForms
+AssertEq(Answer(), "own Call", A_LineNumber)
+AssertEq(CallForms.Answer(), "own Call", A_LineNumber)
+AssertEq(callFormsHolder.Answer(), "own Call", A_LineNumber)
+
 ; A local or parameter named like the module is the receiver, and one named like a field leaves the field reachable.
 MemberOfParameter(Ks) => Ks.Cosh(1)
 MemberOfLocal() {
@@ -657,6 +666,7 @@ Net() => DotNet
 #Module CallForms
 Two(A, B) => A "," B
 Bump(&Value) => Value++
+Answer() => "plain"
 Holder := Two
 class Thing {
 }

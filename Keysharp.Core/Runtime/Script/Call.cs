@@ -490,7 +490,7 @@ namespace Keysharp.Runtime
 			if (meth is not string methName && !meth.CoerceString(out methName)) return DefaultObject;
 
 			if (obj is Module module)
-				return module.TryCall(methName, parameters, out var found) ? found : optional ? NoMember : Errors.MissingMethodErrorOccurred(module, methName);
+				return module.TryCall(nameless ? null : methName, parameters, out var found) ? found : optional ? NoMember : Errors.MissingMethodErrorOccurred(module, methName);
 
 			// Track real receiver (handles the (proto, this) "super" tuple)
 			bool isSuper = obj is ITuple superT && superT.Length > 1 && superT[0] is Any;

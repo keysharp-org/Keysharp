@@ -475,7 +475,7 @@ namespace Keysharp.Runtime
 			// The right operand names a class through the class itself, never through its name: `x is "Array"`
 			// is a type error, and a dynamic reference has to resolve the class first (`x is %"Array"%`).
 			if (right is not Any kso || kso.op == null || !kso.op.ContainsKey("Prototype"))
-				return Errors.TypeErrorOccurred($"Expected Class but got {Keysharp.Builtins.Types.Type(right)}.", false);
+				return Errors.ExpectedTypeErrorOccurred("Class", right, false);
 
 			return Keysharp.Builtins.Types.HasBase(left, GetPropertyValue(right, "Prototype"));
 		}
