@@ -6756,7 +6756,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Linux and macOS use a suppression-capable global hook, which requires InputMonitoring and InputControl. Hotkey names accept trailing spaces and tabs before :: and in Hotkey KeyName, including Up hotkeys and custom combinations. Up must be a complete suffix; Upx and Up extra are invalid.",
-                     "tested-by":  "HotstringTests.HotkeyTrailingText"
+                     "tested-by":  "HotstringTests.HotkeyTrailingText; FlowTests.FlowHeadlessPersistence"
                  },
                  {
                      "category":  "Input/Automation",
@@ -9344,7 +9344,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Prevents the script from exiting automatically when its last thread completes. A running WinEvent, Clipboard.OnChange hook or InputHook also keeps it running; Monitor.OnChange, Audio.OnDeviceChange, Input.OnDeviceChange and CLR event hooks do not.",
-                     "tested-by":  "FlowTests.FlowExitRequests; EventHookTests.PersistenceFollowsTheFamily"
+                     "tested-by":  "FlowTests.FlowExitRequests; EventHookTests.PersistenceFollowsTheFamily; FlowTests.FlowHeadlessPersistence"
                  },
                  {
                      "category":  "Core Language",

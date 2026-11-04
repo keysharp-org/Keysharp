@@ -42,10 +42,6 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 			=> callbackContext.Client;
 		internal static ulong CurrentHookEventId
 			=> callbackContext.EventId;
-		// Avoid grabbing evdev before X/XWayland can receive inputService's replay device.
-		private const int InputServiceGrabDisplayWaitMs = 5000;
-		private const int InputServiceGrabDisplayWaitPollMs = 100;
-
 		// Crash-loop protection for inputService hook recovery.
 		private long lastInputServiceRecoveryTicks;
 		private int inputServiceRecoveryAttempts;
@@ -165,18 +161,6 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 				isInjected ? HOOK_EVENT_INJECTED : 0, ev.DeviceId) != 0;
 		}
 
-		// Pure Wayland and normal X11-ready sessions return immediately.
-		private static void WaitForDisplayServerBeforeGrab()
-		{
-			if (IsWaylandSession || IsX11Available)
-				return;
-
-			var deadline = Environment.TickCount64 + InputServiceGrabDisplayWaitMs;
-
-			while (Environment.TickCount64 < deadline && !IsX11Available)
-				Thread.Sleep(InputServiceGrabDisplayWaitPollMs);
-		}
-
 		protected override bool StartPlatformHookCore(bool wantKeyboard, bool wantMouse, out string message)
 		{
 			message = string.Empty;
@@ -217,8 +201,6 @@ namespace Keysharp.Internals.Input.Hooks.Linux
 
 			// Prepare the desktop keymap before callbacks can translate keys or send text.
 			_ = script.LinuxServices.KeyboardState.Get();
-
-			WaitForDisplayServerBeforeGrab();
 
 			if (TryChangeSubscribedKinds(wantedHooks))
 				return true;

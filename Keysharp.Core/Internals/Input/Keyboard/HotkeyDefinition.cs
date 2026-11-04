@@ -688,8 +688,8 @@ namespace Keysharp.Internals.Input.Keyboard
 				hkd.whichHookNeeded |= HookType.Mouse;
 
 #if LINUX
-			// Native Linux capture needs a session/seat; a custom provider owns its capture requirements.
-			if (Script.IsHeadless && !ht.UsesHookProvider)
+			// Tests must not capture the user's keyboard; providers supply isolated input.
+			if (Script.IsHeadless && Script.IsTestHost && !ht.UsesHookProvider)
 				return DefaultObject;
 #endif
 

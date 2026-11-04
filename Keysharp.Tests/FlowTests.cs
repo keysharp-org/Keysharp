@@ -467,21 +467,29 @@ public partial class FlowTests : TestRunner
 	[Test, Category("Flow"), NonParallelizable]
 	public void FlowWorkerCriticalDispatch() => Assert.IsTrue(TestScript("flow-worker-critical-dispatch", false));
 
-	// Forces the headless branch: with a display present RunMainWindow takes the GUI path, where the ambient
-	// context comes from the UI framework instead of the scheduler. The slot is emptied for the same reason:
-	// the install only fills an empty one, and NUnit keeps a SafeSynchronizationContext of its own there to
-	// catch exceptions from async void methods, which a real run has nothing of.
+	// Clear NUnit's ambient context so the headless runtime installs the context a standalone script uses.
 	[Test, Category("Flow"), NonParallelizable]
 	public void FlowHeadlessAmbientContext()
+		=> RunHeadless(() => Assert.IsTrue(TestScript("flow-headless-ambient-context", false)));
+
+	[TestCase("Persistent"), TestCase("Timer"), TestCase("Hotkey"), TestCase("Hotstring")]
+	[Category("Flow"), Category("Curated")]
+	public void FlowHeadlessPersistence(string source) => RunHeadless(() =>
+	{
+		var script = $"Mode := \"{source}\"\n#Include \"{Path.Combine(path, "flow-headless-persistence.ahk")}\"\n";
+		Assert.That(RunScript(script, "headless-persistence", true, false).Trim(), Is.EqualTo("pass"));
+	});
+
+	private static void RunHeadless(Action action)
 	{
 		var previous = Environment.GetEnvironmentVariable("KEYSHARP_FORCE_HEADLESS");
-		Environment.SetEnvironmentVariable("KEYSHARP_FORCE_HEADLESS", "1");
 		var previousContext = SynchronizationContext.Current;
+		Environment.SetEnvironmentVariable("KEYSHARP_FORCE_HEADLESS", "1");
 		SynchronizationContext.SetSynchronizationContext(null);
 
 		try
 		{
-			Assert.IsTrue(TestScript("flow-headless-ambient-context", false));
+			action();
 		}
 		finally
 		{

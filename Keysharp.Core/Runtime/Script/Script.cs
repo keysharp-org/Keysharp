@@ -1482,13 +1482,10 @@ namespace Keysharp.Runtime
 				try
 				{
 					RunAutoExecSection(userInit);
-					// There is no native event loop, so turn the scheduler by hand: once, so immediate one-shot
-					// timers and deferred non-persistent teardown run, then while async work is in flight -- the
-					// one persistence root a host with no input can see through. Timers, hotkeys and windows are
-					// left out, so the run still ends on its own.
-					do
+					// The posted exit check owns shutdown, including OnExit and its cancellation. A worker may
+					// release the last persistence root before posting that check, so the loop must wait for it.
+					while (!hasExited && !IsDisposed)
 						Keysharp.Internals.Flow.TryDoEvents();
-					while (!hasExited && HasPendingSchedulerWork);
 				}
 				finally
 				{
