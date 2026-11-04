@@ -95,6 +95,64 @@ public class DaemonCompilationTests
 		}
 	}
 
+#if LINUX
+	[Test, Category("Misc"), Category("Curated")]
+	public void AutoStartedDaemonSurvivesTerminalInterrupt()
+	{
+		var launcherSource = Path.Combine(AppContext.BaseDirectory, "Keysharp");
+		if (!File.Exists(launcherSource) || !File.Exists("/usr/bin/setsid"))
+			Assert.Ignore("The Keysharp launcher and setsid are required.");
+
+		var directory = Path.Combine("/tmp", "keysharp-daemon-signal-" + Guid.NewGuid().ToString("N"));
+		Directory.CreateDirectory(directory);
+		Process client = null;
+		Process daemon = null;
+		try
+		{
+			var installation = Path.Combine(directory, "host");
+			CopyInstallation(installation);
+			Directory.CreateDirectory(Path.Combine(directory, "runtime"));
+			var launcher = Path.Combine(installation, "Keysharp");
+			var script = Path.Combine(directory, "signal.ahk");
+			var ready = Path.Combine(directory, "ready");
+			File.WriteAllText(script, Directives + "Persistent()\nFileAppend('ready', A_ScriptDir '/ready')\n");
+			client = Process.Start(StartInfo("/usr/bin/setsid", directory, "1", false, "--wait", launcher, script));
+			var output = client.StandardOutput.ReadToEndAsync();
+			var error = client.StandardError.ReadToEndAsync();
+			Assert.That(SpinWait.SpinUntil(() => File.Exists(ready) || client.HasExited, 30000), Is.True,
+				"The script did not start.");
+			Assert.That(File.Exists(ready), Is.True, error.IsCompletedSuccessfully ? error.Result : "The script exited before startup.");
+			var ownerFile = Directory.GetFiles(Path.Combine(directory, "runtime"), "keysharp-compile-server-*.lock").Single();
+			var owner = File.ReadAllText(ownerFile);
+			daemon = Process.GetProcessById(int.Parse(owner.Split('|')[0]));
+
+			// Signal only the isolated foreground job, never the test host's process group.
+			Assert.That(GetProcessGroup(client.Id), Is.EqualTo(client.Id));
+			Assert.That(GetProcessGroup(client.Id), Is.Not.EqualTo(GetProcessGroup(Environment.ProcessId)));
+			Assert.That(SendSignal(-client.Id, 2), Is.Zero, "Could not send the terminal interrupt.");
+			Assert.That(client.WaitForExit(20000), Is.True, "The script did not exit after the terminal interrupt.");
+			Assert.That(Task.WaitAll([output, error], 5000), Is.True, "The script's output streams did not close.");
+
+			var ping = Run(launcher, directory, "1", false, "--daemon", "ping", script);
+			Assert.That(ping.ExitCode, Is.Zero, ping.Output + ping.Error);
+			Assert.That(daemon.HasExited, Is.False, "The terminal interrupt stopped the compile daemon.");
+			Assert.That(File.ReadAllText(ownerFile), Is.EqualTo(owner), "The compiler was restarted instead of reused.");
+		}
+		finally
+		{
+			if (client != null) { Stop(client); client.Dispose(); }
+			if (daemon != null) { Stop(daemon); daemon.Dispose(); }
+			Directory.Delete(directory, true);
+		}
+	}
+
+	[DllImport("libc", EntryPoint = "getpgid")]
+	private static extern int GetProcessGroup(int pid);
+
+	[DllImport("libc", EntryPoint = "kill", SetLastError = true)]
+	private static extern int SendSignal(int pid, int signal);
+#endif
+
 	private static void CopyInstallation(string destination)
 	{
 		Directory.CreateDirectory(destination);

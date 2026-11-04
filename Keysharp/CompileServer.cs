@@ -36,6 +36,15 @@ internal static class CompileServer
 
 	internal static int Run()
 	{
+#if !WINDOWS
+		// An auto-started daemon must survive the script's terminal interrupts and hangups.
+		// A foreground daemon already leads its process group and stays under terminal control.
+		if (GetProcessGroup() != Environment.ProcessId && StartSession() == -1)
+		{
+			Log($"could not detach from the terminal (errno {Marshal.GetLastPInvokeError()}); exiting.");
+			return 1;
+		}
+#endif
 #if WINDOWS
 		if (CompileDaemonSecurity.IsElevated)
 		{
@@ -70,6 +79,14 @@ internal static class CompileServer
 			DaemonCoordinator.ReleaseOwnership();
 		}
 	}
+
+#if !WINDOWS
+	[DllImport("libc", EntryPoint = "getpgrp")]
+	private static extern int GetProcessGroup();
+
+	[DllImport("libc", EntryPoint = "setsid", SetLastError = true)]
+	private static extern int StartSession();
+#endif
 
 	// Wire format (length-prefixed, BinaryReader/Writer):
 	//   request : bool fromStdin, string path/source, string workingDirectory, bool hasCompilationName + optional name,
