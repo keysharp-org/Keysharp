@@ -375,43 +375,25 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="value">The object to find the property on. Can't be a ComObject.</param>
 		/// <param name="name">The property name to check for.</param>
-		/// <param name="paramCount">The number of parameters the property takes.<br/>
-		/// This is used for indexers which can take 1 or more parameters. Default: 0.
-		/// </param>
 		/// <returns>1 if the property was found on the object, else 0.</returns>
-		public static long HasProp(object value, object name, object paramCount = null, bool checkBase = true)
+		public static long HasProp(object value, object name)
 		{
-			var val = value;
-
 			if (!name.CoerceString(out var n))
 				return 0L;
-
-			if (!paramCount.CoerceInt(out var count, -1))
-				return 0L;
-
-			Any nextBase = null;
 
 			// A primitive answers from its prototype, as AHK's ParamToObjectOrBase does, not from its CLR type.
 			if (ObjectOrBase(value) is Any kso)
 			{
-				if (kso.op != null && kso.op.ContainsKey(n))
-					return 1L;
-
-				if (checkBase)
+				for (var current = kso; current != null; current = current.Base as KeysharpObject)
 				{
-                    var Base = kso;
-                    while ((nextBase = Base.Base) != null && nextBase != null && nextBase is KeysharpObject)
-                    {
-                        Base = (KeysharpObject)nextBase;
-						if (Base.op != null && Base.op.ContainsKey(n))
-							return 1L;
-                    }
-                }
+					if (current.op != null && current.op.ContainsKey(n))
+						return 1L;
+				}
 
 				return 0L;
 			}
 
-			var mph = Reflections.FindAndCacheProperty(val.GetType(), n, count);
+			var mph = Reflections.FindAndCacheProperty(value.GetType(), n, -1);
 			return mph != null && mph.pi != null ? 1L : 0L;
 		}
 

@@ -1,4 +1,6 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 #Include <assert>
 
 class myclass
@@ -149,5 +151,25 @@ class CompoundInit
 }
 
 AssertEq(CompoundInit().bumped, 15, A_LineNumber)
+
+class RepeatedConstruction
+{
+	static Created := 0
+	Items := []
+
+	__New(value)
+	{
+		RepeatedConstruction.Created += 1
+		this.Items.Push(value)
+	}
+}
+
+Loop CallsPastCompilation()
+{
+	constructed := RepeatedConstruction(A_Index)
+	AssertEq(constructed.Items.Length, 1, A_LineNumber)
+	AssertEq(constructed.Items[1], A_Index, A_LineNumber)
+}
+AssertEq(RepeatedConstruction.Created, CallsPastCompilation(), A_LineNumber)
 
 FileAppend "pass", "*"

@@ -1,4 +1,6 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 #Include <assert>
 
 optionalrefstate(&value?) => IsSet(value)
@@ -138,5 +140,16 @@ val := fo(x, &y)
 AssertEq(y, 1, A_LineNumber)
 
 AssertEq(val, 1, A_LineNumber)
+
+; Defaults, references and variadic tails remain independent across repeated calls.
+Loop CallsPastCompilation() {
+	AssertEq(optionalrefstate.Call(), 0, A_LineNumber)
+	AssertEq(optionalrefstate.Call(&provided), 1, A_LineNumber)
+	Assert(optionalrefdefault.Call(), A_LineNumber)
+	AssertEq(fo.Call(A_Index, &y, 1, 2), A_Index + 3, A_LineNumber)
+	AssertEq(y, A_Index + 3, A_LineNumber)
+	AssertEq(fo.Call(A_Index, &val2), A_Index, A_LineNumber)
+	AssertEq(val2, A_Index, A_LineNumber)
+}
 
 FileAppend "pass", "*"

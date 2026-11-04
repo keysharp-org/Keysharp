@@ -6,6 +6,9 @@
 
 #CSharp
 public static long IdentityLong(long value) => value;
+public static long Truth(bool value) => value ? 1 : 0;
+public static long IsMap(Keysharp.Builtins.Map value) => value == null ? 0 : 1;
+public static int Narrow() => 5;
 #EndCSharp
 
 ; Regression tests for typed CLR parameters and properties reached through the dynamic-invoke path.
@@ -20,26 +23,33 @@ public static long IdentityLong(long value) => value;
 ; Float converts and only a genuinely non-numeric value raises, as a catchable TypeError; bool and
 ; string use AutoHotkey's total conversions and never raise.
 
-; -- bool parameter (HasProp's `checkBase`) --------------------------------------------
+; -- bool parameter (inline C#) --------------------------------------------------------
 ; AHK has no Boolean type, so a script writing `false` passes Integer 0. This used to be fatal.
-obj := {a: 1}
-
 try
-	AssertEq(HasProp(obj, "a", , false), 1, A_LineNumber)
+	AssertEq(Truth(false), 0, A_LineNumber)
 catch
 	Assert(false, A_LineNumber)
 
 try
-	AssertEq(HasProp(obj, "a", , true), 1, A_LineNumber)
+	AssertEq(Truth(true), 1, A_LineNumber)
 catch
 	Assert(false, A_LineNumber)
 
 ; A bool target is AutoHotkey truthiness, which is total: a non-empty non-numeric string is true
 ; rather than the TypeError the same value would raise against a numeric target below.
 try
-	AssertEq(HasProp(obj, "a", , "abc"), 1, A_LineNumber)
+	AssertEq(Truth("abc"), 1, A_LineNumber)
 catch
 	Assert(false, A_LineNumber)
+
+; -- reference parameter (inline C#) ---------------------------------------------------
+; A Map passes as itself, and anything else is a catchable TypeError.
+AssertEq(IsMap(Map()), 1, A_LineNumber)
+Throws(() => IsMap("not a map"), A_LineNumber, TypeError)
+
+; -- narrow numeric return (inline C#) -------------------------------------------------
+; An Int32 widens to Integer on the way out, so it is a script Integer and not a boxed CLR Int32.
+AssertEq(Type(Narrow()), "Integer", A_LineNumber)
 
 ; -- long property, reflection-set (Map.Capacity) --------------------------------------
 ; Capacity reads back rounded up to the underlying Dictionary's prime bucket count, so these assert a
@@ -119,21 +129,5 @@ try
 }
 catch
 	Assert(false, A_LineNumber)
-
-; NOTE: two branches of the coercer have no case here because nothing a script can name reaches
-; them, not because they are untested by design.
-;
-;   Reference-typed targets (Kind.Cast): the whole non-hidden surface is `Ks.Mail(…, Map options)`,
-;   `OwnPropsDesc.Merge(Map)` and delegate BeginInvoke/EndInvoke. `Ks` is a non-static partial class,
-;   so none of its statics reach Reflections' global method table and `Mail(…)` does not resolve --
-;   a separate, pre-existing problem. When it is fixed, `Mail(…, "not a map")` belongs here.
-;   (Map.CopyTo and Array.Count look like candidates but are [PublicHiddenFromUser].)
-;
-;   Widening a narrow CLR numeric on the way out: the only non-hidden members returning one are Gui
-;   (KeysharpTrackBar.Value, Control.SetIcon, ProgressDialog.Progress*), which this non-GUI fixture
-;   cannot touch. Treat this as UNCOVERED. external-clr.ahk looks like it covers the runtime half,
-;   but its Int32 reads (StringBuilder.Length, DateTime.Year, Dictionary.Count) all compare with ==,
-;   which passes on a boxed Int32 too; only its case 49 asserts Type(v) == "Integer", and that file
-;   is currently failing and is not in the curated CI filter.
 
 FileAppend "pass", "*"

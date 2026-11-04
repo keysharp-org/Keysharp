@@ -67,8 +67,6 @@ public class ReflectionBench1RefParam : BaseTest
 		MivRef1 = System.Reflection.MethodInvoker.Create(MiRef1);
 		MivRef1_FN = System.Reflection.MethodInvoker.Create(MiRef1_FN);
 		cachedVarRef = (VarRef)Keysharp.Builtins.Misc.MakeVarRef(Keysharp.Builtins.Misc.FieldRef(typeof(ReflectionBench1RefParam), "x", () => x, (KS_value) => x = KS_value), "x");
-		//Don't test refs with DelegateFactory.CreateDelegate(MiRef1) because they are not supported.
-		//Refs take the other path below with reffunc1.
 	}
 }
 

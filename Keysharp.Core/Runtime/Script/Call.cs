@@ -892,7 +892,7 @@ namespace Keysharp.Runtime
 
 		internal static (object, MethodPropertyHolder) GetStaticMethodT<T>(object name, int paramCount)
 		{
-			if (Reflections.FindAndCacheStaticMethod(typeof(T), name.ToString(), paramCount) is MethodPropertyHolder mph && mph.mi != null && mph.IsStaticFunc)
+			if (Reflections.FindAndCacheStaticMethod(typeof(T), name.ToString(), paramCount) is MethodPropertyHolder mph && mph.mi != null && mph.IsStatic)
 				return (null, mph);
 
 			_ = Errors.ErrorOccurred($"Attempting to get static method {name} failed.");

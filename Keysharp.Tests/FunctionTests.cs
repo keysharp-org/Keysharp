@@ -115,6 +115,64 @@ public class FunctionTests : TestRunner
 	[Test, Category("Function"), NonParallelizable]
 	public void CombinedParamsInFunc() => Assert.IsTrue(TestScript("func-combined-params", false));
 
+	[Test, Category("Function"), Category("Internal")]
+	public void ConcurrentPromotion()
+	{
+		var counts = new CallCounts();
+		object[] args = [counts];
+		var call = new MethodPropertyHolder(typeof(CallCounts).GetMethod(nameof(CallCounts.Count))).CallFunc;
+		var field = new MethodPropertyHolder(typeof(CallCounts).GetField(nameof(CallCounts.Slot)));
+		var get = field.CallFunc;
+		var cachedSet = field.SetProp;
+
+		void Invoke()
+		{
+			Assert.That(call(null, args), Is.SameAs(counts));
+			cachedSet(null, counts);
+			Assert.That(get(null, null), Is.SameAs(counts));
+			var created = (CountedConstruction)FastCtor.Call(typeof(CountedConstruction), args);
+			Assert.That(created.Arguments, Is.SameAs(args));
+		}
+
+		var warmup = DelegateFactory.CompilationThreshold - 1;
+		for (var i = 0; i < warmup; i++)
+			Invoke();
+
+		const int workers = 4;
+		using var start = new Barrier(workers);
+		var tasks = Enumerable.Range(0, workers).Select(_ => Task.Factory.StartNew(() =>
+		{
+			Assert.That(start.SignalAndWait(TimeSpan.FromSeconds(10)), Is.True);
+			for (var i = 0; i < CallsPastCompilation; i++)
+				Invoke();
+		}, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default)).ToArray();
+		Task.WhenAll(tasks).GetAwaiter().GetResult();
+
+		Assert.That(counts.Methods, Is.EqualTo(warmup + workers * CallsPastCompilation));
+		Assert.That(counts.Constructors, Is.EqualTo(counts.Methods));
+		Assert.That(field.SetProp, Is.Not.SameAs(cachedSet));
+
+		// The interpreter allocates execution state; the published method must stop doing so.
+		var before = GC.GetAllocatedBytesForCurrentThread();
+		for (var i = 0; i < 1024; i++)
+			GC.KeepAlive(call(null, args));
+		Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.Zero);
+		CallCounts.Slot = null;
+	}
+
+	[Test, Category("Function"), Category("Internal")]
+	public void ConstructorArgumentsAndErrors()
+	{
+		var failure = new InvalidOperationException("constructor failure");
+		object[] args = [failure];
+		for (var i = 0; i < CallsPastCompilation; i++)
+		{
+			var created = (ConditionalConstruction)FastCtor.Call(typeof(ConditionalConstruction), null);
+			Assert.That(created.Arguments, Is.Null);
+			Assert.That(Assert.Throws<InvalidOperationException>(() => FastCtor.Call(typeof(ConditionalConstruction), args)), Is.SameAs(failure));
+		}
+	}
+
 	// Writing the module's own function or class is a load-time error; writing a local of the same name is not.
 	[Test, Category("Function")]
 	public void ConstantAssignment()
@@ -164,32 +222,6 @@ public class FunctionTests : TestRunner
 
 	[Test, Category("Function"), NonParallelizable]
 	public void FatArrowFunc() => Assert.IsTrue(TestScript("func-fat-arrow", false));
-
-	[Test, Category("Function"), Category("Internal")]
-	public void FieldWritabilityDefersCompilation()
-	{
-		var field = typeof(LazyFields).GetField(nameof(LazyFields.Value));
-		var holder = new Keysharp.Internals.Invoke.MethodPropertyHolder(field);
-		var cachedSetter = typeof(Keysharp.Internals.Invoke.MethodPropertyHolder).GetField("setProp", BindingFlags.NonPublic | BindingFlags.Instance);
-
-		// Compilation timing cannot be asserted deterministically through a script.
-		Assert.IsNull(cachedSetter.GetValue(holder));
-		Assert.IsTrue(holder.HasSetter);
-		Assert.IsTrue(Keysharp.Runtime.ScriptVar.Of(holder).RequireWritable(Keysharp.Runtime.VarUsage.Assign, "Value"));
-		Assert.IsNull(cachedSetter.GetValue(holder));
-
-		var target = new LazyFields();
-		holder.SetProp(target, 7.9);
-		Assert.That(target.Value, Is.EqualTo(7L));
-		var setter = holder.SetProp;
-		holder.SetProp(target, 8L);
-		Assert.That(target.Value, Is.EqualTo(8L));
-		Assert.That(holder.SetProp, Is.SameAs(setter));
-
-		var readOnly = new Keysharp.Internals.Invoke.MethodPropertyHolder(typeof(LazyFields).GetField(nameof(LazyFields.ReadOnly)));
-		Assert.That(readOnly.HasSetter, Is.False);
-		Assert.IsNull(readOnly.SetProp);
-	}
 
 	[Test, Category("Function"), NonParallelizable]
 	public void FuncCallable() => Assert.IsTrue(TestScript("func-callable", false));
@@ -421,9 +453,34 @@ public class FunctionTests : TestRunner
 
 	private static object LazyCallback(object value) => value;
 
-	private sealed class LazyFields
+	public sealed class CallCounts
 	{
-		public readonly long ReadOnly = 1;
-		public long Value = 0;
+		public static object Slot;
+		public int Methods, Constructors;
+		public static object Count(object value)
+		{
+			Interlocked.Increment(ref ((CallCounts)value).Methods);
+			return value;
+		}
+	}
+
+	public sealed class CountedConstruction
+	{
+		public readonly object[] Arguments;
+		public CountedConstruction(object[] args)
+		{
+			Interlocked.Increment(ref ((CallCounts)args[0]).Constructors);
+			Arguments = args;
+		}
+	}
+
+	public sealed class ConditionalConstruction
+	{
+		public readonly object[] Arguments;
+		public ConditionalConstruction(object[] args)
+		{
+			if (args is [Exception failure]) throw failure;
+			Arguments = args;
+		}
 	}
 }

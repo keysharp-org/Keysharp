@@ -118,14 +118,14 @@ internal sealed class ReflectionBenchState
 		Miv5 = System.Reflection.MethodInvoker.Create(Mi5);
 		Miv10 = System.Reflection.MethodInvoker.Create(Mi10);
 
-		Del0 = DelegateFactory.CreateDelegate(Mi0);
-		Del1 = DelegateFactory.CreateDelegate(Mi1);
-		Del5 = DelegateFactory.CreateDelegate(Mi5);
-		Del10 = DelegateFactory.CreateDelegate(Mi10);
+		Del0 = MethodPropertyHolder.GetOrAdd(Mi0).CallFunc;
+		Del1 = MethodPropertyHolder.GetOrAdd(Mi1).CallFunc;
+		Del5 = MethodPropertyHolder.GetOrAdd(Mi5).CallFunc;
+		Del10 = MethodPropertyHolder.GetOrAdd(Mi10).CallFunc;
 
-		ODel1 = DelegateFactory.CreateDelegate(t.GetMethod(nameof(Target.ObjMethod1)) ?? throw new NullReferenceException());
-		ODel5 = DelegateFactory.CreateDelegate(t.GetMethod(nameof(Target.ObjMethod5)) ?? throw new NullReferenceException());
-		ODel10 = DelegateFactory.CreateDelegate(t.GetMethod(nameof(Target.ObjMethod10)) ?? throw new NullReferenceException());
+		ODel1 = MethodPropertyHolder.GetOrAdd(t.GetMethod(nameof(Target.ObjMethod1)) ?? throw new NullReferenceException()).CallFunc;
+		ODel5 = MethodPropertyHolder.GetOrAdd(t.GetMethod(nameof(Target.ObjMethod5)) ?? throw new NullReferenceException()).CallFunc;
+		ODel10 = MethodPropertyHolder.GetOrAdd(t.GetMethod(nameof(Target.ObjMethod10)) ?? throw new NullReferenceException()).CallFunc;
 
 		Args0 = [];
 		Args1 = [1L];

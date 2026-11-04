@@ -67,6 +67,8 @@ public static List<string> Stash = new List<string> { "q" };
 
 public static object ObjectSlot = new System.Text.StringBuilder("field");
 
+public static int IntegerSlot = 7;
+
 public static System.DateTime StoredWhen { get; set; } = new System.DateTime(2019, 1, 1);
 
 public static System.DateTime StoredWhenField = new System.DateTime(2018, 1, 1);
@@ -94,12 +96,41 @@ public static void ScribbleSpan(Span<byte> bytes) => bytes[0] = 0xFE;
 
 public static string ReadSpan(ReadOnlySpan<byte> bytes) => System.Convert.ToBase64String(bytes);
 
+public static string SpanWithText(Span<byte> Bytes, string Text) => Bytes.Length + ":" + Text;
+
+public static string ReadOnlySpanWithText(ReadOnlySpan<byte> Bytes, string Text) => Bytes.Length + ":" + Text;
+
+public static string NumberWithText(long Number, string Text) => Number + ":" + Text;
+
 public static byte[] ThreeBytes() => new byte[] { 1, 2, 3 };
 
 public static long ByteCount(byte[] bytes) => bytes.Length;
 
 public class NativeGetter { public object Call(object Owner) => 42L; }
 public static NativeGetter MakeNativeGetter() => new();
+
+class VirtualReaderBase
+{
+    public virtual object Read() => "base";
+}
+
+class CovariantReadTarget : VirtualReaderBase
+{
+    public override string Read() => "covariant";
+}
+
+class GenericReadTarget<T> : VirtualReaderBase
+{
+    public override object Read() => typeof(T).Name;
+}
+
+private static Keysharp.Builtins.KeysharpFunc BindVirtualReader(VirtualReaderBase receiver) =>
+    Keysharp.Builtins.Functions.Func(typeof(VirtualReaderBase).GetMethod("Read")
+        .CreateDelegate<System.Func<VirtualReaderBase, object>>(), receiver);
+
+public static Keysharp.Builtins.KeysharpFunc MakeCovariantReader() => BindVirtualReader(new CovariantReadTarget());
+
+public static Keysharp.Builtins.KeysharpFunc MakeGenericReader() => BindVirtualReader(new GenericReadTarget<string>());
 #EndCSharp
 
 class Meas
@@ -134,6 +165,14 @@ AssertEq(getterHolder.Value, 42, A_LineNumber)
 AssertEq(TakeList(l), 2, A_LineNumber)
 AssertEq(TakeList(MakeList()), 2, A_LineNumber)
 Assert(IsListObject(l), A_LineNumber)
+
+; A function obtained from the base declaration dispatches on each receiver's CLR type.
+covariantReader := MakeCovariantReader()
+genericReader := MakeGenericReader()
+Loop CallsPastCompilation() {
+    AssertEq(covariantReader.Call(), "covariant", A_LineNumber)
+    AssertEq(genericReader.Call(), "String", A_LineNumber)
+}
 
 ; Ordinary AHK calls and generated globals preserve the wrapper; only marked CLR boundaries unwrap it.
 Identity(value) => value
@@ -318,6 +357,31 @@ AssertEq(ReadSpan(hiBuf), "SGkh", A_LineNumber)
 ScribbleSpan(hiBuf)
 AssertEq(NumGet(hiBuf, 0, "UChar"), 0xFE, A_LineNumber)
 
+; Rejecting an earlier span argument must precede later conversion hooks.
+class SpanTextProbe {
+    Calls := 0
+    ToString() {
+        this.Calls += 1
+        return "span"
+    }
+}
+spanText := SpanTextProbe()
+Throws(() => SpanWithText.Call("invalid span", spanText), A_LineNumber, TypeError)
+Throws(() => ReadOnlySpanWithText.Call("invalid span", spanText), A_LineNumber, TypeError)
+AssertEq(spanText.Calls, 0, A_LineNumber)
+AssertEq(SpanWithText.Call(hiBuf, spanText), "3:span", A_LineNumber)
+AssertEq(ReadOnlySpanWithText.Call(hiBuf, spanText), "3:span", A_LineNumber)
+AssertEq(spanText.Calls, 2, A_LineNumber)
+
+; Repeated typed calls preserve conversion order and run each successful hook once.
+typedText := SpanTextProbe()
+Loop CallsPastCompilation() {
+    Throws(() => NumberWithText.Call("invalid number", typedText), A_LineNumber, TypeError)
+    AssertEq(typedText.Calls, A_Index - 1, A_LineNumber)
+    AssertEq(NumberWithText.Call("7", typedText), "7:span", A_LineNumber)
+    AssertEq(typedText.Calls, A_Index, A_LineNumber)
+}
+
 ; A byte[] return is still a wrapped CLR array, and unwraps back into a byte[] parameter.
 Assert(IsClrInstance(ThreeBytes()), A_LineNumber)
 AssertEq(ByteCount(ThreeBytes()), 3, A_LineNumber)
@@ -341,5 +405,24 @@ try Clr.Load("System").Collections.Generic.List["No.Such.Type"]
 catch ValueError
     caught := true
 Assert(caught, A_LineNumber)
+
+; Repeated field access preserves scalar conversion and CLR wrapping.
+integerSlotName := "IntegerSlot"
+WriteIntegerSlot(value) {
+    global
+    %integerSlotName% := value
+}
+Throws(() => WriteIntegerSlot("invalid"), A_LineNumber, TypeError)
+Loop CallsPastCompilation() {
+    %objectSlotName% := A_Index
+    AssertEq(%objectSlotName%, A_Index, A_LineNumber)
+    %storedWhenFieldName% := When()
+    AssertEq(%storedWhenFieldName%.Year, 2020, A_LineNumber)
+    WriteIntegerSlot(A_Index ".9")
+    AssertEq(%integerSlotName%, A_Index, A_LineNumber)
+    AssertEq(Type(%integerSlotName%), "Integer", A_LineNumber)
+}
+Throws(() => WriteIntegerSlot("invalid"), A_LineNumber, TypeError)
+AssertEq(%integerSlotName%, CallsPastCompilation(), A_LineNumber)
 
 FileAppend "pass", "*"

@@ -1,7 +1,6 @@
 using Keysharp.Builtins;
 using System.Collections.Generic;
 using System.Linq.Expressions;
-using Label = System.Reflection.Emit.Label;
 
 namespace Keysharp.Internals.Invoke
 {
@@ -15,7 +14,7 @@ namespace Keysharp.Internals.Invoke
 
 		private Func<object, object[], object> CreateCallFunc()
 		{
-			var call = DelegateFactory.CreateDelegate(this);
+			var call = fi != null ? CreateFieldGetter() : DelegateFactory.CreateDelegate(this);
 			return mi != null && RequiresUIThread(mi, AccessorProperty()) ? OnUIThread(call) : call;
 		}
 
@@ -39,15 +38,13 @@ namespace Keysharp.Internals.Invoke
 		private Action<object, object> setProp;
 		internal Action<object, object> SetProp
 		{
-			get => setProp ??= HasSetter ? CreateFieldSetter() : null;
-			private set => setProp = value;
+			get => Volatile.Read(ref setProp) ?? (HasSetter ? CreateFieldSetter() : null);
+			private set => Volatile.Write(ref setProp, value);
 		}
 		// Checking writability must not compile accessors while discovering module variables.
 		internal bool HasSetter => fi != null ? !fi.IsInitOnly && !fi.IsLiteral : setProp != null;
-		internal readonly bool anyOptional;
 		internal readonly bool isSetter;
 		internal readonly int variadicParamIndex = -1;
-		internal readonly int[] requiredIdx;
 		internal readonly bool receiverInCounts;
 
 		/// <summary>
@@ -61,10 +58,8 @@ namespace Keysharp.Internals.Invoke
 		internal static ConcurrentDictionary<PropertyInfo, MethodPropertyHolder> propertyCache = new();
 		internal static ConcurrentDictionary<FieldInfo, MethodPropertyHolder> fieldCache = new();
 
-		internal bool IsBind { get; private set; }
 		internal bool IsStatic { get; private set; }
 		internal bool IsCompilerGenerated { get; private set; }
-		internal bool IsStaticFunc { get; private set; }
 		internal bool IsStaticProp { get; private set; }
 		internal bool IsVariadic => variadicParamIndex != -1;
 		internal int ParamLength { get; }
@@ -88,8 +83,6 @@ namespace Keysharp.Internals.Invoke
 				&& (method.Name.StartsWith("get_", StringComparison.Ordinal) || method.Name.StartsWith("set_", StringComparison.Ordinal))
 				&& method.DeclaringType.GetProperty(method.Name[4..], BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly)
 					?.IsDefined(typeof(InlineCSharpAttribute), false) == true);
-
-        internal const int DotNetMaxParams = 8192; // https://www.tabsoverspaces.com/233892-whats-the-maximum-number-of-arguments-for-method-in-csharp-and-in-net
 
 		/// <summary>
 		/// Whether a parameter is the explicit <c>object @this</c> receiver rather than a real argument. ONE
@@ -412,8 +405,6 @@ namespace Keysharp.Internals.Invoke
 			return fieldCache.GetOrAdd(fi, static key => new MethodPropertyHolder(key));
         }
 
-        public MethodPropertyHolder() { }
-
 		public MethodPropertyHolder(MethodInfo m)
 		{
 			mi = m;
@@ -427,7 +418,6 @@ namespace Keysharp.Internals.Invoke
 			IsScript = InScriptModule && !inlineMarked;
 
             IsStatic = mi.IsStatic;
-			IsStaticFunc = mi.Attributes.HasFlag(MethodAttributes.Static);
 			IsCompilerGenerated = mi.DeclaringType.IsDefined(typeof(CompilerGeneratedAttribute), inherit: false);
 			var hasHiddenThis = !IsStatic && !IsCompilerGenerated;
 			if (hasHiddenThis) // Built-in instance method, so account for the implicit "this"
@@ -442,7 +432,6 @@ namespace Keysharp.Internals.Invoke
 			isSetter = mi.Name.StartsWith(setterPrefix, StringComparison.Ordinal) || mi.Name.StartsWith(classSetterPrefix, StringComparison.Ordinal);
 			var isItemSetter = isSetter && (mi.Name == "set_Item" || mi.Name.Equals("set___Item", StringComparison.OrdinalIgnoreCase)
 				|| mi.Name.Equals(classSetterPrefix + "__Item", StringComparison.OrdinalIgnoreCase));
-			var req = new List<int>(ParamLength);
 
 			for (var i = 0; i < parameters.Length; i++)
 			{
@@ -451,16 +440,9 @@ namespace Keysharp.Internals.Invoke
 				if (pmi.IsVariadic() || (!inlineMarked && pmi.ParameterType == typeof(object[])
 						&& i == (isItemSetter ? parameters.Length - 2 : parameters.Length - 1)))
                     variadicParamIndex = i;
-                else
-                {
-					if (!pmi.IsOptional)
-					{
-						MinParams++;
-						req.Add(i);
-					}
-				}
+				else if (!pmi.IsOptional)
+					MinParams++;
 			}
-			requiredIdx = req.ToArray();
 
 			if (isSetter) // Allow value to be unset
                 MinParams--;
@@ -473,12 +455,7 @@ namespace Keysharp.Internals.Invoke
 			// NamedArgBinder.ArgBase, which answers a different question (the args-slot offset of parameter 0).
 			receiverInCounts = hasHiddenThis || (IsStatic && parameters.Length > 0 && IsExplicitThis(parameters[0]));
 
-			anyOptional = variadicParamIndex != -1 || MinParams != MaxParams;
-
 			var isKeysharpFunc = typeof(KeysharpFunc).IsAssignableFrom(mi.DeclaringType);
-
-			if (isKeysharpFunc && mi.Name == "Bind")
-				IsBind = true;
 
 			if (isKeysharpFunc && mi.Name == "Call" && !mi.IsStatic)
 			{
@@ -497,10 +474,6 @@ namespace Keysharp.Internals.Invoke
 		public MethodPropertyHolder(PropertyInfo p)
 		{
 			pi = p;
-			compatibilityLevel = (pi.GetCustomAttribute<Keysharp.Runtime.CompatibilityModeAttribute>()
-				?? pi.GetMethod?.GetCustomAttribute<Keysharp.Runtime.CompatibilityModeAttribute>()
-				?? pi.SetMethod?.GetCustomAttribute<Keysharp.Runtime.CompatibilityModeAttribute>())?.Level;
-			moduleType = ResolveModuleType(pi.DeclaringType);
 			parameters = pi.GetIndexParameters();
 			ParamLength = parameters.Length;
 			MinParams = MaxParams = ParamLength;
@@ -551,7 +524,7 @@ namespace Keysharp.Internals.Invoke
 			if (!canRead)
 				_callFunc = (inst, args) => Errors.PropertyErrorOccurred($"Property {pi.Name} is write-only.");
 
-			// Module properties enter through the variable store rather than CompileCore.
+			// Module properties enter through the variable store rather than a method's core.
 			if (inlineMarked)
 			{
 				var get = _callFunc;
@@ -580,28 +553,105 @@ namespace Keysharp.Internals.Invoke
 		public MethodPropertyHolder(FieldInfo f)
 		{
 			fi = f;
-			moduleType = ResolveModuleType(fi.DeclaringType);
 			IsStatic = fi.IsStatic;
 			parameters = System.Array.Empty<ParameterInfo>();
 			ParamLength = 0;
 			MinParams = MaxParams = 0;
 		}
 
+		private Func<object, object[], object> CreateFieldGetter()
+		{
+			var field = fi;
+			var isStatic = field.IsStatic;
+			var convertOut = field.IsDefined(typeof(InlineCSharpAttribute), false) && ArgCoercer.CanLeakClrValue(field.FieldType);
+			var widen = ArgCoercer.IsNarrow(ArgCoercer.KindOf(field.FieldType));
+			var callsUntilCompilation = DelegateFactory.CompilationThreshold;
+			// Instance access needs the compiled receiver cast; reflection reports different errors for invalid receivers.
+			Func<object, object> getter = null;
+			getter = !isStatic || field.FieldType.IsPointer || field.FieldType.IsFunctionPointer
+				? CompileFieldGetter(field, convertOut) : GetField;
+
+			object GetField(object target)
+			{
+				if (Interlocked.Decrement(ref callsUntilCompilation) == 0)
+				{
+					var hot = CompileFieldGetter(field, convertOut);
+					Volatile.Write(ref getter, hot);
+					return hot(target);
+				}
+
+				var value = field.GetValue(target);
+				return convertOut ? ManagedInvoke.ConvertOut(value) : widen ? ArgCoercer.NormalizeScalar(value) : value;
+			}
+
+			return (inst, args) =>
+			{
+				var target = isStatic ? null : inst ?? (args is { Length: > 0 } ? args[0] : null);
+				return Volatile.Read(ref getter)(target);
+			};
+		}
+
+		private static Func<object, object> CompileFieldGetter(FieldInfo field, bool convertOut)
+		{
+			var instance = Expression.Parameter(typeof(object), "inst");
+			var access = Expression.Field(field.IsStatic ? null : Expression.Convert(instance, field.DeclaringType), field);
+			var result = convertOut ? ArgCoercer.ConvertOut(access) : ArgCoercer.NormalizeReturn(access, field.FieldType);
+			return Expression.Lambda<Func<object, object>>(result, instance).Compile();
+		}
+
 		private Action<object, object> CreateFieldSetter()
 		{
-			var instParam = Expression.Parameter(typeof(object), "inst");
-			var valParam = Expression.Parameter(typeof(object), "value");
-			Expression assignExpr;
-			// Same conversion policy as parameters and properties: a script assigning to a typed field must
-			// not be able to raise an uncatchable InvalidCastException out of the compiled setter.
-			var boundary = fi.IsDefined(typeof(InlineCSharpAttribute), false);
-			var steps = ArgCoercer.NeedsCoercion(fi.FieldType, boundary) ? new ArgCoercer.ArgumentSteps(null) : null;
-			var coercedVal = steps?.Coerce(valParam, fi.FieldType, boundary) ?? Expression.Convert(valParam, fi.FieldType);
-			if (fi.IsStatic)
-				assignExpr = Expression.Assign(Expression.Field(null, fi), coercedVal);
-			else
-				assignExpr = Expression.Assign(Expression.Field(Expression.Convert(instParam, fi.DeclaringType), fi), coercedVal);
-			return Expression.Lambda<Action<object, object>>(steps?.Wrap(assignExpr) ?? assignExpr, instParam, valParam).Compile();
+			var field = fi;
+			var boundary = field.IsDefined(typeof(InlineCSharpAttribute), false);
+			var convert = ArgCoercer.NeedsCoercion(field.FieldType, boundary);
+			// Reflection differs for receiver casts and raw value casts, including null unboxing and boxed-struct stores.
+			if (!field.IsStatic || field.FieldType.IsValueType && ArgCoercer.KindOf(field.FieldType) == ArgCoercer.Kind.None
+				|| !convert && field.FieldType != typeof(object))
+			{
+				var direct = CompileFieldSetter(field);
+				return Interlocked.CompareExchange(ref setProp, direct, null) ?? direct;
+			}
+
+			var callsUntilCompilation = DelegateFactory.CompilationThreshold;
+			Action<object, object> compiled = null;
+
+			void SetField(object inst, object value)
+			{
+				// A caller can retain this setter after the holder publishes its compiled replacement.
+				var hot = Volatile.Read(ref compiled);
+				if (hot != null)
+				{
+					hot(inst, value);
+					return;
+				}
+
+				if (Interlocked.Decrement(ref callsUntilCompilation) == 0)
+				{
+					hot = CompileFieldSetter(field);
+					Volatile.Write(ref compiled, hot);
+					Volatile.Write(ref setProp, hot);
+					hot(inst, value);
+					return;
+				}
+
+				if (!convert || ArgCoercer.TryCoerceValue(value, field.FieldType, boundary, out value))
+					field.SetValue(null, value);
+			}
+
+			Action<object, object> cold = SetField;
+			return Interlocked.CompareExchange(ref setProp, cold, null) ?? cold;
+		}
+
+		private static Action<object, object> CompileFieldSetter(FieldInfo field)
+		{
+			var instance = Expression.Parameter(typeof(object), "inst");
+			var value = Expression.Parameter(typeof(object), "value");
+			var boundary = field.IsDefined(typeof(InlineCSharpAttribute), false);
+			var steps = ArgCoercer.NeedsCoercion(field.FieldType, boundary) ? new ArgCoercer.ArgumentSteps(null) : null;
+			var converted = steps?.Coerce(value, field.FieldType, boundary) ?? Expression.Convert(value, field.FieldType);
+			var access = Expression.Field(field.IsStatic ? null : Expression.Convert(instance, field.DeclaringType), field);
+			var assign = Expression.Assign(access, converted);
+			return Expression.Lambda<Action<object, object>>(steps?.Wrap(assign) ?? assign, instance, value).Compile();
 		}
 
 		// Allow creating a "fake" MPH for ObjBindMethod: it names a member to resolve on the receiver at call time,
@@ -621,394 +671,6 @@ namespace Keysharp.Internals.Invoke
 			}
 
 			return null;
-		}
-
-		internal static void ClearCache()
-		{
-			methodCache.Clear();
-            propertyCache.Clear();
-			fieldCache.Clear();
-		}
-	}
-	/**
-	 * As of 10/2025 I've investigated multiple approaches on how to best do function invokes:
-	 * 1) MethodBase.Invoke: slow, throws TargetInvocationExceptions which need to be upwrapped and rethrown (slow)
-	 * 2) MethodInvoker.Invoke: not much faster than MethodBase.Invoke, but doesn't wrap exceptions in TargetInvocationException.
-	 * 3) Code generation: complex, usually requires writing a separate package/project, is not applicable to user code
-	 *		since it is often dynamically generated too.
-	 * 4) IL.Emit: just as fast as expression trees (the current approach), but more complex to implement and maintain.
-	 *      Additionally, expression trees can be interpreted in environments that don't allow dynamic code generation.
-	 *      Downside is that IL.Emit and expression trees have a bit more overhead during the initial compilation,
-	 *      and require loading large dlls.
-	 */
-#if !INTERNALDEBUG
-	[DebuggerStepThrough]
-#endif
-	internal static class DelegateFactory
-	{
-		public static Func<object, object[], object> CreateDelegate(MethodInfo mi)
-			=> CreateDelegate(MethodPropertyHolder.GetOrAdd(mi));
-
-		public static Func<object, object[], object> CreateDelegate(PropertyInfo property)
-		{
-			if (property == null) throw new ArgumentNullException(nameof(property));
-			var getter = property.GetGetMethod(true) ?? throw new ArgumentException("The provided property does not have a getter.", nameof(property));
-			return CreateDelegate(MethodPropertyHolder.GetOrAdd(getter));
-		}
-
-		public static Func<object, object[], object> CreateDelegate(FieldInfo field)
-		{
-			if (field == null) throw new ArgumentNullException(nameof(field));
-			return CreateFieldDelegate(MethodPropertyHolder.GetOrAdd(field));
-		}
-
-		public static Func<object, object[], object> CreateDelegate(MethodPropertyHolder mph)
-		{
-			if (mph.fi != null)
-				return CreateFieldDelegate(mph);
-
-			var isInstance = !mph.IsStatic;
-			var isCompilerGenerated = mph.IsCompilerGenerated;
-			var isVariadic = mph.IsVariadic;
-
-			// The core reads fixed arguments directly and constructs only the final variadic tail.
-			var core = CompileCore(mph);
-			// A script function runs under its own module and compatibility version; a builtin keeps its caller's.
-			var module = mph.InScriptModule ? ModuleData.GetOrCreate(mph.moduleType) : null;
-			var compatibility = mph.compatibilityLevel;
-			var scoped = module != null || compatibility != null;
-
-			return NormalInvoke;
-
-			// The returned delegate performs:
-			//  - exact arg-count validation
-			//  - receiver selection without copying the arguments
-			//  - then calls the compiled core (which handles defaults & per-slot null checks)
-#if !INTERNALDEBUG
-			[DebuggerStepThrough]
-#endif
-			object NormalInvoke(object instance, object[] args)
-			{
-				args ??= System.Array.Empty<object>();
-
-				// ---- fold named arguments into positional slots ----
-				// This has to happen BEFORE the count validation below: that trims trailing nulls to work out how many
-				// arguments were really supplied, and would otherwise count the trailing container as a positional one
-				// (so a named argument filling a required parameter would read as "too few arguments").
-				// See NamedArgBinder.ArgBase for why the offset depends on how the receiver is being passed.
-				// NEVER for a setter: an assignment's value slot is a DATA channel with no named-argument syntax,
-				// and its value arrives trailing -- binding would eat a container being ASSIGNED (`r.__Value := na`,
-				// a for-loop writing a forwarded container element into `&out`) as a named argument of the accessor.
-				if (!mph.isSetter && NamedArgBinder.Has(args))
-					args = NamedArgBinder.Bind(mph, args, NamedArgBinder.ArgBase(mph, instance));
-
-				// ---- validate the argument count ----
-				int lastProvided = args.Length;
-				int provided = lastProvided + (instance == null ? 0 : 1);
-				if (isInstance && isCompilerGenerated) provided--; // account for Inst-provided 'this', which does not count as argument
-
-				for (int i = lastProvided - 1; i >= 0; i--)
-				{
-					if (args[i] == null) provided--;
-					else break;
-				}
-
-				// As AutoHotkey reports them: a builtin given too few arguments names itself, while a script function names
-				// the first parameter it lacks, which binding the arguments finds.
-				if (provided < mph.MinParams && !mph.IsScript)
-					throw new ArgumentError("Too few parameters passed to function.", null, mph.QualifiedName);
-
-				if (!isVariadic && provided > mph.MaxParams)
-					throw new Error("Too many parameters passed to function.", null, mph.QualifiedName);
-
-				// A negative start supplies static parameter zero through target; positive start skips a CLR receiver.
-				object target;
-				int start;
-
-				if (isInstance && instance == null)
-				{
-					if (args.Length == 0)
-						throw new ArgumentError("Too few parameters passed to function.", null, mph.QualifiedName);
-					(target, start) = (args[0], 1);
-				}
-				else
-					(target, start) = (instance, !isInstance && instance != null ? -1 : 0);
-
-				// The frame goes on once the argument count is accepted, so a count error is the caller's, as in AutoHotkey.
-				var stack = CallStack.Current;
-				var depth = stack.Push(mph);
-				ModuleData previousModule = null;
-				int? previousCompatibility = null;
-				var switched = false;
-
-				if (scoped)
-				{
-					previousModule = stack.ModuleOrDefault(TheScript);
-					switched = module != null && !ReferenceEquals(previousModule, module);
-					previousCompatibility = switched || compatibility != null ? Script.currentCompatibilityLevel : null;
-
-					if (switched)
-						stack.Module = module;
-
-					if (switched || compatibility != null)
-						Script.currentCompatibilityLevel = compatibility ?? module.CompatibilityLevel;
-				}
-
-				try
-				{
-					return core(target, args, start);
-				}
-				catch (Exception ex) when (CallStack.RememberAndPass(ex))
-				{
-					throw;
-				}
-				finally
-				{
-					stack.Pop(depth);
-
-					if (switched)
-						stack.Module = previousModule;
-					if (previousCompatibility != null)
-						Script.currentCompatibilityLevel = previousCompatibility.Value;
-				}
-			};
-		}
-
-		// ----------------- Expression core -----------------
-
-		private static Func<object, object[], int, object> CompileCore(MethodPropertyHolder holder)
-		{
-			var mi = holder.mi ?? throw new ArgumentNullException(nameof(holder.mi));
-			var ps = holder.parameters;
-			var variadicParamIndex = holder.variadicParamIndex;
-			var isVariadicSetter = holder.isSetter && variadicParamIndex >= 0 && variadicParamIndex == ps.Length - 2;
-			var pTarget = Expression.Parameter(typeof(object), "target");
-			var pArgs = Expression.Parameter(typeof(object[]), "args");
-			var pStart = Expression.Parameter(typeof(int), "start");
-			var argsLen = Expression.ArrayLength(pArgs);
-			// Resolve the boundary once while building the delegate. Ordinary script/built-in calls retain their
-			// original input expressions and therefore pay no wrapper check at invocation time.
-			var inlineMarked = MethodPropertyHolder.IsInlineBoundary(mi);
-
-			var a = new Expression[ps.Length];
-			// A conversion the script continued has to stop the call, so once any argument needs one, every argument
-			// is evaluated ahead of the call, in order, where a stop leaves nothing on the evaluation stack.
-			var steps = ps.Where((p, i) => i != variadicParamIndex).Any(p => ArgCoercer.NeedsCoercion(p.ParameterType, inlineMarked))
-				? new ArgCoercer.ArgumentSteps(ArgCoercer.DefaultObjectResult)
-				: null;
-
-			for (int i = 0; i < ps.Length; i++)
-			{
-				if (i == variadicParamIndex)
-				{
-					Expression packed = Expression.Call(typeof(DelegateFactory), nameof(PackVariadic), null,
-						pTarget, pArgs, pStart, Expression.Constant(i), Expression.Constant(ps.Length), Expression.Constant(isVariadicSetter),
-						Expression.Constant(holder.IsScript ? holder.ScriptParameterName(ps[^1]) : ""));
-					if (ps[i].IsDefined(typeof(Keysharp.Runtime.VariadicAttribute), false))
-						packed = Expression.Call(typeof(Keysharp.Builtins.Array).GetMethod(nameof(Keysharp.Builtins.Array.Literal),
-							BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly), packed);
-					a[i] = Expression.Convert(packed, ps[i].ParameterType);
-					a[i] = steps?.Hold(a[i]) ?? a[i];
-					continue;
-				}
-
-				var tailValue = isVariadicSetter && i == ps.Length - 1;
-				Expression idx = tailValue
-					? Expression.Subtract(argsLen, Expression.Constant(1))
-					: Expression.Add(pStart, Expression.Constant(i));
-				var inRange = Expression.LessThan(idx, argsLen);
-				var elem = Expression.ArrayIndex(pArgs, idx);
-				var valOrNull = Expression.Condition(inRange, elem, Expression.Constant(null, typeof(object)));
-				if (mi.IsStatic && (i == 0 || tailValue))
-					valOrNull = Expression.Condition(Expression.Equal(idx, Expression.Constant(-1)), pTarget, valOrNull);
-
-				// An optional parameter, or a setter's final value (set_Item's too), takes its default when missing; a required
-				// one throws, naming the parameter only for a script function, as AutoHotkey does.
-				var soft = ps[i].IsOptional || ps[i].HasDefaultValue || holder.isSetter && i == ps.Length - 1;
-				Expression chosen = Expression.Condition(
-					Expression.Equal(valOrNull, Expression.Constant(null, typeof(object))),
-					soft ? (Expression)Expression.Constant(MaterializeDefault(ps[i]), typeof(object))
-						: Expression.Call(throwMissingArgumentMethod, Expression.Constant(holder.IsScript ? holder.ScriptParameterName(ps[i]) : "")),
-					valOrNull);
-
-				if (ps[i].IsDefined(typeof(Keysharp.Runtime.ByRefAttribute), false))
-				{
-					var reference = Expression.Variable(typeof(object), "reference");
-					var name = ps[i].GetCustomAttribute<Keysharp.Runtime.UserDeclaredNameAttribute>()?.Name
-							   ?? ps[i].Name?.TrimStart('@');
-					chosen = Expression.Block([reference],
-						Expression.Assign(reference, chosen),
-						Expression.IfThen(Expression.NotEqual(reference, Expression.Constant(null)),
-							Expression.Call(demandReferenceMethod, reference, Expression.Constant(false), Expression.Constant(name, typeof(string)))),
-						reference);
-				}
-
-				a[i] = steps?.Coerce(chosen, ps[i].ParameterType, inlineMarked) ?? Expression.Convert(chosen, ps[i].ParameterType);
-			}
-
-			Expression call;
-			ParameterExpression receiver = null;
-			if (mi.IsStatic)
-			{
-				call = Expression.Call(mi, a);
-			}
-			else if (mi.DeclaringType!.IsValueType)
-			{
-				call = Expression.Call(Expression.Convert(pTarget, mi.DeclaringType), mi, a);
-			}
-			else
-			{
-				// A wrong receiver is reported before converting arguments.
-				receiver = Expression.Variable(mi.DeclaringType, "receiver");
-				call = Expression.Call(receiver, mi, a);
-			}
-
-			// An inline member's return crosses the CLR->script boundary, so a declared CLR type -- or an
-			// `object` return holding one -- takes the same out-conversion Ks.Clr applies (Clr.Instance/
-			// Clr.Type wrapping, numeric widening) instead of leaking a raw CLR object into the script.
-			// A member whose declared type cannot leak keeps the compile-time-only NormalizeReturn path.
-			Expression body =
-				mi.ReturnType == typeof(void)
-					? Expression.Block(call, Expression.Constant(null, typeof(object)))
-					: inlineMarked && ArgCoercer.CanLeakClrValue(mi.ReturnType)
-						? ArgCoercer.ConvertOut(call)
-						: ArgCoercer.NormalizeReturn(call, mi.ReturnType);
-
-			if (steps != null)
-				body = steps.Wrap(body);
-
-			if (inlineMarked)
-			{
-				var ex = Expression.Parameter(typeof(Exception), "__ksex");
-				body = Expression.TryCatch(
-						   Expression.Convert(body, typeof(object)),
-						   Expression.Catch(ex,
-											Expression.Call(typeof(Keysharp.Runtime.Script), nameof(Keysharp.Runtime.Script.MapInlineError),
-															[typeof(object)], ex, Expression.Constant(holder.QualifiedName is { Length: > 0 } name ? name : mi.Name))));
-			}
-
-			if (receiver != null)
-				body = Expression.Block(typeof(object), [receiver],
-						   Expression.Assign(receiver, Expression.TypeAs(pTarget, receiver.Type)),
-						   Expression.Condition(
-							   Expression.Equal(receiver, Expression.Constant(null, receiver.Type)),
-							   Expression.Call(throwReceiverTypeMethod, pTarget, Expression.Constant(receiver.Type, typeof(Type))),
-							   Expression.Convert(body, typeof(object))));
-
-			return Expression.Lambda<Func<object, object[], int, object>>(body, pTarget, pArgs, pStart)
-							 .Compile();
-		}
-
-		// Preserve explicit packed arrays, but never rewrite the caller's slots while collecting a tail.
-		private static object[] PackVariadic(object target, object[] args, int start, int index, int paramCount, bool setter, string valueName)
-		{
-			var count = args.Length - start;
-			if (setter && count <= index)
-				return (object[])ThrowMissingArgument(valueName);
-			if (paramCount == 1 && start == 0) return args;
-			var offset = start + index;
-			if ((paramCount != 1 || start > 0) && count == paramCount
-				&& (offset < 0 ? target : args[offset]) is object[] packed)
-				return packed;
-
-			if (offset == 0 && !setter)
-				return args;
-
-			var length = Math.Max(0, count - index - (setter ? 1 : 0));
-			if (length == 0) return System.Array.Empty<object>();
-			var tail = new object[length];
-			var prefix = offset < 0 ? 1 : 0;
-			if (prefix != 0) tail[0] = target;
-			System.Array.Copy(args, Math.Max(0, offset), tail, prefix, length - prefix);
-			return tail;
-		}
-
-		private static Func<object, object[], object> CreateFieldDelegate(MethodPropertyHolder mph)
-		{
-			var fi = mph.fi ?? throw new ArgumentNullException(nameof(mph.fi));
-			var isStatic = fi.IsStatic;
-
-			var instParam = Expression.Parameter(typeof(object), "inst");
-			Expression fieldExpr;
-			if (isStatic)
-				fieldExpr = Expression.Field(null, fi);
-			else
-				fieldExpr = Expression.Field(Expression.Convert(instParam, fi.DeclaringType), fi);
-
-			// Only fields originating in an inline block carry the marker, which distinguishes a public
-			// `object` field written by the user from the object fields generated for script globals.
-			var boxedField = fi.IsDefined(typeof(InlineCSharpAttribute), false) && ArgCoercer.CanLeakClrValue(fi.FieldType)
-							 ? ArgCoercer.ConvertOut(fieldExpr)
-							 : ArgCoercer.NormalizeReturn(fieldExpr, fi.FieldType);
-			var getter = Expression.Lambda<Func<object, object>>(boxedField, instParam).Compile();
-
-			return (inst, args) =>
-			{
-				object target = inst;
-				if (!isStatic && target == null && args != null && args.Length > 0)
-					target = args[0];
-
-				return getter(target);
-			};
-		}
-
-		private static object MaterializeDefault(ParameterInfo p)
-		{
-			var def = p.DefaultValue;
-			return (def is DBNull || def == System.Reflection.Missing.Value) ? null : def;
-		}
-
-		private static readonly MethodInfo throwMissingArgumentMethod =
-			typeof(DelegateFactory).GetMethod(nameof(ThrowMissingArgument), BindingFlags.NonPublic | BindingFlags.Static);
-		private static readonly MethodInfo demandReferenceMethod =
-			typeof(Refs).GetMethod(nameof(Refs.Demand), [typeof(object), typeof(bool), typeof(string)]);
-		private static readonly MethodInfo throwReceiverTypeMethod =
-			typeof(DelegateFactory).GetMethod(nameof(ThrowReceiverType), BindingFlags.NonPublic | BindingFlags.Static);
-
-		[StackTraceHidden]
-		private static object ThrowReceiverType(object target, Type declaring)
-		{
-			CallStack.Current.PopUnstarted();
-			throw Errors.ExpectedTypeError(Types.TypeName(declaring), target);
-		}
-
-		// Thrown from the compiled core when a required parameter is missing or unset. Declared in C# (not via
-		// Expression.Throw) so the Error->Exception operator is applied and the error surfaces normally. The function's
-		// body has not started, so the error is its caller's, as AutoHotkey reports it.
-		[StackTraceHidden]
-		private static object ThrowMissingArgument(string name)
-		{
-			CallStack.Current.PopUnstarted();
-			throw new ArgumentError("Missing a required parameter.", null, name);
-		}
-	}
-
-#if !INTERNALDEBUG
-	[DebuggerStepThrough]
-#endif
-	internal static class FastCtor
-	{
-		private static readonly ConcurrentDictionary<System.Type, Func<object[], object>> Cache = new();
-
-		// Semantics: always call a public ctor like:  new T(object[] args)
-		public static object Call(Type type, params object[] args)
-		{
-			var activator = Cache.GetOrAdd(type, BuildFactory);
-			return activator(args);
-		}
-
-		private static Func<object[], object> BuildFactory(System.Type type)
-		{
-			// Look for a single public instance ctor with signature (object[])
-			var ctor = type.GetConstructor(new[] { typeof(object[]) });
-			if (ctor is null)
-			{
-				return a => System.Activator.CreateInstance(type, a)!;
-			}
-
-			var a = System.Linq.Expressions.Expression.Parameter(typeof(object[]), "args");
-			var body = System.Linq.Expressions.Expression.Convert(System.Linq.Expressions.Expression.New(ctor, a), typeof(object));
-			return System.Linq.Expressions.Expression.Lambda<Func<object[], object>>(body, a).Compile();
 		}
 	}
 }

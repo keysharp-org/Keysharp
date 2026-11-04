@@ -2,8 +2,15 @@ namespace Keysharp.Tests;
 
 public abstract class TestRunner
 {
+	/// <summary>
+	/// Calls that take a member, field or constructor past its compilation threshold, so a test exercises both its cold
+	/// and compiled forms. Scripts read it through the assert library's CallsPastCompilation.
+	/// </summary>
+	protected static readonly int CallsPastCompilation = Keysharp.Internals.Invoke.DelegateFactory.CompilationThreshold + 8;
+
 	static TestRunner()
 	{
+		Environment.SetEnvironmentVariable("KEYSHARP_TEST_CALLS_PAST_COMPILATION", CallsPastCompilation.ToString(CultureInfo.InvariantCulture));
 #if LINUX
 		var isWayland = string.Equals(Environment.GetEnvironmentVariable("XDG_SESSION_TYPE"), "wayland", StringComparison.OrdinalIgnoreCase)
 			|| !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WAYLAND_DISPLAY"));

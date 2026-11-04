@@ -77,6 +77,11 @@ Throws(_cb, _line?, _expected?)
 ; What an error says, as "Type: Message [Extra]".
 Described(_err) => Type(_err) . ": " . _err.Message . " [" . _err.Extra . "]"
 
+; How many calls take a function, field or constructor past the runtime's compilation threshold, so a loop of that many
+; exercises both its cold and its compiled form. The test runner sets it from the threshold; a script run on its own
+; makes one call.
+CallsPastCompilation() => Integer(EnvGet("KEYSHARP_TEST_CALLS_PAST_COMPILATION") || 1)
+
 ; Writes "fail <tag> (got <x> want <y>)" unless calling _cb throws an error described as _expected, or "none" for no
 ; error.
 AssertError(_cb, _expected, _line?)

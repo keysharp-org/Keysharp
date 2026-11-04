@@ -6677,13 +6677,13 @@
                  {
                      "category":  "Collections",
                      "feature":  "HasProp()",
-                     "syntax":  "",
+                     "syntax":  "HasProp(Value, Name)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "The HasProp function returns a non-zero number if the specified value has a property by the specified name.",
-                     "tested-by":  "class-ownprops.ahk"
+                     "tested-by":  "collections-object.ahk; class-ownprops.ahk"
                  },
                  {
                      "category":  "Input/Automation",

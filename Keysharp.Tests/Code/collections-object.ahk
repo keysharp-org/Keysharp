@@ -59,6 +59,9 @@ base4 := {inherited: true}
 ObjSetBase(o4, base4)
 Assert(HasProp(o4, "answer") && HasProp(o4, "inherited")
 	&& !HasProp(o4, "missing") && !HasProp(0, "Base"), A_LineNumber)
+AssertEq(HasProp.MinParams, 2, A_LineNumber)
+AssertEq(HasProp.MaxParams, 2, A_LineNumber)
+Throws(() => HasProp.Call(o4, "answer", 0), A_LineNumber, Error)
 
 ; A literal's unset value defines no property, and deleting a dynamic property returns an empty string.
 LiteralOf(v?) => {a: 1, b: (v?)}
