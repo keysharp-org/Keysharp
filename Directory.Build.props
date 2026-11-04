@@ -100,6 +100,11 @@
     <RuntimeIdentifiers>osx-arm64;osx-x64</RuntimeIdentifiers>
   </PropertyGroup>
 
+  <!-- Packaging can narrow restore without making portable project references RID-specific. -->
+  <PropertyGroup Condition="'$(IsKeysharpShippingProject)' == 'true' AND '$(KeysharpRuntimeIdentifiers)' != ''">
+    <RuntimeIdentifiers>$(KeysharpRuntimeIdentifiers)</RuntimeIdentifiers>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(IsKeysharpShippingProject)' == 'true' AND '$(RuntimeIdentifier)' != '' AND '$(PublishDir)' == ''">
     <PublishDir>$(MSBuildThisFileDirectory)dist/publish/$(RuntimeIdentifier)/$(MSBuildProjectName)/</PublishDir>
   </PropertyGroup>

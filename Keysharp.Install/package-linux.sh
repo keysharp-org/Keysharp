@@ -77,7 +77,7 @@ APP_DIR="${PKG_DIR}/app"
 ETO_DIR="$(if cd "${ETO_ROOT:-${ROOT}/../Eto}" 2>/dev/null; then pwd; fi)"
 PATH_MAP="${ROOT}=/_/keysharp"
 # One RID and one Eto target framework, so restore fetches nothing the package does not ship.
-DOTNET_ARGS=(-p:Configuration="${CONFIG}" -p:RuntimeIdentifiers="${RID}" -p:TargetFrameworkOverride=net10.0 --nologo)
+DOTNET_ARGS=(-p:Configuration="${CONFIG}" -p:KeysharpRuntimeIdentifiers="${RID}" -p:TargetFrameworkOverride=net10.0 --nologo)
 if [[ -n "${ETO_DIR}" ]]; then
   PATH_MAP="${PATH_MAP}%2c${ETO_DIR}=/_/Eto"
   DOTNET_ARGS+=(-p:ETO_ROOT="${ETO_DIR}")

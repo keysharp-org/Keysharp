@@ -16,6 +16,11 @@ Keysharp does not build or install them. Install them using
 Architecture is selected with a runtime identifier, such as `-r linux-arm64` or
 `-r win-arm64`. Keep the managed platform as AnyCPU.
 
+To limit the launcher RIDs restored for packaging, use
+`-p:KeysharpRuntimeIdentifiers=linux-x64`. This applies to Keysharp and Keyview;
+their library dependencies retain portable builds. The Linux packager sets this
+automatically.
+
 ## Compiler precompilation
 
 RID-specific publishes with `PublishReadyToRun=true` partially precompile the two
