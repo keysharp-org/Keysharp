@@ -138,10 +138,8 @@ namespace Keysharp.Internals.Threading
 		internal ScriptTimerState currentTimer;
 		internal string defaultGui;
 		internal Form dialogOwner;
-		// A_EventInfo backing store. Holds either the final script-visible value, or a Func<object> that
-		// builds it on first read (resolved and cached back by ThreadAccessors.A_EventInfo). A_EventInfo is
-		// rarely read, so parking a factory lets producers (hook events, PCRE callouts) skip constructing the
-		// value unless the script actually inspects it. Use SetEventInfo to park a lazy value.
+		// A value, factory, or timer lifetime. The script-facing accessor wraps timer lifetimes on first read;
+		// storing the lifetime directly avoids a closure allocation on every firing.
 		internal object eventInfo;
 		// The call stack depth below this pseudo-thread's boundary frame, which its end restores.
 		internal int callStackDepth;

@@ -1,3 +1,5 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 
 #MaxThreads 2
@@ -31,7 +33,7 @@ TimerHandler2(*)
 {
 global x
 	x++
-	SetTimer(A_EventInfo, 0)
+	SetTimer(A_EventInfo.Callback, 0)
 
 }
 

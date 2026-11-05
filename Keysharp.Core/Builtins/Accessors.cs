@@ -358,7 +358,15 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public static object A_EventInfo
 		{
-			get => ThreadAccessors.A_EventInfo;
+			get
+			{
+				var value = ThreadAccessors.A_EventInfo;
+
+				if (value is ScriptTimerInfo info)
+					ThreadAccessors.A_EventInfo = value = Ks.Timer.Bind(info);
+
+				return value;
+			}
 			set => ThreadAccessors.A_EventInfo = value;
 		}
 
@@ -1859,22 +1867,21 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Iterates through all timers in existence and returns the number of them which are enabled.
+		/// Enabled timers on the calling real thread, in registration order.
 		/// </summary>
-		public static Map A_Timers
+		public static Array A_Timers
 		{
 			get
 			{
-				var timerData = new List<object>();
-				foreach (var timer in Script.TheScript.FlowData.timers.GetSnapshot())
-				{
-					if (timer.Callback is { } callback)
-					{
-						timerData.AddRange(callback, timer.IsActive);
-					}
-				}
+				var manager = Script.TheScript.FlowData.timers;
+				var owner = Script.TheScript.EventScheduler;
+				var timers = manager.GetInfoSnapshot(owner);
+				var descriptions = new object[timers.Length];
 
-				return new Map(timerData.ToArray());
+				for (var i = 0; i < timers.Length; i++)
+					descriptions[i] = Timer.Bind(timers[i]);
+
+				return new Array(descriptions);
 			}
 		}
 

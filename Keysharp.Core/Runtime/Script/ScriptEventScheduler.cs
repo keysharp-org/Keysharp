@@ -992,9 +992,9 @@ namespace Keysharp.Runtime
 
 				var threads = script.Threads;
 
-				// Thread limits and interruptibility block every queued launch. Park the timer so the pump can
+				// Interruptibility blocks every queued launch. Park the timer so the pump can
 				// keep serving dispatch work without retrying blocked launches in the same pass.
-				if (!threads.AnyThreadsAvailable() || !threads.IsInterruptible())
+				if (!threads.IsInterruptible())
 					return ScriptEventExecutionResult.GlobalBlocked;
 
 				// Keep the overdue callback queued while other eligible events continue. Admission changes and
@@ -1012,13 +1012,22 @@ namespace Keysharp.Runtime
 					return ScriptEventExecutionResult.Dropped;
 				}
 
-				timers.MarkCallbackStarted(timer);
 				var executed = false;
 
 				{
 					using var thread = scheduler.StartPseudoThreadScope(timer.Priority, true, false, false, ThreadKind.Timer);
 
-					if (thread.Started)
+					if (!thread.Started)
+					{
+						if (thread.Result == ScriptEventExecutionResult.Dropped)
+							timers.ReleaseQueuedTimer(timer);
+
+						return thread.Result;
+					}
+
+					var timerInfo = timers.MarkCallbackStarted(timer);
+
+					if (timerInfo != null)
 					{
 						// Timers honour the Thread-Interrupt uninterruptible startup window like any new thread. The launch
 						// passed skipUninterruptible=true (the pump vetted admission above), which also skips the window setup,
@@ -1031,7 +1040,7 @@ namespace Keysharp.Runtime
 						{
 							var btv = thread.ThreadVariables;
 							btv.currentTimer = timer;
-							btv.eventInfo = callback;
+							btv.eventInfo = timerInfo;
 							_ = Script.InvokeOrNull(callback, null);
 						}
 						catch (Exception ex) when (CallStack.RememberAndCatch(ex))
@@ -1042,10 +1051,6 @@ namespace Keysharp.Runtime
 				}
 
 				timers.MarkCallbackFinished(timer);
-
-				// A thread that ran made its own check as it ended; one that never started did not, and its timer may be gone.
-				if (!executed && timer.Callback == null)
-					_ = script.ExitIfNotPersistent();
 
 				return executed
 					? ScriptEventExecutionResult.Executed

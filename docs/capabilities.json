@@ -1789,8 +1789,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Built-in variable.",
-                     "tested-by":  "misc-timer.ahk"
+                     "notes":  "Timer callbacks expose their Ks.Timer object; AutoHotkey returns 0.",
+                     "tested-by":  "misc-timer.ahk; TimerSchedulerTests.TimerEventInfo; TimerSchedulerTests.TimerEventInfoExit"
                  },
                  {
                      "category":  "Environment/System",
@@ -2946,12 +2946,24 @@
                  {
                      "category":  "Keysharp Module (Ks)",
                      "feature":  "A_Timers",
-                     "syntax":  "",
+                     "syntax":  "#Import Ks { A_Timers }",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets active timers as a map of callback -\u003e enabled state."
+                     "notes":  "Snapshot Array of enabled Timer objects on the calling real thread, in registration order.",
+                     "tested-by":  "TimerSchedulerTests.TimerHandles"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Timer",
+                     "syntax":  "#Import Ks { Timer }",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Nonconstructible, read-only timer information from A_Timers or A_EventInfo: Callback, Period, Priority, RealThread, Elapsed, InProgress and EndReason.",
+                     "tested-by":  "TimerSchedulerTests.TimerHandles; TimerSchedulerTests.TimerEventInfo"
                  },
                  {
                      "category":  "Environment/System",
@@ -10277,8 +10289,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Periods are measured from callback start; overdue callbacks coalesce and remain due while blocked by priority or timer permission. Timers continue while tray, popup, or menu-bar menus are open. Uses ordinary deadline-based waits without requesting higher timer resolution. Callbacks remain serialized on their owning scheduler.",
-                     "tested-by":  "timer-blocked-admission.ahk; timer-short-callback-keeps-period.ahk; timer-long-callback-coalesces.ahk; timer-during-callback-sleep.ahk; TimerSchedulerTests.MenuVisible"
+                     "notes":  "Periods are measured from callback start; overdue callbacks coalesce and remain due while blocked by priority, thread limits or timer permission. Timers continue while tray, popup, or menu-bar menus are open. Uses ordinary deadline-based waits without requesting higher timer resolution. Callbacks remain serialized on their owning scheduler.",
+                     "tested-by":  "timer-blocked-admission.ahk; timer-short-callback-keeps-period.ahk; timer-long-callback-coalesces.ahk; timer-during-callback-sleep.ahk; TimerSchedulerTests.MenuVisible; TimerSchedulerTests.TimerEventInfo; TimerSchedulerTests.FailedLaunchPreservesTimer"
                  },
                  {
                      "category":  "Environment/System",

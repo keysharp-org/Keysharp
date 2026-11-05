@@ -301,10 +301,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Causes a function to be called automatically and repeatedly at a specified time interval.
 		/// </summary>
-		/// <param name="function">The function object to call.<br/>
-		/// The callback accepts two parameters as follows:<br/>
-		///     The function object itself.<br/>
-		///     The date/time the timer was triggered as a YYYYMMDDHH24MISS string.<br/>
+		/// <param name="function">The callable to invoke without arguments. A_EventInfo exposes its Timer description.<br/>
 		/// </param>
 		/// <param name="period">If omitted and the timer does not exist, it will be created with a period of 250.<br/>
 		/// If omitted and the timer already exists, it will be reset at its former period unless Priority is specified.<br/>
@@ -323,21 +320,18 @@ namespace Keysharp.Builtins
 		public static object SetTimer(object function = null, object period = null, object priority = null)
 		{
 			var f = function;
+			var periodGiven = period != null;
 
-			if (!period.CoerceLong(out var p, long.MaxValue))
+			if (!period.CoerceLong(out var p, 250))
 				return DefaultObject;
 
 			if (!priority.CoerceLong(out var pri))
 				return DefaultObject;
 
-			var once = p < 0;
 			object func = null;
 			var script = Script.TheScript;
 			var ownerScheduler = script.EventScheduler;
 			ScriptTimerState timer = null;
-
-			if (once)
-				p = -p;
 
 			if (f == null)
 			{
@@ -362,19 +356,18 @@ namespace Keysharp.Builtins
 				return DefaultObject;
 			}
 
-			if (timer == null)
+			if (timer == null || !timer.IsActive)
 			{
+				func ??= timer?.Callback;
+
 				if (func == null)
 					return DefaultObject;
 
-				if (p == long.MaxValue)//Period omitted and timer didn't exist, so create one with a 250ms interval.
-					p = 250;
-
-				_ = script.FlowData.timers.Upsert(func, ownerScheduler, p, once, pri);
+				_ = script.FlowData.timers.Upsert(func, ownerScheduler, p, pri);
 				return DefaultObject;
 			}
 
-			if (p == long.MaxValue)
+			if (!periodGiven)
 			{
 				if (priority != null)//Period omitted and timer existed, but priority was specified, so just update the priority.
 					script.FlowData.timers.UpdatePriority(timer, pri);
@@ -384,7 +377,7 @@ namespace Keysharp.Builtins
 				return DefaultObject;
 			}
 
-			_ = script.FlowData.timers.Upsert(timer.Callback, timer.OwnerScheduler, p, once, priority != null ? pri : timer.Priority);
+			_ = script.FlowData.timers.Upsert(timer.Callback, timer.OwnerScheduler, p, priority != null ? pri : timer.Priority);
 
 			return DefaultObject;
 		}

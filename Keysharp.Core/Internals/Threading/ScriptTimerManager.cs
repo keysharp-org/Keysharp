@@ -4,16 +4,52 @@ using Keysharp.Runtime;
 
 namespace Keysharp.Internals.Threading
 {
-	internal sealed class ScriptTimerState : CallbackRegistration
+	// Scheduling slots survive rearming; descriptions retain the lifetime that originally fired.
+	internal sealed class ScriptTimerInfo : CallbackRegistration
 	{
-		internal ScriptTimerState(object callback, ScriptEventScheduler ownerScheduler)
-			: base(callback, ownerScheduler, true)
+		internal ScriptTimerInfo(object callback, ScriptEventScheduler owner, long period, long priority, long order)
+			: base(callback, owner, true)
 		{
+			Owner = owner;
+			Period = period;
+			Priority = priority;
+			RegistrationOrder = order;
 		}
 
-		internal long PeriodMs { get; set; }
+		internal long Period;
+		internal long LastStartTick = -1;
+		internal long RegistrationOrder { get; }
+		internal ScriptEventScheduler Owner { get; }
+		internal object scriptObject;
+		private string endReason;
+
+		internal string EndReason => Volatile.Read(ref endReason) ?? "";
+		internal bool RunOnce => Period < 0;
+		// AHK's period of 1 is due in the current tick; the script still reads back 1.
+		internal long Delay
+		{
+			get
+			{
+				var period = Period < 0 ? -Period : Period;
+				return period == 1 ? 0 : period;
+			}
+		}
+
+		internal void End(string reason)
+		{
+			_ = Interlocked.CompareExchange(ref endReason, reason, null);
+			Clear();
+		}
+	}
+
+	internal sealed class ScriptTimerState(ScriptTimerInfo info, ScriptEventScheduler owner)
+	{
+		internal ScriptTimerInfo Info { get; set; } = info;
+		internal ScriptEventScheduler OwnerScheduler { get; set; } = owner;
+		internal object Callback => Info?.Callback;
+		internal long Priority => Info?.Priority ?? 0;
+		internal bool IsActive => Info?.IsActive == true;
 		internal long NextDueTick { get; set; }
-		internal bool RunOnce { get; set; }
 		internal bool Queued { get; set; }
 		internal bool WakeRequested { get; set; }
 		internal int RunningCount { get; set; }
@@ -48,6 +84,7 @@ namespace Keysharp.Internals.Threading
 		private readonly AutoResetEvent wakeEvent = new(false);
 		private Thread timerThread;
 		private bool disposed;
+		private long registrationSequence;
 
 		internal int Count
 		{
@@ -106,7 +143,19 @@ namespace Keysharp.Internals.Threading
 			}
 		}
 
-		internal ScriptTimerState Upsert(object callback, ScriptEventScheduler ownerScheduler, long periodMs, bool runOnce, long priority)
+		internal ScriptTimerInfo[] GetInfoSnapshot(ScriptEventScheduler owner)
+		{
+			ScriptTimerInfo[] snapshot;
+
+			lock (gate)
+				snapshot = timers.Values.Where(timer => timer.IsActive && ReferenceEquals(timer.OwnerScheduler, owner))
+					.Select(static timer => timer.Info).ToArray();
+
+			System.Array.Sort(snapshot, static (left, right) => left.RegistrationOrder.CompareTo(right.RegistrationOrder));
+			return snapshot;
+		}
+
+		internal ScriptTimerState Upsert(object callback, ScriptEventScheduler ownerScheduler, long period, long priority)
 		{
 			ArgumentNullException.ThrowIfNull(callback);
 
@@ -120,19 +169,19 @@ namespace Keysharp.Internals.Threading
 
 				if (!timers.TryGetValue(key, out timer))
 				{
-					timer = new ScriptTimerState(callback, ownerScheduler);
+					timer = new ScriptTimerState(new ScriptTimerInfo(callback, ownerScheduler, period, priority, ++registrationSequence), ownerScheduler);
 					timers.Add(key, timer);
 				}
+				else if (!timer.IsActive)
+					timer.Info = new ScriptTimerInfo(timer.Callback, ownerScheduler, period, priority, ++registrationSequence);
+				else
+				{
+					Volatile.Write(ref timer.Info.Period, period);
+					Volatile.Write(ref timer.Info.Priority, priority);
+				}
 
-				//AHK stores a period of 1 as 0 so the timer may run within the same tick instead of waiting for the next
-				//one (script.cpp SetTimer), which is what makes SetTimer(fn, -1) followed by Sleep(-1) fire. SetTimer
-				//has already turned a period of 0 into "disable", so 1 is the only value needing this.
-				timer.PeriodMs = periodMs == 1 ? 0 : periodMs;
-				timer.NextDueTick = Environment.TickCount64 + timer.PeriodMs;
+				timer.NextDueTick = Environment.TickCount64 + timer.Info.Delay;
 				timer.WakeRequested = false;
-				timer.Priority = priority;
-				timer.RunOnce = runOnce;
-				timer.SetActive(true);
 				EnsureThreadStarted();
 			}
 
@@ -148,12 +197,11 @@ namespace Keysharp.Internals.Threading
 
 			lock (gate)
 			{
-				if (disposed)
+				if (disposed || !timer.IsActive)
 					return;
 
-				timer.NextDueTick = Environment.TickCount64 + timer.PeriodMs;
+				timer.NextDueTick = Environment.TickCount64 + timer.Info.Delay;
 				timer.WakeRequested = false;
-				timer.SetActive(true);
 			}
 
 			Wake();
@@ -167,10 +215,10 @@ namespace Keysharp.Internals.Threading
 
 			lock (gate)
 			{
-				if (disposed)
+				if (disposed || !timer.IsActive)
 					return;
 
-				timer.Priority = priority;
+				Volatile.Write(ref timer.Info.Priority, priority);
 			}
 
 			timer.OwnerScheduler?.WakeForTimerCheck();
@@ -183,10 +231,10 @@ namespace Keysharp.Internals.Threading
 
 			lock (gate)
 			{
-				if (disposed)
+				if (disposed || timer.Info is not { } info)
 					return;
 
-				timer.SetActive(false);
+				info.End("Stopped");
 
 				if (!timer.Queued && timer.RunningCount == 0)
 				{
@@ -199,30 +247,36 @@ namespace Keysharp.Internals.Threading
 			timer.OwnerScheduler?.WakeForTimerCheck();
 		}
 
-		internal void MarkCallbackStarted(ScriptTimerState timer)
+		internal ScriptTimerInfo MarkCallbackStarted(ScriptTimerState timer)
 		{
 			if (timer == null)
-				return;
+				return null;
+
+			ScriptTimerInfo info;
 
 			lock (gate)
 			{
-				if (disposed)
-					return;
+				if (disposed || timer.Info == null)
+					return null;
 
+				info = timer.Info;
 				timer.Queued = false;
 				timer.WakeRequested = false;
 
+				Volatile.Write(ref info.LastStartTick, Environment.TickCount64);
+
 				// AHK checks timers when a thread sleeps or on its 10 ms main timer, so a repeating timer runs at most
-				// that often; without the floor, a period of 1 (stored as 0) would refire back to back on a whole core.
-				if (timer.RunOnce)
-					timer.SetActive(false);
+				// that often; without the floor, a period of 1 (due immediately) would refire back to back on a whole core.
+				if (info.RunOnce)
+					info.End("Completed");
 				else
-					timer.NextDueTick = Environment.TickCount64 + Math.Max(timer.PeriodMs, MinRepeatPeriodMs);
+					timer.NextDueTick = Environment.TickCount64 + Math.Max(info.Delay, MinRepeatPeriodMs);
 
 				timer.RunningCount++;
 			}
 
 			Wake();
+			return info;
 		}
 
 		internal void MarkCallbackFinished(ScriptTimerState timer)
@@ -234,7 +288,7 @@ namespace Keysharp.Internals.Threading
 
 			lock (gate)
 			{
-				if (disposed)
+				if (disposed || timer.Info == null)
 					return;
 
 				if (timer.RunningCount > 0)
@@ -261,7 +315,7 @@ namespace Keysharp.Internals.Threading
 
 			lock (gate)
 			{
-				if (disposed)
+				if (disposed || timer.Info == null)
 					return;
 
 				timer.Queued = false;
@@ -294,7 +348,7 @@ namespace Keysharp.Internals.Threading
 					if (!ReferenceEquals(timer.OwnerScheduler, ownerScheduler))
 						continue;
 
-					timer.SetActive(false);
+					timer.Info.End("Stopped");
 
 					if (timer.RunningCount == 0)
 					{
@@ -483,7 +537,9 @@ namespace Keysharp.Internals.Threading
 			timer.Queued = false;
 			timer.WakeRequested = false;
 			timer.RunningCount = 0;
-			timer.Set(null, null, false);
+			timer.Info?.End("Stopped");
+			timer.Info = null;
+			timer.OwnerScheduler = null;
 		}
 	}
 }

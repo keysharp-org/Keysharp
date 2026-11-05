@@ -26,7 +26,7 @@ namespace Keysharp.Internals.Scripting
 		/// The thread priority this registration launches its callback at (default 0). Timers set it from SetTimer's
 		/// priority argument; menu items from Menu.Add's "Pn" option. Most registrations leave it 0.
 		/// </summary>
-		internal long Priority { get; set; }
+		internal long Priority;
 
 		internal void SetActive(bool active)
 			=> Set(OwnerScheduler, active);

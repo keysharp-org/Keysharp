@@ -1,7 +1,7 @@
 #ErrorStdOut
 #Warn All, StdOut
 #NoTrayIcon
-#import KS { WinEvent, A_Timers }
+#import KS { WinEvent, Timer, A_Timers }
 #Include <assert>
 
 x := 0
@@ -151,10 +151,19 @@ class InfoProbe {
 	Call(*) => this.seen := A_EventInfo
 }
 probe := InfoProbe()
+Critical
 SetTimer(probe, -1)
-Assert(A_Timers.Has(probe), A_LineNumber)
+probeTimers := A_Timers
+Assert(probeTimers.Length == 1 && probeTimers[1].Callback == probe, A_LineNumber)
+Critical "Off"
 Sleep 50
-Assert(probe.seen == probe, A_LineNumber)
+Assert(probe.seen is Timer, A_LineNumber)
+AssertEq(probe.seen.Callback, probe, A_LineNumber)
+probeBound := ObjBindMethod(probe, "Call")
+SetTimer(probeBound, -1)
+Sleep 50
+Assert(probe.seen is Timer, A_LineNumber)
+AssertEq(probe.seen.Callback, probeBound, A_LineNumber)
 
 ; A callback property hands back the object that was assigned.
 ih := InputHook()

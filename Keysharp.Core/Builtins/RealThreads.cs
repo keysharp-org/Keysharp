@@ -118,7 +118,7 @@ namespace Keysharp.Builtins
 			/// owned by a single real thread, but <c>RealThread.Main</c> can be read from any of them, so the
 			/// install is done with a CAS to keep exactly one object per thread.
 			/// </summary>
-			private static RealThread Bind(ScriptEventScheduler scheduler)
+			internal static RealThread Bind(ScriptEventScheduler scheduler)
 			{
 				var existing = Volatile.Read(ref scheduler.realThread);
 

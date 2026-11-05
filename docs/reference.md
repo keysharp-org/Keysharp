@@ -510,7 +510,7 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ A callback parameter takes a function reference, `SetTimer(MyFunc)`. A string raises `TypeError`, as in AutoHotkey v2, so resolve a name known only at run time first: `SetTimer(%"MyFunc"%)`.
 		+ A `Gui` built with an event sink, `Gui(Options, Title, EventObj)`, takes the name of one of that sink's methods in `OnEvent`/`OnNotify`/`OnCommand`/`OnMessage`, as in AutoHotkey. That is the one place a callback is named; elsewhere `ObjBindMethod(obj, "Method")` binds a method by name.
 		+ `Hotkey()`'s `Action` takes an alt-tab action or another hotkey's name, and `Hotstring()`'s `Replacement` takes replacement text.
-	+ A callback is a function or any object with a `Call` method, kept as given, so `A_HotIf`, `A_Timers` and callback properties return that object.
+	+ A callback is a function or any object with a `Call` method, kept as given, so `A_HotIf` and callback properties, including `Timer.Callback`, return that object.
 	+ Registering a callback validates it as AutoHotkey does: one that cannot take the site's arguments (`OnExit`/`OnError` 2, `OnClipboardChange` 1, `OnMessage` 4, `SetTimer` 0, `Hotkey`/`HotIf` 1, a `Menu` item 3, each GUI event its own count) raises a `ValueError`, and an uncallable object a `MethodError`. An object is judged by the `MinParams`, `MaxParams` and `IsVariadic` properties it defines, and one defining `MinParams`, or `MaxParams` where that is read, is taken to be callable. `Hotstring`, `Sort` and GUI event-sink method names are not checked. Registering a callback again with `OnExit`, `OnError`, `OnClipboardChange`, `OnMessage`, a GUI event or an `Overlay` event keeps it in place (`OnMessage` applies the new `MaxThreads`), while each `Clipboard.OnChange`-style call makes a separate hook. Each closure is a distinct callback, even one from the same fat arrow as another.
 	+ Most built-in functions can also be used as function objects.
 	+ A `BoundFunc` object's `IsBuiltIn` is always false, even when binding a built-in function with no arguments, as in AutoHotkey.
@@ -647,10 +647,9 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ `FileGetSize()` supports `G` and `T` for gigabytes and terabytes.
 	+ Per-device physical key state on Linux is read through `Device.GetKeyState(KeyName)`, where `Device` comes from `Input.Devices` or `A_EventInfo.Device`. Global `GetKeyState()` follows AHK's `L`/`P`/`T` modes; the numeric device-ID mode is no longer accepted.
 	+ `Log(Number, Base := 10)` is by default base 10, but it can accept a double as the second parameter to specify a custom base.
-		+ In `SetTimer()`:
-			+ In the callback function, `A_EventInfo` is set to the function object used to create the timer.
-			+ This allows the handler to alter the timer by passing the function object back to another call to `SetTimer()`.
-			+ Timers continue while tray, popup, or menu-bar menus are open.
+	+ In `SetTimer()`:
+		+ `A_EventInfo` returns the originating `Ks.Timer` object (AutoHotkey: 0). Use `SetTimer(, 0)` or `SetTimer(A_EventInfo.Callback, 0)` to stop it.
+		+ Timers continue while tray, popup, or menu-bar menus are open.
 	+ `Run/RunWait()` can take an extra string for the argument instead of appending it to the program name string. However, the original functionality still works too.
 		+ The new signature is: `Run/RunWait(Target [, WorkingDir, Options, &OutputVarPID, Args])`.
 	+ `SubStr()` uses a default of 1 for the second parameter, `StartingPos`, to relieve the caller of always having to specify it.
@@ -850,8 +849,9 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ Every per-pseudo-thread fact is a property on the object rather than its own importable global, so the surface extends without new names. See the `Thread` class under *New classes*.
 		+ There is exactly one object per pseudo-thread, so "is this the one I am in" is `thr == A_Thread`.
 	+ `A_WinActivateForce` returns whether the forceful method of activating a window is in effect because `#WinActivateForce` was specified.
-	+ `A_Timers` returns a `Map` from each timer's callback, the object passed to `SetTimer`, to its enabled state.
+	+ `A_Timers` returns a snapshot `Array` of live `Timer` objects for enabled timers on the calling real thread, in registration order.
 * New classes:
+	+ `Timer`: Nonconstructible, read-only metadata shared by `A_Timers` and `A_EventInfo` for one timer lifetime. Exposes `Callback`, `Period`, `Priority`, `RealThread`, `Elapsed`, `InProgress` and `EndReason`; control remains with `SetTimer`.
 	+ `Audio`: Cross-platform polyphonic playback, device discovery and endpoint control. Import with `#Import Ks { Audio }`. The AutoHotkey `Sound*` functions retain their fuzzy device selector and monophonic playback.
 		+ `Audio.Clip` is an immutable decoded sound, from `Audio.Load(path)` or `Audio.FromPcm(buffer, rate, channels, format)`. `FromPcm` copies the bytes synchronously, so the caller may reuse its `Buffer` immediately. Only WAV is decoded without a platform codec; `Audio.IsFormatSupported()` reports what this host can actually decode, and every other container is refused by name rather than played as noise.
 		+ `Audio.Output` is an explicit mixer and one native stream. `Open()`, `Prepare(clip)` and then `Play(clip)` — after preparation a play performs no decode, resample or blocking call, so it is safe to call from a frame timer. `VoicePolicy` is `"Oldest"`, `"RoundRobin"` or `"Reject"`, and `StopAll()` silences every voice immediately. One script may hold 16 outputs open, because dropping an output does not close it.

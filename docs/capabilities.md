@@ -160,7 +160,7 @@ Status legend:
 | A_DetectHiddenWindows | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Toggles whether window searching includes hidden windows. |
 | A_DirSeparator | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets the current platform directory separator character. |
 | A_EndChar | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
-| A_EventInfo | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
+| A_EventInfo | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Timer callbacks expose their Ks.Timer object; AutoHotkey returns 0. |
 | A_EventInfo.Device | 🟡 Partial | 🟡 Partial | 🟡 Partial | 🟡 Partial | Identified native Linux events and managed hook-provider events expose an Input descriptor instead of a numeric DeviceId. Zero or unavailable event IDs omit Device. Metadata is resolved on first Device access; reading other event properties does not query devices. The descriptor retains its originating source. Native Windows and macOS hooks do not identify devices. Driver and hardware delivery remain unverified. |
 | A_FileEncoding | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets or returns the default file encoding, initially CP0. Reports UTF-8, UTF-8-RAW, UTF-16, UTF-16-RAW or CPnnn, preserving CP0 as the system default. |
 | A_GuiTheme | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets/sets the application-wide GUI theme. Accepted values: Classic, System, Dark. System selects the operating-system theme; Eto follows later system-theme changes, while WinForms resolves the setting when it is applied. Classic selects the Eto light theme on Linux and macOS. |
@@ -277,7 +277,7 @@ Status legend:
 | A_TimeIdleKeyboard | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_TimeIdleMouse | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_TimeIdlePhysical | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
-| A_Timers | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Gets active timers as a map of callback -> enabled state. |
+| A_Timers | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Snapshot Array of enabled Timer objects on the calling real thread, in registration order. |
 | A_TimeSincePriorHotkey | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_TimeSinceThisHotkey | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_TitleMatchMode | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets or returns 1 for matching the start of a title, 2 for matching anywhere in a title, 3 for matching exactly a title, or "RegEx" for matching using a regular expression. |
@@ -983,7 +983,7 @@ Status legend:
 | SetRegView() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Sets the registry view used by registry functions, allowing them in a 64-bit script to access the 32-bit registry view. |
 | SetScrollLockState() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The SetCapsLockState, SetNumLockState and SetScrollLockState functions set the state of the corresponding key. Can also force the key to stay on or off. |
 | SetStoreCapsLockMode() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The SetStoreCapsLockMode function determines whether to restore the state of the CapsLock key after a Send function. |
-| SetTimer() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Periods are measured from callback start; overdue callbacks coalesce and remain due while blocked by priority or timer permission. Timers continue while tray, popup, or menu-bar menus are open. Uses ordinary deadline-based waits without requesting higher timer resolution. Callbacks remain serialized on their owning scheduler. |
+| SetTimer() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Periods are measured from callback start; overdue callbacks coalesce and remain due while blocked by priority, thread limits or timer permission. Timers continue while tray, popup, or menu-bar menus are open. Uses ordinary deadline-based waits without requesting higher timer resolution. Callbacks remain serialized on their owning scheduler. |
 | SetTitleMatchMode() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The SetTitleMatchMode function sets the matching behavior of the WinTitle parameter in built-in functions such as WinWait. |
 | SetWinDelay() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The SetWinDelay function sets the delay that will occur after each windowing function, such as WinActivate. On macOS, -1 also lets minimizing or restoring a foreign window return before its animation ends. |
 | SetWorkingDir() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Changes the script's current working directory. |
@@ -1047,6 +1047,7 @@ Status legend:
 | Thread (object) | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Thread is a class rather than a function: calling it runs the AHK sub-functions (NoTimers/Priority/Interrupt) unchanged, and an instance describes one pseudo-thread: Id, Index (1-based), IsActive, Kind, Elapsed, Priority, Critical, Paused, IsInterruptible, Underlying, Exit and ExitCode (the code its Exit ended it with, readable after it ends). An Is prefix marks a read-only predicate; a settable mode is named for the mode. Obtained from A_Thread, Under or RealThread.Threads, never constructed. There is one object per pseudo-thread, so `thr == A_Thread` tests whether it is the running one. It revalidates its identity on every access, so one held past its pseudo-thread's life reports IsActive false rather than describing whichever pseudo-thread reused the pooled slot. Reads work from any real thread; setters and Exit require the owning one. An unarmed ExitCode follows reference.md's compatibility-mode rule. |
 | Throw | 🟡 Partial | 🟡 Partial | 🟡 Partial | 🟡 Partial | Passes any value unchanged to catch; an uncaught non-Error value is wrapped for OnError and diagnostics. Without a value, it rethrows the value an active catch handles, or raises the continuable Error("An exception was thrown."). |
 | TimeoutError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
+| Timer | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Nonconstructible, read-only timer information from A_Timers or A_EventInfo: Callback, Period, Priority, RealThread, Elapsed, InProgress and EndReason. |
 | ToolTip() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | Creates an always-on-top window anywhere on the screen. On Linux and macOS it is drawn with the cross-platform Overlay primitive rather than a native tooltip, which on Wayland needs a compositor the Overlay supports (KWin, GNOME, or Cinnamon with the Keysharp extension). |
 | Tray icon and menu | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Linux requires a StatusNotifier/AppIndicator host and exposes no activation events. COSMIC 1.2.0 leaves its host-owned tray menu open after an item callback; click the tray icon again to dismiss it. Eto activation cannot cancel menu opening; macOS activation is unverified. |
 | TraySetIcon() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Changes the script's tray icon. |

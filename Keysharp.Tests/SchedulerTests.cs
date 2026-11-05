@@ -52,7 +52,7 @@ public class SchedulerTests : TestRunner
 		var hs = (HotstringDefinition)s.HotstringManager.AddHotstring("::d1test", null, "", "d1test", "leak", false);
 		Assert.That(hs.suspended, Is.Zero);
 
-		_ = s.FlowData.timers.Upsert(new KeysharpFunc((Func<object>)(() => 0L)), s.EventScheduler, 1000L, false, 0L);
+		_ = s.FlowData.timers.Upsert(new KeysharpFunc((Func<object>)(() => 0L)), s.EventScheduler, 1000L, 0L);
 		Assert.That(s.FlowData.timers.IsEmpty, Is.False);
 
 		s.Dispose();
