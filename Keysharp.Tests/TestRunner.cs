@@ -27,7 +27,7 @@ public abstract class TestRunner
 
 	protected sealed class QueuedSynchronizationContext : SynchronizationContext
 	{
-		private readonly Queue<(SendOrPostCallback callback, object state)> posted = new();
+		private readonly ConcurrentQueue<(SendOrPostCallback callback, object state)> posted = new();
 
 		internal int PendingCount => posted.Count;
 
@@ -37,11 +37,8 @@ public abstract class TestRunner
 
 		internal void DrainAll()
 		{
-			while (posted.Count != 0)
-			{
-				var (callback, state) = posted.Dequeue();
-				callback(state);
-			}
+			while (posted.TryDequeue(out var item))
+				item.callback(item.state);
 		}
 	}
 

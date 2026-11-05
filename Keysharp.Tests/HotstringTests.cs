@@ -18,9 +18,9 @@ public partial class HotstringTests : TestRunner
 	private void PumpSchedulers()
 	{
 		mainContext?.DrainAll();
-		Keysharp.Internals.Flow.TryDoEvents(s.EventScheduler, propagateExit: true, yieldTick: false, pumpUi: false);
+		Keysharp.Internals.Flow.TryDoEvents(s.EventScheduler, propagateExit: true, pumpUi: false);
 		mainContext?.DrainAll();
-		Keysharp.Internals.Flow.TryDoEvents(s.UIEventScheduler, propagateExit: true, yieldTick: false, pumpUi: false);
+		Keysharp.Internals.Flow.TryDoEvents(s.UIEventScheduler, propagateExit: true, pumpUi: false);
 		mainContext?.DrainAll();
 	}
 

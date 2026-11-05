@@ -272,7 +272,7 @@ public class SchedulerTests : TestRunner
 
 		try
 		{
-			Assert.DoesNotThrow(() => Keysharp.Internals.Flow.TryDoEvents(scheduler, false, false, false));
+			Assert.DoesNotThrow(() => Keysharp.Internals.Flow.TryDoEvents(scheduler, false, pumpUi: false));
 			Assert.IsTrue(scheduler.EnqueueCallback(() => ran = true));
 			Assert.That(ran, Is.False);
 			Assert.That(context.PendingCount, Is.EqualTo(1));
@@ -283,6 +283,124 @@ public class SchedulerTests : TestRunner
 		{
 			Script.TheScript = s;
 			GC.SuppressFinalize(incomplete);
+		}
+	}
+
+	[TestCase(false), TestCase(true), Category("Threading")]
+	public void PendingUiPostDoesNotSuppressWake(bool enqueue)
+	{
+		var context = UseQueuedMainContext();
+		var scheduler = s.EventScheduler;
+		var calls = 0;
+		Assert.IsTrue(scheduler.EnqueueCallback(() => calls++));
+
+		// Native dispatch can enter a nested wait after consuming the signal but before running the posted pump.
+		scheduler.WaitForPumpSignal(0);
+
+		if (enqueue)
+			Assert.IsTrue(scheduler.EnqueueCallback(() => calls++));
+		else
+			scheduler.Wake();
+
+		var start = Stopwatch.GetTimestamp();
+		scheduler.WaitForPumpSignal(2000);
+		Assert.Less(Stopwatch.GetElapsedTime(start), TimeSpan.FromSeconds(1), "A pending UI post must not suppress a later wake.");
+		Assert.That(context.PendingCount, Is.EqualTo(1), "Wakeups must keep UI posts coalesced.");
+		context.DrainAll();
+		Assert.That(calls, Is.EqualTo(enqueue ? 2 : 1));
+	}
+
+	[Test, Category("Threading")]
+	public void UiContextChangeReschedulesWake()
+	{
+		var original = UseQueuedMainContext();
+		var scheduler = s.EventScheduler;
+		scheduler.Wake();
+		Assert.That(original.PendingCount, Is.EqualTo(1));
+
+		var replacement = new QueuedSynchronizationContext();
+		s.UIThreadContext = replacement;
+		scheduler.Wake();
+
+		Assert.That(replacement.PendingCount, Is.EqualTo(1),
+			"A pump pending on a retired UI context cannot wake the replacement loop.");
+		replacement.DrainAll();
+		original.DrainAll();
+	}
+
+	[Test, Category("Threading")]
+	public void NestedCompletionRunsQueuedDispatch()
+	{
+		var context = UseQueuedMainContext();
+		var scheduler = s.EventScheduler;
+		var completion = new TaskCompletionSource();
+		var elapsed = TimeSpan.MaxValue;
+		Assert.IsTrue(scheduler.EnqueueCallback(() =>
+		{
+			var start = Stopwatch.GetTimestamp();
+			Assert.IsTrue(Keysharp.Internals.Flow.WaitForCompletion(completion.Task, 2000));
+			elapsed = Stopwatch.GetElapsedTime(start);
+		}, ScriptEventQueue.Normal, false));
+		Assert.IsTrue(scheduler.EnqueueCallback(completion.SetResult));
+		scheduler.WaitForPumpSignal(0);
+
+		// Exercise the scheduler-only wait used by workers and hosts without a native message loop.
+		Keysharp.Internals.Flow.noUiPumpScore++;
+		try
+		{
+			scheduler.PumpThreadQueuedEventsCore();
+			Assert.Less(elapsed, TimeSpan.FromSeconds(1), "A nested wait must serve work its outer pump already dequeued a wake for.");
+			context.DrainAll();
+		}
+		finally
+		{
+			Keysharp.Internals.Flow.noUiPumpScore--;
+		}
+	}
+
+	[Test, Category("Threading")]
+	public void SynchronousCallbackCanFinishAfterCallerExits()
+	{
+		var scheduler = new ScriptEventScheduler(s, Environment.CurrentManagedThreadId, false);
+		using var callerFinished = new ManualResetEventSlim(false);
+		Exception callerFailure = null;
+		var callerUnwound = false;
+		var caller = new Thread(() =>
+		{
+			try
+			{
+				_ = scheduler.InvokeSynchronous(() =>
+				{
+					s.hasExited = true;
+					callerUnwound = callerFinished.Wait(2000);
+					s.hasExited = false;
+					return 0;
+				});
+			}
+			catch (Exception ex)
+			{
+				callerFailure = ex;
+			}
+			finally
+			{
+				callerFinished.Set();
+			}
+		}) { IsBackground = true };
+
+		try
+		{
+			caller.Start();
+			Assert.That(SpinWait.SpinUntil(scheduler.HasQueuedEvents, 2000), Is.True);
+			Assert.DoesNotThrow(scheduler.PumpThreadQueuedEventsCore);
+			Assert.That(callerUnwound, Is.True, "The caller must unwind before its callback reports completion.");
+			Assert.That(callerFailure, Is.TypeOf<Keysharp.Builtins.Flow.UserRequestedExitException>());
+		}
+		finally
+		{
+			s.hasExited = true;
+			_ = caller.Join(2000);
+			s.hasExited = false;
+			scheduler.DisposeWorker();
 		}
 	}
 
@@ -322,7 +440,7 @@ public class SchedulerTests : TestRunner
 			{
 				Assert.IsTrue(scheduler.EnqueueCallback(() => _ = Keysharp.Builtins.Flow.Exit(7), ScriptEventQueue.Normal, false));
 				Assert.DoesNotThrow(context.DrainAll);
-				Keysharp.Internals.Flow.TryDoEvents(scheduler, propagateExit: true, yieldTick: false, pumpUi: false);
+				Keysharp.Internals.Flow.TryDoEvents(scheduler, propagateExit: true, pumpUi: false);
 			}));
 	}
 
@@ -400,6 +518,32 @@ public class SchedulerTests : TestRunner
 		context.DrainAll();
 
 		Assert.That(order, Is.EqualTo(["N1", "H1"]));
+	}
+
+	[TestCase(false), TestCase(true), Category("Threading")]
+	public void NestedWaitRetriesBlockedLaunch(bool local)
+	{
+		var context = UseQueuedMainContext();
+		var scheduler = s.EventScheduler;
+		var attempts = 0;
+		var elapsed = TimeSpan.MaxValue;
+
+		_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => ++attempts != 1
+			? ScriptEventExecutionResult.Executed
+			: local ? ScriptEventExecutionResult.LocalBlocked : ScriptEventExecutionResult.GlobalBlocked);
+		_ = scheduler.EnqueueCallback(() =>
+		{
+			var start = Stopwatch.GetTimestamp();
+			Keysharp.Internals.Flow.TryDoEvents(scheduler, waitMs: 2000, pumpUi: false);
+			elapsed = Stopwatch.GetElapsedTime(start);
+		}, ScriptEventQueue.Normal, false);
+
+		// Consume the queue's wake as the outer wait would, so only the blocked-work retry can end the nested wait.
+		scheduler.WaitForPumpSignal(0);
+		scheduler.PumpThreadQueuedEventsCore();
+		Assert.That(attempts, Is.EqualTo(2), "The nested wait must retry the launch parked by its outer pump.");
+		Assert.Less(elapsed, TimeSpan.FromSeconds(1), "Blocked launches must be retried before the wait's deadline.");
+		context.DrainAll();
 	}
 
 	[TestCase(false), Category("Threading")]

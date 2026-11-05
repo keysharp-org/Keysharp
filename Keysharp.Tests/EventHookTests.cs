@@ -55,7 +55,7 @@ public class EventHookTests : TestRunner
 		reg.scriptObject = hook;
 		manager.Register(reg);
 
-		void Drain() => Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+		void Drain() => Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, pumpUi: false);
 		void Activate(nint hwnd) => manager.OnNativeEvent(new WindowEventRaw(WindowEventType.Active, hwnd, 0));
 
 		try
@@ -345,7 +345,7 @@ public class EventHookTests : TestRunner
 			return;
 		}
 
-		void Drain() => Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+		void Drain() => Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, pumpUi: false);
 
 		try
 		{

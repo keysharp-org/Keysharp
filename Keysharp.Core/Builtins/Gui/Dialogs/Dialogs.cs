@@ -291,10 +291,7 @@ namespace Keysharp.Builtins
 					showCts.CancelAfter(TimeSpan.FromSeconds(Math.Min(timeout, 2147483.0)));
 
 				var showTask = script.InvokeOnUIThread(() => show(showCts.Token));
-
-				while (!showTask.IsCompleted)
-					Keysharp.Internals.Flow.TryDoEvents();
-
+				_ = Keysharp.Internals.Flow.WaitForCompletion(showTask, -1);
 				return showTask.IsCanceled ? cancellationResult : showTask.Result;
 			}
 			finally

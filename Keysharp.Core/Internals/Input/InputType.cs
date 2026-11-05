@@ -833,6 +833,8 @@ namespace Keysharp.Internals.Input
 					message = (uint)UserMessages.AHK_INPUT_END,
 					obj = this
 				});
+				// A Wait on this input may be on any thread, and ends on the status just set.
+				script.WakeAllEventSchedulers();
 			}
 		}
 

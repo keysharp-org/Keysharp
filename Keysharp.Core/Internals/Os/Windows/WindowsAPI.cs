@@ -606,6 +606,9 @@ namespace Keysharp.Internals.Os.Windows
 		[return: MarshalAs(UnmanagedType.Bool)]
 		internal static partial bool PeekMessage(out Msg message, nint handle, uint filterMin, uint filterMax, uint flags);
 
+		[LibraryImport(user32, EntryPoint = "MsgWaitForMultipleObjectsEx")]
+		internal static partial uint MsgWaitForMultipleObjectsEx(uint count, ref nint handles, uint milliseconds, uint wakeMask, uint flags);
+
 		[LibraryImport(user32, EntryPoint = "MonitorFromRect")]
 		internal static partial nint MonitorFromRect(ref RECT rect, uint flags);
 

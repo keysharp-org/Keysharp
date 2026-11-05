@@ -473,7 +473,7 @@ namespace Keysharp.Builtins
 			if (!maxTime.CoerceDouble(out var seconds, double.PositiveInfinity))
 				return DefaultObject;
 
-			// Checked on every pump, as AutoHotkey's MsgSleep loop does, rather than after a fixed sleep.
+			// Re-tested whenever the pump is woken, as AutoHotkey's MsgSleep loop does, rather than after a fixed sleep.
 			Keysharp.Internals.Flow.WaitUntil(() => !input.InProgress(),
 				double.IsPositiveInfinity(seconds) ? -1 : (int)Math.Clamp(seconds * 1000, 0, int.MaxValue));
 

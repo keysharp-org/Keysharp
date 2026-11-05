@@ -106,7 +106,7 @@ namespace Keysharp.Runtime
 			// Instead, each execution context tracks its own last poll time and only performs
 			// a preemptive check when its current peek frequency says another one is due.
 			if (Script.IsPreemptiveCheckDue(Keysharp.Internals.Threading.Threads.Current))
-				Keysharp.Internals.Flow.TryDoEvents(true, false);
+				Keysharp.Internals.Flow.TryDoEvents();
 
 			return b;
 		}

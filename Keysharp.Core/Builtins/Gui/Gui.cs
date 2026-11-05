@@ -3550,7 +3550,7 @@ namespace Keysharp.Builtins
 			//report the zeroed struct's IsUnmapped for both and burn the whole grace period.
 			Keysharp.Internals.Flow.WaitUntil(() =>
 				!win.TryGetAttributes(out var attrs)
-				|| attrs.map_state == Keysharp.Internals.Window.Linux.X11.MapState.IsViewable, 2000);
+				|| attrs.map_state == Keysharp.Internals.Window.Linux.X11.MapState.IsViewable, 2000, Script.SLEEP_INTERVAL);
 		}
 
 #endif

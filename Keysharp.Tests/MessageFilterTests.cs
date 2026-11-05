@@ -707,7 +707,7 @@ public class MessageFilterTests : TestRunner
 				s.Threads.EndThread(critical);
 			}
 
-			Keysharp.Internals.Flow.TryDoEvents(s.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+			Keysharp.Internals.Flow.TryDoEvents(s.EventScheduler, propagateExit: false, pumpUi: false);
 			Assert.That(calls, Is.EqualTo(1), "the callback must run once a thread can start");
 			Assert.That(probe.Count, Is.EqualTo(1));
 		}

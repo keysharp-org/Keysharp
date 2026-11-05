@@ -406,7 +406,7 @@ public class GuiTests : TestRunner
 				_ = overlay.OnEvent("Click", first);
 				_ = overlay.OnEvent("Click", second);
 				overlay.HandlePointerEvent(new OverlayPointerEvent(OverlayPointerKind.Click, 3, 4));
-				Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+				Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, pumpUi: false);
 				Assert.That(order, Is.EqualTo(secondRuns ? new[] { "first", "second 3,4" } : ["first"]).AsCollection, $"Click after {what}");
 				_ = overlay.OnEvent("Click", first, 0L);
 				_ = overlay.OnEvent("Click", second, 0L);
@@ -432,7 +432,7 @@ public class GuiTests : TestRunner
 		var allowInterruption = threads.allowInterruption;
 		var handler = new KeysharpFunc((Func<object, object, object, object>)((_, x, y) => { moves.Add($"{x},{y}"); return ""; }));
 
-		static void Pump() => Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+		static void Pump() => Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, pumpUi: false);
 
 		try
 		{
@@ -1520,7 +1520,7 @@ public class GuiTests : TestRunner
 				_ = gui.OnEvent("DpiChanged", firstDpi);
 				_ = gui.OnEvent("DpiChanged", secondDpi);
 				gui.form.CallDpiChangeHandlers(96, 144);
-				Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+				Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, pumpUi: false);
 				Assert.That(order, Is.EqualTo(expected).AsCollection, $"DpiChanged after a return of {what}");
 				_ = gui.OnEvent("DpiChanged", firstDpi, 0L);
 				_ = gui.OnEvent("DpiChanged", secondDpi, 0L);
@@ -1574,7 +1574,7 @@ public class GuiTests : TestRunner
 				_ = gui.OnEvent("DpiChanged", firstDpi);
 				_ = gui.OnEvent("DpiChanged", secondDpi);
 				gui.form.CallDpiChangeHandlers(96, 144);
-				Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+				Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, pumpUi: false);
 				Assert.That(order, Is.EqualTo(expected).AsCollection, $"DpiChanged when the first handler {how}");
 				_ = gui.OnEvent("DpiChanged", firstDpi, 0L);
 				_ = gui.OnEvent("DpiChanged", secondDpi, 0L);
@@ -1651,7 +1651,7 @@ public class GuiTests : TestRunner
 			//The event is queued, as AHK posts it, so nothing runs until the queue is pumped.
 			string[] Pump()
 			{
-				Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+				Keysharp.Internals.Flow.TryDoEvents(Script.TheScript.EventScheduler, propagateExit: false, pumpUi: false);
 				return calls.Select(c => c.Who).ToArray();
 			}
 

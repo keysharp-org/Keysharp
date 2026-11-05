@@ -4,21 +4,8 @@
 #import KS { RealThread, Await }
 #Include <assert>
 
-; A RealThread worker which leaves a permanently unrunnable entry on its own queue must still finish.
-;
-; Refusing a pseudo-thread launch -- here a timer refused because the worker is Critical -- parks the
-; entry at the FRONT of the worker's queue and marks the queue blocked. Only pumping clears that mark:
-; TryBeginPump and EndPump are its only writers. So a worker event loop which waits for the mark to
-; clear instead of retrying the pump is waiting for a condition only it can produce.
-;
-; Clearing the timer while such an entry is parked is what makes it permanent: the entry survives, but
-; the registration it names is gone, so nothing will ever re-serve it and only a pump can discover that
-; and drop it. Without the retry the worker spins forever AFTER its body has already returned -- the
-; completion is published in RunWorkerLoop's finally, which is past the loop -- so Wait() times out on
-; work that finished long ago and Result stays empty. Both assertions below fail (by timeout) then.
-;
-; The main thread was never exposed to this: its pump is driven from outside by PostToUIThread, which
-; does not consult the blocked gate.
+; Critical parks a timer launch on the worker's queue. Removing its registration leaves an entry
+; only another pump can discard. The worker must retry that pump so it can finish and publish its result.
 
 worker := RealThread(WorkerBody)
 

@@ -69,16 +69,17 @@ namespace Keysharp.Runtime
 		{
             get {
 #if !WINDOWS
-				if (!IsUiInitializationBlocked)
-				{
-					var app = Application.Instance;
-					if (app != null)
-						return app.IsUIThread;
-				}
+				if (EtoApplication is { } app)
+					return app.IsUIThread;
 #endif
 			    return Environment.CurrentManagedThreadId == ManagedMainThreadID;
             }
 		}
+
+#if !WINDOWS
+		/// <summary>The Eto application, excluding hosts that cannot run its UI loop.</summary>
+		internal static Application EtoApplication => IsUiInitializationBlocked ? null : Application.Instance;
+#endif
 
 		public const string dotNetMajorVersion = "10";
 
@@ -1097,9 +1098,9 @@ namespace Keysharp.Runtime
 			}
 #if !WINDOWS
 
-			if (Application.Instance != null)
+			if (EtoApplication is { } app)
 			{
-				Application.Instance.Invoke(action);
+				app.Invoke(action);
 				return;
 			}
 
@@ -1130,10 +1131,10 @@ namespace Keysharp.Runtime
 			}
 #if !WINDOWS
 
-			if (Application.Instance != null)
+			if (EtoApplication is { } app)
 			{
 				T appResult = default;
-				Application.Instance.Invoke(() => appResult = action());
+				app.Invoke(() => appResult = action());
 				return appResult;
 			}
 
@@ -1153,16 +1154,14 @@ namespace Keysharp.Runtime
 					action();
 			}
 
-			if (UIThreadContext != null)
-				UIThreadContext.Post(_ => RunIfAlive(), null);
+			if (UIThreadContext is { } context)
+				context.Post(_ => RunIfAlive(), null);
 #if !WINDOWS
-			else if (Application.Instance != null)
-				Application.Instance.AsyncInvoke(RunIfAlive);
+			else if (EtoApplication is { } app)
+				app.AsyncInvoke(RunIfAlive);
 #endif
-			// No UI framework to post through, so queue onto the main thread instead. Running inline would
-			// execute main-thread work on whichever thread posted -- a worker, or the finalizer thread, where
-			// ExitIfNotPersistent's teardown deadlocks on WaitForPendingFinalizers. With no scheduler either
-			// the script is past teardown, so the work is dropped rather than run on the wrong thread.
+			// Without a UI transport, the main scheduler serves the work. Running it on the posting thread
+			// could run teardown on the finalizer thread and deadlock.
 			else if (uiEventScheduler is { IsDisposed: false } ui)
 				_ = ui.EnqueueCallback(RunIfAlive);
 		}
@@ -1179,9 +1178,7 @@ namespace Keysharp.Runtime
 				_ => (string)Errors.ErrorOccurred($"Unknown GUI theme \"{theme}\". Expected Classic, System or Dark.", DefaultErrorString)
 			};
 #else
-			var app = Application.Instance;
-
-			if (app == null || IsUiInitializationBlocked)
+			if (EtoApplication is not { } app)
 				return AccessorData.guiTheme;
 
 			return InvokeOnUIThread(() =>
@@ -1210,7 +1207,7 @@ namespace Keysharp.Runtime
 			};
 			InvokeOnUIThread(() => Application.SetColorMode(colorMode));
 #else
-			if (!IsUiInitializationBlocked && Application.Instance is { } app)
+			if (EtoApplication is { } app)
 				InvokeOnUIThread(() => ApplyEtoGuiTheme(app, normalizedTheme));
 #endif
 			return true;
@@ -1316,7 +1313,7 @@ namespace Keysharp.Runtime
 		{
 			// Work posted before the loop existed is waiting for a pump, and until one runs, every later request for
 			// one, timers included, is taken as already posted.
-			Keysharp.Internals.Flow.TryDoEvents(EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+			Keysharp.Internals.Flow.TryDoEvents(EventScheduler, propagateExit: false, pumpUi: false);
 
 			var autoExecResult = false;
 			var executionResult = EventScheduler.TryExecuteThreadLaunch(0, false, false, tv =>
@@ -1485,7 +1482,7 @@ namespace Keysharp.Runtime
 					// The posted exit check owns shutdown, including OnExit and its cancellation. A worker may
 					// release the last persistence root before posting that check, so the loop must wait for it.
 					while (!hasExited && !IsDisposed)
-						Keysharp.Internals.Flow.TryDoEvents();
+						Keysharp.Internals.Flow.TryDoEvents(waitMs: Timeout.Infinite);
 				}
 				finally
 				{

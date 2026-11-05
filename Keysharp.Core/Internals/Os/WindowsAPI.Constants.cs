@@ -245,6 +245,9 @@ namespace Keysharp.Internals.Os.Windows
 		internal const uint PM_REMOVE = 0x0001;
 		internal const uint PM_NOYIELD = 0x0002;
 
+		internal const uint QS_ALLINPUT = 0x1CFF;
+		internal const uint MWMO_INPUTAVAILABLE = 0x0004;
+
 		internal const int MK_LBUTTON = 0x0001;
 		internal const int MK_RBUTTON = 0x0002;
 		internal const int MK_SHIFT = 0x0004;

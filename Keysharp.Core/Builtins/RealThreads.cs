@@ -300,6 +300,9 @@ namespace Keysharp.Builtins
 					}
 				}
 
+				// A waiting pseudo-thread may consume the exit-loop wake before its exit code is written.
+				scheduler.SignalPump();
+
 				if (scheduler.OwnsCurrentThread)
 					owner.Threads.ThrowIfExitRequested(owner.Threads.CurrentThread);
 

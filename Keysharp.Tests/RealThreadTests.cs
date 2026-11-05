@@ -136,7 +136,7 @@ public class RealThreadTests : TestRunner
 #else
 				Eto.Forms.Application.Instance?.RunIteration();
 #endif
-				Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: true, yieldTick: false, pumpUi: false);
+				Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: true, pumpUi: false);
 			}
 			catch
 			{
@@ -156,13 +156,12 @@ public class RealThreadTests : TestRunner
 		if (script != null)
 		{
 			script.hasExited = true;
-			script.ScheduleAllEventSchedulers();
+			script.WakeAllEventSchedulers();
 		}
 
 		if (worker == null)
 			return;
 
-		// Scheduling only wakes a worker with queued work, so an idle one must be asked to exit.
 		_ = worker.Exit();
 		_ = SpinWait.SpinUntil(() => !worker.IsAlive, 2000);
 	}
@@ -335,6 +334,44 @@ public class RealThreadTests : TestRunner
 
 			Assert.That(result, Is.EqualTo("ok"));
 			Assert.IsTrue(uiRan.IsSet, "Main scheduler did not pump while waiting in Send.");
+		}
+		finally
+		{
+			ShutdownWorker(s, worker);
+		}
+	}
+
+	[TestCase(false), Category("Threading")]
+	[TestCase(true)]
+	public void ExitWakesWaitingWorker(bool paused)
+	{
+		_ = s.EventScheduler;
+		_ = Builtins.Flow.Persistent(true);
+		Ks.RealThread worker = null;
+
+		try
+		{
+			// Exit's wake and its exit-code write race the worker's wait loop; the sleep puts the worker inside its wait
+			// and the repetitions give the race room to lose.
+			for (var iteration = 0; iteration < 20; iteration++)
+			{
+				using var ready = new ManualResetEventSlim(false);
+				worker = StartWorker(() =>
+				{
+					_ = s.EventScheduler.EnqueueCallback(ready.Set);
+
+					if (paused)
+						_ = Builtins.Flow.Pause();
+					else
+						_ = Builtins.Flow.Sleep(30000);
+				});
+
+				Assert.IsTrue(ready.Wait(2000), "Worker did not pump its wait.");
+				Thread.Sleep(10);
+				var terminated = (Ks.KeysharpTask)worker.Exit();
+				Assert.IsTrue(WaitWithUiPump(() => terminated.IsSucceeded),
+					$"Exit did not wake the {(paused ? "paused" : "sleeping")} worker on iteration {iteration}.");
+			}
 		}
 		finally
 		{

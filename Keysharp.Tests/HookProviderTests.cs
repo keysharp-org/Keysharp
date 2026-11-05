@@ -248,6 +248,57 @@ public class HookProviderTests : TestRunner
 	}
 
 	[Test]
+	public void InputWaitWakesAfterStop()
+	{
+		_ = Install(new Provider());
+		var context = UseQueuedMainContext();
+		var input = new InputHook("V");
+		_ = input.Start();
+		Assert.That(input.InProgress, Is.True);
+		using var ready = new ManualResetEventSlim();
+		ScriptEventScheduler scheduler = null;
+		Exception failure = null;
+		object reason = null;
+		var worker = new Thread(() =>
+		{
+			try
+			{
+				scheduler = s.ThreadScheduler;
+				SynchronizationContext.SetSynchronizationContext(scheduler.DispatchContext);
+				_ = scheduler.EnqueueCallback(ready.Set);
+				reason = input.Wait(10);
+			}
+			catch (Exception ex)
+			{
+				failure = ex;
+			}
+			finally
+			{
+				scheduler?.DisposeWorker();
+			}
+		}) { IsBackground = true };
+
+		try
+		{
+			worker.Start();
+			Assert.That(ready.Wait(2000), Is.True, "The input waiter did not pump its scheduler.");
+			Assert.That(SpinWait.SpinUntil(() => (worker.ThreadState & System.Threading.ThreadState.WaitSleepJoin) != 0, 2000), Is.True);
+			_ = input.Stop();
+			Assert.That(worker.Join(2000), Is.True, "Stopping the input must wake another thread before its wait times out.");
+			Assert.That(failure, Is.Null);
+			Assert.That(reason, Is.EqualTo("Stopped"));
+		}
+		finally
+		{
+			_ = input.Stop();
+			// Release a waiter even when the wake under test was lost.
+			scheduler?.Wake();
+			_ = worker.Join(12000);
+			context.DrainAll();
+		}
+	}
+
+	[Test]
 	public void CaptureReset()
 	{
 		var provider = new Provider();

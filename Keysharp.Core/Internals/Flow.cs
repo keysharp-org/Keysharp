@@ -187,7 +187,7 @@ namespace Keysharp.Internals
 			}
 
 			script.hasExited = true;
-			script.ScheduleAllEventSchedulers();
+			script.WakeAllEventSchedulers();
 			threads.allowInterruption = allowInterruptionPrev;
 			HotkeyDefinition.AllDestruct(script);
 			StopMainTimer(script);
@@ -277,13 +277,13 @@ namespace Keysharp.Internals
 			if (delay == 0)
 			{
 				var tc = Environment.TickCount;
-				TryDoEvents(true, false);
+				TryDoEvents();
 				if (Environment.TickCount - tc == 0)
 					System.Threading.Thread.Sleep(0);
 			}
 			else if (delay == -1)
 			{
-				TryDoEvents(true, false);
+				TryDoEvents();
 			}
 			else if (delay == -2)
 				WaitUntil(() => script.hasExited || script.input == null || !script.input.InProgress());
@@ -310,14 +310,25 @@ namespace Keysharp.Internals
 		}
 
 		/// <summary>
-		/// Waits until <paramref name="condition"/> holds, testing a costly one such as a window search only every
-		/// <paramref name="intervalMs"/>, as AutoHotkey's waits do. A thread that runs script events pumps them meanwhile;
-		/// any other, such as a hook thread, sleeps. False when <paramref name="timeoutMs"/> runs out; negative waits forever.
+		/// Waits until <paramref name="condition"/> holds, testing it only when this thread is woken: whatever makes it
+		/// true has to announce that with a message, scheduled work, or a scheduler's <c>Wake</c>. Use the overload with a
+		/// polling interval for conditions with no notification. A thread that owns no pump re-tests every
+		/// <see cref="Script.SLEEP_INTERVAL"/>. False when <paramref name="timeoutMs"/> runs out; negative waits forever.
 		/// </summary>
-		internal static bool WaitUntil(Func<bool> condition, int timeoutMs = -1, int intervalMs = 0)
+		internal static bool WaitUntil(Func<bool> condition, int timeoutMs = -1) => WaitUntil(condition, timeoutMs, 0);
+
+		/// <summary>
+		/// Waits until <paramref name="condition"/> holds, testing it every <paramref name="intervalMs"/> as AutoHotkey's
+		/// waits do: for a condition nothing announces, such as a window search or a key state. A thread that runs
+		/// script events pumps them meanwhile and otherwise blocks; any other, such as a hook thread, sleeps. False when
+		/// <paramref name="timeoutMs"/> runs out; negative waits forever.
+		/// </summary>
+		internal static bool WaitUntil(Func<bool> condition, int timeoutMs, int intervalMs)
 		{
 			var script = Script.TheScript;
-			var pump = script != null && (script.IsOnMainThread || script.CurrentSchedulerIfCreated != null);
+			// Script.EventScheduler may resolve to another thread's scheduler, which this thread cannot pump.
+			var scheduler = script?.CurrentSchedulerIfCreated;
+			var pump = script != null && (script.IsOnMainThread || scheduler != null);
 			var start = Environment.TickCount64;
 
 			for (var nextTest = start; ;)
@@ -330,6 +341,8 @@ namespace Keysharp.Internals
 						return true;
 
 					nextTest = now + intervalMs;
+					// Window and accessibility queries can consume the remaining timeout themselves.
+					now = Environment.TickCount64;
 				}
 
 				var remaining = timeoutMs < 0 ? long.MaxValue : start + timeoutMs - now;
@@ -338,9 +351,16 @@ namespace Keysharp.Internals
 					return false;
 
 				if (pump)
-					TryDoEvents();
+				{
+					var wait = intervalMs > 0 ? Math.Min(remaining, Math.Max(0, nextTest - now)) : remaining;
+					TryDoEvents(scheduler, waitMs: wait == long.MaxValue ? Timeout.Infinite : (int)wait);
+				}
 				else
-					System.Threading.Thread.Sleep((int)Math.Clamp(Math.Min(nextTest - now, remaining), 1, int.MaxValue));
+				{
+					// Nothing can wake a thread without a pump, so the woken form falls back to the same slices as TryDoEvents.
+					var slice = intervalMs > 0 ? nextTest - now : Script.SLEEP_INTERVAL;
+					System.Threading.Thread.Sleep((int)Math.Clamp(Math.Min(slice, remaining), 1, int.MaxValue));
+				}
 			}
 		}
 
@@ -369,16 +389,14 @@ namespace Keysharp.Internals
 			}
 		}
 
-		internal static void TryDoEvents(bool propagateExit = true, bool yieldTick = true)
-			=> TryDoEvents(null, propagateExit, yieldTick);
-
-		// A null scheduler resolves through Script.EventScheduler. An explicit scheduler retains its owning Script,
-		// including when a posted pump from an older Script runs after the process-wide current Script has changed.
-		// Callers already inside a UI dispatch can suppress the nested native UI pump while retaining scheduler and
-		// exit handling.
-		internal static void TryDoEvents(ScriptEventScheduler scheduler, bool propagateExit = true, bool yieldTick = true, bool pumpUi = true)
+		// Pumps this thread's scheduler and, on the main thread, the native UI loop. waitMs 0 pumps without waiting,
+		// Timeout.Infinite blocks until woken and a positive value caps the block; whatever a caller's loop waits for has
+		// to wake it with a message, scheduled work, or the scheduler's Wake. Blocked queued work is retried on a bounded
+		// cadence, and a thread that owns no pump sleeps in slices of at most SLEEP_INTERVAL instead of blocking.
+		// An explicit scheduler retains its owning Script, even after Script.TheScript changes.
+		// pumpUi:false suppresses native dispatch while retaining scheduler and exit handling.
+		internal static void TryDoEvents(ScriptEventScheduler scheduler = null, bool propagateExit = true, int waitMs = 0, bool pumpUi = true)
 		{
-			var start = yieldTick ? Environment.TickCount : default;
 			var script = scheduler?.Owner ?? Script.TheScript;
 			var currentThread = script.Threads.CurrentThread;
 			// Stamped before the pump as well: a handler that a dispatched message runs inline (a COM event, a subclassed
@@ -396,13 +414,62 @@ namespace Keysharp.Internals
 				{
 					scheduler ??= script.EventScheduler;
 
+					// The uninterruptible startup window ends without a wake. Retry blocked work at its deadline
+					// or the worker loop's peek interval, whichever comes first.
+					if (waitMs != 0 && scheduler.HasBlockedQueuedWork)
+					{
+						var peek = ThreadVariables.DefaultUninterruptiblePeekFrequency;
+
+						if (!currentThread.allowThreadToBeInterrupted && currentThread.UninterruptibleDuration > 0)
+						{
+							var untilInterruptible = currentThread.threadStartTick + currentThread.UninterruptibleDuration - Environment.TickCount64;
+
+							if (untilInterruptible > 0)
+								peek = Math.Min(untilInterruptible, peek);
+						}
+
+						waitMs = CapWait(waitMs, peek);
+					}
+					else if (waitMs != 0 && scheduler.OwnsCurrentThread && scheduler.HasQueuedEvents())
+						// An outer pump may have consumed the wake before a callback enters a nested wait.
+						waitMs = 0;
+
 					if (pumpUi && noUiPumpScore == 0 && script.IsOnMainThread)
 					{
 #if WINDOWS
+						// The signal also covers hosts whose synchronization context does not post native messages.
+						if (waitMs != 0 && scheduler.OwnsCurrentThread)
+						{
+							scheduler.WaitForMessagesOrPumpSignal(waitMs);
+							waitMs = 0;
+						}
+
 						Application.DoEvents();
 #else
-						Application.Instance?.RunIteration();
+						if (Script.EtoApplication is { } app)
+						{
+							var nativeWait = 0;
+
+							// A post that lands in the native loop lets one wait see messages and scheduler wakes alike. A
+							// foreign host context has no wake the native loop sees, so both are serviced in bounded slices.
+							if (script.UIThreadContext is null or EtoSynchronizationContext)
+								nativeWait = waitMs;
+							else
+								waitMs = CapWait(waitMs, Script.SLEEP_INTERVAL);
+
+							app.RunIteration(nativeWait);
+
+							// Zeroed only once the wait was served, so an iteration that throws still falls back to bounded slices.
+							if (nativeWait != 0)
+								waitMs = 0;
+						}
 #endif
+					}
+
+					if (waitMs != 0 && scheduler.OwnsCurrentThread)
+					{
+						scheduler.WaitForPumpSignal(waitMs);
+						waitMs = 0;
 					}
 
 					scheduler.PumpThreadQueuedEventsCore();
@@ -425,69 +492,54 @@ namespace Keysharp.Internals
 				script.Threads.ThrowIfExitRequested(currentThread);
 			}
 
-			if (yieldTick && start.Equals(Environment.TickCount))
-				System.Threading.Thread.Sleep(1);
+			// If no pump could wait, give up the time in bounded slices.
+			if (waitMs != 0)
+				System.Threading.Thread.Sleep(CapWait(waitMs, Script.SLEEP_INTERVAL));
+
+			static int CapWait(int waitMs, long cap) => waitMs < 0 ? (int)cap : (int)Math.Min(waitMs, cap);
 		}
 
 		/// <summary>
-		/// Waits for <paramref name="task"/>, pumping events so timers, hotkeys and the GUI stay alive. This is
-		/// what backs the script-facing waits -- <c>Await()</c>, <c>Task.Wait()</c> and <c>RealThread.Wait()</c>
-		/// -- as distinct from <c>TaskExtensions</c>, which serves internal cold-start and compositor probes and
-		/// deliberately refuses to pump anywhere but the main thread.
-		/// <para>
-		/// It blocks on a successful completion signal and pumps on each tick, rather than spinning. Pumping is what makes the
-		/// task progress when its continuation was posted to this thread's scheduler, which is why a wait that
-		/// cannot pump -- the raw Clr.Wrap surface, a tight loop -- can leave such a task unfinished.</para>
-		/// <para>
-		/// Interruptible, like <c>Sleep</c>: new pseudo-threads may launch while it waits.</para>
+		/// Waits for task completion without observing its result or exception. Pumps the calling thread's scheduler
+		/// so its continuations can run; like Sleep, the wait allows new pseudo-threads. Threads without a scheduler
+		/// block normally. Unlike this script-facing wait, TaskExtensions only pumps the UI thread.
 		/// </summary>
 		/// <param name="task">The task to wait for.</param>
 		/// <param name="timeoutMs">Milliseconds to wait, or negative to wait indefinitely.</param>
 		/// <returns>True if the task finished, false if the timeout elapsed first.</returns>
 		internal static bool WaitForCompletion(Task task, int timeoutMs)
 		{
-			if (task == null)
+			if (task == null || task.IsCompleted)
 				return true;
 
-			if (task.IsCompleted)
-				return true;
-
-			// Waiting on the task itself observes its exception. A non-throwing completion signal preserves the
-			// distinction between waiting for an outcome and inspecting that outcome.
-			var completionSignal = task.ContinueWith(static _ => { }, CancellationToken.None,
+			// Script.EventScheduler can resolve to another thread's scheduler, which this thread cannot pump.
+			var scheduler = Script.TheScript?.CurrentSchedulerIfCreated;
+			using var wakeCancellation = new CancellationTokenSource();
+			var wakeContinuation = task.ContinueWith(static (_, s) => ((ScriptEventScheduler)s)?.Wake(), scheduler, wakeCancellation.Token,
 				TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 
-			// Pump the scheduler this thread owns, not whatever Script.EventScheduler resolves to: on a thread
-			// with no ambient SynchronizationContext those differ, and PumpThreadQueuedEventsCore returns
-			// immediately for a scheduler it does not own, turning the wait into a silent spin.
-			var scheduler = Script.TheScript?.CurrentSchedulerIfCreated;
-
-			// Nothing here would be pumped anyway (static init, a pool thread), so an ordinary blocking wait on the
-			// successful completion signal is both correct and all that is available.
-			if (scheduler == null)
-				return completionSignal.Wait(timeoutMs < 0 ? Timeout.Infinite : timeoutMs) || task.IsCompleted;
-
-			var deadline = timeoutMs < 0 ? long.MaxValue : Environment.TickCount64 + timeoutMs;
-
-			while (true)
+			try
 			{
-				var remaining = timeoutMs < 0 ? PumpTickMs : (int)Math.Min(PumpTickMs, Math.Max(0, deadline - Environment.TickCount64));
+				if (scheduler == null)
+					return wakeContinuation.Wait(timeoutMs < 0 ? Timeout.Infinite : timeoutMs) || task.IsCompleted;
 
-				// Pump first, so a zero or very short timeout still services the queue once rather than only
-				// sleeping, and so the caller stays responsive from the outset rather than a tick late.
-				TryDoEvents(scheduler, propagateExit: true, yieldTick: false);
+				var deadline = timeoutMs < 0 ? long.MaxValue : Environment.TickCount64 + timeoutMs;
 
-				if (completionSignal.Wait(remaining))
-					return true;
+				do
+				{
+					// Pumps once even for a zero timeout, so the queue is still serviced.
+					var remaining = timeoutMs < 0 ? Timeout.Infinite : (int)Math.Max(0, deadline - Environment.TickCount64);
+					TryDoEvents(scheduler, propagateExit: true, waitMs: remaining);
+				} while (!task.IsCompleted && Environment.TickCount64 < deadline);
 
-				if (Environment.TickCount64 >= deadline)
-					return task.IsCompleted;
+				return task.IsCompleted;
+			}
+			finally
+			{
+				// A timed-out or interrupted wait must not leave its scheduler attached to a long-lived task.
+				wakeCancellation.Cancel();
 			}
 		}
-
-		// How long a task wait blocks before pumping again. Short enough that a script stays responsive, long
-		// enough that a multi-second wait is not thousands of DoEvents rounds.
-		private const int PumpTickMs = 5;
 
 		/// <summary>
 		/// Suspends <paramref name="tv"/> while its paused flag is set, pumping so that a hotkey or posted work can
@@ -515,7 +567,7 @@ namespace Keysharp.Internals
 			try
 			{
 				while (tv.IsPaused && tv.requestedExitCode == null && !script.hasExited && !script.IsDisposed)
-					TryDoEvents(propagateExit: false);
+					TryDoEvents(propagateExit: false, waitMs: Timeout.Infinite);
 			}
 			finally
 			{

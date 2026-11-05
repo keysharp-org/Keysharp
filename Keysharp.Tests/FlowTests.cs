@@ -522,6 +522,153 @@ public partial class FlowTests : TestRunner
 	[Test, Category("Flow")]
 	public void FlowTryCatch() => Assert.IsTrue(TestScript("flow-trycatch", false));
 
+	[TestCase(false), TestCase(true), Category("Flow"), Category("Curated"), Category("Internal")]
+	public void FinalReleaseWaitsForDeferredExit(bool vetoFirst) => RunHeadless(() =>
+	{
+		var context = UseQueuedMainContext();
+		var scheduler = s.MainEventScheduler;
+		var mainThread = Thread.CurrentThread;
+		var previousExitCode = Environment.ExitCode;
+		using var released = new ManualResetEventSlim();
+		using var firstExit = new ManualResetEventSlim();
+		using var returned = new ManualResetEventSlim();
+		var exitCodes = new List<long>();
+		var stayedAlive = true;
+		Exception producerFailure = null;
+		var producer = new Thread(() =>
+		{
+			try
+			{
+				if (!released.Wait(2000))
+					throw new TimeoutException("The main loop did not release its last pending work.");
+
+				PostExit(41);
+
+				if (vetoFirst)
+				{
+					if (!firstExit.Wait(2000))
+						throw new TimeoutException("The deferred exit did not reach OnExit.");
+
+					PostExit(42);
+				}
+			}
+			catch (Exception ex)
+			{
+				producerFailure = ex;
+				s.hasExited = true;
+				scheduler.SignalPump();
+			}
+
+			void PostExit(int code)
+			{
+				// Wait until the main loop has chosen to block or return, without letting the exit post decide for it.
+				var settled = SpinWait.SpinUntil(() => returned.IsSet
+					|| (mainThread.ThreadState & System.Threading.ThreadState.WaitSleepJoin) != 0, 2000);
+				stayedAlive &= settled && !returned.IsSet;
+				s.SetPendingExitCode(code);
+				s.ExitIfNotPersistent();
+				_ = scheduler.EnqueueCallback(context.DrainAll);
+			}
+		}) { IsBackground = true };
+
+		Keysharp.Internals.Flow.noUiPumpScore++;
+		try
+		{
+			producer.Start();
+			try
+			{
+				s.RunMainWindow("headless-deferred-exit", () =>
+				{
+					_ = Builtins.Flow.OnExit(new KeysharpFunc((Func<object, object, object>)((reason, code) =>
+					{
+						exitCodes.Add(Convert.ToInt64(code));
+						firstExit.Set();
+						return vetoFirst && exitCodes.Count == 1 ? 1L : 0L;
+					})));
+					s.AdjustPendingSchedulerWork(1);
+					_ = scheduler.EnqueueCallback(() =>
+					{
+						s.AdjustPendingSchedulerWork(-1);
+						released.Set();
+					});
+					return 0L;
+				}, false, true);
+			}
+			catch (Builtins.Flow.UserRequestedExitException) { }
+		}
+		finally
+		{
+			returned.Set();
+			_ = producer.Join(5000);
+			Keysharp.Internals.Flow.noUiPumpScore--;
+			Environment.ExitCode = previousExitCode;
+		}
+
+		Assert.That(producerFailure, Is.Null);
+		Assert.That(stayedAlive, Is.True, "Only the posted exit check may end the headless loop, including after an OnExit veto.");
+		Assert.That(exitCodes, Is.EqualTo(vetoFirst ? new long[] { 41, 42 } : new long[] { 41 }));
+	});
+
+	[Test, Category("Flow"), Category("Internal")]
+	public void WaitPredicateConsumesTimeout()
+	{
+		_ = UseQueuedMainContext();
+		var dispatched = false;
+		_ = s.EventScheduler.EnqueueCallback(() => dispatched = true);
+
+		Assert.IsFalse(Keysharp.Internals.Flow.WaitUntil(() =>
+		{
+			Thread.Sleep(20);
+			return false;
+		}, 1, 100));
+		Assert.IsFalse(dispatched, "An expired wait must return before dispatching more work.");
+	}
+
+	[TestCase(false), TestCase(true), Category("Flow"), Category("Internal")]
+	public void CompletionWakesForeignUiContext(bool completeOnNativeLoop)
+	{
+		if (completeOnNativeLoop)
+			SkipIfUiInitializationBlocked("The native UI loop is unavailable in this test host.");
+
+		var previousContext = s.UIThreadContext;
+		_ = UseQueuedMainContext();
+		var completion = new TaskCompletionSource();
+#if WINDOWS
+		using var nativeContext = completeOnNativeLoop ? new WindowsFormsSynchronizationContext() : null;
+#else
+		var app = Application.Instance;
+#endif
+		long postedAt = 0;
+		var completer = new Thread(() =>
+		{
+			Thread.Sleep(75);
+			postedAt = Environment.TickCount64;
+
+			if (completeOnNativeLoop)
+#if WINDOWS
+				nativeContext.Post(_ => completion.SetResult(), null);
+#else
+				app.AsyncInvoke(() => completion.SetResult());
+#endif
+			else
+				completion.SetResult();
+		}) { IsBackground = true };
+
+		try
+		{
+			completer.Start();
+			// The host context is never drained. Both a scheduler wake and native dispatch must still end
+			// this wait without relying on the five-second deadline.
+			Assert.IsTrue(Keysharp.Internals.Flow.WaitForCompletion(completion.Task, 5000));
+			Assert.That(Environment.TickCount64 - postedAt, Is.LessThan(2000), "The completion did not wake its waiter.");
+		}
+		finally
+		{
+			_ = completer.Join(5000);
+			s.UIThreadContext = previousContext;
+		}
+	}
+
 	// An event's launch catch filter copies the frames before the finally blocks which pop them run.
 	[Test, Category("Flow"), Category("Internal")]
 	public void ForeignExceptionStack()

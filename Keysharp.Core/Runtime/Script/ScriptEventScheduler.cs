@@ -87,17 +87,18 @@ namespace Keysharp.Runtime
 			=> SynchronizationContext.Current == null ? (uiEventScheduler ?? ThreadScheduler) : ThreadScheduler;
 
 
-		internal void ScheduleAllEventSchedulers()
-			=> ScheduleEventSchedulers(static _ => true);
+		// Exit, input completion and scheduler disposal may release waiters on any thread.
+		internal void WakeAllEventSchedulers()
+		{
+			foreach (var scheduler in Volatile.Read(ref liveSchedulers))
+				scheduler.Wake();
+		}
 
 		internal void ScheduleBlockedEventSchedulers()
-			=> ScheduleEventSchedulers(static scheduler => scheduler.HasBlockedQueuedWork);
-
-		private void ScheduleEventSchedulers(Predicate<ScriptEventScheduler> shouldSchedule)
 		{
 			foreach (var scheduler in Volatile.Read(ref liveSchedulers))
 			{
-				if (shouldSchedule == null || shouldSchedule(scheduler))
+				if (scheduler.HasBlockedQueuedWork)
 					scheduler.SchedulePump();
 			}
 		}
@@ -267,7 +268,7 @@ namespace Keysharp.Runtime
 		private readonly LinkedList<ScriptQueueEntry> normalQueue = new();
 		// Reused by EnqueueDueTimers (only the owning thread calls it), so the per-pump due-check doesn't allocate.
 		private readonly List<Keysharp.Internals.Threading.ScriptTimerState> dueTimerBuffer = new();
-		private AutoResetEvent workerPumpSignal;
+		private AutoResetEvent pumpSignal;
 		private int workerDisposed;
 		private bool ownedResourcesDisposed;
 		private int workerExitRequested;
@@ -279,7 +280,7 @@ namespace Keysharp.Runtime
 		internal ThreadVariableManager threadManager;
 		private int persistentRegistrationCount;
 		private bool blockedQueuedWork;
-		private bool pumpScheduled;
+		private object scheduledPumpTarget;
 		private bool timerCheckPending;
 		private readonly bool isUiScheduler;
 		private readonly int ownerManagedThreadId;
@@ -301,24 +302,19 @@ namespace Keysharp.Runtime
 			script = owner;
 			this.ownerManagedThreadId = ownerManagedThreadId;
 			this.isUiScheduler = isUiScheduler;
+			pumpSignal = new(false);
 			if (isUiScheduler)
 			{
 				postedPump = PumpPosted;
 				owner.uiEventScheduler = this;
 			}
-			else
-				workerPumpSignal = new(false);
 		}
 
 		internal Script Owner => script;
 		internal bool OwnsCurrentThread => Thread.CurrentThread.ManagedThreadId == ownerManagedThreadId;
 		internal int OwnerManagedThreadId => ownerManagedThreadId;
 		internal bool IsDisposed => script.IsDisposed || Volatile.Read(ref workerDisposed) != 0;
-		// True for schedulers that are guaranteed to be pumped: the UI scheduler (driven by the
-		// message loop) and RealThread schedulers (marked intentional before body runs, then
-		// driven by RunWorkerEventLoop). False for ephemeral ad-hoc C# thread schedulers that
-		// have no pump loop and would silently swallow any enqueued work.
-internal bool HasBlockedQueuedWork
+		internal bool HasBlockedQueuedWork
 		{
 			get
 			{
@@ -342,7 +338,7 @@ internal bool HasBlockedQueuedWork
 					_ = Interlocked.Exchange(ref persistentRegistrationCount, 0);
 			}
 
-			SignalWorkerPump();
+			SignalPump();
 		}
 
 		/// <summary>
@@ -555,7 +551,9 @@ internal bool HasBlockedQueuedWork
 			if (isUiScheduler && script.UIThreadContext != null)
 				return script.InvokeOnUIThread(func);
 
-			using var completed = new ManualResetEventSlim(false);
+			// The caller may unwind before the callback finishes, so completion cannot own a disposable wait handle.
+			var completed = new TaskCompletionSource();
+			var waiter = script.CurrentSchedulerIfCreated;
 			ExceptionDispatchInfo captured = null;
 			T result = default;
 
@@ -571,12 +569,13 @@ internal bool HasBlockedQueuedWork
 				}
 				finally
 				{
-					completed.Set();
+					completed.SetResult();
+					waiter?.Wake();
 				}
 			}, ScriptEventQueue.Interactive))
 				throw new ObjectDisposedException(nameof(ScriptEventScheduler));
 
-			WaitForSynchronousCompletion(completed);
+			WaitForSynchronousCompletion(completed.Task, waiter);
 			captured?.Throw();
 			return result;
 		}
@@ -593,8 +592,7 @@ internal bool HasBlockedQueuedWork
 			var consecutiveNormalLocalBlocks = 0;
 			var preferNormalOnce = false;
 
-			if (!TryBeginPump())
-				return;
+			BeginPump();
 
 			try
 			{
@@ -644,7 +642,7 @@ internal bool HasBlockedQueuedWork
 				return;
 
 			_ = Interlocked.Exchange(ref workerExitRequested, 1);
-			SignalWorkerPump();
+			SignalPump();
 		}
 
 		internal void RunWorkerEventLoop()
@@ -655,7 +653,7 @@ internal bool HasBlockedQueuedWork
 				{
 					// Blocked work can become runnable either when another scheduler finishes a pseudo-thread
 					// or when interruptibility naturally times out, so wait briefly rather than spinning.
-					_ = WaitForWorkerPumpSignal((int)ThreadVariables.DefaultUninterruptiblePeekFrequency);
+					WaitForPumpSignal((int)ThreadVariables.DefaultUninterruptiblePeekFrequency);
 
 					// RequestWorkerExit signals this same wait, and a shutting-down worker abandons queued work
 					// rather than serving one more entry on the way out.
@@ -674,7 +672,7 @@ internal bool HasBlockedQueuedWork
 					if (Volatile.Read(ref persistentRegistrationCount) == 0)
 						return;
 
-					_ = WaitForWorkerPumpSignal();
+					WaitForPumpSignal(Timeout.Infinite);
 				}
 			}
 		}
@@ -687,11 +685,11 @@ internal bool HasBlockedQueuedWork
 			DisposeOwnedResources();
 			script.ReleaseThreadScheduler(this);
 
-			SignalWorkerPump();
+			SignalPump();
 
 			// Only the worker's finally path closes its wait handle. Script shutdown can run concurrently on
 			// another thread, so it limits itself to requesting exit and waking this handle.
-			var signal = Interlocked.Exchange(ref workerPumpSignal, null);
+			var signal = Interlocked.Exchange(ref pumpSignal, null);
 			signal?.Dispose();
 		}
 
@@ -699,21 +697,31 @@ internal bool HasBlockedQueuedWork
 		{
 			DisposeOwnedResources();
 
-			if (!isUiScheduler)
+			// A GUI main thread is released by the hasExited wake that precedes Dispose, not by this signal, which is for
+			// a headless one still waiting on it. Only the owner can know that nobody waits, so only it closes the handle.
+			if (isUiScheduler)
+			{
+				SignalPump();
+
+				if (OwnsCurrentThread)
+					Interlocked.Exchange(ref pumpSignal, null)?.Dispose();
+			}
+			else
 				RequestWorkerExit();
 		}
 
 		internal void SchedulePump() => SchedulePump(requireQueued: true);
 
-		// Wakes this scheduler so its pump runs the timer due-check (EnqueueDueTimers), even when the queue is currently
-		// empty — the timer manager's waker calls this when a timer is due but not yet enqueued. Coalesced via
-		// pumpScheduled, so repeated wakes before the pump runs collapse into one post.
+		// Wake even with an empty queue, for example when a task completes.
+		internal void Wake() => SchedulePump(requireQueued: false);
+
+		// A due timer needs a pump even before its callback is enqueued.
 		internal void WakeForTimerCheck()
 		{
 			lock (gate)
 				timerCheckPending = true;
 
-			SchedulePump(requireQueued: false);
+			Wake();
 		}
 
 		private void SchedulePump(bool requireQueued)
@@ -721,35 +729,58 @@ internal bool HasBlockedQueuedWork
 			if (IsDisposed)
 				return;
 
+			object target = isUiScheduler ? script.UIThreadContext : null;
+#if !WINDOWS
+			if (target == null && isUiScheduler)
+				target = Script.EtoApplication;
+#endif
+			bool post;
+
 			lock (gate)
 			{
-				if (!TryMarkPumpScheduledUnsafe(requireQueued))
+				if (requireQueued && !HasQueuedEventsUnsafe())
 					return;
+
+				// A pending post can only wake the UI transport it was sent to.
+				post = target != null && !ReferenceEquals(scheduledPumpTarget, target);
+
+				if (post)
+					scheduledPumpTarget = target;
 			}
 
-			if (isUiScheduler)
-				// This delegate can run from an idle native UI loop with no script exception boundary.
-				// Keep exit requests pending for the next genuine script safe point instead of throwing here.
-				script.PostToUIThread(postedPump);
-			else
-				SignalWorkerPump();
+			// A nested wait can consume the signal before the posted pump runs. Coalesce posts, never wakeups.
+			SignalPump();
+
+			if (post)
+			{
+				// Native loops need a posted pump; the scheduler's own loop is already woken by its signal.
+				if (target is SynchronizationContext context)
+					context.Post(static state => ((Action)state)(), postedPump);
+#if !WINDOWS
+				else if (target is Eto.Forms.Application app)
+					app.AsyncInvoke(postedPump);
+#endif
+			}
 		}
 
+		// Native dispatch has no script exception boundary; defer exit propagation to a script safe point.
 		private void PumpPosted()
-			=> Keysharp.Internals.Flow.TryDoEvents(this, propagateExit: false, yieldTick: false, pumpUi: false);
+		{
+			if (!IsDisposed)
+				Keysharp.Internals.Flow.TryDoEvents(this, propagateExit: false, pumpUi: false);
+		}
 
 		private LinkedList<ScriptQueueEntry> GetQueue(ScriptEventQueue queueType)
 			=> queueType == ScriptEventQueue.Interactive ? interactiveQueue : normalQueue;
 
-		private bool TryBeginPump()
+		private void BeginPump()
 		{
 			// Nested passes do their own bookkeeping: the pass beneath one is parked in a callback, which may be a
 			// dialog's message loop that only a posted wake reaches.
 			lock (gate)
 			{
 				blockedQueuedWork = false;
-				pumpScheduled = false;
-				return true;
+				scheduledPumpTarget = null;
 			}
 		}
 
@@ -848,7 +879,11 @@ internal bool HasBlockedQueuedWork
 			// Re-labelling is a no-op copy for a correct producer; it exists so a mislabelled one cannot be refetched
 			// by the skip-walk and re-run for the rest of the pass.
 			lock (gate)
+			{
 				GetQueue(queueType).AddFirst(new ScriptQueueEntry(entry.Priority, entry.Execute, true));
+				// Dispatch later in this pass can enter a nested wait before EndPump runs.
+				blockedQueuedWork = true;
+			}
 		}
 
 		private bool HandleLocalBlock(ScriptEventQueue queueType, ScriptQueueEntry entry, ref int consecutiveInteractiveLocalBlocks, ref int consecutiveNormalLocalBlocks, ref bool preferNormalOnce)
@@ -859,6 +894,7 @@ internal bool HasBlockedQueuedWork
 			lock (gate)
 			{
 				GetQueue(queueType).AddLast(entry);
+				blockedQueuedWork = true;
 				interactiveCount = interactiveQueue.Count;
 				normalCount = normalQueue.Count;
 			}
@@ -876,50 +912,56 @@ internal bool HasBlockedQueuedWork
 			return interactiveBlocked && normalBlocked;
 		}
 
-		private bool HasQueuedEvents()
+		internal bool HasQueuedEvents()
 		{
 			lock (gate)
 				return HasQueuedEventsUnsafe();
 		}
 
-		internal void SignalWorkerPump()
+		// Signals only the managed wait handle. Use Wake when a native UI loop must also be woken.
+		internal void SignalPump()
 		{
 			try
 			{
-				_ = Volatile.Read(ref workerPumpSignal)?.Set();
+				_ = Volatile.Read(ref pumpSignal)?.Set();
 			}
 			catch (ObjectDisposedException)
 			{
 			}
 		}
 
-		private bool WaitForWorkerPumpSignal()
-			=> WaitForWorkerPumpSignal(Timeout.Infinite);
+		// Only the owner waits; a handle its own shutdown has already closed leaves nothing to wait for.
+		internal void WaitForPumpSignal(int timeout) => _ = Volatile.Read(ref pumpSignal)?.WaitOne(timeout);
 
-		private bool WaitForWorkerPumpSignal(int timeout)
+#if WINDOWS
+		// The handle is kept open across the native wait; a failed wait is slept through in a bounded slice rather than spun.
+		internal void WaitForMessagesOrPumpSignal(int timeout)
 		{
+			if (Volatile.Read(ref pumpSignal) is not { } signal)
+				return;
+
+			var handle = signal.SafeWaitHandle;
+			var added = false;
+
 			try
 			{
-				return Volatile.Read(ref workerPumpSignal)?.WaitOne(timeout) == true;
+				handle.DangerousAddRef(ref added);
+				var nativeHandle = handle.DangerousGetHandle();
+
+				if (WindowsAPI.MsgWaitForMultipleObjectsEx(1, ref nativeHandle, unchecked((uint)timeout),
+					WindowsAPI.QS_ALLINPUT, WindowsAPI.MWMO_INPUTAVAILABLE) == uint.MaxValue)
+					Thread.Sleep(timeout < 0 ? Script.SLEEP_INTERVAL : Math.Min(timeout, Script.SLEEP_INTERVAL));
 			}
-			catch (ObjectDisposedException)
+			finally
 			{
-				return false;
+				if (added)
+					handle.DangerousRelease();
 			}
 		}
+#endif
 
 		private bool HasQueuedEventsUnsafe() => interactiveQueue.Count != 0 || normalQueue.Count != 0;
 		private bool HasBlockedQueuedWorkUnsafe() => blockedQueuedWork && HasQueuedEventsUnsafe();
-
-		private bool TryMarkPumpScheduledUnsafe(bool requireQueued = true)
-		{
-			// requireQueued:false is the timer-waker path — wake to run the due-check even with an empty queue.
-			if ((requireQueued && !HasQueuedEventsUnsafe()) || pumpScheduled)
-				return false;
-
-			pumpScheduled = true;
-			return true;
-		}
 
 		private sealed class TimerQueuedEvent(ScriptEventScheduler scheduler, ScriptTimerState timer)
 		{
@@ -1096,11 +1138,10 @@ internal bool HasBlockedQueuedWork
 			}
 		}
 
-		private void WaitForSynchronousCompletion(ManualResetEventSlim completed)
+		// The completion wakes the waiter's pump; a thread without one checks for shutdown between timed waits.
+		private void WaitForSynchronousCompletion(Task completed, ScriptEventScheduler waiter)
 		{
-			var waitingScheduler = script.CurrentSchedulerIfCreated;
-
-			while (!completed.Wait(20))
+			while (!completed.IsCompleted)
 			{
 				if (script.hasExited)
 					throw new Keysharp.Builtins.Flow.UserRequestedExitException();
@@ -1108,12 +1149,12 @@ internal bool HasBlockedQueuedWork
 				if (IsDisposed)
 					throw new ObjectDisposedException(nameof(ScriptEventScheduler));
 
-				PumpDuringSynchronousWait(waitingScheduler);
+				if (waiter != null)
+					Keysharp.Internals.Flow.TryDoEvents(waiter, propagateExit: true, waitMs: Timeout.Infinite);
+				else
+					_ = completed.Wait(20);
 			}
 		}
-
-		private void PumpDuringSynchronousWait(ScriptEventScheduler waitingScheduler)
-			=> Keysharp.Internals.Flow.TryDoEvents(waitingScheduler, propagateExit: true, yieldTick: false);
 
 		internal ScriptEventExecutionResult TryStartPseudoThread(long priority, bool skipUninterruptible, bool isCritical, bool allowEmergencyOverflow, out ThreadVariables threadVariables, ThreadKind kind = ThreadKind.None)
 		{
@@ -1154,7 +1195,7 @@ internal bool HasBlockedQueuedWork
 				interactiveQueue.Clear();
 				normalQueue.Clear();
 				blockedQueuedWork = false;
-				pumpScheduled = false;
+				scheduledPumpTarget = null;
 			}
 		}
 
@@ -1191,6 +1232,9 @@ internal bool HasBlockedQueuedWork
 				if (hotkeysChanged || hotstringsChanged)
 					_ = Keysharp.Internals.Input.Keyboard.HotkeyDefinition.ManifestAllHotkeysHotstringsHooks(script);
 			}
+
+			// Release other schedulers waiting for work discarded here, such as InvokeSynchronous.
+			script.WakeAllEventSchedulers();
 		}
 
 		private void InvalidatePendingCallbacks()

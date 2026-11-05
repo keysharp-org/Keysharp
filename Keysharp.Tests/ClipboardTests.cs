@@ -408,7 +408,7 @@ public partial class ClipboardTests : TestRunner
 	{
 		var script = Script.TheScript;
 		script.ClipboardEventManager.Dispatch(dataType);
-		Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+		Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, pumpUi: false);
 	}
 
 	/// <summary>The hook's own bookkeeping — Start and Stop — without needing a real clipboard event,
@@ -448,7 +448,7 @@ public partial class ClipboardTests : TestRunner
 			var dispatch = System.Threading.Tasks.Task.Run(() => script.ClipboardEventManager.Dispatch(0L));
 			Assert.IsTrue(dispatch.Wait(TimeSpan.FromSeconds(5)), "The native producer only queues the notification.");
 			Assert.That(calls.Count, Is.EqualTo(3), "The callback waits for its owning thread.");
-			Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+			Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, pumpUi: false);
 			Assert.That(calls.Count, Is.EqualTo(4));
 			Assert.That(calls[3][1], Is.Zero);
 			Assert.That(calls[3][2], Is.EqualTo(ownerThread));
@@ -488,7 +488,7 @@ public partial class ClipboardTests : TestRunner
 			var script = Script.TheScript;
 			script.ClipboardEventManager.Dispatch(1L);
 			script.ClipboardEventManager.Dispatch(1L);
-			Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+			Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, pumpUi: false);
 			Assert.That(calls, Is.EqualTo(1), "Both changes were queued before the first ran, and the second is discarded.");
 			Assert.That(hook.EndReason, Is.EqualTo("Stopped"));
 		}
@@ -524,7 +524,7 @@ public partial class ClipboardTests : TestRunner
 			{
 				script.ClipFunctions.InvokeEventHandlers(dataType);
 				script.ClipboardEventManager.Dispatch(dataType);
-				Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, yieldTick: false, pumpUi: false);
+				Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, pumpUi: false);
 			}
 
 			Assert.That(chainValues, Is.EqualTo([0L, 1L, 2L]).AsCollection, "The chain receives numeric types regardless of what a hook returns.");
