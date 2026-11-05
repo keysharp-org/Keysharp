@@ -175,7 +175,17 @@ namespace Keysharp.Compilation.Syntax
 			{
 				if (statement is DirectiveStmt directive && StringComparer.OrdinalIgnoreCase.Equals(directive.Name, "Module"))
 				{
-					current = DeclareModule(directive, body, group, mods) ?? current;
+					var next = DeclareModule(directive, body, group, mods) ?? current;
+					if (next != current)
+					{
+						current = next;
+						// Preserve the boundary when reopened sections are grouped into one module body.
+						current.Body.Add(new DirectiveStmt("HotIf", "")
+						{
+							Line = directive.Line, Column = directive.Column, File = directive.File,
+							SourceOrder = directive.SourceOrder, Inclusion = directive.Inclusion
+						});
+					}
 					if (current.Compat == null) modes[directive.Inclusion] = current.Compat = group.Root.Compat;
 				}
 				else if (statement is ImportDirective import)

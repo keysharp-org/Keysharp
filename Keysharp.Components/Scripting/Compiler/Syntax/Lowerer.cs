@@ -980,6 +980,9 @@ namespace Keysharp.Compilation.Syntax
 					if (_experimentalWarned.Add(type))
 						CompileWarnings.Add($"0:0: {Script.GetUserDeclaredName(type) ?? type.Name} is experimental and may change or be removed without deprecation.");
 			_dhhr.AddRange(_moduleDhhr.OrderBy(item => item.SourceOrder).Select(item => item.Statement));
+			// A module's final criterion must not reach another module or ordinary auto-execute code.
+			if (registrationDirectives.Any(directive => StringComparer.OrdinalIgnoreCase.Equals(directive.Name, "HotIf")))
+				_dhhr.Add(CallStmt("Keysharp.Builtins.Keyboard.HotIf", Str("")));
 			return (members, auto);
 		}
 
@@ -7111,8 +7114,11 @@ namespace Keysharp.Compilation.Syntax
 			if (_hasOperatorDeclarations && _startupModules.Count == 0)
 				stmts.Add(ExprStmt(Inv(Access("MainScript.Operators.Register"), Id(NameMangler.OperatorManifestField))));
 			if (_suspendExemptRead)
+			{
 				stmts.Add(DeclLocal(SyntaxFactory.PredefinedType(SyntaxFactory.Token(SyntaxKind.BoolKeyword)),
 					DeclarationSuspendExemptVariable, False));
+				stmts.Add(CallStmt("Keysharp.Builtins.Keyboard.HotIf", Str("")));
+			}
 			stmts.AddRange(_dhhrPrelude);
 			foreach (var registration in _dhhr)
 				if (_suspendExemptRead || registration is not ExpressionStatementSyntax

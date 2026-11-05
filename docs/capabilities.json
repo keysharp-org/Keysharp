@@ -251,8 +251,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The #HotIf directive creates context-sensitive hotkeys and hotstrings. They perform a different action (or none at all) depending on any condition (an expression).",
-                     "tested-by":  "Gui/guitest.ks"
+                     "notes":  "Creates context-sensitive hotkeys, hotstrings and remaps. Switching modules clears the condition, including when reopening an earlier module; repeating the current module preserves it. Static declarations are registered before any module auto-execute section runs.",
+                     "tested-by":  "hotkey-hotstring-parsing.ahk; Gui/guitest.ks"
                  },
                  {
                      "category":  "Environment/System",

@@ -64,7 +64,7 @@ Status legend:
 | #EndRegion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Accepted; a source-folding marker with no runtime semantics. |
 | #Error | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Emits the given message as a compile-time diagnostic. |
 | #ErrorStdOut | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Standalone directive that sends subsequent load-time errors and uncaught runtime errors to standard error instead of displaying a dialog. The command-line switch applies to load-time errors from the start of loading. |
-| #HotIf | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #HotIf directive creates context-sensitive hotkeys and hotstrings. They perform a different action (or none at all) depending on any condition (an expression). |
+| #HotIf | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates context-sensitive hotkeys, hotstrings and remaps. Switching modules clears the condition, including when reopening an earlier module; repeating the current module preserves it. Static declarations are registered before any module auto-execute section runs. |
 | #HotIfTimeout | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The #HotIfTimeout directive sets the maximum time that may be spent evaluating a single #HotIf expression. |
 | #Hotstring | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Changes hotstring options or ending characters. Keysharp adds `I<n>` (0 through 100), setting a hotstring default that overrides #InputLevel. Invalid options raise ValueError. |
 | #If | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Begins a conditional compilation block. |

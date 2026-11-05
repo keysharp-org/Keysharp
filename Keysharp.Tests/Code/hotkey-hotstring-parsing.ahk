@@ -1,3 +1,6 @@
+#ErrorStdOut
+#Warn All, StdOut
+#Warn LocalSameAsGlobal, Off
 #NoTrayIcon
 #Include <assert>
 
@@ -150,8 +153,6 @@ testfunc "::"
 
 AssertEq(a, "::", A_LineNumber)
 
-FileAppend "pass", "*"
-
 `;:::
 `::;
 '::;
@@ -163,4 +164,24 @@ FileAppend "pass", "*"
 +w::`
 t::`
 
+; Switching modules clears #HotIf; repeating the current module preserves it.
+try
+{
+	Hotkey("*F15", , "Off")
+	Hotkey("*F19", , "Off")
+	Throws(() => Hotkey("*F17", , "Off"), A_LineNumber, TargetError)
+}
+catch Any as Failure
+	FileAppend "fail " . Failure.Message . "`n", "*"
+
+FileAppend "pass", "*"
 ExitApp()
+
+#HotIf true
+#Module HotIfScope
+F15::F16
+#HotIf true
+#Module hOtIfScope
+F17::F18
+#Module __Main
+F19::F20
