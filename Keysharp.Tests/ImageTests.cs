@@ -20,6 +20,15 @@ public class ImageTests : TestRunner
 		Assert.IsTrue(TestScript("image-vector", false));
 	}
 
+	[Test, Category("Image"), Category("Gui")]
+	public void ShowFromWorker()
+	{
+		if (Script.IsHeadless)
+			Assert.Ignore("Image previews require a usable UI toolkit.");
+
+		Assert.IsTrue(TestScript("image-show-worker", false));
+	}
+
 	[Test, Category("Image"), Category("Internal")]
 	public void DrawImageResources()
 	{

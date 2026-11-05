@@ -1668,53 +1668,49 @@ namespace Keysharp.Builtins
 				// (e.g. "Image  3840 x 2160 @ 200%").
 				var caption = $"{baseTitle}  {imgW} x {imgH} @ {FormatScalePercent(scaleX, scaleY)}";
 
-				// Construct the Gui through the runtime's Class.Call (the path scripts use); calling the
-				// C# constructor directly binds to Gui's internal form-wrapping ctor and crashes. "+Resize"
-				// makes the window stretchable; "+AutoScroll" lets the whole image be reached by scrolling
-				// when the window is smaller than it. Windows refuses to make a window larger than the
-				// monitor (it clamps to the max tracking size), so a picture bigger than the screen cannot
-				// be shown by a window that fits it — scrolling bridges that gap.
-				if (Script.TheScript.Vars.Statics[typeof(Gui)] is not Class guiClass
-						|| guiClass.Call("+Resize +AutoScroll", caption) is not Gui gui)
-					return Errors.ErrorOccurred("Could not create a window to display the image.");
-
-				// Size the picture to the image's full pixel dimensions (the caption size). A Picture from
-				// an "HBITMAP:" source is set to the loaded bitmap's pixel size directly, bypassing the GUI's
-				// DPI scaling, so passing the *pixel* width/height (not a DPI-logical size) is what makes the
-				// window open at the size the caption advertises. The control is fixed at this size and
-				// pinned top-left; scrolling reaches any part the window is too small to show.
-				_ = gui.Add("Picture", $"w{imgW} h{imgH}", "HBITMAP:" + handle);
-
-				// Cap the window at the size it first opens (the image, or the screen if the image is larger):
-				// "+MaxSize" with no dimensions defers the limit until first show, where the Gui pins it to
-				// that size, so the window can't be stretched past the image into dead space. "+MinSize"
-				// gives a small, DPI-scaled lower bound so it can't be shrunk away to nothing.
-				_ = gui.Opt("+MinSize120x90 +MaxSize");
-
-				if (wait != null && wait.Ab())
+				var script = Script.TheScript;
+				var closing = wait != null && wait.Ab() ? new TaskCompletionSource() : null;
+				var preview = script.InvokeOnUIThread(() =>
 				{
-					// Block until the user dismisses the window. Hook the form's close directly rather than
-					// WinWaitClose(gui.Hwnd): an AHK GUI HIDES rather than destroys on close, so WinWaitClose
-					// would hinge on window-search-by-handle plus the script's DetectHiddenWindows state to
-					// decide "gone" — both fragile here (and window-id matching is unreliable on Wayland). The
-					// Closing event is a direct, per-window signal with none of those dependencies. A plain
-					// captured bool is enough: the event and the pump both run on the UI thread, and
-					// WaitUntil re-invokes the predicate each iteration so the read is never hoisted.
-					// Subscribe before Show so a near-instant close can't be missed.
-					var closing = false;
+					// Class.Call constructs the script Gui; the direct C# constructor wraps an existing form.
+					if (script.Vars.Statics[typeof(Gui)] is not Class guiClass
+							|| guiClass.Call("+Resize +AutoScroll", caption) is not Gui gui)
+						return Errors.ErrorOccurred("Could not create a window to display the image.");
+
+					// HBITMAP picture sizes are physical pixels, bypassing the GUI's DPI scaling. Scrollbars keep
+					// images larger than the screen reachable; MaxSize pins the upper size to the first show.
+					_ = gui.Add("Picture", $"w{imgW} h{imgH}", "HBITMAP:" + handle);
+					_ = gui.Opt("+MinSize120x90 +MaxSize");
+
+					if (closing != null)
+					{
+						// A GUI hides on close. Subscribe before Show and wake the caller's own scheduler on dismissal.
 #if WINDOWS
-					gui.form.FormClosing += (s, e) => closing = true;
+						gui.form.FormClosing += (s, e) => closing.TrySetResult();
 #else
-					gui.form.Closing += (s, e) => closing = true;
+						gui.form.Closing += (s, e) => closing.TrySetResult();
 #endif
+					}
+
 					_ = gui.Show();
-					Keysharp.Internals.Flow.WaitUntil(() => closing);
-					_ = gui.Destroy();
-					return gui;
+					return (object)gui;
+				});
+
+				if (closing != null && preview is Gui shown)
+				{
+					try
+					{
+						_ = Keysharp.Internals.Flow.WaitForCompletion(closing.Task, -1);
+					}
+					finally
+					{
+						// Worker exit also closes the preview; script teardown already owns all remaining windows.
+						if (!script.IsDisposed && !script.IsTearingDown)
+							_ = script.InvokeOnUIThread(() => shown.Destroy());
+					}
 				}
 
-				_ = gui.Show();
-				return gui;
+				return preview;
 			}
 
 			#endregion
