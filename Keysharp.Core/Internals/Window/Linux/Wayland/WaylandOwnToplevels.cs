@@ -60,6 +60,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			internal Traits Applied = Traits.None;    // ...and what it was told, so a pass only issues what changed
 			internal bool PositionSettled;            // a placement has been verified (or given up on) once; see ApplyPosition
 			internal FormWindowState? PendingWindowState; // maximize/minimize/restore to reassert via the backend
+			internal bool PendingActivate;            // focus through the backend once mapped; a client cannot focus itself
 			internal Action ReleaseFixedSize;         // undoes HoldFixedSizeUntilMapped once the map is past
 			internal Point SurfaceOrigin;             // where the compositor last said this form's surface starts
 			internal long SurfaceTick;                // ...and when, since the user can move the window at any time
@@ -256,11 +257,12 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// Request that our own window (identified by <paramref name="form"/>) be
 		/// moved so its top-left sits at screen (<paramref name="x"/>, <paramref name="y"/>). Either
 		/// coordinate may be <see cref="WindowInfoBase.Unchanged"/> to leave it untouched.
-		/// <paramref name="title"/> and the match size are used only to correlate the window.
+		/// <paramref name="title"/> and the match size are used only to correlate the window. <paramref name="activate"/>
+		/// asks the compositor to focus it as well, once.
 		/// Returns immediately; the move runs asynchronously, or once the window is mapped. No-op off
 		/// Wayland or when there is no capable backend.
 		/// </summary>
-		internal static void Position(Eto.Forms.Form form, string title, int x, int y, int matchW, int matchH, bool removeBorder = false, bool keepAbove = false, bool skipTaskbar = false)
+		internal static void Position(Eto.Forms.Form form, string title, int x, int y, int matchW, int matchH, bool removeBorder = false, bool keepAbove = false, bool skipTaskbar = false, bool activate = false)
 		{
 			var formHandle = form?.Handle ?? 0;
 
@@ -268,7 +270,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				return;
 
 			var asserts = x != WindowInfoBase.Unchanged || y != WindowInfoBase.Unchanged
-						  || removeBorder || keepAbove || skipTaskbar;
+						  || removeBorder || keepAbove || skipTaskbar || activate;
 
 			// Registration is local; a plain Show starts no compositor work until a query needs it.
 			var state = Track(form, formHandle, title, matchW, matchH);
@@ -283,6 +285,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				if (removeBorder) state.RemoveBorder = true;
 				if (keepAbove) state.KeepAbove = true;
 				if (skipTaskbar) state.SkipTaskbar = true;
+				if (activate) state.PendingActivate = true;
 
 				if (state.Mapped)
 					Reconcile(state);
@@ -836,7 +839,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				state.RetryCorrelationAt = 0;
 
 				// Whatever the compositor was told went with the window the last unmap destroyed.
-				if (state.Wanted != Traits.None || state.PendingWindowState.HasValue || state.ReleaseFixedSize != null)
+				if (state.Wanted != Traits.None || state.PendingWindowState.HasValue || state.PendingActivate
+						|| state.ReleaseFixedSize != null)
 					Reconcile(state);
 			}
 		}
@@ -849,6 +853,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					return;
 
 				state.Mapped = false;
+				// The Show that asked for focus is over with its window; a later one asks for itself.
+				state.PendingActivate = false;
 				UnbindLocked(state);
 			}
 		}
@@ -991,6 +997,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		{
 			nint handle;
 			FormWindowState? ws;
+			bool activate;
 			Traits want, have;
 			int generation;
 
@@ -1004,6 +1011,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				ws = state.PendingWindowState;
 				// A state change is a one-shot reassert; repeating it would undo a later user action.
 				state.PendingWindowState = null;
+				activate = state.PendingActivate;
+				state.PendingActivate = false;
 				want = state.Wanted;
 				have = state.AppliedTo == handle ? state.Applied : Traits.None;
 			}
@@ -1045,6 +1054,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			if (want.Opacity != null && !Equals(want.Opacity, have.Opacity))
 				if (backend.TrySetTransparency(handle, want.Opacity))
 					applied = applied with { Opacity = want.Opacity };
+
+			// Focus goes last, once the window is where and how it was asked for. A client cannot focus itself on
+			// Wayland, and Mutter refuses focus on map to a window that an always-on-top window overlaps.
+			if (activate && !backend.TryActivateWindow(handle))
+				lock (sync)
+					if (IsBoundLocked(state, generation, handle))
+						state.PendingActivate = true;
 
 			lock (sync)
 			{

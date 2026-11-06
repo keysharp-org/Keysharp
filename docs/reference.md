@@ -1462,6 +1462,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ Static text controls do not send the Windows `API WM_CTLCOLORSTATIC (0x0138)` message to their parent controls like they do in AutoHotkey.
 		+ Only on Windows does `+Parent` place a GUI inside another window. On Linux and macOS, `+Parent` and `-Parent` act as `+Owner` and `-Owner`.
 		+ Off Windows, a `Show` width or height of 0 is treated as 1: GTK cannot map a smaller window, and an empty toplevel left at zero takes the toolkit's 200x200 default. AutoHotkey's zero-sized dummy window, often used as a `HotIfWinExist` target, is therefore a single pixel rather than nothing.
+		+ On Wayland, an activating `Show` also asks the compositor backend to focus the window: a client cannot focus itself there, and Mutter refuses focus on map to a window that an always-on-top window overlaps. Without a backend the compositor's own policy decides.
 		+ Tooltips do not automatically disappear when clicking on them.
 		+ Double click handlers for buttons are not supported.
 		+ UpDown controls with paired buddy controls are not supported. Keysharp just uses the regular NumericUpDown control in C#.

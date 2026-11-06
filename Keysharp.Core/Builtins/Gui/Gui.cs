@@ -3175,6 +3175,8 @@ namespace Keysharp.Builtins
 			var requestedSize = new Size(int.MinValue, int.MinValue);
 			// Per call: a Show without X or Y leaves a shown window where it is, as in AHK.
 			var requestedLocation = new Point(int.MinValue, int.MinValue);
+			// Also per call: a Show activates unless its own options say otherwise, so NA does not outlive its call.
+			form.showWithoutActivation = false;
 
 			foreach (Range r in s.AsSpan().SplitAny(Spaces))
 			{
@@ -3496,6 +3498,9 @@ namespace Keysharp.Builtins
 				var keepAbove = form.TopMost;
 				// Likewise gtk_window_set_skip_taskbar_hint: X11-only, so +ToolWindow needs the compositor.
 				var skipTaskbar = !form.ShowInTaskbar;
+				// And form.Activate() above: a client cannot focus itself on Wayland, and Mutter refuses focus on
+				// map to a window that an always-on-top window overlaps, so an activating Show asks the compositor.
+				var activate = !form.showWithoutActivation && form.WindowState != FormWindowState.Minimized;
 
 				//Unconditional because a Show is also a RE-show: hiding the window unmapped it and the compositor
 				//dropped everything it had been told, including a transparency this Show doesn't ask for itself.
@@ -3503,7 +3508,7 @@ namespace Keysharp.Builtins
 				//has none.
 				Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.Position(form, form.Title,
 						hasPos ? location.X : int.MinValue, hasPos ? location.Y : int.MinValue,
-						size.Width, size.Height, removeBorder, keepAbove, skipTaskbar);
+						size.Width, size.Height, removeBorder, keepAbove, skipTaskbar, activate);
 			}
 #endif
 #if WINDOWS
