@@ -14,6 +14,7 @@ namespace Keysharp.Internals.Input.Linux
 		internal const string SocketEnvironmentVariable = "KEYSHARP_INPUT_SOCKET";
 		internal const string DefaultSocketPathValue = "/run/keysharp-input/keysharp-input.sock";
 		internal const int MaxInputsPerRequest = 1024;
+		internal const int MaxTerminalInputBytes = 1024;
 		internal const int KeyStateBitmapBytes = 96;
 		internal const int DeviceNameCapacity = 256;
 		internal const int DeviceAxisCapacity = 64;
@@ -62,7 +63,8 @@ namespace Keysharp.Internals.Input.Linux
 			ObserveMouse = 1UL << 12,
 			QueryDevices = 1UL << 13,
 			QueryGamepads = 1UL << 14,
-			All = (1UL << 15) - 1,
+			TerminalInput = 1UL << 15,
+			All = (1UL << 16) - 1,
 		}
 
 		internal enum HookType : uint
@@ -383,9 +385,11 @@ namespace Keysharp.Internals.Input.Linux
 					if ((info.GrantedScopes & ~(uint)ManagedScopes) != 0)
 						throw new InvalidDataException("keysharp-input returned unknown capability bits.");
 
+					var available = (Operations)info.AvailableOperations & Operations.All;
+					if (info.ClientAbiMinor < 2) available &= ~Operations.TerminalInput;
 					var client = new KeysharpInputClient(connection, role,
 						(LinuxPermissionScope)info.GrantedScopes,
-						(Operations)info.AvailableOperations & Operations.All, owner, lease, info.LeaseId);
+						available, owner, lease, info.LeaseId);
 					connection = 0;
 
 					if ((client.AvailableOperations & requested) != requested)
@@ -472,7 +476,7 @@ namespace Keysharp.Internals.Input.Linux
 				| Operations.ObserveKeyboard | Operations.ObserveMouse | Operations.QueryDevices)) != 0)
 				scopes |= LinuxPermissionScope.InputMonitoring;
 			if ((operations & (Operations.SynthesizeKeyboard | Operations.SynthesizeMouse
-				| Operations.BlockInput)) != 0)
+				| Operations.BlockInput | Operations.TerminalInput)) != 0)
 				scopes |= LinuxPermissionScope.InputControl;
 			return scopes;
 		}
@@ -574,6 +578,43 @@ namespace Keysharp.Internals.Input.Linux
 			{
 				if (rented != null)
 					ArrayPool<NativeInput>.Shared.Return(rented);
+			}
+		}
+
+		internal void SendTerminalInput(uint terminal, byte[] bytes)
+		{
+			if (!owner.IsOwnerThread) { owner.Invoke(() => { SendTerminalInput(terminal, bytes); return true; }); return; }
+			ArgumentNullException.ThrowIfNull(bytes);
+			if (terminal is < 1 or > 63)
+				throw new ArgumentOutOfRangeException(nameof(terminal));
+			if (bytes.Length > MaxTerminalInputBytes)
+				throw new ArgumentOutOfRangeException(nameof(bytes));
+			if (connectionRole != ConnectionRole.Rpc)
+				throw new InvalidOperationException("Terminal input requires an RPC connection.");
+			RequireOperations(Operations.TerminalInput);
+			ThrowIfDisposed();
+
+			Native.ksi_terminal_input_options_init(out var options);
+			Native.ksi_terminal_input_result_init(out var result);
+			Native.ksi_error_init(out var error);
+			options.TargetKind = 1; // Linux virtual console.
+			options.TargetId = terminal;
+			options.Flags = 3; // Require UTF-8 and map text backspace to the terminal's erase character.
+			fixed (byte* pointer = bytes)
+			{
+				var status = (NativeClientStatus)Native.ksi_terminal_input(connection, ref options,
+					pointer, (uint)bytes.Length, ref result, ref error);
+				if (status == NativeClientStatus.Ok && result.BytesAccepted == bytes.Length)
+					return;
+				if (status == NativeClientStatus.Timeout) Dispose();
+				if (status == NativeClientStatus.Ok) status = NativeClientStatus.Internal;
+				var message = NativeClientException.BuildMessage("keysharp-input", "terminal input", status,
+					error.Detail, error.SystemError, error.GetMessage());
+				message += $" Confirmed submitted bytes: {result.BytesAccepted} of {bytes.Length}. Text was not retried.";
+				if (status is NativeClientStatus.Timeout or NativeClientStatus.Unavailable or NativeClientStatus.Internal)
+					message += " Delivery of the remaining bytes is unknown.";
+				throw new NativeClientException("keysharp-input", "terminal input", status,
+					error.Detail, error.SystemError, message);
 			}
 		}
 
@@ -1386,6 +1427,24 @@ namespace Keysharp.Internals.Input.Linux
 		}
 
 		[StructLayout(LayoutKind.Sequential)]
+		private struct NativeTerminalInputOptions
+		{
+			internal uint StructSize;
+			internal uint TargetKind;
+			internal uint TargetId;
+			internal uint Flags;
+			private fixed ulong reserved[4];
+		}
+
+		[StructLayout(LayoutKind.Sequential)]
+		private struct NativeTerminalInputResult
+		{
+			internal uint StructSize;
+			internal uint BytesAccepted;
+			private fixed ulong reserved[4];
+		}
+
+		[StructLayout(LayoutKind.Sequential)]
 		private struct NativeKeyboardInput
 		{
 			internal ushort Vk;
@@ -1770,6 +1829,13 @@ namespace Keysharp.Internals.Input.Linux
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksi_synthesize(nint connection,
 				NativeInput* inputs, uint count, uint flags, out uint logicalModifiersLR, ref NativeError error);
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+			internal static extern void ksi_terminal_input_options_init(out NativeTerminalInputOptions options);
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+			internal static extern void ksi_terminal_input_result_init(out NativeTerminalInputResult result);
+			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+			internal static extern uint ksi_terminal_input(nint connection, ref NativeTerminalInputOptions options,
+				byte* bytes, uint count, ref NativeTerminalInputResult result, ref NativeError error);
 			[DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
 			internal static extern uint ksi_set_block_input(nint connection, uint mask,
 				out uint effectiveMask, ref NativeError error);

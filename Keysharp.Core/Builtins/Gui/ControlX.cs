@@ -467,6 +467,11 @@ namespace Keysharp.Builtins
 											 object excludeTitle = null,
 											 object excludeText = null)
 		{
+#if LINUX
+			if (Keysharp.Internals.Input.Linux.LinuxTerminalInput.TrySendText(keys, controlID,
+				winTitle, winText, excludeTitle, excludeText))
+				return DefaultObject;
+#endif
 			EnsureControlPermission("ControlSendText");
 #if WINDOWS
 			EnsureControlInputPermission("ControlSendText");

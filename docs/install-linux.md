@@ -80,6 +80,10 @@ sh ./keysharp-linux-setup.sh --dry-run
 sudo sh ./keysharp-linux-setup.sh --upgrade-components
 ```
 
+`ControlSendText` to a local text console requires `keysharp-input` client ABI 1.2
+or newer with terminal input support. An older ABI 1.x component remains usable
+for its existing operations; upgrade the input component to enable console targets.
+
 - `--skip-input` or `--skip-desktop` skips that component for this run. It does not
   uninstall an existing component.
 - `--keysharp-version`, `--input-version` and `--desktop-version` select a release

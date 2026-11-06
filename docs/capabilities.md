@@ -8,7 +8,7 @@ Status legend:
 - 🟠 Planned: Not implemented yet, but intended
 - 🔴 Unsupported: Not supported
 - ⚪ Unknown: Not yet verified
-- `Partial*` on non-Windows `Control*()` functions means script-owned Keysharp controls are supported, but controls in foreign applications are not.
+- `Partial*` on non-Windows `Control*()` functions means script-owned Keysharp controls are supported, but controls in foreign applications are not. On Linux, `ControlSendText()` also supports local text-console targets.
 
 | Capability | Windows | Linux (X11) | Linux (Wayland) | macOS | Notes |
 |---|---|---|---|---|---|
@@ -431,7 +431,7 @@ Status legend:
 | ControlHideDropDown() | 🟢 Full | 🟡 Partial* | 🟡 Partial* | 🟡 Partial* | The ControlHideDropDown function hides the popup list of a combo box or drop-down list. |
 | ControlMove() | 🟢 Full | 🟡 Partial* | 🟡 Partial* | 🟡 Partial* | Moves and/or resizes a control using the same target-client coordinates as ControlGetPos, including controls in nested containers. A direct control handle or omitted ControlID uses the control's containing top-level window's client area. Omitted position and size axes stay unchanged. Off Windows, toolkit controls use this mapping; native window movement remains limited by the desktop backend. |
 | ControlSend() | 🟢 Full | 🟡 Partial* | 🟡 Partial* | 🟡 Partial* | Sends simulated keystrokes to a window or control. Linux supports the script's own GTK windows and controls only; a window forwards input to its focused control. Input is posted asynchronously, with modifiers carried in the target events rather than changing global keyboard state. |
-| ControlSendText() | 🟢 Full | 🟡 Partial* | 🟡 Partial* | 🟡 Partial* | Sends literal text to a window or control. Linux supports the script's own GTK windows and controls only; text and edit keys are posted in order to the UI thread and respect read-only controls and text-input cancellation. |
+| ControlSendText() | 🟢 Full | 🟡 Partial* | 🟡 Partial* | 🟡 Partial* | Sends literal text to a window or control. Linux GTK targets are limited to the script's own windows and controls; text and edit keys are posted in order to the UI thread and respect read-only controls and text-input cancellation. Linux also accepts /dev/tty1 through /dev/tty63 without window criteria (keysharp-input client ABI 1.2 or later, InputControl). The caller must own the active seat0 session; the target must be a same-user logged-in text console on that seat using N_TTY, Unicode keyboard mode and UTF-8 input. Inactive consoles are supported; graphical sessions and pseudo-terminals are not. Calls allow 1024 UTF-8 bytes after newline normalization; successful submission does not guarantee consumption. |
 | ControlSetChecked() | 🟢 Full | 🟡 Partial* | 🟡 Partial* | 🟡 Partial* | The ControlSetChecked function checks or unchecks a check box or radio button. |
 | ControlSetEnabled() | 🟢 Full | 🟡 Partial* | 🟡 Partial* | 🟡 Partial* | The ControlSetEnabled function enables or disables a control. |
 | ControlSetExStyle() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | The ControlSetStyle and ControlSetExStyle functions change the style or extended style of a control. Eto controls have no Win32 style word, so the value is parsed and accepted on non-Windows platforms but has no effect. |
@@ -1035,7 +1035,6 @@ Status legend:
 | Switch | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Selects one case branch based on a value/expression. |
 | SysGet() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Gets system information. Non-Windows builds implement monitor dimensions/count, mouse presence/buttons, network state and selected session metrics; Win32-only system metrics have no portable equivalent and are not implemented. |
 | SysGetIPAddresses() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The SysGetIPAddresses function returns an array of the system's IPv4 addresses. |
-| ZeroDivisionError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
 | Tan() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the tangent of a number. |
 | Tanh() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the hyperbolic tangent of a number. |
 | TargetError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
@@ -1146,3 +1145,4 @@ Status legend:
 | WinWaitActive() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | The WinWaitActive and WinWaitNotActive functions wait until the specified window is active or not active. |
 | WinWaitClose() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | The WinWaitClose function waits until no matching windows can be found. |
 | WinWaitNotActive() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | The WinWaitActive and WinWaitNotActive functions wait until the specified window is active or not active. |
+| ZeroDivisionError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |

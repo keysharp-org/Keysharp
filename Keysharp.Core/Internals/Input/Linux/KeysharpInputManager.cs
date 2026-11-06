@@ -64,6 +64,20 @@ namespace Keysharp.Internals.Input.Linux
 			}
 		}
 
+		internal void SendTerminalInput(uint terminal, byte[] bytes)
+		{
+			var lease = client;
+			if (!IsCurrentLease(lease))
+				throw new InvalidOperationException("The keysharp-input authorization lease has stopped.");
+
+			// A failed send can have submitted a prefix. Give it one RPC with no reconnect/replay path.
+			using var request = KeysharpInputClient.Connect(KeysharpInputClient.Operations.TerminalInput,
+				role: KeysharpInputClient.ConnectionRole.Rpc, lease: lease);
+			if (!IsCurrentLease(lease))
+				throw new InvalidOperationException("The keysharp-input authorization lease has stopped.");
+			request.SendTerminalInput(terminal, bytes);
+		}
+
 		private uint SendInputOnce(
 			IReadOnlyList<KeysharpInputClient.Input> inputs,
 			KeysharpInputClient.SynthFlags flags)

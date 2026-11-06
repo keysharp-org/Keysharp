@@ -4468,8 +4468,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Sends literal text to a window or control. Linux supports the script's own GTK windows and controls only; text and edit keys are posted in order to the UI thread and respect read-only controls and text-input cancellation.",
-                     "tested-by":  "ControlTests/control_send.ahk; window-functions.ahk"
+                     "notes":  "Sends literal text to a window or control. Linux GTK targets are limited to the script's own windows and controls; text and edit keys are posted in order to the UI thread and respect read-only controls and text-input cancellation. Linux also accepts /dev/tty1 through /dev/tty63 without window criteria (keysharp-input client ABI 1.2 or later, InputControl). The caller must own the active seat0 session; the target must be a same-user logged-in text console on that seat using N_TTY, Unicode keyboard mode and UTF-8 input. Inactive consoles are supported; graphical sessions and pseudo-terminals are not. Calls allow 1024 UTF-8 bytes after newline normalization; successful submission does not guarantee consumption.",
+                     "tested-by":  "ControlTests/control_send.ahk; window-functions.ahk; control-send-text-tty.ahk; LinuxTerminalInputTests"
                  },
                  {
                      "category":  "Windowing/GUI",
