@@ -178,7 +178,11 @@ namespace Eto.Forms
                         return ctrl.GetControl();
                 }
 
+#if LINUX
+                return Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.GetTrackedWindow(handle);
+#else
                 return null;
+#endif
             }
 		}
 
@@ -232,7 +236,7 @@ namespace Eto.Forms
         // and wins for as long as it is matching, so the value actually written comes from there. Without that,
         // this call - deferred to an AsyncInvoke whenever the window is still unmapped, which is the normal case
         // at Shown - lands on top of a live correlation token and makes every first correlation time out.
-        internal static bool SetWaylandAppId(Form form, string appId)
+        internal static bool SetWaylandAppId(Window form, string appId)
         {
             if (form == null || string.IsNullOrEmpty(appId) || !Keysharp.Internals.Platform.Desktop.IsWaylandSession)
                 return false;

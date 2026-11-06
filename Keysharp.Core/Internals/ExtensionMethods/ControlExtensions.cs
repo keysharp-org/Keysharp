@@ -831,7 +831,7 @@ namespace System.Windows.Forms
 #if LINUX
 
 			// GTK offsets and compositor geometry both use logical coordinates.
-			if (control.FindForm() is Forms.Form form)
+			if ((control as Forms.Window ?? control.ParentWindow) is Forms.Window form)
 			{
 				var found = global::Keysharp.Internals.Window.Linux.Wayland.WaylandOwnToplevels.TryGetSurfaceOrigin(form, out var origin);
 

@@ -82,7 +82,7 @@ namespace Keysharp.Internals
 			{
 				parent = control.CheckedInvoke(() =>
 				{
-					var form = control as Form ?? control.ParentWindow as Form ?? control.Parent as Form;
+					var form = control as Eto.Forms.Window ?? control.ParentWindow;
 					return form != null && form.Handle != h ? form.Handle : default;
 				}, true);
 				return parent != 0;
@@ -96,7 +96,7 @@ namespace Keysharp.Internals
 #if !WINDOWS
 			if (TryOwnControl(h, out var control))
 			{
-				top = control.CheckedInvoke(() => (control as Form ?? control.ParentWindow as Form ?? control.Parent as Form)?.Handle ?? default, true);
+				top = control.CheckedInvoke(() => (control as Eto.Forms.Window ?? control.ParentWindow)?.Handle ?? default, true);
 				return top != 0;
 			}
 #endif
@@ -265,7 +265,7 @@ namespace Keysharp.Internals
 		{
 #if !WINDOWS
 			if (TryOwnControl(h, out var control))
-				return control is Form form ? form.CheckedInvoke(() => form.WindowState, true) : FormWindowState.Normal;
+				return control is Eto.Forms.Window form ? form.CheckedInvoke(() => form.WindowState, true) : FormWindowState.Normal;
 #endif
 			return NotYet<FormWindowState>();
 		}
@@ -273,7 +273,7 @@ namespace Keysharp.Internals
 		{
 #if !WINDOWS
 			if (TryOwnControl(h, out var control))
-				return control is Form form && form.CheckedInvoke(() => form.TopMost, true);
+				return control is Eto.Forms.Window form && form.CheckedInvoke(() => form.Topmost, true);
 #endif
 			return NotYet<bool>();
 		}
@@ -312,9 +312,9 @@ namespace Keysharp.Internals
 		public virtual bool TrySetAlwaysOnTop(nint h, bool onTop)
 		{
 #if !WINDOWS
-			if (TryOwnControl(h, out var control) && control is Form form)
+			if (TryOwnControl(h, out var control) && control is Eto.Forms.Window form)
 			{
-				form.CheckedInvoke(() => form.TopMost = onTop, true);
+				form.CheckedInvoke(() => form.Topmost = onTop, true);
 				return true;
 			}
 #endif
@@ -361,7 +361,7 @@ namespace Keysharp.Internals
 		public virtual bool TrySetState(nint h, FormWindowState state)
 		{
 #if !WINDOWS
-			if (TryOwnControl(h, out var control) && control is Form form)
+			if (TryOwnControl(h, out var control) && control is Eto.Forms.Window form)
 			{
 				form.CheckedInvoke(() => form.WindowState = state, true);
 				return true;
@@ -449,7 +449,7 @@ namespace Keysharp.Internals
 		public virtual bool TryClose(nint h)
 		{
 #if !WINDOWS
-			if (TryOwnControl(h, out var control) && control is Form form)
+			if (TryOwnControl(h, out var control) && control is Eto.Forms.Window form)
 			{
 				form.CheckedInvoke(form.Close, true);
 				return true;

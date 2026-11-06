@@ -13,14 +13,14 @@ namespace Keysharp.Internals.Window
 		/// aX/aY are interpreted according to the current coord mode and converted to screen coordinates
 		/// based on the active window's upper-left corner (or its client area).
 		/// </summary>
-		public static void CoordToScreen(ref int aX, ref int aY, CoordMode modeType)
+		public static void CoordToScreen(ref int aX, ref int aY, CoordMode modeType, WindowInfoBase activeWindow = null)
 		{
 			var coordMode = ThreadAccessors.GetCoordMode(modeType);
 
 			if (coordMode == CoordModeType.Screen)
 				return;
 
-			var activeWindow = WindowQuery.ActiveWindow;
+			activeWindow ??= WindowQuery.ActiveWindow;
 
 			if (activeWindow.Handle != 0 && !activeWindow.IsIconic)
 			{

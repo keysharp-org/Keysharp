@@ -796,23 +796,42 @@ namespace Keysharp.Builtins
 			// Keysharp menus do not expose the native MNS_MODELESS style, so an omitted Wait has the standard-menu
 			// default of true (AHK's aWait.value_or(temp_modeless)). Passing false retains the non-blocking form.
 			var shouldWait = wait.Ab(true);
+			var hasCoordinates = x != null || y != null;
+			WindowInfoBase activeWindow = null;
+#if LINUX
+			if (hasCoordinates)
+				activeWindow = WindowQuery.ActiveWindow;
+#endif
 
 			_ = GetCursorPos(out POINT def);
 			var _x = xVal;
 			var _y = yVal;
-			if (x != null || y != null) CoordToScreen(ref _x, ref _y, Builtins.CoordMode.Menu);
+			if (hasCoordinates) CoordToScreen(ref _x, ref _y, Builtins.CoordMode.Menu, activeWindow);
 			if (x == null) _x = def.X;
 			if (y == null) _y = def.Y;
+#if LINUX
+			Point? pt = hasCoordinates ? new Point(_x, _y) : null;
+#else
 			var pt = new Point(_x, _y);
+#endif
 #if !WINDOWS
 			// Non-WinForms backends don't raise Opened, so mark the menu visible here (the ctor's Closed handler
 			// clears it). WinForms uses Opened/Closed for this and needs nothing extra.
 			Script.TheScript.SetMenuVisible(menuId, true);
 #endif
 
+			void ShowMenu()
+			{
+#if LINUX
+				MenuItem.Show(pt, activeWindow?.Handle ?? 0);
+#else
+				MenuItem.Show(pt);
+#endif
+			}
+
 			if (!shouldWait)
 			{
-				MenuItem.Show(pt);
+				ShowMenu();
 				return DefaultObject;
 			}
 
@@ -826,7 +845,7 @@ namespace Keysharp.Builtins
 			try
 			{
 				MenuItem.Closed += handler;
-				MenuItem.Show(pt);
+				ShowMenu();
 #if WINDOWS
 				Keysharp.Internals.Flow.WaitUntil(() => closed || MenuItem.IsDisposed || !MenuItem.Visible);
 #else

@@ -67,10 +67,10 @@ namespace Keysharp.Internals
 		// doesn't key on, so Backend(h) misses and Eto's self position/query (which is a Wayland no-op) is used.
 		// Correlate such a handle to its compositor window so self-window verbs (move, bounds) take the same
 		// compositor path foreign windows do. Returns false for child controls and non-own handles.
-		private static bool OwnBackend(nint h, out Form form, out WaylandWindowInfo info)
+		private static bool OwnBackend(nint h, out Eto.Forms.Window form, out WaylandWindowInfo info)
 		{
 			info = null;
-			form = TryOwnControl(h, out var ctrl) ? ctrl as Form : null;
+			form = TryOwnControl(h, out var ctrl) ? ctrl as Eto.Forms.Window : null;
 			return form != null && WaylandOwnToplevels.TryGetOwnWindow(form, out info);
 		}
 
@@ -255,10 +255,10 @@ namespace Keysharp.Internals
 		/// Where our own window's client area sits, composed from the one thing each side knows: the compositor
 		/// says where the surface is, the toolkit says where the content sits inside it.
 		/// </summary>
-		private static Rectangle OwnClientBounds(Form form, WaylandWindowInfo own)
+		private static Rectangle OwnClientBounds(Eto.Forms.Window form, WaylandWindowInfo own)
 			=> TryOwnClientBounds(form, own, out var bounds) ? bounds : EstimateOwnClientBounds(form, own);
 
-		private static Rectangle EstimateOwnClientBounds(Form form, WaylandWindowInfo own)
+		private static Rectangle EstimateOwnClientBounds(Eto.Forms.Window form, WaylandWindowInfo own)
 		{
 			var frame = own.FrameGeometry;
 			var local = form.GetClientScreenRect(true);
@@ -277,7 +277,7 @@ namespace Keysharp.Internals
 			return own.ClientGeometry.Width > 0 && own.ClientGeometry.Height > 0 ? own.ClientGeometry : frame;
 		}
 
-		private static bool TryOwnClientBounds(Form form, WaylandWindowInfo own, out Rectangle bounds)
+		private static bool TryOwnClientBounds(Eto.Forms.Window form, WaylandWindowInfo own, out Rectangle bounds)
 		{
 			if (form.Content is Control content && WaylandOwnToplevels.TryGetSurfaceOrigin(form, own, out var surface))
 			{
@@ -434,7 +434,7 @@ namespace Keysharp.Internals
 			// its toplevel and may be ignored resizing it, so a window also goes to the positioner, which holds
 			// everything the compositor is told about it.
 			var done = base.TryMoveResize(h, bounds, setPos, setSize);
-			return control is Form form ? WaylandOwnToplevels.MoveResize(form, bounds, setPos, setSize) : done;
+			return control is Eto.Forms.Window form ? WaylandOwnToplevels.MoveResize(form, bounds, setPos, setSize) : done;
 		}
 
 		public override bool TryActivate(nint h)
@@ -476,7 +476,7 @@ namespace Keysharp.Internals
 			// rather than OwnBackend directly, because it also holds the request for a window that has not been
 			// mapped yet and reasserts it after a Hide/Show, which unmaps the window and drops the compositor's
 			// opacity with it.
-			if (TryOwnControl(h, out var ctrl) && ctrl is Form ownForm)
+			if (TryOwnControl(h, out var ctrl) && ctrl is Eto.Forms.Window ownForm)
 			{
 				var size = ownForm.GetSize();
 				return WaylandOwnToplevels.SetTransparency(ownForm, ownForm.Title, size.Width, size.Height, alpha);

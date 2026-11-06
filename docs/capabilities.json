@@ -6943,8 +6943,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The InputBox function displays an input box to ask the user to enter a string. On Linux and macOS the dialog is built with Eto and honours only the Password option; the W, H, X, Y and T (timeout) options are ignored, so Result never returns \"Timeout\".",
-                     "tested-by":  "Gui/guitest.ks"
+                     "notes":  "Displays an input box with Password, W/H sizing and T timeout options on every platform. Linux and macOS dialogs are fixed-size. Explicit X/Y placement on Wayland requires a keysharp-desktop backend with window movement support. Omitted axes retain compositor placement; omitting both coordinates leaves placement entirely to the compositor. Without movement support, all placement follows compositor policy. On X11 and macOS, omitting both coordinates keeps the toolkit default placement.",
+                     "tested-by":  "gui-inputbox-position.ahk; Gui/guitest.ks"
                  },
                  {
                      "category":  "Input/Automation",
@@ -8289,7 +8289,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Shows the menu at a screen position.",
+                     "notes":  "Shows the menu near the pointer when coordinates are omitted. On Wayland explicit coordinates follow CoordMode and are anchored to the active script-owned window, including InputBox. Without an owned window, exact screen placement is not guaranteed. The toolkit or compositor can adjust placement to keep the menu visible.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -11595,8 +11595,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The WinMove function changes the position and/or size of the specified window. An unimplemented backend operation raises UnsupportedError.",
-                     "tested-by":  "Gui/guitest.ks"
+                     "notes":  "The WinMove function changes the position and/or size of the specified window. Wayland backends can also move ordinary dialog and utility windows they expose, including InputBox. The GNOME/Cinnamon provider rejects independent movement of attached modal dialogs with UnsupportedError. Provider tests cover this restriction; live GNOME/Cinnamon verification remains pending. An unimplemented backend operation raises UnsupportedError.",
+                     "tested-by":  "gui-inputbox-position.ahk; Gui/guitest.ks"
                  },
                  {
                      "category":  "Windowing/GUI",

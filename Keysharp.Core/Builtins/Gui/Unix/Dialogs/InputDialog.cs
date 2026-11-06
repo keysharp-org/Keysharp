@@ -1,6 +1,9 @@
 #if !WINDOWS
 using Eto.Forms;
 using Eto.Drawing;
+#if LINUX
+using Keysharp.Internals.Window.Linux.Wayland;
+#endif
 
 namespace Keysharp.Builtins
 {
@@ -73,9 +76,27 @@ namespace Keysharp.Builtins
 
 		internal string Value => input.Text;
 
-		//As in AutoHotkey, a coordinate left out centres the dialog in that direction.
+#if LINUX
+		protected override void OnLoadComplete(EventArgs e)
+		{
+			base.OnLoadComplete(e);
+
+			if (!WaylandOwnToplevels.IsSupported)
+				return;
+
+			WaylandOwnToplevels.Position(this, Title, x, y, Width, Height, keepAbove: Topmost);
+			// GTK queues ShowModalAsync; reserve here, immediately before the native window maps.
+			_ = WaylandOwnToplevels.ReserveWindow(this, x, y);
+		}
+#endif
+
 		private void CentreOmittedCoordinate()
 		{
+#if LINUX
+			// Preserve the compositor's placement on axes the script did not request.
+			if (Keysharp.Internals.Platform.Desktop.IsWaylandSession)
+				return;
+#endif
 			var area = (Screen ?? Eto.Forms.Screen.PrimaryScreen).WorkingArea;
 			Location = new Point(x != int.MinValue ? x : (int)(area.X + (area.Width - Width) / 2),
 								 y != int.MinValue ? y : (int)(area.Y + (area.Height - Height) / 2));

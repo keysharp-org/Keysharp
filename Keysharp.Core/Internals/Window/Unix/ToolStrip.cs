@@ -350,10 +350,20 @@ namespace Keysharp.Internals.Window.Unix
 				base.SyncEtoItems();
 		}
 
-		public virtual void Show(Eto.Drawing.Point point, Control parent = null)
+		public virtual void Show(Eto.Drawing.Point? point = null, nint parentHandle = 0)
 		{
 			SyncEtoItems();
-			ContextMenu.Show(parent, point);
+#if LINUX
+			if (point is Eto.Drawing.Point screenPoint
+				&& Control.FromHandle(parentHandle) is Eto.Forms.Window { Content: Control content } parent)
+			{
+				// The compositor supplies the screen origin; Eto places the popup relative to our surface.
+				var client = parent.GetClientScreenRect(true);
+				ContextMenu.Show(content, new Eto.Drawing.Point(screenPoint.X - client.X, screenPoint.Y - client.Y));
+				return;
+			}
+#endif
+			ContextMenu.Show(null, point);
 		}
 	}
 

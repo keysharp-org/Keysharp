@@ -42,7 +42,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			internal TaskCompletionSource<WaylandWindowInfo> CorrelationCompletion;
 			internal int CorrelationGeneration;       // the map CorrelationCompletion is searching for
 			internal nint FormHandle;
-			internal Eto.Forms.Form Form;
+			internal Eto.Forms.Window Form;
 			internal nint CompositorHandle;          // resolved compositor window handle; 0 until correlated
 			internal string CompositorId = "";       // its id, kept for claim bookkeeping
 			internal string Title = "";
@@ -139,6 +139,13 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
+		internal static Eto.Forms.Window GetTrackedWindow(nint handle)
+		{
+			lock (sync)
+				return states.TryGetValue(handle, out var state) && state.Form is { IsDisposed: false }
+					? state.Form : null;
+		}
+
 		/// <summary>
 		/// The app_id a form should be carrying right now: the caller's value, unless a correlation is matching
 		/// this window, in which case its unique token wins until it is done.
@@ -149,7 +156,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// a correlation. Routing both writers through here keeps the token in place until the match is done.
 		/// </para>
 		/// </summary>
-		internal static string CurrentAppId(Eto.Forms.Form form, string baseAppId)
+		internal static string CurrentAppId(Eto.Forms.Window form, string baseAppId)
 		{
 			var formHandle = form is { IsDisposed: false } ? form.Handle : 0;
 
@@ -174,7 +181,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// the window.
 		/// </para>
 		/// </summary>
-		internal static bool ReserveWindow(Eto.Forms.Form form, int x, int y)
+		internal static bool ReserveWindow(Eto.Forms.Window form, int x, int y)
 		{
 			//IsSupported before the handle: reading form.Handle on X11 forces a native window id.
 			if (!IsSupported)
@@ -211,7 +218,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// given up on it.
 		/// </para>
 		/// </summary>
-		internal static void HoldFixedSizeUntilMapped(Eto.Forms.Form form, Action release)
+		internal static void HoldFixedSizeUntilMapped(Eto.Forms.Window form, Action release)
 		{
 			if (!IsSupported || form is not { Resizable: true } || release == null)
 				return;
@@ -262,7 +269,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// Returns immediately; the move runs asynchronously, or once the window is mapped. No-op off
 		/// Wayland or when there is no capable backend.
 		/// </summary>
-		internal static void Position(Eto.Forms.Form form, string title, int x, int y, int matchW, int matchH, bool removeBorder = false, bool keepAbove = false, bool skipTaskbar = false, bool activate = false)
+		internal static void Position(Eto.Forms.Window form, string title, int x, int y, int matchW, int matchH, bool removeBorder = false, bool keepAbove = false, bool skipTaskbar = false, bool activate = false)
 		{
 			var formHandle = form?.Handle ?? 0;
 
@@ -446,7 +453,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// An uncorrelated form is simply not found, leaving the caller uncorrected.
 		/// </para>
 		/// </summary>
-		internal static bool TryGetSurfaceOrigin(Eto.Forms.Form form, out Point origin)
+		internal static bool TryGetSurfaceOrigin(Eto.Forms.Window form, out Point origin)
 		{
 			origin = default;
 			//Asking a disposed form for its handle throws rather than answering.
@@ -500,7 +507,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			return known;
 		}
 
-		internal static bool TryGetSurfaceOrigin(Eto.Forms.Form form, WaylandWindowInfo info, out Point origin)
+		internal static bool TryGetSurfaceOrigin(Eto.Forms.Window form, WaylandWindowInfo info, out Point origin)
 		{
 			var surface = info?.SurfaceGeometry ?? Rectangle.Empty;
 			origin = new Point(surface.X, surface.Y);
@@ -526,7 +533,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// pump while correlation completes, so callers use it only for an explicit screen-coordinate query;
 		/// pointer and event paths continue to use the cached-only <see cref="TryGetSurfaceOrigin"/>.
 		/// </summary>
-		internal static bool TryResolveSurfaceOrigin(Eto.Forms.Form form, out Point origin)
+		internal static bool TryResolveSurfaceOrigin(Eto.Forms.Window form, out Point origin)
 		{
 			if (TryGetSurfaceOrigin(form, out origin))
 				return true;
@@ -537,7 +544,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		/// <summary>Queries a mapped form's compositor window, correlating it until bound for the current map.
 		/// False when its global geometry cannot be queried.</summary>
-		internal static bool TryGetOwnWindow(Eto.Forms.Form form, out WaylandWindowInfo info)
+		internal static bool TryGetOwnWindow(Eto.Forms.Window form, out WaylandWindowInfo info)
 		{
 			info = null;
 			var backend = WaylandBackend.Current;
@@ -585,7 +592,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// a capable backend. <paramref name="title"/> and the match size correlate the window, exactly like
 		/// <see cref="Position"/>.
 		/// </summary>
-		internal static void SetWindowState(Eto.Forms.Form form, string title, int matchW, int matchH, FormWindowState windowState)
+		internal static void SetWindowState(Eto.Forms.Window form, string title, int matchW, int matchH, FormWindowState windowState)
 		{
 			var formHandle = form?.Handle ?? 0;
 
@@ -609,7 +616,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// backend. Returns false only when the compositor cannot do this at all, which is what makes
 		/// <c>WinSetTransparent</c> raise its OSError there.
 		/// </summary>
-		internal static bool SetTransparency(Eto.Forms.Form form, string title, int matchW, int matchH, object alpha)
+		internal static bool SetTransparency(Eto.Forms.Window form, string title, int matchW, int matchH, object alpha)
 		{
 			var formHandle = form?.Handle ?? 0;
 			var backend = WaylandBackend.Current;
@@ -671,7 +678,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		/// yet is placed when it is. A mapped one is changed now, on the calling thread, so a read straight after
 		/// sees the result, as in AutoHotkey. False when a requested position could not be applied.
 		/// </summary>
-		internal static bool MoveResize(Eto.Forms.Form form, Rectangle bounds, bool setPos, bool setSize)
+		internal static bool MoveResize(Eto.Forms.Window form, Rectangle bounds, bool setPos, bool setSize)
 		{
 			var formHandle = form?.Handle ?? 0;
 			var backend = WaylandBackend.Current;
@@ -777,7 +784,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		// Refresh correlation metadata and watch newly tracked forms.
-		private static FormState Track(Eto.Forms.Form form, nint formHandle, string title, int matchW, int matchH)
+		private static FormState Track(Eto.Forms.Window form, nint formHandle, string title, int matchW, int matchH)
 		{
 			FormState state;
 			bool created;
@@ -801,7 +808,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		}
 
 		// Watch GTK so hiding or disposing through any caller invalidates the compositor binding.
-		private static void Watch(FormState state, Eto.Forms.Form form)
+		private static void Watch(FormState state, Eto.Forms.Window form)
 		{
 			var app = Eto.Forms.Application.Instance;
 
@@ -1232,7 +1239,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			listed = false;
 			var pid = (long)Environment.ProcessId;
 			string title, token;
-			Eto.Forms.Form form;
+			Eto.Forms.Window form;
 			int mw, mh;
 			bool reserved;
 			long reservationExpiry;
@@ -1472,7 +1479,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			}
 		}
 
-		private static bool TrySetAppIdOnUiThread(Eto.Forms.Form form, string appId)
+		private static bool TrySetAppIdOnUiThread(Eto.Forms.Window form, string appId)
 		{
 			if (form == null || string.IsNullOrEmpty(appId))
 				return false;

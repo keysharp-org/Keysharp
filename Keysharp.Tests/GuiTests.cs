@@ -196,6 +196,28 @@ public class GuiTests : TestRunner
 	}
 
 	[Test, Category("Gui")]
+#if WINDOWS
+	[Apartment(ApartmentState.STA)]
+#endif
+	public void InputBoxPosition()
+	{
+		SkipIfUiInitializationBlocked("InputBox positioning requires a usable UI toolkit.");
+		if (Script.IsHeadless)
+			Assert.Ignore("InputBox positioning requires a desktop session.");
+#if LINUX
+		if (Keysharp.Internals.Platform.Desktop.IsWaylandSession)
+		{
+			var desktop = s.LinuxServices.Desktop;
+			if (!desktop.ProviderSupportsWindowList() || !desktop.ProviderSupportsWindowMove())
+				Assert.Ignore("Wayland InputBox positioning requires window listing and movement through keysharp-desktop.");
+			if (!desktop.OpenSession(LinuxPermissionScope.WindowMonitoring | LinuxPermissionScope.WindowControl))
+				Assert.Ignore("Wayland InputBox positioning requires existing window monitoring and control permissions.");
+		}
+#endif
+		Assert.IsTrue(TestScript("gui-inputbox-position", false));
+	}
+
+	[Test, Category("Gui")]
 	public void DisplaySelection()
 	{
 		DisplayInfo[] displays =
