@@ -174,9 +174,9 @@ class Shell {
         local m := Image.Create(1, 1)
         local titleW := m.MeasureText(title, titleFont, fontName).Width
         local keyWs := [], descW := 0
-        for ln in lines {
-            keyWs.Push(m.MeasureText(ln[1], keyFont, fontName).Width)
-            descW := Max(descW, m.MeasureText(ln[2], descFont, fontName).Width)
+        for shortcut in lines {
+            keyWs.Push(m.MeasureText(shortcut[1], keyFont, fontName).Width)
+            descW := Max(descW, m.MeasureText(shortcut[2], descFont, fontName).Width)
         }
         local footerW := m.MeasureText(footer, hintFont, fontName).Width
         local closeW := m.MeasureText(closeHint, hintFont, fontName).Width
@@ -190,8 +190,7 @@ class Shell {
         local titleH := 34, hintH := 24
         local h := pad + titleH + lines.Length * rowH + hintH
 
-        ; Pick the display that will own the card before rasterizing it. `ui` converts the authored 96-DPI layout
-        ; into the platform's native screen units; `raster` converts those native units into backing pixels.
+        ; Monitor scale maps the layout to native screen units; Redraw chooses the backing resolution.
         MonitorGetWorkArea(MonitorGetPrimary(), &l, &t, &r, &b)
         if !this.posLoaded {
             this.posLoaded := true
@@ -202,31 +201,8 @@ class Shell {
         local targetY := useSaved ? this.posY : (t + b) // 2
 		local scale := Monitor.FromPoint(targetX, targetY).Scale
 
-		local img := Image.Create(w, h, , scale)
-        img.FillRoundRect(0, 0, w, h, 12, "0xF01C1F28")
-        img.DrawRoundRect(1, 1, w - 2, h - 2, 12, "0xFF3C4353", 1.5)
-        img.DrawText(title, pad, pad, "0xFF5EC8FF", titleFont, fontName)
-        img.DrawText(closeHint, w - pad - closeW, pad + 3, "0xFF7A8698", hintFont, fontName)
-        img.DrawLine(pad, pad + titleH - 8, w - pad, pad + titleH - 8, "0xFF333A48", 1)
-
-        local y := pad + titleH
-        for i, ln in lines {
-            local pillW := keyWs[i] + pillPad * 2
-            img.FillRoundRect(pad, y, pillW, pillH, 5, "0xFF2C323E")
-            img.DrawRoundRect(pad, y, pillW, pillH, 5, "0xFF474F60", 1)
-            img.DrawText(ln[1], pad + pillPad, y + 4, "0xFFE7B84B", keyFont, fontName)
-            img.DrawText(ln[2], descX, y + 4, "0xFFD6DBE4", descFont, fontName)
-            y += rowH
-        }
-
-        ; Footer checkbox — filled when "don't show on startup" is set for this demo.
-        local cbY := y + 4
+        local cbY := pad + titleH + lines.Length * rowH + 4
         local dont := this.DontShow(title)
-        img.DrawRoundRect(pad, cbY, cbSize, cbSize, 3, "0xFF8A94A6", 1.5)
-        if dont
-            img.FillRoundRect(pad + 4, cbY + 4, cbSize - 8, cbSize - 8, 2, "0xFF5EC8FF")
-        img.DrawText(footer, pad + cbSize + 8, cbY - 1, "0xFF9AA4B4", hintFont, fontName)
-
 		if !IsObject(this.ov)
 			this.ov := Overlay()
 		local pw := Round(w * scale), ph := Round(h * scale)
@@ -238,8 +214,7 @@ class Shell {
 		if (useSaved && this.OnScreenRect(this.posX, this.posY, pw, ph))
 			rx := this.posX, ry := this.posY
 		this.rect := {X: rx, Y: ry, Width: pw, Height: ph}
-		this.ov.SetImage(img, this.rect.X, this.rect.Y, this.rect.Width, this.rect.Height)
-		img.Dispose()
+		this.ov.Redraw(DrawCard, this.rect.X, this.rect.Y, this.rect.Width, this.rect.Height)
         ; The clickable rectangles are overlay-local; OnEvent's (x, y) uses the same native units.
         ; Ctrl+drag elsewhere on the card moves it (see OnClick/DragCard).
 		this.closeRect := {X: Round((w - pad - closeW) * scale),
@@ -250,6 +225,31 @@ class Shell {
 		                   Y: Round((cbY - 3) * scale),
 		                   Width: Round((cbSize + 8 + footerW) * scale),
 		                   Height: Round((cbSize + 6) * scale)}
+
+        DrawCard(img) {
+            img.Transform := {ScaleX: pw / w, ScaleY: ph / h}
+            img.FillRoundRect(0, 0, w, h, 12, "0xF01C1F28")
+            img.DrawRoundRect(1, 1, w - 2, h - 2, 12, "0xFF3C4353", 1.5)
+            img.DrawText(title, pad, pad, "0xFF5EC8FF", titleFont, fontName)
+            img.DrawText(closeHint, w - pad - closeW, pad + 3, "0xFF7A8698", hintFont, fontName)
+            img.DrawLine(pad, pad + titleH - 8, w - pad, pad + titleH - 8, "0xFF333A48", 1)
+
+            local y := pad + titleH, i, row, pillW
+            for i, row in lines {
+                pillW := keyWs[i] + pillPad * 2
+                img.FillRoundRect(pad, y, pillW, pillH, 5, "0xFF2C323E")
+                img.DrawRoundRect(pad, y, pillW, pillH, 5, "0xFF474F60", 1)
+                img.DrawText(row[1], pad + pillPad, y + 4, "0xFFE7B84B", keyFont, fontName)
+                img.DrawText(row[2], descX, y + 4, "0xFFD6DBE4", descFont, fontName)
+                y += rowH
+            }
+
+            ; Footer checkbox — filled when "don't show on startup" is set for this demo.
+            img.DrawRoundRect(pad, cbY, cbSize, cbSize, 3, "0xFF8A94A6", 1.5)
+            if dont
+                img.FillRoundRect(pad + 4, cbY + 4, cbSize - 8, cbSize - 8, 2, "0xFF5EC8FF")
+            img.DrawText(footer, pad + cbSize + 8, cbY - 1, "0xFF9AA4B4", hintFont, fontName)
+        }
     }
 
     ; Overlay Click handler; x/y arrive overlay-local from OnEvent. The ✕ closes the card, the checkbox
@@ -290,7 +290,7 @@ class Shell {
             return                               ; a plain click that didn't move the card — do nothing
         this.posX := this.rect.X, this.posY := this.rect.Y
         this.SaveCardPos()
-        this.Render()                            ; recompute closeRect/checkRect for the new position
+        this.Render()                            ; refresh backing resolution and hit targets for the new display
         this.ov.Show()
     }
 

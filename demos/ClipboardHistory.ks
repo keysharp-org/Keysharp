@@ -180,32 +180,33 @@ class ClipboardHistory {
         MonitorGetWorkArea(MonitorGetPrimary(), &l, &t, &r, &b)
 		local scale := Monitor.Primary.Scale
 
-		local img := Image.Create(w, h, , scale)
-        img.FillRoundRect(0, 0, w, h, 12, "0xF01C1F28")
-        img.DrawRoundRect(1, 1, w - 2, h - 2, 12, "0xFF3C4353", 1.5)
-        img.DrawText("Clipboard History", pad, pad, "0xFF5EC8FF", "s12 bold", "Arial")
-        img.DrawText("1–9 · ↑↓ + Enter · Esc", w - 196, pad + 3, "0xFF7A8698", "s9", "Arial")
-        img.DrawLine(pad, pad + titleH - 8, w - pad, pad + titleH - 8, "0xFF333A48", 1)
-
-        local y := pad + titleH
-        for i, text in this.items {
-            local sel := (i = this.idx)
-            if sel
-                img.FillRoundRect(8, y - 1, w - 16, rowH - 3, 6, "0xFF17A3F0")
-            local num := (i <= 9) ? i ".  " : "    "
-            img.DrawText(num this.Preview(text, 86), pad + 4, y + 4, sel ? "0xFF07101C" : "0xFFD6DBE4", "s10", "Arial")
-            y += rowH
-        }
-        img.DrawText("Newest first  ·  showing " n " of " this.clips.Length, pad, y + 2, "0xFF6E7A8C", "s9", "Arial")
-
 		if !IsObject(this.picker)
 			this.picker := Overlay()
 		local pw := Round(w * scale), ph := Round(h * scale)
-		this.picker.SetImage(img, (l + r) // 2 - pw // 2, (t + b) // 2 - ph // 2, pw, ph)
-		img.Dispose()
+		this.picker.Redraw(DrawPicker, (l + r) // 2 - pw // 2, (t + b) // 2 - ph // 2, pw, ph)
 
-		if !this.picker.Visible
+		if !this.picker.IsVisible
 			this.picker.Show()
+
+        DrawPicker(img) {
+            img.Transform := {ScaleX: pw / w, ScaleY: ph / h}
+            img.FillRoundRect(0, 0, w, h, 12, "0xF01C1F28")
+            img.DrawRoundRect(1, 1, w - 2, h - 2, 12, "0xFF3C4353", 1.5)
+            img.DrawText("Clipboard History", pad, pad, "0xFF5EC8FF", "s12 bold", "Arial")
+            img.DrawText("1–9 · ↑↓ + Enter · Esc", w - 196, pad + 3, "0xFF7A8698", "s9", "Arial")
+            img.DrawLine(pad, pad + titleH - 8, w - pad, pad + titleH - 8, "0xFF333A48", 1)
+
+            local y := pad + titleH, i, text, sel, num
+            for i, text in this.items {
+                sel := (i = this.idx)
+                if sel
+                    img.FillRoundRect(8, y - 1, w - 16, rowH - 3, 6, "0xFF17A3F0")
+                num := (i <= 9) ? i ".  " : "    "
+                img.DrawText(num this.Preview(text, 86), pad + 4, y + 4, sel ? "0xFF07101C" : "0xFFD6DBE4", "s10", "Arial")
+                y += rowH
+            }
+            img.DrawText("Newest first  ·  showing " n " of " this.clips.Length, pad, y + 2, "0xFF6E7A8C", "s9", "Arial")
+        }
     }
 
     ; A single-line, length-capped preview of a clip.

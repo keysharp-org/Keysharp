@@ -1,3 +1,5 @@
+#ErrorStdOut
+#Warn All, StdOut
 #Requires AutoHotkey v2.0
 #Requires capability InputMonitoring, InputControl   ; passive event display plus the HUD's suppressing control/drag hotkeys
 #SingleInstance Force
@@ -30,7 +32,7 @@
     option also surfaces input a hotkey/remap suppresses, so a remap's physical source and the LButton used
     to drag a HUD still register), telling physical from injected input via A_EventInfo.IsInjected, lock-key
     toggle state polled with GetKeyState(key, "T") and surfaced as green LEDs, Overlay canvases drawn with
-    Image primitives (FillRoundRect/FillEllipse/DrawText) and updated live through Overlay.SetImage
+    Image primitives (FillRoundRect/FillEllipse/DrawText) and updated live through Overlay.Redraw
     calls — re-rendered at the current display's backing density times zoom to stay
     crisp and centre-anchored — and HotIf-scoped hotkeys so the drag/zoom
     only capture the click while the cursor is over a HUD (so normal clicks pass straight through).
@@ -80,7 +82,7 @@ class InputHUD {
 
     ; ---- state -------------------------------------------------------------
     static ih := ""
-    static kb := ""                      ; each HUD carries its target display's ui/raster/density metadata
+    static kb := ""                      ; each HUD tracks its layout scale and zoom
     static ms := ""
     static down := Map()                 ; vk -> "phys" | "synth"  (pressed keys, keyed by origin)
     static mdown := Map()                ; "left"/"right"/"middle"/"x1"/"x2" -> "phys" | "synth"
@@ -117,8 +119,7 @@ class InputHUD {
     }
 
     static Setup() {
-        ; Layout is authored in conventional UI units. Each HUD independently tracks native-units-per-UI-unit
-        ; (`ui`) and backing-pixels-per-native-unit (`raster`) for the display containing its centre.
+        ; Layout scale maps authored sizes to native screen units; Overlay chooses the backing resolution.
 		this.ms := {ov: Overlay(), cx: 0, cy: 0, X: 0, Y: 0, Width: 118, Height: 188, pw: 118, ph: 188,
 					scale: 1, zoom: 1, zoomImg: ""}
         this.BuildKeyboard()
@@ -169,10 +170,7 @@ class InputHUD {
             if this.RefreshDisplayMetrics(this.ms)
                 this.msDirty := true
         }
-        ; A HUD that is actively being zoom-dragged (zoomWhich) paints via the cheap upscale preview — reusing a
-		; cached, unzoomed render instead of re-running every primitive at density*zoom (which is O(zoom^2) pixels and is
-        ; what made a large zoom crawl). ZoomHud re-flags the HUD dirty when it settles, so the very next tick draws
-        ; it crisp again. Every other repaint (key/mouse state changes) takes the full-quality path.
+        ; Zoom previews reuse the last sharp frame; the first tick after release draws fresh text at the final size.
         if this.kbDirty {
             this.kbDirty := false
             if (this.zoomWhich = "kb")
@@ -282,31 +280,19 @@ class InputHUD {
         return {vk: vk, label: label, tog: tog, px: px, py: py, pw: pw, tx: px + (pw - tw) / 2, ty: py + (this.U - th) / 2}
     }
 
-	; Full-quality keyboard render: draw the fixed authored layout into a fresh density*zoom bitmap so it stays crisp at
-    ; any zoom, then size/position the overlay with the SAME z and upload it. Used for every repaint EXCEPT the live
-    ; frames of a zoom-drag, which take the cheaper RenderKbPreview path and are re-sharpened here once they settle.
+    ; Draw text and shapes at the target display's backing resolution and the final zoom.
     static RenderKeyboard() {
         local kb := this.kb
-        local z := this.Geometry(kb)     ; snapshot the zoom ONCE; the bitmap, on-screen size and position all use z
-		local img := Image.Create(kb.Width, kb.Height, , kb.scale * z)
-        this.DrawKeyboard(img)
-		this.UpdateOverlay(kb, img)    ; image + final geometry reach the platform in one transaction
-        img.Dispose()
+        this.RedrawOverlay(kb, (img) => this.DrawKeyboard(img))
         this.DropBase(kb)                ; this crisp frame supersedes any zoom-drag preview base; free it
     }
 
-    ; Cheap live zoom-drag frame: reuse a cached, UNZOOMED (DPI-scale) render of the board and let the overlay upscale
-	; it to the on-screen size, rather than re-running every key's primitives at density*zoom every frame. Rendering the
-    ; primitives is ~half the per-frame cost and grows with zoom^2, so skipping it keeps a zoom-drag responsive even at
-    ; large scales (the base is a bit soft while dragging; RenderKeyboard re-sharpens the instant the drag settles).
-    ; The base is drawn once per drag (capturing the current key/toggle state); each live frame only re-uploads it.
+    ; Reuse the last sharp frame while zooming to keep dragging responsive. Redraw renders fresh text on release.
     static RenderKbPreview() {
         local kb := this.kb
-        if (kb.zoomImg = "") {
-			kb.zoomImg := Image.Create(kb.Width, kb.Height, , kb.scale)
-            this.DrawKeyboard(kb.zoomImg)
-        }
-        local z := this.Geometry(kb)
+        if (kb.zoomImg = "")
+            kb.zoomImg := kb.ov.Canvas.Copy()
+        this.Geometry(kb)
 		this.UpdateOverlay(kb, kb.zoomImg)
     }
 
@@ -372,26 +358,19 @@ class InputHUD {
         return changed
     }
 
-	; Full-quality mouse render (crisp density*zoom bitmap). Like the keyboard, the live frames of a zoom-drag take the
-    ; cheaper RenderMsPreview path instead, and this re-sharpens the mouse the instant that drag settles.
+    ; The mouse uses the same target-aware rendering as the keyboard.
     static RenderMouse() {
         local ms := this.ms
-        local z := this.Geometry(ms)
-		local img := Image.Create(ms.Width, ms.Height, , ms.scale * z)
-        this.DrawMouse(img)
-		this.UpdateOverlay(ms, img)
-        img.Dispose()
+        this.RedrawOverlay(ms, (img) => this.DrawMouse(img))
         this.DropBase(ms)                ; this crisp frame supersedes any zoom-drag preview base; free it
     }
 
-    ; Cheap live zoom-drag frame for the mouse HUD: upscale a cached unzoomed render (see RenderKbPreview).
+    ; Cache an owned copy because SetImage and Redraw may replace the overlay's canvas.
     static RenderMsPreview() {
         local ms := this.ms
-        if (ms.zoomImg = "") {
-			ms.zoomImg := Image.Create(ms.Width, ms.Height, , ms.scale)
-            this.DrawMouse(ms.zoomImg)
-        }
-        local z := this.Geometry(ms)
+        if (ms.zoomImg = "")
+            ms.zoomImg := ms.ov.Canvas.Copy()
+        this.Geometry(ms)
 		this.UpdateOverlay(ms, ms.zoomImg)
     }
 
@@ -584,6 +563,11 @@ class InputHUD {
             }
             this.SaveHud(which, o)                       ; remember where the user parked this HUD for next run
         } finally {
+            ; Displays can share a layout scale but use different backing resolutions.
+            if (which = "kb")
+                this.kbDirty := true
+            else
+                this.msDirty := true
             this.busy := false
         }
     }
@@ -637,12 +621,7 @@ class InputHUD {
         }
     }
 
-    ; Snapshots a HUD's zoom ONCE and derives its on-screen geometry from that single value: the cached on-screen
-    ; size (pw/ph) and top-left (x/y), positioned so the HUD's fixed CENTRE (cx/cy — set by Place, moved by a drag)
-    ; stays put as it scales. Returns z so the caller renders the bitmap at the SAME zoom it will be displayed at.
-    ; The zoom loop only ever writes `zoom` (one field), so a render tick that interleaves with it can never read a
-    ; half-updated geometry — which was the cause of the board briefly rendering at one scale but showing at another
-    ; (a huge, blurry, off-centre frame). All geometry is computed here, on the render's own (main) thread.
+    ; Snapshot zoom once so drawing and placement share the same size around the fixed centre.
     static Geometry(o) {
         local z := o.zoom
         ; Zoom is encoded in the authored W/H, then monitor scale converts that size to native screen units.
@@ -650,11 +629,16 @@ class InputHUD {
 		o.ph := Round(Round(o.Height * z) * o.scale)
         o.X := Round(o.cx - o.pw / 2)
         o.Y := Round(o.cy - o.ph / 2)
-        return z
     }
 
-    ; The image is prepared off-screen, so no transparent or separately moved intermediate frame is requested.
-	; Zoom lives entirely in Width/Height; the renderer selects backing density automatically.
+    static RedrawOverlay(o, draw) {
+        this.Geometry(o)
+        local sx := o.pw / o.Width, sy := o.ph / o.Height
+        o.ov.Redraw((img) => (img.Transform := {ScaleX: sx, ScaleY: sy}, draw(img)),
+            o.X, o.Y, o.pw, o.ph)
+    }
+
+    ; Cached zoom previews keep their pixels while their displayed size changes.
 	static UpdateOverlay(o, img) {
 		o.ov.SetImage(img, o.X, o.Y, o.pw, o.ph)
 	}
