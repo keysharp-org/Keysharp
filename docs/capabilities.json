@@ -6544,7 +6544,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "full",
-                     "notes":  "Displays the window. Explicit X/Y placement on Wayland requires a compositor backend (KWin, GNOME or Cinnamon with the Keysharp extension). In the tested COSMIC 1.2.0 session, GTK ignores resize requests for already shown windows; initial sizing, maximize and restore work.",
+                     "notes":  "Displays the window. Explicit X/Y placement on Wayland requires a compositor backend (KWin, GNOME or Cinnamon with the Keysharp extension). In the tested COSMIC 1.2.0 session, GTK ignores resize requests for already shown windows; initial sizing, maximize and restore work. Off Windows a width or height of 0 is treated as 1, since GTK cannot map a smaller window; AutoHotkey's zero-sized dummy window is a single pixel.",
                      "tested-by":  "ControlTests/control_add_delete_item.ahk"
                  },
                  {

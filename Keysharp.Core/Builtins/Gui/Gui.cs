@@ -3344,6 +3344,11 @@ namespace Keysharp.Builtins
 #if WINDOWS
 				form.GuiClientSize = size;
 #else
+				// GTK maps nothing smaller than one pixel, and an empty toplevel left at zero takes the toolkit's
+				// 200x200 default, so a zero-sized window, AutoHotkey's invisible dummy, becomes one pixel instead.
+				size.Width = Math.Max(1, size.Width);
+				size.Height = Math.Max(1, size.Height);
+
 				if (explicitSize)
 					form.ClientSize = size;
 

@@ -38,6 +38,20 @@ lastFoundGui := Gui("+LastFound")
 AssertEq(WinExist(), lastFoundGui.Hwnd, A_LineNumber)
 lastFoundGui.Destroy()
 
+; A zero Show size is AutoHotkey's invisible dummy window, FindText.ahk's HotIfWinExist target. Off Windows the
+; client area is clamped to one pixel: GTK maps nothing smaller, and an empty toplevel left at zero took the
+; toolkit's 200x200 default.
+zeroGui := Gui("-Caption +ToolWindow")
+zeroGui.Show("NA x0 y0 w0 h0")
+zeroGui.GetClientPos(,, &zeroWidth, &zeroHeight)
+#if WINDOWS
+Assert(zeroWidth <= 1 && zeroHeight <= 1, A_LineNumber)
+#else
+AssertEq(zeroWidth, 1, A_LineNumber)
+AssertEq(zeroHeight, 1, A_LineNumber)
+#endif
+zeroGui.Destroy()
+
 ; A later Show keeps the dimensions it does not name. As AutoHotkey picks its show mode, a maximized window stays
 ; maximized unless restored or given a new size or position, which unmaximizes it first, and a minimized one is
 ; restored to its prior state unless an option keeps it minimized, when it takes no new size.
