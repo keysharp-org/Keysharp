@@ -4,11 +4,6 @@ Name=Keyview
 Exec=/usr/local/bin/keyview %f
 Icon=keysharp
 Terminal=false
-Categories=Utility;Development;
+Categories=Utility;TextEditor;
 MimeType=application/x-keysharp;application/x-autohotkey;
 InitialPreference=10
-Actions=Edit;
-
-[Desktop Action Edit]
-Name=Edit Keysharp Script
-Exec=/usr/local/bin/keyview --edit %f
