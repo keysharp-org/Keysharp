@@ -79,6 +79,8 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		private const int ConfigureTimeoutMs = 1000;
 		private const int BufferPoolCapacity = 3;
 		private const int BufferReleaseWaitMs = 33;
+		// Tests shorten the wait to stand in for a compositor that holds every pooled frame past it.
+		internal static int BufferReleaseWaitMsForTests = BufferReleaseWaitMs;
 
 		private readonly WaylandLayerShellClient client;
 		private readonly object stateSync = new();
@@ -95,7 +97,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		#region Partial updates
 
-		private readonly WaylandDamageHistory damageHistory = new(BufferPoolCapacity + 1);
+		private readonly WaylandDamageHistory damageHistory = new(2 * BufferPoolCapacity + 1);
 		private WaylandBufferInterpretation? historyInterpretation;
 		private WaylandFrameDamage preparedSemanticDamage;
 		private WaylandFrameDamage preparedWriteDamage;
@@ -318,10 +320,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			return true;
 		}
 
-		// A full pool waits briefly for release; returning false preserves the caller's pending damage.
+		// A full pool waits briefly for a release, then grows, up to twice its capacity. A compositor that paints on
+		// the thread that processes commits (KWin) can hold every pooled frame past the wait, and giving up there
+		// would lose a resize or an explicit Present, which has no later frame to fold into. Released spares beyond
+		// the capacity are retired by the next scan. Returning null preserves the caller's pending damage.
 		private WaylandShmBuffer AcquireBuffer(int w, int h)
 		{
-			var deadline = Environment.TickCount64 + BufferReleaseWaitMs;
+			var deadline = Environment.TickCount64 + BufferReleaseWaitMsForTests;
+			var grow = false;
 
 			while (true)
 			{
@@ -338,11 +344,18 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 						if (!b.Released)
 							continue;
 
-						if (b.Width == w && b.Height == h)
-							reusable = b;
-						else
+						var fits = b.Width == w && b.Height == h;
+
+						if (fits && reusable == null)
 						{
-							// A released buffer of the wrong size can never satisfy this frame.
+							reusable = b;
+							continue;
+						}
+
+						// A released buffer of the wrong size can never satisfy this frame, and a released spare beyond
+						// the capacity has outlived the stall that allocated it.
+						if (!fits || bufferPool.Count > BufferPoolCapacity)
+						{
 							b.Dispose();
 							bufferPool.RemoveAt(i);
 						}
@@ -351,21 +364,19 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					if (reusable != null)
 						return reusable;
 
-					if (bufferPool.Count < BufferPoolCapacity)
+					if (bufferPool.Count < (grow ? 2 * BufferPoolCapacity : BufferPoolCapacity))
 					{
 						var chosen = WaylandShmBuffer.Create(client, w, h, bufferReleased);
 						bufferPool.Add(chosen);
 						return chosen;
 					}
 
-					if (!client.IsAvailable)
+					if (grow || !client.IsAvailable)
 						return null;
 				}
 
 				var remaining = deadline - Environment.TickCount64;
-
-				if (remaining <= 0 || !bufferReleased.Wait((int)remaining))
-					return null;
+				grow = remaining <= 0 || !bufferReleased.Wait((int)remaining);
 			}
 		}
 

@@ -1074,6 +1074,46 @@ public class GuiTests : TestRunner
 			_ = overlay.Destroy();
 		}
 	}
+
+#if LINUX
+	// A compositor that paints on the thread that processes commits (KWin) can hold every pooled frame past the
+	// release wait. A zero wait stands in for that; the pool then grows rather than dropping the frame, so an
+	// explicit Present and a resize still publish.
+	[Test, Category("Gui"), Category("Curated")]
+	public void HeldFramesDoNotDropPresents()
+	{
+		if (Script.IsHeadless)
+			Assert.Ignore("Overlay surfaces need an initialized graphics backend.");
+
+		var context = UseQueuedMainContext();
+		var overlay = new Ks.KeysharpOverlay();
+		_ = overlay.__New(0L, 0L, 64L, 32L);
+		var wait = Keysharp.Internals.Window.Linux.Wayland.WaylandImageOverlay.BufferReleaseWaitMsForTests;
+		Keysharp.Internals.Window.Linux.Wayland.WaylandImageOverlay.BufferReleaseWaitMsForTests = 0;
+
+		try
+		{
+			_ = overlay.Show();
+			context.DrainAll();
+
+			for (var i = 0; i < 3; i++)
+			{
+				_ = overlay.Canvas.FillRect((long)i, 0L, 4L, 4L, "0xFF0000");
+				_ = overlay.Present();
+				Assert.That(overlay.HasUnpresentedDamageForTests, Is.False, "Present uploads the frame without waiting for a release");
+			}
+
+			_ = overlay.Canvas.FillRect(0L, 0L, 2L, 2L, "0x0000FF");
+			overlay.Width = 40L;
+			Assert.That(overlay.HasUnpresentedDamageForTests, Is.False, "a resize republishes without waiting for a release");
+		}
+		finally
+		{
+			Keysharp.Internals.Window.Linux.Wayland.WaylandImageOverlay.BufferReleaseWaitMsForTests = wait;
+			_ = overlay.Destroy();
+		}
+	}
+#endif
 	// Drawing interleaved with reads must fold into the same bitmap without replaying earlier operations.
 	[Test, Category("Gui"), Category("Curated")]
 	public void LazyDrawFold()
