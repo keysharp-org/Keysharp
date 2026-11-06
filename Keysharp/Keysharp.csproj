@@ -21,7 +21,7 @@
 	<PropertyGroup>
 		<StartupObject>Keysharp.Main.Program</StartupObject>
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-		<ApplicationIcon>..\assets\Keysharp.ico</ApplicationIcon>
+		<ApplicationIcon Condition="$([MSBuild]::IsOSPlatform('Windows'))">..\assets\Keysharp.ico</ApplicationIcon>
 		<Authors>Matt Feemster, Descolada + legacy IronAHK developers</Authors>
 		<Description>A cross-platform C# port and enhancement of the AutoHotkey program</Description>
 		<Company>Keysharp</Company>
@@ -67,10 +67,6 @@
 		<Content Include="..\Keyview\Icon.icns" Link="Icon.icns" Condition="$([MSBuild]::IsOSPlatform('OSX')) And Exists('..\Keyview\Icon.icns')">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>
-		<Content Include="Keysharp.manifest">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-		</Content>
 		<Content Include="Scripts\WindowSpy.ks">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
@@ -99,7 +95,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<EmbeddedResource Include="..\assets\Keysharp.ico" Link="Keysharp.ico" />
+		<EmbeddedResource Include="..\assets\Keysharp.ico" Link="Keysharp.ico" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
 	</ItemGroup>
 
 	<ItemGroup>

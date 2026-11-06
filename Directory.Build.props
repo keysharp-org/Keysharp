@@ -48,6 +48,7 @@
 
   <PropertyGroup Condition="'$(MSBuildProjectName)' == 'Keysharp' OR '$(MSBuildProjectName)' == 'Keyview'">
     <IsKeysharpShippingProject>true</IsKeysharpShippingProject>
+    <PublishDocumentationFiles>false</PublishDocumentationFiles>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(IsKeysharpShippingProject)' == 'true' AND '$(PublishReadyToRun)' != 'false'">
