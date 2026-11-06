@@ -32,6 +32,12 @@ optionsGui.Opt("-MINSIZE -maxsize +0x40000 +E0x8")
 Throws(() => optionsGui.Opt("UnknownWindowOption"), A_LineNumber, ValueError)
 optionsGui.Destroy()
 
+; The constructor parses +LastFound before the window exists and applies it once it does, so the Gui is the Last
+; Found Window as soon as the constructor returns, as FindText's Gui("+LastFound").Destroy() relies on.
+lastFoundGui := Gui("+LastFound")
+AssertEq(WinExist(), lastFoundGui.Hwnd, A_LineNumber)
+lastFoundGui.Destroy()
+
 ; A later Show keeps the dimensions it does not name. As AutoHotkey picks its show mode, a maximized window stays
 ; maximized unless restored or given a new size or position, which unmaximizes it first, and a minimized one is
 ; restored to its prior state unless an option keeps it minimized, when it takes no new size.

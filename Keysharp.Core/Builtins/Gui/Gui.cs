@@ -2728,7 +2728,9 @@ namespace Keysharp.Builtins
 			else if (option.Equals("LastFound", StringComparison.OrdinalIgnoreCase))
 			{
 				lastfound = add;
-				Script.TheScript.HwndLastUsed = Hwnd;
+				// __New parses options before the window exists and applies LastFound itself once it does.
+				if (add && (form?.CachedHwnd ?? 0) != 0)
+					Script.TheScript.HwndLastUsed = Hwnd;
 			}
 			else if (option.Equals("MaximizeBox", StringComparison.OrdinalIgnoreCase))
 				form.MaximizeBox = add;
