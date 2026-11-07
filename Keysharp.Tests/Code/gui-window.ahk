@@ -220,6 +220,10 @@ Throws(() => tv.SetParts(10), A_LineNumber, MethodError)
 Throws(() => lv.SetFormat("yyyy"), A_LineNumber, MethodError)
 cueEdit := lists.Add("Edit")
 cueEdit.SetCue("cue")
+#if LINUX || OSX
+; The toolkit's list has only the Report view, so another one raises a continuable UnsupportedError.
+Throws(() => lv.Opt("+Icon"), A_LineNumber, UnsupportedError)
+#endif
 
 ; ListView rows are 1-based. Passing each GetNext result back visits every selected row once, Modify reaches the last
 ; row, and an option or column a call does not name keeps its state or text.
@@ -236,9 +240,9 @@ Loop 10
 AssertEq(seen, "1 3 ", A_LineNumber)
 last := lv.Add(, "row5")
 AssertEq(last, 5, A_LineNumber)
-AssertEq(lv.Modify(last, "Select"), 1, A_LineNumber)
+AssertEq(lv.Modify(last, "Select"), "", A_LineNumber)
 AssertEq(lv.GetNext(3), last, A_LineNumber)
-AssertEq(lv.Modify(last + 1, "Select"), 0, A_LineNumber)
+AssertEq(lv.Modify(last + 1, "Select"), "", A_LineNumber)
 lv.Modify(2, "Check Focus")
 lv.Modify(1, , , "10")
 lv.Modify(2, "Vis")
@@ -260,14 +264,14 @@ Throws(() => lv.GetText(99), A_LineNumber, Error)
 Throws(() => lv.GetText(1, 3), A_LineNumber, Error)
 Throws(() => lv.DeleteCol(3), A_LineNumber, Error)
 Throws(() => lv.Delete(0), A_LineNumber, ValueError)
-AssertEq(lv.ModifyCol(0), 0, A_LineNumber)
+AssertEq(lv.ModifyCol(0), "", A_LineNumber)
 
 lv.Modify(0, "-Select")
 AssertEq(lv.GetCount("Selected"), 0, A_LineNumber)
 AssertEq(lv.GetCount(), 5, A_LineNumber)
 AssertEq(lv.Insert(1, , "first"), 1, A_LineNumber)
 AssertEq(lv.GetText(2), "row1", A_LineNumber)
-AssertEq(lv.Delete(6), 1, A_LineNumber)
+AssertEq(lv.Delete(6), "", A_LineNumber)
 AssertEq(lv.GetCount(), 5, A_LineNumber)
 
 ; An Integer column sorts by number, and Sort sorts it once.
