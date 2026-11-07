@@ -8,6 +8,7 @@ namespace Keysharp.Internals.Strings
 	/// </summary>
 	internal static class CaseCompare
 	{
+		/// <summary>The user's culture, which Locale comparisons and FormatTime use.</summary>
 		internal static CultureInfo UserCulture { get; set; }
 
 		// The first script of the process captures it, before it makes the threads' culture invariant.

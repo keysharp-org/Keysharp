@@ -34,6 +34,7 @@ namespace Keysharp.Builtins
 		private uint mouseTransparentWindow;
 #endif
 		internal bool BeenShown => beenShown;
+		internal bool IsToolWindow => toolWindow;
 
 #if WINDOWS
 		private KeysharpContentPanel contentPanel;
@@ -644,7 +645,14 @@ namespace Keysharp.Builtins
 			//an enumeration modified exception because Winforms is internally already iterating over
 			//all open windows to close them.
 			if (!OwnerScript.IsTearingDown)
+			{
 				this.CheckedInvoke(Close, false);
+#if !WINDOWS
+				//GTK closes only a loaded window, so one never shown raises no Closing for Form_FormClosing to let its Gui go.
+				if (!Loaded && CachedHwnd != 0 && this is not MainWindow && Tag is WeakReference<Gui>)
+					ClearThis();
+#endif
+			}
 
 			return DefaultObject;
 		}

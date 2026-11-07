@@ -41,6 +41,8 @@ AssertEq(s, "{}", A_LineNumber)
 ; Test 9: Omitted index (using next input values).
 s := Format("{} {}", 1, 2)
 AssertEq(s, "1 2", A_LineNumber)
+; An omitted index follows the previous placeholder, even an explicit one.
+AssertEq(Format("{2} {}", "a", "b", "c"), "b c", A_LineNumber)
 
 ; Test 10: Custom uppercase transformation.
 s := Format("{1:U}", "test")

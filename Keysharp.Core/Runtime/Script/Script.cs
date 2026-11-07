@@ -1337,7 +1337,9 @@ namespace Keysharp.Runtime
 			if (executionResult != ScriptEventExecutionResult.Executed)
 				return;
 
-			if (!autoExecResult && !persistent)
+			// As AHK decides after its section with IsPersistent: an error ends only the auto-execute thread of a script
+			// that a visible window, a hotkey, a timer, an InputHook or Persistent() keeps running.
+			if (!autoExecResult && !AnyPersistent(includeWindows: IsOnMainThread, includePendingWork: false))
 			{
 				// ExitApp rethrows UserRequestedExitException to unwind script threads.
 				// On non-Windows platforms this method runs inside a Gtk# AsyncInvoke
@@ -1827,10 +1829,11 @@ namespace Keysharp.Runtime
 		internal void ForgetPendingExitCode() => Volatile.Write(ref pendingExitCode, 0);
 
 		/// <param name="includeWindows">False to skip the visible-window test, the one term only the UI thread may read.</param>
-		internal bool AnyPersistent(bool includeWindows = true)
+		/// <param name="includePendingWork">False to skip unsettled async work, which AHK's IsPersistent has no term for.</param>
+		internal bool AnyPersistent(bool includeWindows = true, bool includePendingWork = true)
 		{
 			// Plain reads first, then the terms that take a lock or walk the windows, since this runs at every last-thread end.
-			if (Volatile.Read(ref totalExistingThreads) > 0 || HasPendingSchedulerWork || FlowData.persistentValueSetByUser
+			if (Volatile.Read(ref totalExistingThreads) > 0 || (includePendingWork && HasPendingSchedulerWork) || FlowData.persistentValueSetByUser
 					|| input != null || HotkeyData.shk.Length > 0)
 				return true;
 

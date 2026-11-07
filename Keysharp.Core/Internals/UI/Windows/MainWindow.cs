@@ -409,8 +409,8 @@ namespace Keysharp.Internals.UI.Windows
 				case MenuCommand.ViewRefresh: RefreshSelectedTab(); break;
 				case MenuCommand.ViewClearDebugLog: OwnerScript.DebugOutput.Clear(); break;
 				case MenuCommand.TrayHelp:
+				case MenuCommand.HelpUserManual: Processes.Run(Keysharp.Builtins.Menu.DocumentationUrl); break;
 				case MenuCommand.HelpWebsite: Processes.Run("https://github.com/keysharp-org/Keysharp"); break;
-				case MenuCommand.HelpUserManual: Dialogs.MsgBox("This feature is not implemented"); break;
 				case MenuCommand.HelpAbout: ShowAbout(); break;
 			}
 		}

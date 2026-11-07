@@ -39,8 +39,8 @@ namespace Keysharp.Builtins
 			/// same value always produces the same bytes.
 			/// </param>
 			/// <returns>JSON text.</returns>
-			/// <exception cref="ValueError">Thrown if value contains a reference cycle or nests too deeply, or
-			/// if indent is neither a width nor a run of spaces or tabs.</exception>
+			/// <exception cref="ValueError">Thrown if value contains a reference cycle, nests too deeply or holds
+			/// Infinity or NaN, or if indent is neither a width nor a run of spaces or tabs.</exception>
 			[Static]
 			public static object Encode(object @this, object value, object indent = null, object nullValue = null)
 			{
@@ -246,6 +246,13 @@ namespace Keysharp.Builtins
 
 					case int i: writer.WriteNumberValue(i); return;
 
+					// JSON has no number for these. A continued error here, as below, writes null in the value's
+					// place, so the writer stays valid for the values after it.
+					case double d when !double.IsFinite(d):
+						_ = Errors.ValueErrorOccurred("Infinity and NaN cannot be encoded as JSON.", d);
+						writer.WriteNullValue();
+						return;
+
 					case double d: writer.WriteNumberValue(d); return;
 
 					case decimal m: writer.WriteNumberValue(m); return;
@@ -254,12 +261,14 @@ namespace Keysharp.Builtins
 				if (depth >= MaxDepth)
 				{
 					_ = Errors.ValueErrorOccurred($"JSON nesting exceeds the limit of {MaxDepth}.");
+					writer.WriteNullValue();
 					return;
 				}
 
 				if (!open.Add(value))
 				{
 					_ = Errors.ValueErrorOccurred("A value cannot be encoded because it contains itself.");
+					writer.WriteNullValue();
 					return;
 				}
 

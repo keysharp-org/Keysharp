@@ -28,7 +28,7 @@ namespace Keysharp.Internals
 		public override long GetStyle(nint h)
 			=> TryOwnControl(h, out _) ? base.GetStyle(h) : Query(h)?.Style ?? 0;
 		public override long GetExStyle(nint h)
-			=> TryOwnControl(h, out _) ? base.GetExStyle(h) : 0;
+			=> TryOwnControl(h, out _) ? base.GetExStyle(h) : Query(h)?.ExStyle ?? 0;
 		public override bool GetActive(nint h)
 			=> TryOwnControl(h, out _) ? base.GetActive(h) : Query(h)?.Active == true;
 		public override bool GetVisible(nint h)

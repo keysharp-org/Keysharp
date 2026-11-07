@@ -53,12 +53,12 @@ namespace Keysharp.Runtime
 		public static void ReportPassed(KeysharpException ex)
 		{
 			if (ex.DiagnosticError is { } err)
-				_ = Errors.ErrorOccurred(err, ErrorMode.Exit);
+				_ = Errors.ErrorOccurred(err, ErrorMode.Exit, ex.ThrownValue);
 		}
 
 		/// <summary>
 		/// The exception a script's throw raises for <paramref name="value"/>. The original value is retained for catch
-		/// filters and output variables; a non-Error value also has an Error wrapper for uncaught diagnostics.
+		/// filters, output variables and OnError; a non-Error value also has an Error wrapper for uncaught diagnostics.
 		/// When no enclosing try catches it, OnError and the default dialog handle it here, before the stack unwinds.
 		/// </summary>
 		[StackTraceHidden]
@@ -69,7 +69,7 @@ namespace Keysharp.Runtime
 			var exception = err.AsException(value);
 			// Each throw is a fresh raise, whatever became of the value before.
 			err.Reported = false;
-			_ = Errors.ErrorOccurred(err, ErrorMode.Exit);
+			_ = Errors.ErrorOccurred(err, ErrorMode.Exit, value);
 			return exception;
 		}
 

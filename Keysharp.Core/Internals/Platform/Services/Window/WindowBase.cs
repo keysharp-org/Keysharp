@@ -216,8 +216,8 @@ namespace Keysharp.Internals
 		public virtual long GetExStyle(nint h)
 		{
 #if !WINDOWS
-			if (TryOwnControl(h, out _))
-				return 0L;
+			if (TryOwnControl(h, out var control))
+				return control.CheckedInvoke(() => EtoWindowStyles.ExFor(control), true);
 #endif
 			return NotYet<long>();
 		}

@@ -187,6 +187,13 @@ Loop Reg "HKCU", "K"
 Assert(n > 0, A_LineNumber)
 AssertEq(RegRead("HKCU", "ks-no-such-value", "none"), "none", A_LineNumber)
 
+; RegCreateKey creates a key with no value, which the RegDeleteKey below removes with its parent.
+RegCreateKey("HKCU\SOFTWARE\KeysharpTest\ks_create")
+n := 0
+Loop Reg "HKCU\SOFTWARE\KeysharpTest", "K"
+	n += A_LoopRegName = "ks_create"
+AssertEq(n, 1, A_LineNumber)
+
 RegDelete("HKEY_CURRENT_USER\SOFTWARE\KeysharpTest", "testval")
 RegDelete("HKEY_CURRENT_USER\SOFTWARE\KeysharpTest\ks_sub1", "")
 RegDelete("HKEY_CURRENT_USER\SOFTWARE\KeysharpTest\ks_sub1\ks_sub1_sub1", "dword1")

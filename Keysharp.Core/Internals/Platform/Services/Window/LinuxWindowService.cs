@@ -151,7 +151,7 @@ namespace Keysharp.Internals
 		public override long GetExStyle(nint h)
 		{
 			if (TryOwnControl(h, out _)) return base.GetExStyle(h);
-			if (IsWayland(h)) return 0L;
+			if (Backend(h, out var info)) return info.ExStyle;
 			return 0L;
 		}
 

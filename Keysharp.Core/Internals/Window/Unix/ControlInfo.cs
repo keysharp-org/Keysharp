@@ -36,7 +36,7 @@ namespace Keysharp.Internals.Window.Unix
 
 		internal override bool Exists => control != null;
 
-		internal override long ExStyle => 0;
+		internal override long ExStyle => EtoWindowStyles.ExFor(control);
 
 		internal override bool IsHung => false;
 

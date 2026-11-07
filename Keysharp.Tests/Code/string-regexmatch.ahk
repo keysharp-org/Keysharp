@@ -256,6 +256,8 @@ AssertEq(m.Mark, "foo", A_LineNumber)
 i := RegExMatch("abc", "(?<=c)", &m, 0)
 ; Expect a zero-width match at position 3
 Assert(i == 4 && m.Pos == 4, A_LineNumber)
+; A StartingPos of 0 starts at the end, so nothing before it can match.
+AssertEq(RegExMatch("abc", "a", , 0), 0, A_LineNumber)
 
 ; No-match returns 0 and blanks the OutputVar
 m := ""  ; initialize

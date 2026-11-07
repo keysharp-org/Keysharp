@@ -65,14 +65,16 @@ namespace Keysharp.Builtins
 		public static object Abs(object number)
 		{
 			number = Number.staticCall(null, number);
+			// The minimum integer has no positive counterpart and stays as it is, as in AutoHotkey.
 			if (number is long ll)
-				return Math.Abs(ll);
+				return ll < 0 ? unchecked(-ll) : ll;
 			else if (number is bool bl)
 				return bl;
 			else if (number is double dd)
 				return Math.Abs(dd);
 			else
-				return Errors.ErrorOccurred($"Abs() argument of {number} was not numeric");
+				// Number has already raised a TypeError, which the script continued.
+				return number;
 		}
 
 		/// <summary>
@@ -80,14 +82,14 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="number">A number representing a cosine, where -1 ≤ <paramref name="n"/> ≤ 1.</param>
 		/// <returns>An angle, θ, measured in radians, such that 0 ≤ θ ≤ π.</returns>
-		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if the argument was not between -1 and 1.</exception>
+		/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if the argument was not between -1 and 1.</exception>
 		public static object ACos(object number)
 		{
 			if (!number.CoerceDouble(out var n))
 				return DefaultObject;
 
 			if (n < -1 || n > 1)
-				return Errors.ErrorOccurred($"ACos() argument of {n} was not between -1 and 1.");
+				return Errors.InvalidParameterErrorOccurred(1, "ACos", number);
 
 			return Math.Acos(n);
 		}
@@ -97,14 +99,14 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="number">A number representing a sine, where -1 ≤ <paramref name="n"/> ≤ 1.</param>
 		/// <returns>An angle, θ, measured in radians, such that -π/2 ≤ θ ≤ π/2.</returns>
-		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if the argument was not between -1 and 1.</exception>
+		/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if the argument was not between -1 and 1.</exception>
 		public static object ASin(object number)
 		{
 			if (!number.CoerceDouble(out var n))
 				return DefaultObject;
 
 			if (n < -1 || n > 1)
-				return Errors.ErrorOccurred($"ASin() argument of {n} was not between -1 and 1.");
+				return Errors.InvalidParameterErrorOccurred(1, "ASin", number);
 
 			return Math.Asin(n);
 		}
@@ -249,14 +251,14 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="number">A number whose logarithm is to be found.</param>
 		/// <returns>The natural logarithm of <paramref name="n"/> if it's positive, else an exception is thrown.</returns>
-		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if the argument was negative.</exception>
+		/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if the argument was negative.</exception>
 		public static object Ln(object number)
 		{
 			if (!number.CoerceDouble(out var n))
 				return DefaultObject;
 
 			if (n < 0)
-				return Errors.ErrorOccurred($"Ln() argument {n} was negative.");
+				return Errors.InvalidParameterErrorOccurred(1, "Ln", number);
 
 			return Math.Log(n);
 		}
@@ -267,14 +269,14 @@ namespace Keysharp.Builtins
 		/// <param name="number">A number whose logarithm is to be found.</param>
 		/// <param name="base">The base of the logarithm. If unspecified this is <c>10</c>.</param>
 		/// <returns>The logarithm of <paramref name="n"/> to base <paramref name="b"/> if n is positive, else an exception is thrown.</returns>
-		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if the argument was negative.</exception>
+		/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if the argument was negative.</exception>
 		public static object Log(object number, object @base = null)
 		{
 			if (!number.CoerceDouble(out var n))
 				return DefaultObject;
 
 			if (n < 0)
-				return Errors.ErrorOccurred($"Log() argument {n} was negative.");
+				return Errors.InvalidParameterErrorOccurred(1, "Log", number);
 
 			if (@base == null)
 				return Math.Log10(n);
@@ -473,14 +475,14 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="number">A number.</param>
 		/// <returns>The positive square root of <paramref name="n"/> if positive, else an exception is thrown.</returns>
-		/// <exception cref="Error">An <see cref="Error"/> exception is thrown if the value is negative.</exception>
+		/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if the value is negative.</exception>
 		public static object Sqrt(object number)
 		{
 			if (!number.CoerceDouble(out var n))
 				return DefaultObject;
 
 			if (n < 0)
-				return Errors.ErrorOccurred($"Sqrt() argument of {n} was negative.");
+				return Errors.InvalidParameterErrorOccurred(1, "Sqrt", number);
 
 			return Math.Sqrt(n);
 		}

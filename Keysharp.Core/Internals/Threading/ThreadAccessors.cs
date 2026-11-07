@@ -93,12 +93,12 @@ namespace Keysharp.Internals.Threading
 		/// <summary>
 		/// Current day of the week's 3-letter abbreviation in the current user's language, e.g. Sun.
 		/// </summary>
-		public static string A_DDD => DateTime.Now.ToString("ddd");
+		public static string A_DDD => DateTime.Now.ToString("ddd", CaseCompare.UserCulture ?? CultureInfo.CurrentCulture);
 
 		/// <summary>
 		/// Current day of the week's full name in the current user's language, e.g. Sunday.
 		/// </summary>
-		public static string A_DDDD => DateTime.Now.ToString("dddd");
+		public static string A_DDDD => DateTime.Now.ToString("dddd", CaseCompare.UserCulture ?? CultureInfo.CurrentCulture);
 
 		/// <summary>
 		/// True if the thread immediately underneath the current thread is paused, otherwise false.

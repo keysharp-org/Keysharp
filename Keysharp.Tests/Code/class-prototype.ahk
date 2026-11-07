@@ -120,4 +120,11 @@ for v in enumLike
 	enumSeen .= v
 AssertEq(enumSeen, "12", A_LineNumber)
 
+; As in AutoHotkey, an object's base chain starts at its base, so it is not derived from itself, while a primitive's
+; starts at its type's prototype. An object still cannot be its own base.
+Assert(!HasBase(Object.Prototype, Object.Prototype) && !(Object.Prototype is Object) && HasBase(1, Integer.Prototype)
+	&& HasBase({}, Object.Prototype), A_LineNumber)
+selfBase := {}
+Throws(() => ObjSetBase(selfBase, selfBase), A_LineNumber, ValueError)
+
 FileAppend "pass", "*"

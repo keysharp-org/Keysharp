@@ -18,7 +18,7 @@ Assert(Eq(0, ACos(1)), A_LineNumber)
 
 Assert(Eq(0.8298316245918765, ACos(0.675)), A_LineNumber)
 
-Throws(() => ACos(-1.1), A_LineNumber, Error)
+Throws(() => ACos(-1.1), A_LineNumber, ValueError)
 
 Throws(() => ACos(1.1), A_LineNumber, Error)
 

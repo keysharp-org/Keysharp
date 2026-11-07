@@ -18,7 +18,7 @@ Assert(Eq(1.5707963267948966, ASin(1)), A_LineNumber)
 
 Assert(Eq(0.74096470220302, ASin(0.675)), A_LineNumber)
 
-Throws(() => ASin(-1.1), A_LineNumber, Error)
+Throws(() => ASin(-1.1), A_LineNumber, ValueError)
 
 Throws(() => ASin(1.1), A_LineNumber, Error)
 

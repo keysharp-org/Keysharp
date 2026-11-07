@@ -36,6 +36,9 @@ Throws(() => Json.Encode(cyclic), A_LineNumber, ValueError)
 shared := Map("a", 1)
 AssertEq(Json.Encode(Map("x", shared, "y", shared)), '{"x":{"a":1},"y":{"a":1}}', A_LineNumber)
 
+; JSON has no number for Infinity or NaN.
+Throws(() => Json.Encode([Exp(1000)]), A_LineNumber, ValueError)
+
 ; The nesting limit is the same in both directions, so whatever encodes also decodes.
 nest127 := ""
 Loop 127

@@ -83,7 +83,7 @@ namespace Keysharp.Internals.Window.MacOS
 
 		internal override bool Exists => TryGetNativeInfo(out _);
 
-		internal override long ExStyle => 0;
+		internal override long ExStyle => AlwaysOnTop ? EtoWindowStyles.WS_EX_TOPMOST : 0L;
 
 		internal override bool IsHung => false;
 

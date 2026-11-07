@@ -155,7 +155,7 @@ namespace Keysharp.Builtins
 				nativeBase = Script.NativeKind(baseObjVal.type);
 
 			// As AutoHotkey's CanSetBase, a base of another native type or one that would make a loop is invalid.
-			if (nativeObj != nativeBase || Types.HasBase(baseObjVal, objVal) != 0)
+			if (nativeObj != nativeBase || baseObjVal == objVal || Types.HasBase(baseObjVal, objVal) != 0)
 				return Errors.ValueErrorOccurred("Invalid base.");
 
 			objVal.SetBaseInternal(baseObjVal);

@@ -116,7 +116,7 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			return HasKnownField(client ? WaylandWindowFields.Client : WaylandWindowFields.Frame);
 		}
 		internal override long Style => Decorated ? WsCaption : 0L;
-		internal override long ExStyle => 0L;
+		internal override long ExStyle => alwaysOnTop ? EtoWindowStyles.WS_EX_TOPMOST : 0L;
 		internal override bool Active => active;
 		internal override bool Visible => visible;
 		internal override bool Enabled => true;

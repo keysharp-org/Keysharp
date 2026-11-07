@@ -332,6 +332,11 @@ Check("native control font reflects quality", NumGet(nativeFont, 26, "UChar"), 3
 Check("FontHandle reflects bold", DllCall("libpango-1.0.so.0\pango_font_description_get_weight", "Ptr", g.FontHandle, "Int"), 700)
 Check("FontHandle reflects size", Abs(DllCall("libpango-1.0.so.0\pango_font_description_get_size", "Ptr", g.FontHandle, "Int") - oldSize * 2) <= 2, true)
 #endif
+#if LINUX || OSX
+; Quality is only a rendering hint, as in AutoHotkey, so a toolkit without the setting accepts and ignores it.
+g.SetFont("q5 underline")
+Check("quality hint accepted", g.Font.Underline, true)
+#endif
 
 ; Assigning something that is not a Font must raise.
 Rejects("gui bad assign", () => g.Font := "s12")

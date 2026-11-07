@@ -389,8 +389,20 @@ namespace Keysharp.Builtins
 				case SystemMetric.SM_REMOTECONTROL:
 					return "echo $SSH_TTY".Bash(out var sshOut2) == 0 && sshOut2 != "" ? 1L : 0L;
 
+				case SystemMetric.SM_XVIRTUALSCREEN:
+					return (long)Platform.Screen.GetVirtualScreenBounds().X;
+
+				case SystemMetric.SM_YVIRTUALSCREEN:
+					return (long)Platform.Screen.GetVirtualScreenBounds().Y;
+
+				case SystemMetric.SM_CXVIRTUALSCREEN:
+					return (long)Platform.Screen.GetVirtualScreenBounds().Width;
+
+				case SystemMetric.SM_CYVIRTUALSCREEN:
+					return (long)Platform.Screen.GetVirtualScreenBounds().Height;
+
 				default:
-					throw new NotImplementedException($"SysGet({sm}) has no Linux/Eto equivalent.");
+					return Errors.UnsupportedErrorOccurred($"SysGet({sm}) has no equivalent on this platform.");
 			}
 #elif WINDOWS
 

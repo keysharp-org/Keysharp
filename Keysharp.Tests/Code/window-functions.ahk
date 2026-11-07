@@ -429,6 +429,13 @@ Assert(!(ControlGetStyle(styleButton) & WS_DISABLED), A_LineNumber)
 styleGui.Destroy()
 #endif
 
+#if LINUX || OSX
+; The extended style carries what the toolkit knows, so AutoHotkey's WS_EX_TOPMOST test finds an always-on-top window.
+exStyleGui := Gui("+AlwaysOnTop", "Window functions exstyle " A_TickCount), exStyleGui.Show("NoActivate w200 h100")
+Assert(WinGetExStyle(exStyleGui) & 0x8, A_LineNumber)
+exStyleGui.Destroy()
+#endif
+
 ; WinKill forces only a window which does not answer, and a Gui answers by hiding.
 killTarget := Gui()
 killTarget.Show("NA w100 h50")

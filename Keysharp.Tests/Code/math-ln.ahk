@@ -12,7 +12,7 @@ zeroLn := Ln(0)
 
 Assert(zeroLn is Float && zeroLn < -1.0E300, A_LineNumber)
 
-Throws(() => Ln(-1), A_LineNumber, Error)
+Throws(() => Ln(-1), A_LineNumber, ValueError)
 
 Throws(() => Ln(-0.5), A_LineNumber, Error)
 

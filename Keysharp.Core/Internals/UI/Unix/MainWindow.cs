@@ -556,7 +556,7 @@ namespace Keysharp.Internals.UI.Unix
 		}
 
 		private void userManualToolStripMenuItem_Click(object sender, EventArgs e)
-			=> RunMenuCommand(MenuCommand.HelpUserManual, () => Dialogs.MsgBox("This feature is not implemented"));
+			=> RunMenuCommand(MenuCommand.HelpUserManual, () => Processes.Run(Keysharp.Builtins.Menu.DocumentationUrl));
 
 		private void variablesAndTheirContentsToolStripMenuItem_Click(object sender, EventArgs e)
 			=> RunMenuCommand(MenuCommand.ViewVariables, () => ShowInternalVars(true));

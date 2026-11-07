@@ -33,6 +33,45 @@ namespace Keysharp.Internals
 		internal const long WS_MAXIMIZEBOX = 0x00010000;
 		internal const long WS_TABSTOP = 0x00010000;   // same bit as WS_MAXIMIZEBOX; child controls only
 
+		internal const long WS_EX_TOPMOST = 0x00000008;
+		internal const long WS_EX_TRANSPARENT = 0x00000020;
+		internal const long WS_EX_TOOLWINDOW = 0x00000080;
+		internal const long WS_EX_LAYERED = 0x00080000;
+
+		/// <summary>
+		/// The extended style word, from the window state the toolkit knows: always-on-top, and a Gui's
+		/// +ToolWindow and +ClickThrough, the last as WS_EX_TRANSPARENT | WS_EX_LAYERED, as Windows sets it.
+		/// A child control has none of these, so it reports 0.
+		/// </summary>
+		internal static long ExFor(Eto.Forms.Control control)
+		{
+			if (control is not Eto.Forms.Window window)
+				return 0L;
+
+			var exStyle = 0L;
+
+			try
+			{
+				if (window.Topmost)
+					exStyle |= WS_EX_TOPMOST;
+
+				if (window is Keysharp.Builtins.KeysharpForm form)
+				{
+					if (form.IsToolWindow)
+						exStyle |= WS_EX_TOOLWINDOW;
+
+					if (form.clickThrough)
+						exStyle |= WS_EX_TRANSPARENT | WS_EX_LAYERED;
+				}
+			}
+			catch
+			{
+				// As in ForWindow: a window torn down mid-read reports what was collected.
+			}
+
+			return exStyle;
+		}
+
 		/// <summary>
 		/// The style word for any Eto control, dispatching to the window or child-control mapping.
 		/// </summary>

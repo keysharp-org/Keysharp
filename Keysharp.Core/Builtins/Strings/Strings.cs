@@ -61,7 +61,7 @@ namespace Keysharp.Builtins
 
 			StringBuilder result = new StringBuilder();
 			int pos = 0;
-			int nextArg = 0; // if no explicit index is given, use the next argument.
+			int nextArg = 0; // the argument a placeholder without an index takes
 
 			while (pos < format.Length)
 			{
@@ -135,9 +135,6 @@ namespace Keysharp.Builtins
 						continue;
 					}
 				}
-
-				if (pos == indexStart) // no explicit index was provided
-					nextArg++;
 
 				// --- Parse an optional format specifier ---
 				SpecInfo spec;
@@ -215,6 +212,8 @@ namespace Keysharp.Builtins
 				}
 
 				pos++; // skip the closing '}'
+				// As in AutoHotkey, a bare {} follows the last valid placeholder, explicit indexes included.
+				nextArg = argIndex + 1;
 
 				// --- Format the argument according to the parsed specifier ---
 				if (!TryCoerceArgument(args[argIndex], spec.Type, out var arg))
@@ -333,7 +332,8 @@ namespace Keysharp.Builtins
 			DateTime time;
 			var output = string.Empty;
 			var splits = s.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
-			var ci = CultureInfo.CurrentCulture;
+			// As in AutoHotkey, the user's locale, which the threads' invariant culture is not.
+			var ci = CaseCompare.UserCulture ?? CultureInfo.CurrentCulture;
 			var hasTimestamp = splits.Length > 0 && char.IsAsciiDigit(splits[0][0]);
 			var unknownLocale = false;
 
@@ -375,7 +375,8 @@ namespace Keysharp.Builtins
 			{
 				try
 				{
-					time = Conversions.ToDateTime(splits[0], ci.Calendar);
+					// A timestamp is Gregorian whatever the locale's calendar, as in AutoHotkey.
+					time = Conversions.ToDateTime(splits[0], CultureInfo.InvariantCulture.Calendar);
 				}
 				catch
 				{
@@ -389,7 +390,7 @@ namespace Keysharp.Builtins
 				switch (f.TrimStart(' ', '\t').ToLowerInvariant())
 				{
 					case Keyword_Time:
-						f = "h:mm tt";
+						f = ci.DateTimeFormat.ShortTimePattern;
 						break;
 
 					case Keyword_ShortDate:
@@ -405,15 +406,15 @@ namespace Keysharp.Builtins
 						break;
 
 					case Keyword_YDay:
-						output = ci.Calendar.GetDayOfYear(time).ToString();
+						output = time.DayOfYear.ToString();
 						return output;
 
 					case Keyword_YDay0:
-						output = ci.Calendar.GetDayOfYear(time).ToString().PadLeft(3, '0');
+						output = time.DayOfYear.ToString().PadLeft(3, '0');
 						return output;
 
 					case Keyword_WDay:
-						output = ((int)ci.Calendar.GetDayOfWeek(time) + 1).ToString();
+						output = ((int)time.DayOfWeek + 1).ToString();
 						return output;
 
 					case Keyword_YWeek:
@@ -434,7 +435,7 @@ namespace Keysharp.Builtins
 				if (splits.Contains("R", StringComparer.OrdinalIgnoreCase))
 					f = "f";
 				else
-					f = "h:mm tt dddd, MMMM d, yyyy";
+					f = ci.DateTimeFormat.ShortTimePattern + " " + ci.DateTimeFormat.LongDatePattern;
 			}
 
 			if (unknownLocale)

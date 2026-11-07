@@ -250,20 +250,20 @@ namespace Keysharp.Builtins
 
 			/// <summary>
 			/// Sets the given columns' text and the states the options name on a row, or on every row when the number is
-			/// 0. An omitted column keeps its text. Returns 1, or 0 when the row does not exist.
+			/// 0. An omitted column keeps its text. A row that does not exist is left alone, as in AutoHotkey.
 			/// </summary>
-			public long Modify(object rowNumber, object options = null, params object[] columns)
+			public object Modify(object rowNumber, object options = null, params object[] columns)
 			{
 				if (!rowNumber.CoerceInt(out var row) || !options.CoerceString(out var opts) || !CoerceStrings(columns, out var texts))
-					return 0L;
+					return DefaultObject;
 
 				if (row < 0)
-					return (long)Errors.InvalidParameterErrorOccurred(1, "Gui.ListView.Prototype.Modify", rowNumber, 0L);
+					return Errors.InvalidParameterErrorOccurred(1, "Gui.ListView.Prototype.Modify", rowNumber);
 
 				var count = Lv.Items.Count;
 
 				if (row > count || !ListViewRowOptions.TryParse(opts, out var o))
-					return 0L;
+					return DefaultObject;
 
 				if (row == 0)
 					o.vis = false;
@@ -279,40 +279,40 @@ namespace Keysharp.Builtins
 					eventHandlerActive = true;
 				}
 
-				return 1L;
+				return DefaultObject;
 			}
 
 			/// <summary>
 			/// Deletes a row, or every row when the number is omitted. As in AutoHotkey, 0 is refused rather than read as
-			/// "all". Returns 1, or 0 when the row does not exist.
+			/// "all", and a row that does not exist is left alone.
 			/// </summary>
-			public long Delete(object rowNumber = null)
+			public object Delete(object rowNumber = null)
 			{
 				if (!rowNumber.CoerceInt(out var row))
-					return 0L;
+					return DefaultObject;
 
 				if (rowNumber is not null)
 				{
 					if (row < 1)
-						return (long)Errors.InvalidParameterErrorOccurred(1, "Gui.ListView.Prototype.Delete", rowNumber, 0L);
+						return Errors.InvalidParameterErrorOccurred(1, "Gui.ListView.Prototype.Delete", rowNumber);
 
 					if (row > Lv.Items.Count)
-						return 0L;
+						return DefaultObject;
 				}
 
 				_ = ClearColors();
 				DeleteRows(rowNumber is null ? -1 : row - 1);
-				return 1L;
+				return DefaultObject;
 			}
 
-			/// <summary>Deletes a column and returns 1. A column that does not exist fails, as in AutoHotkey.</summary>
-			public long DeleteCol(object column)
+			/// <summary>Deletes a column. A column that does not exist fails, as in AutoHotkey.</summary>
+			public object DeleteCol(object column)
 			{
 				if (!column.CoerceInt(out var col))
-					return 0L;
+					return DefaultObject;
 
 				if (col < 1 || col > Lv.Columns.Count)
-					return (long)Errors.ErrorOccurred("Failed", 0L);
+					return Errors.ErrorOccurred("Failed");
 
 				_ = ClearColors();
 				DeleteColumn(col - 1);
@@ -320,7 +320,7 @@ namespace Keysharp.Builtins
 				if (col - 1 < columns.Count)
 					columns.RemoveAt(col - 1);
 
-				return 1L;
+				return DefaultObject;
 			}
 
 			/// <summary>The number of rows, of selected rows ("Selected") or of columns ("Column").</summary>
@@ -444,21 +444,21 @@ namespace Keysharp.Builtins
 
 			/// <summary>
 			/// Changes a column's options and title. With only the number it sizes that column to its contents, and with
-			/// nothing every column. Returns 1, or 0 when the column does not exist.
+			/// nothing every column. A column that does not exist is left alone, as in AutoHotkey.
 			/// </summary>
-			public long ModifyCol(object columnNumber = null, object options = null, object columnTitle = null)
+			public object ModifyCol(object columnNumber = null, object options = null, object columnTitle = null)
 			{
 				if (columnNumber is null)
 				{
 					if (options is not null || columnTitle is not null)
-						return (long)Errors.InvalidParameterErrorOccurred(1, "Gui.ListView.Prototype.ModifyCol", columnNumber, 0L);
+						return Errors.InvalidParameterErrorOccurred(1, "Gui.ListView.Prototype.ModifyCol", columnNumber);
 
 					AutoSizeColumn(-1, false);
-					return 1L;
+					return DefaultObject;
 				}
 
 				if (!columnNumber.CoerceInt(out var col))
-					return 0L;
+					return DefaultObject;
 
 				var index = col - 1;
 				var exists = index >= 0 && index < Lv.Columns.Count;
@@ -466,30 +466,29 @@ namespace Keysharp.Builtins
 				//A lone column number only sizes, and one that names no column does nothing, as in AutoHotkey.
 				if (options is null && columnTitle is null)
 				{
-					if (!exists)
-						return 0L;
+					if (exists)
+						AutoSizeColumn(index, false);
 
-					AutoSizeColumn(index, false);
-					return 1L;
+					return DefaultObject;
 				}
 
 				if (col < 1)
-					return (long)Errors.InvalidParameterErrorOccurred(1, "Gui.ListView.Prototype.ModifyCol", columnNumber, 0L);
+					return Errors.InvalidParameterErrorOccurred(1, "Gui.ListView.Prototype.ModifyCol", columnNumber);
 
 				if (!exists)
-					return 0L;
+					return DefaultObject;
 
 				string title = null;
 
 				if (!options.CoerceString(out var opts) || (columnTitle is not null && !columnTitle.CoerceString(out title))
 						|| !ListViewColumnChange.TryParse(opts, Column(index), null, out var change))
-					return 0L;
+					return DefaultObject;
 
 				if (title != null)
 					SetColumnTitle(index, title);
 
 				ApplyColumnChange(index, change);
-				return 1L;
+				return DefaultObject;
 			}
 
 			/// <summary>

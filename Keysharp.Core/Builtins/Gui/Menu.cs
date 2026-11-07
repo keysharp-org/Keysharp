@@ -428,6 +428,12 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
+		/// The documentation site, which the tray Help item and the main window's User Manual open where AutoHotkey
+		/// opens its help file.
+		/// </summary>
+		internal const string DocumentationUrl = "https://keysharp-org.github.io/KeysharpDocs/";
+
+		/// <summary>
 		/// Adds the standard tray menu items after any existing items.<br/>
 		/// Any standard items already in the menu are not duplicated, but any missing items are added.
 		/// </summary>
@@ -436,7 +442,7 @@ namespace Keysharp.Builtins
 			var script = Script.TheScript;
 			if (A_AllowMainWindow.Ab())
 				AddStandardOpenItem();
-			_ = AddStandardItem("&Help", () => Processes.Run("https://github.com/keysharp-org/Keysharp/issues"));
+			_ = AddStandardItem("&Help", () => Processes.Run(DocumentationUrl));
 			_ = AddStandardItem("StandardSeparator1");
 			_ = AddStandardItem("&Window Spy", () => LaunchSpy("WindowSpy", "Window Spy script"));
 #if LINUX || OSX
@@ -525,7 +531,7 @@ namespace Keysharp.Builtins
 		private ToolStripItem AddStandardItem(string id, Action callback = null, int? index = null, bool check = false)
 		{
 			if (FindStandardItem(id) is { } existing)
-				return existing;
+				return UnwrapSeparator(existing);
 			ToolStripItem item;
 			if (callback == null)
 			{
@@ -581,7 +587,7 @@ namespace Keysharp.Builtins
 				foreach (ToolStripItem item in GetMenu().Items)
 				{
 					ReleaseIcon(item);
-					Script.TheScript.ReleaseStandardItem(item);
+					Script.TheScript.ReleaseStandardItem(UnwrapSeparator(item));
 				}
 				GetMenu().Items.Clear();
 				foreach (var hub in clickHandlers.Values)
@@ -602,9 +608,10 @@ namespace Keysharp.Builtins
 
 				GetMenu().Refresh();
 
-				if (clickHandlers.TryRemove(item, out var hub))
+				var menuItem = UnwrapSeparator(item);
+				if (clickHandlers.TryRemove(menuItem, out var hub))
 					hub.Clear();
-				Script.TheScript.ReleaseStandardItem(item);
+				Script.TheScript.ReleaseStandardItem(menuItem);
 			}
 
 			return DefaultObject;
@@ -667,27 +674,66 @@ namespace Keysharp.Builtins
 		/// </param>
 		public object Rename(object menuItemName, object newName = null)
 		{
-			if (!menuItemName.CoerceString(out var name) || !newName.CoerceString(out var newname, "-"))
+			if (!menuItemName.CoerceString(out var name) || !newName.CoerceString(out var newname))
 				return DefaultObject;
 
-			var item = GetExistingMenuItem(name);
+			if (GetExistingMenuItem(name) is not ToolStripItem item)
+				return DefaultObject;
 
-			if (item is ToolStripSeparator tss)
+			if (newname.Length == 0)
 			{
-				var index = (int)GetIndex(tss);
-				var newItem = new ToolStripMenuItem(newname);
-#if WINDOWS
-				newItem.Disposed += ReleaseIcon;
-#endif
-				newItem.Name = newItem.Text = newname;
-				GetMenu().Items.RemoveAt(index);
-				GetMenu().Items.Insert(index, newItem);
+				if (item is ToolStripMenuItem menuItem)
+					ReplaceItem(item, new RenamedSeparator(menuItem));
 			}
+			else if (item is ToolStripSeparator separator)
+			{
+				var restored = (separator as RenamedSeparator)?.Item;
 
-			if (item is ToolStripItem tsi)
-				tsi.Name = tsi.Text = newname;
+				if (restored == null)
+				{
+					restored = new ToolStripMenuItem { Image = separator.Image };
+					restored.Click += Tsmi_Click;
+				}
+
+				restored.Name = restored.Text = newname;
+				ReplaceItem(separator, restored);
+			}
+			else
+				item.Name = item.Text = newname;
 
 			return DefaultObject;
+		}
+
+		/// <summary>
+		/// What Rename puts in place of an item it turns into a separator. It holds the item, which keeps the callback,
+		/// submenu, icon and check state, so a later name restores it as AutoHotkey's one menu item keeps them.
+		/// </summary>
+		private sealed class RenamedSeparator(ToolStripMenuItem item) : ToolStripSeparator
+		{
+			internal readonly ToolStripMenuItem Item = item;
+		}
+
+		private static ToolStripItem UnwrapSeparator(ToolStripItem item) => item is RenamedSeparator separator ? separator.Item : item;
+
+		private void ReplaceItem(ToolStripItem item, ToolStripItem replacement)
+		{
+			var items = GetMenu().Items;
+			var index = items.IndexOf(item);
+			var (enabled, available) = (item.Enabled, item.Available);
+			//Shared, so options Add gives the held item while it is a separator survive the restore.
+			replacement.Tag = GetPresentation(item);
+#if WINDOWS
+			replacement.Disposed -= ReleaseIcon;
+			replacement.Disposed += ReleaseIcon;
+#endif
+			items.RemoveAt(index);
+			items.Insert(index, replacement);
+			//Set once the replacement is in the menu, since a Unix separator's native item takes no state it had before.
+			replacement.Enabled = enabled;
+			replacement.Available = available;
+
+			if (item == defaultItem)
+				SetDefaultItem(replacement);
 		}
 
 		/// <summary>
@@ -745,9 +791,10 @@ namespace Keysharp.Builtins
 			if (!iconWidth.CoerceInt(out var width, SystemInformation.SmallIconSize.Width))
 				return DefaultObject;
 
-			if (GetExistingMenuItem(name) is not ToolStripItem tsmi)
+			if (GetExistingMenuItem(name) is not ToolStripItem found)
 				return DefaultObject;
 
+			var tsmi = UnwrapSeparator(found);
 			Bitmap bmp = null;
 			if (filename.Length != 0 && filename != "*")
 			{
@@ -771,7 +818,7 @@ namespace Keysharp.Builtins
 
 		private static void ReleaseIcon(object sender, EventArgs e = null)
 		{
-			var item = (ToolStripItem)sender;
+			var item = UnwrapSeparator((ToolStripItem)sender);
 			var icon = item.Image as IDisposable;
 			item.Image = null;
 			icon?.Dispose();
@@ -1009,7 +1056,7 @@ namespace Keysharp.Builtins
 			if (menu == target)
 				return true;
 			foreach (ToolStripItem item in menu.Items)
-				if (item is ToolStripMenuItem owner && ContainsMenu(owner.DropDown, target))
+				if (UnwrapSeparator(item) is ToolStripMenuItem owner && ContainsMenu(owner.DropDown, target))
 					return true;
 			return false;
 		}
@@ -1041,7 +1088,7 @@ namespace Keysharp.Builtins
 
 			//Only Add can update an existing item without replacing its callback.
 			var found = !insert && name.Length > 0 ? GetMenuItem(name) as ToolStripItem : null;
-			var existing = found as ToolStripMenuItem;
+			var existing = UnwrapSeparator(found) as ToolStripMenuItem;
 			if (!insert && found == null && GetPosition(name) > 0)
 				return Errors.InvalidParameterErrorOccurred(1, "Menu.Prototype.Add", name);
 
@@ -1210,7 +1257,7 @@ namespace Keysharp.Builtins
 
 		private bool Check(string s, eCheckToggle checktoggle)
 		{
-			if (GetExistingMenuItem(s) is ToolStripMenuItem item)
+			if (GetExistingMenuItem(s) is ToolStripItem found && UnwrapSeparator(found) is ToolStripMenuItem item)
 			{
 				if (checktoggle == eCheckToggle.Check)
 					item.Checked = true;

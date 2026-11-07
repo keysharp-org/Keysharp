@@ -332,13 +332,15 @@ AssertEq(BareOutsideCatch(), "continued", A_LineNumber)
 AssertEq(bareOutside, "Error An exception was thrown. Return", A_LineNumber)
 OnError(BareOutsideHandler, 0)
 
-; An uncaught explicit throw reaches the callbacks where it is thrown, before any finally block runs. A value which
-; is not an Error arrives as Error(Value), using its own Message value property when it has one.
+; An uncaught explicit throw reaches the callbacks where it is thrown, before any finally block runs. As in
+; AutoHotkey, they receive the thrown value itself, even one which is not an Error.
 order := ""
+lastThrown := ""
 
 OrderHandler(exception, mode) {
-	global order
-	order .= "[" Type(exception) " " exception.Message " " mode "]"
+	global order, lastThrown
+	lastThrown := exception
+	order .= "[" Type(exception) (exception is Error ? " " exception.Message : IsObject(exception) ? "" : " " exception) " " mode "]"
 	return 1
 }
 
@@ -355,11 +357,12 @@ ThrowThroughFinally(value) {
 dynamicMessage := {}
 dynamicMessage.DefineProp("Message", { Get: (*) => Throw(Error("Message getter must not run.")) })
 OnError(OrderHandler)
-for thrown in [[Error("C3D38B48-order-error"), "C3D38B48-order-error"], ["C3D38B48-order-string", "C3D38B48-order-string"]
-	, [42, "42"], [{}, ""], [dynamicMessage, ""], [{ Message: "C3D38B48-order-object-message" }, "C3D38B48-order-object-message"]] {
+for thrown in [[Error("C3D38B48-order-error"), "Error C3D38B48-order-error"], ["C3D38B48-order-string", "String C3D38B48-order-string"]
+	, [42, "Integer 42"], [{}, "Object"], [dynamicMessage, "Object"], [{ Message: "C3D38B48-order-object-message" }, "Object"]] {
 	order := ""
 	RunThread(ThrowThroughFinally.Bind(thrown[1]))
-	AssertEq(order, "[Error " thrown[2] " Exit][finally]", A_LineNumber)
+	AssertEq(order, "[" thrown[2] " Exit][finally]", A_LineNumber)
+	Assert(lastThrown == thrown[1], A_LineNumber)
 }
 
 ; The Throw function is the same throw.
@@ -475,7 +478,7 @@ RunThread(ThrowPastOtherClass.Bind(ValueError("C3D38B48-other-class")))
 AssertEq(order, "[finally][ValueError C3D38B48-other-class Exit]", A_LineNumber)
 order := ""
 RunThread(ThrowPastOtherClass.Bind("C3D38B48-other-class-string"))
-AssertEq(order, "[finally][Error C3D38B48-other-class-string Exit]", A_LineNumber)
+AssertEq(order, "[finally][String C3D38B48-other-class-string Exit]", A_LineNumber)
 order := ""
 RunThread(BuiltinPastOtherClass)
 Assert(RegExMatch(order, "^\[finally\]\[TargetError .*C3D38B48-late-builtin.* Exit\]$"), A_LineNumber)
@@ -487,7 +490,7 @@ RunThread(BareRethrowFromCatch.Bind(Error("C3D38B48-bare-rethrow")))
 AssertEq(order, "[catch][inner finally][finally][Error C3D38B48-bare-rethrow Exit]", A_LineNumber)
 order := ""
 RunThread(BareRethrowFromCatch.Bind("C3D38B48-bare-rethrow-string"))
-AssertEq(order, "[catch][inner finally][finally][Error C3D38B48-bare-rethrow-string Exit]", A_LineNumber)
+AssertEq(order, "[catch][inner finally][finally][String C3D38B48-bare-rethrow-string Exit]", A_LineNumber)
 
 ; A throw which an enclosing try catches never reaches the callbacks, however far up the try is.
 ThrowValue(value) {

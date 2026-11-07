@@ -455,11 +455,7 @@ namespace Keysharp.Internals.Strings
 				result = forImage ? new Font(resolved, size * 96f / 72f, style, GraphicsUnit.Pixel) : new Font(resolved, size, style);
 			}
 #else
-			if (fontOptions.quality is > 0)
-			{
-				_ = Errors.ErrorOccurred("Font rendering quality is not supported on this platform.");
-				return standard;
-			}
+			// Eto fonts carry no rendering quality, and AutoHotkey treats qN as a hint, so it is accepted and ignored.
 			var style = Eto.Drawing.FontStyle.None;
 			if (weight >= 700) style |= Eto.Drawing.FontStyle.Bold;
 			if (italic) style |= Eto.Drawing.FontStyle.Italic;

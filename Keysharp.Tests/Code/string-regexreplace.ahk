@@ -52,6 +52,8 @@ Throws(() => RegExReplace("ab", "a(?C:NoSuchCallout)", "X"), A_LineNumber, Value
 ; A limit of 0 replaces nothing and a negative one replaces everything, as in AutoHotkey.
 AssertEq(RegExReplace("abcb", "b", "X", &count, 0) "|" count, "abcb|0", A_LineNumber)
 AssertEq(RegExReplace("abcb", "b", "X", &count, -5) "|" count, "aXcX|2", A_LineNumber)
+; A StartingPos of 0 starts at the end of haystack, as in AutoHotkey.
+AssertEq(RegExReplace("abc", "a", "x", , , 0), "abc", A_LineNumber)
 
 ; AutoHotkey's replacement syntax: $n takes one digit, a missing or unmatched subpattern is empty, a name is matched
 ; case-sensitively, U, L and T change case, and .NET's other $ forms are literal text.

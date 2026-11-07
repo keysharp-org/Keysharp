@@ -42,7 +42,7 @@ Assert(Near(Log(0.675, 3), -0.35776278143229939), A_LineNumber)
 
 Assert(Near(Log(0.675, 4), -0.28352029636194687), A_LineNumber)
 
-Throws(() => Log(-1), A_LineNumber, Error)
+Throws(() => Log(-1), A_LineNumber, ValueError)
 
 Throws(() => Log(-0.5), A_LineNumber, Error)
 

@@ -138,6 +138,20 @@ AssertEq(customSelected, 1, A_LineNumber)
 AssertEq(commands.Length, 0, A_LineNumber)
 AssertEq(A_IsSuspended, 0, A_LineNumber)
 
+; A blank name turns an item into a separator, and naming it again restores the same item with its callback.
+roundTrip := Menu()
+roundTrip.Add("Choice", CustomChoice)
+roundTrip.Rename("Choice")
+AssertEq(roundTrip.MenuItemName("1&"), "", A_LineNumber)
+roundTrip.Rename("1&", "Renamed Suspend")
+roundTrip.ToClr().Items.Find("Renamed Suspend", true).GetValue(0).PerformClick()
+Loop 100 {
+    if customSelected = 2
+        break
+    Sleep 10
+}
+AssertEq(customSelected, 2, A_LineNumber)
+
 OnMessage(0x111, Command, 0)
 FileAppend "pass", "*"
 

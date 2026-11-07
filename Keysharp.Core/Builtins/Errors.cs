@@ -18,10 +18,15 @@ namespace Keysharp.Builtins
 		/// Handles an error nothing catches: the OnError callbacks run on the raising thread, then the default dialog
 		/// unless one returns non-zero. A negative return continues an error of mode Return.
 		/// </summary>
-		/// <param name="err">The exception object to pass to each callback.</param>
+		/// <param name="err">The error reported, and passed to each callback unless <paramref name="thrown"/> is given.</param>
+		/// <param name="thrown">The value a script threw, which the callbacks receive in place of its Error wrapper, as in AutoHotkey.</param>
 		/// <returns>True if the thread must exit, false if it continues.</returns>
 		[StackTraceHidden]
-		internal static bool ErrorOccurred(Error err, ErrorMode mode = ErrorMode.Return)
+		internal static bool ErrorOccurred(Error err, ErrorMode mode = ErrorMode.Return) => ErrorOccurred(err, mode, null);
+
+		// No default for thrown: an optional third parameter would let ErrorOccurred(err, mode) bind to ErrorOccurred<T>.
+		[StackTraceHidden]
+		internal static bool ErrorOccurred(Error err, ErrorMode mode, object thrown)
 		{
 			var script = Script.TheScript;
 
@@ -36,7 +41,7 @@ namespace Keysharp.Builtins
 			// A try hides an error from reporting, but not a critical one, which cannot be caught (AHK's CriticalError).
 			if (!err.Reported && (!Threads.Current.insideTry || mode == ErrorMode.ExitApp))
 			{
-				var retval = script.onErrorHandlers.IsEmpty ? 0L : CallOnErrorHandlers(script, err, mode);
+				var retval = script.onErrorHandlers.IsEmpty ? 0L : CallOnErrorHandlers(script, thrown ?? err, mode);
 				// Set after the callbacks, so one which rethrows this error does not report it a second time.
 				err.Reported = true;
 
@@ -64,7 +69,7 @@ namespace Keysharp.Builtins
 		/// when none decides or this real thread is already running the callbacks.
 		/// </summary>
 		[StackTraceHidden]
-		private static long CallOnErrorHandlers(Script script, Error err, ErrorMode mode)
+		private static long CallOnErrorHandlers(Script script, object thrown, ErrorMode mode)
 		{
 			var manager = script.Threads.CurrentManager;
 
@@ -84,7 +89,7 @@ namespace Keysharp.Builtins
 
 					try
 					{
-						_ = Script.InvokeOrNull(registration.Callback, null, err, mode.ToString()).TryCoerceLong(out var retval);
+						_ = Script.InvokeOrNull(registration.Callback, null, thrown, mode.ToString()).TryCoerceLong(out var retval);
 
 						if (retval != 0L)
 							return retval;
@@ -131,7 +136,7 @@ namespace Keysharp.Builtins
 				var err = ex is KeysharpException { DiagnosticError: { } diagnostic } ? diagnostic : new Error(ex);
 
 				if (!err.Reported)
-					_ = ErrorOccurred(err, ErrorMode.Exit);
+					_ = ErrorOccurred(err, ErrorMode.Exit, (ex as KeysharpException)?.ThrownValue);
 
 				if (!err.Reported && !Script.TheScript.SuppressErrorOccurredDialog)
 					ShowUncaughtErrorDialog(err);
@@ -789,7 +794,7 @@ namespace Keysharp.Builtins
 	{
 		public Error UserError => ThrownValue as Error;
 		public object ThrownValue { get; }
-		// Raw values still need an Error for OnError and uncaught diagnostics.
+		// A raw value needs an Error for the dialog and the error output; OnError receives the value itself.
 		internal Error DiagnosticError { get; }
 
 		/// <summary>

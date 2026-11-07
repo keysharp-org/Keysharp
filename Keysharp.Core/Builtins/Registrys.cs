@@ -102,6 +102,46 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
+		/// Creates a registry key without writing a value. A key which already exists is left as it is.
+		/// </summary>
+		/// <param name="keyName">The full name of the registry key, e.g. "HKCU\Software\SomeApplication".<br/>
+		/// This must start with HKEY_LOCAL_MACHINE (or HKLM), HKEY_USERS (or HKU), HKEY_CURRENT_USER (or HKCU), HKEY_CLASSES_ROOT (or HKCR), or HKEY_CURRENT_CONFIG (or HKCC).<br/>
+		/// To access a remote registry, prepend the computer name and a backslash, e.g. "\\workstation01\HKLM".<br/>
+		/// keyName can be omitted only if a registry loop is running, in which case it defaults to the key of the current loop item.<br/>
+		/// If the item is a subkey, the full name of that subkey is used by default.
+		/// </param>
+		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown on failure.</exception>
+		public static object RegCreateKey(object keyName = null)
+		{
+			ThreadAccessors.A_LastError = 0;
+			if (!keyName.CoerceString(out var keyname))
+				return DefaultObject;
+
+			string valname = "", valtype = "";
+
+			try
+			{
+				keyname = LoopItem(keyname, false, ref valname, ref valtype);
+				var (root, subkey) = Conversions.ToRegRootKey(keyname);
+
+				if (root == null)
+					return DefaultObject;
+
+				using (root)
+				using (root.CreateSubKey(subkey, true))
+				{
+				}
+
+				return DefaultObject;
+			}
+			catch (Exception ex)
+			{
+				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
+				return Errors.OSErrorOccurred(ex, $"Error creating registry key {keyname}");
+			}
+		}
+
+		/// <summary>
 		/// Reads a value from the registry.
 		/// </summary>
 		/// <param name="keyName">The full name of the registry key, e.g. "HKLM\Software\SomeApplication".<br/>

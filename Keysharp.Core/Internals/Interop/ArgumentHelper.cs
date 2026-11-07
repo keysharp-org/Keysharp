@@ -240,10 +240,7 @@ namespace Keysharp.Internals.Interop
 				code = Struct.GetPrimitiveTypeCode(structType);
 
 				if (code == NativeTypeCode.Invalid)
-				{
-					args[n] = ReadStructValueArg(p, structType);
-					return true;
-				}
+					return TryReadStructValueArg(p, structType, out args[n]);
 
 				//An instance passes the bits it stores at the class's width, so a float keeps its exact pattern.
 				if (p is Any)
@@ -714,8 +711,14 @@ namespace Keysharp.Internals.Interop
 
 			returnCode = NativeTypeCode.Ptr;
 
+			// The callee would write through a hidden return pointer the call never passes, so a continued error must
+			// not make the call.
 			if (Struct.GetSize(structType) > sizeof(long))
+			{
 				_ = Errors.ValueErrorOccurred("Struct return values larger than 8 bytes are not supported yet.");
+				failed = true;
+				return true;
+			}
 
 			structReturnConverter = slot =>
 			{
@@ -726,15 +729,19 @@ namespace Keysharp.Internals.Interop
 			return true;
 		}
 
-		private static long ReadStructValueArg(object input, Type structType)
+		// Returns false after a continued error, so the call is not made with a slot the callee would misread.
+		private static bool TryReadStructValueArg(object input, Type structType, out long slot)
 		{
-			var value = GetStructValue(structType, input);
-			var size = Struct.GetSize(structType);
+			slot = 0L;
 
-			if (size > sizeof(long))
-				return (long)Errors.ValueErrorOccurred("Struct arguments larger than 8 bytes are not supported yet.", null, 0L);
+			if (Struct.GetSize(structType) > sizeof(long))
+			{
+				_ = Errors.ValueErrorOccurred("Struct arguments larger than 8 bytes are not supported yet.");
+				return false;
+			}
 
-			return Struct.ReadArgumentSlot(value);
+			slot = Struct.ReadArgumentSlot(GetStructValue(structType, input));
+			return true;
 		}
 
 		private object NormalizeStructPointerArg(object[] parameters, object value, int n, int paramIndex, Type pointerType, Type targetType)

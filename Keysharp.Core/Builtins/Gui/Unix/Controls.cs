@@ -784,8 +784,9 @@ namespace Keysharp.Builtins
 			get => View.Details;
 			set
 			{
+				// A script that continues the error keeps a working Report view.
 				if (value != View.Details)
-					throw new NotImplementedException("ListView view modes other than Report are not implemented on Linux.");
+					_ = Errors.UnsupportedErrorOccurred("ListView view modes other than Report are not supported on this platform.");
 
 				ApplyHeaderStyle();
 			}

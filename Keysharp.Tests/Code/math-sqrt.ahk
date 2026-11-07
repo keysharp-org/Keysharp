@@ -15,6 +15,6 @@ AssertEq(113, Sqrt(12769), A_LineNumber)
 
 AssertEq(2.8284271247461903, Sqrt(8), A_LineNumber)
 
-Throws(() => Sqrt(-1), A_LineNumber, Error)
+Throws(() => Sqrt(-1), A_LineNumber, ValueError)
 
 FileAppend "pass", "*"

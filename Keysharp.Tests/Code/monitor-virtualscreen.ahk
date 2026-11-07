@@ -31,4 +31,9 @@ for m in Monitor.Devices
 Assert(v.X = left && v.Y = top, A_LineNumber)
 Assert(v.Width = right - left && v.Height = bottom - top, A_LineNumber)
 
+#if LINUX || OSX
+; SysGet's virtual-screen metrics report the same rectangle.
+AssertEq(SysGet(76) " " SysGet(77) " " SysGet(78) " " SysGet(79), v.X " " v.Y " " v.Width " " v.Height, A_LineNumber)
+#endif
+
 FileAppend "pass", "*"

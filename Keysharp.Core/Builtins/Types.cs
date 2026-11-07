@@ -12,9 +12,14 @@ namespace Keysharp.Builtins
 		/// <param name="baseObj">The potential base object to test.</param>
 		/// <returns>This function returns 1 if baseObj is in value's chain of base objects, else 0.</returns>
 		public static long HasBase(object value, object baseObj) {
+			Any any;
+
+			// As in AutoHotkey, the walk starts at the value's base, so an object is not derived from itself.
 			if (Builtins.Primitive.IsNative(value))
-				value = TheScript.Vars.Prototypes[Builtins.Primitive.MapPrimitiveToNativeType(value)];
-            if (value is not Any any)
+				any = TheScript.Vars.Prototypes[Builtins.Primitive.MapPrimitiveToNativeType(value)];
+			else if (value is Any obj)
+				any = obj.Base;
+			else
 				return baseObj.GetType().IsAssignableFrom(value.GetType()) ? 1L : 0L;
 
             while (any != null)

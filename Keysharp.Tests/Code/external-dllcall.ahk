@@ -495,4 +495,16 @@ if !DllCall("GetModuleHandle", "Str", "lz32", "Ptr") {
 	DllCall("lz32\LZDone")
 }
 
+; A struct over 8 bytes cannot be returned or passed by value yet, and a call whose error is continued is not made.
+struct TRIPLE {
+	a : Int32, b : Int32, c : Int32
+}
+ContinueError(*) => -1
+copied := Buffer(8, 0)
+OnError(ContinueError)
+DllCall("msvcrt\wcscpy", "Ptr", copied, "Str", "x", TRIPLE)
+DllCall("msvcrt\wcscpy", "Ptr", copied, "Str", "x", TRIPLE, TRIPLE(), "CDecl Ptr")
+OnError(ContinueError, 0)
+AssertEq(NumGet(copied, "UShort"), 0, A_LineNumber)
+
 FileAppend "pass", "*"

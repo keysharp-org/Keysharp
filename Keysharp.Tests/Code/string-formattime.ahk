@@ -2,8 +2,12 @@
 #Include <assert>
 
 ; Names, separators, the calendar and the week rule all come from the locale, so every call that depends on one
-; pins en-US with L1033. Only purely numeric day/month/hour/minute/second specifiers run on the current locale.
+; pins a locale, mostly en-US with L1033. Only purely numeric day/month/hour/minute/second specifiers run on the
+; user's locale.
 x := "20200704070809"
+
+; ICU's time patterns may separate AM with a no-break space where Windows' own have a space.
+Spaced(s) => StrReplace(StrReplace(s, Chr(0xA0), " "), Chr(0x202F), " ")
 
 AssertEq(FormatTime(x, "d"), "4", A_LineNumber)
 
@@ -53,7 +57,9 @@ AssertEq(FormatTime(x " L1033", "t"), "A", A_LineNumber)
 
 AssertEq(FormatTime(x " L1033", "tt"), "AM", A_LineNumber)
 
-AssertEq(FormatTime(x " L1033", "Time"), "7:08 AM", A_LineNumber)
+AssertEq(Spaced(FormatTime(x " L1033", "Time")), "7:08 AM", A_LineNumber)
+
+AssertEq(FormatTime(x " L1031", "Time"), "07:08", A_LineNumber)
 
 AssertEq(FormatTime(x " L1033", "shortdate"), "7/4/2020", A_LineNumber)
 
@@ -90,25 +96,25 @@ AssertEq(FormatTime("202007042030 L1033", "yyyyMMddHHmmss"), "20200704203000", A
 AssertEq(FormatTime("20200704203040 L1033", "yyyyMMddHHmmss"), "20200704203040", A_LineNumber)
 
 ; A blank or omitted format gives the time followed by the long date, or the reverse with R.
-AssertEq(FormatTime(x " L1033", ""), "7:08 AM Saturday, July 4, 2020", A_LineNumber)
+AssertEq(Spaced(FormatTime(x " L1033", "")), "7:08 AM Saturday, July 4, 2020", A_LineNumber)
 
-AssertEq(FormatTime(x " L1033"), "7:08 AM Saturday, July 4, 2020", A_LineNumber)
+AssertEq(Spaced(FormatTime(x " L1033")), "7:08 AM Saturday, July 4, 2020", A_LineNumber)
 
-; The locale's own short time pattern may separate AM with a no-break space.
-y := StrReplace(StrReplace(FormatTime(x " L1033 R"), Chr(0xA0), " "), Chr(0x202F), " ")
-
-AssertEq(y, "Saturday, July 4, 2020 7:08 AM", A_LineNumber)
+AssertEq(Spaced(FormatTime(x " L1033 R")), "Saturday, July 4, 2020 7:08 AM", A_LineNumber)
 
 ; LSys is the current locale without user overrides, which never alter purely numeric specifiers.
 AssertEq(FormatTime(x " LSys", "yyyyMMddHHmmss"), FormatTime(x, "yyyyMMddHHmmss"), A_LineNumber)
 
-; es-MX, by decimal and by hexadecimal LCID. Its AM marker varies in spacing and dots between ICU versions.
+; es-MX, by decimal and by hexadecimal LCID. Its time and long date patterns vary between ICU versions.
 for lcid in ["L2058", "L0x80A"]
 {
-	y := StrReplace(StrReplace(FormatTime(x " " lcid, ""), Chr(0xA0), " "), Chr(0x202F), " ")
-	Assert(RegExMatch(y, "i)^7:08 a *\. *m"), A_LineNumber)
-	Assert(InStr(y, "julio 4, 2020"), A_LineNumber)
+	y := FormatTime(x " " lcid, "")
+	AssertEq(y, FormatTime(x " " lcid, "Time") " " FormatTime(x " " lcid, "LongDate"), A_LineNumber)
+	Assert(InStr(y, "julio") && InStr(y, "2020"), A_LineNumber)
 }
+
+; A timestamp is Gregorian, and th-TH formats it in the Buddhist era.
+AssertEq(FormatTime("20200704 L1054", "yyyy"), "2563", A_LineNumber)
 
 AssertEq(FormatTime(x " L1033", "yyyyM"), "20207", A_LineNumber)
 
@@ -144,7 +150,7 @@ AssertEq(FormatTime(x " L1033", "H 'o''clock'"), "20 o'clock", A_LineNumber)
 AssertEq(FormatTime(x " L1033", "d") "|" FormatTime(x " L1033", "y"), "4|20", A_LineNumber)
 AssertEq(FormatTime(x " L1033", "''") "|" FormatTime(x " L1033", "'") "|" FormatTime(x " L1033", " ''"), "|| ", A_LineNumber)
 AssertEq(FormatTime(x " L1033", "yyy|yyyyy|yyyyyy'x'"), "2020|2020|2020x", A_LineNumber)
-AssertEq(FormatTime(x " L1033", " `tTime") "|" FormatTime(x " L1033", " YDay") "|" FormatTime(x " L1033", "Time "), "8:08 PM|186|Ti8e ", A_LineNumber)
+AssertEq(Spaced(FormatTime(x " L1033", " `tTime")) "|" FormatTime(x " L1033", " YDay") "|" FormatTime(x " L1033", "Time "), "8:08 PM|186|Ti8e ", A_LineNumber)
 
 ; An empty quoted section separates the specifiers around it.
 AssertEq(FormatTime(x " L1033", "d''d|yyy''yy|dd''|''dd"), "44|202020|04|04", A_LineNumber)

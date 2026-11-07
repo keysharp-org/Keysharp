@@ -13,6 +13,9 @@ case "Persistent":
 	Persistent()
 case "Timer":
 	SetTimer(() => 0, -150)
+	; As in AutoHotkey, an error ends only the auto-execute thread, and the timer keeps the script running.
+	OnError((*) => 1)
+	throw Error("ends the auto-execute section")
 case "Hotkey":
 	Hotkey("F1", InputReceived)
 case "Hotstring":
