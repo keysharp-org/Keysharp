@@ -447,6 +447,14 @@ namespace Keysharp.Internals
 #elif OSX
 	internal sealed class MacScreen : IScreen
 	{
+		public bool TryGetPrimarySize(out int width, out int height)
+		{
+			var size = Window.MacOS.MacNativeWindows.PrimaryDisplaySize();
+			width = (int)Math.Round(size.Width);
+			height = (int)Math.Round(size.Height);
+			return width > 0 && height > 0;
+		}
+
 		public IReadOnlyList<DisplayInfo> GetDisplays()
 		{
 			var screens = Forms.Screen.Screens?.ToArray() ?? [];
@@ -481,7 +489,22 @@ namespace Keysharp.Internals
 
 		public bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
 			=> EtoScreenCapture.TryCapture(bounds.X, bounds.Y, bounds.Width, bounds.Height, out bmp);
-		public bool TryCaptureWindow(nint h, bool includeDecoration, out Bitmap bmp, out PixelScale pixelScale) { bmp = null; pixelScale = PixelScale.One; return false; }
+
+		public bool TryCaptureWindow(nint h, bool includeDecoration, out Bitmap bmp, out PixelScale pixelScale)
+		{
+			bmp = Window.MacOS.MacNativeWindows.TryCaptureWindow(unchecked((uint)h.ToInt64()));
+			pixelScale = PixelScale.One;
+
+			if (bmp == null)
+				return false;
+
+			// The window-server image is physical pixels; the window's logical (point) width comes
+			// from its bounds, so their ratio is the HiDPI scale.
+			if (Window.MacOS.MacNativeWindows.TryGetWindowInfo(h, out var info))
+				pixelScale = PixelScale.From(bmp, ScreenRect.FromRectangle(info.Bounds));
+
+			return true;
+		}
 	}
 #endif
 }

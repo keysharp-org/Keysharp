@@ -31,8 +31,7 @@ namespace Keysharp.Internals.AppleEvents
 	}
 
 	/// <summary>
-	/// Resolves an application address and launches it on demand. Name-to-bundle lookups use cached AppleScript;
-	/// bundle paths and running processes use AppKit.
+	/// Resolves an application address through AppKit and launches it on demand.
 	/// </summary>
 	internal static class AETargets
 	{
@@ -65,14 +64,19 @@ namespace Keysharp.Internals.AppleEvents
 				return new AETarget { BundleId = bundleId, DisplayName = Path.GetFileNameWithoutExtension(target) };
 			}
 
-			// A dot means it is already a bundle identifier; anything else is a name to look one up for.
-			if (target.Contains('.', StringComparison.Ordinal))
+			// Names can contain dots, including the .app suffix. A registered bundle identifier takes precedence.
+			if (!string.IsNullOrEmpty(Remember(pathByBundleId, target, LookUpPathByBundleId)))
 				return new AETarget { BundleId = target, DisplayName = target };
 
 			var resolved = Remember(bundleIdByName, target, LookUpBundleIdByName);
 
 			if (string.IsNullOrEmpty(resolved))
-				throw new ArgumentException($"No application named '{target}' could be found.");
+			{
+				if (!target.Contains('.', StringComparison.Ordinal))
+					throw new ArgumentException($"No application named '{target}' could be found.");
+
+				resolved = target;
+			}
 
 			return new AETarget { BundleId = resolved, DisplayName = target };
 		}
@@ -218,9 +222,21 @@ namespace Keysharp.Internals.AppleEvents
 
 		private static string LookUpBundleIdByName(string name)
 		{
-			// Quoting matters: a name with a double quote in it would otherwise change the meaning of the script.
-			var escaped = name.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
-			return RunAppleScript($"id of application \"{escaped}\"");
+			try
+			{
+				var path = NSWorkspace.SharedWorkspace.FullPathForApplication(name);
+				var bundleId = string.IsNullOrEmpty(path) ? null : BundleIdOfPath(path);
+
+				if (!string.IsNullOrEmpty(bundleId))
+					_ = pathByBundleId.TryAdd(bundleId, path);
+
+				return bundleId ?? "";
+			}
+			catch (Exception ex)
+			{
+				Diagnostics.Debug.WriteLine($"Application lookup failed: {ex.Message}");
+				return "";
+			}
 		}
 
 		private static string LookUpPathByBundleId(string bundleId)
@@ -233,19 +249,6 @@ namespace Keysharp.Internals.AppleEvents
 			catch (Exception ex)
 			{
 				Diagnostics.Debug.WriteLine($"Application path lookup failed: {ex.Message}");
-				return "";
-			}
-		}
-
-		private static string RunAppleScript(string script)
-		{
-			try
-			{
-				return script.AppleScript(out var output, wait: true) == 0 ? output.Trim() : "";
-			}
-			catch (Exception ex)
-			{
-				Diagnostics.Debug.WriteLine($"Application lookup failed: {ex.Message}");
 				return "";
 			}
 		}

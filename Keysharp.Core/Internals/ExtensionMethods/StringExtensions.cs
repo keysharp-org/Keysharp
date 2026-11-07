@@ -201,9 +201,12 @@ namespace System
 				if (!wait)
 					return 0;
 
-				output = process.StandardOutput.ReadToEnd().Trim(CrLf);
-				var err = process.StandardError.ReadToEnd().Trim(CrLf);
+				// Drain both pipes so a full stderr buffer cannot block stdout from closing.
+				var stdout = process.StandardOutput.ReadToEndAsync();
+				var stderr = process.StandardError.ReadToEndAsync();
 				process.WaitForExit();
+				output = stdout.GetAwaiter().GetResult().Trim(CrLf);
+				var err = stderr.GetAwaiter().GetResult().Trim(CrLf);
 
 				if (process.ExitCode != 0 && !err.IsNullOrEmpty())
 					Diagnostics.Debug.WriteLine($"AppleScript failed with exit code {process.ExitCode}: {err}");
