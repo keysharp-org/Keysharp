@@ -12,7 +12,15 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 	// higher-level hotkey, hotstring and InputHook decision pipeline.
 	internal class MacHookThread : Keysharp.Internals.Input.Hooks.Unix.UnixHookThread
 	{
-		internal MacHookThread(Script script, string mutexName) : base(script, mutexName) { }
+		internal MacHookThread(Script script, string mutexName) : base(script, mutexName)
+		{
+			// macOS translates these PC keys to existing Mac keys; named operations share that identity.
+			keyToVk["PrintScreen"] = VK_F13;
+			keyToVk["ScrollLock"] = VK_F14;
+			keyToVk["Pause"] = VK_F15;
+			keyToVk["NumLock"] = VK_CLEAR;
+			keyToVk["Insert"] = keyToVk["Ins"] = VK_HELP;
+		}
 
 		private const int HookStartTimeoutMs = 3000;
 		private MacNativeEventTap nativeEventTap;
@@ -151,11 +159,26 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 				return false; // The paired text key-up carries no separate AHK input.
 			}
 
-			var sc = (uint)MacNativeInput.CGEventGetIntegerValueField(cgEvent, MacNativeInput.kCGKeyboardEventKeycode);
-			if (!KeyCodes.TryMapMacCodeToVk(sc, out var vk) || vk == 0)
-				return false;
-
+			uint sc = 0, vk;
 			bool keyUp;
+			bool autoRepeat;
+
+			if (type == MacNativeInput.kCGEventSystemDefined)
+			{
+				if (!MacNativeInput.TryDecodeSystemKeyEvent(cgEvent, out vk, out keyUp, out autoRepeat))
+					return false;
+			}
+			else
+			{
+				sc = (uint)MacNativeInput.CGEventGetIntegerValueField(cgEvent, MacNativeInput.kCGKeyboardEventKeycode);
+				if (!KeyCodes.TryMapMacCodeToVk(sc, out vk) || vk == 0)
+					return false;
+
+				keyUp = type == MacNativeInput.kCGEventKeyUp;
+				autoRepeat = type == MacNativeInput.kCGEventKeyDown
+					&& MacNativeInput.CGEventGetIntegerValueField(cgEvent, MacNativeInput.kCGKeyboardEventAutorepeat) != 0;
+			}
+
 			if (type == MacNativeInput.kCGEventFlagsChanged)
 			{
 				bool? queriedDown = null;
@@ -180,7 +203,6 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 				if (!HasKbdHook())
 					return false;
 
-				keyUp = type == MacNativeInput.kCGEventKeyUp;
 				if (SideSpecificModifierLRMaskFromVK(vk) != 0 || vk == VK_CAPITAL)
 					_ = keyboardState.ApplyFlagsChanged(vk, flags, origin, !keyUp,
 						injectedKind, senderRevisions.Modifiers, senderRevisions.CapsLock);
@@ -192,8 +214,7 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 
 			var args = new KeyboardHookEventArgs(keyUp ? EventType.KeyReleased : EventType.KeyPressed, vk, sc, mask)
 			{
-				IsAutoRepeat = type == MacNativeInput.kCGEventKeyDown
-					&& MacNativeInput.CGEventGetIntegerValueField(cgEvent, MacNativeInput.kCGKeyboardEventAutorepeat) != 0
+				IsAutoRepeat = autoRepeat
 			};
 			return ProcessNativeKeyboardEvent(args, vk, sc, keyUp, extraInfo);
 		}

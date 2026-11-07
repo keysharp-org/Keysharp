@@ -150,13 +150,45 @@ namespace Keysharp.Internals.Window.MacOS
 		[LibraryImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
 		private static partial CGRectNative CGDisplayBounds(uint displayID);
 
-		// The primary display's size in points via CoreGraphics — thread-safe, unlike Forms.Screen/NSScreen
-		// (main-thread-only), so window enumeration / full-screen-overlay checks can run on a #HotIf or hook
-		// thread without an AppKitThreadAccessException. A zero size (headless / no display) reads as "no screen".
+		[LibraryImport("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")]
+		private static unsafe partial int CGGetActiveDisplayList(uint maxDisplays, uint* displays, out uint count);
+
+		// Read the primary size in points without enumerating screens or allocating toolkit wrappers.
+		// A zero size (headless / no display) reads as "no screen".
 		internal static (double Width, double Height) PrimaryDisplaySize()
 		{
 			var bounds = CGDisplayBounds(CGMainDisplayID());
 			return (bounds.Width, bounds.Height);
+		}
+
+		internal static unsafe ScreenRect VirtualScreenBounds()
+		{
+			if (CGGetActiveDisplayList(0, null, out var count) != 0)
+				throw new InvalidOperationException("The active displays could not be enumerated.");
+
+			if (count == 0)
+				return default;
+
+			Span<uint> displays = count <= 16 ? stackalloc uint[(int)count] : new uint[count];
+
+			fixed (uint* ids = displays)
+				if (CGGetActiveDisplayList((uint)displays.Length, ids, out count) != 0)
+					throw new InvalidOperationException("The active displays could not be enumerated.");
+
+			RectangleF? union = null;
+
+			for (var i = 0; i < count; i++)
+			{
+				var bounds = CGDisplayBounds(displays[i]);
+
+				if (bounds.Width <= 0 || bounds.Height <= 0)
+					continue;
+
+				var rectangle = new RectangleF((float)bounds.X, (float)bounds.Y, (float)bounds.Width, (float)bounds.Height);
+				union = union is { } previous ? RectangleF.Union(previous, rectangle) : rectangle;
+			}
+
+			return ScreenRect.FromRectangle(union ?? default);
 		}
 
 		internal static List<MacNativeWindow> Snapshot(bool onScreenOnly = false)

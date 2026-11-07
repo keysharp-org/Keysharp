@@ -17,6 +17,7 @@ namespace Keysharp.Internals
 			if (width <= 0 || height <= 0)
 				return false;
 
+			using var threadScope = Eto.Platform.Instance.ThreadStart();
 			var captures = new List<(ScreenRect Bounds, Bitmap Pixels)>();
 
 			try
@@ -457,7 +458,8 @@ namespace Keysharp.Internals
 
 		public IReadOnlyList<DisplayInfo> GetDisplays()
 		{
-			var screens = Forms.Screen.Screens?.ToArray() ?? [];
+			using var pool = new MonoMac.Foundation.NSAutoreleasePool();
+			var screens = Forms.Screen.Screens.ToArray();
 			var result = new List<DisplayInfo>(screens.Length);
 
 			for (var i = 0; i < screens.Length; i++)
@@ -468,24 +470,37 @@ namespace Keysharp.Internals
 					continue;
 
 				var bounds = ScreenRect.FromRectangle(screen.Bounds);
-				ScreenRect workArea;
-				try { workArea = ScreenRect.FromRectangle(screen.WorkingArea); }
-				catch { workArea = bounds; }
+				var workArea = ScreenRect.FromRectangle(screen.WorkingArea);
 				// NSScreen's localizedName ("Built-in Retina Display", "DELL U2720Q") is the name macOS itself
-				// shows for a display. Eto's Screen.ID is kept only as the fallback: no Cocoa screen handler sets
-				// it, so before this it was always the synthetic display-N that reached scripts.
+				// shows for a display. Eto's Cocoa handler does not set Screen.ID, so keep a synthetic fallback.
 				var name = MacScreenNames.LocalizedName(screen);
 				result.Add(new DisplayInfo(
 					name.Length > 0 ? name : screen.ID is { Length: > 0 } id ? id : $"display-{i + 1}",
-					bounds, workArea, 1.0, screen.IsPrimary));
+					bounds, workArea, 1.0, screen.IsPrimary, DisplayId(screen)));
 			}
 
 			return result;
 		}
 
+		public ScreenRect GetWorkArea(DisplayInfo display)
+		{
+			using var pool = new MonoMac.Foundation.NSAutoreleasePool();
+
+			foreach (var screen in Forms.Screen.Screens)
+				if (screen != null && DisplayId(screen) == display.NativeId)
+					return ScreenRect.FromRectangle(screen.WorkingArea);
+
+			throw new InvalidOperationException("The display is no longer available.");
+		}
+
+		private static uint DisplayId(Forms.Screen screen)
+			=> screen.ControlObject is MonoMac.AppKit.NSScreen native
+				&& native.DeviceDescription["NSScreenNumber"] is MonoMac.Foundation.NSNumber id
+					? id.UInt32Value : throw new InvalidOperationException("The display has no native identifier.");
+
 		public DisplayDetails GetDisplayDetails(DisplayInfo display) => MacMonitorDetails.Get(display);
 
-		public ScreenRect GetVirtualScreenBounds() => DisplayTopology.ToolkitUnion();
+		public ScreenRect GetVirtualScreenBounds() => Window.MacOS.MacNativeWindows.VirtualScreenBounds();
 
 		public bool TryCaptureRegion(ScreenRect bounds, out Bitmap bmp)
 			=> EtoScreenCapture.TryCapture(bounds.X, bounds.Y, bounds.Width, bounds.Height, out bmp);

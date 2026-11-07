@@ -59,8 +59,13 @@ namespace Keysharp.Internals.Window
 		{
 			var created = Platform.MonitorEvents.CreateBackend(script);
 
+			// GTK reads stay on the notifying UI thread; CoreGraphics intake only queues work.
 			if (created != null)
-				created.Sink = OnNativeChange;
+#if OSX
+				created.Sink = QueueRefresh;
+#else
+				created.Sink = ProcessRefresh;
+#endif
 
 			return created;
 		}
@@ -106,16 +111,15 @@ namespace Keysharp.Internals.Window
 				return;
 
 			lock (classifyGate)
-				lastTopology = Snapshot() ?? [];
+				// Another first registration may have completed before this one acquired the lock.
+				if (!disposed && !HasSubscriptions)
+					lastTopology = Snapshot() ?? [];
 		}
 
-		// ---- native intake (arbitrary thread) ----------------------------------------------
+		// ---- topology refresh -------------------------------------------------------------
 
-		private void OnNativeChange()
+		protected override void ProcessRefresh()
 		{
-			if (disposed)
-				return;
-
 			string kind;
 			MonitorEventRegistration[] toFire;
 

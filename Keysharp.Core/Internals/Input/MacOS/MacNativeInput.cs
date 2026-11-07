@@ -4,6 +4,8 @@ using Keysharp.Builtins;
 using Keysharp.Internals.Input.Keyboard;
 using Keysharp.Internals.Input.Hooks;
 using Keysharp.Internals.Input.Hooks.MacOS;
+using MonoMac.AppKit;
+using MonoMac.Foundation;
 using static Keysharp.Internals.Input.Keyboard.KeyboardMouseSender;
 using static Keysharp.Internals.Input.Keyboard.KeyboardUtils;
 using static Keysharp.Internals.Input.Keyboard.VirtualKeys;
@@ -49,6 +51,7 @@ namespace Keysharp.Internals.Input.MacOS
 		internal const uint kCGEventKeyDown = 10;
 		internal const uint kCGEventKeyUp = 11;
 		internal const uint kCGEventFlagsChanged = 12;
+		internal const uint kCGEventSystemDefined = 14;
 		internal const uint kCGEventScrollWheel = 22;
 		internal const uint kCGEventOtherMouseDown = 25;
 		internal const uint kCGEventOtherMouseUp = 26;
@@ -133,6 +136,9 @@ namespace Keysharp.Internals.Input.MacOS
 
 		[LibraryImport(ApplicationServices)]
 		internal static partial void CGEventPost(uint tap, nint cgEvent);
+
+		[LibraryImport(ApplicationServices)]
+		private static partial void CGEventSetSource(nint cgEvent, nint source);
 
 		[LibraryImport(ApplicationServices)]
 		internal static partial void CGEventSetIntegerValueField(nint cgEvent, uint field, long value);
@@ -235,6 +241,9 @@ namespace Keysharp.Internals.Input.MacOS
 		[LibraryImport(CoreFoundation)]
 		internal static partial void CFRelease(nint cf);
 
+		[LibraryImport(CoreFoundation)]
+		private static partial nint CFRetain(nint cf);
+
 		[LibraryImport(CoreFoundation, StringMarshalling = StringMarshalling.Utf8)]
 		private static partial nint CFStringCreateWithCString(nint allocator, string cStr, uint encoding);
 
@@ -243,7 +252,8 @@ namespace Keysharp.Internals.Input.MacOS
 		internal static ulong KeyboardEventMask =>
 			(1UL << (int)kCGEventKeyDown) |
 			(1UL << (int)kCGEventKeyUp) |
-			(1UL << (int)kCGEventFlagsChanged);
+			(1UL << (int)kCGEventFlagsChanged) |
+			(1UL << (int)kCGEventSystemDefined);
 
 		internal static ulong MouseEventMask =>
 			(1UL << (int)kCGEventLeftMouseDown) |
@@ -410,18 +420,102 @@ namespace Keysharp.Internals.Input.MacOS
 			return flags;
 		}
 
-		internal static nint CreateKeyboardEvent(uint vk, bool keyDown, long extraInfo, uint modifiersLR,
-			bool autoRepeat = false, bool? capsLockOn = null)
+		private static int SystemKeyFromVk(uint vk) => vk switch
 		{
-			if (!KeyCodes.TryMapVkToMacCode(vk, out var keyCode))
-				return nint.Zero;
+			VK_VOLUME_UP => 0, // NX_KEYTYPE_SOUND_UP
+			VK_VOLUME_DOWN => 1, // NX_KEYTYPE_SOUND_DOWN
+			VK_BRIGHTNESS_UP => 2, // NX_KEYTYPE_BRIGHTNESS_UP
+			VK_BRIGHTNESS_DOWN => 3, // NX_KEYTYPE_BRIGHTNESS_DOWN
+			VK_VOLUME_MUTE => 7, // NX_KEYTYPE_MUTE
+			VK_MEDIA_EJECT => 14, // NX_KEYTYPE_EJECT
+			VK_MEDIA_PLAY_PAUSE => 16, // NX_KEYTYPE_PLAY
+			VK_MEDIA_NEXT_TRACK => 17, // NX_KEYTYPE_NEXT
+			VK_MEDIA_PREV_TRACK => 18, // NX_KEYTYPE_PREVIOUS
+			VK_MEDIA_FAST_FORWARD => 19, // NX_KEYTYPE_FAST
+			VK_MEDIA_REWIND => 20, // NX_KEYTYPE_REWIND
+			VK_KEYBOARD_BACKLIGHT_UP => 21, // NX_KEYTYPE_ILLUMINATION_UP
+			VK_KEYBOARD_BACKLIGHT_DOWN => 22, // NX_KEYTYPE_ILLUMINATION_DOWN
+			VK_KEYBOARD_BACKLIGHT_TOGGLE => 23, // NX_KEYTYPE_ILLUMINATION_TOGGLE
+			_ => -1
+		};
 
-			var ev = CGEventCreateKeyboardEvent(SharedEventSource(), (ushort)keyCode, keyDown);
+		private static uint VkFromSystemKey(int key) => key switch
+		{
+			0 => VK_VOLUME_UP,
+			1 => VK_VOLUME_DOWN,
+			2 => VK_BRIGHTNESS_UP,
+			3 => VK_BRIGHTNESS_DOWN,
+			7 => VK_VOLUME_MUTE,
+			14 => VK_MEDIA_EJECT,
+			16 => VK_MEDIA_PLAY_PAUSE,
+			17 => VK_MEDIA_NEXT_TRACK,
+			18 => VK_MEDIA_PREV_TRACK,
+			19 => VK_MEDIA_FAST_FORWARD,
+			20 => VK_MEDIA_REWIND,
+			21 => VK_KEYBOARD_BACKLIGHT_UP,
+			22 => VK_KEYBOARD_BACKLIGHT_DOWN,
+			23 => VK_KEYBOARD_BACKLIGHT_TOGGLE,
+			_ => 0
+		};
+
+		internal static bool TryDecodeSystemKeyEvent(nint cgEvent, out uint vk, out bool keyUp, out bool autoRepeat)
+		{
+			vk = 0;
+			keyUp = autoRepeat = false;
+
+			if (cgEvent == nint.Zero || CGEventGetType(cgEvent) != kCGEventSystemDefined)
+				return false;
+
+			using var pool = new NSAutoreleasePool();
+			using var ev = NSEvent.EventWithCGEvent(cgEvent);
+
+			if (ev == null || ev.Subtype != 8) // NX_SUBTYPE_AUX_CONTROL_BUTTONS
+				return false;
+
+			var data = (long)ev.Data1;
+			var state = (data >> 8) & 0xFF;
+
+			if (state != (int)NSEventType.KeyDown && state != (int)NSEventType.KeyUp)
+				return false;
+
+			vk = VkFromSystemKey((int)((data >> 16) & 0xFFFF));
+
+			if (vk == 0)
+				return false;
+
+			keyUp = state == (int)NSEventType.KeyUp;
+			autoRepeat = !keyUp && (data & 1) != 0;
+			return true;
+		}
+
+		internal static nint CreateKeyboardEvent(uint vk, bool keyDown, long extraInfo, uint modifiersLR,
+			bool autoRepeat = false, bool? capsLockOn = null, uint scanCode = 0)
+		{
+			var systemKey = SystemKeyFromVk(vk);
+			var flags = FlagsForModifiers(modifiersLR, capsLockOn);
+			nint ev;
+
+			if (systemKey >= 0)
+				ev = CreateSystemKeyEvent(systemKey, keyDown, autoRepeat, flags);
+			else
+			{
+				if (!KeyCodes.TryMapVkToMacCode(vk, out var keyCode))
+					return nint.Zero;
+
+				// Preserve duplicate native keys such as keypad Enter. A navigation VK's default SC can
+				// describe its Windows numpad twin, which is a different key on macOS.
+				if (scanCode != 0 && KeyCodes.TryMapMacCodeToVk(scanCode, out var scanVk) && scanVk == vk)
+					keyCode = scanCode;
+
+				ev = CGEventCreateKeyboardEvent(SharedEventSource(), (ushort)keyCode, keyDown);
+			}
 
 			if (ev != nint.Zero)
 			{
-				CGEventSetFlags(ev, FlagsForModifiers(modifiersLR, capsLockOn));
-				if (keyDown && autoRepeat)
+				if (systemKey >= 0)
+					CGEventSetSource(ev, SharedEventSource());
+				CGEventSetFlags(ev, flags);
+				if (systemKey < 0 && keyDown && autoRepeat)
 					CGEventSetIntegerValueField(ev, kCGKeyboardEventAutorepeat, 1);
 				var kind = keyDown ? InjectedEventKind.None : InjectedEventKind.KeyUp;
 				CGEventSetIntegerValueField(ev, kCGEventSourceUserData, EncodeInjectedExtraInfo(extraInfo, kind));
@@ -430,10 +524,22 @@ namespace Keysharp.Internals.Input.MacOS
 			return ev;
 		}
 
-		internal static bool PostKeyboard(uint vk, bool keyDown, long extraInfo, uint modifiersLR,
-			bool autoRepeat = false, bool? capsLockOn = null)
+		private static nint CreateSystemKeyEvent(int key, bool keyDown, bool autoRepeat, ulong flags)
 		{
-			var ev = CreateKeyboardEvent(vk, keyDown, extraInfo, modifiersLR, autoRepeat, capsLockOn);
+			// Keep the NSEvent and its autorelease pool on the sender thread; only the retained CGEvent escapes.
+			using var pool = new NSAutoreleasePool();
+			var state = keyDown ? NSEventType.KeyDown : NSEventType.KeyUp;
+			var data = (key << 16) | ((int)state << 8) | (keyDown && autoRepeat ? 1 : 0);
+			using var ev = NSEvent.OtherEvent(NSEventType.SystemDefined, default, (NSEventModifierMask)flags,
+				0, 0, null, 8, data, -1); // NX_SUBTYPE_AUX_CONTROL_BUTTONS
+			var cgEvent = ev?.CGEvent ?? nint.Zero;
+			return cgEvent != nint.Zero ? CFRetain(cgEvent) : nint.Zero;
+		}
+
+		internal static bool PostKeyboard(uint vk, bool keyDown, long extraInfo, uint modifiersLR,
+			bool autoRepeat = false, bool? capsLockOn = null, uint scanCode = 0)
+		{
+			var ev = CreateKeyboardEvent(vk, keyDown, extraInfo, modifiersLR, autoRepeat, capsLockOn, scanCode);
 			return PostAndRelease(ev);
 		}
 

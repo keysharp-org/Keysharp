@@ -76,14 +76,14 @@ namespace Keysharp.Internals.Input.MacOS
 		}
 
 		private void PostKeyboardWithPredictedState(UnixHookThread lht, uint vk, bool keyDown,
-											long extraInfo, bool autoRepeat = false)
+											long extraInfo, uint scanCode, bool autoRepeat = false)
 		{
 			bool? isNeutral = null;
 			var keyAsModifiersLR = lht.KeyToModifiersLR(vk, 0, ref isNeutral);
 			_ = CurrentPostedModifiers();
 			var capsLock = CurrentCapsLockState();
 			keyboardState.PostModifier(keyAsModifiersLR, keyDown, modifiersLR =>
-				MacNativeInput.PostKeyboard(vk, keyDown, extraInfo, modifiersLR, autoRepeat, capsLock));
+				MacNativeInput.PostKeyboard(vk, keyDown, extraInfo, modifiersLR, autoRepeat, capsLock, scanCode));
 		}
 
 		private bool CurrentCapsLockState() => keyboardState.GetCapsLock(QueryCapsLockState);
@@ -130,7 +130,7 @@ namespace Keysharp.Internals.Input.MacOS
 		}
 
 		private void DispatchKeybdEvent(UnixHookThread lht, KeyEventTypes eventType,
-											  uint vk, long extraInfo, bool autoRepeat)
+											  uint vk, uint sc, long extraInfo, bool autoRepeat)
 		{
 			using var scope = lht.EnterSendScope();
 
@@ -142,23 +142,23 @@ namespace Keysharp.Internals.Input.MacOS
 				RefreshCapsLockState();
 				// IOKit owns the actual lock state; emit the matching CGEvent only as notification
 				// for applications and SendLevel-aware Keysharp hooks.
-				PostKeyboardWithPredictedState(lht, vk, true, extraInfo);
+				PostKeyboardWithPredictedState(lht, vk, true, extraInfo, sc);
 				if (eventType == KeyEventTypes.KeyDownAndUp)
-					PostKeyboardWithPredictedState(lht, vk, false, extraInfo);
+					PostKeyboardWithPredictedState(lht, vk, false, extraInfo, sc);
 				return;
 			}
 
 			switch (eventType)
 			{
 				case KeyEventTypes.KeyDown:
-					PostKeyboardWithPredictedState(lht, vk, true, extraInfo, autoRepeat);
+					PostKeyboardWithPredictedState(lht, vk, true, extraInfo, sc, autoRepeat);
 					break;
 				case KeyEventTypes.KeyUp:
-					PostKeyboardWithPredictedState(lht, vk, false, extraInfo);
+					PostKeyboardWithPredictedState(lht, vk, false, extraInfo, sc);
 					break;
 				case KeyEventTypes.KeyDownAndUp:
-					PostKeyboardWithPredictedState(lht, vk, true, extraInfo, autoRepeat);
-					PostKeyboardWithPredictedState(lht, vk, false, extraInfo);
+					PostKeyboardWithPredictedState(lht, vk, true, extraInfo, sc, autoRepeat);
+					PostKeyboardWithPredictedState(lht, vk, false, extraInfo, sc);
 					break;
 			}
 		}
@@ -242,12 +242,12 @@ namespace Keysharp.Internals.Input.MacOS
 								capsLockOn = CurrentCapsLockState();
 							}
 						}
-						if (MacNativeInput.PostKeyboard(ev.Vk, true, extraInfo, modifiersAfterDown, ev.AutoRepeat, capsLockOn))
+						if (MacNativeInput.PostKeyboard(ev.Vk, true, extraInfo, modifiersAfterDown, ev.AutoRepeat, capsLockOn, ev.Sc))
 							keyboardState.SetModifiers(modifiersLR = modifiersAfterDown);
 						break;
 					case ArrayEventType.KeyUp:
 						var modifiersAfterUp = modifiersLR & ~ev.ModifiersLR;
-						if (MacNativeInput.PostKeyboard(ev.Vk, false, extraInfo, modifiersAfterUp, capsLockOn: capsLockOn))
+						if (MacNativeInput.PostKeyboard(ev.Vk, false, extraInfo, modifiersAfterUp, capsLockOn: capsLockOn, scanCode: ev.Sc))
 							keyboardState.SetModifiers(modifiersLR = modifiersAfterUp);
 						break;
 					case ArrayEventType.MouseMoveRel:

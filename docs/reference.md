@@ -207,8 +207,8 @@ macOS support is in active development. The following table summarises what work
 | Feature | Status | Notes |
 |---|---|---|
 | Script execution | Working | Parser, compiler, and runtime are functional |
-| Hotkeys / Hotstrings | Working | The suppression-capable hook requires **Input Monitoring** and **Accessibility** on first use. #/Win maps to the Command key, !/Alt maps to the Option key |
-| Keyboard & mouse send | Working | Requires **Accessibility** permission on first use |
+| Hotkeys / Hotstrings | Working | The suppression-capable hook requires **Input Monitoring** and **Accessibility** on first use. #/Win maps to the Command key, !/Alt maps to the Option key. Volume, media, brightness and keyboard-backlight hotkeys are implemented but unverified on hardware |
+| Keyboard & mouse send | Working | Requires **Accessibility** permission on first use. Volume, media, brightness and keyboard-backlight keys are implemented but unverified on hardware; `Media_Stop` sending is unsupported |
 | Global keyboard/mouse hooks | Working | Requires **Input Monitoring** and **Accessibility** because the hook can suppress events |
 | Cursor confinement | Partial | `ClipCursor` suppresses out-of-bounds movement; requires **Input Monitoring** and **Accessibility** permissions |
 | GUI windows | Working | Eto.Forms backend; some controls differ from Windows |
@@ -217,6 +217,8 @@ macOS support is in active development. The following table summarises what work
 | Window management | Partial | Accessibility API; foreign-app control requires permission |
 | Registry APIs | Not supported | Windows-only |
 | COM APIs | Unverified | `ComObject` and friends are backed by Apple Events, not COM. Implemented but not yet exercised on macOS hardware. Requires **Automation** permission per controlled application. See [ComObject off Windows](#comobject-off-windows) |
+
+On macOS, PC-key names follow the platform's physical-key mappings: `PrintScreen` → `F13`, `ScrollLock` → `F14`, `Pause` → `F15`, `Insert`/`Ins` → `Help`, and `NumLock` → `NumpadClear`. In particular, `NumLock` sends keypad Clear and does not toggle a lock.
 
 Permissions are requested automatically when first needed, or up front with `#Requires capability` (see [Additions and Improvements](#additions-and-improvements) below). Grant them in **System Settings → Privacy & Security**.
 

@@ -5,7 +5,6 @@ using Microsoft.Win32;
 namespace Keysharp.Internals
 {
 	// Per-OS producers of DisplayDetails — the expensive per-display metadata behind IScreen.GetDisplayDetails.
-	// Nothing here is reachable from GetDisplays(): topology enumeration stays exactly as cheap as it was.
 
 #if WINDOWS
 	/// <summary>
@@ -508,23 +507,13 @@ namespace Keysharp.Internals
 	}
 #elif OSX
 	/// <summary>
-	/// The display name macOS itself shows. <c>NSScreen.localizedName</c> is a 10.15 API that MonoMac's bindings
-	/// predate, so it is sent as a raw selector through libobjc and read back through CoreFoundation (NSString and
-	/// CFString are toll-free bridged). Going through the C ABI rather than MonoMac's managed messaging helpers
-	/// keeps this path off binding surface that varies between MonoMac/Xamarin.Mac versions — the same reasoning
-	/// <c>MacNativeWindows</c> applies to <c>ActivateIgnoringOtherApps</c>. Anything unexpected yields "" and the
-	/// caller falls back.
-	/// <para>The result is cached per NSScreen, because unlike everything else in this file this runs during plain
-	/// topology enumeration — <c>MonitorGetName</c> needs it, so it cannot move behind <c>GetDisplayDetails</c> —
-	/// and that path carries every <c>A_ScreenWidth</c>, <c>MonitorGet</c>, overlay placement and capture. It is
-	/// also the one AppKit call among these; keeping it to once per screen keeps the message send off the hot
-	/// path as well as the allocations.</para>
+	/// Queries <c>NSScreen.localizedName</c> directly because MonoMac predates this macOS 10.15 property.
+	/// Names are read with each snapshot because native screen handles can be reused after hotplug.
+	/// An unavailable name returns "" so the caller can use its fallback.
 	/// </summary>
 	internal static class MacScreenNames
 	{
 		private const string ObjC = "/usr/lib/libobjc.A.dylib";
-		private const string CoreFoundation =
-			"/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
 
 		[DllImport(ObjC, EntryPoint = "sel_registerName", CharSet = CharSet.Ansi)]
 		private static extern nint SelRegisterName(string name);
@@ -536,28 +525,11 @@ namespace Keysharp.Internals
 		[return: MarshalAs(UnmanagedType.I1)]
 		private static extern bool MsgSendRespondsTo(nint receiver, nint selector, nint argument);
 
-		[DllImport(CoreFoundation)]
-		private static extern nint CFStringGetLength(nint theString);
-
-		[DllImport(CoreFoundation)]
-		[return: MarshalAs(UnmanagedType.I1)]
-		private static extern bool CFStringGetCString(nint theString, byte[] buffer, nint bufferSize, uint encoding);
-
-		private const uint EncodingUtf8 = 0x08000100;
-
 		private static readonly nint localizedName = SelRegisterName("localizedName");
 		private static readonly nint respondsToSelector = SelRegisterName("respondsToSelector:");
 
-		// NSScreen pointer -> its localized name. AppKit keeps one NSScreen per attached display and rebuilds the
-		// array on reconfiguration, so a pointer that is still being handed out still denotes the same display; a
-		// re-plug or rearrangement produces new objects, which simply miss. Bounded by the number of displays the
-		// session has ever shown at once, i.e. a handful of short strings.
-		private static readonly Dictionary<nint, string> names = new();
-
 		internal static string LocalizedName(Forms.Screen screen)
 		{
-			nint handle;
-
 			try
 			{
 				// Eto's Cocoa screen handler wraps an NSScreen; Handle is the ObjC object the selector goes to.
@@ -565,41 +537,12 @@ namespace Keysharp.Internals
 				if (screen?.ControlObject is not MonoMac.Foundation.NSObject native || native.Handle == 0)
 					return "";
 
-				handle = native.Handle;
-			}
-			catch
-			{
-				return "";
-			}
+				var handle = native.Handle;
 
-			lock (names)
-			{
-				if (names.TryGetValue(handle, out var cached))
-					return cached;
-
-				var name = Query(handle);
-				names[handle] = name;
-				return name;
-			}
-		}
-
-		private static string Query(nint handle)
-		{
-			try
-			{
 				if (!MsgSendRespondsTo(handle, respondsToSelector, localizedName))
 					return "";
 
-				var value = MsgSend(handle, localizedName);
-
-				if (value == 0)
-					return "";
-
-				// CFStringGetLength is in UTF-16 code units; UTF-8 can need up to 3 bytes each, plus the NUL.
-				var buffer = new byte[(int)CFStringGetLength(value) * 3 + 1];
-				return CFStringGetCString(value, buffer, buffer.Length, EncodingUtf8)
-					? System.Text.Encoding.UTF8.GetString(buffer).TrimEnd('\0')
-					: "";
+				return MonoMac.Foundation.NSString.FromHandle(MsgSend(handle, localizedName)) ?? "";
 			}
 			catch
 			{

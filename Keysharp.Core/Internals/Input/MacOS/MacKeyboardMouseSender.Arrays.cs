@@ -419,7 +419,7 @@ namespace Keysharp.Internals.Input.MacOS
 		internal override void SendKeybdEvent(KeyEventTypes eventType, uint vk, uint sc, uint eventFlags, long extraInfo, bool autoRepeat = false)
 		{
 			if (script.HookThread is UnixHookThread lht)
-				DispatchKeybdEvent(lht, eventType, vk, extraInfo, autoRepeat);
+				DispatchKeybdEvent(lht, eventType, vk, sc, extraInfo, autoRepeat);
 		}
 
 		internal override void SendUnicodeChar(char ch, uint modifiers)

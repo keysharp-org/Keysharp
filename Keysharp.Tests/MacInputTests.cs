@@ -180,12 +180,161 @@ public class MacInputTests
 
 			AssertMetadata(down, KeyIgnore, MacNativeInput.InjectedEventKind.None);
 			AssertMetadata(up, KeyIgnore, MacNativeInput.InjectedEventKind.KeyUp);
+			Assert.IsFalse(MacNativeInput.TryDecodeSystemKeyEvent(down, out _, out _, out _));
 		}
 		finally
 		{
 			if (down != nint.Zero) MacNativeInput.CFRelease(down);
 			if (up != nint.Zero) MacNativeInput.CFRelease(up);
 		}
+	}
+
+	[Category("Input")]
+	[TestCase("PrintScreen", VK_F13, 0x69u, "F13")]
+	[TestCase("ScrollLock", VK_F14, 0x6Bu, "F14")]
+	[TestCase("Pause", VK_F15, 0x71u, "F15")]
+	[TestCase("NumLock", VK_CLEAR, 0x47u, "NumpadClear")]
+	[TestCase("Insert", VK_HELP, 0x72u, "Help")]
+	[TestCase("Ins", VK_HELP, 0x72u, "Help")]
+	public void PcKeyAliases(string name, uint vk, uint sc, string canonical)
+	{
+		Assert.AreEqual((long)vk, Keyboard.GetKeyVK(name));
+		Assert.AreEqual((long)sc, Keyboard.GetKeySC(name));
+		Assert.AreEqual(canonical, Keyboard.GetKeyName(name));
+	}
+
+	[Category("Input")]
+	[TestCase(VK_RETURN, 0u, 0x24u)]
+	[TestCase(VK_RETURN, 0x4Cu, 0x4Cu)]
+	[TestCase(VK_HOME, 0x59u, 0x73u)]
+	[TestCase((uint)'A', 0u, 0u)]
+	public void NativeScanCodeSelection(uint vk, uint sc, uint expected)
+	{
+		var ev = MacNativeInput.CreateKeyboardEvent(vk, true, KeyIgnore, 0, capsLockOn: false, scanCode: sc);
+		try
+		{
+			Assert.AreNotEqual(nint.Zero, ev);
+			Assert.AreEqual((long)expected, MacNativeInput.CGEventGetIntegerValueField(ev, MacNativeInput.kCGKeyboardEventKeycode));
+		}
+		finally
+		{
+			if (ev != nint.Zero) MacNativeInput.CFRelease(ev);
+		}
+	}
+
+	[Category("Input")]
+	[TestCase("Volume_Up", VK_VOLUME_UP, 0)]
+	[TestCase("Volume_Down", VK_VOLUME_DOWN, 1)]
+	[TestCase("Volume_Mute", VK_VOLUME_MUTE, 7)]
+	[TestCase("Media_Play_Pause", VK_MEDIA_PLAY_PAUSE, 16)]
+	[TestCase("Media_Next", VK_MEDIA_NEXT_TRACK, 17)]
+	[TestCase("Media_Prev", VK_MEDIA_PREV_TRACK, 18)]
+	[TestCase("Media_FastForward", VK_MEDIA_FAST_FORWARD, 19)]
+	[TestCase("Media_Rewind", VK_MEDIA_REWIND, 20)]
+	[TestCase("Media_Eject", VK_MEDIA_EJECT, 14)]
+	[TestCase("Brightness_Up", VK_BRIGHTNESS_UP, 2)]
+	[TestCase("Brightness_Down", VK_BRIGHTNESS_DOWN, 3)]
+	[TestCase("KeyboardBacklight_Up", VK_KEYBOARD_BACKLIGHT_UP, 21)]
+	[TestCase("KeyboardBacklight_Down", VK_KEYBOARD_BACKLIGHT_DOWN, 22)]
+	[TestCase("KeyboardBacklight_Toggle", VK_KEYBOARD_BACKLIGHT_TOGGLE, 23)]
+	public void SystemKeys(string name, uint vk, int key)
+	{
+		uint? modifiers = null;
+		Assert.AreEqual(vk, script.HookThread.TextToVK(name, ref modifiers, null));
+		Assert.AreEqual(name, script.HookThread.VKtoKeyName(vk, true));
+
+		foreach (var (down, repeat, state) in new[] { (true, false, 0x0A00), (true, true, 0x0A01), (false, true, 0x0B00) })
+		{
+			var ev = MacNativeInput.CreateKeyboardEvent(vk, down, KeyIgnore, MOD_LSHIFT | MOD_RCONTROL,
+				autoRepeat: repeat, capsLockOn: false);
+			try
+			{
+				Assert.AreNotEqual(nint.Zero, ev);
+				Assert.AreEqual(14u, MacNativeInput.CGEventGetType(ev));
+				Assert.AreEqual(MacNativeInput.kCGEventFlagMaskShift | MacNativeInput.kCGEventFlagMaskControl,
+					MacNativeInput.CGEventGetFlags(ev));
+				Assert.AreEqual(MacNativeInput.kCGEventSourceStateCombinedSessionState,
+					MacNativeInput.CGEventGetIntegerValueField(ev, MacNativeInput.kCGEventSourceStateID));
+				AssertMetadata(ev, KeyIgnore, down ? MacNativeInput.InjectedEventKind.None : MacNativeInput.InjectedEventKind.KeyUp);
+				Assert.IsTrue(MacNativeInput.TryDecodeSystemKeyEvent(ev, out var decodedVk, out var keyUp, out var autoRepeat));
+				Assert.AreEqual(vk, decodedVk);
+				Assert.AreEqual(!down, keyUp);
+				Assert.AreEqual(down && repeat, autoRepeat);
+
+				// The factory's NSEvent and autorelease pool have been disposed before this native round trip.
+				using var pool = new MonoMac.Foundation.NSAutoreleasePool();
+				using var native = MonoMac.AppKit.NSEvent.EventWithCGEvent(ev);
+				Assert.AreEqual(MonoMac.AppKit.NSEventType.SystemDefined, native.Type);
+				Assert.AreEqual(8, native.Subtype);
+				Assert.AreEqual((long)((key << 16) | state), (long)native.Data1);
+			}
+			finally
+			{
+				if (ev != nint.Zero) MacNativeInput.CFRelease(ev);
+			}
+		}
+	}
+
+	[Category("Input")]
+	[TestCase(1, 16, 0x0A00)] // Another system event subtype.
+	[TestCase(8, 6, 0x0A00)] // Power has no Keysharp key mapping.
+	[TestCase(8, 0xFFFF, 0x0A00)]
+	[TestCase(8, 16, 0x0C00)] // Neither key down nor key up.
+	public void OtherSystemEvents(short subtype, int key, int state)
+	{
+		using var pool = new MonoMac.Foundation.NSAutoreleasePool();
+		using var ev = MonoMac.AppKit.NSEvent.OtherEvent(MonoMac.AppKit.NSEventType.SystemDefined, default,
+			0, 0, 0, null, subtype, (key << 16) | state, -1);
+		var native = ev.CGEvent;
+		Assert.AreNotEqual(nint.Zero, native);
+		Assert.IsFalse(MacNativeInput.TryDecodeSystemKeyEvent(native, out var vk, out var keyUp, out var autoRepeat));
+		Assert.AreEqual(0u, vk);
+		Assert.IsFalse(keyUp);
+		Assert.IsFalse(autoRepeat);
+	}
+
+	[TestCase(VK_MEDIA_STOP), TestCase(uint.MaxValue), Category("Input")]
+	public void UnmappedKeyboardEvent(uint vk)
+	{
+		var ev = MacNativeInput.CreateKeyboardEvent(vk, true, KeyIgnore, 0, capsLockOn: false);
+		try { Assert.AreEqual(nint.Zero, ev); }
+		finally
+		{
+			if (ev != nint.Zero) MacNativeInput.CFRelease(ev);
+		}
+	}
+
+	[Test, Category("Input")]
+	public void SystemKeyHookInput()
+	{
+		var hook = new SystemKeyHook(script);
+		var blocked = script.KeyboardData.blockInput;
+		script.KeyboardData.blockInput = true;
+		try
+		{
+			foreach (var physical in new[] { true, false })
+				foreach (var down in new[] { true, false })
+				{
+					var ev = MacNativeInput.CreateKeyboardEvent(VK_MEDIA_REWIND, down, KeyBlockThis, 0, capsLockOn: false);
+					try
+					{
+						Assert.AreNotEqual(nint.Zero, ev);
+						if (physical)
+						{
+							MacNativeInput.CGEventSetIntegerValueField(ev, MacNativeInput.kCGEventSourceUserData, 0);
+							MacNativeInput.CGEventSetIntegerValueField(ev, MacNativeInput.kCGEventSourceUnixProcessID, 0);
+							MacNativeInput.CGEventSetIntegerValueField(ev, MacNativeInput.kCGEventSourceStateID,
+								MacNativeInput.kCGEventSourceStateHIDSystemState);
+						}
+
+						Assert.IsTrue(hook.ProcessNativeKeyboardEvent(MacNativeInput.kCGEventSystemDefined, ev));
+						Assert.AreEqual(physical && down, hook.physicalKeyState[VK_MEDIA_REWIND] != 0);
+						Assert.AreEqual(0, hook.physicalKeyState['A']);
+					}
+					finally { if (ev != nint.Zero) MacNativeInput.CFRelease(ev); }
+				}
+		}
+		finally { script.KeyboardData.blockInput = blocked; }
 	}
 
 	[Test, Category("Input")]
@@ -1287,6 +1436,11 @@ public class MacInputTests
 			MacNativeInput.kCGEventTapDisabledByTimeout, (nint)123, nint.Zero));
 		Assert.AreEqual(0, driver.EnableCount);
 		Assert.AreEqual(0, resyncCount);
+	}
+
+	private sealed class SystemKeyHook : MacHookThread
+	{
+		internal SystemKeyHook(Script owner) : base(owner, "System key test") => activeHooks = HookType.Keyboard;
 	}
 
 	private static void AssertMetadata(nint ev, long expectedExtraInfo, MacNativeInput.InjectedEventKind expectedKind)

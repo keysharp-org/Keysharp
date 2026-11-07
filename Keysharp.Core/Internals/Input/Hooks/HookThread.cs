@@ -499,6 +499,16 @@ namespace Keysharp.Internals.Input.Hooks
 					{"Media_Prev", VK_MEDIA_PREV_TRACK},
 					{"Media_Stop", VK_MEDIA_STOP},
 					{"Media_Play_Pause", VK_MEDIA_PLAY_PAUSE},
+#if OSX
+					{"Media_FastForward", VK_MEDIA_FAST_FORWARD},
+					{"Media_Rewind", VK_MEDIA_REWIND},
+					{"Media_Eject", VK_MEDIA_EJECT},
+					{"Brightness_Up", VK_BRIGHTNESS_UP},
+					{"Brightness_Down", VK_BRIGHTNESS_DOWN},
+					{"KeyboardBacklight_Up", VK_KEYBOARD_BACKLIGHT_UP},
+					{"KeyboardBacklight_Down", VK_KEYBOARD_BACKLIGHT_DOWN},
+					{"KeyboardBacklight_Toggle", VK_KEYBOARD_BACKLIGHT_TOGGLE},
+#endif
 					{"Launch_Mail", VK_LAUNCH_MAIL},
 					{"Launch_Media", VK_LAUNCH_MEDIA_SELECT},
 					{"Launch_App1", VK_LAUNCH_APP1},

@@ -99,10 +99,18 @@ namespace Keysharp.Internals.Window.MacOS
 
 		private void OnReconfigured(uint display, uint flags, nint userInfo)
 		{
-			if ((flags & KCGDisplayBeginConfigurationFlag) != 0 || owner.IsDisposed)
+			if ((flags & KCGDisplayBeginConfigurationFlag) != 0 || disposed || owner.IsDisposed)
 				return;
 
-			Sink?.Invoke();
+			// The sink queues enumeration so native intake never waits on manager locks.
+			try
+			{
+				Sink?.Invoke();
+			}
+			catch (Exception ex)
+			{
+				Diagnostics.Debug.WriteLine($"Queuing a display reconfiguration failed: {ex.Message}");
+			}
 		}
 	}
 }

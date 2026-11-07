@@ -533,8 +533,18 @@ done
 		// be avoided since it's sometimes used as a failure indictor by API
 		// calls.  And 0x00 should definitely be avoided because it is used
 		// to indicate failure by many functions that deal with virtual keys.
-		// 0x88 - 0x8F : unassigned
 		// 0x97 - 0x9F : unassigned (this range seems less likely to be used)
+#if OSX
+		// macOS-only synthetic IDs; the 0x88 range is reserved on Windows.
+		internal const uint VK_MEDIA_REWIND = 0x88;
+		internal const uint VK_MEDIA_EJECT = 0x89;
+		internal const uint VK_BRIGHTNESS_UP = 0x8A;
+		internal const uint VK_BRIGHTNESS_DOWN = 0x8B;
+		internal const uint VK_KEYBOARD_BACKLIGHT_UP = 0x8C;
+		internal const uint VK_KEYBOARD_BACKLIGHT_DOWN = 0x8D;
+		internal const uint VK_KEYBOARD_BACKLIGHT_TOGGLE = 0x8E;
+		internal const uint VK_MEDIA_FAST_FORWARD = 0x97;
+#endif
 		internal const uint VK_NEW_MOUSE_FIRST = 0x9A;
 		internal const uint VK_WHEEL_LEFT = 0x9C;
 		internal const uint VK_WHEEL_RIGHT = 0x9D;
