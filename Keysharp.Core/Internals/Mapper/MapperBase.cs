@@ -13,7 +13,7 @@ namespace Keysharp.Internals.Mapper
 
 			foreach (var kv in clrMappingTable)
 			{
-				if (kv.Value == keyword)
+				if (string.Equals(kv.Value, keyword, StringComparison.OrdinalIgnoreCase))
 				{
 					res = kv.Key;
 					break;

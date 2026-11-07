@@ -12,6 +12,7 @@
 #import CompatNested:New { NoReturnNested21 }
 #import IncludedModule
 #import IncludedParent
+#import IncludedParent:Child { IncludeEndModule }
 #import LocalParent
 #import KS { CompileScript }
 #import Compat21
@@ -421,6 +422,8 @@ AssertEq(DefinedMode(NoReturnNested21), "v2.1", A_LineNumber)
 ; A parent's own #Module decides where its #Requires counts, wherever a child's directive created it.
 AssertEq(IncludedParent.StartupMode, "v2.0", A_LineNumber)
 AssertEq(LocalParent.StartupMode, "v2.0", A_LineNumber)
+; The end of an included file returns to the module including it, whatever modules the file declares.
+AssertEq(IncludeEndModule(), "IncludedParent:Child", A_LineNumber)
 
 try {
 	Map().Get("absent")
@@ -576,8 +579,8 @@ NoReturnNested21() {
 
 #Module IncludedParent:Child
 
-; Only a #Module follows, so that no later line of this script falls inside a module the file declares.
 #Include Lib/compat_mode_include.ahk
+IncludeEndModule() => "IncludedParent:Child"
 
 #Module LocalParent
 #Requires AutoHotkey v2.0

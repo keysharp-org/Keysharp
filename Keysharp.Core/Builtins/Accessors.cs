@@ -358,15 +358,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public static object A_EventInfo
 		{
-			get
-			{
-				var value = ThreadAccessors.A_EventInfo;
-
-				if (value is ScriptTimerInfo info)
-					ThreadAccessors.A_EventInfo = value = Ks.Timer.Bind(info);
-
-				return value;
-			}
+			get => ThreadAccessors.A_EventInfo;
 			set => ThreadAccessors.A_EventInfo = value;
 		}
 
@@ -405,18 +397,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				var encoding = ThreadAccessors.A_FileEncoding;
-
-				if (encoding == null)
-					return "CP0";
-
-				var suffix = encoding.Preamble.IsEmpty ? "-RAW" : "";
-
-				return encoding.CodePage switch
-				{
-					65001 => "UTF-8" + suffix,
-					1200 => "UTF-16" + suffix,
-					var codePage => "CP" + codePage.ToString(CultureInfo.InvariantCulture)
-				};
+				return encoding == null ? "CP0" : Files.EncodingName(encoding, true);
 			}
 			set
 			{
@@ -1562,34 +1543,6 @@ namespace Keysharp.Builtins
 			get => Script.TheScript.AccessorData.iconFrozen ?? (Script.TheScript.AccessorData.iconFrozen = false).Value;
 			set => Script.TheScript.AccessorData.iconFrozen = value.ParseBool();
 		}
-
-
-		internal static long ControlDelayDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.controlDelay;
-		internal static CoordModeType CoordModeCaretDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.coordModeCaret;
-		internal static CoordModeType CoordModeMenuDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.coordModeMenu;
-		internal static CoordModeType CoordModeMouseDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.coordModeMouse;
-		internal static CoordModeType CoordModePixelDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.coordModePixel;
-		internal static CoordModeType CoordModeToolTipDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.coordModeToolTip;
-		internal static long DefaultMouseSpeedDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.defaultMouseSpeed;
-		internal static bool DetectHiddenTextDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.detectHiddenText;
-		internal static bool DetectHiddenWindowsDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.detectHiddenWindows;
-		internal static Encoding FileEncodingDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.fileEncoding ?? NativeType.AnsiEncoding;
-		internal static long KeyDelayDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.keyDelay;
-		internal static long KeyDelayPlayDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.keyDelayPlay;
-		internal static long KeyDurationDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.keyDuration;
-		internal static long KeyDurationPlayDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.keyDurationPlay;
-		internal static long MouseDelayDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.mouseDelay;
-		internal static long MouseDelayPlayDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.mouseDelayPlay;
-		internal static long PeekFrequencyDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.peekFrequency;
-#if WINDOWS
-		internal static long RegViewDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.regView;
-#endif
-		internal static long SendLevelDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.sendLevel;
-		internal static SendModes SendModeDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.sendMode;
-		internal static bool StoreCapsLockModeDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.storeCapsLockMode;
-		internal static long TitleMatchModeDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.titleMatchMode;
-		internal static bool TitleMatchModeSpeedDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.titleMatchModeSpeed;
-		internal static long WinDelayDefault => Script.TheScript.AccessorData.threadConfigDataPrototype.winDelay;
 
 		//if (A_IsCompiled != 0)//  return Path.GetFileName(GetAssembly().Location);//else if (scriptName == "*")//  return "*";//else//  return Path.GetFileName(scriptName);
 

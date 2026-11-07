@@ -171,8 +171,9 @@ namespace Keysharp.Compilation.Syntax
 		// Hotkey/hotstring/remap support: callbacks in their declaring module and the DHHR list
 		// (Directives/Hotkeys/Hotstrings/Remaps registration calls) emitted into Program.AutoExecSection.
 		private readonly List<MemberDeclarationSyntax> _hotMembers = new();
-		private readonly List<StatementSyntax> _dhhr = new();
-		private readonly List<(long SourceOrder, StatementSyntax Statement)> _moduleDhhr = new();
+		// Every module's registrations, which run in load order as AutoHotkey's directives and definitions take effect.
+		private readonly List<(long SourceOrder, StatementSyntax Statement)> _dhhr = new();
+		private bool _dhhrHotIf;
 		private readonly List<StatementSyntax> _dhhrPrelude = new();
 		private readonly HashSet<string> _startupModules = new(System.StringComparer.Ordinal);
 		private const string DeclarationSuspendExemptVariable = "KS_suspendExempt";
@@ -182,7 +183,7 @@ namespace Keysharp.Compilation.Syntax
 		private void AddDhhr(Stmt source, StatementSyntax statement)
 		{
 			if (statement != null)
-				_moduleDhhr.Add((source.SourceOrder, statement));
+				_dhhr.Add((source.SourceOrder, statement));
 		}
 		// The #SuspendExempt state a hotkey, hotstring or remap registration passes.
 		private ExpressionSyntax SuspendExempt()
@@ -859,7 +860,6 @@ namespace Keysharp.Compilation.Syntax
 		// Registers declarations and lowers a module's members and auto-execute statements after imports are bound.
 		private (List<MemberDeclarationSyntax> members, List<StatementSyntax> auto) LowerProgramBody(List<Stmt> body)
 		{
-			_moduleDhhr.Clear();
 			foreach (var s in body)
 			{
 				// Named hotkey and hotstring callbacks are module functions too.
@@ -979,10 +979,7 @@ namespace Keysharp.Compilation.Syntax
 				foreach (var type in _experimentalTypes)
 					if (_experimentalWarned.Add(type))
 						CompileWarnings.Add($"0:0: {Script.GetUserDeclaredName(type) ?? type.Name} is experimental and may change or be removed without deprecation.");
-			_dhhr.AddRange(_moduleDhhr.OrderBy(item => item.SourceOrder).Select(item => item.Statement));
-			// A module's final criterion must not reach another module or ordinary auto-execute code.
-			if (registrationDirectives.Any(directive => StringComparer.OrdinalIgnoreCase.Equals(directive.Name, "HotIf")))
-				_dhhr.Add(CallStmt("Keysharp.Builtins.Keyboard.HotIf", Str("")));
+			_dhhrHotIf |= registrationDirectives.Any(directive => StringComparer.OrdinalIgnoreCase.Equals(directive.Name, "HotIf"));
 			return (members, auto);
 		}
 
@@ -1301,9 +1298,14 @@ namespace Keysharp.Compilation.Syntax
 			return false;
 		}
 
-		// Applicable wildcard imports keep source order across callable scopes, as AutoHotkey's module import list does.
-		private IEnumerable<ImportWildcard> ScopedWildcards() =>
-			_importScopes.SelectMany(frame => frame.Wildcards).Concat(_moduleWildcards).OrderByDescending(wildcard => wildcard.SourceOrder);
+		// As AutoHotkey searches them, the innermost scope's wildcard imports come first and the module's last, each scope's
+		// newest first, so an inner import has precedence wherever an outer one is written.
+		private IEnumerable<ImportWildcard> ScopedWildcards()
+		{
+			for (var i = _importScopes.Count - 1; i >= 0; i--)
+				foreach (var wildcard in _importScopes[i].Wildcards.OrderByDescending(w => w.SourceOrder)) yield return wildcard;
+			foreach (var wildcard in _moduleWildcards.OrderByDescending(w => w.SourceOrder)) yield return wildcard;
+		}
 
 		private bool CanWildcardImport(string lower) => !lower.StartsWith('_') && !_moduleOwnVars.Contains(lower)
 			&& !_moduleExplicitImports.Contains(lower) && !_userFuncByLower.ContainsKey(lower) && !_userClassByLower.ContainsKey(lower)
@@ -7120,10 +7122,13 @@ namespace Keysharp.Compilation.Syntax
 				stmts.Add(CallStmt("Keysharp.Builtins.Keyboard.HotIf", Str("")));
 			}
 			stmts.AddRange(_dhhrPrelude);
-			foreach (var registration in _dhhr)
+			// The sort is stable, so a directive keeps its place ahead of a definition sharing its source position.
+			foreach (var (_, registration) in _dhhr.OrderBy(item => item.SourceOrder))
 				if (_suspendExemptRead || registration is not ExpressionStatementSyntax
 					{ Expression: AssignmentExpressionSyntax { Left: IdentifierNameSyntax { Identifier.ValueText: DeclarationSuspendExemptVariable } } })
 					stmts.Add(registration);
+			// The last criterion must not reach the auto-execute code.
+			if (_dhhrHotIf) stmts.Add(CallStmt("Keysharp.Builtins.Keyboard.HotIf", Str("")));
 			if (_persistent) stmts.Add(CallStmt("Keysharp.Builtins.Flow.Persistent"));
 			stmts.Add(CallStmt("Keysharp.Runtime.Keyboard.HotkeyDefinition.ManifestAllHotkeysHotstringsHooks"));
 			// Run each module's auto-exec in dependency order, in a call stack frame of its own and under that module.

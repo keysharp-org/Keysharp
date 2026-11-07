@@ -102,7 +102,8 @@
 		<PackageReference Include="BitFaster.Caching" Version="2.6.1" />
 		<PackageReference Include="PCRE.NET" Version="1.6.1" />
 		<PackageReference Include="Semver" Version="3.0.0" />
-		<PackageReference Include="System.CodeDom" Version="10.0.13" />
+		<!-- Compiler diagnostics use the shared install's CodeDOM; WindowsDesktop already supplies it on Windows. -->
+		<PackageReference Include="System.CodeDom" Version="10.0.13" Condition="!$([MSBuild]::IsOSPlatform('Windows'))" />
 		<PackageReference Include="System.Management" Version="10.0.13" Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
 	</ItemGroup>
 

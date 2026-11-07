@@ -8,8 +8,6 @@
 global using global::System;
 global using global::System.Buffers;
 global using global::System.Data;
-global using global::System.CodeDom;
-global using global::System.CodeDom.Compiler;
 global using global::System.Collections;
 global using global::System.Collections.Concurrent;
 global using global::System.Collections.Frozen;

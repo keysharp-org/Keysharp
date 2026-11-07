@@ -1198,11 +1198,16 @@ namespace Keysharp.Parsing.Syntax
 						else if (i + 2 < src.Count && nameTok.IsKeyword("module"))
 						{
 							var argument = src[i + 2].Text;
-							if (argument.Equals("__Main", StringComparison.OrdinalIgnoreCase) && SourcePathComparer.Equals(moduleFile, _mainScriptPath)) argument = "__Init";
 							// A nested module is a module of its own, so its whole name is the key.
 							for (var k = i + 3; k + 1 < src.Count && src[k].Kind == TokenKind.Colon && !src[k].LeadingWhitespace
 								&& src[k + 1].Kind == TokenKind.Identifier && !src[k + 1].LeadingWhitespace; k += 2)
 								argument += ":" + src[k + 1].Text;
+							// The initial module holds the file's modules, so `__Init:Name` is the module Name, as the lowerer's
+							// DeclareModule has it.
+							var mainScript = SourcePathComparer.Equals(moduleFile, _mainScriptPath);
+							for (int colon; (colon = argument.IndexOf(':')) > 0 && IsInitialModule(argument.AsSpan(0, colon), mainScript);)
+								argument = argument[(colon + 1)..];
+							if (IsInitialModule(argument, mainScript)) argument = "__Init";
 							// Only creating a module changes the mode, not reopening one.
 							if (knownModules.Add(argument)) backCompat = rootBackCompat;
 							module = argument;
@@ -1263,6 +1268,10 @@ namespace Keysharp.Parsing.Syntax
 				catch { if (ignoreMissing) return null; throw IncludeNotFound(directive, file); }
 			}
 		}
+
+		// A name of the file's initial module, which the main script also calls __Main.
+		private static bool IsInitialModule(ReadOnlySpan<char> name, bool mainScript) =>
+			name.Equals("__Init", StringComparison.OrdinalIgnoreCase) || mainScript && name.Equals("__Main", StringComparison.OrdinalIgnoreCase);
 
 		private static (int Line, int Column) LexDiagnosticPosition(string diagnostic)
 		{

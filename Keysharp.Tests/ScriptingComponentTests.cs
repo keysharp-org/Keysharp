@@ -39,6 +39,7 @@ public class ScriptingComponentTests : TestRunner
 		Assert.That(coreReferences.Any(name => name.StartsWith("Microsoft.CodeAnalysis", StringComparison.Ordinal)),
 			Is.False,
 			"Keysharp.Core must remain runnable without Roslyn.");
+		Assert.That(coreReferences, Does.Not.Contain("System.CodeDom"), "CodeDOM diagnostics belong to the compiler component.");
 
 		Assert.IsTrue(ScriptingComponentRegistry.TryGetSyntaxValidator(out var parser, out var failure), failure);
 		Assert.That(parser.Id, Is.EqualTo(ScriptingComponentIds.Parser));

@@ -653,7 +653,8 @@ namespace Keysharp.Runtime
 				return (f, inst);
 
 			var recv = f != null ? f.Inst : callback;
-			var name = f != null ? f.Mph.Name : "Call";
+			// A null name is ObjBindMethod's call form, which runs the Call this lookup finds.
+			var name = f?.Mph.Name ?? "Call";
 
 			KeysharpFunc target;
 
@@ -685,15 +686,6 @@ namespace Keysharp.Runtime
 			}
 
 			return (target, recv);
-		}
-
-		public static bool IsCallable(object item)
-		{
-			if (item is KeysharpFunc || item is IMetaObject)
-				return true;
-			else if (item is KeysharpObject kso)
-				return Functions.HasProp(kso, "Call") != 0L;
-			return false;
 		}
 
 		public static object SetPropertyValue(object item, object name, object value) => SetPropertyValueCore(item, name, null, value, allowCreate: true);

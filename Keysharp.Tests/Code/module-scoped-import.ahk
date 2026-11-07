@@ -306,7 +306,7 @@ FnParameterReference(&value) => &%"value"%
 parameterValue := "parameter"
 Assert(FnParameterReference(&parameterValue) == &parameterValue, A_LineNumber)
 
-; An enclosing wildcard written after a nested function has precedence in that function too.
+; A function's own wildcard has precedence over an enclosing function's or the module's, wherever that is written.
 FnNestedWildcardOrder() {
     Nested() {
         #import KS { * }
@@ -316,7 +316,7 @@ FnNestedWildcardOrder() {
     #import "module_scoped_import_helper" { * }
     return Nested()
 }
-AssertEq(FnNestedWildcardOrder(), "helper,helper", A_LineNumber)
+AssertEq(FnNestedWildcardOrder(), "1.0,1.0", A_LineNumber)
 
 ; Unassigned references outside a nested function leave its wildcard binding independent.
 FnNestedWildcardReads() {
@@ -330,7 +330,7 @@ FnNestedWildcardReads() {
 }
 AssertEq(FnNestedWildcardReads(), "0,42,0", A_LineNumber)
 
-AssertEq(BeforeModuleWildcard(), "helper,helper", A_LineNumber)
+AssertEq(BeforeModuleWildcard(), "1.0,1.0", A_LineNumber)
 AssertEq(AfterModuleWildcard(), "1.0,1.0", A_LineNumber)
 
 ; A nested module and its members import into a function or class like any other, binding the leaf or an alias.

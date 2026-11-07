@@ -112,6 +112,15 @@ AssertEq(match.TESTNAME, "XYZ", A_LineNumber)
 
 AssertEq(match.Name("TESTNAME"), "testname", A_LineNumber)
 
+; A subpattern that did not participate keeps its name.
+RegExMatch("b", "(?<x>a)?b", &optional)
+AssertEq(optional.Name("x"), "x", A_LineNumber)
+Throws(() => optional.y, A_LineNumber, ValueError)
+Throws(() => optional[2], A_LineNumber, ValueError)
+Throws(() => optional.Pos(2), A_LineNumber, ValueError)
+Throws(() => optional.Len("y"), A_LineNumber, ValueError)
+Throws(() => optional.Name(-1), A_LineNumber, ValueError)
+
 CheckMatches(match, "0testname", "abcXYZ123XYZ")
 
 RegExMatch("C:\Foo\Bar\Baz.txt", "\w+$", &match)

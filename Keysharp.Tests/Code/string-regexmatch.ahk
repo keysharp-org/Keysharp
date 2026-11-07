@@ -122,6 +122,15 @@ RegExMatch("b", "(?J)(?<dup>a)|(?<dup>b)", &duplicate)
 
 AssertEq(duplicate["DUP"], "b", A_LineNumber)
 
+; A subpattern that did not participate keeps its name, and a name or number the pattern lacks is an error.
+RegExMatch("b", "(?<x>a)?b", &optional)
+AssertEq(optional.Name("x"), "x", A_LineNumber)
+Throws(() => optional.y, A_LineNumber, ValueError)
+Throws(() => optional[2], A_LineNumber, ValueError)
+Throws(() => optional.Pos(2), A_LineNumber, ValueError)
+Throws(() => optional.Len("y"), A_LineNumber, ValueError)
+Throws(() => optional.Name(-1), A_LineNumber, ValueError)
+
 ; A hyphen beside a class escape in a character class is literal, as in AutoHotkey's PCRE, also beside a one-letter
 ; property and in a pattern whose callouts are rewritten too.
 AssertEq(RegExMatch("first.last-x@mail.example.com", "^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$"), 1, A_LineNumber)

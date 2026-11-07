@@ -1,6 +1,5 @@
 using Keysharp.Builtins;
 
-using sttd = System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Concurrent.ConcurrentDictionary<System.Type, System.Collections.Concurrent.ConcurrentDictionary<int, Keysharp.Internals.Invoke.MethodPropertyHolder>>>;
 using ttsd = System.Collections.Concurrent.ConcurrentDictionary<System.Type, System.Collections.Concurrent.ConcurrentDictionary<string, System.Collections.Concurrent.ConcurrentDictionary<int, Keysharp.Internals.Invoke.MethodPropertyHolder>>>;
 
 
@@ -21,11 +20,6 @@ namespace Keysharp.Internals.Invoke
 		}
 		internal Dictionary<Type, Dictionary<string, FieldInfo>> staticFields = [];
 
-		internal sttd stringToTypeBuiltInMethods = new (StringComparer.OrdinalIgnoreCase);
-		internal sttd stringToTypeLocalMethods = new (StringComparer.OrdinalIgnoreCase);
-		internal sttd stringToTypeMethods = new (StringComparer.OrdinalIgnoreCase);
-		internal sttd stringToTypeStaticMethods = new (StringComparer.OrdinalIgnoreCase);
-		internal sttd stringToTypeProperties = new (StringComparer.OrdinalIgnoreCase);
 		internal Dictionary<string, Type> stringToTypes = new (StringComparer.OrdinalIgnoreCase);
 		internal ttsd typeToStringMethods = new ();
 		internal ttsd typeToStringStaticMethods = new ();
@@ -195,13 +189,13 @@ namespace Keysharp.Internals.Invoke
 
 		/// <summary>
 		/// Picks the overload of <paramref name="name"/> declared by <paramref name="t"/> or a base type that can
-		/// accept the NAMES a call supplies, or null if none can. The names alone decide, and the first match wins:
+		/// accept the names a call supplies, or null if none can. The names alone decide, and the first match wins:
 		/// this is a last resort, reached only once the pick dynamic dispatch already made has been found unable to
 		/// take them, so "an overload that can" beats "the one that provably cannot". The arity is still checked
 		/// afterwards by the invoke wrapper, which raises rather than trying another candidate -- so a type with
-		/// two same-named overloads that BOTH declare the name and differ only in arity resolves by declaration
+		/// two same-named overloads that both declare the name and differ only in arity resolves by declaration
 		/// order. No such member exists in the built-in surface; the <c>Clr.</c> namespace, where real overload sets
-		/// ARE common, has its own name-aware resolver (<c>ClrHelpers.ManagedInvoke.TryMethod</c>) and never
+		/// are common, has its own name-aware resolver (<c>ClrHelpers.ManagedInvoke.TryMethod</c>) and never
 		/// reaches here.
 		/// <para>
 		/// Needed because dynamic dispatch resolves with <c>paramCount == -1</c> and takes whichever overload the
@@ -217,7 +211,7 @@ namespace Keysharp.Internals.Invoke
 			_ = FindAndCacheInstanceMethod(t, name, -1);
 			_ = FindAndCacheStaticMethod(t, name, -1);
 			var rd = Script.TheScript.ReflectionsData;
-			// An overload that DECLARES the names wins over one that merely absorbs them into a variadic tail: the
+			// An overload that declares the names wins over one that merely absorbs them into a variadic tail: the
 			// tail would forward them on to nothing, where the declaring overload is what the caller meant.
 			return SearchChain(rd.typeToStringMethods, declaredOnly: true)
 				   ?? SearchChain(rd.typeToStringStaticMethods, declaredOnly: true)
@@ -246,11 +240,9 @@ namespace Keysharp.Internals.Invoke
 			var rd = script.ReflectionsData;
 			do
 			{
-				// The miss test is deliberately outside the lock: the tables are concurrent, so a read racing a fill
-				// is safe, and the lock below is no longer what makes them so. It now only keeps two threads that
-				// miss on the same type from both paying for GetMethods() -- and imperfectly, since they can both
-				// get past this test first. That is wasted work, never a wrong answer: every write below is an
-				// idempotent GetOrAdd of the same reflection data.
+				// The tables are concurrent, so the miss test needs no lock, and the lock only serializes the fills. Two
+				// threads that both miss each call GetMethods, which costs work, never correctness: every write below is
+				// an idempotent GetOrAdd of the same reflection data.
 				if (typeToMethods.TryGetValue(t, out var dkt))
 				{
 				}
@@ -262,8 +254,6 @@ namespace Keysharp.Internals.Invoke
 
 						if (meths.Length > 0)
 						{
-							bool isStaticPhase = (propType & BindingFlags.Static) != 0;
-
 							foreach (var meth in meths)
 							{
 								var mph = MethodPropertyHolder.GetOrAdd(meth);
@@ -275,25 +265,6 @@ namespace Keysharp.Internals.Invoke
 
 								var overloads = byName.GetOrAdd(nameToUse, _ => new ConcurrentDictionary<int, MethodPropertyHolder>());
 								overloads[mph.ParamLength] = mph;
-
-								// name -> type -> overloads
-								if (isStaticPhase)
-								{
-									rd.stringToTypeStaticMethods.GetOrAdd(nameToUse, _ => new ConcurrentDictionary<Type, ConcurrentDictionary<int, MethodPropertyHolder>>())
-																[meth.ReflectedType] = overloads;
-
-									bool isLocal = meth.ReflectedType.FullName.StartsWith(script.ProgramNamespace, StringComparison.OrdinalIgnoreCase)
-												|| meth.ReflectedType.FullName.StartsWith("Keysharp.Tests",       StringComparison.OrdinalIgnoreCase);
-
-									var split = isLocal ? rd.stringToTypeLocalMethods : rd.stringToTypeBuiltInMethods;
-									split.GetOrAdd(nameToUse, _ => new ConcurrentDictionary<Type, ConcurrentDictionary<int, MethodPropertyHolder>>())
-										 [meth.ReflectedType] = overloads;
-								}
-								else
-								{
-									rd.stringToTypeMethods.GetOrAdd(nameToUse, _ => new ConcurrentDictionary<Type, ConcurrentDictionary<int, MethodPropertyHolder>>())
-														  [meth.ReflectedType] = overloads;
-								}
 							}
 						}
 						else//Make a dummy entry because this type has no methods. This saves us additional searching later on when we encounter a type derived from this one. It will make the first Dictionary lookup above return true.
@@ -358,11 +329,6 @@ namespace Keysharp.Internals.Invoke
 
 								var overloads = byName.GetOrAdd(nameToUse, _ => new ConcurrentDictionary<int, MethodPropertyHolder>());
 								overloads[mph.ParamLength] = mph;
-
-								// name -> type -> overloads
-								rd.stringToTypeProperties
-									.GetOrAdd(nameToUse, _ => new ConcurrentDictionary<Type, ConcurrentDictionary<int, MethodPropertyHolder>>())
-									[prop.ReflectedType] = overloads;
 							}
 						}
 						else//Make a dummy entry because this type has no properties. This saves us additional searching later on when we encounter a type derived from this one. It will make the first Dictionary lookup above return true.

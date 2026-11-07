@@ -49,7 +49,7 @@ namespace Keysharp.Internals.Invoke
 
 		/// <summary>
 		/// The adjustment that turns <see cref="MaxParams"/>/<see cref="MinParams"/> into the number of arguments a
-		/// CALLER supplies, for the receiver this call will really use: -1 when the counts include a receiver that
+		/// caller supplies, for the receiver this call will really use: -1 when the counts include a receiver that
 		/// is supplied out-of-band (so the caller never passes it), else 0.
 		/// </summary>
 		internal int ReceiverCorrection(object inst) => receiverInCounts && inst != null ? -1 : 0;
@@ -85,7 +85,7 @@ namespace Keysharp.Internals.Invoke
 					?.IsDefined(typeof(InlineCSharpAttribute), false) == true);
 
 		/// <summary>
-		/// Whether a parameter is the explicit <c>object @this</c> receiver rather than a real argument. ONE
+		/// Whether a parameter is the explicit <c>object @this</c> receiver rather than a real argument. One
 		/// definition, because two consumers have to agree exactly: <c>BuildParamIndexMap</c> excludes it from the
 		/// name map, and <c>NamedArgBinder.ArgBase</c> shifts every name's slot down by one when it is present
 		/// (via <see cref="receiverInCounts"/>). If those two ever disagreed, a name would resolve to slot -1 and
@@ -314,7 +314,7 @@ namespace Keysharp.Internals.Invoke
 		/// <para>
 		/// A plain <c>Type.GetMethod(name, Public | Instance)</c> throws <c>AmbiguousMatchException</c> as soon as
 		/// a built-in declares its own real signature -- that declaration is <c>new</c>, not <c>override</c> (see
-		/// <c>Buffer.__New</c>), so <c>Any.__New(params object[])</c> is still inherited and BOTH are public
+		/// <c>Buffer.__New</c>), so <c>Any.__New(params object[])</c> is inherited as well and both are public
 		/// instance methods of that name. Walking <c>DeclaredOnly</c> outward picks the nearest one, which is what
 		/// C# <c>new</c>-hiding and script-side overriding both pick.
 		/// </para>
@@ -449,9 +449,9 @@ namespace Keysharp.Internals.Invoke
 
 			MaxParams = parameters.Length + (hasHiddenThis ? 1 : 0) - (variadicParamIndex == -1 ? 0 : 1);
 
-			// Whether MinParams/MaxParams COUNT the receiver: a hidden-this instance method adds it above, and the
+			// Whether MinParams/MaxParams count the receiver: a hidden-this instance method adds it above, and the
 			// explicit `object @this` convention carries it as parameters[0]. Anything reasoning about how many
-			// arguments a caller actually passes must correct for it via ReceiverCorrection -- never with
+			// arguments a caller actually passes must correct for it via ReceiverCorrection, not with
 			// NamedArgBinder.ArgBase, which answers a different question (the args-slot offset of parameter 0).
 			receiverInCounts = hasHiddenThis || (IsStatic && parameters.Length > 0 && IsExplicitThis(parameters[0]));
 

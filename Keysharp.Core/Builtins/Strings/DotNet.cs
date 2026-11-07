@@ -15,13 +15,12 @@ namespace Keysharp.Builtins
 			// The compiled pattern, or null once a compile error has been raised and continued.
 			private static RegexWithTag CachedRegex(string needle, bool reverse)
 			{
-				var key = needle + reverse;
-				var script = Script.TheScript;
-				var regdkt = script.RegExData.regdktDotNet;
+				var data = Script.TheScript.RegExData;
+				var regdkt = reverse ? data.regdktDotNetReverse : data.regdktDotNet;
 
-				lock (script.RegExData.locker)//KeyedCollection is not threadsafe, the way ConcurrentDictionary is, so we must lock. We use KeyedCollection because we need to preserve order to remove the first entry.
+				lock (data.locker)//KeyedCollection is not threadsafe, the way ConcurrentDictionary is, so we must lock. We use KeyedCollection because we need to preserve order to remove the first entry.
 				{
-					if (regdkt.TryGetValue(key, out var exp))
+					if (regdkt.TryGetValue(needle, out var exp))
 						return exp;
 
 					try
@@ -34,7 +33,7 @@ namespace Keysharp.Builtins
 						return null;
 					}
 
-					exp.tag = key;
+					exp.tag = needle;
 					regdkt.Add(exp);
 
 					while (regdkt.Count > 100)

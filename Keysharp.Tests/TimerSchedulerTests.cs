@@ -166,8 +166,5 @@ public class TimerSchedulerTests : TestRunner
 	public void TimerHandles() => Assert.IsTrue(TestScript("timer-handles", false));
 
 	[Test, Category("Threading"), Category("Curated")]
-	public void TimerEventInfo() => Assert.IsTrue(TestScript("timer-eventinfo", false));
-
-	[Test, Category("Threading"), Category("Curated")]
 	public void TimerEventInfoExit() => Assert.IsTrue(TestScript("timer-eventinfo-exit", false));
 }

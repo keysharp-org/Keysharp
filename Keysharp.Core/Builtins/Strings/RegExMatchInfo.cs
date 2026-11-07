@@ -6,7 +6,8 @@ namespace Keysharp.Builtins
 	/// The match object both regex engines hand back: <see cref="RegEx.RegExMatch"/> over PCRE and
 	/// <c>Ks.DotNet.RegExMatch</c> over .NET. Which engine produced it is not observable — the members mean the same
 	/// thing either way, following AutoHotkey: <c>Count</c> excludes the whole match, <c>Name</c> is empty for an
-	/// unnamed subpattern, and a subpattern that did not participate reads as an empty string at position 0.
+	/// unnamed subpattern, a subpattern that did not participate reads as an empty string at position 0, and a name or
+	/// number the pattern does not have raises a ValueError.
 	/// </summary>
 	public class RegExMatchInfo : KeysharpObject, I__Enum, IEnumerable<(object, object)>
 	{
@@ -38,7 +39,7 @@ namespace Keysharp.Builtins
 
 		public static implicit operator long(RegExMatchInfo r) => r.Pos();
 
-		public object __Get(object name, object args) => this[name];
+		public object __Get(object name, object args) => TryGetGroup(name, "__Get", out var g) ? g.Value : DefaultErrorString;
 
 		public KeysharpFunc __Enum(object NumberOfVars = null)
 		{
@@ -53,43 +54,45 @@ namespace Keysharp.Builtins
 
 		public long get_Len(object obj = null) => Len(obj);
 
-		public long Len(object obj) => GetGroup(obj).Length;
+		public long Len(object obj) => TryGetGroup(obj, "Len", out var g) ? g.Length : DefaultErrorLong;
 
-		public string Name(object obj)
-		{
-			var g = GetGroup(obj);
-			return g.Success ? g.Name : "";
-		}
+		// The pattern's name for the subpattern, whether or not it participated, as in AutoHotkey.
+		public string Name(object obj) => TryGetGroup(obj, "Name", out var g) ? g.Name : DefaultErrorString;
 
 		public long get_Pos(object obj = null) => Pos(obj);
 
 		public long Pos(object obj = null)
 		{
-			var g = GetGroup(obj);
+			if (!TryGetGroup(obj, "Pos", out var g))
+				return DefaultErrorLong;
+
 			return g.Success ? g.Index + 1 : 0;
 		}
 
 		[PublicHiddenFromUser]
 		public override string ToString() => Pos().ToString();
 
-		public string this[params object[] obj] => GetGroup(obj.Length == 0 ? null : obj[0]).Value;
+		public string this[params object[] obj] => TryGetGroup(obj.Length == 0 ? null : obj[0], "__Item", out var g) ? g.Value : DefaultErrorString;
 
 		/// <summary>The group named by null (the whole match), a name, or a number, which as in AutoHotkey may be a numeric
-		/// string and is truncated if a Float; a miss is an unset Subpattern.</summary>
-		private Subpattern GetGroup(object key)
+		/// string and is truncated if a Float. False if the script continued an invalid-parameter error.</summary>
+		private bool TryGetGroup(object key, string member, out Subpattern group)
 		{
-			if (key == null)
-				return At(0);
+			var ordinal = key == null ? 0
+						  : key.TryCoerceLong(out var number) ? (number >= 0 && number < GroupCount ? (int)number : -1)
+						  : key is string name ? Named(name) : -1;
+			group = ordinal >= 0 ? At(ordinal) : default;
 
-			if (!key.TryCoerceLong(out var number))
-				return key is string name ? Named(name) : default;
+			if (ordinal >= 0)
+				return true;
 
-			return number >= 0 && number < GroupCount ? At((int)number) : default;
+			_ = Errors.InvalidParameterErrorOccurred(1, "RegExMatchInfo.Prototype." + member, key);
+			return false;
 		}
 
 		// As AutoHotkey does, a name matches case-insensitively and the first subpattern so named answers, unless it did
-		// not participate and a later one of the same name did.
-		private Subpattern Named(string name)
+		// not participate and a later one of the same name did. -1 when no subpattern has the name.
+		private int Named(string name)
 		{
 			var first = -1;
 
@@ -101,13 +104,13 @@ namespace Keysharp.Builtins
 					continue;
 
 				if (g.Success)
-					return g;
+					return i;
 
 				if (first < 0)
 					first = i;
 			}
 
-			return first < 0 ? default : At(first);
+			return first;
 		}
 
 		private Subpattern At(int ordinal) =>

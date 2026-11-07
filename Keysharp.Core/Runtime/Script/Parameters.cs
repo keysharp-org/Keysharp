@@ -21,7 +21,7 @@ namespace Keysharp.Runtime
 			else
 				ke = Loops.MakeEnumerator(obj, 1L);
 
-			if (ke is object && IsCallable(ke))
+			if (ke != null)
 			{
 				// Driven exactly the way MakeEnumerable drives a for-loop: one VarRef and one argument array for the
 				// whole run, calling the normalized Enumerator directly. Invoke-by-name per element would re-resolve

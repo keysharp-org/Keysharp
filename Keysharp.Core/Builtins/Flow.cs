@@ -303,7 +303,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="function">The callable to invoke without arguments. A_EventInfo exposes its Timer description.<br/>
 		/// </param>
-		/// <param name="period">If omitted and the timer does not exist, it will be created with a period of 250.<br/>
+		/// <param name="period">If omitted and the timer does not exist, it will be created with a period of 250, and is due at once if Priority is specified.<br/>
 		/// If omitted and the timer already exists, it will be reset at its former period unless Priority is specified.<br/>
 		/// Otherwise, the absolute value of this parameter is used as the approximate number of milliseconds that must pass before<br/>
 		/// the timer is executed. The timer will be automatically reset. It can be set to repeat automatically or run only once:<br/>
@@ -312,7 +312,8 @@ namespace Keysharp.Builtins
 		///     If Period is 0, the timer is marked for deletion. If a thread started by this timer is still running, the timer is deleted after the thread finishes (unless it has been reenabled);<br/>
 		///         otherwise, it is deleted immediately. In any case, the timer's previous Period and Priority are not retained.
 		/// </param>
-		/// <param name="priority">If omitted, it defaults to 0. Otherwise, specify an integer between 0 and 4<br/>
+		/// <param name="priority">If omitted, a new timer defaults to 0 and an existing timer keeps its priority.<br/>
+		/// Otherwise, specify an integer<br/>
 		/// to indicate this timer's thread priority. See <see cref="Threads"/> for details.<br/>
 		/// To change the priority of an existing timer without affecting it in any other way, omit Period.
 		/// </param>
@@ -363,7 +364,7 @@ namespace Keysharp.Builtins
 				if (func == null)
 					return DefaultObject;
 
-				_ = script.FlowData.timers.Upsert(func, ownerScheduler, p, pri);
+				_ = script.FlowData.timers.Upsert(func, ownerScheduler, p, pri, dueIfNew: timer == null && !periodGiven && priority != null);
 				return DefaultObject;
 			}
 

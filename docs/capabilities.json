@@ -294,8 +294,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Imports modules or names with shared variable storage. Function imports are lexical and reject the Export modifier and conflicting declarations in the same scope, including locals and parameters; class and block imports are Keysharp extensions. Lookup searches the directive file directory, module directory and main script directory, then AhkLibPath or the default library directories. Relative AhkLibPath entries and A_LineFile use the module root file. A:B names a nested module, quoted or not, a Keysharp extension.",
-                     "tested-by":  "module-export.ahk; module-basic.ahk; module-import.ahk; module-scoped-import.ahk; module-object-members.ahk; module-extends.ahk; module-wildcard-own-vars.ahk; ModuleTests.FileIdentity; ModuleTests.SearchPaths; ModuleTests.ImportDiagnostics; directive-csharp-modules.ahk; ParserTests.DistinctCaseModuleSearchDirectories"
+                     "notes":  "Imports modules or names with shared variable storage. Function imports are lexical and reject the Export modifier and conflicting declarations in the same scope, including locals and parameters; class and block imports are Keysharp extensions. Imported files load recursively, preserving load-time hotkey and hotstring directive order. Lookup searches the directive file directory, module directory and main script directory, then AhkLibPath or the default library directories. Relative AhkLibPath entries and A_LineFile use the module root file. A:B names a nested module, quoted or not, a Keysharp extension.",
+                     "tested-by":  "module-export.ahk; module-basic.ahk; module-import.ahk; module-scoped-import.ahk; module-object-members.ahk; module-extends.ahk; module-wildcard-own-vars.ahk; ModuleTests.FileIdentity; ModuleTests.SearchPaths; ModuleTests.ImportDiagnostics; ModuleTests.ImportDirectiveOrder; directive-csharp-modules.ahk; ParserTests.DistinctCaseModuleSearchDirectories"
                  },
                  {
                      "category":  "Environment/System",
@@ -1790,7 +1790,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Timer callbacks expose their Ks.Timer object; AutoHotkey returns 0.",
-                     "tested-by":  "misc-timer.ahk; TimerSchedulerTests.TimerEventInfo; TimerSchedulerTests.TimerEventInfoExit"
+                     "tested-by":  "misc-timer.ahk; TimerSchedulerTests.TimerHandles; TimerSchedulerTests.TimerEventInfoExit"
                  },
                  {
                      "category":  "Environment/System",
@@ -2963,7 +2963,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Nonconstructible, read-only timer information from A_Timers or A_EventInfo: Callback, Period, Priority, RealThread, Elapsed, InProgress and EndReason.",
-                     "tested-by":  "TimerSchedulerTests.TimerHandles; TimerSchedulerTests.TimerEventInfo"
+                     "tested-by":  "TimerSchedulerTests.TimerHandles"
                  },
                  {
                      "category":  "Environment/System",
@@ -4908,7 +4908,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns drive letters on Windows and semicolon-separated drive paths on Linux/macOS. A type filter includes every matching drive, including the first discovered drive.",
+                     "notes":  "Returns drive letters on Windows and semicolon-separated drive paths on Linux/macOS. An omitted type lists every drive. Filters are case-insensitive; an empty or unknown explicit filter raises ValueError.",
                      "tested-by":  "DriveTests.DriveGetList (drive-getlist.ahk)"
                  },
                  {
@@ -9932,8 +9932,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "RegExMatch result. Direct construction, including subclasses using the default Call, raises ValueError. __Enum([NumberOfVars]) includes the whole match at 0; omitted or zero adapts to value or name/index-and-value outputs, while 1 or 2 fixes the mode and argument count.",
-                     "tested-by":  "string-regexmatch.ahk; flow-enum.ahk; class-builtin-visibility.ahk"
+                     "notes":  "RegExMatch result shared by PCRE and DotNet. Name retains the pattern's group name even when that group did not match; an unknown group name or number raises ValueError. Direct construction, including subclasses using the default Call, raises ValueError. __Enum([NumberOfVars]) includes the whole match at 0; omitted or zero adapts to value or name/index-and-value outputs, while 1 or 2 fixes the mode and argument count.",
+                     "tested-by":  "string-regexmatch.ahk; string-regexmatch-dotnet.ahk; flow-enum.ahk; class-builtin-visibility.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -10289,8 +10289,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Periods are measured from callback start; overdue callbacks coalesce and remain due while blocked by priority, thread limits or timer permission. Timers continue while tray, popup, or menu-bar menus are open. Uses ordinary deadline-based waits without requesting higher timer resolution. Callbacks remain serialized on their owning scheduler.",
-                     "tested-by":  "timer-blocked-admission.ahk; timer-short-callback-keeps-period.ahk; timer-long-callback-coalesces.ahk; timer-during-callback-sleep.ahk; TimerSchedulerTests.MenuVisible; TimerSchedulerTests.TimerEventInfo; TimerSchedulerTests.FailedLaunchPreservesTimer"
+                     "notes":  "Periods are measured from callback start; overdue callbacks coalesce and remain due while blocked by priority, thread limits or timer permission. A new timer created with Priority but no Period is due immediately and repeats every 250 ms; changing only an existing timer's priority preserves its deadline. Timers continue while tray, popup, or menu-bar menus are open. Uses ordinary deadline-based waits without requesting higher timer resolution. Callbacks remain serialized on their owning scheduler.",
+                     "tested-by":  "misc-timer.ahk; timer-blocked-admission.ahk; timer-short-callback-keeps-period.ahk; timer-long-callback-coalesces.ahk; timer-during-callback-sleep.ahk; TimerSchedulerTests.MenuVisible; TimerSchedulerTests.TimerHandles; TimerSchedulerTests.FailedLaunchPreservesTimer"
                  },
                  {
                      "category":  "Environment/System",

@@ -412,8 +412,8 @@ namespace Keysharp.Builtins
 				return DefaultObject;
 
 			if (obj is Any)
-				// A null name calls a module itself, where the name Call would find a function of the module.
-				return new BoundFunc(new MethodPropertyHolder(method == null && obj is Module ? null : n), args, o);
+				// As in AutoHotkey, an omitted Method binds no name: the call reaches Call (or a module itself), never __Call.
+				return new BoundFunc(new MethodPropertyHolder(method == null ? null : n), args, o);
 			else if (Reflections.FindAndCacheMethod(o.GetType(), n, -1) is MethodPropertyHolder mph && mph.mi != null)
 				return new BoundFunc(mph, [obj, .. args], o);
 

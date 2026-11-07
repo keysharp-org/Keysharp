@@ -42,12 +42,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		public object Encoding
 		{
-			get => (stream?.Encoding ?? textEncoding ?? System.Text.Encoding.Default).CodePage switch
-			{
-				65001 => "UTF-8",
-				1200 => "UTF-16",
-				var codePage => $"CP{codePage}"
-			};
+			get => Files.EncodingName(stream?.Encoding ?? textEncoding ?? System.Text.Encoding.Default, false);
 
 			set
 			{

@@ -193,6 +193,7 @@ relayObj := Relay()
 AssertEq(HasMethod(relayObj), 0, A_LineNumber)
 Throws(() => relayObj(), A_LineNumber, MethodError)
 Throws(() => SetTimer(relayObj, -1), A_LineNumber, MethodError)
+Throws(() => ObjBindMethod(relayObj)(), A_LineNumber, MethodError)
 relayObj.Call()
 AssertEq(relayObj.calls, 1, A_LineNumber)
 

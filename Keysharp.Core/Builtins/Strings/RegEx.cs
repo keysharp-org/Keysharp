@@ -4,7 +4,9 @@ namespace Keysharp.Builtins
 	{
 		internal readonly Lock locker = new ();
 		internal RegEx.RegexEntry regdkt = [];
+		// Right-to-left patterns get their own cache so that both are keyed by the needle alone.
 		internal RegEx.RegexEntryDotNet regdktDotNet = [];
+		internal RegEx.RegexEntryDotNet regdktDotNetReverse = [];
 		internal ConcurrentLfu<string, Action<PcreMatch, StringBuilder>> ReplacementCache = new (Caching.DefaultCacheCapacity);
 	}
 

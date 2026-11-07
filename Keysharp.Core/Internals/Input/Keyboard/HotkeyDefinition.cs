@@ -2726,7 +2726,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 					var sameTarget = ReferenceEquals(cp.Mph, fo.Mph)
 						|| cp.Mph.mi == null && fo.Mph.mi == null
-							&& cp.Mph.Name.Equals(fo.Mph.Name, StringComparison.OrdinalIgnoreCase);
+							&& string.Equals(cp.Mph.Name, fo.Mph.Name, StringComparison.OrdinalIgnoreCase);
 					if (sameTarget && ReferenceEquals(cp.Inst, fo.Inst))
 						return cp;
 				}

@@ -62,6 +62,13 @@ Sleep(-1)
 
 AssertEq(x, 1, A_LineNumber)
 
+x := 0
+SetTimer(TimerHandler3,, 3) ; A timer created with only a priority starts due, then repeats every 250 ms.
+Sleep(-1)
+SetTimer(TimerHandler3, 0)
+
+AssertEq(x, 1, A_LineNumber)
+
 x := 0, doDelayEnd := 0
 ; Fill max threads with TimerHandler4, and ensure TimerHandler3 is queued behind it.
 SetTimer(TimerHandler3, -30)

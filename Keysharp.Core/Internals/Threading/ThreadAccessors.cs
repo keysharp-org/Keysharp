@@ -160,11 +160,13 @@ namespace Keysharp.Internals.Threading
 				var tv = Script.TheScript.Threads.CurrentThread;
 				var ei = tv.eventInfo;
 
-				// A_EventInfo may park a Func<object> (hook events, PCRE callouts) that builds its value on first
-				// read; resolve it once and cache the result back so later reads are cheap. tv.eventInfo is only
-				// touched by its owning thread, so this write-back needs no synchronisation.
+				// A_EventInfo may park a Func<object> (hook events, PCRE callouts) or a timer lifetime that builds its
+				// value on first read; resolve it once and cache the result back so later reads are cheap. tv.eventInfo
+				// is only touched by its owning thread, so this write-back needs no synchronisation.
 				if (ei is Func<object> factory)
 					tv.eventInfo = ei = factory();
+				else if (ei is ScriptTimerInfo info)
+					tv.eventInfo = ei = Ks.Timer.Bind(info);
 
 				return ei ?? 0L;
 			}

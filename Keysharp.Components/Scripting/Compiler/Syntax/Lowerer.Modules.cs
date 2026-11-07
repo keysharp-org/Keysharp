@@ -170,22 +170,29 @@ namespace Keysharp.Compilation.Syntax
 			var modes = new Dictionary<int, Semver.SemVersion>();
 			Semver.SemVersion ModeOf(int inclusion) => modes.TryGetValue(inclusion, out var mode) ? mode
 				: modes[inclusion] = _includeParents[inclusion] < 0 ? Script.DefaultCompatibilityVersion : ModeOf(_includeParents[inclusion]);
+			// The module each #Include is in: it starts in its includer's, and its end returns there, as AutoHotkey reopens the
+			// module that was open before the file.
+			var modules = new Dictionary<int, ModInfo>();
+			ModInfo ModuleOf(int inclusion) => modules.TryGetValue(inclusion, out var module) ? module
+				: modules[inclusion] = _includeParents[inclusion] < 0 ? group.Root : ModuleOf(_includeParents[inclusion]);
+			// Each change of module clears the criterion, as AutoHotkey's CloseCurrentModule does, which also runs before an
+			// imported file loads. The reset takes the statement's place in load order, ahead of what the statement registers.
+			static DirectiveStmt ClearHotIf(Stmt at) => new("HotIf", "")
+			{
+				Line = at.Line, Column = at.Column, File = at.File, SourceOrder = at.SourceOrder, Inclusion = at.Inclusion
+			};
+			if (group != _mainGroup && body.Count > 0) current.Body.Add(ClearHotIf(body[0]));
 
 			foreach (var statement in body)
 			{
+				if (ModuleOf(statement.Inclusion) is var opened && opened != current)
+					(current = opened).Body.Add(ClearHotIf(statement));
 				if (statement is DirectiveStmt directive && StringComparer.OrdinalIgnoreCase.Equals(directive.Name, "Module"))
 				{
 					var next = DeclareModule(directive, body, group, mods) ?? current;
 					if (next != current)
-					{
-						current = next;
-						// Preserve the boundary when reopened sections are grouped into one module body.
-						current.Body.Add(new DirectiveStmt("HotIf", "")
-						{
-							Line = directive.Line, Column = directive.Column, File = directive.File,
-							SourceOrder = directive.SourceOrder, Inclusion = directive.Inclusion
-						});
-					}
+						(current = next).Body.Add(ClearHotIf(directive));
+					modules[directive.Inclusion] = current;
 					if (current.Compat == null) modes[directive.Inclusion] = current.Compat = group.Root.Compat;
 				}
 				else if (statement is ImportDirective import)
@@ -210,10 +217,10 @@ namespace Keysharp.Compilation.Syntax
 			return mods;
 		}
 
-		private void LoadFileModules(List<ModInfo> mods)
+		private void LoadFileModules(List<ModInfo> mods, List<ModInfo> pending = null)
 		{
-			var queue = new Queue<ModInfo>(mods);
-			while (queue.TryDequeue(out var module))
+			// AutoHotkey resolves the last declared module first, finishing each file's imports before the next import.
+			foreach (var module in (pending ?? mods).AsEnumerable().Reverse())
 				foreach (var import in module.AllImports.OrderBy(item => item.SourceOrder).ToArray())
 				{
 					if (_importModules.ContainsKey(import)) continue;
@@ -249,12 +256,13 @@ namespace Keysharp.Compilation.Syntax
 									AppendSourceOrder(program);
 									AddSourceTexts(file, text, program);
 									group.Root.MainInclusion = AppendInclusions(program);
-									foreach (var discovered in PartitionModules(program.Body, group))
+									var discoveredModules = PartitionModules(program.Body, group);
+									foreach (var discovered in discoveredModules)
 									{
 										if (!mods.Contains(discovered)) mods.Add(discovered);
 										PrescanManifestDirectives(discovered.Body);
-										queue.Enqueue(discovered);
 									}
+									LoadFileModules(mods, discoveredModules);
 								}
 								catch (System.Exception error) { Diag($"#Import: failed to read module '{path}' from {System.IO.Path.GetFileName(file)}: {error.Message}"); }
 							}

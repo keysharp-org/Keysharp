@@ -103,7 +103,7 @@ namespace Keysharp.Builtins
 
 			var info = filename == null ? Loops.Peek(LoopType.File) : null;
 			// Null means RAW; a Buffer gets a BOM only when an encoding is specified.
-			var encoding = t is string ? ThreadAccessors.A_FileEncoding ?? NativeType.AnsiEncoding : null;
+			var encoding = t is string ? EffectiveFileEncoding : null;
 
 			if (info?.outputStream == null && !TryParseFileOptions(opts, false, ref encoding, out _))
 				return DefaultObject;
@@ -990,7 +990,7 @@ namespace Keysharp.Builtins
 		{
 			ThreadAccessors.A_LastError = 0;
 
-			if (!filename.CoerceString(out var file) || !TryGetEncoding(encoding, (encoding == null ? ThreadAccessors.A_FileEncoding : null) ?? NativeType.AnsiEncoding, out var enc))
+			if (!filename.CoerceString(out var file) || !TryGetEncoding(encoding, encoding == null ? EffectiveFileEncoding : NativeType.AnsiEncoding, out var enc))
 				return DefaultObject;
 
 			// A number is AutoHotkey's flag values summed.
@@ -1073,7 +1073,7 @@ namespace Keysharp.Builtins
 				return Errors.ValueErrorOccurred("FileRead requires a file name.");
 
 			// Null means RAW.
-			var encoding = ThreadAccessors.A_FileEncoding ?? NativeType.AnsiEncoding;
+			var encoding = EffectiveFileEncoding;
 
 			if (!TryParseFileOptions(opts, true, ref encoding, out var max))
 				return DefaultObject;
@@ -1487,7 +1487,7 @@ namespace Keysharp.Builtins
 		}
 
 		private static TextStream OpenForAppend(string path, Encoding encoding, bool crlf) =>
-			TextStream.Open(path, TextStreamMode.Append, FileShare.Read, encoding ?? ThreadAccessors.A_FileEncoding ?? NativeType.AnsiEncoding, crlf ? TextStream.EolCrlf : 0, encoding != null);
+			TextStream.Open(path, TextStreamMode.Append, FileShare.Read, encoding ?? EffectiveFileEncoding, crlf ? TextStream.EolCrlf : 0, encoding != null);
 
 		// `n can appear without a separating space. Null encoding means RAW.
 		private static bool TryParseFileOptions(string options, bool takesMax, ref Encoding encoding, out long maxBytes)
@@ -1572,6 +1572,22 @@ namespace Keysharp.Builtins
 
 			return true;
 		}
+
+		/// <summary>
+		/// The encoding a file function uses when the script names none: A_FileEncoding, or CP0 when that is unset.
+		/// </summary>
+		internal static Encoding EffectiveFileEncoding => ThreadAccessors.A_FileEncoding ?? NativeType.AnsiEncoding;
+
+		/// <summary>
+		/// The name AutoHotkey gives an encoding: UTF-8, UTF-16 or CPnnn, with -RAW for a Unicode encoding that writes
+		/// no byte order mark when <paramref name="reportRaw"/> is set.
+		/// </summary>
+		internal static string EncodingName(Encoding encoding, bool reportRaw) => encoding.CodePage switch
+		{
+			65001 => reportRaw && encoding.Preamble.IsEmpty ? "UTF-8-RAW" : "UTF-8",
+			1200 => reportRaw && encoding.Preamble.IsEmpty ? "UTF-16-RAW" : "UTF-16",
+			var codePage => "CP" + codePage.ToString(CultureInfo.InvariantCulture)
+		};
 
 		/// <summary>
 		/// Parses the file encoding setting, preserving CP0 as null.

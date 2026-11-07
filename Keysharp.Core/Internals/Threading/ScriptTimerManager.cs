@@ -155,7 +155,7 @@ namespace Keysharp.Internals.Threading
 			return snapshot;
 		}
 
-		internal ScriptTimerState Upsert(object callback, ScriptEventScheduler ownerScheduler, long period, long priority)
+		internal ScriptTimerState Upsert(object callback, ScriptEventScheduler ownerScheduler, long period, long priority, bool dueIfNew = false)
 		{
 			ArgumentNullException.ThrowIfNull(callback);
 
@@ -166,11 +166,15 @@ namespace Keysharp.Internals.Threading
 				ThrowIfDisposed();
 
 				var key = (callback, ownerScheduler);
+				var dueNow = false;
 
 				if (!timers.TryGetValue(key, out timer))
 				{
 					timer = new ScriptTimerState(new ScriptTimerInfo(callback, ownerScheduler, period, priority, ++registrationSequence), ownerScheduler);
 					timers.Add(key, timer);
+					// AHK starts a timer that SetTimer creates with only a priority at a last-run time of 0, so the
+					// next check fires it; an existing timer, even a disabled one, waits its full period.
+					dueNow = dueIfNew;
 				}
 				else if (!timer.IsActive)
 					timer.Info = new ScriptTimerInfo(timer.Callback, ownerScheduler, period, priority, ++registrationSequence);
@@ -180,7 +184,7 @@ namespace Keysharp.Internals.Threading
 					Volatile.Write(ref timer.Info.Priority, priority);
 				}
 
-				timer.NextDueTick = Environment.TickCount64 + timer.Info.Delay;
+				timer.NextDueTick = Environment.TickCount64 + (dueNow ? 0L : timer.Info.Delay);
 				timer.WakeRequested = false;
 				EnsureThreadStarted();
 			}

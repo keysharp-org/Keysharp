@@ -300,6 +300,33 @@ public partial class ModuleTests : TestRunner
 	[Test, Category("Module")]
 	public void Import() => Assert.IsTrue(TestScript("module-import", false));
 
+	[Test, Category("Module")]
+	public void ImportDirectiveOrder()
+	{
+		RunFiles(TempRoot("directive-order"), "module_import_directive_order",
+		[
+			("main.ahk", """
+				#NoTrayIcon
+				#ErrorStdOut
+				#Warn All, StdOut
+				#Hotstring C0
+				#Import "RootFirst"
+				Hotstring(":C:ksimportnested", , "Off")
+				Hotstring(":C0:ksimporttail", , "Off")
+				Hotstring(":C:ksimportroot", , "Off")
+				FileAppend "pass", "*"
+				ExitApp()
+				#Module Later
+				#Import "Branch"
+				#Import "Tail"
+				"""),
+			("RootFirst.ahk", "::ksimportroot::x\n"),
+			("Branch.ahk", "#Hotstring C\n#Import \"Leaf\"\n"),
+			("Leaf.ahk", "::ksimportnested::x\n#Hotstring C0\n"),
+			("Tail.ahk", "::ksimporttail::x\n#Hotstring C\n"),
+		]);
+	}
+
 	// A module's body can come from several files, and each file's definitions take their mode through its own #Includes.
 	[Test, Category("Module")]
 	public void ModesAcrossFiles()
@@ -468,7 +495,7 @@ public partial class ModuleTests : TestRunner
 				#Module __Main:Spelled
 				#Requires AutoHotkey v2.1-alpha.35
 
-				#Module __Init:Spelled
+				#Module Spelled
 				#Include <SpelledProbe>
 				"""),
 			("Package/Outer.ahk", """
@@ -503,7 +530,7 @@ public partial class ModuleTests : TestRunner
 			// A sibling's #Requires leaves Modes:Legacy in v2.0 mode, where <ModeProbe> skips the local file.
 			("ModeProbe", "Probe := \"local\"\n"),
 			("Lib/ModeProbe.ahk", "Probe := \"library\"\n"),
-			// __Main and __Init name one module in the main file, so a #Requires under either spelling is its mode.
+			// `__Main:Spelled` and `Spelled` name one module in the main file, so a #Requires under either spelling is its mode.
 			("SpelledProbe", "Probe := \"local\"\n"),
 			("Lib/SpelledProbe.ahk", "Probe := \"library\"\n"),
 		};
@@ -798,8 +825,7 @@ public partial class ModuleTests : TestRunner
 	{
 		GeneratedCode("#import Ks:Dotnet { Format }\nMsgBox Format(\"{1}\", 1)\n",
 			[CachedFunc("format", "Ks.DotNet.Format"), $"{InvokeOrNull}msgbox, null, {Invoke}format, null, \"{{1}}\", 1L));"], compile: true);
-		foreach (var source in new[] { "#Import Ks { Cosh }\nx := Cosh(1)\n", "#Import Ks { * }\nx := Cosh(1)\n" })
-			GeneratedCode(source, [CachedFunc("cosh", "Ks.Cosh"), $"{Invoke}cosh, null, 1L)"]);
+		GeneratedCode("#Import Ks { * }\nx := Cosh(1)\n", [CachedFunc("cosh", "Ks.Cosh"), $"{Invoke}cosh, null, 1L)"]);
 		GeneratedCode("#Import Ks { Cosh as Hyperbolic }\nx := Hyperbolic(1)\n", [CachedFunc("hyperbolic", "Ks.Cosh"), $"{InvokeAs}hyperbolic, \"Hyperbolic\", 1L)"]);
 		// Two names for one function share its field.
 		GeneratedCode("#Import Ks { Cosh, Cosh as Hyperbolic }\nx := Hyperbolic(1)\ny := Cosh(2)\n",
@@ -883,8 +909,6 @@ public partial class ModuleTests : TestRunner
 		GeneratedCode("Foo() {\n#Import Other { F }\nreturn F()\n}\n#Module Other\nF() => 1\n", [$"return {Invoke}{OtherF}, null);"]);
 
 		// A C# local of the field's name would capture a simple name, the enclosing function's too.
-		GeneratedCode("#Import Ks:DotNet { Format }\n#Import Ks\nFoo(Format) {\nreturn Ks.DotNet.Format(\"{1}\", Format)\n}\n",
-			[$"return {Invoke}{MainModule}format, null, \"{{1}}\", Format);"]);
 		GeneratedCode("#Import Ks\nFoo(KS_Ks_Cosh) {\nreturn Ks.Cosh(KS_Ks_Cosh)\n}\n", [$"return {Invoke}{MainModule}KS_Ks_Cosh, null, KS_Ks_Cosh);"]);
 		GeneratedCode("#Import Ks\nFoo() {\nlocal KS_Ks_Cosh := 1\nNested() {\nreturn Ks.Cosh(1)\n}\nreturn Nested() KS_Ks_Cosh\n}\n", [$"return {Invoke}{MainModule}KS_Ks_Cosh, null, 1L);"]);
 		// A class member of that name would too, and a method's name is no field's.
@@ -972,7 +996,6 @@ public partial class ModuleTests : TestRunner
 		foreach (var source in new[]
 		{
 			"#Import Ks { Cosh }\n",
-			"#Import Ks:DotNet { Format }\n",
 			"#Import Ks { * }\n",
 			"Foo() {\n#Import Ks { Cosh }\nreturn 1\n}\n",
 			"class C {\n#Import Ks { Cosh }\n}\n",

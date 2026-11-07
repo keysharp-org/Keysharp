@@ -164,12 +164,14 @@ AssertEq(a, "::", A_LineNumber)
 +w::`
 t::`
 
-; Switching modules clears #HotIf; repeating the current module preserves it.
+; Switching modules clears #HotIf; repeating the current module preserves it. Other directives apply in load order
+; across modules, so the case-sensitive default reaches the hotstring of the module declared after it.
 try
 {
 	Hotkey("*F15", , "Off")
 	Hotkey("*F19", , "Off")
 	Throws(() => Hotkey("*F17", , "Off"), A_LineNumber, TargetError)
+	Hotstring(":C:ksloadorder", , "Off")
 }
 catch Any as Failure
 	FileAppend "fail " . Failure.Message . "`n", "*"
@@ -185,3 +187,8 @@ F15::F16
 F17::F18
 #Module __Main
 F19::F20
+#Hotstring C
+#Module HotstringOrder
+::ksloadorder::x
+#Module __Main
+#Hotstring C0

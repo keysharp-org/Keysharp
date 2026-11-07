@@ -95,18 +95,25 @@ namespace Keysharp.Builtins
 		/// Returns a string of letters, one character for each drive letter in the system.
 		/// </summary>
 		/// <param name="driveType">If omitted, all drive types are retrieved.<br/>
-		/// Otherwise, specify one of the following words to retrieve only a specific type of drive: CDROM, REMOVABLE, FIXED, NETWORK, RAMDISK, UNKNOWN.
+		/// Otherwise, specify one of the following words, in any case, to retrieve only a specific type of drive: CDROM, REMOVABLE, FIXED, NETWORK, RAMDISK, UNKNOWN.
 		/// </param>
 		/// <returns>The drive letters in the system, depending on DriveType. For example: ACDEZ.</returns>
+		/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if driveType is not one of those words.</exception>
 		public static string DriveGetList(object driveType = null)
 		{
-			if (!driveType.CoerceString(out var drivetype))
-				return "";
-
 			DriveType? type = null;
 
-			if (!string.IsNullOrEmpty(drivetype))
+			// As in AutoHotkey, only an omitted type lists every drive; an empty or unknown word is an error.
+			if (driveType != null)
+			{
+				if (!driveType.CoerceString(out var drivetype))
+					return "";
+
 				type = Script.TheScript.DriveTypeMapper.LookUpCLRType(drivetype);
+
+				if (!type.HasValue)
+					return (string)Errors.ValueErrorOccurred($"Unknown drive type \"{drivetype}\". Expected CDROM, REMOVABLE, FIXED, NETWORK, RAMDISK or UNKNOWN.", drivetype, DefaultErrorString);
+			}
 
 			var drives = DriveInfo.GetDrives();
 #if !WINDOWS
