@@ -2420,9 +2420,30 @@ namespace Keysharp.Builtins
 		{
 #if WINDOWS
 			_ = WindowsAPI.FlashWindow(form.Handle, blink.Ab(true));
+#elif LINUX
+			//The window manager marks the window as wanting attention until it is cleared or focused. GTK's Wayland
+			//backend has no urgency hint, so there this does nothing.
+			if (form.ToNative() is Gtk.Window window)
+				window.UrgencyHint = blink.Ab(true);
+#elif OSX
+			//macOS asks for attention for the whole application, by bouncing its Dock icon once.
+			var app = MonoMac.AppKit.NSApplication.SharedApplication;
+
+			if (attentionRequest != 0)
+			{
+				app.CancelUserAttentionRequest(attentionRequest);
+				attentionRequest = 0;
+			}
+
+			if (blink.Ab(true))
+				attentionRequest = app.RequestUserAttention(MonoMac.AppKit.NSRequestUserAttentionType.InformationalRequest);
 #endif
 			return DefaultObject;
 		}
+
+#if OSX
+		private long attentionRequest;//The pending Flash request, cancelled by the next Flash. MonoMac's nint is a long.
+#endif
 
 		[RequiresUIThread]
 		public object GetClientPos([Optional()][DefaultParameterValue(null)] object x,

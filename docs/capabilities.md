@@ -621,7 +621,7 @@ Status legend:
 | Gui.DateTime.SetFormat() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets the display format of a DateTime control. |
 | Gui.Destroy() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Destroys the GUI window and releases associated resources. |
 | Gui.Edit.SetCue() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Shows a cue text in an empty Edit, which off Windows only a single-line Edit has, a multi-line or password one raising an Error there. |
-| Gui.Flash() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Flashes the GUI window to attract attention. Backed by the Win32 FlashWindow API; the call is accepted and does nothing on Linux and macOS. |
+| Gui.Flash() | 🟢 Full | 🟡 Partial | 🔴 Unsupported | 🟡 Partial | X11 uses urgency hints, macOS requests Dock attention, and Wayland has no effect. |
 | Gui.FocusedCtrl | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Currently focused control in the GUI. |
 | Gui.Font | 🟡 Partial | 🟡 Partial | 🟡 Partial | ⚪ Unknown | Detached Font snapshot; assignments apply only specified attributes. Weights map to normal or bold; non-default quality raises Error. |
 | Gui.FontHandle | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | Read-only borrowed native handle for the GUI's current default font: an HFONT on Windows, a PangoFontDescription* on Linux and an NSFont* on macOS, where it is unverified. |

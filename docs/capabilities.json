@@ -6286,10 +6286,10 @@
                      "feature":  "Gui.Flash()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
+                     "linux_x11":  "partial",
                      "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "Flashes the GUI window to attract attention. Backed by the Win32 FlashWindow API; the call is accepted and does nothing on Linux and macOS."
+                     "macos":  "partial",
+                     "notes":  "X11 uses urgency hints, macOS requests Dock attention, and Wayland has no effect."
                  },
                  {
                      "category":  "Windowing/GUI",

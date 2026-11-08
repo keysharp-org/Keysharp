@@ -1476,6 +1476,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ UpDown controls with paired buddy controls are not supported. Keysharp just uses the regular NumericUpDown control in C#.
 			+ The options `16`, `Horz` and `Wrap` have no effect.
 			+ The min and max values cannot be swapped.
+		+ `Gui.Flash()` sets the urgency hint on X11 and bounces the Dock icon once on macOS; it has no effect on Wayland.
 		+ For slider events, the second parameter passed to the event handler will always be `0` because it's not possible to retrieve the method by which the slider was moved in C#.
 		+ Only `Tab3` is supported, no older tab functionality is present.
 		+ When adding a `ListView`, the `Count` option is not supported because C# can't preallocate memory for a `ListView`.
