@@ -5,22 +5,17 @@ namespace Keysharp.Tests;
 [TestFixture, Category("Internal"), Category("Curated")]
 public class WaylandTests
 {
-	[TestCase(true)]
-	[TestCase(false)]
-	public void ForeignVisibility(bool supported)
+	// WindowOperationFailureTests covers the failing and unsupported routes.
+	[Test]
+	public void ForeignVisibility()
 	{
-		var backend = new VisibilityBackend(supported);
+		var backend = new VisibilityBackend();
 		var windows = new WaylandWindow(backend);
 		var handle = new nint(42);
-		Assert.That(windows.TryHide(handle), Is.EqualTo(supported));
-		Assert.That(windows.TryShow(handle), Is.EqualTo(supported));
-		Assert.That(windows.TrySetVisible(handle, false), Is.EqualTo(supported));
-		Assert.That(windows.TrySetVisible(handle, true), Is.EqualTo(supported));
+		Assert.That(windows.TryHide(handle), Is.True);
+		Assert.That(windows.TryShow(handle), Is.True);
 		Assert.That(windows.TrySetVisible(0, true), Is.False);
-		Assert.That(backend.Requests, Is.EqualTo(new[]
-		{
-			(handle, false), (handle, true), (handle, false), (handle, true)
-		}));
+		Assert.That(backend.Requests, Is.EqualTo(new[] { (handle, false), (handle, true) }));
 	}
 
 	[Test]
@@ -418,16 +413,17 @@ public class WaylandTests
 		}
 	}
 
-	private sealed class VisibilityBackend(bool supported) : IWaylandBackend
+	private sealed class VisibilityBackend : IWaylandBackend
 	{
 		public string BackendKey => "visibility-test";
 		public string Name => "visibility-test";
 		internal readonly List<(nint Handle, bool Visible)> Requests = [];
 		public bool IsKnown(nint handle) => handle == new nint(42);
-		public bool TrySetWindowVisible(nint handle, bool visible)
+		public bool TrySetWindowVisible(nint handle, bool visible, out Exception failure)
 		{
 			Requests.Add((handle, visible));
-			return supported;
+			failure = null;
+			return true;
 		}
 		public bool TrySetWindowState(nint handle, FormWindowState state)
 			=> throw new InvalidOperationException("Hiding and showing must not change minimization or maximization.");

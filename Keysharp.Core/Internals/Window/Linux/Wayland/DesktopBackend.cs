@@ -334,9 +334,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			=> TryGetServiceHandle(handle, out var id)
 				&& Desktop.SetWindowSkipTaskbar(id, skip);
 
-		public virtual bool TrySetZOrder(nint handle, ZOrder z)
-			=> TrySetZOrder(handle, z, out _);
-
 		public virtual bool TrySetZOrder(nint handle, ZOrder z, out Exception failure)
 		{
 			failure = null;
@@ -415,9 +412,6 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		internal bool TrySetWindowTitle(nint handle, string title)
 			=> TryGetServiceHandle(handle, out var id) && Desktop.SetWindowTitle(id, title);
-
-		public bool TrySetWindowVisible(nint handle, bool visible)
-			=> TrySetWindowVisible(handle, visible, out _);
 
 		public bool TrySetWindowVisible(nint handle, bool visible, out Exception failure)
 		{

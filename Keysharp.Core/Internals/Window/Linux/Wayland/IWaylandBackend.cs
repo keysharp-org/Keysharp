@@ -194,11 +194,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 
 		bool TrySetWindowState(nint handle, FormWindowState state) => false;
 		bool TryUnminimizeWindow(nint handle) => false;
-		bool TrySetWindowVisible(nint handle, bool visible) => false;
 		bool TrySetWindowVisible(nint handle, bool visible, out Exception failure)
 		{
 			failure = null;
-			return TrySetWindowVisible(handle, visible);
+			return false;
 		}
 
 		/// <summary>Keep the window above (true) / clear keep-above (false). False = unsupported.</summary>
@@ -210,11 +209,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 		bool TrySetSkipTaskbar(nint handle, bool skip) => false;
 
 		/// <summary>Move the window in the compositor stacking order. False = unsupported.</summary>
-		bool TrySetZOrder(nint handle, ZOrder z) => false;
 		bool TrySetZOrder(nint handle, ZOrder z, out Exception failure)
 		{
 			failure = null;
-			return TrySetZOrder(handle, z);
+			return false;
 		}
 
 		/// <summary>Set whole-window opacity from AHK alpha semantics (0 transparent, 255 opaque, "Off" opaque). False = unsupported.</summary>
