@@ -39,15 +39,17 @@ namespace Keysharp.Builtins.COM
 
 		/// <summary>
 		/// Without an argument, the pinned interface (or the object's only user interface). "Name" gives the bus
-		/// name, "IID" the interface name, "Path" the object path.
+		/// name, "IID" the interface name, "Path" the object path. A ComValue gives its VarType without an argument
+		/// and an empty string otherwise, and any other value gives an empty string.
 		/// </summary>
 		public static object ComObjType(object comObj, object infoType = null)
 		{
-			if (comObj is not ComObject co)
-				return Errors.TypeErrorOccurred(comObj, typeof(ComObject));
-
 			if (!infoType.CoerceString(out var what))
 				return DefaultObject;
+
+			// As on Windows and in AutoHotkey, only a COM value reports a type, so ComObjType(x) != "" tests for one.
+			if (comObj is not ComObject co)
+				return comObj is ComValue cv && what.Length == 0 ? cv.VarType : "";
 
 			if (what.Length == 0 || string.Equals(what, "IID", StringComparison.OrdinalIgnoreCase))
 			{

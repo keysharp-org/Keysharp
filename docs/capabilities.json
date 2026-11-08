@@ -4119,7 +4119,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "The ComObjType function retrieves type information from a COM object. Off Windows the requests differ: Linux answers Name, IID and Path, and macOS answers the class name, Name, CLSID or IID, and Path."
+                     "notes":  "Off Windows, ComValue returns its VarType notation by default; ComObject metadata requests are platform-specific."
                  },
                  {
                      "category":  "COM",

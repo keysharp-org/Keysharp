@@ -456,7 +456,7 @@ Common to both backends:
 
 * `ComObject()` starts the service or application if it is not running; `ComObjActive()` and `ComObjGet()` attach only, and throw otherwise. Neither platform has monikers, so `ComObjGet` is an alias of `ComObjActive`.
 * `ComObjQuery()` narrows which face of the object is used: a D-Bus interface on Linux, a scripting suite on macOS. Passing it up front as `ComObject`'s second argument does the same thing.
-* `ComValue()` uses a D-Bus signature on Linux or a four-character descriptor on macOS, while also accepting compatible `VT_` constants. `VarType` preserves either notation and is assignable. `ComObjType()` accepts only a `ComObject`.
+* `ComValue()` uses a D-Bus signature on Linux or a four-character descriptor on macOS, while also accepting compatible `VT_` constants. `VarType` preserves either notation and is assignable.
 * `ComCall()`, `ObjAddRef()`, `ObjRelease()`, `ComObjValue()`, `ComObjFlags()`, `ComObjFromPtr()` and `ComObjArray()` throw an error stating the reason. They depend on vtables, reference counts or raw interface pointers, none of which exist on either backend.
 
 ### macOS specifics

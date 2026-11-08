@@ -48,15 +48,17 @@ namespace Keysharp.Builtins.COM
 
 		/// <summary>
 		/// Without an argument, the object's class name. "Name" gives the application, "CLSID" or "IID" its bundle
-		/// identifier, "Path" the object specifier as AppleScript would write it.
+		/// identifier, "Path" the object specifier as AppleScript would write it. A ComValue gives its VarType without an
+		/// argument and an empty string otherwise, and any other value gives an empty string.
 		/// </summary>
 		public static object ComObjType(object comObj, object infoType = null)
 		{
-			if (comObj is not ComObject co)
-				return Errors.TypeErrorOccurred(comObj, typeof(ComObject));
-
 			if (!infoType.CoerceString(out var what))
 				return DefaultObject;
+
+			// As on Windows and in AutoHotkey, only a COM value reports a type, so ComObjType(x) != "" tests for one.
+			if (comObj is not ComObject co)
+				return comObj is ComValue cv && what.Length == 0 ? cv.VarType : "";
 
 			if (what.Length == 0)
 				return co.className ?? "";
