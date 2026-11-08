@@ -237,7 +237,7 @@ namespace Keysharp.Builtins
 		internal static object ErrorOccurred(string text, object ret = null, ErrorMode mode = ErrorMode.Return)
 		{
 			Error err;
-			return ErrorOccurred(err = new Error(text), mode) ? throw err : ret ?? DefaultObject;
+			return ErrorOccurred(err = new Error(text), mode: mode) ? throw err : ret ?? DefaultObject;
 		}
 
 		[StackTraceHidden]
@@ -251,7 +251,7 @@ namespace Keysharp.Builtins
 		internal static object ErrorOccurred(string text, object what, object extra, object ret = null, ErrorMode mode = ErrorMode.Return)
 		{
 			Error err;
-			return ErrorOccurred(err = new Error(text, what, extra), mode) ? throw err : ret ?? DefaultObject;
+			return ErrorOccurred(err = new Error(text, what, extra), mode: mode) ? throw err : ret ?? DefaultObject;
 		}
 
 		/// <summary>
@@ -542,7 +542,7 @@ namespace Keysharp.Builtins
 		internal static object VarReadOnlyErrorOccurred(string kind, string name, VarUsage usage)
 		{
 			Error err;
-			return ErrorOccurred(err = new Error(ReadOnlyMessage(kind, usage) + ".", null, name), ErrorMode.Exit) ? throw err : DefaultObject;
+			return ErrorOccurred(err = new Error(ReadOnlyMessage(kind, usage) + ".", null, name), mode: ErrorMode.Exit) ? throw err : DefaultObject;
 		}
 
 		/// <summary>
