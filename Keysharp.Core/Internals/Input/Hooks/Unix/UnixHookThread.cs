@@ -420,22 +420,17 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 			// keystrokes even when they were sent via hotkey such #c or a hotstring for which the user
 			// might still be holding down a modifier, such as :*:<t>::Test (if '>' requires shift key).
 			// It might also fix other issues.
+#if OSX
+			// Option and Shift+Option produce ordinary text and dead keys on macOS.
+			if ((kbdMsSender.modifiersLRLogical & ~(MOD_LSHIFT | MOD_RSHIFT | MOD_LALT | MOD_RALT)) != 0)
+#else
 			if ((kbdMsSender.modifiersLRLogical & ~(MOD_LSHIFT | MOD_RSHIFT)) != 0 // At least one non-Shift modifier is down (Shift may also be down).
 					&& !((kbdMsSender.modifiersLRLogical & (MOD_LALT | MOD_RALT)) != 0 && (kbdMsSender.modifiersLRLogical & (MOD_LCONTROL | MOD_RCONTROL)) != 0))
+#endif
 			{
-				// Since in some keybd layouts, AltGr (Ctrl+Alt) will produce valid characters (such as the @ symbol,
-				// which is Ctrl+Alt+Q in the German/IBM layout and Ctrl+Alt+2 in the Spanish layout), an attempt
-				// will now be made to transcribe all of the following modifier combinations:
-				// - Anything with no modifiers at all.
-				// - Anything that uses ONLY the shift key.
-				// - Anything with Ctrl+Alt together in it, including Ctrl+Alt+Shift, etc. -- but don't do
-				//   "anything containing the Alt key" because that causes weird side-effects with
-				//   Alt+LeftArrow/RightArrow and maybe other keys too).
-				// Older comment: If any modifiers except SHIFT are physically down, don't transcribe the key since
-				// most users wouldn't want that.  An additional benefit of this policy is that registered hotkeys will
-				// normally be excluded from the input (except those rare ones that have only SHIFT as a modifier).
-				// Note that ToAsciiEx() will translate ^i to a tab character, !i to plain i, and many other modified
-				// letters as just the plain letter key, which we don't want.
+				// Shortcut modifiers require an InputHook's M option. The Linux exception above admits Ctrl+Alt
+				// as AltGr (e.g. Ctrl+Alt+Q produces @ on German layouts); plain Alt remains excluded because
+				// combinations such as Alt+Left/Right navigate instead of entering text.
 				for (var input = script.input; ; input = input.prev)
 				{
 					if (input == null) // No inputs left, and none were found that meet the conditions below.
@@ -504,6 +499,7 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 				ch.Clear();
 				charCount = ToUnicodeWithDeadKeys(vk, rawSC, keyState, ch, 0, activeWindowKeybdLayout);
 
+#if !OSX
 				if (charCount == 0 && (kbdMsSender.modifiersLRLogical & (MOD_LALT | MOD_RALT)) != 0 && (kbdMsSender.modifiersLRLogical & (MOD_LCONTROL | MOD_RCONTROL)) == 0u)
 				{
 					// Let the Alt state be ignored for Alt / Alt+Shift combinations (matches the M option
@@ -514,6 +510,7 @@ namespace Keysharp.Internals.Input.Hooks.Unix
 					ch.Clear();
 					charCount = ToUnicodeWithDeadKeys(vk, rawSC, keyState, ch, 0, activeWindowKeybdLayout);
 				}
+#endif
 
 				if ((kbdMsSender.modifiersLRLogical & (MOD_LCONTROL | MOD_RCONTROL)) == 0) // i.e. must not replace '\r' with '\n' if it is the result of Ctrl+M.
 				{

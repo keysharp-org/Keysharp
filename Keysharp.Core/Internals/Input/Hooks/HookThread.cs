@@ -4903,6 +4903,9 @@ namespace Keysharp.Internals.Input.Hooks
 				altTabMenuIsVisible = GetAltTabMenuHandle() != 0;
 				pendingDeadKeys.Clear();
 				pendingDeadKeyInvisible = false;
+#if !WINDOWS
+				KeyCodes.ResetDeadKeyState();
+#endif
 				script.HotstringManager.ClearBuf();
 				hsHwnd = 0; // It isn't necessary to determine the actual window/control at this point since the buffer is already empty.
 

@@ -82,10 +82,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 		/// <summary>Clears any buffered dead-key composition state (e.g. when input collection (re)starts).</summary>
 		public static void ResetDeadKeyState()
-		{
-			EnsureProvider();
-			provider?.ResetDeadKeyState();
-		}
+			=> provider?.ResetDeadKeyState();
 
 		public static void ConfigureLayout(string rules = null, string model = null, string layout = null, string variant = null, string options = null)
 		{

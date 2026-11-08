@@ -131,6 +131,10 @@ namespace Keysharp.Internals.Input.Unix
 
 		public int TranslateKeyWithDeadKeys(uint vk, bool shift, bool altGr, bool capsLock, Span<char> buffer)
 		{
+			// Modifier transitions carry no text and must not consume a pending dead key.
+			if (KeyboardUtils.IsModifierVk(vk) || vk == VK_CAPITAL)
+				return 0;
+
 			lock (mapperLock)
 			{
 				if (!vkToMacKeyCode.TryGetValue(vk, out var keyCode))

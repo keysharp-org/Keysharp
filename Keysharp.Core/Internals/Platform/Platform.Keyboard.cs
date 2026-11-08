@@ -106,10 +106,18 @@ namespace Keysharp.Internals
 
 				caps = lpKeyState.Length > VirtualKeys.VK_CAPITAL && (lpKeyState[VirtualKeys.VK_CAPITAL] & 0x01) != 0;
 
+#if OSX
+				// Both Option keys select the same character/dead-key layer on macOS.
+				altGr =
+					(lpKeyState.Length > VirtualKeys.VK_MENU && (lpKeyState[VirtualKeys.VK_MENU] & 0x80) != 0) ||
+					(lpKeyState.Length > VirtualKeys.VK_LMENU && (lpKeyState[VirtualKeys.VK_LMENU] & 0x80) != 0) ||
+					(lpKeyState.Length > VirtualKeys.VK_RMENU && (lpKeyState[VirtualKeys.VK_RMENU] & 0x80) != 0);
+#else
 				altGr =
 					(lpKeyState.Length > VirtualKeys.VK_RMENU && (lpKeyState[VirtualKeys.VK_RMENU] & 0x80) != 0) ||
 					(lpKeyState.Length > VirtualKeys.VK_RCONTROL && (lpKeyState[VirtualKeys.VK_RCONTROL] & 0x80) != 0
 					 && lpKeyState.Length > VirtualKeys.VK_LMENU && (lpKeyState[VirtualKeys.VK_LMENU] & 0x80) != 0);
+#endif
 			}
 
 			/// <summary>

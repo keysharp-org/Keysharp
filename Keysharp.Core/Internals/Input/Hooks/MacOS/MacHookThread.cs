@@ -454,6 +454,7 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 
 		internal void OnNativeTapReenabled()
 		{
+			KeyCodes.ResetDeadKeyState();
 			keyboardState.Resync();
 			mouseStream.ResyncButtons();
 			mouseStream.ForgetHardwareMoves();
@@ -535,6 +536,7 @@ namespace Keysharp.Internals.Input.Hooks.MacOS
 			// This is the only synchronous UI/layout preparation point. Once the native tap starts,
 			// key mapping is snapshot-only and can never wait on the UI thread.
 			KeyCodes.PrepareForInputHook(script);
+			KeyCodes.ResetDeadKeyState();
 			keyboardState.Resync();
 			mouseStream.ResyncButtons();
 			mouseStream.ForgetHardwareMoves();

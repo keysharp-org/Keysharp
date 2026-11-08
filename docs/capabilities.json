@@ -7229,7 +7229,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Whether typed characters should reflect active modifier changes."
+                     "notes":  "Controls transcription of shortcut combinations (M). On macOS, Option and Shift+Option do not require M."
                  },
                  {
                      "category":  "Input/Automation",

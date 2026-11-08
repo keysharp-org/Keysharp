@@ -811,7 +811,9 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ `Clone() => Buffer`: Returns a buffer of the same class and size holding a copy of the bytes, where AutoHotkey raises a `TypeError`.
 	+ `Func`:
 		+ `IsClosure`, `IsMethod` and `Params` expose Keysharp function metadata.
-	+ `InputHook.KeyOpt("{All}", ...)` affects keyboard input only. Keysharp adds composable `{Keyboard}` and `{Mouse}` (buttons and wheels); mouse movement uses `VisibleMouseMove`.
+	+ `InputHook`:
+		+ `KeyOpt("{All}", ...)` affects keyboard input only. Keysharp adds composable `{Keyboard}` and `{Mouse}` (buttons and wheels); mouse movement uses `VisibleMouseMove`.
+		+ On macOS, either Option key, alone or with Shift, can produce text without `M`; combinations with Control or Command require `M`.
 	+ `Map`:
 		+ Float keys remain Float keys in both compatibility modes, distinct from Integer and String keys: `1`, `1.0` and `"1.0"` can identify separate entries. AutoHotkey converts Float keys to String in v2.0 mode and rejects them with `TypeError` in v2.1-alpha.35's v2.1 mode.
 		+ `ToString() => String`: Returns the map as `[key: value, ...]`, its keys and values formatted as `Array.ToString()` formats elements.
