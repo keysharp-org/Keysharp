@@ -32,7 +32,7 @@ public partial class MiscTests : TestRunner
 		// A thread which has not set a mode starts at 0, which has to be v2.0.
 		Assert.That(Level("2.0.0"), Is.Zero);
 		Assert.That(Level(""), Is.Zero);
-		Assert.That(Level("2.1-alpha.37"), Is.EqualTo(CompatibilityVersions.Level(2, 1)));
+		Assert.That(Level("2.1-alpha.38"), Is.EqualTo(CompatibilityVersions.Level(2, 1)));
 		Assert.That(Level("2.1.0"), Is.GreaterThan(Level("2.0.0")));
 		Assert.That(Level("2.2"), Is.GreaterThan(Level("2.1")));
 		Assert.That(Level("3.0"), Is.GreaterThan(Level("2.65535")));
