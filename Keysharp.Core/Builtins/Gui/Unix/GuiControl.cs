@@ -385,8 +385,9 @@ namespace Keysharp.Builtins
 			[RequiresUIThread]
 			public object Move(object x = null, object y = null, object width = null, object height = null)
 			{
-				if (_control == null)
-					return Errors.ErrorOccurred("GUI control is no longer available.");
+				//Eto does not dispose a closed window, so a destroyed Gui is told apart by its cleared handle.
+				if (_control == null || ParentForm is not { IsDisposed: false, CachedHwnd: not 0 })
+					return Errors.ErrorOccurred("The control is destroyed.");
 
 				var location = _control.GetLocation();
 				var size = _control.GetSize();

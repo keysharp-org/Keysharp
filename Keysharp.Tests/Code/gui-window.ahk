@@ -208,6 +208,22 @@ titled := Gui(, "")
 AssertEq(titled.Title, "", A_LineNumber)
 titled.Destroy()
 
+; Moving a control of a destroyed Gui raises an error, as in AutoHotkey.
+movedGui := Gui()
+movedButton := movedGui.AddButton()
+movedGui.Show("NA")
+movedGui.Destroy()
+Throws(() => movedButton.Move(10, 10), A_LineNumber, Error)
+
+#if LINUX || OSX
+; A Gui destroyed before it was ever shown has no window afterwards, and its controls are destroyed with it.
+hiddenGui := Gui()
+hiddenButton := hiddenGui.AddButton()
+hiddenGui.Destroy()
+Throws(() => hiddenGui.Hwnd, A_LineNumber, Error)
+Throws(() => hiddenButton.Hwnd, A_LineNumber, Error)
+#endif
+
 ; A control type's own members live on its class, as in AutoHotkey, so another type has none of them.
 lists := Gui()
 okButton := lists.Add("Button", , "OK")
