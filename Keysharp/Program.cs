@@ -367,7 +367,7 @@ public static class Program
 			var program = ScriptExecutionState.Assembly.GetType($"{Keywords.MainNamespaceName}.{Keywords.MainClassName}");
 			var main = program.GetMethod("Main");
 #if DEBUG
-			Ks.OutputDebugLine("Running compiled code (daemon).");
+			_ = Keysharp.Internals.Diagnostics.Debug.WriteLine("Running compiled code (daemon).");
 #endif
 			_ = main.Invoke(null, [scriptArgs]).TryCoerceInt(out var exitCode);
 			Environment.ExitCode = exitCode;

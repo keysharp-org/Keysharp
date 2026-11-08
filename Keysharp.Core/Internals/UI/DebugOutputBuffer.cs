@@ -20,7 +20,15 @@ namespace Keysharp.Internals.UI
 		// Showing the Debug tab refreshes text accumulated while the window was hidden.
 		private bool windowVisible;
 
-		internal void Append(string text, bool clear)
+		internal void Append(string text) => Update(text, false);
+
+		/// <summary>
+		/// Empties the buffer at once, from any thread, so text appended afterwards survives; the tab follows on the
+		/// UI thread.
+		/// </summary>
+		internal void Clear() => Update("", true);
+
+		private void Update(string text, bool clear)
 		{
 			bool post;
 
@@ -46,18 +54,6 @@ namespace Keysharp.Internals.UI
 
 			if (post)
 				script.PostToUIThread(Refresh);
-		}
-
-		/// <summary>On the UI thread, empties the buffer and the tab.</summary>
-		internal void Clear()
-		{
-			lock (gate)
-			{
-				buffer.Clear();
-				shown = -1;
-			}
-
-			Refresh();
 		}
 
 		/// <summary>

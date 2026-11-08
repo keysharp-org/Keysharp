@@ -27,10 +27,12 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Sends a string followed by a newline to the debugger (if any) for display.
+		/// Empties the debug tab in the main window. Text already sent to a debugger is unaffected.
 		/// </summary>
-		/// <param name="text">The text to send to the debugger for display.</param>
-		/// <param name="clear">True to first clear the display, else false to append.</param>
-		public static object OutputDebugLine(object text, object clear = null) => Diagnostics.Debug.WriteLine(text, clear);
+		public static object ClearDebug()
+		{
+			Script.TheScript.DebugOutput.Clear();
+			return DefaultObject;
+		}
 	}
 }

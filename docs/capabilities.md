@@ -358,6 +358,7 @@ Status legend:
 | Catch | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Handles an exception thrown by try/throw. |
 | Ceil() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the ceiling value of a number, rounding away from zero for positive numbers, and toward zero for negative numbers. |
 | Chr | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the string (usually a single character) corresponding to the character code indicated by the specified number. |
+| ClearDebug() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Empties the debug tab of the script's main window. |
 | Click() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Clicks, holds, releases, wheels, or moves the mouse through the platform input backend and requires InputControl. Wayland requires a supported compositor input backend or keysharp-input; macOS maps InputControl to Accessibility. |
 | Clipboard | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Text, image, URI, custom MIME, wait, and change-notification operations use the native platform clipboard backends. See ClipboardAll() for the Wayland multi-format restore limitation. |
 | Clipboard.All | 🟢 Full | 🟢 Full | 🟡 Partial | ⚪ Unknown | The ClipboardAll() save/restore pair as one get/set property. Inherits ClipboardAll()'s Wayland single-representation limitation. |
@@ -909,8 +910,7 @@ Status legend:
 | or | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical OR operator. |
 | Ord() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the code point of the first character in a string: a surrogate pair is decoded, and a lone surrogate is returned as it is. |
 | OSError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. OSError(Code) records the code as its own Number property and uses the operating system's message; a nonnumeric string is the Message and leaves Number unset. Without an argument, it uses the last operating-system error. |
-| OutputDebug() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The OutputDebug function sends a string to the debugger (if any) for display. Ks.OutputDebugLine additionally takes a flag to clear the debug output. |
-| OutputDebugLine() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes a debug line with newline terminator. |
+| OutputDebug() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The OutputDebug function sends a string to the debugger (if any) for display, and appends it to the debug tab of the script's main window. |
 | Overlay | 🟢 Full | 🟢 Full | 🟡 Partial | ⚪ Unknown | Click-through, always-on-top overlay used by Highlight and ToolTip. Draw through Canvas and publish with Present; SetImage copies an image and Redraw builds a replacement canvas. Pointer event callbacks are owned by the registering real thread, as for Gui.OnEvent, and require ClickThrough := false. On GNOME/Cinnamon a click-through overlay is drawn inside the shell, so it is not a window and takes no taskbar entry; frames are transferred as bounded PNG data. Runtime-tested on Windows, covered by automated backing tests on Linux, and unverified on macOS. |
 | Parser and runtime execution | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Script execution is provided by Keysharp.Core. Source parsing is an optional Roslyn-free component; lowering and C# compilation are supplied by the optional compiler component. |
 | Pause() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Pause function pauses the script's current thread or sets the pause state of the underlying thread. |
@@ -987,7 +987,7 @@ Status legend:
 | SetTitleMatchMode() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The SetTitleMatchMode function sets the matching behavior of the WinTitle parameter in built-in functions such as WinWait. |
 | SetWinDelay() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The SetWinDelay function sets the delay that will occur after each windowing function, such as WinActivate. On macOS, -1 also lets minimizing or restoring a foreign window return before its animation ends. |
 | SetWorkingDir() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Changes the script's current working directory. |
-| ShowDebug() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Shows or toggles debug UI/log output. |
+| ShowDebug() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Shows the main window and focuses its debug tab. |
 | Shutdown() | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | Shuts down, restarts, or logs off the system. macOS uses System Events; its normal actions are implemented, but AHK's force flag has no direct equivalent and is ignored with a diagnostic. |
 | Sin() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the hyperbolic sine of a number. |
 | Sinh() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the hyperbolic sine of a number. |

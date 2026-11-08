@@ -121,7 +121,7 @@ public class GuiTests : TestRunner
 #endif
 			window.SetPauseState(true);
 			window.SetSuspendState(true);
-			s.DebugOutput.Append("Buffered before display", false);
+			s.DebugOutput.Append("Buffered before display");
 			Assert.That(handle, Is.Not.EqualTo(nint.Zero));
 			Assert.AreSame(s.mainWindowGui, GuiHelper.GuiFromHwnd(handle.ToInt64()));
 			Assert.IsFalse(window.Visible);

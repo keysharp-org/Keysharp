@@ -3676,6 +3676,16 @@
                      "tested-by":  "string-chr.ahk"
                  },
                  {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "ClearDebug()",
+                     "syntax":  "",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Empties the debug tab of the script's main window."
+                 },
+                 {
                      "category":  "Input/Automation",
                      "feature":  "Click()",
                      "syntax":  "",
@@ -9279,18 +9289,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The OutputDebug function sends a string to the debugger (if any) for display. Ks.OutputDebugLine additionally takes a flag to clear the debug output.",
+                     "notes":  "The OutputDebug function sends a string to the debugger (if any) for display, and appends it to the debug tab of the script's main window.",
                      "tested-by":  "Gui/guitest.ks"
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "OutputDebugLine()",
-                     "syntax":  "",
-                     "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "Writes a debug line with newline terminator."
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -10333,7 +10333,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Shows or toggles debug UI/log output.",
+                     "notes":  "Shows the main window and focuses its debug tab.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {

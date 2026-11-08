@@ -169,7 +169,7 @@ namespace Keysharp.Builtins
 					{
 						try
 						{
-							//OutputDebugLine($"GetVars(): getting prop: {prop.Name}");
+							//Diagnostics.Debug.WriteLine($"GetVars(): getting prop: {prop.Name}");
 							var val = prop.GetValue(null);
 							PropPrinter.Print(val, prop.Name, sb);
 						}
@@ -186,7 +186,7 @@ namespace Keysharp.Builtins
 
 			var s = sb.ToString();
 			//sw.Stop();
-			//OutputDebugLine($"GetVars(): took {sw.Elapsed.TotalMilliseconds}ms.");
+			//Diagnostics.Debug.WriteLine($"GetVars(): took {sw.Elapsed.TotalMilliseconds}ms.");
 			return s;
 		}
 
@@ -280,12 +280,11 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Internal helper to send a string to the debugger (if any) for display.
-		/// Used by OutputDebug and OutputDebugLine.
+		/// Sends a string to the debugger (if any) and to the main window's Debug tab, for both OutputDebug and
+		/// the runtime's own diagnostics.
 		/// </summary>
 		/// <param name="text">The text to send to the debugger for display.</param>
-		/// <param name="clear">True to first clear the display, else false to append.</param>
-		internal static object OutputDebugCommon(string text, bool clear = false)
+		internal static object OutputDebugCommon(string text)
 		{
 			if (text == null)
 				return DefaultObject;
@@ -298,7 +297,7 @@ namespace Keysharp.Builtins
 				WindowsAPI.OutputDebugString(text);
 #endif
 			// Before any Script exists (launcher and compiler diagnostics) there is no Debug tab to keep it for.
-			Script.TheScript?.DebugOutput.Append(text, clear);
+			Script.TheScript?.DebugOutput.Append(text);
 			return DefaultObject;
 		}
 

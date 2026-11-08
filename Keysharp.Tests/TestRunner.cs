@@ -165,7 +165,7 @@ public abstract class TestRunner
 
 		if (arr == null)
 		{
-			_ = Ks.OutputDebugLine(code);
+			_ = Keysharp.Internals.Diagnostics.Debug.WriteLine(code);
 			return code;
 		}
 
@@ -238,7 +238,7 @@ public abstract class TestRunner
 				_ = error.AppendLine();
 				_ = error.AppendLine(ex.StackTrace);
 				var msg = error.ToString();
-				_ = Ks.OutputDebugLine(msg);
+				_ = Keysharp.Internals.Diagnostics.Debug.WriteLine(msg);
 				Console.Write("fail");
 				Assert.Fail(msg);
 			}

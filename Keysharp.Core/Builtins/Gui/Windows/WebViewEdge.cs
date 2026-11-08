@@ -175,7 +175,7 @@ namespace Keysharp.Builtins
 				return new KeysharpEdgeWebView(addStyle, addExStyle, removeStyle, removeExStyle);
 
 			//Falling back is not an error, but a script author wondering which engine they got wants the reason.
-			_ = Ks.OutputDebugLine($"WebView: using the Internet Explorer backend because {EdgeWebViewInterop.Unavailable}.");
+			_ = Diagnostics.Debug.WriteLine($"WebView: using the Internet Explorer backend because {EdgeWebViewInterop.Unavailable}.");
 			return null;
 		}
 

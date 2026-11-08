@@ -731,7 +731,7 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ Platform notes: on a Wayland session driven through a shell extension (Cinnamon/Muffin) the compositor's selection source can advertise only one type, so `Clipboard.Set` and `ClipboardAll` restore a single, most-useful representation rather than every format.
 * New debugging functions:
 	+ `ShowDebug()`: Shows the main window and focuses the debug output tab.
-	+ `OutputDebugLine()`: The same as `OutputDebug()` but appends a linebreak at the end of the string.
+	+ `ClearDebug()`: Empties the debug output tab. Text already sent to a debugger is unaffected.
 * New `Crypt` class, holding hashing, key derivation, symmetric encryption and cryptographically secure random values (`#Import "Ks" { Crypt }`):
 	+ A String or `StringBuffer` is taken as its **UTF-8** bytes, so a digest is the one any other tool prints for the same text. Pass an `Encoding` — the names `A_FileEncoding` takes — to use a different one, and note that a name which cannot be resolved raises rather than falling back. A `Buffer` is used as it stands; an open `File` is accepted by anything that hashes, but not by `Crypt.Encrypt`.
 	+ A digest is returned as uppercase hexadecimal; compare digests case-insensitively, since the tool a checksum came from may print it in lowercase.
