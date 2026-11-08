@@ -446,7 +446,7 @@ namespace Keysharp.Builtins
 				if (!options.CoerceString(out var optionText))
 					return DefaultObject;
 
-				var opts = g.ParseOpt(typename, _control.Text, optionText);
+				var opts = g.ParseOpt(typename.ToLowerInvariant(), _control.Text, optionText);
 
 				if (opts.dpiresize.HasValue)
 					dpiResize = opts.dpiresize.Value;
@@ -494,7 +494,7 @@ namespace Keysharp.Builtins
 							cb.AutoComplete = opts.sort.Value;
 					}
 
-					if (typename != Keyword_DropDownList && opts.cmbsimple.HasValue)
+					if (this is not DDL && opts.cmbsimple.HasValue)
 						cb.DropDownStyle = opts.cmbsimple.IsTrue() ? ComboBoxStyle.Simple : ComboBoxStyle.DropDown;
 				}
 				else if (_control is KeysharpTextBox txt)

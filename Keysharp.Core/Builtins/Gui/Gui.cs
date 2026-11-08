@@ -1579,6 +1579,9 @@ namespace Keysharp.Builtins
 				return Errors.ValueErrorOccurred($"Invalid control type: {type}. Expected {controlTypes}.");
 			}
 
+			//Type is AutoHotkey's name for the control, which its class is named after; Tab2 and Tab3 share Tab's class.
+			holder.typename = type switch { Keyword_Tab2 => "Tab2", Keyword_Tab3 => "Tab3", _ => holder.GetType().Name };
+
 			if (opts.name != null)
 				ctrl.Name = opts.name;
 
@@ -2432,9 +2435,9 @@ namespace Keysharp.Builtins
 		public object AddTab(object options = null, object text = null) => Add(Keyword_Tab, options, text);
 		// Just for compatibility
 		[RequiresUIThread]
-		public object AddTab2(object options = null, object text = null) => Add(Keyword_Tab, options, text);
+		public object AddTab2(object options = null, object text = null) => Add(Keyword_Tab2, options, text);
 		[RequiresUIThread]
-		public object AddTab3(object options = null, object text = null) => Add(Keyword_Tab, options, text);
+		public object AddTab3(object options = null, object text = null) => Add(Keyword_Tab3, options, text);
 
 		[RequiresUIThread]
 		public object AddText(object options = null, object text = null) => Add(Keyword_Text, options, text);

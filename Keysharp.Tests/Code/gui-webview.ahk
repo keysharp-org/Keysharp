@@ -18,7 +18,7 @@ catch {
 }
 
 AssertEq(Type(wv), "Gui.WebView", A_LineNumber)
-Assert(wv.Type = "webview", A_LineNumber)   ; Type echoes the caller's spelling, so match it case-insensitively
+AssertEq(wv.Type, "WebView", A_LineNumber)
 
 ; Which engine is behind it depends on the platform and, on Windows, on whether the script asked for the
 ; WebView2 package. All this can check is that it named one of them.

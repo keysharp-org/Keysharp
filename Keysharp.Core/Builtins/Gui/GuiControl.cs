@@ -14,7 +14,7 @@ namespace Keysharp.Builtins
 		{
 			protected Control() { }
 
-			private string typename;
+			internal string typename;
 			private WeakReference<Gui> gui;
 			private readonly CallbackRegistry clickHandlers = new(CallbackStop.NonEmpty, "Gui");
 			private readonly CallbackRegistry doubleClickHandlers = new(CallbackStop.NonEmpty, "Gui");

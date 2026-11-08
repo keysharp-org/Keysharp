@@ -680,6 +680,18 @@ AssertEq(themeSlider.Type, "Slider", A_LineNumber)
 #endif
 themeGui.Destroy()
 
+; Type is AutoHotkey's name for the control type, whichever spelling was given to Add, and Opt still applies the
+; options of that type.
+typeGui := Gui()
+typeGui.AddEdit()
+typeUpDown := typeGui.Add("UPDOWN")
+AssertEq(typeUpDown.Type "|" typeGui.AddSlider().Type "|" typeGui.Add("picture").Type "|" typeGui.AddDDL().Type "|" typeGui.AddTab2().Type
+	, "UpDown|Slider|Pic|DDL|Tab2", A_LineNumber)
+typeUpDown.Opt("Range1-5")
+typeUpDown.Value := 9
+AssertEq(typeUpDown.Value, 5, A_LineNumber)
+typeGui.Destroy()
+
 ; Submit stores a ListBox's text, or its position with AltSubmit. A radio group with one named button stores the
 ; checked position, one with several names stores 1 or 0 per button, and the controls after a group are submitted.
 ; A multi-line Edit and a Hotkey are submitted as well.
