@@ -5963,7 +5963,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Adds a control to the GUI. The ActiveX and Custom control types are Win32-only and raise a ValueError on Linux and macOS. A ListView created with a view option other than +Report (+Icon, +IconSmall, +Tile, +List) is not implemented there either. Adding a WebView on Linux fails unless WebKitGTK is installed. Windows supports -Theme for native-painted controls; other platforms ignore it.",
+                     "notes":  "Adds a control to the GUI. The ActiveX and Custom control types are Win32-only and raise a ValueError on Linux and macOS. A ListView created with a view option other than +Report (+Icon, +IconSmall, +Tile, +List) is not implemented there either. Adding a WebView on Linux fails unless WebKitGTK is installed. Windows supports -Theme for native-painted controls; other platforms ignore it. UpDown attaches to a preceding Edit; horizontal arrows are Windows-only.",
                      "tested-by":  "ControlTests/control_add_delete_item.ahk"
                  },
                  {

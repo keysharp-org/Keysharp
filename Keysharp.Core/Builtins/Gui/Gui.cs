@@ -773,15 +773,42 @@ namespace Keysharp.Builtins
 
 				case Keyword_UpDown:
 				{
-					//This is done differently than how the documentation says.
-					//There is no such thing as a "buddy". rather, the numeric up down control is entirely self
-					//contained. This is because the buddy style control was a remnant of MFC, and C# doesn't support such a control.
-					//Also, there is no way to do "wrapping". Users will need to program this themselves.
-					//16 has no effect, no way to make it vertical.
-					//Horz has no effect.
-					//Min and max can't be swapped.
-					//Increment is made easier to set with the new "Increment" option.
-					//Hex is made easier with the new "Hex" option.
+					//AutoHotkey gives an UpDown UDS_AUTOBUDDY (0x10) unless -16 or Horz takes it away, so it attaches to
+					//the control added before it. Only an Edit is attached to here: after anything else, or without
+					//0x10, the UpDown is a self-contained number box instead of AutoHotkey's bare arrows.
+					const int UDS_WRAP = 0x01, UDS_ALIGNRIGHT = 0x04, UDS_ALIGNLEFT = 0x08, UDS_AUTOBUDDY = 0x10, UDS_HORZ = 0x40;
+					var autoBuddy = (opts.remstyle & UDS_AUTOBUDDY) == 0 && (!opts.nudhorz || (opts.addstyle & UDS_AUTOBUDDY) != 0);
+
+					if (autoBuddy && LastControl is Forms.Control buddy && buddy.GetGuiControl() is Edit)
+					{
+						if (opts.wordwrap == true)
+							opts.addstyle |= UDS_WRAP;
+
+						if (opts.nudhorz)
+							opts.addstyle |= UDS_HORZ;
+
+						if (opts.halign == GuiOptions.HorizontalAlignment.Left)
+						{
+							opts.addstyle |= UDS_ALIGNLEFT;
+							opts.remstyle |= UDS_ALIGNRIGHT;
+						}
+
+						var upDown = new KeysharpUpDown(buddy, opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
+						{
+							Increment = opts.nudinc ?? 0,
+							Hexadecimal = opts.hex.IsTrue()
+						};
+						//AutoHotkey's default range is 0-100, and the starting position is the text as a number, 0 when
+						//there is none, which then replaces whatever the Edit held.
+						upDown.SetRange(opts.nudlow ?? 0, opts.nudhigh ?? 100);
+						_ = text.TryCoerceInt(out var start);
+						upDown.Value = start;
+						ctrl = upDown;
+						holder = new UpDown(this, ctrl, typeo);
+						break;
+					}
+
+					//The number box has no Wrap, Horz or reversed range. Increment and Hex are Keysharp's own options.
 					var nud = new KeysharpNumericUpDown(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 					{
 						Increment = opts.nudinc ?? 1,
@@ -1567,9 +1594,9 @@ namespace Keysharp.Builtins
 				Reflections.SafeSetProperty(ctrl, "AutoSize", opts.autosize.Value);
 
 			//A WebView took its text as the URL to navigate to above, and the WinForms browser throws outright
-			//when Text is assigned.
+			//when Text is assigned. An attached UpDown took its text as the starting position.
 			if (textStr != null && ctrl is not KeysharpDateTimePicker && ctrl is not HotkeyBox
-			 && ctrl is not KeysharpLinkLabel && ctrl is not IWebViewBackend)
+			 && ctrl is not KeysharpLinkLabel && ctrl is not IWebViewBackend && ctrl is not KeysharpUpDown)
 				ctrl.Text = textStr;
 
 			if (ctrl is not KeysharpStatusStrip)//Don't want status strip to have a margin, so it can be placed at the bottom of the form when autosize is true, and have it look exactly like it would if it were docked when autosize is false.
@@ -1689,6 +1716,17 @@ namespace Keysharp.Builtins
 			{
 				var lcLoc = lastControl.GetLocation();
 				var lcSize = lastControl.GetSize();
+
+				//An attached UpDown and its Edit are placed against as one control, keeping the UpDown's top and
+				//height, as in AutoHotkey.
+				if (lastControl is KeysharpUpDown { Buddy: { } lcBuddy })
+				{
+					var buddyLeft = lcBuddy.GetLocation().X;
+					var left = Math.Min(lcLoc.X, buddyLeft);
+					lcSize = new Size(Math.Max(lcLoc.X + lcSize.Width, buddyLeft + lcBuddy.GetSize().Width) - left, lcSize.Height);
+					lcLoc = new Point(left, lcLoc.Y);
+				}
+
 				lcLeft = lcLoc.X;
 				lcTop = lcLoc.Y;
 				lcRight = lcLoc.X + lcSize.Width;
@@ -1711,8 +1749,6 @@ namespace Keysharp.Builtins
 			}
 			else if (ctrl is KeysharpProgressBar kpb && ((kpb.AddStyle & 0x04) == 0x04))
 				w = fontpixels * 2;
-			else if (ctrl is KeysharpNumericUpDown)
-				w = lcWidth;
 			else if (ctrl is KeysharpComboBox || ctrl is HotkeyBox || ctrl is KeysharpListBox || ctrl is KeysharpNumericUpDown || ctrl is KeysharpProgressBar || ctrl is KeysharpTextBox || ctrl is KeysharpPasswordBox)
 				w = fontpixels * 15;
 				else if (ctrl is KeysharpTrackBar trk)
@@ -2078,10 +2114,6 @@ namespace Keysharp.Builtins
 					xoffset = section.Value.Right + form.Margin.Left;
 				}
 			}
-			else if (xoffset == int.MinValue && yoffset == int.MinValue && ctrl is KeysharpNumericUpDown)
-			{
-				xoffset = lcLeft; yoffset = lcTop;
-			}
 
 			loc = new Point(Convert.ToInt32(xoffset), Convert.ToInt32(yoffset));
 
@@ -2214,6 +2246,23 @@ namespace Keysharp.Builtins
 #if !WINDOWS
 			Keysharp.Internals.Window.Unix.EtoMessageSource.Attach(ctrl);
 #endif
+
+			if (ctrl is KeysharpUpDown attachedUpDown)
+			{
+				//As in AutoHotkey, writing the starting position into the Edit raises no Change event for it.
+				var buddyHolder = attachedUpDown.Buddy.GetGuiControl();
+				var wasActive = buddyHolder.eventHandlerActive;
+				buddyHolder.eventHandlerActive = false;
+
+				try
+				{
+					attachedUpDown.Attach();
+				}
+				finally
+				{
+					buddyHolder.eventHandlerActive = wasActive;
+				}
+			}
 
 #if WINDOWS
 			if (ctrl is KeysharpActiveX kax)
@@ -3622,7 +3671,7 @@ namespace Keysharp.Builtins
 			{
 				if (control.Name != "" && control.GetGuiControl() is Gui.Control guictrl)
 				{
-					if (control is KeysharpTextBox || control is KeysharpPasswordBox || control is KeysharpDateTimePicker || control is KeysharpMonthCalendar)//Just use value because it's the same and consolidates the formatting in one place, despite being slightly slower.
+					if (control is KeysharpTextBox || control is KeysharpPasswordBox || control is KeysharpDateTimePicker || control is KeysharpMonthCalendar || control is KeysharpUpDown)//Just use value because it's the same and consolidates the formatting in one place, despite being slightly slower.
 						result.DefinePropInternal(control.Name, new OwnPropsDesc(guictrl.Value));
 					else if (control is KeysharpRichEdit)
 						result.DefinePropInternal(control.Name,  new OwnPropsDesc(!guictrl.AltSubmit || guictrl is not RichEdit re ? guictrl.Value : re.RichText));

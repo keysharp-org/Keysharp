@@ -1473,9 +1473,8 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ On Wayland, ordinary dialogs and utility windows exposed by keysharp-desktop can be found and moved with window functions. This includes native `MsgBox`, `FileSelect` and `DirSelect` windows when the compositor exposes them; those functions have no position options. The GNOME/Cinnamon provider rejects independent movement of attached modal dialogs with `UnsupportedError`. Provider tests cover this restriction; live GNOME/Cinnamon verification remains pending.
 		+ Tooltips do not automatically disappear when clicking on them.
 		+ Double click handlers for buttons are not supported.
-		+ UpDown controls with paired buddy controls are not supported. Keysharp just uses the regular NumericUpDown control in C#.
-			+ The options `16`, `Horz` and `Wrap` have no effect.
-			+ The min and max values cannot be swapped.
+		+ UpDown attaches only to Edit controls; other predecessors or `-16` produce a standalone number box. `Horz` is Windows-only.
+			+ Standalone UpDown controls do not support `Wrap` or reversed ranges.
 		+ On Windows, `-Theme` removes visual styles from controls Windows draws itself, while `Button`, `CheckBox`, `Radio` and `GroupBox` keep their themed look. On Linux and macOS the option is accepted and ignored.
 		+ `Gui.Flash()` sets the urgency hint on X11 and bounces the Dock icon once on macOS; it has no effect on Wayland.
 		+ For slider events, the second parameter passed to the event handler will always be `0` because it's not possible to retrieve the method by which the slider was moved in C#.

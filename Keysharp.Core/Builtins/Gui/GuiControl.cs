@@ -706,7 +706,7 @@ namespace Keysharp.Builtins
 
 			internal void Nud_ValueChanged(object sender, EventArgs e)
 			{
-				if (eventHandlerActive && _control is KeysharpNumericUpDown)
+				if (eventHandlerActive && _control is KeysharpNumericUpDown or KeysharpUpDown)
 					changeHandlers?.InvokeEventHandlers(this, 0L);
 			}
 

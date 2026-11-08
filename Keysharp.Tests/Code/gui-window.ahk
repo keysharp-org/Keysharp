@@ -649,6 +649,25 @@ _OwnWindowHandles(Title, Count) {
 	return handles
 }
 #endif
+; An UpDown added right after an Edit attaches to it, as in AutoHotkey: its starting position, kept inside the
+; range, replaces the Edit's text, and the number typed into the Edit is the UpDown's value. As the Windows
+; control reads it, empty text is 0 and a number outside the range is clamped to it.
+buddyGui := Gui()
+buddyEdit := buddyGui.AddEdit("w80", "abc")
+buddyUpDown := buddyGui.AddUpDown("Range1-10", 20)
+startShown := buddyEdit.Value
+buddyEdit.Value := "3"
+AssertEq(startShown "|" buddyUpDown.Value, "10|3", A_LineNumber)
+buddyEdit.Value := ""
+emptyRead := buddyUpDown.Value
+buddyEdit.Value := "50"
+AssertEq(emptyRead "|" buddyUpDown.Value, "1|10", A_LineNumber)
+; Changing the Edit's casing re-creates its window on Windows, which must not detach the UpDown.
+buddyEdit.Opt("Uppercase")
+buddyUpDown.Value := 5
+AssertEq(buddyEdit.Value, "5", A_LineNumber)
+buddyGui.Destroy()
+
 ; Theme is a control option as well as a window one, and the window's sets the default for controls added after
 ; it. On Windows -Theme takes the visual style off the control; elsewhere it is accepted and ignored.
 themeGui := Gui("-Theme")

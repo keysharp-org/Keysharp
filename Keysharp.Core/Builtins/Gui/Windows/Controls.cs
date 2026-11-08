@@ -729,6 +729,203 @@ namespace Keysharp.Builtins
 	}
 
 	/// <summary>
+	/// The native up-down control an UpDown becomes when it attaches to the Edit added just before it. With
+	/// UDS_SETBUDDYINT its position is the number in the Edit, so the two always agree.
+	/// </summary>
+	public class KeysharpUpDown : Control
+	{
+		private const int UDS_SETBUDDYINT = 0x02, UDS_ALIGNRIGHT = 0x04, UDS_AUTOBUDDY = 0x10, UDS_ARROWKEYS = 0x20;
+		private const uint UDM_SETBUDDY = 0x0400 + 105, UDM_SETACCEL = 0x0400 + 107, UDM_SETBASE = 0x0400 + 109;
+		private const uint UDM_SETRANGE32 = 0x0400 + 111, UDM_SETPOS32 = 0x0400 + 113, UDM_GETPOS32 = 0x0400 + 114;
+		private readonly int addStyle, removeStyle;
+		private readonly int addExStyle, removeExStyle;
+		private bool attached, hexadecimal;
+		private int minimum, maximum = 100, increment, position;
+
+		internal Control Buddy { get; }
+
+		public event EventHandler ValueChanged;
+
+		protected override CreateParams CreateParams
+		{
+			get
+			{
+				var cp = base.CreateParams;
+				cp.ClassName = "msctls_updown32";
+				cp.Style |= UDS_SETBUDDYINT | UDS_ALIGNRIGHT | UDS_ARROWKEYS | addStyle;
+				cp.Style &= ~removeStyle;
+				//The buddy is linked by message, since UDS_AUTOBUDDY takes whichever window precedes this one in the
+				//z-order.
+				cp.Style &= ~UDS_AUTOBUDDY;
+				cp.ExStyle |= addExStyle;
+				cp.ExStyle &= ~removeExStyle;
+				return cp;
+			}
+		}
+
+		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+		internal bool Hexadecimal
+		{
+			get => hexadecimal;
+			set
+			{
+				hexadecimal = value;
+
+				if (attached)
+					_ = Send(UDM_SETBASE, value ? 16 : 10, 0);
+			}
+		}
+
+		/// <summary>
+		/// The step of one arrow click, or 0 for the control's own accelerating default.
+		/// </summary>
+		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+		internal int Increment
+		{
+			get => increment;
+			set
+			{
+				increment = value;
+
+				if (attached)
+					SetAccel();
+			}
+		}
+
+		internal int Minimum => minimum;
+		internal int Maximum => maximum;
+
+		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+		internal int Value
+		{
+			get
+			{
+				if (attached && IsHandleCreated)
+					position = (int)Send(UDM_GETPOS32, 0, 0);
+
+				return position;
+			}
+			set
+			{
+				position = value;
+
+				//The control keeps the position inside the range and writes it to the Edit.
+				if (attached)
+					_ = Send(UDM_SETPOS32, 0, value);
+			}
+		}
+
+		static KeysharpUpDown()
+		{
+			var icce = new INITCOMMONCONTROLSEX
+			{
+				dwSize = (uint)Marshal.SizeOf<INITCOMMONCONTROLSEX>(),
+				dwICC = 0x10//ICC_UPDOWN_CLASS
+			};
+			_ = WindowsAPI.InitCommonControlsEx(in icce);
+		}
+
+		internal KeysharpUpDown(Control buddy, int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
+		{
+			Buddy = buddy;
+			addStyle = _addStyle;
+			addExStyle = _addExStyle;
+			removeStyle = _removeStyle;
+			removeExStyle = _removeExStyle;
+			TabStop = false;//The arrows act on the Edit, which keeps the focus.
+			SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint, false);//The control draws its own arrows.
+		}
+
+		/// <summary>
+		/// Links the control to its Edit, which moves it to the Edit's edge and narrows the Edit to make room, and
+		/// writes the starting position into the Edit. Called once the control has its parent and window.
+		/// </summary>
+		internal void Attach()
+		{
+			_ = Send(UDM_SETBUDDY, Buddy.Handle, 0);
+			attached = true;
+			ApplyState();
+			_ = Send(UDM_SETPOS32, 0, position);
+			//Changing the Edit's casing or alignment re-creates its window.
+			Buddy.HandleCreated += (_, _) => Relink();
+		}
+
+		internal void SetRange(int low, int high)
+		{
+			minimum = low;
+			maximum = high;
+
+			if (attached)
+				_ = Send(UDM_SETRANGE32, low, high);
+		}
+
+		protected override void OnHandleCreated(EventArgs e)
+		{
+			base.OnHandleCreated(e);
+
+			//The Edit's text kept the position while this window was re-created.
+			if (attached)
+			{
+				Relink();
+				ApplyState();
+			}
+		}
+
+		protected override void WndProc(ref Message m)
+		{
+			if (GuiHelper.CallMessageHandler(this, ref m))
+				return;
+
+			//The parent reflects the scroll message the control sends it for each arrow click or arrow key. As in
+			//AutoHotkey, only SB_THUMBPOSITION counts, since a mouse click is followed by SB_ENDSCROLL as well.
+			if ((m.Msg == WindowsAPI.WM_REFLECT + WindowsAPI.WM_VSCROLL || m.Msg == WindowsAPI.WM_REFLECT + WindowsAPI.WM_HSCROLL)
+					&& (m.WParam.ToInt64() & 0xFFFF) == WindowsAPI.SB_THUMBPOSITION)
+			{
+				ValueChanged?.Invoke(this, EventArgs.Empty);
+				return;
+			}
+
+			base.WndProc(ref m);
+		}
+
+		/// <summary>
+		/// Links a re-created window, of either control, to the other again. Both keep their bounds, since the
+		/// alignment would otherwise narrow the Edit a second time.
+		/// </summary>
+		private void Relink()
+		{
+			if (!IsHandleCreated || !Buddy.IsHandleCreated)
+				return;
+
+			var bounds = Bounds;
+			var buddyBounds = Buddy.Bounds;
+			_ = Send(UDM_SETBUDDY, Buddy.Handle, 0);
+			Buddy.Bounds = buddyBounds;
+			Bounds = bounds;
+		}
+
+		private void ApplyState()
+		{
+			_ = Send(UDM_SETRANGE32, minimum, maximum);
+			SetAccel();
+
+			if (hexadecimal)
+				_ = Send(UDM_SETBASE, 16, 0);
+		}
+
+		private unsafe void SetAccel()
+		{
+			if (increment <= 0)
+				return;
+
+			var accel = stackalloc uint[2] { 0, (uint)increment };//One UDACCEL: no delay, then this step.
+			_ = Send(UDM_SETACCEL, 1, (nint)accel);
+		}
+
+		private nint Send(uint msg, nint wParam, nint lParam) => WindowsAPI.SendMessage(Handle, msg, wParam, lParam);
+	}
+
+	/// <summary>
 	/// Takes the visual-style theme off a control, as AutoHotkey's -Theme does, so it draws in the classic style.
 	/// Controls that WinForms paints itself (Button, CheckBox, Radio, GroupBox) keep their themed look.
 	/// </summary>

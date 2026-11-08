@@ -1243,6 +1243,141 @@ namespace Keysharp.Builtins
 		}
 	}
 
+	/// <summary>
+	/// The stepper an UpDown becomes when it attaches to the Edit added just before it. The toolkit's stepper only
+	/// reports clicks, so the number lives in the Edit's text, where UDS_SETBUDDYINT keeps it on Windows.
+	/// </summary>
+	public class KeysharpUpDown : Stepper
+	{
+		private const int UDS_WRAP = 0x01, UDS_ALIGNLEFT = 0x08, UDS_NOTHOUSANDS = 0x80;
+		private readonly int style;
+		private bool attached;
+		private int minimum, maximum = 100, position;
+
+		internal Forms.Control Buddy { get; }
+		internal bool Hexadecimal { get; set; }
+
+		/// <summary>
+		/// The step of one arrow click, or 0 for a step of one.
+		/// </summary>
+		internal int Increment { get; set; }
+
+		internal int Minimum => minimum;
+		internal int Maximum => maximum;
+
+		internal int Value
+		{
+			get
+			{
+				if (attached && TryParseBuddy(out var shown))
+					position = shown;
+
+				return position;
+			}
+			set
+			{
+				position = Math.Clamp(value, Math.Min(minimum, maximum), Math.Max(minimum, maximum));
+
+				if (attached)
+					Buddy.Text = FormatPosition(position);
+			}
+		}
+
+		public event EventHandler ValueChanged;
+
+		internal KeysharpUpDown(Forms.Control buddy, int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
+		{
+			Buddy = buddy;
+			style = _addStyle & ~_removeStyle;
+			Step += OnStepped;
+		}
+
+		/// <summary>
+		/// Moves the stepper to the Edit's edge and narrows the Edit to make room, as the Windows control does when
+		/// it is given a buddy, then writes the starting position into the Edit. Called once both are placed.
+		/// </summary>
+		internal void Attach()
+		{
+			var location = Buddy.GetLocation();
+			var size = Buddy.GetSize();
+			var width = this.PreferredSize.Width;
+
+			if ((style & UDS_ALIGNLEFT) != 0)
+			{
+				this.SetLocation(location);
+				Buddy.SetLocation(new Point(location.X + width, location.Y));
+			}
+			else
+				this.SetLocation(new Point(location.X + size.Width - width, location.Y));
+
+			Buddy.SetSize(new Size(Math.Max(size.Width - width, 0), size.Height));
+			this.SetSize(new Size(width, size.Height));
+			attached = true;
+			Value = position;
+		}
+
+		internal void SetRange(int low, int high)
+		{
+			minimum = low;
+			maximum = high;
+		}
+
+		private void OnStepped(object sender, StepperEventArgs e)
+		{
+			int low = Math.Min(minimum, maximum), high = Math.Max(minimum, maximum);
+			var current = Value;
+			var step = (long)Math.Max(Increment, 1);
+			//The up arrow moves toward Maximum, which is the lower number when the range is inverted.
+			var next = current + ((e.Direction == StepperDirection.Up) == (maximum >= minimum) ? step : -step);
+
+			if (next < low || next > high)
+			{
+				var span = high - low + 1L;
+				next = (style & UDS_WRAP) != 0 ? low + ((next - low) % span + span) % span : Math.Clamp(next, low, high);
+			}
+
+			if (next != current)
+				Value = (int)next;
+
+			//The Windows control reports every click, including one at the end of the range.
+			ValueChanged?.Invoke(this, EventArgs.Empty);
+		}
+
+		/// <summary>
+		/// The number in the Edit as the Windows control reads it: empty text is 0, a number outside the range is
+		/// clamped to it, and anything else, including surrounding spaces or a plus sign, leaves the position as
+		/// it was.
+		/// </summary>
+		private bool TryParseBuddy(out int shown)
+		{
+			var text = Buddy.Text.AsSpan();
+			long number = 0;
+			bool parsed;
+
+			if (text.IsEmpty)
+				parsed = true;
+			else if (Hexadecimal)
+			{
+				if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+					text = text[2..];
+
+				//Parsed as an int so that a negative position, shown as eight hex digits, reads back.
+				parsed = int.TryParse(text, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var hex);
+				number = hex;
+			}
+			else
+				parsed = text[0] != '+' && long.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowThousands, CultureInfo.CurrentCulture, out number);
+
+			shown = (int)Math.Clamp(number, Math.Min(minimum, maximum), Math.Max(minimum, maximum));
+			return parsed;
+		}
+
+		private string FormatPosition(int value) =>
+			Hexadecimal ? $"0x{value:X4}"
+			: (style & UDS_NOTHOUSANDS) != 0 ? value.ToString(CultureInfo.CurrentCulture)
+			: value.ToString("N0", CultureInfo.CurrentCulture);
+	}
+
 	public class KeysharpPictureBox : ImageView
 	{
 		private PictureBoxSizeMode sizeMode = PictureBoxSizeMode.Normal;

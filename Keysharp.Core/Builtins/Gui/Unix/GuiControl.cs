@@ -117,7 +117,9 @@ namespace Keysharp.Builtins
 			{
 				get
 				{
-					if (_control is KeysharpNumericUpDown nud)
+					if (_control is KeysharpUpDown upDown)
+						return (long)upDown.Value;
+					else if (_control is KeysharpNumericUpDown nud)
 					{
 						var v = (decimal)nud.Value;
 						if (v == decimal.Truncate(v) && v >= long.MinValue && v <= long.MaxValue)
@@ -181,7 +183,14 @@ namespace Keysharp.Builtins
 					if (!value.CoerceString(out var val))
 						return;
 
-					if (_control is KeysharpNumericUpDown nud)
+					if (_control is KeysharpUpDown upDown)
+					{
+						if (!value.CoerceInt(out var position))
+							return;
+
+						upDown.Value = position;
+					}
+					else if (_control is KeysharpNumericUpDown nud)
 						nud.Value = (double)value.ParseDouble().Value;
 					else if (_control is KeysharpCheckBox cb)
 					{
@@ -348,6 +357,10 @@ namespace Keysharp.Builtins
 				else if (_control is KeysharpNumericUpDown nud)
 				{
 					nud.ValueChanged += Nud_ValueChanged;
+				}
+				else if (_control is KeysharpUpDown upDown)
+				{
+					upDown.ValueChanged += Nud_ValueChanged;
 				}
 				else if (_control is HotkeyBox hkb)
 				{
@@ -696,6 +709,17 @@ namespace Keysharp.Builtins
 
 					if (opts.nudhigh.HasValue)
 						nud.Maximum = opts.nudhigh.Value;
+				}
+				else if (_control is KeysharpUpDown upDown)
+				{
+					if (opts.nudinc.HasValue)
+						upDown.Increment = opts.nudinc.Value;
+
+					if (opts.hex.HasValue)
+						upDown.Hexadecimal = opts.hex.Value;
+
+					if (opts.nudlow.HasValue || opts.nudhigh.HasValue)
+						upDown.SetRange(opts.nudlow ?? upDown.Minimum, opts.nudhigh ?? upDown.Maximum);
 				}
 
 				SetContentAlignment(_control, opts);
