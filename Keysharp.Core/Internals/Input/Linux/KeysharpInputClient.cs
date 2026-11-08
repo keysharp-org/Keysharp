@@ -15,6 +15,11 @@ namespace Keysharp.Internals.Input.Linux
 		internal const string DefaultSocketPathValue = "/run/keysharp-input/keysharp-input.sock";
 		internal const int MaxInputsPerRequest = 1024;
 		internal const int MaxTerminalInputBytes = 1024;
+		private const uint TerminalTargetLinuxVt = 1;
+		private const uint TerminalInputRequireUtf8 = 1;
+		private const uint TerminalInputText = 2;
+		// A 1.1 client library has no ksi_terminal_input export, whatever the service reports.
+		private const uint TerminalInputClientAbiMinor = 2;
 		internal const int KeyStateBitmapBytes = 96;
 		internal const int DeviceNameCapacity = 256;
 		internal const int DeviceAxisCapacity = 64;
@@ -386,7 +391,7 @@ namespace Keysharp.Internals.Input.Linux
 						throw new InvalidDataException("keysharp-input returned unknown capability bits.");
 
 					var available = (Operations)info.AvailableOperations & Operations.All;
-					if (info.ClientAbiMinor < 2) available &= ~Operations.TerminalInput;
+					if (info.ClientAbiMinor < TerminalInputClientAbiMinor) available &= ~Operations.TerminalInput;
 					var client = new KeysharpInputClient(connection, role,
 						(LinuxPermissionScope)info.GrantedScopes,
 						available, owner, lease, info.LeaseId);
@@ -597,9 +602,10 @@ namespace Keysharp.Internals.Input.Linux
 			Native.ksi_terminal_input_options_init(out var options);
 			Native.ksi_terminal_input_result_init(out var result);
 			Native.ksi_error_init(out var error);
-			options.TargetKind = 1; // Linux virtual console.
+			options.TargetKind = TerminalTargetLinuxVt;
 			options.TargetId = terminal;
-			options.Flags = 3; // Require UTF-8 and map text backspace to the terminal's erase character.
+			// TerminalInputText maps a backspace to the terminal's erase character.
+			options.Flags = TerminalInputRequireUtf8 | TerminalInputText;
 			fixed (byte* pointer = bytes)
 			{
 				var status = (NativeClientStatus)Native.ksi_terminal_input(connection, ref options,

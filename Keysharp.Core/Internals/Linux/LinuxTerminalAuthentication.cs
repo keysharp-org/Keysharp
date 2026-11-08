@@ -59,14 +59,16 @@ namespace Keysharp.Internals.Linux
 				options.ArgumentList.Add("--fallback");
 				options.ArgumentList.Add("--notify-fd");
 				options.ArgumentList.Add(notification.GetClientHandleAsString());
-				var process = System.Diagnostics.Process.Start(options);
+				System.Diagnostics.Process process;
+				// Once exposed, the inheritable write end is closed only by this call, not by the server's Dispose.
+				try { process = System.Diagnostics.Process.Start(options); }
+				finally { notification.DisposeLocalCopyOfClientHandle(); }
 				if (process == null)
 				{
 					error = "Could not start the terminal authentication agent.";
 					return null;
 				}
 				agent = new(process);
-				notification.DisposeLocalCopyOfClientHandle();
 				if (!WaitForRegistration(notification, process, registrationTimeoutMilliseconds, out error))
 				{
 					agent.Dispose();
