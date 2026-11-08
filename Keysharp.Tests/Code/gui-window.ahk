@@ -649,5 +649,17 @@ _OwnWindowHandles(Title, Count) {
 	return handles
 }
 #endif
+; Theme is a control option as well as a window one, and the window's sets the default for controls added after
+; it. On Windows -Theme takes the visual style off the control; elsewhere it is accepted and ignored.
+themeGui := Gui("-Theme")
+themeGui.AddMonthCal("+Theme")
+themeSlider := themeGui.AddSlider("Thick30")
+#if WINDOWS
+AssertEq(DllCall("uxtheme\GetWindowTheme", "Ptr", themeSlider.Hwnd, "Ptr"), 0, A_LineNumber)
+#else
+AssertEq(themeSlider.Type, "Slider", A_LineNumber)
+#endif
+themeGui.Destroy()
+
 FileAppend "pass", "*"
 ExitApp()

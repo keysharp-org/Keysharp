@@ -729,6 +729,25 @@ namespace Keysharp.Builtins
 	}
 
 	/// <summary>
+	/// Takes the visual-style theme off a control, as AutoHotkey's -Theme does, so it draws in the classic style.
+	/// Controls that WinForms paints itself (Button, CheckBox, Radio, GroupBox) keep their themed look.
+	/// </summary>
+	internal static partial class ControlTheme
+	{
+		[LibraryImport("uxtheme.dll", StringMarshalling = StringMarshalling.Utf16)]
+		private static partial int SetWindowTheme(nint hwnd, string subAppName, string subIdList);
+
+		internal static void Strip(Control control)
+		{
+			//A re-created window comes back themed.
+			control.HandleCreated += (_, _) => _ = SetWindowTheme(control.Handle, "", "");
+
+			if (control.IsHandleCreated)
+				_ = SetWindowTheme(control.Handle, "", "");
+		}
+	}
+
+	/// <summary>
 	/// Derivation that allows setting the interpolation mode.
 	/// Gotten from: https://www.codeproject.com/articles/717312/pixelbox-a-picturebox-with-configurable-interpolat
 	/// </summary>

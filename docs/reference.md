@@ -1476,6 +1476,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ UpDown controls with paired buddy controls are not supported. Keysharp just uses the regular NumericUpDown control in C#.
 			+ The options `16`, `Horz` and `Wrap` have no effect.
 			+ The min and max values cannot be swapped.
+		+ On Windows, `-Theme` removes visual styles from controls Windows draws itself, while `Button`, `CheckBox`, `Radio` and `GroupBox` keep their themed look. On Linux and macOS the option is accepted and ignored.
 		+ `Gui.Flash()` sets the urgency hint on X11 and bounces the Dock icon once on macOS; it has no effect on Wayland.
 		+ For slider events, the second parameter passed to the event handler will always be `0` because it's not possible to retrieve the method by which the slider was moved in C#.
 		+ Only `Tab3` is supported, no older tab functionality is present.

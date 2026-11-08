@@ -55,6 +55,9 @@ namespace Keysharp.Builtins
 		private bool lastfound = false;
 		private bool owndialogs = false;
 		private bool resizable = false;
+#if WINDOWS
+		private bool useTheme = true;//The +/-Theme window option: the default for the controls added after it.
+#endif
 #if !WINDOWS
 		// Whether this GUI provides the standard macOS application menu bar (App/Edit/Window), which is
 		// what makes Cmd+C/V/X/A/Z work in its text controls. Toggled by the "AppMenu" option; on by default.
@@ -2201,6 +2204,11 @@ namespace Keysharp.Builtins
 			holder.dpiResize = opts.dpiresize ?? defaultDpiResize;
 #if WINDOWS
 			ctrl.EnsureHandle();//Only now that it has its parent, whose window its notifications are to reach.
+
+			//AutoHotkey strips the theme once, at creation. Off Windows the option is accepted and ignored, since the
+			//toolkit draws every control in the desktop theme.
+			if (!(opts.theme ?? useTheme))
+				ControlTheme.Strip(ctrl);
 #endif
 			controls[ctrl.Handle.ToInt64()] = holder;
 #if !WINDOWS
@@ -2793,8 +2801,14 @@ namespace Keysharp.Builtins
 			}
 			else if (option.Equals("SysMenu", StringComparison.OrdinalIgnoreCase))
 				form.ControlBox = add;
+			//As in AutoHotkey, it sets the default for controls added afterwards and leaves the window itself alone.
+			//Off Windows the toolkit draws everything in the desktop theme, so it is accepted and ignored there.
 			else if (option.Equals("Theme", StringComparison.OrdinalIgnoreCase))
-				_ = Diagnostics.Debug.WriteLine("Themes are not supported", false);
+			{
+#if WINDOWS
+				useTheme = add;
+#endif
+			}
 			else if (option.Equals("ToolWindow", StringComparison.OrdinalIgnoreCase))
 			{
 				form.SetToolWindow(add);
@@ -3937,6 +3951,7 @@ namespace Keysharp.Builtins
 				else if (Options.TryParse(opt, "t", ref options.t, allowFloat: true)) { options.tabstops.Add(options.t); }
 				else if (Word(opt, "Redraw")) { options.redraw = adding; }
 				else if (Word(opt, "DPIResize")) { options.dpiresize = adding; }
+				else if (Word(opt, Keyword_Theme)) { options.theme = adding; }
 				//Checkbox.
 				else if (Word(opt, "Check3")) { options.check3 = adding; }//Needs to come before any option starting with a 'c'.
 				else if (Word(opt, "CheckedGray")) { options.checkedgray = adding; options.ischecked = adding ? -1 : 0; }
@@ -4625,6 +4640,8 @@ namespace Keysharp.Builtins
 			internal List<int> tabstops = [];
 			internal int thick = int.MinValue;
 			internal bool? thinborder;
+			//The per-control +/-Theme, applied when the control is added; unset means the Gui's own Theme option.
+			internal bool? theme;
 			internal int tickinterval = int.MinValue;
 			internal bool tooltip = false;
 			internal int tooltipside = 0;

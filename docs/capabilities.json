@@ -5963,7 +5963,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Adds a control to the GUI. The ActiveX and Custom control types are Win32-only and raise a ValueError on Linux and macOS. A ListView created with a view option other than +Report (+Icon, +IconSmall, +Tile, +List) is not implemented there either. Adding a WebView on Linux fails unless WebKitGTK is installed.",
+                     "notes":  "Adds a control to the GUI. The ActiveX and Custom control types are Win32-only and raise a ValueError on Linux and macOS. A ListView created with a view option other than +Report (+Icon, +IconSmall, +Tile, +List) is not implemented there either. Adding a WebView on Linux fails unless WebKitGTK is installed. Windows supports -Theme for native-painted controls; other platforms ignore it.",
                      "tested-by":  "ControlTests/control_add_delete_item.ahk"
                  },
                  {
@@ -6479,7 +6479,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Sets options for the window. Raw Win32 style and extended-style options (+0x..., +E0x...) have no portable equivalent and are ignored on Linux and macOS; the named options are honoured through the toolkit\u0027s own properties. The Theme option is unsupported on every platform. +Round rounds the window\u0027s outer corners, on Windows 11 only. On Linux and macOS, +Parent and -Parent act as +Owner and -Owner.",
+                     "notes":  "Sets options for the window. Raw Win32 style and extended-style options (+0x..., +E0x...) have no portable equivalent and are ignored on Linux and macOS; the named options are honoured through the toolkit's own properties. Theme sets the default for new Windows controls; other platforms ignore it. +Round rounds the window's outer corners, on Windows 11 only. On Linux and macOS, +Parent and -Parent act as +Owner and -Owner.",
                      "tested-by":  "ControlTests/picture_tests.ahk"
                  },
                  {
