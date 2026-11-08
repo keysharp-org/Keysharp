@@ -282,6 +282,11 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 			// Registration is local; a plain Show starts no compositor work until a query needs it.
 			var state = Track(form, formHandle, title, matchW, matchH);
 
+			// A later Show that does not activate withdraws the focus an earlier one asked for and has yet to get.
+			if (!activate)
+				lock (sync)
+					state.PendingActivate = false;
+
 			if (!asserts)
 				return;
 
@@ -1063,11 +1068,10 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 					applied = applied with { Opacity = want.Opacity };
 
 			// Focus goes last, once the window is where and how it was asked for. A client cannot focus itself on
-			// Wayland, and Mutter refuses focus on map to a window that an always-on-top window overlaps.
-			if (activate && !backend.TryActivateWindow(handle))
-				lock (sync)
-					if (IsBoundLocked(state, generation, handle))
-						state.PendingActivate = true;
+			// Wayland, and Mutter refuses focus on map to a window that an always-on-top window overlaps. The request
+			// is not retried, so a refusal cannot surface as focus on a later, unrelated pass such as a WinMove.
+			if (activate)
+				_ = backend.TryActivateWindow(handle);
 
 			lock (sync)
 			{
