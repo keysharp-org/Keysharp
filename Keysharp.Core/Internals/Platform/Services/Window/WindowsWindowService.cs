@@ -309,6 +309,12 @@ namespace Keysharp.Internals
 				return true;
 
 			var pid = (uint)GetPid(h);
+
+			// A script thread other than the UI thread can time out sending to the script's own window, which only
+			// means the UI thread is busy, so the script does not terminate itself.
+			if (pid == (uint)Environment.ProcessId)
+				return !GetExists(h);
+
 			var prc = pid != 0 ? WindowsAPI.OpenProcess(ProcessAccessTypes.PROCESS_ALL_ACCESS, false, pid) : 0;
 
 			if (prc != 0)
