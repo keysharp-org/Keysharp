@@ -14,12 +14,10 @@ namespace Keysharp.Builtins
 			{
 				internal Engine.AudioClipData Data;
 
-				public Clip(params object[] args) : base(args) { }
-
 				public override object __New(params object[] args)
 					=> Errors.ErrorOccurred("Audio.Clip is produced by Audio.Load() or Audio.FromPcm(), not constructed.");
 
-				internal static Clip Wrap(Engine.AudioClipData data) => new (null) { Data = data };
+				internal static Clip Wrap(Engine.AudioClipData data) => new () { Data = data };
 
 				/// <summary>The clip's length in milliseconds, derived from its exact frame count.</summary>
 				public object DurationMilliseconds => Data.DurationMilliseconds;
@@ -38,11 +36,11 @@ namespace Keysharp.Builtins
 			internal bool missing;
 			internal Engine.AudioService service;
 
-			internal static Audio Wrap(Engine.AudioService owner, Engine.AudioDeviceDescriptor d) => new (null) { service = owner, Snapshot = d };
+			internal static Audio Wrap(Engine.AudioService owner, Engine.AudioDeviceDescriptor d) => new () { service = owner, Snapshot = d };
 
 			/// <summary>Removed callbacks reject controls until Refresh finds the endpoint again.</summary>
 			internal static Audio WrapMissing(Engine.AudioService owner, Engine.AudioDeviceDescriptor d)
-				=> new (null) { service = owner, Snapshot = d, missing = true };
+				=> new () { service = owner, Snapshot = d, missing = true };
 
 			/// <summary>The endpoint's native identity. Names can repeat and enumeration order can change.</summary>
 			public string Id => Snapshot.Id ?? "";
@@ -194,7 +192,7 @@ namespace Keysharp.Builtins
 			/// script owns: it opens once, prepares its clips once, and then every play is a bounded, non-blocking
 			/// submission that neither decodes nor resamples.
 			/// </summary>
-			public class Output : KeysharpObject
+			public class Output : KeysharpObject, IDisposable
 			{
 				internal Engine.AudioOutputCore core;
 
@@ -202,7 +200,13 @@ namespace Keysharp.Builtins
 				/// register, open or close against a different script's backend.</summary>
 				internal Engine.AudioService service;
 
-				public Output(params object[] args) : base(args) { }
+				public Output(params object[] args) : this()
+				{
+					if (args != null)
+						_ = Configure(args.ElementAtOrDefault(0), args.ElementAtOrDefault(1), args.ElementAtOrDefault(2), args.ElementAtOrDefault(3));
+				}
+
+				protected Output() { }
 
 				/// <summary>
 				/// Configures a closed output. Nothing native is touched until <c>Open</c> or <c>TryOpen</c>, so
@@ -210,6 +214,9 @@ namespace Keysharp.Builtins
 				/// or "Reject", matched without regard to case.
 				/// </summary>
 				public object __New(object device = null, object voiceLimit = null, object voicePolicy = null, object latencyMilliseconds = null)
+					=> Configure(device, voiceLimit, voicePolicy, latencyMilliseconds);
+
+				private object Configure(object device, object voiceLimit, object voicePolicy, object latencyMilliseconds)
 				{
 					if (!voiceLimit.CoerceLong(out var voices, 16L))
 						return DefaultObject;
@@ -492,16 +499,7 @@ namespace Keysharp.Builtins
 					return this;
 				}
 
-				/// <summary>
-				/// Releases the native stream when a script drops the output without closing it. Without this a
-				/// forgotten output keeps its stream and one of the sixteen open slots until the script exits, and
-				/// the error naming the cap would tell the user to close an object they no longer hold.
-				/// </summary>
-				public override object __Delete()
-				{
-					_ = Dispose();
-					return base.__Delete();
-				}
+				void IDisposable.Dispose() => _ = Dispose();
 
 				/// <summary>Terminal. Releases caches and native state; later operations raise.</summary>
 				public object Dispose()
@@ -529,13 +527,11 @@ namespace Keysharp.Builtins
 				/// <summary>Retains the owning script's audio service.</summary>
 				internal Engine.AudioService service;
 
-				public Playback(params object[] args) : base(args) { }
-
 				public override object __New(params object[] args)
 					=> Errors.ErrorOccurred("Audio.Playback is produced by Audio.Play() or Audio.Output.Play(), not constructed.");
 
 				internal static Playback Wrap(Engine.AudioService owner, Engine.AudioPlaybackControl c, Engine.AudioOutputCore o, Engine.AudioClipData s)
-					=> new (null) { service = owner, control = c, owner = o, source = s };
+					=> new () { service = owner, control = c, owner = o, source = s };
 
 				/// <summary>The device this sound was admitted on. It never tracks a later default change.</summary>
 				public object Device

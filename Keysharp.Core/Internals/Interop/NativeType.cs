@@ -75,6 +75,7 @@ namespace Keysharp.Internals.Interop
 			NativeTypeCode.Short or NativeTypeCode.UShort => 2,
 			NativeTypeCode.Int or NativeTypeCode.UInt or NativeTypeCode.Float or NativeTypeCode.HResult => 4,
 			NativeTypeCode.Invalid or NativeTypeCode.Void => 0,
+			NativeTypeCode.Ptr or NativeTypeCode.UPtr => IntPtr.Size,
 			_ => 8
 		};
 
@@ -128,6 +129,8 @@ namespace Keysharp.Internals.Interop
 				case NativeTypeCode.Double: return Unsafe.ReadUnaligned<double>(p);
 
 				case NativeTypeCode.Float: return (double)Unsafe.ReadUnaligned<float>(p);
+				case NativeTypeCode.Ptr:
+				case NativeTypeCode.UPtr: return (long)Unsafe.ReadUnaligned<nint>(p);
 
 				//A string output slot holds the address of a string, so it dereferences to the string itself,
 				//with StrGet's guard against a null or implausibly low address. None of them are freed: as
@@ -139,7 +142,7 @@ namespace Keysharp.Internals.Interop
 
 				case NativeTypeCode.AStr: return Marshal.PtrToStringAnsi((nint)Unsafe.ReadUnaligned<long>(p)) ?? "";
 
-				default: return Unsafe.ReadUnaligned<long>(p);//Int64, UInt64, Ptr and UPtr read the full eight bytes.
+				default: return Unsafe.ReadUnaligned<long>(p);//Int64 and UInt64 read the full eight bytes.
 			}
 		}
 
@@ -205,7 +208,13 @@ namespace Keysharp.Internals.Interop
 					Unsafe.WriteUnaligned(p, d);
 					break;
 
-				default://Int64, UInt64, Ptr and UPtr.
+				case NativeTypeCode.Ptr:
+				case NativeTypeCode.UPtr:
+					_ = number.TryCoerceLong(out var address);
+					Unsafe.WriteUnaligned(p, (nint)address);
+					break;
+
+				default://Int64 and UInt64.
 					_ = number.TryCoerceLong(out var l);
 					Unsafe.WriteUnaligned(p, l);
 					break;

@@ -101,14 +101,20 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// Initializes a new instance of the <see cref="Array"/> class.
 	/// See <see cref="__New(object[])"/>.
 	/// </summary>
-	public Array(params object[] args) : base(args) { }
+	public Array(params object[] args) : this()
+	{
+		if (args != null)
+			_ = AddInitialValues(args);
+	}
+
+	protected Array() { }
 
 	// An array literal or a variadic parameter, as AHK's Array::Create: each item as it is, and no __New, whose single
 	// collection argument would be expanded.
 	[PublicHiddenFromUser]
 	public new static Array Literal(params object[] items)
 	{
-		var arr = new Array(null);
+		var arr = new Array();
 		arr.array.Capacity = Math.Max(arr.capacity, items?.Length ?? 0);
 
 		if (items != null)
@@ -202,7 +208,9 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	///     <see cref="ICollection"/>: adds each element to the underlying list.
 	/// </param>
 	/// <returns>Empty string, unused.</returns>
-	public override object __New(params object[] args)
+	public override object __New(params object[] args) => AddInitialValues(args);
+
+	private object AddInitialValues(object[] args)
 	{
 		if (args is null || args.Length == 0)
 		{

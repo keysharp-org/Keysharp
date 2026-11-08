@@ -30,9 +30,7 @@ namespace Keysharp.Builtins
 
 		object IEnumerator.Current => CurrentValue;
 
-		public Enumerator(params object[] args) : base(args)
-		{
-		}
+		public Enumerator() { }
 
 		// Loops own disposal.
 		internal override bool DisposesWhenCollected => false;

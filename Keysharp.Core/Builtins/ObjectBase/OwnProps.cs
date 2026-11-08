@@ -95,7 +95,7 @@ namespace Keysharp.Builtins
 				if (op.Value != null)
 					return (kv.Key, op.Value);
 				else if (op.StructField != null)
-					return (kv.Key, obj is Struct st ? st.GetFieldValue(op.StructField) : null);
+					return (kv.Key, obj is Struct st ? st.GetFieldValue(op.StructField, true) : null);
 				else if (op.Get is KeysharpFunc fo)
 					return (kv.Key, fo.Call(obj));
 				else if (op.Get != null)
@@ -329,7 +329,16 @@ namespace Keysharp.Builtins
 					: Script.GetUserDeclaredName(StructField.FieldType) ?? StructField.FieldType.Name;
 
 				map.DefinePropInternal("Type", new OwnPropsDesc(typeValue));
-				map.DefinePropInternal("Offset", new OwnPropsDesc(StructField.Offset));
+
+				// Until its struct closes, a field reports only the offset it was given, with a field name as that
+				// field spells it. [v2.1-alpha.38+]
+				object offset = StructField.Placed ? StructField.Offset
+					: StructField.OffsetOf != null ? StructField.OffsetOf.Name
+					: StructField.ExplicitOffset >= 0 ? StructField.ExplicitOffset
+					: null;
+
+				if (offset != null)
+					map.DefinePropInternal("Offset", new OwnPropsDesc(offset));
 
 				if (StructField.Pack > 0)
 					map.DefinePropInternal("Pack", new OwnPropsDesc(StructField.Pack));

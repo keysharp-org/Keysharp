@@ -25,8 +25,6 @@ namespace Keysharp.Builtins
 		[UserDeclaredName("Clipboard")]
 		public sealed class KeysharpClipboard : KeysharpObject
 		{
-			public KeysharpClipboard(params object[] args) : base(args) { }
-
 			/// <summary>
 			/// There is exactly one clipboard per session, so — unlike Image/Overlay/Monitor, which each wrap *a*
 			/// thing — this class wraps *the* thing and has no instances. Every member is static.

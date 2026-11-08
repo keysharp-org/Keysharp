@@ -166,6 +166,7 @@ namespace Keysharp.Runtime
 			{
 				if (TryResolveMember(kso, key, true, out var opm, checkBase))
 				{
+					if (opm.StructField != null && item is Struct getStruct) return (item, getStruct.GetFieldValue(opm.StructField, true));
 					if (opm.Call != null) return (item, opm.Call); // (this, …)
 					if (opm.Get != null) return (item, InvokeOrNull(opm.Get, null, item) ?? UnsetResultErrorOccurred(item, key));
 					if (opm.Value != null) return (item, opm.Value);
@@ -309,7 +310,7 @@ namespace Keysharp.Runtime
 					{
 						// `s.field[i]` folds to GetPropertyValue(s, "field", i); apply any trailing index to the field
 						// value (e.g. a structured-array field element) rather than dropping it.
-						var fieldValue = getStruct.GetFieldValue(opm.StructField);
+						var fieldValue = getStruct.GetFieldValue(opm.StructField, args.Length > 0);
 						return args.Length > 0 ? GetPropertyResultIndex(item, namestr, fieldValue, args) : fieldValue;
 					}
 
@@ -379,32 +380,23 @@ namespace Keysharp.Runtime
 			// ---------- Don't call metas for non-Any objects ----------
 			if (kso == null) return null;
 
-			// Only accept direct Call or direct Value (callable) for the lifecycle name.
-			if (TryGetOwnPropsMap(kso, methName, out var opm, searchBase: true,
+			// Lifecycle lookup accepts direct callbacks and never falls back to __Call.
+			if (!TryGetOwnPropsMap(kso, methName, out var opm, searchBase: true,
 				type: OwnPropsMapType.Call | OwnPropsMapType.Value))
-			{
-				var target = opm.Call ?? opm.Value;
-
-				if (target is KeysharpFunc f)
-				{
-					// Any's own __Init, which constructing any class without fields reaches, does nothing.
-					if (parameters is null or { Length: 0 } && f.mph.mi == anyInit && f.GetType() == typeof(KeysharpFunc))
-						return "";
-
-					// Direct lifecycle method
-					return parameters == null ? f.Call(actualThis) : f.CallInst(actualThis, parameters);
-				}
-				else if (target != null)
-				{
-					// Callable object (has its own Call). Explicitly call "Call" (still NOT meta).
-					return InvokeOrNull(target, null, [actualThis, ..(parameters ?? [])]);
-				}
-
-				// Found a member but it's not callable.
 				return null;
+
+			var target = opm.Call ?? opm.Value;
+
+			if (target is KeysharpFunc f)
+			{
+				// Any's own __Init, which constructing any class without fields reaches, does nothing.
+				if (parameters is null or { Length: 0 } && f.mph.mi == anyInit && f.GetType() == typeof(KeysharpFunc))
+					return "";
+
+				return parameters == null ? f.Call(actualThis) : f.CallInst(actualThis, parameters);
 			}
-			// Not found ? per docs, internal lifecycle invocation should be a no-op (no __Call).
-			return null;
+
+			return target == null ? null : InvokeOrNull(target, null, [actualThis, ..(parameters ?? [])]);
 		}
 
 		// Avoid allocating an argument array for calls without arguments.
@@ -521,7 +513,7 @@ namespace Keysharp.Runtime
 						return fn.Call(mitup.Item1);
 					return fn.CallInst(mitup.Item1, parameters);
 
-				case KeysharpObject callable:
+				case Any callable when callable is KeysharpObject or Struct:
 					// Callable object meta: Call(receiver, name, ParamsArray). Named arguments ride into the
 					// Params Array as an ordinary trailing element.
 					if (mitup.Item1 == null)
@@ -772,9 +764,9 @@ namespace Keysharp.Runtime
 				{
 					if (field.StructField != null)
 					{
-						if (item is not Struct setStruct || setStruct.Ptr == 0 && !setStruct.HasCachedEmbeddedField(field.StructField))
+						if (item is not Struct setStruct)
 							return Errors.ErrorOccurred("Property invalid for object with null data.", null, namestr);
-						if (argCount > 1) return SetPropertyResultIndex(setStruct.GetFieldValue(field.StructField));
+						if (argCount > 1) return SetPropertyResultIndex(setStruct.GetFieldValue(field.StructField, true));
 						_ = setStruct.SetFieldValue(field.StructField, value);
 						return value;
 					}

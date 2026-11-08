@@ -15,7 +15,7 @@ namespace Keysharp.Builtins
 		/// mouse handlers with <see cref="OnEvent"/> (Click/DoubleClick/ContextMenu/MouseMove).</para>
 		/// </summary>
 		[UserDeclaredName("Overlay"), Experimental]
-		public class KeysharpOverlay : KeysharpObject
+		public class KeysharpOverlay : KeysharpObject, IDisposable
 		{
 			private const uint OverlayIdPrefix = 0x1000_0000u;
 			private const uint IdMask = 0x0FFF_FFFFu;
@@ -75,15 +75,23 @@ namespace Keysharp.Builtins
 					(height == null || height.CoerceInt(out nextH));
 			}
 
-			public KeysharpOverlay(params object[] args) : base(args) { }
+			public KeysharpOverlay(params object[] args) : this()
+			{
+				if (args != null)
+					_ = Configure(args.ElementAtOrDefault(0), args.ElementAtOrDefault(1), args.ElementAtOrDefault(2), args.ElementAtOrDefault(3));
+			}
+
+			protected KeysharpOverlay() { }
 
 			/// <summary>
 			/// <c>Overlay()</c> creates an unconfigured overlay. <c>Overlay(X, Y, Width, Height)</c> stores a native
 			/// screen rectangle and creates its canvas on first access. Use <see cref="FromImage"/> when an image
 			/// supplies the initial pixels.
 			/// </summary>
-			// `new`, not `override`: lifecycle dispatch resolves the most-derived declaration by name.
 			public object __New(object x = null, object y = null, object width = null, object height = null)
+				=> Configure(x, y, width, height);
+
+			private object Configure(object x, object y, object width, object height)
 			{
 				if (x == null && y == null && width == null && height == null)
 					return DefaultObject;
@@ -573,10 +581,10 @@ namespace Keysharp.Builtins
 
 				// The service's id-keyed sink map (and the live backing) hold this delegate for as long as the
 				// registration stands. Capture only a weak reference to the overlay: a strong capture would pin a
-				// dropped overlay forever — __Delete could then never run, so an event-overlay abandoned without
+				// dropped overlay forever, so an event-overlay abandoned without
 				// Destroy would leak its canvas and keep holding script persistence, and a shown one would never
 				// auto-hide on collection. With the weak target the normal drop-all-references lifecycle keeps
-				// working; an event arriving after collection is a no-op until the destructor's Destroy clears
+				// working; an event arriving after collection is a no-op until disposal clears
 				// the registration.
 				var weakSelf = new WeakReference<KeysharpOverlay>(this);
 				Platform.Overlay.SetImageOverlayPointerSink(OverlayId, ev =>
@@ -839,6 +847,18 @@ namespace Keysharp.Builtins
 			public object Destroy()
 			{
 				if (RejectRedrawMutation()) return DefaultObject;
+				ReleaseNative();
+				return DefaultObject;
+			}
+
+			void IDisposable.Dispose()
+			{
+				ReleaseNative();
+				HasFinalizer = false;
+			}
+
+			private void ReleaseNative()
+			{
 				ClearEventHandlers();
 
 				// No confirmation is awaited: Destroy cannot leave a backing behind without an owner to retry it.
@@ -853,10 +873,7 @@ namespace Keysharp.Builtins
 				surface = null;
 				autoW = 0;
 				autoH = 0;
-				return DefaultObject;
 			}
-
-			public override object __Delete() => Destroy();
 
 			#endregion
 

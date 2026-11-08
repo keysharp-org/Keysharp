@@ -222,10 +222,6 @@ e2:
 			{
 			}
 
-			public Myclass(params object[] args) : base(args)
-			{
-			}
-
 			public static void __Init(object @this)
 			{
 				_ = Keysharp.Runtime.Script.InvokeOrNull((_ks_s.Vars.Prototypes[typeof(KeysharpObject)], @this), "__Init");
@@ -273,8 +269,6 @@ _ks_e1_end:
 			public static void static__Init(object @this)
 			{
 			}
-
-			public static new Myclass staticCall(object @this, params object[] args) => new(args);
 
 #pragma warning restore IDE0060 // Remove unused parameter
 		}

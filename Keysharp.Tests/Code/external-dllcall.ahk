@@ -30,7 +30,7 @@ visGui.Hide()
 Assert(!DllCall("IsWindowVisible", "Ptr", visGui.Hwnd), A_LineNumber)
 visGui.Destroy()
 
-ZeroPaddedNumber := Buffer(20)
+ZeroPaddedNumber := Buffer(22)
 DllCall("wsprintf", "Ptr", ZeroPaddedNumber, "Str", "%010d", "Int", 432, "Cdecl")
 str := StrGet(ZeroPaddedNumber)
 fmtstr := Format(str, "0:D10")
@@ -348,21 +348,20 @@ AssertEq(pointed " " ansiPointed, "kept kept", A_LineNumber)
 DllCall(replaceCallback, "Str*", &pointed)
 AssertEq(pointed, "replaced", A_LineNumber)
 
-code := Buffer(64)
-NumPut(
-	'Int64', 0x10ec8348e5894855, 'Int64', 0x00fc45c7104d8948,
-	'Int64', 0xfc458304eb000000, 'Int64', 0x8d489848fc458b01,
-	'Int64', 0x014810458b480014, 'Int64', 0x75c0856600b70fd0,
-	'Int64', 0x10c48348fc458be4, 'Int64', 0xc35d,
-	code
-)
-
-if (!DllCall("VirtualProtect", "Ptr", code, "Ptr", code.Size, "UInt", 0x40, "UInt*", &OldProtect := 0, "UInt"))
-	throw Error("Failed to mark MCL memory as executable")
-
-val := DllCall(code, "Str", "Hello", "Cdecl Int")
-
-AssertEq(val, 5, A_LineNumber)
+code := AllocateCode(64)
+try {
+	NumPut(
+		'Int64', 0x10ec8348e5894855, 'Int64', 0x00fc45c7104d8948,
+		'Int64', 0xfc458304eb000000, 'Int64', 0x8d489848fc458b01,
+		'Int64', 0x014810458b480014, 'Int64', 0x75c0856600b70fd0,
+		'Int64', 0x10c48348fc458be4, 'Int64', 0xc35d,
+		code
+	)
+	ProtectCode(code, 64)
+	AssertEq(DllCall(code, "Str", "Hello", "Cdecl Int"), 5, A_LineNumber)
+} finally {
+	DllCall("VirtualFree", "Ptr", code, "Ptr", 0, "UInt", 0x8000, "Int")
+}
 	
 ; Ensure int* gets properly written to with a negative number.
 
@@ -402,16 +401,31 @@ AssertEq(dest, 0.10000000149011612, A_LineNumber)
 
 
 ptr := MCode('2,x64:gwEBww==')
+try {
+	i := -2
+	DllCall(ptr, "int*", &i)
+	AssertEq(i, -1, A_LineNumber)
 
-i := -2
-DllCall(ptr, "int*", &i)
+	i := -1
+	DllCall(ptr, "int*", &i)
+	AssertEq(i, 0, A_LineNumber)
+} finally {
+	DllCall("VirtualFree", "Ptr", ptr, "Ptr", 0, "UInt", 0x8000, "Int")
+}
 
-AssertEq(i, -1, A_LineNumber)
+AllocateCode(Size) {
+	address := DllCall("VirtualAlloc", "Ptr", 0, "Ptr", Size, "UInt", 0x3000, "UInt", 4, "Ptr")
+	if !address
+		throw Error("VirtualAlloc failed: " A_LastError)
+	return address
+}
 
-i := -1
-DllCall(ptr, "int*", &i)
-
-AssertEq(i, 0, A_LineNumber)
+ProtectCode(Address, Size) {
+	if !DllCall("VirtualProtect", "Ptr", Address, "Ptr", Size, "UInt", 0x20, "UInt*", &OldProtect := 0, "UInt")
+		throw Error("VirtualProtect failed: " A_LastError " address=" Address " size=" Size)
+	if !DllCall("FlushInstructionCache", "Ptr", -1, "Ptr", Address, "Ptr", Size, "Int")
+		throw Error("FlushInstructionCache failed: " A_LastError)
+}
 
 MCode(mcode) {
 	static e := Map('1', 4, '2', 1), c := (A_PtrSize=8) ? "x64" : "x86"
@@ -422,15 +436,16 @@ MCode(mcode) {
 	if (!DllCall("crypt32\CryptStringToBinary", "str", m.3, "uint", 0, "uint", e[m.1], "ptr", 0, "uint*", &s := 0, "ptr", 0, "ptr", 0))
 		return
 		
-	p := DllCall("GlobalAlloc", "uint", 0, "ptr", s, "ptr")
-	
-	if (c="x64")
-		DllCall("VirtualProtect", "ptr", p, "ptr", s, "uint", 0x40, "uint*", &op := 0)
-	
-	if (DllCall("crypt32\CryptStringToBinary", "str", m.3, "uint", 0, "uint", e[m.1], "ptr", p, "uint*", &s, "ptr", 0, "ptr", 0))
+	p := AllocateCode(s)
+	try {
+		if !DllCall("crypt32\CryptStringToBinary", "str", m.3, "uint", 0, "uint", e[m.1], "ptr", p, "uint*", &s, "ptr", 0, "ptr", 0)
+			throw Error("CryptStringToBinary failed: " A_LastError)
+		ProtectCode(p, s)
 		return p
-
-	DllCall("GlobalFree", "ptr", p)
+	} catch {
+		DllCall("VirtualFree", "Ptr", p, "Ptr", 0, "UInt", 0x8000, "Int")
+		throw
+	}
 }
 
 /*
@@ -445,10 +460,12 @@ CallbackZeroArgs() => 3
 CallbackTwoArgs(arg1, arg2) => arg1 + arg2
 
 ptr := MCode('2,x64:SP/h')
-result := 0
-result := DllCall(ptr, "ptr", CallbackCreate(CallbackZeroArgs))
-
-AssertEq(result, 3, A_LineNumber)
+try {
+	result := DllCall(ptr, "ptr", CallbackCreate(CallbackZeroArgs))
+	AssertEq(result, 3, A_LineNumber)
+} finally {
+	DllCall("VirtualFree", "Ptr", ptr, "Ptr", 0, "UInt", 0x8000, "Int")
+}
 
 /*
 int CallCallbackTwoArgs(void* ptr, int arg1, int arg2)
@@ -458,11 +475,12 @@ int CallCallbackTwoArgs(void* ptr, int arg1, int arg2)
 }
 */
 ptr := MCode('2,x64:SInIidFEicJI/+A=')
-
-result := 0
-result := DllCall(ptr, "ptr", CallbackCreate(CallbackTwoArgs), "int", -1, "int", 4)
-
-AssertEq(result, 3, A_LineNumber)  ; This is testing the conversion of long back to int.
+try {
+	result := DllCall(ptr, "ptr", CallbackCreate(CallbackTwoArgs), "int", -1, "int", 4)
+	AssertEq(result, 3, A_LineNumber)  ; This is testing the conversion of long back to int.
+} finally {
+	DllCall("VirtualFree", "Ptr", ptr, "Ptr", 0, "UInt", 0x8000, "Int")
+}
 
 Base64ToString(Base64)
 {
@@ -495,15 +513,29 @@ if !DllCall("GetModuleHandle", "Str", "lz32", "Ptr") {
 	DllCall("lz32\LZDone")
 }
 
-; A struct over 8 bytes cannot be returned or passed by value yet, and a call whose error is continued is not made.
+#if X64
+; A struct which is not 1, 2, 4 or 8 bytes is passed by address, and returned through memory the caller passes first.
+struct LLDIV {
+	Quot : Int64, Rem : Int64
+}
+quotient := DllCall("ucrtbase\lldiv", "Int64", 17, "Int64", 5, LLDIV)
+AssertEq(quotient.Quot " " quotient.Rem, "3 2", A_LineNumber)
 struct TRIPLE {
 	a : Int32, b : Int32, c : Int32
 }
+; int Sum(TRIPLE t) { return t.a + t.b + t.c; }
+ptr := MCode('2,x64:iwEDQQQDQQjD')
+try
+	AssertEq(DllCall(ptr, TRIPLE, TRIPLE(1, 2, 39), "Int"), 42, A_LineNumber)
+finally
+	DllCall("VirtualFree", "Ptr", ptr, "Ptr", 0, "UInt", 0x8000, "Int")
+#endif
+
+; A call whose error is continued is not made.
 ContinueError(*) => -1
 copied := Buffer(8, 0)
 OnError(ContinueError)
-DllCall("msvcrt\wcscpy", "Ptr", copied, "Str", "x", TRIPLE)
-DllCall("msvcrt\wcscpy", "Ptr", copied, "Str", "x", TRIPLE, TRIPLE(), "CDecl Ptr")
+DllCall("msvcrt\wcscpy", "Ptr", copied, "Str", "x", Int32[3])
 OnError(ContinueError, 0)
 AssertEq(NumGet(copied, "UShort"), 0, A_LineNumber)
 

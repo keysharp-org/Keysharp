@@ -31,13 +31,9 @@ namespace Keysharp.Builtins.COM
 
 		private AEContext context;
 
-		public ComObject(params object[] args) : base(args)
-		{
-			if (args != null && args.Length > 0)
-				_ = Errors.ErrorOccurred("Construct an Apple Events ComObject by calling ComObject(name), not with New.");
-		}
+		public ComObject() { }
 
-		internal ComObject(AETarget target, List<AESpecifierStep> steps, string suite) : base(null)
+		internal ComObject(AETarget target, List<AESpecifierStep> steps, string suite)
 		{
 			this.target = target;
 			this.steps = steps ?? [];

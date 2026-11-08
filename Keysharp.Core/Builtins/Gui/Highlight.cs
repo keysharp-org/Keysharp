@@ -9,7 +9,7 @@ namespace Keysharp.Builtins
 		/// rectangle with a colored, click-through border. Construct one, then drive it with
 		/// <c>Show</c>/<c>Move</c>/<c>Hide</c>/<c>Destroy</c>. The caller owns the object (like a ToolTip slot —
 		/// there is no global registry); calling <c>Destroy</c>, or dropping all references (the overlay is then
-		/// torn down on garbage collection via <c>__Delete</c>), frees it.
+		/// torn down on garbage collection), frees it.
 		///
 		/// <para>Internally it is a single <see cref="KeysharpOverlay"/> — the one cross-platform, click-through,
 		/// always-on-top overlay primitive — whose canvas holds a d-thick frame (a transparent centre so it frames,
@@ -31,7 +31,7 @@ namespace Keysharp.Builtins
 		/// </code>
 		/// </summary>
 		[UserDeclaredName("Highlight")]
-		public class KeysharpHighlight : KeysharpObject
+		public class KeysharpHighlight : KeysharpObject, IDisposable
 		{
 			// The single reusable overlay (null until the first Show, and after Destroy).
 			private KeysharpOverlay overlay;
@@ -48,15 +48,22 @@ namespace Keysharp.Builtins
 			// visible = caller intent (Show issued, no intervening Hide/Destroy); shown = overlay actually mapped.
 			private bool visible, shown;
 
-			public KeysharpHighlight(params object[] args) : base(args) { }
+			public KeysharpHighlight(params object[] args) : this()
+			{
+				if (args != null)
+					_ = Configure(args.ElementAtOrDefault(0), args.ElementAtOrDefault(1), args.ElementAtOrDefault(2),
+						args.ElementAtOrDefault(3), args.ElementAtOrDefault(4), args.ElementAtOrDefault(5));
+			}
+
+			protected KeysharpHighlight() { }
 
 			/// <summary>Highlight(X?, Y?, Width?, Height?, Color := "Red", Thickness := 2) — stores the rectangle/style; no
 			/// overlay is created until the first Show.</summary>
-			// `new`, not `override`: construction dispatches by name, so the real signature is declared here and
-			// arity/defaults/named binding follow from it (see Buffer.__New and Any's constructor). The parameters
-			// are PascalCase on purpose: these names are script-facing API (`Highlight(Color: "Blue")`).
 			public object __New(object x = null, object y = null, object width = null, object height = null,
 									object color = null, object thickness = null)
+				=> Configure(x, y, width, height, color, thickness);
+
+			private object Configure(object x, object y, object width, object height, object color, object thickness)
 			{
 				if (!SetRect(x, y, width, height) || color != null && !TrySetColor(color))
 					return DefaultObject;
@@ -139,19 +146,26 @@ namespace Keysharp.Builtins
 			/// (a later Show rebuilds it).</summary>
 			public object Destroy()
 			{
+				ReleaseNative();
+				return DefaultObject;
+			}
+
+			void IDisposable.Dispose()
+			{
+				ReleaseNative();
+				HasFinalizer = false;
+			}
+
+			private void ReleaseNative()
+			{
 				visible = false;
 				shown = false;
-				_ = overlay?.Destroy();
+				((IDisposable)overlay)?.Dispose();
 				overlay = null;
 				builtW = builtH = builtD = int.MinValue;
 				builtPixels = default;
 				builtColor = -1;
-				return DefaultObject;
 			}
-
-			// __Delete is invoked by the destructor pump on the main thread when this object is collected, so a
-			// caller that just drops the overlay still gets it freed (no explicit Destroy required).
-			public override object __Delete() => Destroy();
 
 			#endregion
 

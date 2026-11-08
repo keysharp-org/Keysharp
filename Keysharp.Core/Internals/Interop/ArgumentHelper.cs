@@ -67,7 +67,16 @@ namespace Keysharp.Internals.Interop
 		private bool voidReturn;
 		private bool disposed;
 		private NativeTypeCode returnCode;
-		private Func<long, object> structReturnConverter;
+		// A pointer class's target, which a returned address is read as.
+		private Type returnPointerTarget;
+		// The struct a struct return type comes back in, created before the call as AutoHotkey creates it.
+		private Struct returnStruct;
+
+		/// <summary>
+		/// The address of the memory a struct returned through memory is written to, which the call takes as an extra
+		/// first argument, or 0 when the return value comes back in a register.
+		/// </summary>
+		internal readonly long ReturnBuffer => returnStruct != null && !StructMarshal.InRegister(returnStruct.Layout.Size) ? returnStruct.Ptr : 0;
 
 		/// <summary>
 		/// <paramref name="args"/> and <paramref name="slots"/> must be stack memory belonging to the caller,
@@ -228,19 +237,21 @@ namespace Keysharp.Internals.Interop
 			else if (Struct.TryResolvePointerClass(rawTag, out var pointerType, out var targetType))
 			{
 				//A struct pointer class passes the address of the struct value, materializing one when needed.
-				return ConvertPtr(n, NormalizeStructPointerArg(parameters, p, n, valueIndex, pointerType, targetType));
+				return NormalizeStructPointerArg(parameters, p, n, valueIndex, pointerType, targetType) is { } pointerArgument
+					&& ConvertPtr(n, pointerArgument);
 			}
 			else if (Struct.TryResolveClass(rawTag, out var structType))
 			{
-				if (Struct.IsArray(structType))
-					return ConvertPtr(n, NormalizeStructPointerArg(parameters, p, n, valueIndex, null, structType));
+				if (StructLayout.Get(structType).IsArray)
+					return NormalizeStructPointerArg(parameters, p, n, valueIndex, null, structType) is { } arrayArgument
+						&& ConvertPtr(n, arrayArgument);
 
 				//A numeric type class is handled as the built-in type it mirrors, so that e.g. a Float64
 				//argument is passed in a floating-point register rather than as raw bits in an integer one.
-				code = Struct.GetPrimitiveTypeCode(structType);
+				code = StructLayout.GetPrimitiveTypeCode(structType);
 
 				if (code == NativeTypeCode.Invalid)
-					return TryReadStructValueArg(p, structType, out args[n]);
+					return ConvertAggregate(parameters, valueIndex, structType, out args[n]);
 
 				//An instance passes the bits it stores at the class's width, so a float keeps its exact pattern.
 				if (p is Any)
@@ -251,10 +262,9 @@ namespace Keysharp.Internals.Interop
 						return false;
 					}
 
-					var address = (void*)((Struct)p).Ptr;
-
-					if (address == null)
-						return Errors.ErrorOccurred(new Error("Struct storage has not been initialized."), false);
+					if (!((Struct)p).TryGetDataPointer(out var data))
+						return false;
+					var address = (void*)data;
 
 					args[n] = code switch
 					{
@@ -588,7 +598,7 @@ namespace Keysharp.Internals.Interop
 				if (slot.Kind == OutputTarget.Struct)
 				{
 					if (parameters[pi] is Any structRef && Refs.GetValueOrNull(structRef) is Struct structValue)
-						_ = Refs.SetValue(structRef, Struct.GetOutputValue(structValue));
+						_ = Refs.SetValue(structRef, structValue.GetOutputValue());
 
 					continue;
 				}
@@ -627,8 +637,18 @@ namespace Keysharp.Internals.Interop
 			if (voidReturn)
 				return Script.DefaultObject;
 
-			if (structReturnConverter != null)
-				return structReturnConverter(value);
+			if (returnStruct != null)
+			{
+				if (ReturnBuffer == 0)
+					StructMarshal.WriteArgumentSlot(returnStruct, value);
+
+				return returnStruct.GetOutputValue();
+			}
+
+			if (returnPointerTarget != null)
+				return value == 0 ? null : StructLayout.Get(returnPointerTarget).IsPrimitive
+					? StructMarshal.ReadPrimitiveValue(returnPointerTarget, value)
+					: Script.Invoke(Script.TheScript.Vars.Statics[returnPointerTarget], "At", value);
 
 			//A '*'-suffixed return type means the register holds the address of the value, so read the value
 			//out of it: its own width, since only that many bytes at the address are the callee's to define.
@@ -683,19 +703,23 @@ namespace Keysharp.Internals.Interop
 		{
 			builtinCode = NativeTypeCode.Invalid;
 
-			if (Struct.TryResolvePointerClass(rawReturnType, out _, out var pointerTargetType))
+			if (Struct.TryResolvePointerClass(rawReturnType, out _, out returnPointerTarget))
 			{
 				returnCode = NativeTypeCode.Ptr;
-				structReturnConverter = ptr => Struct.IsPrimitive(pointerTargetType)
-											   ? Struct.ReadPrimitiveValue(pointerTargetType, ptr)
-											   : ptr == 0 ? null : Script.Invoke(Script.TheScript.Vars.Statics[pointerTargetType], "At", ptr);
 				return true;
 			}
 
 			if (!Struct.TryResolveClass(rawReturnType, out var structType))
 				return false;
 
-			if (Struct.IsArray(structType))
+			var layout = StructLayout.GetValidated(structType);
+			if (layout.Invalid)
+			{
+				failed = true;
+				return true;
+			}
+
+			if (layout.IsArray)
 			{
 				_ = Errors.ValueErrorOccurred("Structured arrays cannot be used as a DllCall return type.");
 				failed = true;
@@ -704,43 +728,47 @@ namespace Keysharp.Internals.Interop
 
 			// A numeric type class converts directly rather than being instantiated, so it behaves exactly like the
 			// built-in type it mirrors — including floats, which are returned in a different register.
-			builtinCode = Struct.GetPrimitiveTypeCode(structType);
+			builtinCode = StructLayout.GetPrimitiveTypeCode(structType);
 
 			if (builtinCode != NativeTypeCode.Invalid)
 				return false;
 
 			returnCode = NativeTypeCode.Ptr;
 
-			// The callee would write through a hidden return pointer the call never passes, so a continued error must
-			// not make the call.
-			if (Struct.GetSize(structType) > sizeof(long))
-			{
-				_ = Errors.ValueErrorOccurred("Struct return values larger than 8 bytes are not supported yet.");
-				failed = true;
-				return true;
-			}
+			if (StructMarshal.AggregateError(structType, layout) is { } error)
+				_ = Errors.ValueErrorOccurred(error);
+			else if (Struct.CreateInstance(structType) is { } result && result.TryGetDataPointer(out _))
+				returnStruct = result;
 
-			structReturnConverter = slot =>
-			{
-				var result = Struct.CreateInstance(structType);
-				Struct.WriteArgumentSlot(result, slot);
-				return result;
-			};
+			failed |= returnStruct == null;
 			return true;
 		}
 
+		// An aggregate passes its bytes in a register when it fits one and otherwise its own address, as AutoHotkey passes it.
 		// Returns false after a continued error, so the call is not made with a slot the callee would misread.
-		private static bool TryReadStructValueArg(object input, Type structType, out long slot)
+		private static bool ConvertAggregate(object[] parameters, int valueIndex, Type structType, out long slot)
 		{
 			slot = 0L;
 
-			if (Struct.GetSize(structType) > sizeof(long))
+			var layout = StructLayout.GetValidated(structType);
+			if (layout.Invalid)
+				return false;
+
+			if (StructMarshal.AggregateError(structType, layout) is { } error)
 			{
-				_ = Errors.ValueErrorOccurred("Struct arguments larger than 8 bytes are not supported yet.");
+				_ = Errors.ValueErrorOccurred(error);
 				return false;
 			}
 
-			slot = Struct.ReadArgumentSlot(GetStructValue(structType, input));
+			if (StructMarshal.ToStruct(structType, parameters[valueIndex]) is not { } value)
+				return false;
+
+			if (StructMarshal.InRegister(layout.Size))
+				return StructMarshal.TryReadArgumentSlot(value, layout.Size, out slot);
+
+			// The parameter list keeps a converted value alive for the call.
+			parameters[valueIndex] = value;
+			slot = value.Ptr;
 			return true;
 		}
 
@@ -766,7 +794,9 @@ namespace Keysharp.Internals.Interop
 			if (targetRef == null && pointerType != null && Struct.IsArrayOf(input, targetType))
 				return input;
 
-			var structValue = GetStructValue(targetType, input);
+			var structValue = StructMarshal.ToStruct(targetType, input);
+			if (structValue == null)
+				return null;
 
 			if (targetRef != null)
 			{
@@ -777,19 +807,6 @@ namespace Keysharp.Internals.Interop
 				parameters[paramIndex] = structValue;
 
 			return structValue;
-		}
-
-		private static Struct GetStructValue(Type structType, object input)
-		{
-			if (Struct.IsStructInstance(input, structType))
-				return (Struct)input;
-
-			var value = Struct.CreateInstance(structType);
-
-			if (input != null)
-				Struct.SetInputValue(value, input);
-
-			return value;
 		}
 	}
 }

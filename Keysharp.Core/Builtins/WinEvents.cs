@@ -33,13 +33,21 @@ namespace Keysharp.Builtins
 			private WindowSearchSettings settings;
 			private readonly Lock slotGate = new();               // orders slot assignments with Start's copy of them
 
-			public WinEvent(params object[] args) : base(args) { }
+			public WinEvent(params object[] args) : this()
+			{
+				if (args != null)
+					_ = SetCriteria(args.ElementAtOrDefault(0), args.ElementAtOrDefault(1), args.ElementAtOrDefault(2), args.ElementAtOrDefault(3));
+			}
+
+			public WinEvent() => settings = WindowSearchSettings.Current;
 
 			/// <summary>
 			/// Parses the criteria, raising where WinExist would, and captures the calling thread's window-search
 			/// settings. All four blank matches any top-level window, respecting the captured DetectHiddenWindows.
 			/// </summary>
-			public object __New(object winTitle = null, object winText = null, object excludeTitle = null, object excludeText = null)
+			public object __New(object winTitle = null, object winText = null, object excludeTitle = null, object excludeText = null) => SetCriteria(winTitle, winText, excludeTitle, excludeText);
+
+			private object SetCriteria(object winTitle, object winText, object excludeTitle, object excludeText)
 			{
 				this.winTitle = winTitle ?? "";
 				this.winText = winText ?? "";

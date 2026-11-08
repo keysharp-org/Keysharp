@@ -178,6 +178,52 @@ public partial class ScreenTests
 	}
 
 	[Test, Category("Screen"), Category("Internal"), Category("Curated")]
+	public void OverlayLateDisposalWaitsForOwnerSweep()
+	{
+		using var canvas = TestSurface(1, 1);
+		var backing = new RecordingOverlayBacking();
+		var service = new TestOverlayService(() => backing);
+		var owner = new Script();
+		var bounds = new ScreenRect(0, 0, 1, 1);
+
+		try
+		{
+			Script.TheScript = owner;
+			Assert.IsTrue(service.TryPresentImageOverlay(1, canvas, bounds, 255, true));
+			service.SetImageOverlayPointerSink(1, _ => { });
+			var slots = (IDictionary)typeof(OverlayBase).GetField("overlays", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(service);
+			var slot = slots[1U];
+			var gate = slot.GetType().GetField("Gate", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(slot);
+			owner.Dispose();
+			Script.TheScript = s;
+
+			lock (gate)
+			{
+				var disposing = Task.Run(() =>
+				{
+					service.SetImageOverlayPointerSink(1, null);
+					service.DisposeImageOverlay(1);
+				});
+				Assert.IsTrue(disposing.Wait(TimeSpan.FromSeconds(2)), "Late disposal must not wait for a backing operation holding the slot gate.");
+			}
+
+			Assert.IsFalse(backing.Disposed);
+			Assert.IsTrue(IsOverlayRegistered(service, 1));
+			Assert.IsTrue(service.DisposeAllImageOverlays(owner));
+			Assert.IsTrue(backing.Disposed);
+			Script.TheScript = owner;
+			Assert.IsFalse(service.TryPresentImageOverlay(2, canvas, bounds, 255, true));
+			Assert.IsFalse(IsOverlayRegistered(service, 2));
+		}
+		finally
+		{
+			owner.Dispose();
+			Script.TheScript = s;
+			_ = service.DisposeAllImageOverlays();
+		}
+	}
+
+	[Test, Category("Screen"), Category("Internal"), Category("Curated")]
 	public void OverlaySerialization()
 	{
 		using var canvas = TestSurface(1, 1);

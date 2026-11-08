@@ -79,10 +79,6 @@ namespace Keysharp.CompiledMain
 				Keysharp.Runtime.Script.InvokeOrNull(msgbox, "Call", "Hello from Keysharp!");
 				return "";
 			}
-
-			public __Main(params object[] args) : base(null)
-			{
-			}
 		}
 
 		public static object AutoExecSection()

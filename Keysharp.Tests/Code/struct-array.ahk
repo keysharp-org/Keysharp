@@ -113,4 +113,56 @@ DllCall(fillCb, UInt8.Ptr, bytes, "void")
 AssertEq(bytes[1], 65, A_LineNumber)
 CallbackFree(fillCb)
 
+struct ARRAY_INIT {
+    static Created := 0
+    Number : Int32 := 7
+    __New() {
+        ARRAY_INIT.Created += 1
+        this.Number += 1
+    }
+}
+initialized := ARRAY_INIT[2]()
+AssertEq(ARRAY_INIT.Created, 2, A_LineNumber)
+AssertEq(initialized[1].Number, 8, A_LineNumber)
+AssertEq(initialized[2].Number, 8, A_LineNumber)
+Assert(initialized[1] == initialized[1], A_LineNumber)
+Assert(initialized[1] != initialized[2], A_LineNumber)
+initializedView := ARRAY_INIT[2].At(initialized)
+AssertEq(initializedView[1].Number, 8, A_LineNumber)
+AssertEq(ARRAY_INIT.Created, 2, A_LineNumber)
+
+struct ARRAY_VALUE {
+    Number : Int32 := 3
+    __Value {
+        get => this.Number ? this.Number * 10 : unset
+        set => this.Number := value
+    }
+}
+values := ARRAY_VALUE[2]()
+AssertEq(values[1], 30, A_LineNumber)
+values[2] := 6
+AssertEq(values[2], 60, A_LineNumber)
+values[2] := 0
+AssertEq(values[2] ?? "unset", "unset", A_LineNumber)
+Throws(() => values[2], A_LineNumber, UnsetError)
+targets := Int32.Ptr[2]()
+target := Int32(17)
+targets[1] := target
+Assert(targets[1] == target, A_LineNumber)
+AssertEq(targets[1].__Value, 17, A_LineNumber)
+AssertEq(targets[2] ?? "unset", "unset", A_LineNumber)
+
+struct ARRAY_NUMBER extends Int32 {
+    __New() => this.__Value := 7
+}
+numbers := ARRAY_NUMBER[2]()
+AssertEq(numbers[1], 7, A_LineNumber)
+AssertEq(numbers[2], 7, A_LineNumber)
+
+; Overflowing layouts are rejected before allocation or any access through a pointer.
+overflowArray := Int64[0x7FFFFFFFFFFFFFFF]
+Throws(() => overflowArray.Prototype.Size, A_LineNumber, TypeError)
+Throws(() => overflowArray(), A_LineNumber, TypeError)
+Throws(() => overflowArray.At(0), A_LineNumber, TypeError)
+
 FileAppend "pass", "*"

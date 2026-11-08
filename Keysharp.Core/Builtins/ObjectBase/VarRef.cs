@@ -13,9 +13,9 @@ namespace Keysharp.Builtins
 
 		public static VarRef Empty = new VarRef(() => null, x => x = null);
 
-		protected VarRef() : base(null) { }
+		protected VarRef() { }
 
-		public VarRef(object x) : base(null)
+		public VarRef(object x)
 		{
 			stored = x;
 			variable = true;
@@ -23,7 +23,7 @@ namespace Keysharp.Builtins
 
 		public VarRef(Func<object> getter, Action<object> setter) : this(getter, setter, "") { }
 
-		internal VarRef(Func<object> getter, Action<object> setter, string name, bool variable = false) : base(null)
+		internal VarRef(Func<object> getter, Action<object> setter, string name, bool variable = false)
 		{
 			Get = getter;
 			Set = setter;
@@ -33,7 +33,7 @@ namespace Keysharp.Builtins
 
 		// A variable's canonical reference owns native memory: a local's value lives in it, while a static field's cached
 		// reference reaches its storage. Virtual references and script subclasses own no native memory.
-		internal bool IsVariable => variable && GetType() == typeof(VarRef);
+		internal bool IsVariable => variable && type == typeof(VarRef);
 
 		public object __Value
 		{
@@ -57,6 +57,6 @@ namespace Keysharp.Builtins
 		/// it on a particular instance, which is what the <see cref="Any.op"/> test covers.
 		/// </para>
 		/// </summary>
-		internal bool IsPlain => op == null && GetType() == typeof(VarRef);
+		internal bool IsPlain => op == null && type == typeof(VarRef);
 	}
 }

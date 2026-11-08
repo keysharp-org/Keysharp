@@ -7,9 +7,9 @@ namespace Keysharp.Builtins
 		{
 			private readonly ScriptTimerInfo info;
 
-			public Timer(params object[] Arguments) : base(Arguments) { }
+			public Timer() { }
 
-			private Timer(ScriptTimerInfo info) : base(null)
+			private Timer(ScriptTimerInfo info)
 			{
 				this.info = info;
 				RealThread = RealThread.Bind(info.Owner);

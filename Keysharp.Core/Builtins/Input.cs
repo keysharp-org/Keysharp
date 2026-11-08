@@ -10,8 +10,8 @@ namespace Keysharp.Builtins
 			private readonly InputDeviceInfo device;
 			private readonly Script owner;
 
-			public Input(params object[] Arguments) : base(Arguments) { }
-			internal Input(InputDeviceInfo device, Script owner = null) : base(null)
+			public Input() { }
+			internal Input(InputDeviceInfo device, Script owner = null)
 			{
 				this.device = device;
 				this.owner = owner ?? Script.TheScript;
@@ -77,7 +77,7 @@ namespace Keysharp.Builtins
 				{
 					var owner = Script.TheScript;
 					var devices = owner.HookThread.GetInputDevices();
-					var result = new Array(null);
+					var result = new Array();
 					_ = result.array.EnsureCapacity(devices.Length);
 
 					foreach (var device in devices)

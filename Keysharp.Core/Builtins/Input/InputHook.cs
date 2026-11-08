@@ -284,11 +284,13 @@ namespace Keysharp.Builtins
 			}
 		}
 
-		public InputHook(params object[] args) : base(null)
+		public InputHook(params object[] args) : this()
 		{
-			input = new InputType(this);
-			InitializeInstance(args);
+			if (args != null)
+				_ = Configure(args.ElementAtOrDefault(0), args.ElementAtOrDefault(1), args.ElementAtOrDefault(2));
 		}
+
+		protected InputHook() => input = new InputType(this);
 
 		/// <summary>
 		/// Creates an object which can be used to collect or intercept keyboard input.
@@ -321,7 +323,9 @@ namespace Keysharp.Builtins
 		/// </list>
 		/// </param>
 		/// <returns>An empty value; the constructed object is the instance being initialized.</returns>
-		public object __New(object options = null, object endKeys = null, object matchList = null)
+		public object __New(object options = null, object endKeys = null, object matchList = null) => Configure(options, endKeys, matchList);
+
+		private object Configure(object options, object endKeys, object matchList)
 		{
 			if (!options.CoerceString(out var optionsText) || !endKeys.CoerceString(out var endKeysText) || !matchList.CoerceString(out var matchListText))
 				return DefaultObject;

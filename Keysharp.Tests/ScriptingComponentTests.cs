@@ -228,6 +228,56 @@ public class ScriptingComponentTests : TestRunner
 	}
 
 	[Test]
+	public void NativeConstructors()
+	{
+		var result = new CompilerComponent().Compile(new ScriptCompileRequest
+		{
+			SourceText = "#NoTrayIcon\n#ErrorStdOut\n#Warn All, StdOut\nclass NativeBase extends Buffer {\n}\nclass NativeDerived extends NativeBase {\n}\nstruct NativeStorage {\nNumber: Int32\n}\n",
+			CompilationName = "native-constructors",
+			Output = ScriptCompilationOutput.InMemory,
+		});
+		Assert.IsTrue(result.Success, result.ErrorText);
+		var types = Assembly.Load(result.AssemblyBytes).GetTypes();
+		var classes = types.Where(type => typeof(Keysharp.Builtins.Buffer).IsAssignableFrom(type) || typeof(Struct).IsAssignableFrom(type)).ToArray();
+		Assert.That(classes, Has.Length.EqualTo(3));
+		var callbacks = 0;
+		var callback = new KeysharpFunc((Func<object, object>)(_ => ++callbacks));
+
+		foreach (var type in classes.Where(type => typeof(Keysharp.Builtins.Buffer).IsAssignableFrom(type)))
+		{
+			var prototype = new Prototype(type);
+			prototype.DefinePropInternal("__Init", new OwnPropsDesc(null, null, null, callback));
+			prototype.DefinePropInternal("__New", new OwnPropsDesc(null, null, null, callback));
+			var instance = FastCtor.Create(prototype);
+			try
+			{
+				Assert.That(instance.Base, Is.SameAs(prototype));
+				Assert.That(instance.GetType(), Is.EqualTo(type));
+				Assert.That(instance.type, Is.EqualTo(type));
+			}
+			finally
+			{
+				(instance as IDisposable)?.Dispose();
+			}
+		}
+		Assert.That(callbacks, Is.Zero);
+
+		var module = types.Single(type => typeof(Keysharp.Runtime.Module).IsAssignableFrom(type));
+		Assert.That(module.IsAbstract, Is.False);
+		Assert.That(FastCtor.Instantiate(module).GetType(), Is.EqualTo(module));
+
+		var storageType = classes.Single(type => typeof(Struct).IsAssignableFrom(type));
+		var storagePrototype = new Prototype(storageType);
+		Assert.That(Struct.DefineFieldOnPrototype(storagePrototype, "Later", typeof(StructInt32)), Is.EqualTo(StructFieldDefinition.Defined),
+			"a prototype alone must leave the struct layout open");
+		using var storage = (Struct)FastCtor.Create(storagePrototype);
+		Assert.That(storage.GetType(), Is.EqualTo(storageType));
+		Assert.That(storage.Base, Is.SameAs(storagePrototype));
+		Assert.That(storage.Ptr, Is.Zero, "memory comes from initialization");
+		Assert.That(StructLayout.GetValidated(storageType).Size, Is.EqualTo(4));
+	}
+
+	[Test]
 	public void DefaultRuntimeDirectory()
 	{
 		var root = NewComponentRoot();

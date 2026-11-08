@@ -22,17 +22,24 @@ namespace Keysharp.Builtins
 		/// until it is assigned back, so one font can be given to any number of controls.</para>
 		/// <para>Use as: <c>#import KS { Font }</c>, then <c>f := Font.UiDefault</c>, <c>MyGui.Font := f</c>.</para>
 		/// </summary>
-		//Not sealed, and with the params ctor every extendable builtin here has: a script's `class X extends
-		//Font` lowers to real C# inheritance with a `(params object[])` base call, so sealing or omitting that
-		//ctor fails the generated code with CS0509/CS1729.
 		public class Font : KeysharpObject
 		{
 			internal FontOptions fontOptions;
 
-			public Font(params object[] args) : base(args) { }
+			public Font(params object[] args) : this()
+			{
+				if (args != null)
+					_ = ApplyOptions(args.Length > 0 ? args[0] : null, args.Length > 1 ? args[1] : null);
+			}
+
+			protected Font() { }
+
+			internal Font(FontOptions options) : this() => fontOptions = options;
 
 			/// <summary>Takes <c>Gui.SetFont</c>'s two arguments in the same order.</summary>
-			public object __New(object options = null, object name = null)
+			public object __New(object options = null, object name = null) => ApplyOptions(options, name);
+
+			private object ApplyOptions(object options, object name)
 			{
 				if (options is Any || name is Any)
 					return Errors.TypeErrorOccurred(options is Any ? options : name, typeof(string));
@@ -318,8 +325,7 @@ namespace Keysharp.Builtins
 			/// </summary>
 			internal static Font FromNative(NativeFont f, string fallbackFamily)
 			{
-				var font = new Font(null);
-				font.fontOptions = Conversions.ReadFontOptions(f);
+				var font = new Font(Conversions.ReadFontOptions(f));
 				font.fontOptions.name ??= fallbackFamily;
 				return font;
 			}

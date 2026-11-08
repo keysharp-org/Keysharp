@@ -17,8 +17,6 @@ namespace Keysharp.Builtins
 		// same simple name in every file that reopens the partial (Font, Color, Icon, Timer, Screen, Size, Point).
 		public sealed class App : KeysharpObject
 		{
-			public App(params object[] args) : base(args) { }
-
 			/// <summary>
 			/// There is exactly one application per process, so — like Clipboard, which wraps *the* clipboard rather
 			/// than *a* clipboard — this class wraps *the* thing and has no instances. Every member is static.

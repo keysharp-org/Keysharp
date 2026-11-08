@@ -10,8 +10,6 @@ namespace Keysharp.Builtins
 		{
 			private static readonly object[] nullPlaceholder = [null];
 
-			public DotNet(params object[] args) : base(args) { }
-
 			// The compiled pattern, or null once a compile error has been raised and continued.
 			private static RegexWithTag CachedRegex(string needle, bool reverse)
 			{

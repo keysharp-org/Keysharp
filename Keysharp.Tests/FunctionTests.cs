@@ -120,6 +120,7 @@ public class FunctionTests : TestRunner
 	{
 		var counts = new CallCounts();
 		object[] args = [counts];
+		CountedConstruction.Counts = counts;
 		var call = new MethodPropertyHolder(typeof(CallCounts).GetMethod(nameof(CallCounts.Count))).CallFunc;
 		var field = new MethodPropertyHolder(typeof(CallCounts).GetField(nameof(CallCounts.Slot)));
 		var get = field.CallFunc;
@@ -130,8 +131,7 @@ public class FunctionTests : TestRunner
 			Assert.That(call(null, args), Is.SameAs(counts));
 			cachedSet(null, counts);
 			Assert.That(get(null, null), Is.SameAs(counts));
-			var created = (CountedConstruction)FastCtor.Call(typeof(CountedConstruction), args);
-			Assert.That(created.Arguments, Is.SameAs(args));
+			Assert.That(FastCtor.Instantiate(typeof(CountedConstruction)), Is.TypeOf<CountedConstruction>());
 		}
 
 		var warmup = DelegateFactory.CompilationThreshold - 1;
@@ -158,18 +158,28 @@ public class FunctionTests : TestRunner
 			GC.KeepAlive(call(null, args));
 		Assert.That(GC.GetAllocatedBytesForCurrentThread() - before, Is.Zero);
 		CallCounts.Slot = null;
+		CountedConstruction.Counts = null;
 	}
 
+	// A constructor's exception reaches the caller unwrapped, both before and after its factory is compiled.
 	[Test, Category("Function"), Category("Internal")]
-	public void ConstructorArgumentsAndErrors()
+	public void ConstructorErrors()
 	{
 		var failure = new InvalidOperationException("constructor failure");
-		object[] args = [failure];
-		for (var i = 0; i < CallsPastCompilation; i++)
+
+		try
 		{
-			var created = (ConditionalConstruction)FastCtor.Call(typeof(ConditionalConstruction), null);
-			Assert.That(created.Arguments, Is.Null);
-			Assert.That(Assert.Throws<InvalidOperationException>(() => FastCtor.Call(typeof(ConditionalConstruction), args)), Is.SameAs(failure));
+			for (var i = 0; i < CallsPastCompilation; i++)
+			{
+				ConditionalConstruction.Failure = null;
+				Assert.That(FastCtor.Instantiate(typeof(ConditionalConstruction)), Is.TypeOf<ConditionalConstruction>());
+				ConditionalConstruction.Failure = failure;
+				Assert.That(Assert.Throws<InvalidOperationException>(() => FastCtor.Instantiate(typeof(ConditionalConstruction))), Is.SameAs(failure));
+			}
+		}
+		finally
+		{
+			ConditionalConstruction.Failure = null;
 		}
 	}
 
@@ -464,23 +474,20 @@ public class FunctionTests : TestRunner
 		}
 	}
 
-	public sealed class CountedConstruction
+	public sealed class CountedConstruction : Any
 	{
-		public readonly object[] Arguments;
-		public CountedConstruction(object[] args)
-		{
-			Interlocked.Increment(ref ((CallCounts)args[0]).Constructors);
-			Arguments = args;
-		}
+		internal static CallCounts Counts;
+		public CountedConstruction() => Interlocked.Increment(ref Counts.Constructors);
 	}
 
-	public sealed class ConditionalConstruction
+	public sealed class ConditionalConstruction : Any
 	{
-		public readonly object[] Arguments;
-		public ConditionalConstruction(object[] args)
+		internal static Exception Failure;
+
+		public ConditionalConstruction()
 		{
-			if (args is [Exception failure]) throw failure;
-			Arguments = args;
+			if (Failure != null)
+				throw Failure;
 		}
 	}
 }

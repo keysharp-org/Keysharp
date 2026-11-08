@@ -8,11 +8,9 @@ namespace Keysharp.Builtins
 			internal EventSubscriptionBase sub;
 			private protected readonly object callback;
 
-			internal EventHook() : base(null) { }
-			private protected EventHook(object callback) : base(null) => this.callback = callback;
+			private protected EventHook(object callback) => this.callback = callback;
 
-			// WinEvent and InputHook are constructed by scripts; the other hooks come from their factories.
-			private protected EventHook(params object[] args) : base(args) { }
+			private protected EventHook() { }
 
 			/// <summary>Validates a callback property, treating unset and an empty string as clear.</summary>
 			internal static bool TrySlotCallback(object value, int argCount, out object callback)

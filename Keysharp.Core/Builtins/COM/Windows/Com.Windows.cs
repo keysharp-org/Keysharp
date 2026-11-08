@@ -507,15 +507,18 @@ namespace Keysharp.Builtins.COM
 
 			//A COM method takes the object pointer as its first argument, so the list is one longer than the
 			//script's arguments and is built with that slot already in front: the helper fills the tail in
-			//place, which is why nothing here has to be copied into or out of a second buffer.
-			Span<long> args = stackalloc long[argCount + 1];
+			//place, which is why nothing here has to be copied into or out of a second buffer. The memory a
+			//struct is returned through goes ahead of even that, as AutoHotkey passes it.
+			Span<long> args = stackalloc long[argCount + 2];
 			Span<ArgumentSlot> slots = stackalloc ArgumentSlot[argCount];
-			using var helper = new ArgumentHelper(parameters, args[1..], slots, isCom: true);
+			using var helper = new ArgumentHelper(parameters, args[2..], slots, isCom: true);
 
 			if (helper.Failed)//The error was reported and suppressed; the argument list is incomplete.
 				return DefaultObject;
 
-			args[0] = pUnk;
+			var returnBuffer = helper.ReturnBuffer;
+			args[0] = returnBuffer;
+			args[1] = pUnk;
 			//Called through the same generated invoker DllCall uses rather than anything COM-aware, because the
 			//vtable entry need not belong to a real COM object at all: a script can build one out of Buffers and
 			//a CallbackCreate thunk, with no AddRef or Release behind it, and ComCall must still work.
@@ -531,9 +534,11 @@ namespace Keysharp.Builtins.COM
 
 			    MsgBox ComCall(3, dummyCOM.Ptr, "int")
 			*/
-			//Every argument sits one slot further along than the helper numbered it, and so does the return
-			//value, so the whole mask shifts with them.
-			var value = NativeInvoker.NativeInvoke(vtbl, args, helper.floatingTypeMask << 1);
+			//Every argument sits one or two slots further along than the helper numbered it, and so does the
+			//return value, so the whole mask shifts with them.
+			var value = returnBuffer != 0
+				? NativeInvoker.NativeInvoke(vtbl, args, helper.floatingTypeMask << 2)
+				: NativeInvoker.NativeInvoke(vtbl, args[1..], helper.floatingTypeMask << 1);
 			helper.CopyBack(parameters);
 			var result = helper.ConvertReturnValue(value);
 			return result;

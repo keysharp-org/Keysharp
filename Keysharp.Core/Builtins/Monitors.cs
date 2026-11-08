@@ -22,9 +22,9 @@ namespace Keysharp.Builtins
 			private long index;
 			private DisplayDetails details;
 
-			public KeysharpMonitor(params object[] args) : base(args) { }
+			public KeysharpMonitor() { }
 
-			internal KeysharpMonitor(DisplayInfo display, long index, DisplayDetails details) : base(null)
+			internal KeysharpMonitor(DisplayInfo display, long index, DisplayDetails details)
 			{
 				this.display = display;
 				this.index = index;

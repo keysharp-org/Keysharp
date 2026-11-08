@@ -242,7 +242,7 @@ namespace Keysharp.Builtins
 				}
 			}
 
-			public Control(params object[] args) : base(args)
+			public Control(params object[] args)
 			{
 				//Refused rather than half-built, and checked by type rather than just by count: a Control with
 				//no toolkit control behind it has no working member at all, and reaching through the null raises

@@ -108,10 +108,13 @@ namespace Keysharp.Internals.Scripting
 
 				var deleted = false;
 				// A batch of Buffers and Files, the usual one, has nothing to order.
-				var anyDelete = batch.Exists(static entry => !entry.Again && entry.Owner.HasDeleteCall);
+				var anyDelete = batch.Exists(static entry => !entry.Again
+					&& (entry.Owner.HasDeleteCall || entry.Owner is Struct { initializedFields: not null }
+						&& WithInitializedFields(entry.Owner).Any(static any => any.HasDeleteCall)));
 
 				// Outside-in (parents before children), and each object's __Delete only the first time it is collected.
-				foreach (var any in anyDelete ? OrderOutsideIn([.. batch.Where(entry => !entry.Again).Select(entry => entry.Owner)]) : [])
+				foreach (var any in anyDelete ? OrderOutsideIn([.. batch.Where(entry => !entry.Again).Select(entry => entry.Owner)])
+					.SelectMany(WithInitializedFields) : [])
 				{
 					if (!any.HasDeleteCall)
 						continue;
@@ -130,9 +133,9 @@ namespace Keysharp.Internals.Scripting
 				// Only then is anything disposed, as a __Delete may use what another object of the batch holds. A __Delete
 				// may also have stored its object or another of the batch, as AutoHotkey allows, so after one ran the
 				// batch is disposed once it is collected again, unless the script is exiting.
-				foreach (var (any, again) in batch)
+				foreach (var (any, _) in batch)
 				{
-					if (deleted && !again && !exiting && any is IDisposable)
+					if (deleted && !exiting && any is IDisposable)
 						any.ArmAgain();
 					else
 						DisposeNative(any);
@@ -186,37 +189,51 @@ namespace Keysharp.Internals.Scripting
 			catch { }
 		}
 
+		// A struct's own __Delete runs before those of the nested structs its construction initialized, the last first.
+		private static IEnumerable<Any> WithInitializedFields(Any owner)
+		{
+			yield return owner;
+
+			if (owner is Struct { initializedFields: { } fields })
+				for (var i = fields.Count - 1; i >= 0; --i)
+					foreach (var field in WithInitializedFields(fields[i]))
+						yield return field;
+		}
+
 		private static List<Any> OrderOutsideIn(List<Any> batch)
 		{
 			// Heuristic: if A references B (directly) and both are in the batch,
 			// A should precede B (outside-in).
-			// We build a graph using shallow enumeration of Keysharp-contained children.
 			var set = new HashSet<Any>(batch, ReferenceEqualityComparer.Instance);
 			var edges = new Dictionary<Any, HashSet<Any>>(ReferenceEqualityComparer.Instance);
 			foreach (var a in batch)
-			{
-				var children = TryEnumerateChildren(a); // see below
-				foreach (var c in children)
-				{
-					if (ReferenceEquals(a, c)) continue;
-					if (c is Any child && set.Contains(child))
-					{
-						if (!edges.TryGetValue(a, out var to)) edges[a] = to = new(ReferenceEqualityComparer.Instance);
-						to.Add(child);
-					}
-				}
-			}
+				AddReferenceEdges(a, a, set, edges);
 
 			// Topological order with parent->child edges means parents first.
 			return TopoSort(batch, edges);
 		}
 
-		private static IEnumerable<object> TryEnumerateChildren(Any a)
+		// What a struct's embedded structs hold, it holds itself, so they are looked through, and only they.
+		private static void AddReferenceEdges(Any from, Any holder, HashSet<Any> set, Dictionary<Any, HashSet<Any>> edges)
 		{
-			// No parser changes: just lean on what you already expose.
-			// 1) If Any wraps a map/array/object that Keysharp can enumerate, use that.
-			// 2) If not, return empty (best-effort). Parent-first still helps many cases.
-			try { return a.GetEnumerableMembersOrEmpty(); } catch { return System.Array.Empty<object>(); }
+			foreach (var child in TryEnumerateChildren(holder))
+			{
+				if (ReferenceEquals(child, from))
+					continue;
+
+				if (set.Contains(child))
+				{
+					if (!edges.TryGetValue(from, out var to)) edges[from] = to = new(ReferenceEqualityComparer.Instance);
+					to.Add(child);
+				}
+				else if (child is Struct nested && holder is Struct owner && nested.IsEmbeddedIn(owner))
+					AddReferenceEdges(from, nested, set, edges);
+			}
+		}
+
+		private static IEnumerable<Any> TryEnumerateChildren(Any a)
+		{
+			try { return a.GetEnumerableMembersOrEmpty(); } catch { return []; }
 		}
 
 		private static List<Any> TopoSort(List<Any> nodes, Dictionary<Any, HashSet<Any>> edges)

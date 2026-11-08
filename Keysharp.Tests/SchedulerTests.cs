@@ -8,10 +8,6 @@ public class SchedulerTests : TestRunner
 		internal int Deletes;
 		internal int Disposes;
 
-		internal DestructorProbe() : base(null)
-		{
-		}
-
 		public override object __Delete()
 		{
 			Deletes++;
@@ -231,6 +227,50 @@ public class SchedulerTests : TestRunner
 
 		Assert.That(probe.Deletes, Is.Zero);
 		Assert.That(probe.Disposes, Is.EqualTo(1));
+	}
+
+	[Test, Category("Threading")]
+	public void DestructorCanResurrectResourceCollectedAgain()
+	{
+		var context = UseQueuedMainContext();
+		var resource = new DestructorProbe();
+		var owner = new KeysharpObject();
+		DestructorProbe saved = null;
+		var deletes = 0;
+		owner.DefinePropInternal("__Delete", new OwnPropsDesc(null, null, null,
+			new KeysharpFunc((Func<object, object>)(_ =>
+			{
+				deletes++;
+				saved = resource;
+				return 0L;
+			}))));
+
+		try
+		{
+			// A sentinel detaches before handing its object to the pump; enqueue directly to avoid GC timing.
+			owner.HasFinalizer = false;
+			resource.HasFinalizer = false;
+			s.DestructorPump.Enqueue(resource, again: true);
+			s.DestructorPump.Enqueue(owner);
+			context.DrainAll();
+
+			Assert.That(deletes, Is.EqualTo(1));
+			Assert.That(saved, Is.SameAs(resource));
+			Assert.That(resource.Disposes, Is.Zero);
+			Assert.IsTrue(resource.HasFinalizer);
+
+			saved = null;
+			resource.HasFinalizer = false;
+			s.DestructorPump.Enqueue(resource, again: true);
+			context.DrainAll();
+			Assert.That(resource.Disposes, Is.EqualTo(1));
+			Assert.That(deletes, Is.EqualTo(1));
+		}
+		finally
+		{
+			owner.HasFinalizer = false;
+			resource.HasFinalizer = false;
+		}
 	}
 
 	[Test, Category("Threading")]

@@ -39,12 +39,14 @@ namespace Keysharp.Builtins
 		readonly int _slotId;
 		// Non-null only for a typed callback: how to convert each parameter, and the return value (default
 		// when the return type is "void"). These decide conversion only; they do not affect the native
-		// signature beyond which register file each value arrives in (see Struct.CallbackSlot).
+		// signature beyond which register file each value arrives in (see StructMarshal.CallbackSlot).
 		// All of these are written before AritySlots.Rent publishes the holder, whose lock and Volatile.Write
 		// pair with Get's Volatile.Read, so Dispatch on another thread always sees them fully initialised.
-		readonly Struct.CallbackConversion[] _typedParameters;
-		readonly Struct.CallbackConversion _typedReturn;
+		readonly StructMarshal.CallbackConversion[] _typedParameters;
+		readonly StructMarshal.CallbackConversion _typedReturn;
 		readonly bool _typedVoid;
+		// The caller passes the memory for an aggregate return value as an extra first argument.
+		readonly bool _returnBuffer;
 		private long _ptr;
 		internal ScriptEventScheduler OwnerScheduler => _ownerState.OwnerScheduler;
 
@@ -119,17 +121,27 @@ namespace Keysharp.Builtins
 		/// integer registers reuses the same arity-based delegates and slots as an untyped callback; only a
 		/// floating-point parameter or return value needs a native signature of its own.
 		/// </summary>
-		internal DelegateHolder(Any function, Struct.CallbackConversion[] conversions, bool typedVoid, bool fast, bool cdecl)
+		internal DelegateHolder(Any function, StructMarshal.CallbackConversion[] conversions, bool typedVoid, bool fast, bool cdecl)
 		{
 			funcObj = function;
 			_fn = Script.ResolveDirectCallTarget(function);
 			_fast = fast;
 			_reference = false;
-			_arity = conversions.Length - 1;
 			_typedVoid = typedVoid;
 			// Non-null even at arity 0, which is what marks this holder as typed for Dispatch.
-			_typedParameters = conversions[.._arity];
-			_typedReturn = conversions[_arity];
+			_typedParameters = conversions[..^1];
+			_typedReturn = conversions[^1];
+			_returnBuffer = !typedVoid && _typedReturn.ByAddress;
+
+			// The native signature, whose arity is what Dispatch finds the holder by.
+			if (_returnBuffer)
+				conversions = [new(NativeTypeCode.Ptr, null), .. conversions];
+
+			_arity = conversions.Length - 1;
+
+			if (_arity > MaxArity)
+				throw new ValueError($"A callback cannot have more than {MaxArity - 1} parameters when its return value is passed through memory.");
+
 			_ownerState = new(Script.TheScript?.EventScheduler, true);
 
 			if (_ownerState.OwnerScheduler is { } owner && !owner.RegisterOwnedDelegate(this))
@@ -315,19 +327,23 @@ namespace Keysharp.Builtins
 			return ConvertResult(InvokeCallback(args, rawArgs));
 		}
 
-		// Converts each raw argument slot per its declared type, then returns the raw bits the declared return
-		// type leaves in the return register (zero for "void", which the native signature ignores).
-		private long InvokeTyped(long[] rawArgs)
+		// Returns the raw bits the declared return type leaves in the return register (zero for "void", which the native
+		// signature ignores). A callback which never ran, or ended in an error, leaves zero, or the address of the memory
+		// for an aggregate return value.
+		private long InvokeTyped(long[] rawArgs) =>
+			InvokeCallback(null, rawArgs) is long bits ? bits : _returnBuffer ? rawArgs[0] : 0L;
+
+		// Inside the callback's thread, as in AutoHotkey, since converting a struct runs its script code.
+		private object CallTyped(long[] rawArgs)
 		{
 			var args = new object[_typedParameters.Length];
+			var first = _returnBuffer ? 1 : 0;
 
 			for (var i = 0; i < args.Length; ++i)
-				args[i] = Struct.ConvertCallbackArgument(_typedParameters[i], rawArgs[i]);
+				args[i] = StructMarshal.ConvertCallbackArgument(_typedParameters[i], rawArgs[i + first]);
 
-			var result = InvokeCallback(args, null);
-			// A null result means the callback never ran (the scheduler was disposed, or the thread could not
-			// start), so there is no value to convert; a declared struct return would reject null as a TypeError.
-			return _typedVoid || result == null ? 0L : Struct.ConvertCallbackReturn(_typedReturn, result);
+			var result = CallTarget(args);
+			return _typedVoid ? 0L : StructMarshal.ConvertCallbackReturn(_typedReturn, result, _returnBuffer ? rawArgs[0] : 0L);
 		}
 
 		// Calls the target, resolving its result to null when it returned no value so that both the untyped and
@@ -339,7 +355,7 @@ namespace Keysharp.Builtins
 		{
 			var targetScheduler = OwnerScheduler;
 			var script = targetScheduler?.Owner;
-			(object value, bool completed) execution;
+			object value;
 
 			if (targetScheduler == null || targetScheduler.IsDisposed
 					|| script is not { hasExited: false, IsDisposed: false })
@@ -352,7 +368,7 @@ namespace Keysharp.Builtins
 				// single invocation, which is the case Fast mode exists to keep cheap. This also skips the
 				// disposed check in InvokeSynchronous; owner retirement was checked above so a late callback can
 				// never run script code or cross the native caller's frames with ObjectDisposedException.
-				execution = targetScheduler.OwnsCurrentThread
+				value = targetScheduler.OwnsCurrentThread
 							? ExecuteTarget(args, rawArgs)
 							: targetScheduler.InvokeSynchronous(() => ExecuteTarget(args, rawArgs));
 			}
@@ -369,7 +385,7 @@ namespace Keysharp.Builtins
 				if (launched.status != ScriptEventExecutionResult.Executed)
 					return null;
 
-				execution = launched.execution;
+				value = launched.value;
 			}
 
 			// A Fast callback runs no pseudo-thread, so no thread end checks for it, however it ended; the other path's
@@ -377,13 +393,12 @@ namespace Keysharp.Builtins
 			if (_fast)
 				script.ExitIfNotPersistent();
 
-			return execution.value;
+			return value;
 		}
 
-		private (object value, bool completed) ExecuteTarget(object[] args, long[] rawArgs)
+		private object ExecuteTarget(object[] args, long[] rawArgs)
 		{
 			object val = null;
-			var completed = false;
 			// As AHK's callback stub does, a callback starts with a fresh peek interval, so one a window message
 			// delivered (a subclass procedure) does not pump messages on its first loop and re-enter itself.
 			Script.TheScript.RecordMessageCheck();
@@ -408,25 +423,23 @@ namespace Keysharp.Builtins
 					}
 				}
 				else
-					val = CallTarget(args);
-
-				completed = true;
+					val = _typedParameters != null ? CallTyped(rawArgs) : CallTarget(args);
 			}
 			catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 			{
 				_ = Errors.ReportUncaught(ex);
 			}
 
-			return (val, completed);
+			return val;
 		}
 
-		private (ScriptEventExecutionResult status, (object value, bool completed) execution) RunInPseudoThread(
+		private (ScriptEventExecutionResult status, object value) RunInPseudoThread(
 			ScriptEventScheduler targetScheduler, long launchPriority, object[] args, long[] rawArgs)
 		{
 			using var thread = targetScheduler.StartPseudoThreadScope(launchPriority, true, false, false, ThreadKind.Callback);
 
 			if (!thread.Started)
-				return (thread.Result, (null, false));
+				return (thread.Result, null);
 
 			return (ScriptEventExecutionResult.Executed, ExecuteTarget(args, rawArgs));
 		}
@@ -457,7 +470,7 @@ namespace Keysharp.Builtins
 	/// <summary>
 	/// Native entry points for typed callbacks whose values do not all travel in integer registers, which are the
 	/// only ones needing a signature the pre-declared arity delegates cannot express. A signature is reduced to
-	/// its register-file shape (see <see cref="Struct.CallbackSlot"/>), so only floating-point positions and the
+	/// its register-file shape (see <see cref="StructMarshal.CallbackSlot"/>), so only floating-point positions and the
 	/// return kind vary; everything integer-like is declared as a long and read at its declared width by
 	/// <see cref="DelegateHolder.Dispatch"/>. The stub reinterprets its floating-point arguments as raw bits and
 	/// hands them to that same dispatcher, so typed and untyped callbacks share one dispatch path.
@@ -479,16 +492,16 @@ namespace Keysharp.Builtins
 		private static readonly MethodInfo dispatch = typeof(DelegateHolder).GetMethod(nameof(DelegateHolder.Dispatch),
 				BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public, null, [typeof(int), typeof(long[])], null);
 
-		internal static bool IsAllInteger(Struct.CallbackConversion[] conversions)
+		internal static bool IsAllInteger(StructMarshal.CallbackConversion[] conversions)
 		{
 			foreach (var conversion in conversions)
-				if (conversion.Slot != Struct.CallbackSlot.Integer)
+				if (conversion.Slot != StructMarshal.CallbackSlot.Integer)
 					return false;
 
 			return true;
 		}
 
-		internal static nint GetOrCreate(Struct.CallbackConversion[] conversions, bool cdecl, int slotId)
+		internal static nint GetOrCreate(StructMarshal.CallbackConversion[] conversions, bool cdecl, int slotId)
 		{
 			var shape = (cdecl ? "c" : "s") + string.Concat(conversions.Select(c => (char)('a' + (int)c.Slot)));
 			// Called under the cache's lock, which is also what guards _delegateTypes, _module and _nextId.
@@ -501,15 +514,15 @@ namespace Keysharp.Builtins
 			});
 		}
 
-		private static Type NativeTypeOf(Struct.CallbackSlot slot) => slot switch
+		private static Type NativeTypeOf(StructMarshal.CallbackSlot slot) => slot switch
 		{
-			Struct.CallbackSlot.Float32 => typeof(float),
-			Struct.CallbackSlot.Float64 => typeof(double),
+			StructMarshal.CallbackSlot.Float32 => typeof(float),
+			StructMarshal.CallbackSlot.Float64 => typeof(double),
 			_ => typeof(long)
 		};
 
 		// The native parameter types of a shape, which is its conversions minus the trailing return value.
-		private static Type[] NativeParameterTypes(Struct.CallbackConversion[] conversions)
+		private static Type[] NativeParameterTypes(StructMarshal.CallbackConversion[] conversions)
 		{
 			var parameterTypes = new Type[conversions.Length - 1];
 
@@ -521,7 +534,7 @@ namespace Keysharp.Builtins
 
 		// Emits the stub body: pack every argument into a long[] of raw bits, call the shared dispatcher, then
 		// reinterpret its result as the declared return type.
-		private static Delegate CreateStub(Struct.CallbackConversion[] conversions, int slotId, Type delegateType)
+		private static Delegate CreateStub(StructMarshal.CallbackConversion[] conversions, int slotId, Type delegateType)
 		{
 			var arity = conversions.Length - 1;
 			var returnSlot = conversions[arity].Slot;
@@ -540,12 +553,12 @@ namespace Keysharp.Builtins
 				// would write 4 bytes and leave two stray bytes in the instruction stream.
 				il.Emit(OpCodes.Ldarg, (short)i);
 
-				if (conversions[i].Slot == Struct.CallbackSlot.Float32)
+				if (conversions[i].Slot == StructMarshal.CallbackSlot.Float32)
 				{
 					il.Emit(OpCodes.Call, singleToBits);
 					il.Emit(OpCodes.Conv_U8);// The reader only looks at the low 32 bits, so keep them unpolluted.
 				}
-				else if (conversions[i].Slot == Struct.CallbackSlot.Float64)
+				else if (conversions[i].Slot == StructMarshal.CallbackSlot.Float64)
 					il.Emit(OpCodes.Call, doubleToBits);
 
 				il.Emit(OpCodes.Stelem_I8);
@@ -553,12 +566,12 @@ namespace Keysharp.Builtins
 
 			il.Emit(OpCodes.Call, dispatch);
 
-			if (returnSlot == Struct.CallbackSlot.Float32)
+			if (returnSlot == StructMarshal.CallbackSlot.Float32)
 			{
 				il.Emit(OpCodes.Conv_I4);
 				il.Emit(OpCodes.Call, bitsToSingle);
 			}
-			else if (returnSlot == Struct.CallbackSlot.Float64)
+			else if (returnSlot == StructMarshal.CallbackSlot.Float64)
 				il.Emit(OpCodes.Call, bitsToDouble);
 
 			il.Emit(OpCodes.Ret);
@@ -566,7 +579,7 @@ namespace Keysharp.Builtins
 		}
 
 		// A delegate type is the one thing DynamicMethod cannot express, so the shape's signature is emitted once.
-		private static Type CreateDelegateType(Struct.CallbackConversion[] conversions, bool cdecl)
+		private static Type CreateDelegateType(StructMarshal.CallbackConversion[] conversions, bool cdecl)
 		{
 			_module ??= AssemblyBuilder.DefineDynamicAssembly(new AssemblyName("Keysharp.TypedCallbacks"),
 						AssemblyBuilderAccess.Run).DefineDynamicModule("Keysharp.TypedCallbacks");

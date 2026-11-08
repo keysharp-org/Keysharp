@@ -66,10 +66,16 @@ namespace Keysharp.Builtins
 
 
 		/// <summary>
-		/// Calls <see cref="__New"/> to initialize a new instance of the <see cref="Buffer"/> class.
+		/// Creates a buffer from a byte count or byte array.
 		/// </summary>
 		/// <param name="args">The data to initially store in the buffer</param>
-		public Buffer(params object[] args) : base(args) { }
+		public Buffer(params object[] args) : this()
+		{
+			if (args != null)
+				_ = SetContents(args.ElementAtOrDefault(0), args.ElementAtOrDefault(1));
+		}
+
+		protected Buffer() { }
 
 		/// <summary>
 		/// Creates a new <see cref="Buffer"/> object.
@@ -89,7 +95,9 @@ namespace Keysharp.Builtins
 		// AutoHotkey's own introspection (Buffer.Prototype.__New reports Min=1, Max=3, IsVariadic=0) instead of
 		// being restated out-of-band by a [TailNames] attribute.
 		// The parameters are PascalCase on purpose: these names ARE script-facing API (`Buffer(ByteCount: 16)`).
-		public unsafe object __New(object byteCount = null, object fillByte = null)
+		public unsafe object __New(object byteCount = null, object fillByte = null) => SetContents(byteCount, fillByte);
+
+		private protected unsafe object SetContents(object byteCount = null, object fillByte = null)
 		{
 			if (byteCount == null)//Also covers Buffer(), whose omitted first argument arrives as null.
 			{

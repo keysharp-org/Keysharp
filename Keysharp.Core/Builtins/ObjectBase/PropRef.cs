@@ -18,8 +18,6 @@ namespace Keysharp.Builtins
 		public object Target { get; private set; }
 		public object[] Args { get; private set; } = null;
 
-		public PropRef() : base() { }
-
 		public override object __New(params object[] args)
 		{
 			if (args == null || args.Length < 2)

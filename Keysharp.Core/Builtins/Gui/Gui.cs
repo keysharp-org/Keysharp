@@ -357,9 +357,15 @@ namespace Keysharp.Builtins
 
 		internal StatusStrip StatusStrip { get; set; }
 
-		public Gui(params object[] args) : base(args) { }
+		public Gui(params object[] args) : this()
+		{
+			if (args != null)
+				_ = CreateWindow(args.Length > 0 ? args[0] : null, args.Length > 1 ? args[1] : null, args.Length > 2 ? args[2] : null);
+		}
 
-		internal Gui(Script owner, object obj0 = null, object obj1 = null, object obj2 = null, object obj3 = null) : base(null)//The last parameter is hidden and is only for internal use for when we wrap the main window in a Gui object.
+		protected Gui() { }
+
+		internal Gui(Script owner, object obj0 = null, object obj1 = null, object obj2 = null, object obj3 = null)//The last parameter is hidden and is only for internal use for when we wrap the main window in a Gui object.
 		{
 			owner.InvokeOnUIThread(() =>
 			{
@@ -407,7 +413,9 @@ namespace Keysharp.Builtins
 				controls[wrapper.Key] = wrapper.Value;
 		}
 
-		public object __New(object options = null, object title = null, object eventObj = null)
+		public object __New(object options = null, object title = null, object eventObj = null) => CreateWindow(options, title, eventObj);
+
+		private object CreateWindow(object options, object title, object eventObj)
 		{
 			if (form == null)//Don't allow derived classes to init twice.
 			{
@@ -4318,53 +4326,149 @@ namespace Keysharp.Builtins
 		//Create a thin wrapper for each control type so that type checking like:
 		//if (obj is Gui.Edit)
 		//works correctly.
-		public class ActiveX(params object[] args) : Gui.Control(args) { }
+		public class ActiveX : Gui.Control
+		{
+			public ActiveX(params object[] args) : base(args) { }
+			protected ActiveX() { }
+		}
 
-		public class Button(params object[] args) : Gui.Control(args) { }
+		public class Button : Gui.Control
+		{
+			public Button(params object[] args) : base(args) { }
+			protected Button() { }
+		}
 
-		public class CheckBox(params object[] args) : Gui.Control(args) { }
+		public class CheckBox : Gui.Control
+		{
+			public CheckBox(params object[] args) : base(args) { }
+			protected CheckBox() { }
+		}
 #if WINDOWS
-		public class Custom(params object[] args) : Gui.Control(args) { }
+		public class Custom : Gui.Control
+		{
+			public Custom(params object[] args) : base(args) { }
+			protected Custom() { }
+		}
 #endif
-		public partial class DateTime(params object[] args) : Gui.Control(args) { }
+		public partial class DateTime : Gui.Control
+		{
+			public DateTime(params object[] args) : base(args) { }
+			protected DateTime() { }
+		}
 
-		public partial class Edit(params object[] args) : Gui.Control(args) { }
+		public partial class Edit : Gui.Control
+		{
+			public Edit(params object[] args) : base(args) { }
+			protected Edit() { }
+		}
 
-		public class GroupBox(params object[] args) : Gui.Control(args) { }
+		public class GroupBox : Gui.Control
+		{
+			public GroupBox(params object[] args) : base(args) { }
+			protected GroupBox() { }
+		}
 
-		public class Hotkey(params object[] args) : Gui.Control(args) { }
+		public class Hotkey : Gui.Control
+		{
+			public Hotkey(params object[] args) : base(args) { }
+			protected Hotkey() { }
+		}
 
-		public class Link(params object[] args) : Gui.Control(args) { }
+		public class Link : Gui.Control
+		{
+			public Link(params object[] args) : base(args) { }
+			protected Link() { }
+		}
 
-		public partial class List(params object[] args) : Gui.Control(args) { }
+		public partial class List : Gui.Control
+		{
+			public List(params object[] args) : base(args) { }
+			protected List() { }
+		}
 
-		public partial class ComboBox(params object[] args) : Gui.List(args) { }
+		public partial class ComboBox : Gui.List
+		{
+			public ComboBox(params object[] args) : base(args) { }
+			protected ComboBox() { }
+		}
 
-		public class DDL(params object[] args) : Gui.List(args) { }
+		public class DDL : Gui.List
+		{
+			public DDL(params object[] args) : base(args) { }
+			protected DDL() { }
+		}
 
-		public class ListBox(params object[] args) : Gui.List(args) { }
+		public class ListBox : Gui.List
+		{
+			public ListBox(params object[] args) : base(args) { }
+			protected ListBox() { }
+		}
 
-		public partial class Tab(params object[] args) : Gui.List(args) { }
+		public partial class Tab : Gui.List
+		{
+			public Tab(params object[] args) : base(args) { }
+			protected Tab() { }
+		}
 
-		public partial class ListView(params object[] args) : Gui.Control(args) { }
+		public partial class ListView : Gui.Control
+		{
+			public ListView(params object[] args) : base(args) { }
+			protected ListView() { }
+		}
 
-		public class MonthCal(params object[] args) : Gui.Control(args) { }
+		public class MonthCal : Gui.Control
+		{
+			public MonthCal(params object[] args) : base(args) { }
+			protected MonthCal() { }
+		}
 
-		public class Pic(params object[] args) : Gui.Control(args) { }
+		public class Pic : Gui.Control
+		{
+			public Pic(params object[] args) : base(args) { }
+			protected Pic() { }
+		}
 
-		public class Progress(params object[] args) : Gui.Control(args) { }
+		public class Progress : Gui.Control
+		{
+			public Progress(params object[] args) : base(args) { }
+			protected Progress() { }
+		}
 
-		public class Radio(params object[] args) : Gui.Control(args) { }
+		public class Radio : Gui.Control
+		{
+			public Radio(params object[] args) : base(args) { }
+			protected Radio() { }
+		}
 
-		public class Slider(params object[] args) : Gui.Control(args) { }
+		public class Slider : Gui.Control
+		{
+			public Slider(params object[] args) : base(args) { }
+			protected Slider() { }
+		}
 
-		public partial class StatusBar(params object[] args) : Gui.Control(args) { }
+		public partial class StatusBar : Gui.Control
+		{
+			public StatusBar(params object[] args) : base(args) { }
+			protected StatusBar() { }
+		}
 
-		public class Text(params object[] args) : Gui.Control(args) { }
+		public class Text : Gui.Control
+		{
+			public Text(params object[] args) : base(args) { }
+			protected Text() { }
+		}
 
-		public partial class TreeView(params object[] args) : Gui.Control(args) { }
+		public partial class TreeView : Gui.Control
+		{
+			public TreeView(params object[] args) : base(args) { }
+			protected TreeView() { }
+		}
 
-		public class UpDown(params object[] args) : Gui.Control(args) { }
+		public class UpDown : Gui.Control
+		{
+			public UpDown(params object[] args) : base(args) { }
+			protected UpDown() { }
+		}
 
 		//The members a control type has beyond Gui.Control's live in a file of their own, as AutoHotkey defines them
 		//on that type's prototype: List.cs (Gui.List and Gui.Tab), ListView.cs, TreeView.cs, StatusBar.cs, DateTime.cs,

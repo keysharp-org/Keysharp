@@ -64,12 +64,10 @@ namespace Keysharp.Builtins
 		/// <summary>The font half as a <see cref="Ks.Font"/>, which is what <c>GetFormat</c> hands back.</summary>
 		internal Ks.Font ToFont()
 		{
-			//null, not empty: Any's ctor runs __Init/__New for any non-null args, and a snapshot built here has
-			//nothing for them to do.
-			return new Ks.Font(null) { fontOptions = new FontOptions {
+			return new Ks.Font(new FontOptions {
 				name = name, size = size, color = color, weight = weight,
 				italic = italic, underline = underline, strike = strike
-			} };
+			});
 		}
 
 		/// <summary>
@@ -258,6 +256,8 @@ namespace Keysharp.Builtins
 
 			//How deep the BeginUpdate/EndUpdate pairs are nested; only the outermost freezes the control.
 			private int updateDepth;
+
+			protected RichEdit() { }
 
 			public RichEdit(params object[] args) : base(args)
 			{

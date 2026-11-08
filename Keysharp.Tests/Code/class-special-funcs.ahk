@@ -7,6 +7,7 @@
 #import KS { Collect, StringBuffer }
 #Include <assert>
 gval := 0, gtext := "", gdefined := 0, gclones := 0, gvarref := 0, gstructs := 0, gstructdata := 0, gdata := 0, gheld := 0, gkept := ""
+glatestruct := 0
 dataBuffer := Buffer(4, 0)
 NumPut("Int", 37, dataBuffer)
 
@@ -83,6 +84,10 @@ struct DeletedDataStruct
 	__Delete() => __Main.gstructdata := this.Number
 }
 
+struct LateDeleteStruct {
+	Number : Int32
+}
+
 MakeCollectable()
 {
 	DeletedBuffer(16, 42)
@@ -99,6 +104,8 @@ MakeCollectable()
 	ObjCreateWithDataPtr(DeletedStruct, 0)
 	ObjCreateWithDataPtr(DeletedDataObject, __Main.dataBuffer.Ptr)
 	ObjCreateWithDataPtr(DeletedDataStruct, __Main.dataBuffer.Ptr)
+	untouched := LateDeleteStruct()
+	DefineProp(LateDeleteStruct.Prototype, "__Delete", {Call: (*) => __Main.glatestruct += 1})
 }
 
 gval := 0
@@ -127,7 +134,130 @@ AssertEq(gstructdata, 37, A_LineNumber)
 AssertEq(NumGet(ObjGetDataPtr(gdata), "UChar"), 37, A_LineNumber)
 AssertEq(NumGet(dataBuffer, "UChar"), 37, A_LineNumber)
 AssertEq(gvarref, 0, A_LineNumber)
+AssertEq(glatestruct, 1, A_LineNumber)
 Object.Prototype.DeleteProp.Call(VarRef.Prototype, "__Delete")
+
+nestedDeletes := "", targetIdentity := 0, resurrectedNested := ""
+struct NestedLifetime {
+	Number : Int32
+	__Delete() {
+		__Main.nestedDeletes .= this.Number ","
+		if this.Number == 11
+			__Main.resurrectedNested := this
+	}
+}
+struct NestedLifetimeOwner {
+	Left : NestedLifetime
+	Right : NestedLifetime[2]
+	__Delete() => __Main.nestedDeletes .= "owner,"
+}
+struct PointerLifetimeOwner {
+	Target : Int32.Ptr
+}
+KeepNestedChild() {
+	owner := NestedLifetimeOwner()
+	owner.Left.Number := 11
+	owner.Right[1].Number := 22
+	owner.Right[2].Number := 33
+	return owner.Left
+}
+KeepPointerTarget() {
+	target := Int32(45)
+	__Main.targetIdentity := ObjPtr(target)
+	wrapper := Int32.Ptr()
+	wrapper.__Value := target
+	owner := PointerLifetimeOwner()
+	owner.Target := wrapper
+	return owner
+}
+; Return before collecting the child so evaluation temporaries cannot extend its lifetime.
+CheckRetainedNestedChild() {
+	heldChild := KeepNestedChild()
+	Loop 3
+		Sleep(30), Collect()
+	AssertEq(__Main.nestedDeletes, "", A_LineNumber)
+	AssertEq(heldChild.Number, 11, A_LineNumber)
+}
+CheckRetainedNestedChild()
+heldPointer := KeepPointerTarget()
+AssertEq(ObjPtr(heldPointer.Target), targetIdentity, A_LineNumber)
+AssertEq(heldPointer.Target.__Value, 45, A_LineNumber)
+timeout := A_TickCount + 2000
+while (nestedDeletes == "" && A_TickCount < timeout)
+	Sleep(30), Collect()
+AssertEq(nestedDeletes, "owner,33,22,11,", A_LineNumber)
+CheckResurrectedNested() {
+	AssertEq(__Main.resurrectedNested.Number, 11, A_LineNumber)
+	__Main.resurrectedNested.Number := 12
+	Loop 3
+		Sleep(30), Collect()
+	AssertEq(__Main.resurrectedNested.Number, 12, A_LineNumber)
+	__Main.resurrectedNested := ""
+}
+CheckResurrectedNested()
+Loop 3
+	Sleep(30), Collect()
+AssertEq(nestedDeletes, "owner,33,22,11,", A_LineNumber)
+
+struct FailingNestedLifetime extends NestedLifetime {
+	static Created := 0
+	__New() {
+		this.Number := ++FailingNestedLifetime.Created
+		if this.Number == 2
+			throw Error("nested construction failed")
+	}
+}
+struct FailingNestedOwner {
+	static Initialized := false
+	Children : FailingNestedLifetime[3]
+	__Init() => FailingNestedOwner.Initialized := true
+	__New() => FailingNestedOwner.Initialized := true
+	__Delete() => __Main.nestedDeletes .= "owner,"
+}
+nestedDeletes := ""
+Throws(() => FailingNestedOwner(), A_LineNumber, Error)
+AssertEq(FailingNestedLifetime.Created, 2, A_LineNumber)
+Assert(!FailingNestedOwner.Initialized, A_LineNumber)
+timeout := A_TickCount + 2000
+while (nestedDeletes == "" && A_TickCount < timeout)
+	Sleep(30), Collect()
+AssertEq(nestedDeletes, "owner,2,1,", A_LineNumber)
+
+struct EmptyLifetime {
+	static Created := 0, Deleted := 0, FailOn := 0
+	__New() {
+		if ++EmptyLifetime.Created == EmptyLifetime.FailOn
+			throw Error("empty nested construction failed")
+	}
+	__Delete() => EmptyLifetime.Deleted += 1
+}
+struct EmptyLifetimeOwner {
+	static Initialized := false
+	First : EmptyLifetime
+	Rest : EmptyLifetime[2]
+	__Init() => EmptyLifetimeOwner.Initialized := true
+}
+MakeEmptyLifetimeOwner() {
+	owner := EmptyLifetimeOwner()
+	AssertEq(owner.Size, 0, A_LineNumber)
+}
+MakeEmptyLifetimeOwner()
+AssertEq(EmptyLifetime.Created, 3, A_LineNumber)
+Assert(EmptyLifetimeOwner.Initialized, A_LineNumber)
+timeout := A_TickCount + 2000
+while (EmptyLifetime.Deleted < 3 && A_TickCount < timeout)
+	Sleep(30), Collect()
+AssertEq(EmptyLifetime.Deleted, 3, A_LineNumber)
+
+EmptyLifetime.Created := 0, EmptyLifetime.Deleted := 0, EmptyLifetime.FailOn := 2
+EmptyLifetimeOwner.Initialized := false
+Throws(() => EmptyLifetimeOwner(), A_LineNumber, Error)
+AssertEq(EmptyLifetime.Created, 2, A_LineNumber)
+Assert(!EmptyLifetimeOwner.Initialized, A_LineNumber)
+timeout := A_TickCount + 2000
+while (EmptyLifetime.Deleted < 2 && A_TickCount < timeout)
+	Sleep(30), Collect()
+AssertEq(EmptyLifetime.Deleted, 2, A_LineNumber)
 
 class enumclass
 {

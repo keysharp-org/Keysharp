@@ -127,7 +127,6 @@ namespace Keysharp.Builtins
 		/// <returns>The default return value</returns>
 		public static object ObjSetBase(object obj, object baseObj)
 		{
-			var script = Script.TheScript;
 			var objVal = obj as KeysharpObject;
 			var baseObjVal = baseObj as KeysharpObject;
 
@@ -146,8 +145,8 @@ namespace Keysharp.Builtins
 				return Errors.TypeErrorOccurred(baseObj, typeof(KeysharpObject));
 
 			// find each object's "native" (built‐in) prototype type
-			var nativeObj = script.GetNativeType(objVal.Base);
-			var nativeBase = script.GetNativeType(baseObjVal);
+			var nativeObj = Script.TheScript.GetNativeType(objVal.Base);
+			var nativeBase = Script.TheScript.GetNativeType(baseObjVal);
 			// For Prototype wrappers, use the underlying runtime type carried by Any.type.
 			if (nativeObj == typeof(Prototype))
 				nativeObj = Script.NativeKind(objVal.type);
@@ -212,7 +211,7 @@ namespace Keysharp.Builtins
 			// Each slot is read as an own value property; Get, Set, Call and Type count only when they hold an object.
 			// The slots present then have to form exactly one kind of property, as in AutoHotkey.
 			if (descriptor is not Any kso)
-				return Errors.InvalidParameterErrorOccurred(nameIndex + 1, function, descriptor);
+				return InvalidDescriptorErrorOccurred(nameIndex + 1);
 
 			var value = DescriptorSlot(kso, "Value");
 			var get = DescriptorSlot(kso, "Get") as Any;
@@ -225,22 +224,18 @@ namespace Keysharp.Builtins
 			var typed = type != null;
 			var layout = pack != null || offset != null;
 			var isValue = value != null && !dynamic && !typed && !layout;
-			var isTyped = typed && !dynamic && value == null;
-			var isDynamic = dynamic && value == null && !layout;
+			// A Pack has to be one of the Integers a struct accepts. [v2.1-alpha.38+]
+			var isTyped = typed && !dynamic && value == null && pack is null or 0L or 1L or 2L or 4L or 8L;
+			var isDynamic = dynamic && value == null && !typed && !layout;
 
 			if (!(isValue || isTyped || isDynamic))
-				return Errors.InvalidParameterErrorOccurred(nameIndex + 1, function, descriptor);
+				return InvalidDescriptorErrorOccurred(nameIndex + 1);
 
 			var enumerable = DescriptorSlot(kso, "Enumerable").Ab(true);
 
 			if (typed)
-			{
-				// As AutoHotkey reads it, a Pack which is not a number is 0. Only a struct class's Prototype can take a typed
-				// property.
-				_ = pack.TryCoerceLong(out var packValue);
-				return Struct.DefineFieldOnPrototype(target, nameVal, Struct.TryResolveClass(type, out var fieldType) ? fieldType : null,
-						   packValue, offset, false, enumerable) ?? Errors.ErrorOccurred("Cannot add typed property.");
-			}
+				return TypedFieldResult(Struct.DefineFieldOnPrototype(target, nameVal, Struct.TryResolveClass(type, out var fieldType) ? fieldType : null,
+										(long?)pack ?? 0, offset, false, enumerable), target, nameIndex + 1);
 
 			var op = target.EnsureOwnProps();
 
@@ -255,8 +250,19 @@ namespace Keysharp.Builtins
 			return target;
 		}
 
-		[PublicHiddenFromUser]
-		public static object DefineStructFieldOnPrototype(object obj0, object obj1, Type type)
+		// As AutoHotkey's DefineProp, a descriptor which is not exactly one kind of property names the parameter without the
+		// function. [v2.1-alpha.38+]
+		private static object InvalidDescriptorErrorOccurred(int position) => Errors.ValueErrorOccurred($"Parameter #{position} invalid.");
+
+		private static object TypedFieldResult(StructFieldDefinition result, Any target, int descriptorPosition) => result switch
+		{
+			StructFieldDefinition.Defined => target,
+			StructFieldDefinition.InvalidArgument => InvalidDescriptorErrorOccurred(descriptorPosition),
+			_ => Errors.ErrorOccurred("Cannot add typed property.")
+		};
+
+		// A class body's typed fields, which fail as the DefineProp calls AutoHotkey lowers them to do.
+		private static object DefineDeclaredField(object obj0, object obj1, object type, long pack, string offsetOf)
 		{
 			if (obj0 is not Any target)
 				return Errors.ArgumentErrorOccurred(obj0, 1);
@@ -264,52 +270,24 @@ namespace Keysharp.Builtins
 			if (!obj1.CoerceString(out var fieldName))
 				return DefaultObject;
 
-			var result = Struct.DefineFieldOnPrototype(target, fieldName, type, 0, null, true);
-			return result ?? Errors.ValueErrorOccurred("Type is only valid for struct fields.");
+			_ = Struct.TryResolveClass(type, out var fieldType);
+			return TypedFieldResult(Struct.DefineFieldOnPrototype(target, fieldName, fieldType, pack, offsetOf, true), target, 3);
 		}
 
 		[PublicHiddenFromUser]
-		public static object DefineStructFieldOnPrototype(object obj0, object obj1, object type)
-		{
-			if (obj0 is not Any target)
-				return Errors.ArgumentErrorOccurred(obj0, 1);
+		public static object DefineStructFieldOnPrototype(object obj0, object obj1, Type type) => DefineDeclaredField(obj0, obj1, type, 0, null);
 
-			if (!obj1.CoerceString(out var fieldName))
-				return DefaultObject;
-
-			var result = Struct.DefineFieldOnPrototype(target, fieldName,
-						 Struct.TryResolveClass(type, out var resolved) ? resolved : null, 0, null, true);
-			return result ?? Errors.ValueErrorOccurred("Type is only valid for struct fields.");
-		}
+		[PublicHiddenFromUser]
+		public static object DefineStructFieldOnPrototype(object obj0, object obj1, object type) => DefineDeclaredField(obj0, obj1, type, 0, null);
 
 		// Typed-field registration with an explicit #StructPack alignment (emitted by the lowerer for packed struct fields).
 		[PublicHiddenFromUser]
-		public static object DefineStructFieldOnPrototype(object obj0, object obj1, Type type, long pack)
-		{
-			if (obj0 is not Any target)
-				return Errors.ArgumentErrorOccurred(obj0, 1);
-
-			if (!obj1.CoerceString(out var fieldName))
-				return DefaultObject;
-
-			var result = Struct.DefineFieldOnPrototype(target, fieldName, type, pack, null, true);
-			return result ?? Errors.ValueErrorOccurred("Type is only valid for struct fields.");
-		}
+		public static object DefineStructFieldOnPrototype(object obj0, object obj1, Type type, long pack) => DefineDeclaredField(obj0, obj1, type, pack, null);
 
 		// offsetOf names the field whose offset a union block's member after the first shares.
 		[PublicHiddenFromUser]
-		public static object DefineStructFieldOnPrototype(object obj0, object obj1, object type, long pack, string offsetOf = null)
-		{
-			if (obj0 is not Any target)
-				return Errors.ArgumentErrorOccurred(obj0, 1);
-
-			if (!obj1.CoerceString(out var fieldName))
-				return DefaultObject;
-
-			var result = Struct.DefineFieldOnPrototype(target, fieldName,
-						 Struct.TryResolveClass(type, out var resolved) ? resolved : null, pack, offsetOf, true);
-			return result ?? Errors.ValueErrorOccurred("Type is only valid for struct fields.");
-		}
+		public static object DefineStructFieldOnPrototype(object obj0, object obj1, object type, long pack, string offsetOf = null) =>
+			DefineDeclaredField(obj0, obj1, type, pack, offsetOf);
 
 		/// <summary>Creates an instance without initialization, using a borrowed structured-data address.</summary>
 		public static object ObjCreateWithDataPtr(object ClassObj, object Address)
@@ -318,37 +296,39 @@ namespace Keysharp.Builtins
 					|| !CanCreateWithDataPointer(proto.type))
 				return Errors.ErrorOccurred("Invalid class.");
 
-			if (!Address.CoerceLong(out var address))
+			// An object gives its Ptr and is kept alive by the new instance, and any address is accepted, as Struct.At
+			// accepts it. [v2.1-alpha.38+]
+			if (!Struct.TryGetAddress(Address, out var address))
 				return DefaultObject;
 
 			if (Struct.IsStructType(proto.type))
-			{
-				if ((nuint)address < 65536 && address != 0 && Struct.GetSize(proto.type) != 0)
-					return Errors.InvalidParameterErrorOccurred(2, nameof(ObjCreateWithDataPtr), Address);
+				return (object)Struct.CreateView(proto, address, Address as Any, callDelete: true) ?? DefaultObject;
 
-				return Struct.CreatePointerView(proto.type, proto, address, true);
-			}
-
-			var instance = (KeysharpObject)FastCtor.Call(proto.type, null);
-			instance.type = proto.type;
-			instance.SetBaseInternal(proto);
-			Script.TheScript.ExternalDataPointers.Add(instance, new(address));
-
+			var instance = (KeysharpObject)FastCtor.Create(proto);
+			AttachDataPointer(instance, address, Address as Any);
 			return instance;
 		}
 
-		private static bool CanCreateWithDataPointer(Type type) => Class.CanConstruct(type)
-			&& (typeof(KeysharpObject).IsAssignableFrom(type) || Struct.IsStructType(type))
-			&& type.GetConstructor([typeof(object[])]) != null && !typeof(ScriptProcess).IsAssignableFrom(type)
+		internal static void AttachDataPointer(KeysharpObject instance, long address, object owner) =>
+			Script.TheScript.ExternalDataPointers.Add(instance, owner != null ? new OwnedDataPointer(address, owner) : new StrongBox<long>(address));
+
+		private sealed class OwnedDataPointer(long address, object owner) : StrongBox<long>(address)
+		{
+			internal readonly object Owner = owner;
+		}
+
+		private static bool CanCreateWithDataPointer(Type type) => Struct.IsStructType(type)
+			|| Class.CanConstruct(type) && typeof(KeysharpObject).IsAssignableFrom(type)
 			&& !typeof(KeysharpFunc).IsAssignableFrom(type) && !typeof(KeysharpFile).IsAssignableFrom(type)
-			&& !typeof(Gui.Control).IsAssignableFrom(type) && !typeof(Module).IsAssignableFrom(type);
+			&& !typeof(Module).IsAssignableFrom(type);
 
 		/// <summary>Returns the address of the object's structured data (typed properties). [v2.1-alpha.3+]</summary>
+		/// <remarks>An object without structured data or a data pointer returns unset. [v2.1-alpha.38+]</remarks>
 		public static object ObjGetDataPtr(object obj) => obj switch
 		{
-			Struct st => st.Ptr,
+			Struct st => st.IsPointerView || st.Ptr != 0 ? (object)st.Ptr : null,
 			KeysharpObject instance when Script.TheScript.ExternalDataPointers.TryGetValue(instance, out var pointer) => pointer.Value,
-			KeysharpObject => Errors.ErrorOccurred("Operation failed."),
+			Any => null,
 			_ => Errors.TypeErrorOccurred(obj, typeof(KeysharpObject))
 		};
 
@@ -356,7 +336,7 @@ namespace Keysharp.Builtins
 		public static object ObjGetDataSize(object obj) => obj switch
 		{
 			Struct st => Struct.get_Size(st),
-			Any { isPrototype: true } proto when Struct.IsStructType(proto.type) => Struct.GetSize(proto.type),
+			Any { isPrototype: true } proto when Struct.IsStructType(proto.type) => StructLayout.GetValidated(proto.type).Size,
 			KeysharpObject => 0L,
 			_ => Errors.TypeErrorOccurred(obj, typeof(KeysharpObject))
 		};

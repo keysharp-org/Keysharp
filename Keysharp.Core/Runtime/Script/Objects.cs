@@ -256,7 +256,7 @@ namespace Keysharp.Runtime
 
 				foreach (var nestedType in nestedTypes)
 				{
-					if (Struct.IsAutoPointerClass(nestedType))
+					if (StructLayout.IsAutoPointerClass(nestedType))
 						continue;
 
 					// Same opt-out the method loop above honors. Without it a public nested type is always

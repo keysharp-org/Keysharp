@@ -2,6 +2,7 @@
 #ErrorStdOut
 #Warn All, StdOut
 
+#import Ks { Collect }
 #import "Fast" { * }
 #import "Fast" { Crunch as Aliased }
 #import "Fast" { Own as ExplicitOwn }
@@ -71,8 +72,174 @@ AssertEq(CycleReader.Member, 1, A_LineNumber)
 AssertEq(CycleReader.GlobalName, 2, A_LineNumber)
 AssertEq(Type(CycleReader.Scoped), "Module", A_LineNumber)
 
+class Widget { }
+class DerivedWidget extends Widget { }
+AssertEq(AcceptWidget(Widget()), "accepted", A_LineNumber)
+AssertEq(AcceptWidget(DerivedWidget()), "accepted", A_LineNumber)
+class ScriptNativeWidget extends NativeWidget { }
+class InlineWidget {
+    #CSharp
+    public object ReadValue() => 19L;
+    #EndCSharp
+}
+plain := {}
+ObjSetBase(plain, Widget.Prototype)
+Assert(ObjGetBase(plain) == Widget.Prototype, A_LineNumber)
+ObjSetBase(plain, DerivedWidget.Prototype)
+Assert(ObjGetBase(plain) == DerivedWidget.Prototype, A_LineNumber)
+native := NativeWidget()
+AssertEq(native.ReadValue(), 17, A_LineNumber)
+AssertEq(ScriptNativeWidget().ReadValue(), 17, A_LineNumber)
+AssertEq(InlineWidget().ReadValue(), 19, A_LineNumber)
+
+; A struct is created through its class, from script or C#. A C# constructor cannot use its memory, which an instance
+; gets when it is initialized and a view once it is constructed.
+AssertEq(ProtectedNumber(7).__Value, 7, A_LineNumber)
+protectedDerived := Class("ProtectedDerived", ProtectedNumber)
+AssertEq(protectedDerived(8).__Value, 8, A_LineNumber)
+AssertEq(ImplicitNumber(9).__Value, 9, A_LineNumber)
+implicitDerived := Class("ImplicitDerived", ImplicitNumber)
+AssertEq(implicitDerived(10).__Value, 10, A_LineNumber)
+struct Quantity extends ProtectedNumber { }
+AssertEq(Quantity(11).__Value, 11, A_LineNumber)
+AssertEq(AcceptQuantity(Quantity()), "accepted", A_LineNumber)
+struct ExplicitNative extends Int32 {
+    #CSharp
+    public Explicitnative() { }
+    #EndCSharp
+}
+explicitNumber := ExplicitNative(13)
+AssertEq(explicitNumber.__Value, 13, A_LineNumber)
+AssertEq(ExplicitNative.At(explicitNumber).__Value, 13, A_LineNumber)
+AssertEq(CreateImplicitNumber().__Value, 12, A_LineNumber)
+bareNumber := NewImplicitNumber()
+AssertEq(bareNumber.Ptr, 0, A_LineNumber)
+Throws(() => bareNumber.__Value, A_LineNumber)
+Throws(() => NoDefaultNumber(), A_LineNumber, ValueError)
+Throws(() => NoDefaultNumber.At(65536), A_LineNumber, ValueError)
+DefineProp(RecursiveNative.Prototype, "Self", {Type: RecursiveNative})
+Throws(() => NewRecursiveNative(), A_LineNumber, TypeError)
+
+; Dispose runs for a struct which owns memory, after its __Delete; a view gets neither.
+lifetimeDeletes := {Count: 0}
+DefineProp(NativeLifetime.Prototype, "__Delete", {Call: (this) => ++lifetimeDeletes.Count})
+DropNativeLifetimes(buffer) {
+    view := NativeLifetime.At(buffer)
+    owned := NativeLifetime()
+}
+lifetimeBuffer := Buffer(4, 0)
+NumPut("Int", 29, lifetimeBuffer)
+DropNativeLifetimes(lifetimeBuffer)
+timeout := A_TickCount + 2000
+while (ReadNativeDisposed() == 0 && A_TickCount < timeout)
+    Sleep(30), Collect()
+loop 3
+    Sleep(30), Collect()
+AssertEq(ReadNativeDisposed(), 1, A_LineNumber)
+AssertEq(lifetimeDeletes.Count, 1, A_LineNumber)
+AssertEq(NumGet(lifetimeBuffer, "Int"), 29, A_LineNumber)
+Assert(!HasMethod(NativeLifetime.Prototype, "Dispose"), A_LineNumber)
+struct NativeDisposeOwner {
+    First: NativeDisposeChild
+    Second: NativeDisposeChild
+}
+DefineProp(NativeDisposeChild.Prototype, "Value", {Type: Int32})
+AssertEq(DisposeNativeChildren(), "2:0:0:0", A_LineNumber)
+
+; A C# __New runs once the memory and the nested structs are initialized; a view runs none of it.
+struct ViewChild {
+    Value: Int32 := 7
+    __New() => this.Value += 1
+}
+struct ViewOwner {
+    Child: ViewChild
+}
+viewBuffer := Buffer(4, 0)
+NumPut("Int", 41, viewBuffer)
+borrowedOwner := PreReadOwner.At(viewBuffer)
+AssertEq(AcceptPreReadOwner(borrowedOwner), "accepted", A_LineNumber)
+AssertEq(borrowedOwner.Child.Value, 41, A_LineNumber)
+AssertEq(borrowedOwner.ObservedValue() ?? "none", "none", A_LineNumber)
+borrowedOwner.Child.Value := 21
+AssertEq(NumGet(viewBuffer, "Int"), 21, A_LineNumber)
+ownedOwner := PreReadOwner()
+AssertEq(ownedOwner.ObservedValue(), 8, A_LineNumber)
+AssertEq(ownedOwner.Child.Value, 8, A_LineNumber)
+
 #CSharp
 public static object Own() => "main";
+public static object AcceptWidget(Widget value) => "accepted";
+public static object AcceptQuantity(Quantity value) => "accepted";
+public static object CreateImplicitNumber() =>
+    Keysharp.Runtime.Script.Invoke(Keysharp.Runtime.Script.TheScript.Vars.Statics[typeof(ImplicitNumber)], "Call", 12L);
+public static object NewImplicitNumber() => new ImplicitNumber();
+public static object NewRecursiveNative() => new RecursiveNative();
+public static object ReadNativeDisposed() => NativeLifetime.Disposed;
+public class NativeLifetime : Keysharp.Builtins.StructInt32
+{
+    public static long Disposed;
+    [Keysharp.Runtime.PublicHiddenFromUser]
+    public override void Dispose()
+    {
+        Disposed++;
+        base.Dispose();
+    }
+}
+public static object DisposeNativeChildren()
+{
+    var owner = (Keysharp.Builtins.Struct)Keysharp.Runtime.Script.Invoke(Keysharp.Runtime.Script.TheScript.Vars.Statics[typeof(Nativedisposeowner)], "Call");
+    var first = (NativeDisposeChild)Keysharp.Runtime.Script.GetPropertyValue(owner, "First");
+    var second = (NativeDisposeChild)Keysharp.Runtime.Script.GetPropertyValue(owner, "Second");
+    first.ThrowOnDispose = true;
+    try
+    {
+        owner.Dispose();
+        return "did not throw";
+    }
+    catch (System.InvalidOperationException)
+    {
+        return $"{NativeDisposeChild.Disposed}:{owner.Ptr}:{first.Ptr}:{second.Ptr}";
+    }
+}
+public class NativeDisposeChild : Keysharp.Builtins.Struct
+{
+    public static long Disposed;
+    public bool ThrowOnDispose;
+    [Keysharp.Runtime.PublicHiddenFromUser]
+    public override void Dispose()
+    {
+        base.Dispose();
+        Disposed++;
+        if (ThrowOnDispose) throw new System.InvalidOperationException();
+    }
+}
+public static object AcceptPreReadOwner(PreReadOwner value) => "accepted";
+public class PreReadOwner : Viewowner
+{
+    private object observed;
+    public override object __New(params object[] args)
+    {
+        var child = Keysharp.Runtime.Script.GetPropertyValue(this, "Child");
+        observed = Keysharp.Runtime.Script.GetPropertyValue(child, "Value");
+        return base.__New(args);
+    }
+    public object ObservedValue() => observed;
+}
+public class NativeWidget : Keysharp.Builtins.KeysharpObject
+{
+    private long value = 17;
+    public object ReadValue() => value;
+}
+public class ProtectedNumber : Keysharp.Builtins.StructInt32
+{
+    protected ProtectedNumber() { }
+}
+public class ImplicitNumber : Keysharp.Builtins.StructInt32 { }
+public class RecursiveNative : Keysharp.Builtins.Struct { }
+public class NoDefaultNumber : Keysharp.Builtins.StructInt32
+{
+    public NoDefaultNumber(long value) { }
+}
 [Keysharp.Runtime.UserDeclaredName("LocalVisible")]
 public static long LocalRaw = 1;
 public static long ReadLocalRaw() => LocalRaw;
@@ -112,13 +279,11 @@ public static object Echo() => "visible-call";
 [Rename(Naming.Kind)]
 public class RawKind : Keysharp.Builtins.Any
 {
-    public RawKind(params object[] args) : base(args) { }
     [Keysharp.Runtime.Static]
     public static object Tag(object @this) => "visible-class";
     [Rename("VisibleNested")]
     public class RawNested : Keysharp.Builtins.Any
     {
-        public RawNested(params object[] args) : base(args) { }
         [Keysharp.Runtime.Static]
         public static object Tag(object @this) => "visible-nested";
     }
@@ -129,7 +294,6 @@ public static long tally() => 11;
 [Rename("ScriptDerived")]
 public class RawScriptDerived : Scriptbase
 {
-    public RawScriptDerived(params object[] args) : base(args) { }
 }
 
 [Export]

@@ -44,6 +44,8 @@ namespace Keysharp.Builtins
 			/// </summary>
 			public NamedArgs(params object[] nameValuePairs) : base(eCaseSense.Off) => Fill(nameValuePairs);
 
+			protected NamedArgs() : base(eCaseSense.Off) { }
+
 			public override object __New(params object[] nameValuePairs)
 			{
 				CaseSense = "Off";

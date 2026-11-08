@@ -43,7 +43,7 @@ namespace Keysharp.Builtins
 			NativeTypeCode code;
 
 			if (type is Class cls)
-				code = Struct.GetNumericTypeCode(cls);
+				code = StructMarshal.GetNumericTypeCode(cls);
 			else if (type.CoerceString(out var name, "UInt"))
 				code = NativeType.Parse(name);
 			else
@@ -101,7 +101,7 @@ namespace Keysharp.Builtins
 
 			for (var i = 0; i <= lastPairIndex; i += 2)
 			{
-				var code = obj[i] is Class cls ? Struct.GetNumericTypeCode(cls) : NativeType.Parse(obj[i] as string);
+				var code = obj[i] is Class cls ? StructMarshal.GetNumericTypeCode(cls) : NativeType.Parse(obj[i] as string);
 
 				if (!NativeType.IsNumeric(code))
 					return (long)Errors.ValueErrorOccurred($"Type of {Errors.Describe(obj[i])} is not a number that can be written to memory.", obj[i], DefaultErrorLong);

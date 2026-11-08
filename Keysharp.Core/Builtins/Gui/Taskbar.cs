@@ -30,13 +30,21 @@ namespace Keysharp.Builtins
 		{
 			private nint hwnd;
 
-			public KeysharpTaskbar(params object[] args) : base(args) { }
+			public KeysharpTaskbar(params object[] args) : this()
+			{
+				if (args != null)
+					_ = SetWindow(args.Length > 0 ? args[0] : null);
+			}
+
+			protected KeysharpTaskbar() { }
 
 			/// <summary>
 			/// Taskbar(Hwnd) -- the taskbar button of the window with that handle. The object carries nothing but
 			/// the handle: the shell copies whatever it is given, so it can be built for one call and dropped.
 			/// </summary>
-			public object __New(object hwnd)
+			public object __New(object hwnd) => SetWindow(hwnd);
+
+			private object SetWindow(object hwnd)
 			{
 				if (!hwnd.CoerceLong(out var handle))
 					return DefaultObject;

@@ -613,9 +613,9 @@ namespace Keysharp.Builtins
 		//{
 		//}
 
-		// `new`, not `override`: construction dispatches by name, so the real signature is declared here and
-		// arity/defaults/named binding follow from it (see Buffer.__New and Any's constructor).
-		public new object __New(object data = null, object size = null)
+		public new object __New(object data = null, object size = null) => Capture(data, size);
+
+		private object Capture(object data, object size)
 		{
 			if (data == null)
 				ClipboardPermission.EnsureMonitoring("ClipboardAll");
@@ -629,12 +629,16 @@ namespace Keysharp.Builtins
 						? Platform.Clipboard.CaptureAll()
 						: Env.ExtractClipboardAllBytes(data, sizeValue);
 
-			//Passed as the single ByteCount argument, not wrapped in an object[]: Buffer.__New now declares real
-			//parameters, so the byte[] must arrive as the argument itself (it has a dedicated branch there).
-			return base.__New(bytes);
+			return SetContents(bytes);
 		}
 
-		public ClipboardAll(params object[] args) : base(args) { }
+		public ClipboardAll(params object[] args) : this()
+		{
+			if (args != null)
+				_ = Capture(args.ElementAtOrDefault(0), args.ElementAtOrDefault(1));
+		}
+
+		protected ClipboardAll() { }
 	}
 
 	public partial class Ks

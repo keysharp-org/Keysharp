@@ -397,8 +397,13 @@ MessageOf(callback) {
 		return err.Message
 	return "none"
 }
-AssertEq(MessageOf(() => DefineProp(descriptorTarget, "A", {})), "Parameter #3 of DefineProp is invalid.", A_LineNumber)
-AssertEq(MessageOf(() => descriptorTarget.DefineProp("A", {})), "Parameter #2 of Object.Prototype.DefineProp is invalid.", A_LineNumber)
+; The message names only the parameter. A Type with Get, Set or Call, or a Pack which is not one of the Integers 0, 1, 2,
+; 4 or 8, is invalid too. [v2.1-alpha.38+]
+AssertEq(MessageOf(() => DefineProp(descriptorTarget, "A", {})), "Parameter #3 invalid.", A_LineNumber)
+AssertEq(MessageOf(() => descriptorTarget.DefineProp("A", {})), "Parameter #2 invalid.", A_LineNumber)
+AssertEq(MessageOf(() => descriptorTarget.DefineProp("A", {Type: Int32, Get: (*) => 1})), "Parameter #2 invalid.", A_LineNumber)
+for invalidPack in [3, 16, "2", 2.0]
+	AssertEq(MessageOf(() => DefineProp(descriptorTarget, "A", {Type: Int32, Pack: invalidPack})), "Parameter #3 invalid.", A_LineNumber)
 descriptorTarget.DefineProp("B", {Get: 1, Value: 5})
 AssertEq(descriptorTarget.B, 5, A_LineNumber)
 descriptorTarget.DefineProp("C", {Get: (*) => 7, Set: "x"})
@@ -467,10 +472,17 @@ AssertEq(methodHolder.OnlyCall(), 9, A_LineNumber)
 struct HiddenField {
 	Shown : Int32
 }
+DefineProp(HiddenField.Prototype, "Hidden", {Get: (*) => 99, Set: (*) => 0, Call: (*) => 99})
 DefineProp(HiddenField.Prototype, "Hidden", {Type: Int32, Enumerable: false})
+hiddenDesc := Object.Prototype.GetOwnPropDesc.Call(HiddenField.Prototype, "Hidden")
+Assert(hiddenDesc.Type == Int32 && !hiddenDesc.HasOwnProp("Get") && !hiddenDesc.HasOwnProp("Set") && !hiddenDesc.HasOwnProp("Call"), A_LineNumber)
+DefineProp(HiddenField.Prototype, "VisibleAgain", {Value: 99, Enumerable: false})
+DefineProp(HiddenField.Prototype, "VisibleAgain", {Type: Int32})
+visibleDesc := Object.Prototype.GetOwnPropDesc.Call(HiddenField.Prototype, "VisibleAgain")
+Assert(visibleDesc.Type == Int32 && !visibleDesc.HasOwnProp("Value"), A_LineNumber)
 fieldNames := PropNames(HiddenField())
-Assert(InStr(fieldNames, "Shown,") && !InStr(fieldNames, "Hidden,"), A_LineNumber)
-AssertEq(HiddenField.Prototype.Size, 8, A_LineNumber)
+Assert(InStr(fieldNames, "Shown,") && InStr(fieldNames, "VisibleAgain,") && !InStr(fieldNames, "Hidden,"), A_LineNumber)
+AssertEq(HiddenField.Prototype.Size, 12, A_LineNumber)
 ; `Static` followed by `:=` or `=>` names a member rather than marking one static.
 class StaticNamedMembers {
 	Static := 1

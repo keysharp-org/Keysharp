@@ -5,6 +5,8 @@ namespace Keysharp.Builtins.COM
 	{
 		public ComValueRef(params object[] args) : base(args) { }
 
+		protected ComValueRef() { }
+
 		public object __Value
 		{
 			get => get_Item(System.Array.Empty<object>());

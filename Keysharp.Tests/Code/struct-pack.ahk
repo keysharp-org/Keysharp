@@ -95,10 +95,13 @@ originalStructPrototype := ExternalValue.Prototype
 ExternalValue.Prototype := Object.Prototype
 AssertEq(ObjGetBase(ExternalValue.At(externalBuffer.Ptr)), originalStructPrototype, A_LineNumber)
 ExternalValue.Prototype := originalStructPrototype
-Throws(() => ObjGetDataPtr({}), A_LineNumber, Error)
+; An object without structured data or a data pointer has no address to give. [v2.1-alpha.38+]
+for withoutData in [{}, Map(), ExternalObject, ExternalValue.Prototype, Class(Struct)()]
+    AssertEq(ObjGetDataPtr(withoutData) ?? "unset", "unset", A_LineNumber)
+Throws(() => ObjGetDataPtr(1), A_LineNumber, TypeError)
 Throws(() => ObjSetDataPtr({}, 0), A_LineNumber, Error)
 Throws(() => ObjCreateWithDataPtr({Prototype: Object.Prototype}, 0), A_LineNumber, Error)
-Throws(() => ObjCreateWithDataPtr(ExternalObject, {}), A_LineNumber, TypeError)
+Throws(() => ObjCreateWithDataPtr(ExternalObject, {}), A_LineNumber, PropertyError)
 originalExternalPrototype := ExternalObject.Prototype
 ExternalObject.Prototype := RegExMatchInfo.Prototype
 AssertEq(ObjGetBase(ObjCreateWithDataPtr(ExternalObject, 0)), originalExternalPrototype, A_LineNumber)
@@ -138,11 +141,41 @@ AssertEq({Value: 3}.Clone().Value, 3, A_LineNumber)
 AssertEq([4].Clone()[1], 4, A_LineNumber)
 AssertEq(Map("Key", 5).Clone()["Key"], 5, A_LineNumber)
 
-; Address checks depend on the layout, and only raw construction permits a null address with fields.
-for address in [0, 1, 65535]
-    Throws(() => Int32.At(address), A_LineNumber, ValueError)
-for address in [1, 65535]
-    Throws(() => ObjCreateWithDataPtr(Int32, address), A_LineNumber, ValueError)
+; Any address is accepted, including one below 65536 such as a MAKEINTRESOURCE value, but typed properties refuse to
+; read or write through it. [v2.1-alpha.38+]
+for address in [0, 1, 65535] {
+    AssertEq(ObjGetDataPtr(Int32.At(address)), address, A_LineNumber)
+    AssertEq(ObjGetDataPtr(ObjCreateWithDataPtr(Int32, address)), address, A_LineNumber)
+    Throws(() => Int32.At(address).__Value, A_LineNumber, Error)
+    Throws(() => ObjCreateWithDataPtr(ExternalValue, address).Number := 1, A_LineNumber, Error)
+    Throws(() => Int32[2].At(address)[1], A_LineNumber, Error)
+}
+AssertEq(ObjGetDataPtr(Int32.At(65536)), 65536, A_LineNumber)
+
+; An object gives its address through Ptr, and the instance keeps the object alive. [v2.1-alpha.38+]
+addressSource := Buffer(8, 0)
+NumPut("Int", 5, addressSource)
+AssertEq(Int32.At(addressSource).__Value, 5, A_LineNumber)
+AssertEq(ObjCreateWithDataPtr(ExternalValue, {Ptr: addressSource.Ptr}).Number, 5, A_LineNumber)
+AssertEq(ObjGetDataPtr(ObjCreateWithDataPtr(ExternalObject, addressSource)), addressSource.Ptr, A_LineNumber)
+Int32.At(addressSource).__Value := 6
+AssertEq(NumGet(addressSource, "Int"), 6, A_LineNumber)
+Throws(() => Int32.At({}), A_LineNumber, PropertyError)
+for invalidAddress in ["1", 1.5] {
+    Throws(() => Int32.At({Ptr: invalidAddress}), A_LineNumber, TypeError)
+    Throws(() => ObjCreateWithDataPtr(ExternalValue, {Ptr: invalidAddress}), A_LineNumber, TypeError)
+}
+class OverriddenAddress extends Buffer {
+    Ptr => 42
+}
+AssertEq(ObjGetDataPtr(Int32.At(OverriddenAddress(4))), 42, A_LineNumber)
+struct BytePointerHolder {
+    Bytes : UInt8.Ptr
+}
+bytes := BytePointerHolder()
+bytes.Bytes := UInt8.At(addressSource)
+AssertEq(bytes.Bytes.__Value, 6, A_LineNumber)
+
 for address in [0, 1, 65535, -1] {
     AssertEq(ObjGetDataPtr(Struct.At(address)), address, A_LineNumber)
     AssertEq(ObjGetDataPtr(ObjCreateWithDataPtr(Struct, address)), address, A_LineNumber)
@@ -161,7 +194,9 @@ for nested in [ExternalNested.At(externalBuffer.Ptr), ObjCreateWithDataPtr(Exter
     AssertEq(nested.Child, child, A_LineNumber)
     AssertEq(ObjGetDataPtr(child), externalBuffer.Ptr, A_LineNumber)
     ObjSetDataPtr(nested, 0)
-    AssertEq(nested.Child, child, A_LineNumber)
+    Throws(() => nested.Child, A_LineNumber, Error)
+    Throws(() => nested.Child := 47, A_LineNumber, Error)
+    ObjSetDataPtr(nested, buf2.Ptr)
     nested.Child := 47
     AssertEq(child.Number, 47, A_LineNumber)
 }
@@ -177,12 +212,12 @@ struct TaggedValue {
     After : UInt8
 }
 tagged := TaggedValue()
-AssertEq(TaggedValue.Prototype.Size, 12, A_LineNumber)
+AssertEq(TaggedValue.Prototype.Size, 8, A_LineNumber)
 tagged.AsInt := 0x3F800000
 AssertEq(tagged.AsFloat, 1.0, A_LineNumber)
 AssertEq(tagged.AsByte, 0, A_LineNumber)
 tagged.After := 9
-AssertEq(NumGet(tagged, 8, "uchar"), 9, A_LineNumber)
+AssertEq(NumGet(tagged, 5, "uchar"), 9, A_LineNumber)
 struct InitializedUnion {
     Head : UInt8
     union {

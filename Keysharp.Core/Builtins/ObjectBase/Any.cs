@@ -115,40 +115,18 @@ namespace Keysharp.Builtins
 			set => Errors.ErrorOccurred($"The base can't be changed for the type {GetType()}");
 		}
 
-		// Factories pass null to skip or defer script initialization.
-		public Any(params object[] args)
+		public Any()
 		{
 			type = GetType();
 			InitializeBase(type);
-			InitializeInstance(args);
 		}
 
-		internal void InitializeInstance(object[] args)
+		// As AutoHotkey's Object::Initialize, which a class's Call runs on a new instance.
+		internal virtual void Initialize(object[] args)
 		{
-			// Resolve by name because a typed __New can hide Any's virtual params overload.
-			if (args != null)
-			{
-				InitFor(type)?.CallFunc(this, args);
-				NewFor(type)?.CallFunc(this, args);
-			}
+			_ = Script.InvokeMeta(this, "__Init");
+			_ = Script.InvokeMeta(this, "__New", args);
 		}
-
-		// Per-type lifecycle methods, resolved once. Null for a type that declares none of its own, so those pay
-		// a single cached lookup and no call at all.
-		private static readonly ConcurrentDictionary<Type, MethodPropertyHolder> newByType = new();
-		private static readonly ConcurrentDictionary<Type, MethodPropertyHolder> initByType = new();
-
-		private static MethodPropertyHolder NewFor(Type t) => Resolve(newByType, t, "__New");
-
-		private static MethodPropertyHolder InitFor(Type t) => Resolve(initByType, t, "__Init");
-
-		private static MethodPropertyHolder Resolve(ConcurrentDictionary<Type, MethodPropertyHolder> cache, Type t, string name)
-			=> cache.GetOrAdd(t, static (ty, n) =>
-			{
-				var mi = MethodPropertyHolder.FindLifecycleMethod(ty, n);
-				// Any's own declarations are the no-op bases; treat "found only those" as "has none".
-				return mi == null || mi.DeclaringType == typeof(Any) ? null : MethodPropertyHolder.GetOrAdd(mi);
-			}, name);
 
 		// These must be visible such that user classes can call base.__Init() without errors, and AHK also exposes them
 		public virtual object __Init() => "";

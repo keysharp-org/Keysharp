@@ -17,8 +17,6 @@ namespace Keysharp.Builtins
 	{
 		private bool hasDeleteInChain;
 
-		public KeysharpObject(params object[] args) : base(args) { }
-
 		internal bool HasDeleteInChain => hasDeleteInChain;
 
 		// A prototype is not, as in AutoHotkey, which skips an object with an own __Class.
@@ -93,7 +91,7 @@ namespace Keysharp.Builtins
 		[PublicHiddenFromUser]
 		public static object Literal(params object[] pairs)
 		{
-			var kso = new KeysharpObject(null);
+			var kso = new KeysharpObject();
 
 			if (pairs.Length != 0)
 				kso.op = new(pairs.Length / 2, StringComparer.OrdinalIgnoreCase);

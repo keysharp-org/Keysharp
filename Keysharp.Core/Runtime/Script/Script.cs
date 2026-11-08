@@ -1922,22 +1922,14 @@ namespace Keysharp.Runtime
 		internal static Type NativeKind(Type t) =>
 			t == typeof(Class) ? typeof(KeysharpObject) : t.IsSubclassOf(typeof(KeysharpFunc)) ? typeof(KeysharpFunc) : t;
 
+		// The built-in type of the nearest prototype in the chain which is not one of the script's own classes.
 		internal Type GetNativeType(Any obj)
 		{
-				while (obj != null)
-				{
-					var t = obj.type;
-				if (!string.Equals(t.Namespace, ProgramNamespace, StringComparison.OrdinalIgnoreCase))
-				{
-					// we found a built-in prototype object
-					return NativeKind(t);
-				}
+			for (; obj != null; obj = obj.Base)
+				if (!string.Equals(obj.type.Namespace, ProgramNamespace, StringComparison.OrdinalIgnoreCase))
+					return NativeKind(obj.type);
 
-					// follow the “base” link:
-					obj = obj.Base;
-				}
-				// fallback?
-				return typeof(Any);
+			return typeof(Any);
 		}
 
 		/// <summary>Whether anything wants the native clipboard-change source: an <c>OnClipboardChange</c> handler,

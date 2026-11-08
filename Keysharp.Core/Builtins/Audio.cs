@@ -8,8 +8,6 @@ namespace Keysharp.Builtins
 		[Experimental]
 		public partial class Audio : KeysharpObject
 		{
-			public Audio(params object[] args) : base(args) { }
-
 			/// <summary>Audio endpoint instances are produced by <c>Audio.Devices</c> and audio resources.</summary>
 			public override object __New(params object[] args)
 				=> Errors.ErrorOccurred("Audio instances are produced by Audio.Devices, not constructed.");

@@ -308,28 +308,15 @@ namespace Keysharp.Internals.Invoke
 				: name;
 		}
 
-		/// <summary>
-		/// The lifecycle method (<c>__New</c>, <c>__Init</c>) a type actually uses: the most-derived declaration,
-		/// walking base-ward.
-		/// <para>
-		/// A plain <c>Type.GetMethod(name, Public | Instance)</c> throws <c>AmbiguousMatchException</c> as soon as
-		/// a built-in declares its own real signature -- that declaration is <c>new</c>, not <c>override</c> (see
-		/// <c>Buffer.__New</c>), so <c>Any.__New(params object[])</c> is inherited as well and both are public
-		/// instance methods of that name. Walking <c>DeclaredOnly</c> outward picks the nearest one, which is what
-		/// C# <c>new</c>-hiding and script-side overriding both pick.
-		/// </para>
-		/// </summary>
-		internal static MethodInfo FindLifecycleMethod(Type t, string name)
+		// A builtin's script __New can hide Any's variadic signature. Introspection uses the nearest declaration.
+		internal static MethodInfo FindConstructor(Type t)
 		{
 			for (var cur = t; cur != null; cur = cur.BaseType)
-				if (cur.GetMethod(name, BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly) is { } mi)
+				if (cur.GetMethod("__New", BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly) is { } mi)
 					return mi;
 
 			return null;
 		}
-
-		/// <summary>The <c>__New</c> a type constructs through. See <see cref="FindLifecycleMethod"/>.</summary>
-		internal static MethodInfo FindConstructor(Type t) => FindLifecycleMethod(t, "__New");
 
 		/// <summary>
 		/// Parameter name -> index into <see cref="parameters"/>, for binding named arguments (<c>f(Name: value)</c>).

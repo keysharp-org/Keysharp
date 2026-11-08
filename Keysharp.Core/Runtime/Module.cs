@@ -9,8 +9,6 @@ namespace Keysharp.Runtime
 	/// </summary>
 	public class Module : Any, IMetaObject
 	{
-		public Module(params object[] args) : base(args) { }
-
 		private protected virtual bool TryGetMember(string name, out ScriptVar m) => TheScript.Vars.TryGetMember(GetType(), name, out m);
 
 		/// <summary>Returns the module variable's reference, or unset when the module has no such member.</summary>
@@ -120,8 +118,6 @@ namespace Keysharp.Runtime
 	[UserDeclaredName("AHK")]
 	public class Ahk : Module
 	{
-		public Ahk(params object[] args) : base(args) { }
-
 		private protected override bool TryGetMember(string name, out ScriptVar m) => TheScript.Vars.TryGetAhkMember(name, out m);
 	}
 }

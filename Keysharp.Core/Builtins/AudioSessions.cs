@@ -233,13 +233,11 @@ namespace Keysharp.Builtins
 				internal Engine.AudioService service;
 				internal bool expired;
 
-				public Session(params object[] args) : base(args) { }
-
 				public override object __New(params object[] args)
 					=> Errors.ErrorOccurred("Audio.Session is produced by Audio.Sessions(), not constructed.");
 
 				internal static Session Wrap(Engine.AudioService owner, Engine.AudioSessionDescriptor s)
-					=> new (null) { service = owner, Snapshot = s };
+					=> new () { service = owner, Snapshot = s };
 
 				public string Id => Snapshot.Id ?? "";
 
@@ -402,13 +400,22 @@ namespace Keysharp.Builtins
 				internal string status = "Stopped";
 				internal string error;
 
-				public Meter(params object[] args) : base(args) { }
+				public Meter(params object[] args) : this()
+				{
+					if (args != null)
+						_ = Configure(args.ElementAtOrDefault(0), args.ElementAtOrDefault(1));
+				}
+
+				protected Meter() { }
 
 				/// <summary>
 				/// Snapshots a target without opening anything. A blank target takes the current default output,
 				/// which makes <c>Audio.Meter()</c> the useful minimal form.
 				/// </summary>
 				public object __New(object target = null, object intervalMilliseconds = null)
+					=> Configure(target, intervalMilliseconds);
+
+				private object Configure(object target, object intervalMilliseconds)
 				{
 					service = Service;
 
@@ -543,13 +550,6 @@ namespace Keysharp.Builtins
 						status = "Stopped";
 
 					return this;
-				}
-
-				/// <summary>Releases the observation when a script drops the meter without stopping it.</summary>
-				public override object __Delete()
-				{
-					_ = Dispose();
-					return base.__Delete();
 				}
 
 				public object Dispose()

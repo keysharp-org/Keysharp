@@ -52,7 +52,13 @@ namespace Keysharp.Builtins
 			private RequestOptions session = new();
 			private string unusable;
 
-			public Http(params object[] args) : base(args) { }
+			public Http(params object[] args) : this()
+			{
+				if (args != null)
+					_ = ConfigureSession(args.ElementAtOrDefault(0));
+			}
+
+			protected Http() { }
 
 			/// <summary>
 			/// Creates a session: its own connection pool, cookie jar and default options.
@@ -62,7 +68,9 @@ namespace Keysharp.Builtins
 			/// request made through this session, plus the session-only <c>BaseUrl</c>, <c>Auth</c>, <c>Proxy</c>,
 			/// <c>IgnoreCertificateErrors</c> and <c>Handler</c>.</param>
 			/// <exception cref="ValueError">Thrown for an unknown option key or an unusable option value.</exception>
-			public object __New(object options = null)
+			public object __New(object options = null) => ConfigureSession(options);
+
+			private object ConfigureSession(object options = null)
 			{
 				if (RequestOptions.Parse(options, isSession: true) is not { } parsed)
 				{
@@ -1155,7 +1163,7 @@ namespace Keysharp.Builtins
 				private string text;
 				private Buffer body;
 
-				internal Response() : base(null) { }
+				internal Response() { }
 
 				internal static Response From(HttpResponseMessage message, byte[] bytes) =>
 					new() { message = message, bytes = bytes };

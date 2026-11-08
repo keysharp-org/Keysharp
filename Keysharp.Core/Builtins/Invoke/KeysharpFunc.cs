@@ -36,7 +36,7 @@ namespace Keysharp.Builtins
 		// so binding one behaves the same as supplying it at the call.
 		internal Ks.NamedArgs boundnamed;
 
-		public BoundFunc(params object[] args) : base(args) { }
+		public BoundFunc() { }
 
 		internal BoundFunc(MethodPropertyHolder m, object[] ba, object o = null)
 			: base(m, o)
@@ -239,7 +239,7 @@ namespace Keysharp.Builtins
 
 	public class Closure : KeysharpFunc
 	{
-		public Closure(params object[] args) : base(args) { }
+		public Closure() { }
 
         internal Closure(Delegate m, object o = null) : base(m, o) { }
     }
@@ -400,7 +400,7 @@ namespace Keysharp.Builtins
 		{
 		}
 
-		public KeysharpFunc(params object[] args) : base(args) { }
+		public KeysharpFunc() { }
 
 		// A callable object becomes a function that calls it, a conversion of its own; a function or delegate is itself.
 		public static object staticCall(object @this, object function, object obj = null)
@@ -451,7 +451,7 @@ namespace Keysharp.Builtins
         {
         }
 
-		internal KeysharpFunc(MethodPropertyHolder m, object o = null) : base(null)
+		internal KeysharpFunc(MethodPropertyHolder m, object o = null)
 		{
 			mph = m;
 			mi = m?.mi;

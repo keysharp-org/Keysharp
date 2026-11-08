@@ -89,7 +89,7 @@ namespace Keysharp.Runtime
 				if (builtin)
 				{
 					foreach (var nested in type.GetNestedTypes(BindingFlags.Public)
-						.Where(t => !Struct.IsAutoPointerClass(t) && typeof(Any).IsAssignableFrom(t)
+						.Where(t => !StructLayout.IsAutoPointerClass(t) && typeof(Any).IsAssignableFrom(t)
 							&& !t.IsDefined(typeof(PublicHiddenFromUser), false)))
 						Variables[Script.GetUserDeclaredName(nested) ?? nested.Name] = ScriptVar.Class(nested);
 					foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)
@@ -211,11 +211,7 @@ namespace Keysharp.Runtime
 		{
 			var scope = GetModule(type);
 			return LazyInitializer.EnsureInitialized(ref scope.Instance, () => new Lazy<Module>(() =>
-			{
-				var constructor = type.GetConstructor(Type.EmptyTypes);
-				return (Module)(constructor != null ? constructor.Invoke([])
-					: type.GetConstructor([typeof(object[])]).Invoke([System.Array.Empty<object>()]));
-			})).Value;
+				(Module)FastCtor.Instantiate(type))).Value;
 		}
 
 		internal static ScriptVar ResolveMember(Type owner, string member, ModuleBindingKind kind)

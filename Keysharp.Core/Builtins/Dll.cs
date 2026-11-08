@@ -96,17 +96,22 @@ namespace Keysharp.Builtins
 			if (argCount > NativeInvoker.MaxArguments)//Also what keeps the stack allocation below bounded.
 				return Errors.ValueErrorOccurred($"A DllCall cannot take more than {NativeInvoker.MaxArguments} arguments.");
 
-			Span<long> args = stackalloc long[argCount];
+			//The first slot is for the memory a struct is returned through, which goes ahead of the arguments.
+			Span<long> args = stackalloc long[argCount + 1];
 			Span<ArgumentSlot> slots = stackalloc ArgumentSlot[argCount];
 
 			try
 			{
-				using var helper = new ArgumentHelper(parameters, args, slots);
+				using var helper = new ArgumentHelper(parameters, args[1..], slots);
 
 				if (helper.Failed)//The error was reported and suppressed; the argument list is incomplete.
 					return DefaultObject;
 
-				var value = NativeInvoker.NativeInvoke(address, args, helper.floatingTypeMask);
+				var returnBuffer = helper.ReturnBuffer;
+				args[0] = returnBuffer;
+				var value = returnBuffer != 0
+					? NativeInvoker.NativeInvoke(address, args, helper.floatingTypeMask << 1)
+					: NativeInvoker.NativeInvoke(address, args[1..], helper.floatingTypeMask);
 				helper.CopyBack(parameters);
 				return helper.ConvertReturnValue(value);
 			}
@@ -194,7 +199,7 @@ namespace Keysharp.Builtins
 				if (!Functions.ValidateFunctor(fo, typedArity))
 					return DefaultObject;
 
-				var conversions = new Struct.CallbackConversion[typeSpecs.Count];
+				var conversions = new StructMarshal.CallbackConversion[typeSpecs.Count];
 				// "void" means the callback returns no value, so nothing is converted back. [v2.1-alpha.30+]
 				var typedVoid = typeSpecs[^1] is string text && text.Equals("void", StringComparison.OrdinalIgnoreCase);
 
@@ -210,7 +215,7 @@ namespace Keysharp.Builtins
 														 ? "Invalid callback return type."
 														 : $"Invalid callback parameter type at position {i + 1}.");
 
-					if (!Struct.TryGetCallbackConversion(structType, isReturn, out conversions[i], out var error))
+					if (!StructMarshal.TryGetCallbackConversion(structType, isReturn, out conversions[i], out var error))
 						return Errors.ValueErrorOccurred(error);
 				}
 

@@ -12,7 +12,13 @@ namespace Keysharp.Builtins
 			private StringMemory memory = new();
 			internal string Text => memory.ToString();
 
-			public StringBuffer(params object[] args) : base(args) { }
+			public StringBuffer(params object[] args) : this()
+			{
+				if (args != null)
+					_ = AppendInitialText(args.ElementAtOrDefault(0), args.ElementAtOrDefault(1));
+			}
+
+			protected StringBuffer() { }
 
 			/// <summary>
 			/// Returns a copy with memory of its own holding the same text, capacity and position.
@@ -29,7 +35,9 @@ namespace Keysharp.Builtins
 
 			public static implicit operator string(StringBuffer s) => s.ToString();
 
-			public object __New(object initialValue = null, object capacity = null)
+			public object __New(object initialValue = null, object capacity = null) => AppendInitialText(initialValue, capacity);
+
+			private object AppendInitialText(object initialValue = null, object capacity = null)
 			{
 				if (!initialValue.CoerceString(out var text))
 					return DefaultObject;

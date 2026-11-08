@@ -5663,7 +5663,6 @@ namespace Keysharp.Compilation.Syntax
 			if (classFrame != null) _importScopes.Add(classFrame);
 
 			var members = _scratchListMembers.Get();
-			members.Add(ClassCtor(typeName));
 			var memberNames = _scratchCaseInsensitiveHashStrings.Get();
 
 			foreach (var method in c.Methods.Where(method => !method.IsOperator))
@@ -6965,7 +6964,6 @@ namespace Keysharp.Compilation.Syntax
 			if (lambdas != null) mm.AddRange(lambdas);
 			if (hotMembers != null) mm.AddRange(hotMembers);
 			mm.Add(ObjMethod(NameMangler.AutoExecMethod, EmptyParams(), ModuleBody(autoStmts), labels ?? []));
-			mm.Add(ClassCtor(className));
 			var decl = SyntaxFactory.ClassDeclaration(className)
 				.AddModifiers(PublicTok).WithBaseList(BaseList("Keysharp.Runtime.Module"))
 				.AddAttributeLists(Attr("Keysharp.Runtime.CompatibilityMode", Str((compat ?? Keysharp.Runtime.Script.DefaultCompatibilityVersion).ToString())))
@@ -7428,15 +7426,6 @@ namespace Keysharp.Compilation.Syntax
 		private static ParameterSyntax ThisParam() => SyntaxFactory.Parameter(SyntaxFactory.Identifier("@this")).WithType(ObjType);
 		private static ParameterListSyntax ParamThis() => SyntaxFactory.ParameterList(SyntaxFactory.SingletonSeparatedList(ThisParam()));
 		private static ParameterListSyntax EmptyParams() => SyntaxFactory.ParameterList();
-
-		private static MemberDeclarationSyntax ClassCtor(string className) =>
-			SyntaxFactory.ConstructorDeclaration(className).AddModifiers(PublicTok)
-				.WithParameterList(SyntaxFactory.ParameterList(SyntaxFactory.SingletonSeparatedList(
-					SyntaxFactory.Parameter(SyntaxFactory.Identifier("args")).WithType(ObjArrayType).AddModifiers(SyntaxFactory.Token(SyntaxKind.ParamsKeyword)))))
-				// Typed, so a built-in base with other one-argument constructors still resolves to its object[] one.
-				.WithInitializer(SyntaxFactory.ConstructorInitializer(SyntaxKind.BaseConstructorInitializer,
-					SyntaxFactory.ArgumentList(SyntaxFactory.SingletonSeparatedList(Arg(SyntaxFactory.CastExpression(ObjArrayType, Null))))))
-				.WithBody(SyntaxFactory.Block());
 
 		private static ExpressionSyntax IntLit(int n) => SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(n));
 		private static ExpressionSyntax Str(string value) => SyntaxFactory.LiteralExpression(SyntaxKind.StringLiteralExpression, SyntaxFactory.Literal(value));

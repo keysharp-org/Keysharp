@@ -402,7 +402,9 @@ Some general notes about Keysharp's implementation of the [AutoHotkey v2 specifi
 * Indexing an unset result from a parameterless property getter, for retrieval or assignment, raises `UnsetError` with `No value was returned.` and the property name in `Extra`, including in a `??` expression.
 * An unset final getter or indexed result can use `??` or `IsSet`; an absent indexed property still raises `PropertyError`. Callable-object property accessors honor `MinParams`, `MaxParams` and `IsVariadic`, including forwarding indices to a parameterless getter's result.
 * A structured array class used as a `DllCall` parameter type passes the array's storage address regardless of its size. A structured array return type raises `ValueError`.
+* Outside Windows x64, a struct passed or returned by value through `DllCall` or `CallbackCreate` must be 1, 2, 4 or 8 bytes, with naturally aligned fields that are not all floating-point; other structs raise `ValueError`.
 * Typed properties can be declared only in a struct class. Declaring one in another class, which AutoHotkey allows, raises an error.
+* A struct prototype with typed properties has a read-only `Base` even while its structure is open, and a struct which contains itself raises `TypeError`.
 * The operation of Keysharp is different than AutoHotkey. While AutoHotkey is an interpreted scripting language, Keysharp actually creates a compiled .NET executable and runs it.
 
 * The process for reading and running a script is:
@@ -663,7 +665,6 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ `Collect()`: Calls `GC.Collect()` to force a memory collection.
 		+ This rarely ever has to be used in properly written code.
 		+ Calling `Collect()` may not always have an immediate effect. For example if an object is assigned to a variable inside a function and then the variable is assigned an empty string then calling `Collect()` after it will not cause the object destructor to be called. Only after the function has returned will the object be considered to have no references and `Collect()` starts working.
-		+ If an object destructor needs to be called immediately then it may better to call `Object.__Delete()` manually.
 	+ `EnvUpdate()`: Retained from AutoHotkey v1 as a cross-platform environment notification mechanism. Windows broadcasts `WM_SETTINGCHANGE`; Linux publishes pending `EnvSet()` changes to the D-Bus activation environment and systemd user manager; macOS publishes them to the current launchd session. Linux and macOS updates affect future session-managed processes only and are not persistent.
 	+ `Format()` of the `Ks:DotNet` module: An alternative to the global `Format()`, with the syntax of `string.Format()` in C#, except with 1-based indexing.
 		+ Full documentation for the C# formatting rules can be found [here](https://learn.microsoft.com/en-us/dotnet/api/system.string.format).

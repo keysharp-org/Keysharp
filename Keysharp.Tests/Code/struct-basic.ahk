@@ -298,17 +298,15 @@ catch
 
 Assert(!(atLock.Size != 8 || !threw), A_LineNumber)
 
-threw := false
-try
-    dp(PACK_BASE.Prototype, "z", {type:Int32})
-catch
-    threw := true
+; As in AutoHotkey, a base stays open while only its subclasses' definitions refer to it, so a field added to it now
+; comes before theirs.
+dp(PACK_BASE.Prototype, "z", {type:Int32})
 
 packChild := PACK_CHILD()
 packChild.x := 1
 packChild.y := 3
 
-Assert(!(packChild.Size != 8 || packChild.x != 1 || packChild.y != 3 || !threw), A_LineNumber)
+Assert(!(packChild.Size != 12 || packChild.x != 1 || packChild.y != 3), A_LineNumber)
 
 fwdBox := FWD_BOX()
 fwdPoint := FWD_POINT()
@@ -437,5 +435,217 @@ for badType in ["i32", 4] {
     Assert(!(!IsNumber(kernel32) || kernel32 == 0), A_LineNumber)
 }
 #endif
+
+; Native marshalling reads the declared base layout and rejects inaccessible storage before entering native code.
+struct NATIVE_DERIVED extends BASE_POINT {
+    Extra: Int64
+}
+struct NATIVE_THREE {
+    Bytes: UInt8[3]
+}
+struct NATIVE_PACKED {
+    #StructPack 1
+    Tag: UInt8
+    Value: UInt32
+    Tail: UInt8[3]
+}
+AssertEq(NATIVE_PACKED.Prototype.Size, 8, A_LineNumber)
+nativeDerived := NATIVE_DERIVED()
+nativeDerived.x := 37
+nativeCalls := {Count: 0}
+nativeIdentity := CallbackCreate(value => (++nativeCalls.Count, value), "Fast", [Int32, Int32])
+Throws(() => DllCall(nativeIdentity, Int32, Int32.At(1), "Int"), A_LineNumber, Error)
+for address in [0, 1]
+    Throws(() => DllCall(nativeIdentity, BASE_POINT, BASE_POINT.At(address), "Int"), A_LineNumber, Error)
+#if WINDOWS && X64
+; Windows x64 passes the struct's own address for a size other than 1, 2, 4 or 8 bytes.
+nativeThree := NATIVE_THREE()
+AssertEq(DllCall(nativeIdentity, NATIVE_THREE, nativeThree, "UInt"), nativeThree.Ptr & 0xFFFFFFFF, A_LineNumber)
+AssertEq(DllCall(nativeIdentity, FLOAT_FIELD, FLOAT_FIELD(1.0), "UInt"), 0x3F800000, A_LineNumber)
+nativeCalls.Count := 0
+#else
+for unsupported in [NATIVE_THREE, FLOAT_FIELD, NATIVE_PACKED] {
+    Throws(() => DllCall(nativeIdentity, unsupported, unsupported(), "Int"), A_LineNumber, ValueError)
+    Throws(() => DllCall(nativeIdentity, "Int", 0, unsupported), A_LineNumber, ValueError)
+    Throws(() => CallbackCreate(value => 0, "Fast", [unsupported, Int32]), A_LineNumber, ValueError)
+    Throws(() => CallbackCreate(() => 0, "Fast", [unsupported]), A_LineNumber, ValueError)
+}
+#endif
+nativeErrors := []
+continueNativeError := (error, mode) => (nativeErrors.Push(Type(error)), -1)
+OnError(continueNativeError)
+invalidAggregateInput := DllCall(nativeIdentity, BASE_POINT, 1, "Int")
+AssertEq(nativeErrors.Length, 1, A_LineNumber)
+invalidPointerInput := DllCall(nativeIdentity, Int32.Ptr, "invalid", "Int")
+OnError(continueNativeError, 0)
+AssertEq(nativeErrors.Length, 2, A_LineNumber)
+for errorType in nativeErrors
+    AssertEq(errorType, "TypeError", A_LineNumber)
+AssertEq(invalidAggregateInput ?? "", "", A_LineNumber)
+AssertEq(invalidPointerInput ?? "", "", A_LineNumber)
+AssertEq(nativeCalls.Count, 0, A_LineNumber)
+AssertEq(DllCall(nativeIdentity, BASE_POINT, nativeDerived, "Int"), 37, A_LineNumber)
+AssertEq(nativeCalls.Count, 1, A_LineNumber)
+CallbackFree(nativeIdentity)
+baseReturn := CallbackCreate(() => nativeDerived, "Fast", [BASE_POINT])
+AssertEq(DllCall(baseReturn, "Int"), 37, A_LineNumber)
+CallbackFree(baseReturn)
+
+; A structure stays open to new fields until its layout is needed, so two structs may refer to each other however their
+; definitions are ordered. [v2.1-alpha.38+]
+struct OPEN_FIRST {
+    Second : OPEN_SECOND.Ptr
+}
+struct OPEN_SECOND {
+    First : OPEN_FIRST
+    Number : Int32
+}
+AssertEq(ObjGetDataSize(OPEN_FIRST.Prototype), A_PtrSize, A_LineNumber)
+AssertEq(ObjGetDataSize(OPEN_SECOND.Prototype), 2 * A_PtrSize, A_LineNumber)
+openSecond := OPEN_SECOND()
+openSecond.Number := 5
+openSecond.First.Second := openSecond
+AssertEq(openSecond.First.Second.Number, 5, A_LineNumber)
+
+; Until it closes, a field reports only the Offset it was given, and Pack when one was given.
+DescribeField(proto, name) {
+    desc := Object.Prototype.GetOwnPropDesc.Call(proto, name)
+    return (desc.HasOwnProp("Offset") ? desc.Offset : "-") "/" (desc.HasOwnProp("Pack") ? desc.Pack : "-")
+}
+openPoint := Class(Struct)
+DefineProp(openPoint.Prototype, "X", {Type: Int8})
+DefineProp(openPoint.Prototype, "Y", {Type: Int32, Pack: 2})
+DefineProp(openPoint.Prototype, "Z", {Type: Int16, Offset: "y"})
+DefineProp(openPoint.Prototype, "W", {Type: Int8, Offset: 7})
+AssertEq(DescribeField(openPoint.Prototype, "X"), "-/-", A_LineNumber)
+AssertEq(DescribeField(openPoint.Prototype, "Y"), "-/2", A_LineNumber)
+AssertEq(DescribeField(openPoint.Prototype, "Z"), "Y/-", A_LineNumber)
+AssertEq(DescribeField(openPoint.Prototype, "W"), "7/-", A_LineNumber)
+AssertEq(ObjGetDataSize(openPoint.Prototype), 8, A_LineNumber)
+AssertEq(DescribeField(openPoint.Prototype, "Y"), "2/2", A_LineNumber)
+AssertEq(DescribeField(openPoint.Prototype, "Z"), "2/-", A_LineNumber)
+
+; A subclass, a containing struct or an array type leaves it open; closing any of them, or an instance, closes it.
+lateBase := Class(Struct)
+DefineProp(lateBase.Prototype, "A", {Type: Int32})
+lateChild := Class(lateBase)
+DefineProp(lateChild.Prototype, "C", {Type: Int8})
+lateHolder := Class(Struct)
+DefineProp(lateHolder.Prototype, "Inner", {Type: lateBase})
+lateArray := lateBase[2]
+DefineProp(lateBase.Prototype, "B", {Type: Int32})
+AssertEq(ObjGetDataSize(lateChild.Prototype), 12, A_LineNumber)
+AssertEq(ObjGetDataSize(lateHolder.Prototype), 8, A_LineNumber)
+AssertEq(ObjGetDataSize(lateArray.Prototype), 16, A_LineNumber)
+AssertError(() => DefineProp(lateBase.Prototype, "D", {Type: Int8}), "Error: Cannot add typed property. []", A_LineNumber)
+lateInstance := Class(Struct)
+DefineProp(lateInstance.Prototype, "A", {Type: Int32})
+lateInstance()
+Throws(() => DefineProp(lateInstance.Prototype, "B", {Type: Int8}), A_LineNumber, Error)
+for invalidOffset in ["missing", "A", -1, 1.0, "4"]
+    AssertError(() => DefineProp(Class(lateBase).Prototype, "E", {Type: Int8, Offset: invalidOffset}), "ValueError: Parameter #3 invalid. []", A_LineNumber)
+
+; A script's subclass of a pointer class holds the pointer as a struct of its own, so it is constructed with its owner
+; and the field reads through its __Value. [v2.1-alpha.38+]
+pointerNews := []
+customPointer := Class(Int32.Ptr)
+DefineProp(customPointer.Prototype, "__Value", {Get: (this) => "custom"})
+DefineProp(customPointer.Prototype, "__New", {Call: (this, *) => pointerNews.Push(1)})
+customHolder := Class(Struct)
+DefineProp(customHolder.Prototype, "P", {Type: customPointer})
+customInstance := customHolder()
+AssertEq(pointerNews.Length, 1, A_LineNumber)
+AssertEq(customInstance.P, "custom", A_LineNumber)
+AssertEq(ObjGetDataSize(customHolder.Prototype), A_PtrSize, A_LineNumber)
+plainHolder := Class(Struct)
+DefineProp(plainHolder.Prototype, "P", {Type: Class(Int32.Ptr)})
+plainInstance := plainHolder()
+AssertEq(plainInstance.P ?? "unset", "unset", A_LineNumber)
+plainInstance.P := Int32(7)
+AssertEq(plainInstance.P.__Value, 7, A_LineNumber)
+
+; As in AutoHotkey, a nested struct reads as its __Value when it has one, and is constructed with its owner: its own
+; initializers and a __New without parameters run before the owner's.
+struct NESTED_VALUE {
+    Raw : UInt32
+    __New() => NESTED_OWNER.Trace .= "value,"
+    __Value {
+        get => this.Raw ? this.Raw * 10 : unset
+        set => this.Raw := value
+    }
+}
+struct NESTED_INIT {
+    Number : Int32 := 4
+    __New() {
+        this.Number += 5
+        NESTED_OWNER.Trace .= "init,"
+    }
+}
+struct NESTED_BASE {
+    Value : NESTED_VALUE
+}
+struct NESTED_OWNER extends NESTED_BASE {
+    static Trace := ""
+    Init : NESTED_INIT
+    __Init() => NESTED_OWNER.Trace .= "owner-init,"
+    __New(mark) => NESTED_OWNER.Trace .= mark
+}
+nestedOwner := NESTED_OWNER("owner-new")
+AssertEq(NESTED_OWNER.Trace, "value,init,owner-init,owner-new", A_LineNumber)
+AssertEq(nestedOwner.Init.Number, 9, A_LineNumber)
+AssertEq(nestedOwner.Value ?? "unset", "unset", A_LineNumber)
+Throws(() => nestedOwner.Value, A_LineNumber, UnsetError)
+nestedOwner.Value := 3
+AssertEq(nestedOwner.Value, 30, A_LineNumber)
+DefineProp(NESTED_INIT.Prototype, "__New", {Call: (this) => (this.Number := 20, NESTED_OWNER.Trace .= "changed,")})
+DefineProp(NESTED_OWNER.Prototype, "__Init", {Call: (this) => NESTED_OWNER.Trace .= "changed-owner,"})
+NESTED_OWNER.Trace := ""
+nestedOwner := NESTED_OWNER("again")
+AssertEq(nestedOwner.Init.Number, 20, A_LineNumber)
+AssertEq(NESTED_OWNER.Trace, "value,changed,changed-owner,again", A_LineNumber)
+
+struct NESTED_CALL {
+    Number : Int32 := 7
+    __Value => -1
+    Call(owner, increment) {
+        Assert(owner is NESTED_CALL_OWNER, A_LineNumber)
+        return this.Number + increment
+    }
+}
+struct NESTED_CALL_OWNER {
+    Child : NESTED_CALL
+}
+callOwner := NESTED_CALL_OWNER()
+AssertEq(callOwner.Child, -1, A_LineNumber)
+AssertEq(callOwner.Child(5), 12, A_LineNumber)
+
+; A struct which contains itself, directly or through another, has no layout. AutoHotkey does not check for this.
+selfContained := Class(Struct)
+DefineProp(selfContained.Prototype, "Self", {Type: selfContained})
+AssertError(() => ObjGetDataSize(selfContained.Prototype), "TypeError: Invalid struct. []", A_LineNumber)
+AssertError(() => selfContained.Prototype.Size, "TypeError: Invalid struct. []", A_LineNumber)
+AssertError(() => selfContained(), "TypeError: Invalid struct. []", A_LineNumber)
+
+continuedLayout := {Errors: 0, Constructed: 0}
+DefineProp(selfContained.Prototype, "__New", {Call: (this, *) => ++continuedLayout.Constructed})
+continueLayout := (error, mode) => (++continuedLayout.Errors, -1)
+OnError(continueLayout)
+invalidInstance := selfContained()
+invalidView := selfContained.At(0)
+invalidExternal := ObjCreateWithDataPtr(selfContained, 0)
+OnError(continueLayout, 0)
+AssertEq(continuedLayout.Errors, 3, A_LineNumber)
+AssertEq(continuedLayout.Constructed, 0, A_LineNumber)
+AssertEq(invalidInstance ?? "", "", A_LineNumber)
+AssertEq(invalidView ?? "", "", A_LineNumber)
+AssertEq(invalidExternal ?? "", "", A_LineNumber)
+
+for offset in [0x7FFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFF7] {
+    overflowOffset := Class(Struct)
+    DefineProp(overflowOffset.Prototype, "Value", {Type: Int64, Offset: offset})
+    Throws(() => overflowOffset.Prototype.Size, A_LineNumber, TypeError)
+    Throws(() => overflowOffset(), A_LineNumber, TypeError)
+    Throws(() => overflowOffset.At(0), A_LineNumber, TypeError)
+}
 
 FileAppend "pass", "*"

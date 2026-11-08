@@ -3607,7 +3607,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Creates a native callback address which redirects to a script function. Supports both parameter-count callbacks and typed parameter/return signatures on every platform. Float32 arguments preserve their exact binary value when widened to the script\u0027s Float.",
+                     "notes":  "Creates a native callback address which redirects to a script function. Supports both parameter-count callbacks and typed parameter/return signatures on every platform. Float32 arguments preserve their exact binary value when widened to the script\u0027s Float. By-value structs follow the platform restrictions of DllCall.",
                      "tested-by":  "external-callbackcreate.ahk"
                  },
                  {
@@ -4842,7 +4842,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Calls native functions; supports numeric type classes and void returns. Structured arrays pass by address but cannot be returned. Native Float32 values preserve their exact binary value when widened to the script\u0027s Float.",
+                     "notes":  "Calls native functions; supports numeric type classes and void returns. Structured arrays pass by address but cannot be returned. Native Float32 values preserve their exact binary value when widened to the script\u0027s Float. Outside Windows x64, a struct passed or returned by value must be 1, 2, 4 or 8 bytes, with naturally aligned fields that are not all floating-point.",
                      "tested-by":  "external-dllcall.ahk; struct-array.ahk; struct-basic.ahk"
                  },
                  {
@@ -10758,7 +10758,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "User-defined structures via the struct keyword: typed fields, union blocks, nesting, At, numeric types, pointer classes, #StructPack alignment, and structured arrays (Int32[10] / Struct.Array).",
-                     "tested-by":  "struct-basic.ahk; struct-pack.ahk; struct-array.ahk"
+                     "tested-by":  "struct-basic.ahk; struct-pack.ahk; struct-array.ahk; class-special-funcs.ahk"
                  },
                  {
                      "category":  "Interop/Memory",

@@ -39,6 +39,17 @@ Assert(out.SampleRate == "" && out.Channels == "" && out.LatencyMilliseconds == 
 AssertEq(out.ActiveVoiceCount, 0, A_LineNumber)
 AssertEq(out.DroppedPlayCount, 0, A_LineNumber)
 
+; Native cleanup has no script base method. An explicit script callback does not dispose the output.
+Assert(!HasMethod(Audio.Output.Prototype, "__Delete"), A_LineNumber)
+Assert(!HasMethod(Audio.Meter.Prototype, "__Delete"), A_LineNumber)
+Assert(!HasMethod(Audio.Recorder.Prototype, "__Delete"), A_LineNumber)
+Throws(() => Audio.Output.Prototype.__Delete(), A_LineNumber, MethodError)
+Throws(() => out.__Delete(), A_LineNumber, MethodError)
+out.DefineProp("__Delete", {Call: (*) => 0})
+out.__Delete()
+AssertEq(out.Status, "Closed", A_LineNumber)
+out.DeleteProp("__Delete")
+
 ; Bus gain and mute are settable before the output is ever opened, and survive a close, so a setter and its
 ; getter never disagree about what was asked for.
 out.Volume := 40

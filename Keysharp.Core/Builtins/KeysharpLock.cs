@@ -24,8 +24,6 @@ namespace Keysharp.Builtins
 			// No IsHeld: its answer is stale the instant it is produced, so nothing can act on it —
 			// Acquire(0) is the usable form.
 
-			public KeysharpLock(params object[] args) : base(args) { }
-
 			/// <summary>
 			/// Acquires the lock, blocking until it is free or <paramref name="timeout"/> milliseconds elapse.
 			/// </summary>

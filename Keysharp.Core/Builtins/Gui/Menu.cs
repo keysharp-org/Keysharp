@@ -356,9 +356,13 @@ namespace Keysharp.Builtins
 		/// Initializes a new instance of the <see cref="Menu"/> class.
 		/// </summary>
 		/// <param name="strip">Optional existing <see cref="ContextMenuStrip"/>. Default: false.</param>
-		public Menu(params object[] args) : base(args)
+		public Menu(params object[] args) : this(args?.Length > 0 ? (ContextMenuStrip)args[0] : null) { }
+
+		protected Menu() : this((ContextMenuStrip)null) { }
+
+		private Menu(ContextMenuStrip strip)
 		{
-			MenuItem = (args?.Length > 0 ? (ContextMenuStrip)args[0] : null) ?? new ContextMenuStrip();
+			MenuItem = strip ?? new ContextMenuStrip();
 			//Virtual, so this also covers a MenuBar's MenuStrip: a derived class's field initializers have
 			//already run by the time the base constructor body does.
 			InitMenu(GetMenu());
@@ -1324,6 +1328,7 @@ namespace Keysharp.Builtins
 	public class MenuBar : Menu
 	{
 		public MenuBar(params object[] args) : base(args) { }
+		protected MenuBar() { }
 
 		/// <summary>
 		/// The <see cref="MenuStrip"/> for the menubar.

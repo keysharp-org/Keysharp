@@ -17,6 +17,8 @@ namespace Keysharp.Builtins.COM
 
 		public ComObject(params object[] args) : base(args) { }
 
+		protected ComObject() { }
+
 		KeysharpFunc I__Enum.__Enum(object count)
 		{
 			_ = count.TryCoerceInt(out var c);

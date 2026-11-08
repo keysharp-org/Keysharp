@@ -71,7 +71,13 @@ namespace Keysharp.Builtins
 			set => Seek(value);
 		}
 
-		public KeysharpFile(params object[] args) : base(args) { }
+		public KeysharpFile(params object[] args) : this()
+		{
+			if (args != null)
+				_ = Open(args);
+		}
+
+		protected KeysharpFile() { }
 
 		public KeysharpFile(StreamWriter sw) : this(null, sw) { }
 
@@ -79,7 +85,7 @@ namespace Keysharp.Builtins
 
 		internal KeysharpFile(StringReader reader) : this(reader, null) { }
 
-		internal KeysharpFile(TextReader reader, TextWriter writer, long eolFlags = 0) : base(null)
+		internal KeysharpFile(TextReader reader, TextWriter writer, long eolFlags = 0)
 		{
 			this.reader = reader;
 			this.writer = writer;
@@ -92,7 +98,7 @@ namespace Keysharp.Builtins
 				FlushAtExit();
 		}
 
-		internal KeysharpFile(TextStream stream) : base(null)
+		internal KeysharpFile(TextStream stream)
 		{
 			this.stream = stream;
 			streamRoot = GCHandle.Alloc(stream);
@@ -110,7 +116,9 @@ namespace Keysharp.Builtins
 		/// <returns>An empty value; the constructed object is the instance being initialized.</returns>
 		/// <exception cref="ValueError">Thrown when no source is given.</exception>
 		/// <exception cref="TypeError">Thrown when the source exposes no usable Ptr and Size.</exception>
-		public override object __New(params object[] args)
+		public override object __New(params object[] args) => Open(args);
+
+		private object Open(params object[] args)
 		{
 			if (args == null || args.Length == 0)
 				return Errors.ValueErrorOccurred("File requires a source. Use FileOpen to open a path, or pass a Buffer to read and write its memory.");

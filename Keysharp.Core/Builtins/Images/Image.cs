@@ -91,7 +91,13 @@ namespace Keysharp.Builtins
 			// Destroy still disposes the surface and invalidates the view immediately.
 			private OverlaySurface borrowedSurface;
 
-			public KeysharpImage(params object[] args) : base(args) { }
+			public KeysharpImage(params object[] args) : this()
+			{
+				if (args != null)
+					_ = LoadSource(args.ElementAtOrDefault(0));
+			}
+
+			protected KeysharpImage() { }
 
 			/// <summary>
 			/// The current pixels as a <c>Ks.Clr</c> object over the underlying bitmap, with pending work
@@ -372,9 +378,9 @@ namespace Keysharp.Builtins
 			/// handle. <c>Image()</c> with no argument creates an empty image (used internally by the
 			/// <c>From*</c> factories).
 			/// </summary>
-			//`new`, not `override`: construction dispatches by name, so the real signature can be declared here
-			//and MinParams/MaxParams/named binding follow from it (see Buffer.__New and Any's constructor).
-			public object __New(object source = null)
+			public object __New(object source = null) => LoadSource(source);
+
+			private object LoadSource(object source = null)
 			{
 				if (source != null)
 				{

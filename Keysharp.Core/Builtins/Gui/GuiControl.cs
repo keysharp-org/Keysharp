@@ -12,6 +12,8 @@ namespace Keysharp.Builtins
 	{
 		public partial class Control : KeysharpObject
 		{
+			protected Control() { }
+
 			private string typename;
 			private WeakReference<Gui> gui;
 			private readonly CallbackRegistry clickHandlers = new(CallbackStop.NonEmpty, "Gui");

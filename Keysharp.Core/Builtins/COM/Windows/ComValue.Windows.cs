@@ -130,7 +130,9 @@ namespace Keysharp.Builtins.COM
 		}
 		internal long Flags { get; set; }
 
-		public ComValue(params object[] args) : base(args)
+		protected ComValue() { }
+
+		public ComValue(params object[] args)
 		{
 			if (args.Length == 0 || args[0] == null) return;
 			var value = args[1];

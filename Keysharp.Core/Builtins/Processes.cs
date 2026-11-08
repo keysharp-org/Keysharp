@@ -721,13 +721,13 @@ namespace Keysharp.Builtins
 		private Task<string> capturedStdErr;
 		private bool disposed;
 
-		public ScriptProcess(params object[] args) : base(args)
+		public ScriptProcess(params object[] args)
 		{
 			process = args[0] as Process;
 			WatchForExit();
 		}
 
-		internal ScriptProcess(Process process, string transportPath) : base(null)
+		internal ScriptProcess(Process process, string transportPath)
 		{
 			this.process = process;
 			assemblyTransportPath = transportPath;

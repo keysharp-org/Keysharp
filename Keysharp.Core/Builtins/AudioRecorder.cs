@@ -11,7 +11,7 @@ namespace Keysharp.Builtins
 			/// first and started second, so handlers can be registered before any frame arrives and an immediate
 			/// permission or device failure is observable.
 			/// </summary>
-			public class Recorder : KeysharpObject
+			public class Recorder : KeysharpObject, IDisposable
 			{
 				internal Engine.AudioRecorderCore core;
 				internal Engine.AudioService service;
@@ -25,7 +25,15 @@ namespace Keysharp.Builtins
 				internal long maximumMs;
 				internal long chunkMs = 100;
 
-				public Recorder(params object[] args) : base(args) { }
+				public Recorder(params object[] args) : this()
+				{
+					if (args != null)
+						_ = Configure(args.ElementAtOrDefault(0), args.ElementAtOrDefault(1), args.ElementAtOrDefault(2),
+							args.ElementAtOrDefault(3), args.ElementAtOrDefault(4), args.ElementAtOrDefault(5),
+							args.ElementAtOrDefault(6), args.ElementAtOrDefault(7));
+				}
+
+				protected Recorder() { }
 
 				/// <summary>
 				/// Configures a recorder without touching the device. Every bound is checked here, so a bad option
@@ -35,6 +43,10 @@ namespace Keysharp.Builtins
 				public object __New(object source = null, object path = null, object device = null,
 									object sampleRate = null, object channels = null, object sampleFormat = null,
 									object chunkMilliseconds = null, object maximumDurationMilliseconds = null)
+					=> Configure(source, path, device, sampleRate, channels, sampleFormat, chunkMilliseconds, maximumDurationMilliseconds);
+
+				private object Configure(object source, object path, object device, object sampleRate, object channels,
+					object sampleFormat, object chunkMilliseconds, object maximumDurationMilliseconds)
 				{
 					service = Service;
 
@@ -274,12 +286,7 @@ namespace Keysharp.Builtins
 					result = Recording.Wrap(core);
 				}
 
-				/// <summary>Stops a capture a script dropped without stopping, for the reason Audio.Output gives.</summary>
-				public override object __Delete()
-				{
-					_ = Dispose();
-					return base.__Delete();
-				}
+				void IDisposable.Dispose() => _ = Dispose();
 
 				public object Dispose()
 				{
@@ -308,12 +315,10 @@ namespace Keysharp.Builtins
 				internal int channels;
 				internal string format = "";
 
-				public Recording(params object[] args) : base(args) { }
-
 				public override object __New(params object[] args)
 					=> Errors.ErrorOccurred("Audio.Recording is produced by Audio.Recorder.Stop(), not constructed.");
 
-				internal static Recording Wrap(Engine.AudioRecorderCore core) => new (null)
+				internal static Recording Wrap(Engine.AudioRecorderCore core) => new ()
 				{
 					clip = core.ResultClip,
 					path = core.ResultClip == null ? core.Path : "",

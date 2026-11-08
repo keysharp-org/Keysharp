@@ -183,6 +183,22 @@ struct CB_MIXED_DERIVED extends CB_INT_BASE {
 	f : Float32
 }
 
+#if WINDOWS && X64
+; Any aggregate: in a register when it is 1, 2, 4 or 8 bytes, otherwise by address, and returned through memory the caller passes first.
+floatPair := CB_FLOAT_PAIR(1.5, 2.25)
+floatPairCb := CallbackCreate(v => v.a + v.b, "Fast", [CB_FLOAT_PAIR, Float64])
+AssertEq(DllCall(floatPairCb, CB_FLOAT_PAIR, floatPair, "Double"), 3.75, A_LineNumber)
+CallbackFree(floatPairCb)
+big := CB_BIG(40, 2)
+bigCb := CallbackCreate(v => v.a + v.b, "Fast", [CB_BIG, Int64])
+AssertEq(DllCall(bigCb, CB_BIG, big, "Int64"), 42, A_LineNumber)
+CallbackFree(bigCb)
+swapCb := CallbackCreate(v => CB_BIG(v.b, v.a), "Fast", [CB_BIG, CB_BIG])
+swapped := DllCall(swapCb, CB_BIG, big, CB_BIG)
+AssertEq(swapped.a " " swapped.b, "2 40", A_LineNumber)
+AssertEq(big.a " " big.b, "40 2", A_LineNumber)
+CallbackFree(swapCb)
+#else
 for badShape in [[CB_FLOAT_PAIR, Int32], [CB_BIG, Int32], [Int32, CB_BIG], [CB_FLOAT_DERIVED, Int32]] {
 	threw := false
 	try
@@ -192,6 +208,7 @@ for badShape in [[CB_FLOAT_PAIR, Int32], [CB_BIG, Int32], [Int32, CB_BIG], [CB_F
 
 	Assert(threw, A_LineNumber)
 }
+#endif
 
 ; The callback is checked as AHK's CallbackCreate checks it: against ParamCount, against the one address with &, and,
 ; with neither, by its MinParams, which becomes the count, so an object used as the callback must state it.
@@ -237,6 +254,31 @@ pair.b := 22
 pairCb := CallbackCreate(SumPair, "Fast", [CB_PAIR, Int32])
 AssertEq(DllCall(pairCb, CB_PAIR, pair, Int32), 42, A_LineNumber)
 CallbackFree(pairCb)
+
+; A struct return value is converted in the callback's own thread, with its settings.
+struct CB_MODE {
+	static Mode := ""
+	Raw : Int32
+	__Value {
+		get => this.Raw
+		set {
+			CB_MODE.Mode := A_CoordModeMouse
+			this.Raw := value
+		}
+	}
+}
+ReturnInWindowMode() {
+	CoordMode("Mouse", "Window")
+	return 5
+}
+callerMode := A_CoordModeMouse
+CoordMode("Mouse", "Screen")
+modeCb := CallbackCreate(ReturnInWindowMode, "", [CB_MODE])
+AssertEq(DllCall(modeCb, "Int"), 5, A_LineNumber)
+AssertEq(CB_MODE.Mode, "Window", A_LineNumber)
+AssertEq(A_CoordModeMouse, "Screen", A_LineNumber)
+CallbackFree(modeCb)
+CoordMode("Mouse", callerMode)
 
 ; A "void" return type yields no value, for CallbackCreate and DllCall alike. [v2.1-alpha.30]
 voidSideEffect := 0

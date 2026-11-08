@@ -85,6 +85,8 @@ namespace Keysharp.Builtins
 			/// </summary>
 			/// <param name="args">See <see cref="Map.__New(object[])"/>.</param>
 			public HashMap(params object[] args) : base(args) { }
+
+			protected HashMap() { }
 		}
 	}
 
@@ -218,7 +220,13 @@ namespace Keysharp.Builtins
 		/// Initializes a new instance of the <see cref="Map"/> class.
 		/// See <see cref="__New(object[])"/>.
 		/// </summary>
-		public Map(params object[] args) : this(eCaseSense.On) => InitializeInstance(args);
+		public Map(params object[] args) : this(eCaseSense.On)
+		{
+			if (args != null)
+				_ = Set(args);
+		}
+
+		protected Map() : this(eCaseSense.On) { }
 
 		// A map literal, which AHK builds without __New.
 		[PublicHiddenFromUser]
@@ -227,12 +235,11 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Initializes an empty <see cref="Map"/> whose string-key comparison is fixed at construction.
 		/// The public <see cref="CaseSense"/> setter refuses a map which already holds entries (the AHK v2
-		/// behavior), so a caller which populates as it builds -- JSON decoding -- has no other way to reach
-		/// a case-insensitive map. Passing null to the base constructor skips __Init/__New, which is what
-		/// lets the dictionary be created once, already carrying the right comparer.
+		/// behavior), so a caller which populates as it builds -- JSON decoding -- needs the comparer before
+		/// adding its first entry.
 		/// </summary>
 		/// <param name="caseSense">The case comparison mode for string keys.</param>
-		internal Map(eCaseSense caseSense) : base(null)
+		internal Map(eCaseSense caseSense)
 		{
 			this.caseSense = caseSense;
 			map = new Dictionary<object, object>(CaseEqualityComp.For(caseSense));

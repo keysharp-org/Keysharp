@@ -12,8 +12,11 @@ namespace Keysharp.Builtins
 		/// Windows when the script has asked for the WebView2 package, Internet Explorer there otherwise, and
 		/// Eto's WebView (WebKitGTK or WKWebView) elsewhere.</para>
 		/// </summary>
-		public class WebView(params object[] args) : Gui.Control(args), IWebViewEventSink
+		public class WebView : Gui.Control, IWebViewEventSink
 		{
+			public WebView(params object[] args) : base(args) { }
+			protected WebView() { }
+
 			//Each event is wired to the backend only once a script asks for it: registering MessageReceived
 			//costs a script injected into every page, and OpenNewWindow changes how popups behave.
 			private HashSet<string> attachedEvents;

@@ -26,7 +26,7 @@ namespace Keysharp.Builtins
 		/// <summary>Every group including the whole match at 0, which is the span enumeration walks.</summary>
 		private int GroupCount => match != null ? match.Groups.Count : netMatch.Groups.Count;
 
-		public RegExMatchInfo(params object[] args) : base(args)
+		public RegExMatchInfo(params object[] args)
 		{
 			if (args[0] is PcreMatch p)
 			{

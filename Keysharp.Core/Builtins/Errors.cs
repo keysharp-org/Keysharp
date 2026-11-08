@@ -606,20 +606,25 @@ namespace Keysharp.Builtins
 		/// Initializes a new instance of the <see cref="Error"/> class.
 		/// </summary>
 		/// <param name="args">The parameters to pass to the base.</param>
-		public Error(params object[] args) : base(args) { }
+		public Error(params object[] args) : this()
+		{
+			if (args != null)
+				_ = SetDetails(args.ElementAtOrDefault(0), args.ElementAtOrDefault(1), args.ElementAtOrDefault(2));
+		}
+
+		protected Error() { }
 
 		/// <summary>Reports an exception C# code threw, from the frames the unwind left when it began.</summary>
-		internal Error(Exception ex) : base(null)
+		internal Error(Exception ex)
 		{
 			// The type tells an exception apart from another with the same message.
 			SetProperties(ex.Message, CallStack.Recall(ex), ex.GetType().FullName);
 		}
 
-		// Declared `new` with the real signature, not `override` of the `params object[]` base: construction
-		// dispatches by NAME, most-derived first (Class.Call for scripts, Any's constructor for C#), so the
-		// signature is free to be the documented one and arity/defaults/named binding all come from it directly.
-		// The parameters are PascalCase on purpose: these names ARE script-facing API (`Error(Message: "x")`).
-		public object __New(object message = null, object what = null, object extra = null) =>
+		// The script constructor keeps its real signature for arity and named-argument binding.
+		public object __New(object message = null, object what = null, object extra = null) => SetDetails(message, what, extra);
+
+		private object SetDetails(object message, object what, object extra) =>
 			// An object message is empty text, not its ToString result.
 			Construct(message == null ? GetType().Name : FieldText(message), what, extra);
 
@@ -770,6 +775,8 @@ namespace Keysharp.Builtins
 			: base(args is { Length: 0 } ? ["A required parameter was omitted or unset."] : args)
 		{
 		}
+
+		protected ArgumentError() { }
 	}
 
     /// <summary>
@@ -785,6 +792,8 @@ namespace Keysharp.Builtins
 			: base(args)
 		{
 		}
+
+		protected IndexError() { }
 	}
 
 	/// <summary>
@@ -842,6 +851,8 @@ namespace Keysharp.Builtins
 			: base(args)
 		{
 		}
+
+		protected MemberError() { }
 	}
 
 	/// <summary>
@@ -857,6 +868,8 @@ namespace Keysharp.Builtins
 			: base(args)
 		{
 		}
+
+		protected MemoryError() { }
 	}
 
 	/// <summary>
@@ -872,6 +885,8 @@ namespace Keysharp.Builtins
 			: base(args)
 		{
 		}
+
+		protected MethodError() { }
 	}
 
 	/// <summary>An exception class for an operation the active platform cannot provide.</summary>
@@ -880,6 +895,8 @@ namespace Keysharp.Builtins
 		/// <summary>Initializes a new instance of the <see cref="UnsupportedError"/> class.</summary>
 		/// <param name="args">The parameters to pass to the base.</param>
 		public UnsupportedError(params object[] args) : base(args) { }
+
+		protected UnsupportedError() { }
 	}
 
 	/// <summary>
@@ -895,13 +912,21 @@ namespace Keysharp.Builtins
 		/// Initializes a new instance of the <see cref="OSError"/> class.
 		/// </summary>
 		/// <param name="args">The parameters to pass to the base.</param>
-		public OSError(params object[] args) : base(args) { }
+		public OSError(params object[] args) : this()
+		{
+			if (args != null)
+				_ = SetSystemError(args.ElementAtOrDefault(0), args.ElementAtOrDefault(1), args.ElementAtOrDefault(2));
+		}
+
+		protected OSError() { }
 
 		/// <summary>
 		/// Given a code, or none for the last error the operating system reported, the error takes it as Number and the
 		/// system's text for it as Message, as AutoHotkey's does. Any other value is the Message, with no Number.
 		/// </summary>
-		public new object __New(object errorNumber = null, object what = null, object extra = null)
+		public new object __New(object errorNumber = null, object what = null, object extra = null) => SetSystemError(errorNumber, what, extra);
+
+		private object SetSystemError(object errorNumber, object what, object extra)
 		{
 			if (errorNumber is Exception e)
 			{
@@ -981,6 +1006,8 @@ namespace Keysharp.Builtins
 			: base(args)
 		{
 		}
+
+		protected PropertyError() { }
 	}
 
 	/// <summary>
@@ -996,6 +1023,8 @@ namespace Keysharp.Builtins
 			: base(args)
 		{
 		}
+
+		protected TargetError() { }
 	}
 
 	/// <summary>
@@ -1011,6 +1040,8 @@ namespace Keysharp.Builtins
 			: base(args)
 		{
 		}
+
+		protected TimeoutError() { }
 	}
 
 	/// <summary>
@@ -1026,6 +1057,8 @@ namespace Keysharp.Builtins
 			: base(args)
 		{
 		}
+
+		protected TypeError() { }
 	}
 
 	/// <summary>
@@ -1041,6 +1074,8 @@ namespace Keysharp.Builtins
 			: base(args)
 		{
 		}
+
+		protected UnsetError() { }
 	}
 
 	/// <summary>
@@ -1056,6 +1091,8 @@ namespace Keysharp.Builtins
 			: base(args)
 		{
 		}
+
+		protected UnsetItemError() { }
 	}
 
 	/// <summary>
@@ -1071,6 +1108,8 @@ namespace Keysharp.Builtins
 			: base(args)
 		{
 		}
+
+		protected ValueError() { }
 	}
 
 	/// <summary>
@@ -1086,6 +1125,8 @@ namespace Keysharp.Builtins
 			: base(args)
 		{
 		}
+
+		protected ZeroDivisionError() { }
 	}
 
 	/// <summary>

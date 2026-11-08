@@ -141,6 +141,9 @@ namespace Keysharp.Internals
 
 			if (slot != null)
 			{
+				if (slot.Owner.IsDisposed && !slot.Owner.IsOnMainThread)
+					return;
+
 				lock (slot.Gate)
 				{
 					if (IsCurrent(id, slot))
@@ -169,6 +172,10 @@ namespace Keysharp.Internals
 				if (!overlays.TryGetValue(id, out slot))
 				{
 					var owner = Script.TheScript;
+
+					if (owner.IsDisposed)
+						return false;
+
 					overlays[id] = slot = new OverlaySlot(owner, CreateBacking(id, owner));
 					created = true;
 
@@ -265,6 +272,10 @@ namespace Keysharp.Internals
 				if (!overlays.TryGetValue(id, out slot))
 					return;
 			}
+
+			// Shutdown sweeps this registered backing on its UI thread. A late finalizer must not wait for that thread.
+			if (slot.Owner.IsDisposed && !slot.Owner.IsOnMainThread)
+				return;
 
 			lock (slot.Gate)
 			{

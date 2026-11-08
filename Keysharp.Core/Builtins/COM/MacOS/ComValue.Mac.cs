@@ -28,7 +28,9 @@ namespace Keysharp.Builtins.COM
 			set => _ = TrySetVarType(value);
 		}
 
-		public ComValue(params object[] args) : base(args) => Init(args);
+		public ComValue(params object[] args) => Init(args);
+
+		protected ComValue() { }
 
 		public static object staticCall(object @this, object varType, object value = null, object flags = null)
 			=> new ComValue(varType, value);

@@ -1,8 +1,6 @@
-using System.ComponentModel.Design.Serialization;
-
 namespace Keysharp.Builtins
 {
-    public class Class(params object[] args) : KeysharpObject(args)
+    public class Class : KeysharpObject
     {
 		// Fixed at construction, independently of the mutable Base and Prototype properties.
 		internal Any InstancePrototype;
@@ -33,11 +31,10 @@ namespace Keysharp.Builtins
 
 			var baseType = baseProto.type;
 			var isStruct = Struct.IsStructType(baseType);
-			var userType = isStruct ? Struct.CreateDynamicStructType(name, baseType) : baseType;
+			var userType = isStruct ? StructLayout.CreateDerivedType(name, baseType) : baseType;
 			if (isStruct)
 				TheScript.Operators.RegisterAlias(userType, baseType);
-			var staticInst = (Class)RuntimeHelpers.GetUninitializedObject(original.GetType());
-
+			var staticInst = (Class)FastCtor.Instantiate(original.GetType());
 			staticInst.SetBaseInternal(baseClass);
             staticInst.type = userType;
 
@@ -73,24 +70,36 @@ namespace Keysharp.Builtins
 			if ((own ?? Script.GetPropertyValueOrNull(this, "Prototype")) is not Any proto)
 				return Errors.TypeErrorOccurred("This class has no Prototype to create an instance from.");
 
-			if (!CanConstruct(proto.type))
+			if (FactoryFor(proto) is not { } factory)
 				return Errors.ValueErrorOccurred("Invalid base.");
 
-			var kso = FastCtor.Call(proto.type, null) as Any;
-			kso.type = proto.type;
+			var instance = factory.Create(proto);
 
-			kso.SetBaseInternal(proto);
+			if (instance == null)
+				return DefaultObject;
 
-			if (kso is Struct st)
-				st.InitializeStructStorage();
-
-			Script.InvokeMeta(kso, "__Init");
-			Script.InvokeMeta(kso, "__New", args);
-            return kso;
+			instance.Initialize(args);
+			return instance;
 		}
 
-		internal static bool CanConstruct(Type type) => type != null && typeof(Any).IsAssignableFrom(type)
-			&& !typeof(RegExMatchInfo).IsAssignableFrom(type) && type != typeof(Ks.Timer);
+		// How a script creates instances of the prototype's class, or null when it cannot, as an AutoHotkey class has no
+		// factory. A Prototype keeps it, as AutoHotkey keeps the native constructor with the prototype.
+		internal static FastCtor.Factory FactoryFor(Any prototype)
+		{
+			if (prototype is Prototype { factory: { } cached })
+				return cached;
+
+			var factory = CanConstruct(prototype.type) ? FastCtor.For(prototype.type) : null;
+
+			if (prototype is Prototype p)
+				p.factory = factory;
+
+			return factory;
+		}
+
+		internal static bool CanConstruct(Type type) => FastCtor.CanConstruct(type)
+			&& !typeof(RegExMatchInfo).IsAssignableFrom(type) && type != typeof(Ks.Timer)
+			&& !typeof(Gui.Control).IsAssignableFrom(type) && !typeof(ScriptProcess).IsAssignableFrom(type);
 	}
 
     // Every prototype object is one of these, and Type() reports "Prototype" for it, but as in AutoHotkey no global
@@ -98,12 +107,9 @@ namespace Keysharp.Builtins
     [PublicHiddenFromUser]
     public class Prototype : KeysharpObject
     {
-        public Prototype(params object[] args) : base(args)
-        {
-            isPrototype = true;
-            type = typeof(Prototype);
-        }
-        internal Prototype(Type t) : base(null)
+        internal FastCtor.Factory factory;
+
+        internal Prototype(Type t)
         {
             isPrototype = true;
             type = t;

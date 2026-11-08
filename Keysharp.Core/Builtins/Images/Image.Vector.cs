@@ -56,7 +56,7 @@ namespace Keysharp.Builtins
 				internal readonly object Owner;
 				internal readonly VectorDrawingState State;
 
-				internal VectorState(object owner, VectorDrawingState state) : base(null)
+				internal VectorState(object owner, VectorDrawingState state)
 				{
 					Owner = owner;
 					State = state;
@@ -76,9 +76,17 @@ namespace Keysharp.Builtins
 				private bool boundsValid = true;
 				private float left, top, right, bottom;
 
-				public KeysharpPath(params object[] args) : base(args) { }
+				public KeysharpPath(params object[] args) : this()
+				{
+					if (args != null)
+						_ = ConfigureFillRule(args.ElementAtOrDefault(0));
+				}
 
-				public object __New(object fillRule = null)
+				protected KeysharpPath() { }
+
+				public object __New(object fillRule = null) => ConfigureFillRule(fillRule);
+
+				private object ConfigureFillRule(object fillRule)
 				{
 					if (constructed)
 						return Errors.ValueErrorOccurred("An Image.Path's FillRule is fixed at construction.", ret: this);
@@ -422,10 +430,10 @@ namespace Keysharp.Builtins
 				internal int startColor, endColor;
 				internal bool valid;
 
-				public KeysharpBrush(params object[] args) : base(args) { }
+				public KeysharpBrush() { }
 
 				private KeysharpBrush(BrushKind kind, PointF first, PointF second,
-					int startColor, int endColor) : base(null)
+					int startColor, int endColor)
 				{
 					this.kind = kind;
 					this.first = first;

@@ -24,13 +24,9 @@ namespace Keysharp.Builtins.COM
 		private int connectionGeneration;
 		internal override bool DisposesWhenCollected => sink != null;
 
-		public ComObject(params object[] args) : base(args)
-		{
-			if (args != null && args.Length > 0)
-				_ = Errors.ErrorOccurred("Construct a D-Bus ComObject by calling ComObject(name), not with New.");
-		}
+		public ComObject() { }
 
-		internal ComObject(DBusBus bus, string service, string path, string iface, DBusNodeInfo node) : base(null)
+		internal ComObject(DBusBus bus, string service, string path, string iface, DBusNodeInfo node)
 		{
 			this.bus = bus;
 			this.service = service;
