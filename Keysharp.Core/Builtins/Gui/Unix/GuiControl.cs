@@ -16,8 +16,10 @@ namespace Keysharp.Builtins
 
 			public object Gui => gui != null && gui.TryGetTarget(out var g) ? g : Errors.ErrorOccurred("GUI control's parent GUI is no longer available.");
 
-			[RequiresUIThread]
-			public long Hwnd => _control is Eto.Widget w ? w.Handle.ToInt64() : 0L;
+			//Eto does not dispose a closed window, so a destroyed Gui is told apart by its cleared handle. It is read through
+			//the owning Gui rather than the parent chain, which a hotkey criterion off the UI thread must not walk.
+			public long Hwnd => gui != null && gui.TryGetTarget(out var g) && g.form is { IsDisposed: false, CachedHwnd: not 0 }
+				? cachedHwnd : (long)Errors.ErrorOccurred("The control is destroyed.", 0L);
 
 			[RequiresUIThread]
 			public string NetClassNN
@@ -279,6 +281,7 @@ namespace Keysharp.Builtins
 				gui = new WeakReference<Gui>(g);
 				typename = name;
 				_control = control;
+				cachedHwnd = _control.Handle.ToInt64();
 				_control.Tag = new GuiTag()
 				{
 					GuiControl = this,

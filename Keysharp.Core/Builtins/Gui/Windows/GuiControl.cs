@@ -11,8 +11,14 @@ namespace Keysharp.Builtins
 
 			public object Gui => gui.TryGetTarget(out var g) ? g : Errors.ErrorOccurred("GUI control's parent GUI is no longer available.");
 
-			[RequiresUIThread]
-			public long Hwnd => _control.Handle.ToInt64();
+			public long Hwnd
+			{
+				get
+				{
+					var handle = Volatile.Read(ref cachedHwnd);
+					return handle != 0 ? handle : (long)Errors.ErrorOccurred("The control is destroyed.", 0L);
+				}
+			}
 
 			[RequiresUIThread]
 			public string NetClassNN => WindowQuery.CreateWindow(_control.Handle) is WindowInfoBase wi ? wi.NetClassNN : "";
@@ -262,6 +268,16 @@ namespace Keysharp.Builtins
 					GuiControl = this,
 					Index = _control.Parent != null ? _control.Parent.Controls.Count : 0
 				};
+				_control.HandleCreated += (_, _) => Volatile.Write(ref cachedHwnd, _control.Handle.ToInt64());
+				_control.HandleDestroyed += (_, _) =>
+				{
+					//A recreated handle keeps the control, so a reader on another thread must not see it as destroyed meanwhile.
+					if (!_control.RecreatingHandle)
+						Volatile.Write(ref cachedHwnd, 0L);
+				};
+
+				if (_control.IsHandleCreated)
+					cachedHwnd = _control.Handle.ToInt64();
 
 				if (wrap)//Just a holder for the controls in the main window.
 					return;

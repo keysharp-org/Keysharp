@@ -20,6 +20,8 @@ namespace Keysharp.Builtins
 			private readonly CallbackRegistry doubleClickHandlers = new(CallbackStop.NonEmpty, "Gui");
 			internal bool DpiScaling => ((Gui)Gui).DpiScale != 1.0;
 			private Forms.Control _control;
+			//What Hwnd reports, so that a hotkey criterion can read it without waiting for the UI thread it interrupts.
+			private long cachedHwnd;
 
 			// Normal event handlers can't be used because they need to return a value.
 			// The returned values are then inspected to determine whether subsequent handlers should be called.

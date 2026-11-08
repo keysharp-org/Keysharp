@@ -25,6 +25,12 @@ public class GuiTests : TestRunner
 				Stopwatch.GetTimestamp() + Stopwatch.Frequency * 2, out var handle, out var error);
 			Assert.That(status, Is.EqualTo(CriterionExecutionStatus.Completed), error?.ToString());
 			Assert.That(handle, Is.EqualTo(expected));
+			var button = (Gui.Control)gui.AddButton();
+			var controlCriterion = new KeysharpFunc((Func<object, object>)(_ => Script.GetPropertyValue(button, nameof(Gui.Control.Hwnd))));
+			status = executor.Execute(controlCriterion, HotCriterionEnum.IfCallback, "F24", null,
+				Stopwatch.GetTimestamp() + Stopwatch.Frequency * 2, out handle, out error);
+			Assert.That(status, Is.EqualTo(CriterionExecutionStatus.Completed), error?.ToString());
+			Assert.That(handle, Is.EqualTo(button.Ctrl.Handle.ToInt64()));
 			_ = gui.Hide();
 			Assert.That(gui.Hwnd, Is.EqualTo(expected));
 			var duringRecreate = 0L;
