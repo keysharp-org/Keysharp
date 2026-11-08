@@ -849,12 +849,18 @@ namespace Keysharp.Builtins
 			var shouldWait = wait.Ab(true);
 			var hasCoordinates = x != null || y != null;
 			WindowInfoBase activeWindow = null;
+			POINT def = default;
 #if LINUX
 			if (hasCoordinates)
 				activeWindow = WindowQuery.ActiveWindow;
-#endif
 
-			_ = GetCursorPos(out POINT def);
+			// Linux places an omitted point at the pointer; only a single missing axis needs a cursor query.
+			if (hasCoordinates && (x == null || y == null))
+#else
+			if (x == null || y == null)
+#endif
+				_ = GetCursorPos(out def);
+
 			var _x = xVal;
 			var _y = yVal;
 			if (hasCoordinates) CoordToScreen(ref _x, ref _y, Builtins.CoordMode.Menu, activeWindow);
