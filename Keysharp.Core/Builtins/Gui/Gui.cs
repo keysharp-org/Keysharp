@@ -3663,85 +3663,44 @@ namespace Keysharp.Builtins
 		{
 			EnsureMainWindowControls();
 			var hideVal = ForceBool(hide ?? true);
-			var panels = new HashSet<Panel>();
-			var ctrls = form.GetControls().Flatten(true);
+			var radioGroups = new HashSet<Forms.Control>();
+			var ctrls = form.GetAllControlsRecursive<Forms.Control>();
 			var result = new KeysharpObject();
 
 			foreach (Forms.Control control in ctrls)
 			{
 				if (control.Name != "" && control.GetGuiControl() is Gui.Control guictrl)
 				{
-					if (control is KeysharpTextBox || control is KeysharpPasswordBox || control is KeysharpDateTimePicker || control is KeysharpMonthCalendar || control is KeysharpUpDown)//Just use value because it's the same and consolidates the formatting in one place, despite being slightly slower.
+					//Matched by Gui type, since the toolkit classes differ by platform: a multi-line Edit is a TextArea and a
+					//Slider is not a TrackBar off Windows.
+					if (guictrl is Edit or DateTime or MonthCal or Hotkey or UpDown or Slider or CheckBox)
 						result.DefinePropInternal(control.Name, new OwnPropsDesc(guictrl.Value));
 					else if (control is KeysharpRichEdit)
 						result.DefinePropInternal(control.Name,  new OwnPropsDesc(!guictrl.AltSubmit || guictrl is not RichEdit re ? guictrl.Value : re.RichText));
-					else if (control is KeysharpNumericUpDown nud)
-					{
-#if WINDOWS
-						decimal v = decimal.Round(nud.Value, nud.DecimalPlaces);
-						if (v == decimal.Truncate(v) && v >= long.MinValue && v <= long.MaxValue)
-							result.DefinePropInternal(nud.Name, new OwnPropsDesc((long)v));
-						else
-							result.DefinePropInternal(nud.Name, new OwnPropsDesc((double)v));
-#else
-						double v = nud.Value;
-						if (v == double.Truncate(v) && v >= long.MinValue && v <= long.MaxValue)
-							result.DefinePropInternal(nud.Name, new OwnPropsDesc((long)v));
-						else
-							result.DefinePropInternal(nud.Name, new OwnPropsDesc(v));
-#endif
-					}
-					else if (control is KeysharpCheckBox cb)
-#if WINDOWS
-						result.DefinePropInternal(cb.Name, new OwnPropsDesc(cb.Checked ? 1L : 0L));
-#else
-						result.DefinePropInternal(cb.Name, new OwnPropsDesc((cb.Checked ?? false) ? 1L : 0L));
-#endif
-					else if (control is KeysharpTabControl tc)
-						result.DefinePropInternal(tc.Name, new OwnPropsDesc(!guictrl.AltSubmit ? tc.SelectedTab != null ? tc.SelectedTab.Text : "" : (long)(tc.SelectedIndex + 1)));
+					else if (control is KeysharpTabControl or KeysharpListBox)
+						result.DefinePropInternal(control.Name, new OwnPropsDesc(!guictrl.AltSubmit ? guictrl.Text : guictrl.Value));
 					else if (control is KeysharpComboBox cmb)
 						result.DefinePropInternal(cmb.Name, new OwnPropsDesc(!guictrl.AltSubmit || cmb.Items.IndexOf(cmb.Text) == -1 ? cmb.Text : (long)(cmb.SelectedIndex + 1)));
-					else if (control is TrackBar tb)
-						result.DefinePropInternal(tb.Name, new OwnPropsDesc(tb.Value));
-					else if (control is KeysharpListBox lb)
+					else if (control is RadioButton rb)
 					{
-#if WINDOWS
-						result.DefinePropInternal(lb.Name, new OwnPropsDesc(!guictrl.AltSubmit
-									   ? guictrl.Value
-									   : lb.SelectionMode == SelectionMode.One
-									   ? lb.SelectedItem as string ?? ""
-									   : new Array(lb.SelectedItems.Cast<object>().Where(xx => xx is string).Select(x => x as string))));
-#else
-						result.DefinePropInternal(lb.Name, new OwnPropsDesc(!guictrl.AltSubmit ? guictrl.Value : guictrl.Text));
-#endif
-					}
-					else if (control is RadioButton rb)//This is supposed to do something special if it's part of a group, but unsure how to determine that.
-					{
-						if (rb.Parent is Panel pnl && !panels.Contains(pnl))
+						// As in AutoHotkey, a group with one named button stores the position of its checked button (0 for
+						// none), and otherwise each named button stores 1 or 0. Each group has a panel of its own, and off
+						// Windows the buttons sit in the layout inside it.
+						if (rb.Parent is { } group && radioGroups.Add(group))
 						{
-							_ = panels.Add(pnl);
-							var rbs = pnl.Controls.Cast<Forms.Control>().Where(pc => pc is RadioButton pcrb).Cast<RadioButton>().ToList();
+							// The toolkit's child order follows Z order; the tags retain creation order.
+							var rbs = group.Controls.OfType<RadioButton>().OrderBy(rr => (rr.Tag as GuiTag)?.Index ?? 0).ToList();
 							var named = rbs.Where(rr => rr.Name != "").ToList();
 
 							if (named.Count == 1)
-							{
-								for (var i = 0; i < rbs.Count; i++)
-								{
-									if (rbs[i].Checked)
-									{
-										result.DefinePropInternal(named[0].Name, new OwnPropsDesc((long)(i + 1)));
-										goto DoneAssigning;
-									}
-								}
-
-								result.DefinePropInternal(named[0].Name, new OwnPropsDesc(0L));
-							}
+								result.DefinePropInternal(named[0].Name, new OwnPropsDesc((long)(rbs.FindIndex(rr => rr.Checked) + 1)));
+							else
+								foreach (var rr in named)
+									result.DefinePropInternal(rr.Name, new OwnPropsDesc(rr.Checked ? 1L : 0L));
 						}
 					}
 				}
 			}
-
-			DoneAssigning:
 
 			if (hideVal)
 				_ = Hide();

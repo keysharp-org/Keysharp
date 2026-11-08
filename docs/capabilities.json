@@ -6555,8 +6555,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Submits control values and returns them to script variables.",
-                     "tested-by":  "ControlTests/control_set_exstyle.ahk"
+                     "notes":  "Returns an object holding the values of the window's named controls.",
+                     "tested-by":  "gui-window.ahk; ControlTests/control_set_exstyle.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",
