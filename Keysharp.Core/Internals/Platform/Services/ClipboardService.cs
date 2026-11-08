@@ -272,7 +272,11 @@ namespace Keysharp.Internals
 		internal static readonly string[] FileMimes = ["text/uri-list", "public.file-url", "NSFilenamesPboardType"];
 		internal static readonly string[] HtmlMimes = ["text/html", "public.html", DataFormats.Html];
 		// No DataFormats entry: Eto's DataFormats has Text/Html/Color and nothing for RTF.
+#if OSX
+		internal static readonly string[] RtfMimes = ["public.rtf", "text/rtf", "application/rtf"];
+#else
 		internal static readonly string[] RtfMimes = ["text/rtf", "application/rtf", "public.rtf"];
+#endif
 
 		private static readonly string[] ClipboardProtocolTypes = ["TIMESTAMP", "TARGETS", "MULTIPLE", "SAVE_TARGETS"];
 

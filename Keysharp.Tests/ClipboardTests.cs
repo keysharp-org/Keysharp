@@ -269,13 +269,23 @@ public partial class ClipboardTests : TestRunner
 	public void AllSavesAndRestores()
 	{
 		RequireClipboard();
+#if OSX
+		const string rtf = @"{\rtf1\ansi saved \b rich\b0  text}";
+		_ = Ks.KeysharpClipboard.Set(Clip, MakeMap("Text", "saved", "Rtf", rtf));
+		Assert.IsTrue((bool)Ks.KeysharpClipboard.Has(Clip, "public.rtf"));
+#else
 		_ = Ks.KeysharpClipboard.staticset_Text(Clip, "saved");
+#endif
 		var saved = Ks.KeysharpClipboard.staticget_All(Clip);
 		Assert.IsInstanceOf<ClipboardAll>(saved);
 		_ = Ks.KeysharpClipboard.staticset_Text(Clip, "temporary");
 		Assert.That(Ks.KeysharpClipboard.staticget_Text(Clip), Is.EqualTo("temporary"));
 		_ = Ks.KeysharpClipboard.staticset_All(Clip, saved);
 		Assert.That(Ks.KeysharpClipboard.staticget_Text(Clip), Is.EqualTo("saved"));
+#if OSX
+		Assert.IsTrue((bool)Ks.KeysharpClipboard.Has(Clip, "public.rtf"));
+		Assert.That(Ks.KeysharpClipboard.staticget_Rtf(Clip), Is.EqualTo(rtf));
+#endif
 	}
 
 	/// <summary>Has() takes a kind name OR a native format name; an unknown kind name falls through to the
