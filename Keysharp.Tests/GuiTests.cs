@@ -2662,7 +2662,7 @@ public class GuiTests : TestRunner
 #if WINDOWS
 	[Apartment(ApartmentState.STA)]
 #endif
-	public void EmptyHotkeyControl()
+	public void HotkeyControlValue()
 	{
 		SkipIfUiInitializationBlocked("Reading a Hotkey control's value requires a constructed Gui.");
 		var gui = new Gui(System.Array.Empty<object>());
@@ -2679,7 +2679,38 @@ public class GuiTests : TestRunner
 			Assert.That(hk.Text, Is.Empty, "an empty Hotkey control's text must be blank, not \"None\"");
 
 			hk.Value = "^!a";
-			Assert.That(hk.Value, Is.EqualTo("^!A"));
+			Assert.That(hk.Value, Is.EqualTo("^!a"));
+
+			// HotkeyToText() writes the modifiers as +^! and the key by its AutoHotkey name, whatever order and
+			// spelling the hotkey was set with.
+			foreach (var (set, expected) in new[]
+			{
+				("!^+F1", "+^!F1"),
+				("^Space", "^Space"),
+				("+PgUp", "+PgUp"),
+				("^Esc", "^Escape"),
+				("Numpad0", "Numpad0"),
+				("NumpadEnter", "NumpadEnter"),
+				("Enter", "Enter"),
+				("Up", "Up"),
+				("NumpadUp", "NumpadUp"),
+				("^vk41", "^a"),
+				("^NoSuchKey", ""),
+			})
+			{
+				hk.Value = set;
+				Assert.That(hk.Value, Is.EqualTo(expected), $"Hotkey value set to \"{set}\"");
+			}
+
+#if WINDOWS
+			// A pressed key is told apart by its scan code where the virtual key is shared: the extended Up
+			// of the arrow cluster against the keypad's NumpadUp.
+			var hwnd = (nint)(long)hk.Hwnd;
+			_ = WindowsAPI.SendMessage(hwnd, WindowsAPI.WM_KEYDOWN, (nint)VK_UP, 0x01480001);
+			Assert.That(hk.Value, Is.EqualTo("Up"));
+			_ = WindowsAPI.SendMessage(hwnd, WindowsAPI.WM_KEYDOWN, (nint)VK_UP, 0x00480001);
+			Assert.That(hk.Value, Is.EqualTo("NumpadUp"));
+#endif
 
 			// Assigning "" clears the control, and it reads back blank again rather than round-tripping
 			// the "None" it now displays.

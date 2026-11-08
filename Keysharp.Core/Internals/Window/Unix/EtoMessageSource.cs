@@ -424,7 +424,7 @@ namespace Keysharp.Internals.Window.Unix
 		/// making, so the ranges that are contiguous in both are converted arithmetically and the rest are
 		/// listed. Returns 0 for a key with no Windows equivalent, which is not reported at all.
 		/// </summary>
-		private static uint ToVirtualKey(Forms.Keys key)
+		internal static uint ToVirtualKey(Forms.Keys key)
 		{
 			if (key >= Forms.Keys.A && key <= Forms.Keys.Z)
 				return (uint)('A' + (key - Forms.Keys.A));
