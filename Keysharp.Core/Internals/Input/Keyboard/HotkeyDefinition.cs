@@ -688,8 +688,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				hkd.whichHookNeeded |= HookType.Mouse;
 
 #if LINUX
-			// Tests must not capture the user's keyboard; providers supply isolated input.
-			if (Script.IsHeadless && Script.IsTestHost && !ht.UsesHookProvider)
+			if (!ht.CaptureAllowed)
 				return DefaultObject;
 #endif
 

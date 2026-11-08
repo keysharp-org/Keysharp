@@ -421,8 +421,7 @@ namespace Keysharp.Internals.Input
 					return false;
 
 #if LINUX
-				// Native Linux hooks need a display; a provider can capture input without one.
-				if (Script.IsHeadless && !script.HookThread.UsesHookProvider)
+				if (!script.HookThread.CaptureAllowed)
 				{
 					status = InputStatusType.Failed;
 					return false;

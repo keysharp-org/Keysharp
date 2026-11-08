@@ -108,6 +108,11 @@ namespace Keysharp.Internals.Input.Hooks
 			=> new(id, mouse ? "Mouse" : "Keyboard") { Source = source };
 		internal virtual bool TryGetDeviceKeyState(InputDeviceInfo device, uint vk, out bool down) { down = false; return false; }
 		internal virtual bool UsesHookProvider => false;
+#if LINUX
+		// Native Linux capture grabs the machine's input devices, which an unattended headless test run must leave
+		// alone; a provider supplies isolated input. Hotkeys and InputHook share this so one hook serves both alike.
+		internal bool CaptureAllowed => UsesHookProvider || !(Script.IsTestHost && Script.IsHeadless);
+#endif
 		protected virtual object EventDeviceSource => null;
 		protected volatile HookType activeHooks;
 		protected virtual bool CaptureBelowOsKeyState => false;
