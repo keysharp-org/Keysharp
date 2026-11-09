@@ -275,9 +275,9 @@ public class DaemonCompilationTests
 			info.StdIn.WriteLine("stdin-ok")
 			info.StdIn.Close()
 			deadline := A_TickCount + 20000
-			while !info.HasExited && A_TickCount < deadline
+			while !info.IsExited && A_TickCount < deadline
 				Sleep(10)
-			if !info.HasExited {
+			if !info.IsExited {
 				info.Kill()
 				throw Error("RunScript child did not exit")
 			}
@@ -286,7 +286,7 @@ public class DaemonCompilationTests
 			Check(info.StdOut.Read() == "ChosenChild|" A_WorkingDir "|include-ok|stdin-ok", "RunScript name, options, working directory or stdin differed")
 			Check(childError == "stderr-ok", "RunScript stderr differed")
 		} finally {
-			if !info.HasExited
+			if !info.IsExited
 				info.Kill()
 			info.Close()
 		}

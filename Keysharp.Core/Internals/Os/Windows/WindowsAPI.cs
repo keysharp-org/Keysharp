@@ -876,6 +876,13 @@ namespace Keysharp.Internals.Os.Windows
 
 		internal static partial nint FindWindow(string className, string windowName);
 
+		[LibraryImport(user32, EntryPoint = "GetPropW", StringMarshalling = StringMarshalling.Utf16)]
+		internal static partial nint GetProp(nint hWnd, string name);
+
+		[LibraryImport(user32, EntryPoint = "SetPropW", StringMarshalling = StringMarshalling.Utf16)]
+		[return: MarshalAs(UnmanagedType.Bool)]
+		internal static partial bool SetProp(nint hWnd, string name, nint data);
+
 		[LibraryImport(user32, EntryPoint = "FindWindowExW", StringMarshalling = StringMarshalling.Utf16)]
 		internal static partial nint FindWindowEx(nint parentHandle, nint childAfter, string className, string windowTitle);
 
@@ -1466,6 +1473,10 @@ namespace Keysharp.Internals.Os.Windows
 
 		[LibraryImport(kernel32, EntryPoint = "GetCurrentProcessId")]
 		internal static partial uint GetCurrentProcessId();
+
+		[LibraryImport(kernel32, EntryPoint = "ProcessIdToSessionId")]
+		[return: MarshalAs(UnmanagedType.Bool)]
+		internal static partial bool ProcessIdToSessionId(uint processId, out uint sessionId);
 
 		[LibraryImport(user32, EntryPoint = "SetActiveWindow")]
 		internal static partial int SetActiveWindow(nint handle);

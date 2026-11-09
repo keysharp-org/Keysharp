@@ -1290,6 +1290,7 @@ namespace Keysharp.Runtime
 			_ = script.AudioEventManager.RemoveOwned(this);
 			_ = script.InputEventManager.RemoveOwned(this);
 			_ = script.ClipboardEventManager.RemoveOwned(this);
+			_ = script.ScriptMessageManager.RemoveOwned(this);
 		}
 
 		private void DisposeOwnedClrSubscriptions()

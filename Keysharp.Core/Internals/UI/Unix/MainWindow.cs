@@ -33,7 +33,7 @@ namespace Keysharp.Internals.UI.Unix
 
 		internal MainWindow(Script owner) : base(owner)
 		{
-			Title = "Keysharp";
+			Title = Script.MainWindowTitle;
 			ShowInTaskbar = true;
 			ClientSize = new Size(843, 535);
 

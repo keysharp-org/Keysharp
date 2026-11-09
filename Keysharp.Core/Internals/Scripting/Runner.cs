@@ -1236,7 +1236,7 @@ namespace Keysharp.Internals.Scripting
 		// The compile-time error dialog can relaunch before a script exists to call Flow.Reload().
 		private static int RestartCurrentProcess()
 		{
-			// Recompile in this process so it remains the predecessor's child and keeps its inherited request pipe.
+			// Recompile in this process so it remains the predecessor's child, whose exit it then waits for through getppid.
 			if (Environment.GetEnvironmentVariable(ReloadHandshake.HandshakeVar) != null)
 				return RetryCompilation;
 

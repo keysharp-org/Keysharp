@@ -25,6 +25,7 @@ namespace Keysharp.Internals.UI.Windows
 		internal MainWindow(Script owner) : base(owner)
 		{
 			InitializeHost();
+			Text = Script.MainWindowTitle;
 			//FormBorderStyle = FormBorderStyle.SizableToolWindow;
 			SetStyle(ControlStyles.StandardClick, true);
 			SetStyle(ControlStyles.StandardDoubleClick, true);
@@ -261,6 +262,13 @@ namespace Keysharp.Internals.UI.Windows
 			base.SetVisibleCore(value);
 		}
 
+		// Marks every handle the window gets, recreations included, so other scripts can find it.
+		protected override void OnHandleCreated(EventArgs e)
+		{
+			base.OnHandleCreated(e);
+			_ = WindowsAPI.SetProp(Handle, ScriptEndpoint.MainWindowProperty, 1);
+		}
+
 		protected override void WndProc(ref Message m)
 		{
 			// Script.Dispose closes the form by sending a nested WM_CLOSE after the exit is decided.
@@ -332,10 +340,16 @@ namespace Keysharp.Internals.UI.Windows
 					m.Result = 0;
 					return;
 
-				// A close that did not come from the window's own chrome: a script's WinClose or a tool ending the
-				// task. As in AHK it exits.
+				// A close that did not come from the window's own chrome: a script's WinClose, a tool ending the task, or
+				// another instance replacing this one. As in AHK it exits, with the reason AHK's codes in wParam give.
 				case WindowsAPI.WM_CLOSE:
-					_ = Keysharp.Internals.Flow.ExitAppInternal(OwnerScript, Keysharp.Builtins.Flow.ExitReasons.Close, null, false);
+					var reason = ScriptEndpoint.CloseReason(m.WParam);
+
+					// A queued request belongs to one reload attempt, never a later replacement.
+					if (reason == Keysharp.Builtins.Flow.ExitReasons.Reload)
+						_ = OwnerScript.FlowData.pendingReload?.RequestRetire((int)m.LParam);
+					else
+						_ = Keysharp.Internals.Flow.ExitAppInternal(OwnerScript, reason, null, false);
 
 					m.Result = 0;
 					return;//A veto leaves it open; an accepted exit already closed it during Script.Dispose.

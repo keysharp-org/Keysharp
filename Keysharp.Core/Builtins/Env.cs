@@ -813,20 +813,20 @@ namespace Keysharp.Builtins
 			if (!executable.CoerceString(out var launcher))
 				return DefaultObject;
 
-			// The caller's arguments go BEFORE "--script --assembly *": the command line is read as switches, then the
-			// script, then the script's own arguments, so anything after the script marker would be taken for the
-			// latter. Collected as a LIST, not joined into one string: ProcessStartInfo.ArgumentList applies the
-			// platform's own quoting, so an argument containing a space, a tab, a double quote or a trailing backslash
-			// arrives intact. Hand-joining cannot get this right — on Windows the child's parser reads the `\"` in
-			// "C:\My Dir\" as an escaped quote, swallowing the rest of the command line.
-			var launcherArgs = new List<string>();
+			// --script comes first, the only place a compiled host recognizes it; the caller's switches follow, ahead of
+			// "--assembly", after which arguments belong to the script. Collected as a list, not joined into one string:
+			// ProcessStartInfo.ArgumentList applies the platform's own quoting, so an argument containing a space, a tab,
+			// a double quote or a trailing backslash arrives intact. Hand-joining cannot get this right — on Windows the
+			// child's parser reads the `\"` in "C:\My Dir\" as an escaped quote, swallowing the rest of the command line.
+			var launcherArgs = new List<string> { "--script" };
 
 			if (forwardedArgs != null)
 				launcherArgs.AddRange(forwardedArgs);
 
 			// A host failure can happen before the child assembly runs its own #ErrorStdOut directive. RunScript
 			// captures stderr, so keep those failures on that channel instead of opening a modal error window.
-			launcherArgs.AddRange(["--script", "--errorstdout", "--assembly", compiledPath ?? "*"]);
+			// --force: the child runs as this script's subprocess, which no single-instance policy should stop or prompt about.
+			launcherArgs.AddRange(["--force", "--errorstdout", "--assembly", compiledPath ?? "*"]);
 
 			if (string.IsNullOrEmpty(launcher))
 			{
@@ -903,6 +903,7 @@ namespace Keysharp.Builtins
 			try
 			{
 				_ = scriptProcess.Start();
+				info.CaptureIdentity();
 			}
 			catch
 			{

@@ -55,9 +55,9 @@ namespace Keysharp.CompiledMain
 			try
 			{
 				MainScript.SetName("*");
+				Keysharp.Builtins.Env.HandleCommandLineParams(args);
 				if (Keysharp.Runtime.Script.HandleSingleInstance(MainScript.ScriptName, Keysharp.Runtime.eScriptInstance.Prompt))
 					return 0;
-				Keysharp.Builtins.Env.HandleCommandLineParams(args);
 				MainScript.RunMainWindow(MainScript.ScriptName, AutoExecSection, false, false);
 			}
 			catch (System.Exception mainex)

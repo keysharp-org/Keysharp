@@ -724,10 +724,10 @@ Http.GetAsync(slow, {OnData: Finish})
 child := RunScript(streamScript, true,,, hostBinary)
 waited := 0
 
-while (!child.HasExited && waited++ < 1000)
+while (!child.IsExited && waited++ < 1000)
 	Sleep 10
 
-exitedAlone := child.HasExited
+exitedAlone := child.IsExited
 
 if (!exitedAlone)
 	child.Kill()

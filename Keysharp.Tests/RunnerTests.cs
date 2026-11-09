@@ -1,5 +1,8 @@
 using System.Reflection.Metadata;
 using System.Reflection.PortableExecutable;
+#if WINDOWS
+using Keysharp.Internals.Os.Windows;
+#endif
 
 namespace Keysharp.Tests;
 
@@ -351,11 +354,183 @@ public class RunnerTests : TestRunner
 		Assert.That(CompileDaemonClient.ShouldRetryLocally(new(CompileDaemonStatus.CompileFailed), true), Is.EqualTo(retryFailure));
 	}
 
+	[Test, Category("Internal"), Category("Curated")]
+	public async Task ScriptEndpointStartup()
+	{
+		var pid = Environment.ProcessId;
+		var path = ScriptEndpoint.PathFor(pid);
+		var processStartTicks = ScriptEndpoint.CurrentProcessStartTicks;
+		_ = Directory.CreateDirectory(Path.GetDirectoryName(path));
+		File.Delete(path);
+
+		try
+		{
+			Assert.That(processStartTicks, Is.GreaterThan(0));
+			Assert.That(ScriptEndpoint.ProcessStartTicks(pid), Is.EqualTo(processStartTicks));
+			using var timeout = new CancellationTokenSource(5000);
+
+			using (var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified))
+			{
+				socket.Bind(new UnixDomainSocketEndPoint(path));
+				Assert.That(await ScriptEndpoint.QueryAsync(pid), Is.Null);
+				Assert.That(File.Exists(path), Is.True, "Discovery must preserve a live process's socket before Listen.");
+				var request = ScriptEndpoint.RequestAsync(pid, processStartTicks, [ScriptEndpoint.Version, ScriptEndpoint.Info], timeout.Token);
+				Assert.That(request.IsCompleted, Is.False, "A refused startup connection must wait for the listener.");
+				socket.Listen();
+				using var client = await socket.AcceptAsync(timeout.Token);
+				using var stream = new NetworkStream(client, ownsSocket: false);
+				await stream.WriteAsync(new byte[] { 3, 0, 0, 0, 7, 8, 9 }, timeout.Token);
+				Assert.That(await request, Is.EqualTo(new byte[] { 7, 8, 9 }));
+			}
+
+			File.Delete(path);
+			var foreignPath = ScriptEndpoint.PathFor(int.MaxValue);
+
+			try
+			{
+				using var foreign = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+				foreign.Bind(new UnixDomainSocketEndPoint(foreignPath));
+				Assert.That(await ScriptEndpoint.QueryAsync(int.MaxValue), Is.Null);
+				Assert.That(File.Exists(foreignPath), Is.True, "Discovery does not own another process's endpoint path.");
+			}
+			finally { File.Delete(foreignPath); }
+
+			using var endpoint = ScriptEndpoint.Start(s);
+			Assert.That(endpoint, Is.Not.Null);
+			Assert.That(await ScriptEndpoint.QueryAsync(0), Is.Null);
+			var info = await ScriptEndpoint.RequestAsync(pid, processStartTicks, [ScriptEndpoint.Version, ScriptEndpoint.Info], timeout.Token);
+			var peer = ScriptEndpoint.DecodeInfo(pid, info);
+			Assert.That(peer.ScriptPath, Is.EqualTo(s.scriptPath ?? ""));
+			var retired = new KeysharpScript(pid, "*", processStartTicks + 1);
+			Assert.That(retired.IsExited, Is.True, "A different process lifetime must not become the old script.");
+			var rejected = (KeysharpTask)retired.Post("wrong lifetime");
+			Assert.That(rejected.Wait(2000), Is.EqualTo(true));
+			Assert.That(rejected.Error, Is.TypeOf<TargetError>());
+			_ = await Assert.CatchAsync<IOException>(async () =>
+				await ScriptEndpoint.RequestAsync(pid, processStartTicks,
+					ScriptEndpoint.ExitRequest(Keysharp.Builtins.Flow.ExitReasons.Close, processStartTicks + 1), timeout.Token));
+			Assert.That(s.hasExited, Is.False, "A stale script's exit request must leave the current process alone.");
+
+			using var olderReload = new ReloadHandshake(s);
+			using var currentReload = new ReloadHandshake(s);
+			s.FlowData.pendingReload = currentReload;
+
+			try
+			{
+				foreach (var token in new[] { 0, olderReload.RequestToken })
+				{
+					var oldRequest = ScriptEndpoint.ExitRequest(Keysharp.Builtins.Flow.ExitReasons.Reload, processStartTicks, token);
+					var declined = await ScriptEndpoint.RequestAsync(pid, processStartTicks, oldRequest, timeout.Token);
+					Assert.That(declined, Is.EqualTo(new byte[] { ScriptEndpoint.Empty }), "A reload request belongs to one attempt.");
+				}
+
+				var valid = ScriptEndpoint.ExitRequest(Keysharp.Builtins.Flow.ExitReasons.Reload, processStartTicks, currentReload.RequestToken);
+				var accepted = await ScriptEndpoint.RequestAsync(pid, processStartTicks, valid, timeout.Token);
+				Assert.That(accepted, Is.EqualTo(new byte[] { ScriptEndpoint.Accepted }));
+			}
+			finally { s.FlowData.pendingReload = null; }
+		}
+		finally { File.Delete(path); }
+	}
+
+	[TestCase("Ignore"), TestCase("Force"), TestCase("Off"), TestCase("Prompt"), TestCase("Default"), Category("Curated")]
+	public void HeadlessSingleInstance(string mode) => CheckSingleInstance(mode, true);
+
+#if WINDOWS
+	[Test, Category("Curated")]
+	public void WindowSingleInstance() => CheckSingleInstance("Force", false);
+#endif
+
+	private static void CheckSingleInstance(string mode, bool headless)
+	{
+		var launcher = Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "Keysharp.exe" : "Keysharp");
+
+		if (!File.Exists(launcher))
+			Assert.Ignore($"launcher not built at {launcher}");
+
+		var script = Path.Combine(Path.GetTempPath(), "keysharp-instance-" + Guid.NewGuid().ToString("N") + ".ahk");
+		var closeMonitor = headless ? "" : "OnMessage(0x10, (WParam, LParam, Msg, Hwnd) => (FileAppend(\"WM_CLOSE:\", \"*\"), \"\"))";
+		Process previous = null, next = null;
+
+		try
+		{
+			File.WriteAllText(script, $$"""
+				#ErrorStdOut
+				#Warn All, StdOut
+				#NoTrayIcon
+				{{(mode == "Default" ? "" : "#SingleInstance " + mode)}}
+				if (A_Args[1] = "old") {
+					Persistent
+					OnExit((Reason, Code) => FileAppend(Reason, "*"))
+					SetTimer(() => ExitApp(88), -45000)
+					{{closeMonitor}}
+					FileAppend "ready`n", "*"
+				} else {
+					if (A_Args[3] = "Force" && ProcessExist(A_Args[2]))
+						throw Error("The previous instance is still running.")
+					FileAppend "new", "*"
+				}
+				""");
+			previous = Process.Start(Start("old"));
+			var ready = previous.StandardOutput.ReadLineAsync();
+			var oldError = previous.StandardError.ReadToEndAsync();
+			Assert.That(ready.Wait(30000) && ready.Result == "ready", Is.True, "The previous instance must be ready to receive the retirement request.");
+			var oldOutput = previous.StandardOutput.ReadToEndAsync();
+			next = Process.Start(Start("new"));
+			var newOutput = next.StandardOutput.ReadToEndAsync();
+			var newError = next.StandardError.ReadToEndAsync();
+			Assert.That(next.WaitForExit(30000), Is.True, "Forced replacement and headless launch policies must not open a dialog.");
+			Assert.That(next.ExitCode, Is.Zero, newError.GetAwaiter().GetResult());
+			Assert.That(newError.GetAwaiter().GetResult(), Is.Empty);
+			Assert.That(newOutput.GetAwaiter().GetResult(), Is.EqualTo(mode == "Ignore" ? "" : "new"));
+
+			if (mode == "Force")
+			{
+				Assert.That(previous.HasExited, Is.True, "The replacement must wait for the previous process to end.");
+				Assert.That(oldOutput.GetAwaiter().GetResult(), Is.EqualTo(headless ? "Single" : "WM_CLOSE:Single"));
+				Assert.That(oldError.GetAwaiter().GetResult(), Is.Empty);
+			}
+			else
+				Assert.That(previous.HasExited, Is.False, "Ignore and Off must leave the previous instance running.");
+		}
+		finally
+		{
+			foreach (var child in new[] { next, previous })
+				if (child != null)
+				{
+					if (!child.HasExited)
+					{
+						child.Kill(entireProcessTree: true);
+						_ = child.WaitForExit(5000);
+					}
+
+					child.Dispose();
+				}
+
+			File.Delete(script);
+		}
+
+		ProcessStartInfo Start(string role)
+		{
+			var start = new ProcessStartInfo(launcher)
+			{
+				UseShellExecute = false,
+				CreateNoWindow = true,
+				RedirectStandardOutput = true,
+				RedirectStandardError = true,
+				ArgumentList = { script, role, (previous?.Id ?? 0).ToString(CultureInfo.InvariantCulture), mode }
+			};
+			start.Environment["KEYSHARP_DAEMON"] = "0";
+			start.Environment["KEYSHARP_FORCE_HEADLESS"] = headless ? "1" : "0";
+			return start;
+		}
+	}
+
 #if WINDOWS
 
 	// The host accepts the replacement's request without exiting, as a busy or vetoing predecessor would.
 	[Test, Category("Internal")]
-	public void ReloadWaitTimeout()
+	public void InstanceReplacementWaitTimeout()
 	{
 		var launcher = Path.Combine(AppContext.BaseDirectory, "Keysharp.exe");
 
@@ -364,52 +539,109 @@ public class RunnerTests : TestRunner
 
 		var script = Path.Combine(Path.GetTempPath(), "keysharp-reload-" + Guid.NewGuid().ToString("N") + ".ahk");
 
-		try
+		using var requested = new CountdownEvent(2);
+		var ready = new TaskCompletionSource<nint>(TaskCreationOptions.RunContinuationsAsynchronously);
+		var children = new List<(Process Process, Task<string> Output, Task<string> Error)>();
+		var thread = new Thread(() =>
 		{
-			File.WriteAllText(script, "#ErrorStdOut\n#Warn All, StdOut\n#NoTrayIcon\nFileAppend 'replacement-started', '*'\n");
-			using var requests = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.Inheritable);
-			using var cancellation = new CancellationTokenSource();
-			var start = new ProcessStartInfo(launcher)
-			{
-				UseShellExecute = false,
-				CreateNoWindow = true,
-				RedirectStandardOutput = true,
-				RedirectStandardError = true,
-				ArgumentList = { script }
-			};
-			start.Environment["KEYSHARP_DAEMON"] = "0";
-			start.Environment["KEYSHARP_FORCE_HEADLESS"] = "0";
-			start.Environment[ReloadHandshake.HandshakeVar] = $"{Environment.ProcessId},{requests.GetClientHandleAsString()}";
-			using var process = Process.Start(start);
-			requests.DisposeLocalCopyOfClientHandle();
-			var stdout = process.StandardOutput.ReadToEndAsync();
-			var stderr = process.StandardError.ReadToEndAsync();
-
 			try
 			{
-				var request = new byte[1];
-				var asked = requests.ReadAsync(request, 0, 1, cancellation.Token);
-				Assert.That(asked.Wait(30000) && asked.Result == 1 && request[0] == 1, Is.True, "The replacement asks once it is compiled and about to run.");
-				var elapsed = Stopwatch.StartNew();
+				using var window = new InstanceReplacementWaitWindow(requested, script);
+				ready.SetResult(window.Handle);
+				Application.Run();
+			}
+			catch (Exception ex) { ready.TrySetException(ex); }
+		}) { IsBackground = true };
+		thread.SetApartmentState(ApartmentState.STA);
+		thread.Start();
+		nint hwnd = 0;
 
-				Assert.That(process.WaitForExit(35000), Is.True, "The replacement must time out without opening a retry dialog.");
-				Assert.That(process.ExitCode, Is.EqualTo(2), "A replacement which did not run exits as a critical error, as in AutoHotkey.");
-				// The child starts waiting before the host observes its request; allow scheduling delay at this boundary.
-				Assert.That(elapsed.Elapsed, Is.GreaterThanOrEqualTo(TimeSpan.FromSeconds(14)));
-				Assert.That(stdout.GetAwaiter().GetResult(), Is.Empty, "The replacement must not execute while the predecessor is alive.");
-				Assert.That(stderr.GetAwaiter().GetResult(), Does.Contain("did not exit within 15000 ms."));
-			}
-			finally
+		try
+		{
+			File.WriteAllText(script, "#ErrorStdOut\n#Warn All, StdOut\n#NoTrayIcon\n#SingleInstance Force\nFileAppend 'replacement-started', '*'\n");
+			Assert.That(ready.Task.Wait(10000), Is.True);
+			hwnd = ready.Task.Result;
+			var elapsed = Stopwatch.StartNew();
+
+			// Both waits run together so SingleInstance and Reload exercise the same refusal without doubling the delay.
+			foreach (var reload in new[] { true, false })
 			{
-				cancellation.Cancel();
-				if (!process.HasExited)
+				var start = new ProcessStartInfo(launcher)
 				{
-					process.Kill(entireProcessTree: true);
-					_ = process.WaitForExit(5000);
-				}
+					UseShellExecute = false,
+					CreateNoWindow = true,
+					RedirectStandardOutput = true,
+					RedirectStandardError = true,
+					ArgumentList = { script }
+				};
+				start.Environment["KEYSHARP_DAEMON"] = "0";
+				start.Environment["KEYSHARP_FORCE_HEADLESS"] = "0";
+				if (reload)
+					start.Environment[ReloadHandshake.HandshakeVar] = FormattableString.Invariant($"{Environment.ProcessId},{hwnd},{ScriptEndpoint.CurrentProcessStartTicks},1");
+
+				var process = Process.Start(start);
+				children.Add((process, process.StandardOutput.ReadToEndAsync(), process.StandardError.ReadToEndAsync()));
 			}
+
+			Assert.That(requested.Wait(30000), Is.True, "Both replacements ask once they are compiled and about to run.");
+
+			foreach (var child in children)
+			{
+				Assert.That(child.Process.WaitForExit(35000), Is.True, "#ErrorStdOut must prevent a retry dialog, even with a desktop.");
+				Assert.That(child.Process.ExitCode, Is.EqualTo(2), "A replacement which did not run exits as a critical error, as in AutoHotkey.");
+				Assert.That(child.Output.GetAwaiter().GetResult(), Is.Empty, "The replacement must not execute while the predecessor is alive.");
+				Assert.That(child.Error.GetAwaiter().GetResult(), Does.Contain("did not exit within 15000 ms."));
+			}
+
+			Assert.That(elapsed.Elapsed, Is.GreaterThanOrEqualTo(TimeSpan.FromSeconds(14)));
 		}
-		finally { File.Delete(script); }
+		finally
+		{
+			foreach (var child in children)
+			{
+				if (!child.Process.HasExited)
+				{
+					child.Process.Kill(entireProcessTree: true);
+					_ = child.Process.WaitForExit(5000);
+				}
+
+				child.Process.Dispose();
+			}
+
+			if (hwnd != 0)
+				_ = WindowsAPI.PostMessage(hwnd, InstanceReplacementWaitWindow.StopMessage, (nint)0, (nint)0);
+
+			_ = thread.Join(5000);
+			File.Delete(script);
+		}
+	}
+
+	private sealed class InstanceReplacementWaitWindow : NativeWindow, IDisposable
+	{
+		internal const int StopMessage = 0x8000;
+		private readonly CountdownEvent requested;
+
+		internal InstanceReplacementWaitWindow(CountdownEvent requested, string script)
+		{
+			this.requested = requested;
+			CreateHandle(new CreateParams { Caption = script + " - Keysharp v" + typeof(Script).Assembly.GetName().Version });
+			_ = WindowsAPI.SetProp(Handle, ScriptEndpoint.MainWindowProperty, 1);
+		}
+
+		protected override void WndProc(ref Message message)
+		{
+			if (message.Msg == WindowsAPI.WM_CLOSE)
+			{
+				if (!requested.IsSet)
+					requested.Signal();
+			}
+			else if (message.Msg == StopMessage)
+				Application.ExitThread();
+			else
+				base.WndProc(ref message);
+		}
+
+		public void Dispose() => DestroyHandle();
 	}
 
 	[Test, Category("Internal")]

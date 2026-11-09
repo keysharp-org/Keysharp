@@ -114,6 +114,7 @@ global using Keyboard = Keysharp.Builtins.Keyboard;
 global using MonitorEventManager = Keysharp.Internals.Window.MonitorEventManager;
 global using Platform = Keysharp.Internals.Platform;
 global using ScreenRect = Keysharp.Internals.ScreenRect;
+global using Struct = Keysharp.Builtins.Struct;
 
 #if WINDOWS
 	global using MessageFilter = Keysharp.Internals.Window.Windows.MessageFilter;

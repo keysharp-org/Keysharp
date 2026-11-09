@@ -62,7 +62,7 @@ process := MetadataProcess()
 try {
     CheckOptional(process, "ExitCode")
     CheckOptional(process, "ExitTime")
-    CheckValue21(process, "HasExited", 0)
+    CheckValue21(process, "IsExited", false)
 } finally
     process.Close()
 

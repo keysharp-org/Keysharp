@@ -7053,14 +7053,14 @@ namespace Keysharp.Compilation.Syntax
 			};
 			// NoTrayIcon, the tray icon and the theme need no emission here: the Script constructor
 			// applies them from the manifest embedded in this very assembly, before any chrome exists.
-			// SingleInstance keeps a guard because it must be able to `return 0` from Main — placed right after
-			// SetName so A_ScriptName is set, before any window/auto-exec runs (matches the canonical Main).
-			if (_manifest.SingleInstance != null)
+			tryStmts.Add(CallStmt("Keysharp.Builtins.Env.HandleCommandLineParams", Id("args")));
+			// After the arguments, so a compiled host given --script checks only the script it runs. Without the directive a
+			// script acts as Prompt, as in AHK, which runs source read from stdin as Off.
+			if ((_manifest.SingleInstance ?? (_scriptPath == "*" ? null : "Prompt")) is string singleInstance)
 				tryStmts.Add(SyntaxFactory.IfStatement(
 					Inv(Access("Keysharp.Runtime.Script.HandleSingleInstance"),
-						Member(Id("MainScript"), "ScriptName"), Access("Keysharp.Runtime.eScriptInstance." + _manifest.SingleInstance)),
-					SyntaxFactory.ReturnStatement(IntLit(0))));
-			tryStmts.Add(CallStmt("Keysharp.Builtins.Env.HandleCommandLineParams", Id("args")));
+						Member(Id("MainScript"), "ScriptName"), Access("Keysharp.Runtime.eScriptInstance." + singleInstance), BoolLit(_errorStdOutActive)),
+					SyntaxFactory.ReturnStatement(Access("System.Environment.ExitCode"))));
 			// Load after runtime identity/error options, but before JITting auto-exec can resolve package-backed fields.
 			if (EmitPackageLoad() is StatementSyntax loadPackages) tryStmts.Add(loadPackages);
 

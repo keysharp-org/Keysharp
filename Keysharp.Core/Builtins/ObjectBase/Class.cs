@@ -99,7 +99,7 @@ namespace Keysharp.Builtins
 
 		internal static bool CanConstruct(Type type) => FastCtor.CanConstruct(type)
 			&& !typeof(RegExMatchInfo).IsAssignableFrom(type) && type != typeof(Ks.Timer)
-			&& !typeof(Gui.Control).IsAssignableFrom(type) && !typeof(ScriptProcess).IsAssignableFrom(type);
+			&& !typeof(Gui.Control).IsAssignableFrom(type) && !typeof(Ks.KeysharpScript).IsAssignableFrom(type);
 	}
 
     // Every prototype object is one of these, and Type() reports "Prototype" for it, but as in AutoHotkey no global

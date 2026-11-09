@@ -513,6 +513,12 @@ namespace Keysharp.Runtime
 		/// native monitor, and <see cref="ClipboardMonitoringWanted"/> is what reconciles them.</summary>
 		internal ClipboardEventManager ClipboardEventManager { get; }
 
+		/// <summary>Per-script engine for <c>Script.OnMessage</c> subscriptions, fed by <see cref="endpoint"/>.</summary>
+		internal ScriptMessageManager ScriptMessageManager { get; }
+
+		/// <summary>The socket other scripts contact while the script runs.</summary>
+		private ScriptEndpoint endpoint;
+
 		/// <summary>Registry of live CLR event subscriptions made through <c>Clr</c>.s <c>OnEvent</c>.</summary>
 		internal ClrEventManager ClrEventManager { get; }
 
@@ -625,6 +631,7 @@ namespace Keysharp.Runtime
 			WinEventManager = new(this);
 			MonitorEventManager = new(this);
 			ClipboardEventManager = new(this);
+			ScriptMessageManager = new(this);
 			ClrEventManager = new();
 			AudioService = new(this);
 			AudioEventManager = new(this);
@@ -902,82 +909,6 @@ namespace Keysharp.Runtime
 			_ = Errors.ErrorOccurred($"Required capabilities not granted: {string.Join(", ", denied)}.{reason}",
 				null, ErrorMode.ExitApp);
 			return DefaultObject;
-		}
-
-		public static bool HandleSingleInstance(string title, eScriptInstance inst)
-		{
-			if (title.Length == 0 || title == "*")//Happens when running in Keyview.
-				return false;
-
-			if (IsUiInitializationBlocked)
-				return false;
-
-			// A replacement launched by Reload retires the instance it replaces through the handshake, so the
-			// single-instance policy must not act on it as well: Prompt would ask about that very instance.
-			if (Environment.GetEnvironmentVariable(ReloadHandshake.HandshakeVar) != null)
-				return false;
-
-			if (Env.FindCommandLineArg("force") != null || Env.FindCommandLineArg("f") != null)
-				inst = eScriptInstance.Off;
-
-			if (Env.FindCommandLineArg("restart") != null || Env.FindCommandLineArg("r") != null)
-				inst = eScriptInstance.Force;
-
-			//Restrict the search to windows belonging to this executable, otherwise an unrelated
-			//app whose window title happens to match the script's filename  would be mistaken for 
-			// another running instance.
-			//ahk_exe matches the image file NAME, extension and all, which is what WinGetProcessName reports.
-			//ProcessName drops the extension, so the criteria never matched a running instance at all.
-			title = $"{title} ahk_exe {Path.GetFileName(Environment.ProcessPath)}";
-			var exit = false;
-			var oldDetect = WindowX.DetectHiddenWindows(true);
-			var oldMatchMode = WindowX.SetTitleMatchMode(3);//Require exact match.
-
-			switch (inst)
-			{
-				case eScriptInstance.Force:
-				{
-					//WinClose raises a TargetError when it matches nothing, which is every first run.
-					var running = WindowX.WinExist(title);
-
-					if (running != 0)
-						_ = WindowX.WinClose(running, "", 2);
-				}
-				break;
-
-				case eScriptInstance.Ignore:
-					if (WindowX.WinExist(title) != 0)
-						exit = true;
-
-					break;
-
-				case eScriptInstance.Off:
-					break;
-
-				case eScriptInstance.Prompt:
-				default:
-					var hwnd = WindowX.WinExist(title);
-
-					if (hwnd != 0)
-					{
-#if !WINDOWS
-						// MsgBox below needs Application.Instance, but this runs before the
-						// rest of the UI is initialized -- ensure it exists first.
-						_ = EnsureEtoApplication();
-#endif
-
-						if (Dialogs.MsgBox("Do you want to close the existing instance before running this one?\nYes to exit that instance, No to exit this instance.", null, "YesNo") == "Yes")
-							_ = WindowX.WinClose(hwnd, "", 2);
-						else
-							exit = true;
-					}
-
-					break;
-			}
-
-			_ = WindowX.SetTitleMatchMode(oldMatchMode);
-			_ = WindowX.DetectHiddenWindows(oldDetect);
-			return exit;
 		}
 
 		/// <summary>
@@ -1315,6 +1246,8 @@ namespace Keysharp.Runtime
 			// one, timers included, is taken as already posted.
 			Keysharp.Internals.Flow.TryDoEvents(EventScheduler, propagateExit: false, pumpUi: false);
 
+			endpoint ??= ScriptEndpoint.Start(this);
+
 			var autoExecResult = false;
 			var executionResult = EventScheduler.TryExecuteThreadLaunch(0, false, false, tv =>
 			{
@@ -1381,17 +1314,14 @@ namespace Keysharp.Runtime
 		}
 
 		/// <summary>
-		/// Attaches the main window's visible chrome -- title, icon, and taskbar visibility.
-		/// Assumes <see cref="EnsureMainWindowHandle"/> has already run. The tray comes shortly
+		/// Attaches the main window's visible chrome -- icon and taskbar visibility; its title comes with it, from
+		/// <see cref="EnsureMainWindowHandle"/>, which this assumes has already run. The tray comes shortly
 		/// after, from <see cref="StartDeferredTray"/>; actually displaying the
 		/// window is still left to the caller (e.g. ShowIfNeeded(), or the platform-specific
 		/// startup sequence in <see cref="InitializeUnixMainWindow"/>/<see cref="RunMainWindow"/>).
 		/// </summary>
-		private void AttachMainWindowChrome(string title, bool showInTaskbar, bool initializeUiChrome)
+		private void AttachMainWindowChrome(bool showInTaskbar, bool initializeUiChrome)
 		{
-			if (!string.IsNullOrEmpty(title))
-				mainWindow.Text = title;
-
 			if (initializeUiChrome && scriptIcon != null)
 				mainWindow.Icon = scriptIcon;
 
@@ -1445,6 +1375,7 @@ namespace Keysharp.Runtime
 		}
 #endif
 
+		// title: the script's name, which compiled scripts pass; the main window's title is MainWindowTitle, as AHK's.
 		// errorStdOut: the script declares #ErrorStdOut, which the reload handshake honors before auto-execution applies it.
 		public void RunMainWindow(string title, Func<object> userInit, bool _persistent, bool errorStdOut)
 		{
@@ -1500,7 +1431,7 @@ namespace Keysharp.Runtime
 
 #if WINDOWS
 			EnsureMainWindowHandle();
-			AttachMainWindowChrome(title, true, true);
+			AttachMainWindowChrome(true, true);
 			_ = mainWindow.BeginInvoke(() => RunAutoExecSection(userInit));
 			StartDeferredTray();
 			Application.Run(mainWindow);
@@ -1510,7 +1441,7 @@ namespace Keysharp.Runtime
 			Keysharp.Internals.Window.Linux.X11Server.InstallTestLoopXErrorHandler();
 #endif
 
-			app.AsyncInvoke(() => InitializeUnixMainWindow(app, title, userInit, _persistent));
+			app.AsyncInvoke(() => InitializeUnixMainWindow(app, userInit, _persistent));
 
 			InstallTerminationSignal();
 			app.Run();
@@ -1518,10 +1449,10 @@ namespace Keysharp.Runtime
 		}
 
 #if !WINDOWS
-		private void InitializeUnixMainWindow(Eto.Forms.Application app, string title, Func<object> userInit, bool persistentState)
+		private void InitializeUnixMainWindow(Eto.Forms.Application app, Func<object> userInit, bool persistentState)
 		{
 			EnsureMainWindowHandle();
-			AttachMainWindowChrome(title, true, !NoTrayIcon);
+			AttachMainWindowChrome(true, !NoTrayIcon);
 			persistent = persistentState;
 			mainWindow.Closed += (_, __) =>
 			{
@@ -1686,6 +1617,8 @@ namespace Keysharp.Runtime
 			// SystemEvents.DisplaySettingsChanged, so it has to be detached explicitly or it roots this Script.
 			Teardown(MonitorEventManager.Dispose);
 			Teardown(ClipboardEventManager.Dispose);
+			Teardown(() => endpoint?.Dispose());
+			Teardown(ScriptMessageManager.Dispose);
 			// Stops every open output and releases the backend. An output that a script dropped without closing
 			// still owns a native stream by design, so nothing else in teardown would reach it.
 			Teardown(AudioEventManager.Dispose);

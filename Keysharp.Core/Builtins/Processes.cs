@@ -708,11 +708,11 @@ namespace Keysharp.Builtins
 	}
 
 	/// <summary>
-	/// Encapsulates information and I/O for a spawned <see cref="Process"/>.
+	/// The script <c>RunScript</c> started, with its exit and standard streams. It is a <c>Script</c>, so it can also be
+	/// messaged and asked to exit.
 	/// </summary>
-	public class ScriptProcess : KeysharpObject, IDisposable
+	public class ScriptProcess : Ks.KeysharpScript, IDisposable
 	{
-		private readonly Process process;
 		private string assemblyTransportPath;
 		private object exitCallback;
 		private ScriptEventScheduler callbackScheduler;
@@ -721,20 +721,14 @@ namespace Keysharp.Builtins
 		private Task<string> capturedStdErr;
 		private bool disposed;
 
-		public ScriptProcess(params object[] args)
-		{
-			process = args[0] as Process;
-			WatchForExit();
-		}
+		public ScriptProcess(params object[] args) : base(args[0] as Process) => WatchForExit();
 
-		internal ScriptProcess(Process process, string transportPath)
+		internal ScriptProcess(Process process, string transportPath) : base(process)
 		{
-			this.process = process;
 			assemblyTransportPath = transportPath;
 			WatchForExit();
 		}
 
-		public long HasExited => process.HasExited ? 1L : 0L;
 		public object ExitCode => process.HasExited ? (long)process.ExitCode : DefaultObject;
 		/// <summary>
 		/// Gets the exit time formatted as "YYYYMMDDHH24MISS", or blank in v2.0 mode and unset in v2.1 while running.

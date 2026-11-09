@@ -466,7 +466,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The #SingleInstance directive determines whether a script is allowed to run again when it is already running."
+                     "notes":  "Determines whether a script may run again while the same script path is running; without the directive it acts as Prompt, as in AutoHotkey, and Prompt acts as Off when no desktop is available. A replaced instance exits with OnExit reason Single. On Windows the instance is found by its main window title, as in AutoHotkey, so one whose window reports another Keysharp version is not found; an instance without a main window is found through its socket. Failed retirement ends the replacement with exit code 2. Headless runs and #ErrorStdOut use a bounded wait without retry dialogs.",
+                     "tested-by":  "RunnerTests.HeadlessSingleInstance; RunnerTests.WindowSingleInstance; RunnerTests.InstanceReplacementWaitTimeout"
                  },
                  {
                      "category":  "Environment/System",
@@ -9452,7 +9453,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The object RunScript returns: the child script process and its redirected standard-input, standard-output and standard-error streams.",
+                     "notes":  "The object RunScript returns: the child script process and its redirected standard-input, standard-output and standard-error streams. It is a Script, so it can also be messaged and asked to exit.",
                      "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk"
                  },
                  {
@@ -9490,8 +9491,8 @@
                  },
                  {
                      "category":  "Automation",
-                     "feature":  "ScriptProcess.HasExited",
-                     "syntax":  "exited := process.HasExited",
+                     "feature":  "ScriptProcess.IsExited",
+                     "syntax":  "exited := process.IsExited",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
@@ -9998,7 +9999,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Compiles a replacement before requesting the old instance's exit with OnExit reason Reload, including in headless mode. The replacement waits for the old process to exit, offering a retry every 2 seconds; headless replacements and those using #ErrorStdOut or --errorstdout time out after 15 seconds and report to stderr. An OnExit veto leaves the replacement waiting; a timeout or declined retry exits it with code 2. Linux/macOS handoff unverified.",
-                     "tested-by":  "Gui/guitest.ks; RunnerTests.ReloadWaitTimeout (Windows)"
+                     "tested-by":  "Gui/guitest.ks; RunnerTests.InstanceReplacementWaitTimeout (Windows)"
                  },
                  {
                      "category":  "Core Language",
@@ -12178,6 +12179,94 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "Windows broadcasts WM_SETTINGCHANGE. Linux publishes pending EnvSet changes to the D-Bus activation environment and systemd user manager; D-Bus deletions become empty values because its update API cannot unset them. macOS publishes pending changes to the current launchd session. Existing processes are unchanged and these updates are not persistent."
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Script",
+                     "syntax":  "#import KS { Script }",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "A running script bound to its original process, never a later process reusing its PID. Discovery and messages use the current user's socket folder, separated by logon session on Windows. Every script opens its socket as the auto-execute section starts. RunScript's ScriptProcess is one too. Messages and Script.Exit requests check the original process's identity.",
+                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk; ProcessTests.ScriptMessages; process-script-messages.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Script.Running",
+                     "syntax":  "for s in Script.Running",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "Snapshot Array of the running scripts, oldest first, including the calling script, found through their listening sockets.",
+                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Script.OnMessage()",
+                     "syntax":  "hook := Script.OnMessage(Callback)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "Starts a hook that calls Callback(Hook, Data, Sender) for each message; the first non-empty return, in start order, is the reply. It does not keep the script running. An unavailable owner is skipped so the remaining hooks can answer.",
+                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk; ProcessTests.ScriptMessages; process-script-messages.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Script.Hooks",
+                     "syntax":  "for hook in Script.Hooks",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "An Array of every running Script.OnMessage hook, in start order, from every thread. A snapshot.",
+                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk; ProcessTests.ScriptMessages; process-script-messages.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Script.Send()",
+                     "syntax":  "reply := s.Send(Data [, Timeout := 5000])",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "Sends text or Buffer-like bytes, up to 64 MB, and waits for the reply, serving events meanwhile. Raises TimeoutError when the timeout runs out, or TargetError when the original script process is not running.",
+                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Script.Post()",
+                     "syntax":  "task := s.Post(Data)",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "Sends a message without waiting and returns a Task carrying the reply, with no timeout while the original target process remains running.",
+                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk; ProcessTests.ScriptMessages; process-script-messages.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Script.Exit()",
+                     "syntax":  "Await(s.Exit())",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "Asks the original script process to exit through its socket with OnExit reason Close, which its OnExit callbacks can refuse, and returns a Task that settles when that process ends. There is no timeout if an OnExit callback prevents the exit. An already-ended original process completes successfully; a reused PID is never targeted.",
+                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "Script.PID / .Name / .FullPath / .IsExited",
+                     "syntax":  "s.PID, s.Name, s.FullPath, s.IsExited",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "unknown",
+                     "notes":  "The script's process ID, A_ScriptFullPath and the file name in that path, and whether its original process has ended, including when its PID has been reused. A RunScript child's Name and FullPath are unavailable until its auto-execute section starts and opens its socket.",
+                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk"
                  }
              ]
 }

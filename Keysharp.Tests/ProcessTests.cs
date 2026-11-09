@@ -58,4 +58,7 @@ public partial class ProcessTests : TestRunner
 
 	[Test, Category("Process")]
 	public void ProcessRunScript() => Assert.IsTrue(TestScript("process-runscript", false));
+
+	[Test, Category("Process"), Category("Curated")]
+	public void ScriptMessages() => Assert.IsTrue(TestScript("process-script-messages", false));
 }
