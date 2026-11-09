@@ -5,7 +5,7 @@
 # Environment: VERSION, SERIES, PPA_REVISION (the N in <version>-1~<series>N), PPA (owner/name, whose
 # upstream tarball for VERSION is reused when it has one), RESTORE_IN (docker restores the NuGet feed
 # with each series' SDK in an ubuntu:<series> container; otherwise the local dotnet must be that SDK),
-# ETO_CHECKOUT, KPM_CHECKOUT, OUTPUT_DIR.
+# ETO_ROOT (defaults to ../Eto), KPM_ROOT, OUTPUT_DIR.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -15,8 +15,8 @@ SERIES="${SERIES:-noble resolute}"
 PPA_REVISION="${PPA_REVISION:-1}"
 PPA="${PPA:-}"
 RESTORE_IN="${RESTORE_IN:-host}"
-ETO_CHECKOUT="${ETO_CHECKOUT:-${ROOT}/../Eto}"
-KPM_CHECKOUT="${KPM_CHECKOUT:-${ROOT}/../KPM}"
+ETO_ROOT="${ETO_ROOT:-${ROOT}/../Eto}"
+KPM_ROOT="${KPM_ROOT:-${ROOT}/../KPM}"
 OUTPUT_DIR="${OUTPUT_DIR:-${ROOT}/dist/ppa}"
 
 [[ "${PPA_REVISION}" =~ ^[1-9][0-9]*$ ]] || { echo "PPA_REVISION must be a positive number." >&2; exit 1; }
@@ -24,10 +24,10 @@ OUTPUT_DIR="${OUTPUT_DIR:-${ROOT}/dist/ppa}"
 eto_rev="$(git -C "${ROOT}" show HEAD:flake.lock \
   | python3 -c 'import json, sys; print(json.load(sys.stdin)["nodes"]["eto"]["locked"]["rev"])')"
 kpm_tag="$(git -C "${ROOT}" show HEAD:Keysharp.Install/payload/Keysharp.Payload.proj | sed -n 's:.*<KpmVersion[^>]*>\(.*\)</KpmVersion>.*:\1:p' | head -n 1)"
-kpm_rev="$(git -C "${KPM_CHECKOUT}" rev-parse --verify --quiet "refs/tags/${kpm_tag}^{commit}")" \
-  || { echo "${KPM_CHECKOUT} has no tag ${kpm_tag}, the KPM release Keysharp.Payload.proj pins." >&2; exit 1; }
-git -C "${ETO_CHECKOUT}" cat-file -e "${eto_rev}^{commit}" \
-  || { echo "${ETO_CHECKOUT} lacks Eto ${eto_rev}, the revision flake.lock pins." >&2; exit 1; }
+kpm_rev="$(git -C "${KPM_ROOT}" rev-parse --verify --quiet "refs/tags/${kpm_tag}^{commit}")" \
+  || { echo "${KPM_ROOT} has no tag ${kpm_tag}, the KPM release Keysharp.Payload.proj pins." >&2; exit 1; }
+git -C "${ETO_ROOT}" cat-file -e "${eto_rev}^{commit}" \
+  || { echo "${ETO_ROOT} lacks Eto ${eto_rev}, the revision flake.lock pins." >&2; exit 1; }
 epoch="$(git -C "${ROOT}" log -1 --format=%ct HEAD)"
 maintainer="$(sed -n 's/^Maintainer: //p' "${ROOT}/Keysharp.Install/linux/debian/control")"
 
@@ -63,8 +63,8 @@ else
   tree="${work}/keysharp-${VERSION}"
   mkdir -p "${tree}/vendor/Eto" "${tree}/vendor/KPM"
   git -C "${ROOT}" archive HEAD | tar -x -C "${tree}"
-  git -C "${ETO_CHECKOUT}" archive "${eto_rev}" | tar -x -C "${tree}/vendor/Eto"
-  git -C "${KPM_CHECKOUT}" archive "${kpm_rev}" | tar -x -C "${tree}/vendor/KPM"
+  git -C "${ETO_ROOT}" archive "${eto_rev}" | tar -x -C "${tree}/vendor/Eto"
+  git -C "${KPM_ROOT}" archive "${kpm_rev}" | tar -x -C "${tree}/vendor/KPM"
   mkdir -p "${work}/feed"
   restore_feed "${tree}" "${work}/feed"
   mv "${work}/feed" "${tree}/vendor/nuget"

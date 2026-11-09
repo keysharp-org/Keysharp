@@ -42,7 +42,7 @@ gpg --armor --export-secret-keys <fingerprint> | gh secret set PPA_GPG_PRIVATE_K
 ## Running locally
 
 On Ubuntu with `debhelper` and Docker, with Eto and KPM checked out beside this
-repository (or named by `ETO_CHECKOUT` and `KPM_CHECKOUT`):
+repository (or named by `ETO_ROOT` and `KPM_ROOT`):
 
 ```sh
 RESTORE_IN=docker bash Keysharp.Install/ppa/build-source.sh

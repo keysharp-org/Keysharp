@@ -420,8 +420,8 @@ jobs:
           SERIES: ${{ env.PPA_SERIES }}
           PPA_REVISION: ${{ inputs.ppa_revision || '1' }}
           RESTORE_IN: docker
-          ETO_CHECKOUT: ${{ github.workspace }}/.ppa/Eto
-          KPM_CHECKOUT: ${{ github.workspace }}/.ppa/KPM
+          ETO_ROOT: ${{ github.workspace }}/.ppa/Eto
+          KPM_ROOT: ${{ github.workspace }}/.ppa/KPM
           OUTPUT_DIR: ${{ github.workspace }}/dist/ppa
         run: bash Keysharp.Install/ppa/build-source.sh
 
