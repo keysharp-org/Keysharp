@@ -143,7 +143,7 @@ function Assert-PackagableVersion {
     # so a malformed version fails while computing the version itself, and an over-range one only
     # surfaces later as ICE24 against the already-folded number.
     if ($Version -notmatch '^\d+\.\d+(\.\d+){0,2}$') {
-        throw "Version must have two to four numeric parts, for example 0.0.1 or 0.0.0.18. Got '$Version'."
+        throw "Version must have two to four numeric parts, for example 0.0.1 or 0.0.0.19. Got '$Version'."
     }
 
     $parts = $Version.Split('.')

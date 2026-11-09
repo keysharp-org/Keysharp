@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Four-part version of an existing release tag, for example 0.0.0.18"
+        description: "Four-part version of an existing release tag, for example 0.0.0.19"
         required: true
         type: string
       draft:
@@ -71,7 +71,7 @@ jobs:
           fi
 
           if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || [[ "$tag" != "v$version" ]]; then
-            echo "Release tag must contain a four-part numeric version, for example v0.0.0.18. Got '$tag'." >&2
+            echo "Release tag must contain a four-part numeric version, for example v0.0.0.19. Got '$tag'." >&2
             exit 1
           fi
           if [[ "$draft" != "true" && "$draft" != "false" ]]; then
