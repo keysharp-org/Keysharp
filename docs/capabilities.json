@@ -560,11 +560,12 @@
                      "category":  "Environment/System",
                      "feature":  "#Warning",
                      "syntax":  "",
-                     "windows":  "planned",
-                     "linux_x11":  "planned",
-                     "linux_wayland":  "planned",
-                     "macos":  "planned",
-                     "notes":  "Intended to emit a compile-time warning message. No handler exists, so using it is a load-time error. Distinct from #Warn, which is implemented."
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Keysharp extension that reports a message at compile time without stopping the compile. Distinct from #Warn, whose settings do not apply to it.",
+                     "tested-by":  "DirectiveTests.WarningNonFatal; DaemonCompilationTests"
                  },
                  {
                      "category":  "Environment/System",
@@ -3136,7 +3137,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Computes the absolute value.",
+                     "notes":  "Computes the absolute value; the minimum 64-bit integer is returned unchanged, as in AutoHotkey.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -3147,7 +3148,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Computes the arc cosine. Throws an exception if the argument value is not between -1 and 1.",
+                     "notes":  "Computes the arc cosine. Throws a ValueError if the argument value is not between -1 and 1.",
                      "tested-by":  "math-acos.ahk"
                  },
                  {
@@ -3444,7 +3445,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Computes the arc sine. Throws an exception if the argument value is not between -1 and 1.",
+                     "notes":  "Computes the arc sine. Throws a ValueError if the argument value is not between -1 and 1.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -3608,7 +3609,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Creates a native callback address which redirects to a script function. Supports both parameter-count callbacks and typed parameter/return signatures on every platform. Float32 arguments preserve their exact binary value when widened to the script\u0027s Float. By-value structs follow the platform restrictions of DllCall.",
+                     "notes":  "Creates a native callback address which redirects to a script function. Supports both parameter-count callbacks and typed parameter/return signatures on every platform. By-value structs follow the platform restrictions of DllCall.",
                      "tested-by":  "external-callbackcreate.ahk"
                  },
                  {
@@ -4336,7 +4337,7 @@
                      "linux_x11":  "unsupported",
                      "linux_wayland":  "unsupported",
                      "macos":  "unsupported",
-                     "notes":  "The ControlGetStyle and ControlGetExStyle functions return an integer representing the style or extended style of a control. Eto controls have no Win32 style word, so the non-Windows backend returns the placeholder value 1 for every control rather than a real style.",
+                     "notes":  "Returns the extended style of a control. Off Windows, script-owned child controls return 0; a top-level GUI reports its projected window extended styles.",
                      "tested-by":  "ControlTests/control_exstyle_cb.ahk"
                  },
                  {
@@ -4399,10 +4400,10 @@
                      "feature":  "ControlGetStyle()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "The ControlGetStyle and ControlGetExStyle functions return an integer representing the style or extended style of a control. Eto controls have no Win32 style word, so the non-Windows backend returns the placeholder value 1 for every control rather than a real style. (Unlike WinGetStyle, no WS_* projection is done for controls.)",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "partial",
+                     "notes":  "Returns the style of a control. Off Windows, a script-created control reports WS_CHILD, WS_VISIBLE and WS_DISABLED; other style bits are not reported.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -4853,7 +4854,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Calls native functions; supports numeric type classes and void returns. Structured arrays pass by address but cannot be returned. Native Float32 values preserve their exact binary value when widened to the script\u0027s Float. Outside Windows x64, a struct passed or returned by value must be 1, 2, 4 or 8 bytes, with naturally aligned fields that are not all floating-point.",
+                     "notes":  "Calls native functions; supports numeric type classes and void returns. Structured arrays pass by address but cannot be returned. Outside Windows x64, a struct passed or returned by value must be 1, 2, 4 or 8 bytes, with naturally aligned fields that are not all floating-point.",
                      "tested-by":  "external-dllcall.ahk; struct-array.ahk; struct-basic.ahk"
                  },
                  {
@@ -4875,8 +4876,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "partial",
-                     "notes":  "Ejects or retracts the tray of the specified CD/DVD drive.",
-                     "tested-by":  "drive-driveeject.ahk"
+                     "notes":  "Ejects or retracts the tray of the specified CD/DVD drive."
                  },
                  {
                      "category":  "Core Language",
@@ -4963,8 +4963,7 @@
                      "linux_x11":  "unsupported",
                      "linux_wayland":  "unsupported",
                      "macos":  "unsupported",
-                     "notes":  "Retrieves CD/DVD media playback status through Windows MCI. Linux has no media-playback-status backend, and the feature is permanently unsupported on macOS.",
-                     "tested-by":  "drive-getstatuscd.ahk"
+                     "notes":  "Retrieves CD/DVD media playback status through Windows MCI. Linux has no media-playback-status backend, and the feature is permanently unsupported on macOS."
                  },
                  {
                      "category":  "Core Language",
@@ -4985,8 +4984,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "unsupported",
-                     "notes":  "Prevents media ejection. Linux uses the eject utility; eject locking is permanently unsupported on macOS.",
-                     "tested-by":  "drive-lock-unlock.ahk"
+                     "notes":  "Prevents media ejection. Linux uses the eject utility; eject locking is permanently unsupported on macOS."
                  },
                  {
                      "category":  "Core Language",
@@ -5017,8 +5015,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "unsupported",
-                     "notes":  "Restores media ejection. Linux uses the eject utility; eject locking is permanently unsupported on macOS.",
-                     "tested-by":  "drive-lock-unlock.ahk"
+                     "notes":  "Restores media ejection. Linux uses the eject utility; eject locking is permanently unsupported on macOS."
                  },
                  {
                      "category":  "Automation",
@@ -5729,12 +5726,12 @@
                  {
                      "category":  "Core Language",
                      "feature":  "Format()",
-                     "syntax":  "x := Format(\"{0}\", 123)",
+                     "syntax":  "x := Format(\"{1}\", 123)",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Formats text by substituting placeholders with argument values.",
+                     "notes":  "Formats text by substituting placeholders with argument values. A {} without an index takes the argument after the previous valid placeholder, as in AutoHotkey.",
                      "tested-by":  "ControlTests/control_exstyle_cb.ahk"
                  },
                  {
@@ -5745,7 +5742,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "Optional font attributes and system font selections. Linux resolves unavailable GTK theme fonts through Pango substitution. GUI/image weights map to normal or bold; Windows RichEdit preserves numeric weights. Windows applies quality to GUI fonts and image text; other platforms reject non-default quality, as does per-range RichEdit formatting. Unspecified attributes follow reference.md's compatibility-mode rule; Options remains a valid empty string.",
+                     "notes":  "Optional font attributes and system font selections. Linux resolves unavailable GTK theme fonts through Pango substitution. GUI/image weights map to normal or bold; Windows RichEdit preserves numeric weights. Windows applies quality to GUI fonts and image text, Linux and macOS ignore it, and per-range RichEdit formatting rejects non-default quality everywhere. Unspecified attributes follow reference.md's compatibility-mode rule; Options remains a valid empty string.",
                      "tested-by":  "ks-font.ahk; MiscTests.OptionalMetadata"
                  },
                  {
@@ -5767,7 +5764,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Formats a datetime string according to the parameters. Supports all V2 functionality except for the Dn and Tn options. If you want to specify a specific format, do it in the format parameter.",
+                     "notes":  "Formats a timestamp in the current user's locale, as in AutoHotkey. The Dn and Tn options are not supported, except for 0x80000000.",
                      "tested-by":  "string-formattime.ahk"
                  },
                  {
@@ -5974,7 +5971,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Adds a control to the GUI. The ActiveX and Custom control types are Win32-only and raise a ValueError on Linux and macOS. A ListView created with a view option other than +Report (+Icon, +IconSmall, +Tile, +List) is not implemented there either. Adding a WebView on Linux fails unless WebKitGTK is installed. Windows supports -Theme for native-painted controls; other platforms ignore it. UpDown attaches to a preceding Edit; horizontal arrows are Windows-only.",
+                     "notes":  "Adds a control to the GUI. The ActiveX and Custom control types are Win32-only and raise a ValueError on Linux and macOS, where a ListView view other than Report (+Icon, +IconSmall, +Tile, +List) raises UnsupportedError and keeps the Report view if continued. Adding a WebView on Linux fails unless WebKitGTK is installed. UpDown attaches to a preceding Edit; horizontal arrows are Windows-only. Windows supports -Theme for native-painted controls; other platforms ignore it.",
                      "tested-by":  "ControlTests/control_add_delete_item.ahk"
                  },
                  {
@@ -6087,7 +6084,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "Detached Font snapshot; assignments apply only specified attributes. Weights map to normal or bold; non-default quality raises Error.",
+                     "notes":  "Detached Font snapshot; assignments apply only specified attributes. Weights map to normal or bold; Linux and macOS accept q0-q5 and ignore it as a rendering hint, and Quality reads blank there.",
                      "tested-by":  "ks-font.ahk"
                  },
                  {
@@ -6190,7 +6187,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Sets options for the control. Changing a ListView to a view other than Report (+Icon, +IconSmall, +Tile, +List) is not implemented on Linux or macOS and raises. Raw Win32 style options (+0x..., +E0x...) have no portable equivalent and are ignored."
+                     "notes":  "Sets options for the control. On Linux and macOS, changing a ListView to a view other than Report (+Icon, +IconSmall, +Tile, +List) raises UnsupportedError and keeps the Report view if continued. Raw Win32 style options (+0x..., +E0x...) have no portable equivalent and are ignored, as is +/-Theme, as in AutoHotkey."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -6320,7 +6317,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "Detached Font snapshot; assignments apply only specified attributes. Weights map to normal or bold; non-default quality raises Error.",
+                     "notes":  "Detached Font snapshot; assignments apply only specified attributes. Weights map to normal or bold; Linux and macOS accept q0-q5 and ignore it as a rendering hint, and Quality reads blank there.",
                      "tested-by":  "ks-font.ahk"
                  },
                  {
@@ -6661,7 +6658,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The HasBase function returns a non-zero number if the specified value is derived from the specified base object.",
+                     "notes":  "The HasBase function returns a non-zero number if the specified value is derived from the specified base object. An object is not its own base, as in AutoHotkey.",
                      "tested-by":  "collections-object.ahk"
                  },
                  {
@@ -7731,7 +7728,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Computes the base e (natural) logarithm of a number. Throws an exception if a negative number is passed in.",
+                     "notes":  "Computes the base e (natural) logarithm of a number. Throws a ValueError if a negative number is passed in.",
                      "tested-by":  "file-filecreateshortcut.ahk"
                  },
                  {
@@ -7808,7 +7805,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Computes the base 10 logarithm of a number. Throws an exception if a negative number is passed in.",
+                     "notes":  "Computes the base 10 logarithm of a number. Throws a ValueError if a negative number is passed in.",
                      "tested-by":  "ControlTests/control_show_dropdown.ahk"
                  },
                  {
@@ -8269,7 +8266,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Renames a menu item."
+                     "notes":  "Renames a menu item. A blank or omitted name turns the item into a separator, and a later name restores it with its callback, submenu and state, as in AutoHotkey."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -8963,7 +8960,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The NumGet function returns the binary number stored at the specified address+offset. The type is a name or a numeric type class such as UInt32; one which does not name a number raises a ValueError, and a name is matched in full where AutoHotkey reads only its first character. Native Float32 values preserve their exact binary value when widened to the script\u0027s Float.",
+                     "notes":  "The NumGet function returns the binary number stored at the specified address+offset. The type is a name or a numeric type class such as UInt32; one which does not name a number raises a ValueError, and a name is matched in full where AutoHotkey reads only its first character.",
                      "tested-by":  "external-numput-numget.ahk; external-callbackcreate.ahk"
                  },
                  {
@@ -9027,8 +9024,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns a shallow copy of an Object, Array or Map, with independent own properties and container storage. Contained objects remain shared. Instances created by ObjCreateWithDataPtr raise TypeError.",
-                     "tested-by":  "collections-object.ahk; collections-array.ahk; collections-map.ahk; struct-pack.ahk"
+                     "notes":  "Returns a shallow copy of an Object, Array or Map, with independent own properties and container storage. Contained objects remain shared. The inherited Object.Clone method rejects objects holding native resources or external data; types with their own Clone method define how native data is copied.",
+                     "tested-by":  "collections-object.ahk; collections-array.ahk; collections-map.ahk; struct-pack.ahk; class-special-funcs.ahk"
                  },
                  {
                      "category":  "Collections",
@@ -9149,7 +9146,7 @@
                      "linux_wayland":  "unsupported",
                      "macos":  "unsupported",
                      "notes":  "Returns an Integer containing the object's IUnknown address without adding a native reference. Keep the object alive while using the pointer.",
-                     "tested-by":  "misc-object.ahk; external-com.ahk; external-chrome.ahk"
+                     "tested-by":  "misc-object.ahk; external-com.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -9356,7 +9353,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Prevents the script from exiting automatically when its last thread completes. A running WinEvent, Clipboard.OnChange hook or InputHook also keeps it running; Monitor.OnChange, Audio.OnDeviceChange, Input.OnDeviceChange and CLR event hooks do not.",
+                     "notes":  "Prevents the script from exiting automatically when its last thread completes. A running WinEvent, Clipboard.OnChange hook or InputHook also keeps it running; Monitor.OnChange, Audio.OnDeviceChange, Input.OnDeviceChange, Script.OnMessage and CLR event hooks do not.",
                      "tested-by":  "FlowTests.FlowExitRequests; EventHookTests.PersistenceFollowsTheFamily; FlowTests.FlowHeadlessPersistence"
                  },
                  {
@@ -9879,7 +9876,8 @@
                      "linux_x11":  "unsupported",
                      "linux_wayland":  "unsupported",
                      "macos":  "unsupported",
-                     "notes":  "The RegCreateKey function creates a registry key without writing a value."
+                     "notes":  "The RegCreateKey function creates a registry key without writing a value.",
+                     "tested-by":  "flow-loop-reg.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -10400,7 +10398,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Audio device/endpoint support differs by platform. These are the AutoHotkey-compatible functions; the Keysharp-only Ks.Audio class adds polyphonic playback, exact device selection, per-application sessions and recording alongside them."
+                     "notes":  "SoundGetName, SoundGetVolume, SoundGetMute, SoundSetVolume and SoundSetMute support input and output devices on every platform. Component selection and SoundGetInterface are Windows-only. The Keysharp-only Ks.Audio class adds polyphonic playback, exact device selection, per-application sessions and recording alongside them."
                  },
                  {
                      "category":  "Sound",
@@ -10427,34 +10425,34 @@
                  {
                      "category":  "Sound",
                      "feature":  "SoundGetMute()",
-                     "syntax":  "SoundGetMute(1)",
+                     "syntax":  "SoundGetMute(, Device)",
                      "windows":  "full",
-                     "linux_x11":  "partial",
-                     "linux_wayland":  "partial",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Retrieves a mute setting of a sound device. Differs in that there is no support for components, so the function only takes one parameter: the 1-based index, or name for the device. Platform statuses inherited from curated \u0027Sound APIs\u0027; per-function validation pending.",
+                     "notes":  "Retrieves a mute setting of a sound device. Parameters match AutoHotkey; components are Windows-only, so off Windows a non-empty Component raises TargetError and the device goes in the second parameter.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Sound",
                      "feature":  "SoundGetName()",
-                     "syntax":  "SoundGetName(1)",
+                     "syntax":  "SoundGetName(, Device)",
                      "windows":  "full",
-                     "linux_x11":  "partial",
-                     "linux_wayland":  "partial",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Retrieves the name of a sound device. Differs in that there is no support for components, so the function only takes one parameter: the 1-based index, or name for the device. Platform statuses inherited from curated \u0027Sound APIs\u0027; per-function validation pending.",
+                     "notes":  "Retrieves the name of a sound device. Parameters match AutoHotkey; components are Windows-only, so off Windows a non-empty Component raises TargetError and the device goes in the second parameter.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Sound",
                      "feature":  "SoundGetVolume()",
-                     "syntax":  "SoundGetVolume(1)",
+                     "syntax":  "SoundGetVolume(, Device)",
                      "windows":  "full",
-                     "linux_x11":  "partial",
-                     "linux_wayland":  "partial",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Retrieves a mute setting of a sound device. Differs in that there is no support for components, so the function only takes one parameter: the 1-based index, or name for the device. Platform statuses inherited from curated \u0027Sound APIs\u0027; per-function validation pending.",
+                     "notes":  "Retrieves a volume setting of a sound device. Parameters match AutoHotkey; components are Windows-only, so off Windows a non-empty Component raises TargetError and the device goes in the second parameter.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -10471,23 +10469,23 @@
                  {
                      "category":  "Sound",
                      "feature":  "SoundSetMute()",
-                     "syntax":  "SoundSetMute(1)",
+                     "syntax":  "SoundSetMute(1, , Device)",
                      "windows":  "full",
-                     "linux_x11":  "partial",
-                     "linux_wayland":  "partial",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Changes a mute setting of a sound device. Differs in that there is no support for components, so the function only takes one parameter: the 1-based index, or name for the device. Platform statuses inherited from curated \u0027Sound APIs\u0027; per-function validation pending.",
+                     "notes":  "Changes a mute setting of a sound device. Parameters match AutoHotkey; components are Windows-only, so off Windows a non-empty Component raises TargetError and the device goes in the third parameter.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
                      "category":  "Sound",
                      "feature":  "SoundSetVolume()",
-                     "syntax":  "SoundSetVolume(1)",
+                     "syntax":  "SoundSetVolume(50, , Device)",
                      "windows":  "full",
-                     "linux_x11":  "partial",
-                     "linux_wayland":  "partial",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Changes a volume setting of a sound device. Differs in that there is no support for components, so the function only takes one parameter: the 1-based index, or name for the device. Platform statuses inherited from curated \u0027Sound APIs\u0027; per-function validation pending.",
+                     "notes":  "Changes a volume setting of a sound device. Parameters match AutoHotkey; components are Windows-only, so off Windows a non-empty Component raises TargetError and the device goes in the third parameter.",
                      "tested-by":  "Gui/guitest.ks"
                  },
                  {
@@ -10509,7 +10507,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Computes the square root of a number. Throws an exception if the argument is negative.",
+                     "notes":  "Computes the square root of a number. Throws a ValueError if the argument is negative.",
                      "tested-by":  "external-clr.ahk"
                  },
                  {
@@ -10824,7 +10822,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Gets system information. Non-Windows builds implement monitor dimensions/count, mouse presence/buttons, network state and selected session metrics; Win32-only system metrics have no portable equivalent and are not implemented.",
+                     "notes":  "Gets system information. Linux and macOS implement monitor dimensions and count, the virtual screen (76-79, as Monitor.VirtualScreen), mouse presence and buttons, network state and selected session metrics; any other metric raises UnsupportedError.",
                      "tested-by":  "env-sysget.ahk"
                  },
                  {
@@ -10897,11 +10895,11 @@
                      "category":  "Core Language",
                      "feature":  "Throw",
                      "syntax":  "",
-                     "windows":  "partial",
-                     "linux_x11":  "partial",
-                     "linux_wayland":  "partial",
-                     "macos":  "partial",
-                     "notes":  "Passes any value unchanged to catch; an uncaught non-Error value is wrapped for OnError and diagnostics. Without a value, it rethrows the value an active catch handles, or raises the continuable Error(\"An exception was thrown.\").",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Passes any value unchanged to catch and to OnError. Without a value, it rethrows the value an active catch handles, or raises the continuable Error(\"An exception was thrown.\").",
                      "tested-by":  "flow-trycatch.ahk; flow-onerror.ahk"
                  },
                  {
@@ -11382,10 +11380,10 @@
                      "feature":  "WinGetExStyle()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "Retrieves the extended style of the specified window. Neither X11, Wayland nor macOS has an equivalent of Win32 extended window styles; all three always return 0."
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "partial",
+                     "notes":  "Retrieves the extended style of the specified window. Off Windows it reports WS_EX_TOPMOST for an always-on-top Gui, or a foreign window whose state the X11 or Wayland backend reports (macOS: own windows only), plus WS_EX_TOOLWINDOW for +ToolWindow and WS_EX_TRANSPARENT and WS_EX_LAYERED for +ClickThrough on own Guis; other bits are 0."
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -11876,7 +11874,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Predefined numeric struct type for typed fields and native calls. Reads preserve the exact binary value when widened to the script\u0027s Float.",
+                     "notes":  "Predefined numeric struct type for typed fields and native calls.",
                      "tested-by":  "struct-basic.ahk; external-numput-numget.ahk; external-dllcall.ahk; external-callbackcreate.ahk"
                  },
                  {

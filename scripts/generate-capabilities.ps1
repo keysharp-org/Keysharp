@@ -28,7 +28,7 @@ function EscapeMdCell([string]$value) {
 	if ($null -eq $value) { return "" }
 	$v = $value -replace "`r?`n", "<br>"
 	# Escape pipe so operators like "|" and "||" do not break table columns.
-	$v = $v -replace "\|", "\\|"
+	$v = $v -replace '\|', '\|'
 	return $v
 }
 
@@ -57,7 +57,14 @@ if (-not (Test-Path $Source)) {
 # codepage by default, which double-encodes every non-ASCII character on the round trip.
 $root = [System.IO.File]::ReadAllText((Resolve-Path $Source)) | ConvertFrom-Json
 
-$allRows = $root.rows | Sort-Object @{ Expression = { $_.feature.ToString().ToLowerInvariant() } }, @{ Expression = { $_.feature.ToString() } }
+# Ordinal keys keep ordering independent of culture and the runtime's collation engine.
+$allRows = [object[]]$root.rows
+[Array]::Sort($allRows, [Comparison[object]]{
+	param($left, $right)
+	$order = [StringComparer]::Ordinal.Compare($left.feature.ToLowerInvariant(), $right.feature.ToLowerInvariant())
+	if ($order -eq 0) { return [StringComparer]::Ordinal.Compare($left.feature, $right.feature) }
+	return $order
+})
 $tableAll = BuildTableLines $allRows
 
 $legendLines = @(

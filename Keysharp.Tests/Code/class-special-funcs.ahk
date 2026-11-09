@@ -4,7 +4,7 @@
 #NoTrayIcon
 
 #import __Main
-#import KS { Collect, StringBuffer }
+#import KS { Collect, StringBuffer, Clr }
 #Include <assert>
 gval := 0, gtext := "", gdefined := 0, gclones := 0, gvarref := 0, gstructs := 0, gstructdata := 0, gdata := 0, gheld := 0, gkept := ""
 glatestruct := 0
@@ -163,7 +163,8 @@ KeepNestedChild() {
 }
 KeepPointerTarget() {
 	target := Int32(45)
-	__Main.targetIdentity := ObjPtr(target)
+	; The outer reference prevents CLR binding from unwrapping the struct's numeric value.
+	__Main.targetIdentity := Clr.GetType("System.WeakReference")({__Value: target})
 	wrapper := Int32.Ptr()
 	wrapper.__Value := target
 	owner := PointerLifetimeOwner()
@@ -180,7 +181,7 @@ CheckRetainedNestedChild() {
 }
 CheckRetainedNestedChild()
 heldPointer := KeepPointerTarget()
-AssertEq(ObjPtr(heldPointer.Target), targetIdentity, A_LineNumber)
+Assert(heldPointer.Target == targetIdentity.Target, A_LineNumber)
 AssertEq(heldPointer.Target.__Value, 45, A_LineNumber)
 timeout := A_TickCount + 2000
 while (nestedDeletes == "" && A_TickCount < timeout)

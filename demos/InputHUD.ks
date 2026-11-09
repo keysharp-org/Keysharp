@@ -1,5 +1,3 @@
-#ErrorStdOut
-#Warn All, StdOut
 #Requires AutoHotkey v2.0
 #Requires capability InputMonitoring, InputControl   ; passive event display plus the HUD's suppressing control/drag hotkeys
 #SingleInstance Force

@@ -80,10 +80,6 @@ sh ./keysharp-linux-setup.sh --dry-run
 sudo sh ./keysharp-linux-setup.sh --upgrade-components
 ```
 
-`ControlSendText` to a local text console requires `keysharp-input` client ABI 1.2
-or newer with terminal input support. An older ABI 1.x component remains usable
-for its existing operations; upgrade the input component to enable console targets.
-
 - `--skip-input` or `--skip-desktop` skips that component for this run. It does not
   uninstall an existing component.
 - `--keysharp-version`, `--input-version` and `--desktop-version` select a release
@@ -123,18 +119,14 @@ GNOME or Cinnamon extensions may need a logout after installation or upgrade.
 
 ### Permission prompts
 
-A foreground process with a controlling terminal can authenticate through polkit's
-terminal agent, `pkttyagent`. Keysharp registers it as a fallback for the duration
-of the request, so an existing graphical agent keeps priority, and polkit reads the
-password itself; neither scripts nor the native components see it. Redirected
-standard input does not matter, since the agent uses the controlling terminal.
-This authorizes input capabilities from a local active console without X11 or
-Wayland. The native service's active-seat and polkit restrictions still apply, so
-an SSH session cannot bypass them, and desktop operations still require a supported
-desktop session. Queries, existing grants, runs without a foreground controlling
-terminal, test hosts and `KEYSHARP_FORCE_HEADLESS=1` never start the helper. The
-Linux installers declare or install the distribution's polkit package, which
-provides it.
+A script run in the foreground of a terminal can authenticate there through polkit's
+terminal agent, `pkttyagent`, which Keysharp registers as a fallback so that a
+graphical agent keeps priority. This grants input capabilities from a local active
+console without X11 or Wayland; polkit reads the password itself, so neither scripts
+nor the native components see it. An SSH session cannot bypass the native service's
+active-seat and polkit restrictions, and desktop operations still require a
+supported desktop session. The Linux installers declare or install the polkit
+package that provides `pkttyagent`.
 
 Graphical prompts need a polkit authentication agent running in the requesting
 user's graphical session; the polkit system service alone does not start one in a
@@ -143,7 +135,10 @@ Debian packages recommend `mate-polkit | polkit-1-auth-agent`, which an installe
 desktop provider already satisfies. Otherwise install one through your package
 manager and start it from your desktop or compositor's user-session autostart, not
 as root. When polkit reports that no agent is available, the request fails with an
-error that says so; retry it once the agent is running.
+error that says so; retry it once the agent is running. The missing-agent error, and
+retrying after it, need keysharp-input 1.2.0 and keysharp-desktop 1.0.5 or newer;
+older components report a denial, and only an explicit permission request, such as
+a `RequestCapabilities` call that names the capability, tries again.
 
 ## Requirements and alternatives
 

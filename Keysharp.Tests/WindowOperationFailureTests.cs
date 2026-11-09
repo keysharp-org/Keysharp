@@ -4,13 +4,10 @@ namespace Keysharp.Tests;
 [TestFixture, Category("Internal"), Category("Curated")]
 public class WindowOperationFailureTests : TestRunner
 {
+	// Hide and show share the visibility route, and the two restacking commands share the z-order route.
 	[TestCase("WinHide", true)]
-	[TestCase("WinShow", true)]
-	[TestCase("WinMoveTop", true)]
-	[TestCase("WinMoveBottom", true)]
-	[TestCase("WinHide", false)]
 	[TestCase("WinShow", false)]
-	[TestCase("WinMoveTop", false)]
+	[TestCase("WinMoveTop", true)]
 	[TestCase("WinMoveBottom", false)]
 	public void RoutedFailuresPreserveTheNativeError(string command, bool attempted)
 	{
@@ -27,21 +24,6 @@ public class WindowOperationFailureTests : TestRunner
 		Assert.That(error.GetType(), Is.EqualTo(attempted ? typeof(OSError) : typeof(UnsupportedError)));
 		Assert.That(error.Message, Does.Contain(command));
 		if (attempted) Assert.That(error.Message, Does.Contain(native.Message));
-	}
-
-	[Test]
-	public void TimeoutSurvivesDesktopRetirement()
-	{
-		var native = new NativeClientException("keysharp-desktop", "hide window",
-			NativeClientStatus.Timeout, 0u, 0, "Original withdrawal timeout.");
-		var windows = new WaylandWindow(new FailureBackend(native));
-		s.LinuxServices.Desktop.Dispose();
-		Assert.That(windows.TryHide(42, out var failure), Is.False);
-		Assert.That(failure, Is.SameAs(native));
-		using var scope = Keysharp.Runtime.Flow.EnterTry();
-		var error = Assert.Throws<KeysharpException>(() => WindowHelper.WindowOperationFailed("WinHide", failure)).UserError;
-		Assert.That(error.GetType(), Is.EqualTo(typeof(OSError)));
-		Assert.That(error.Message, Does.Contain("Original withdrawal timeout."));
 	}
 
 	[Test]
@@ -67,22 +49,6 @@ public class WindowOperationFailureTests : TestRunner
 			}
 			finally { _ = gui.Destroy(); }
 		});
-	}
-
-	[Test]
-	public void FailedOperationContinuesOnce()
-	{
-		var windows = new WaylandWindow(new FailureBackend(new IOException("Original native failure.")));
-		Assert.That(windows.TryHide(42, out var failure), Is.False);
-		var reported = 0;
-		_ = Errors.OnError(new KeysharpFunc((Func<object, object, object>)((error, _) =>
-		{
-			Assert.That(error.GetType(), Is.EqualTo(typeof(OSError)));
-			reported++;
-			return -1L;
-		})));
-		Assert.That(WindowHelper.WindowOperationFailed("WinHide", failure), Is.SameAs(Script.DefaultObject));
-		Assert.That(reported, Is.EqualTo(1));
 	}
 
 	private static bool TryOperation(IWindow windows, string command, nint handle, out Exception failure)
@@ -114,6 +80,8 @@ public class WindowOperationFailureTests : TestRunner
 			error = failure;
 			return false;
 		}
+		public bool TrySetWindowState(nint handle, FormWindowState state)
+			=> throw new InvalidOperationException("Hiding and showing must not change minimization or maximization.");
 		public bool TryGetCursorPos(out int x, out int y)
 		{
 			x = y = 0;

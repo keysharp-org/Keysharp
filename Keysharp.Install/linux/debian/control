@@ -28,7 +28,8 @@ Depends: ${misc:Depends},
          libatspi2.0-0t64 | libatspi2.0-0,
          at-spi2-core,
          pulseaudio-utils
-Recommends: keysharp-input-client-abi-1 (>= 1.0),
+# A client-ABI virtual package is versioned 1.<ABI minor>; console ControlSendText needs input ABI 1.2.
+Recommends: keysharp-input-client-abi-1 (>= 1.2),
             keysharp-desktop-client-abi-1 (>= 1.0),
             libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37,
             polkitd | policykit-1

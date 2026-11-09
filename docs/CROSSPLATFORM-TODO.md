@@ -36,8 +36,8 @@ touch core subsystems, so care is needed.
 
 - [ ] **Joystick polling on macOS.** `Keysharp.Core/Internals/Input/Joystick/Joystick.cs`
   Linux has an evdev implementation in `Internals/Input/Linux/LinuxJoystick.cs`, including
-  state queries and the newly-pressed button mask used by joystick hotkeys. macOS still falls
-  through to `NotImplementedException`; add an IOKit HID or GameController backend mirroring the
+  state queries and the newly-pressed button mask used by joystick hotkeys. macOS has no joystick
+  backend, so joystick controls report blank and log once; add an IOKit HID or GameController backend mirroring the
   Windows/Linux polling contract (button-mask XOR → newly-pressed → buffer hotkey messages).
 
 ---
