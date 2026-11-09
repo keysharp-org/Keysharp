@@ -1113,6 +1113,10 @@ public class GuiTests : TestRunner
 		if (Script.IsHeadless)
 			Assert.Ignore("Overlay surfaces need an initialized graphics backend.");
 
+		// Only the wlr-layer-shell backing (KWin, wlroots) pools frames; any other overlay would pass without reaching it.
+		if (Keysharp.Internals.Window.Linux.Wayland.WaylandLayerShellClient.Current?.IsAvailable != true)
+			Assert.Ignore("The frame pool belongs to the wlr-layer-shell overlay backing.");
+
 		var context = UseQueuedMainContext();
 		var overlay = new Ks.KeysharpOverlay();
 		_ = overlay.__New(0L, 0L, 64L, 32L);

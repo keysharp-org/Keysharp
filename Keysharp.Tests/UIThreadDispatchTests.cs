@@ -15,9 +15,6 @@ public class UIThreadDispatchTests : TestRunner
 		public long DirectMethod() => Environment.CurrentManagedThreadId;
 
 		[RequiresUIThread]
-		public static long StaticMethod() => Environment.CurrentManagedThreadId;
-
-		[RequiresUIThread]
 		public string Compatibility => Script.currentCompatibilityLevel.ToString();
 
 		[RequiresUIThread]
@@ -38,12 +35,6 @@ public class UIThreadDispatchTests : TestRunner
 		{
 			get => Environment.CurrentManagedThreadId;
 			[RequiresUIThread]
-			set { SetterThread = Environment.CurrentManagedThreadId; Value = value; }
-		}
-
-		public long DirectProperty
-		{
-			get => Environment.CurrentManagedThreadId;
 			set { SetterThread = Environment.CurrentManagedThreadId; Value = value; }
 		}
 
@@ -169,8 +160,6 @@ public class UIThreadDispatchTests : TestRunner
 	[TestCase(nameof(DispatchTarget.MarkedGetter), true, true, false)]
 	[TestCase(nameof(DispatchTarget.MarkedSetter), false, false, true)]
 	[TestCase(nameof(DispatchTarget.MarkedSetter), true, false, true)]
-	[TestCase(nameof(DispatchTarget.DirectProperty), false, false, false)]
-	[TestCase(nameof(DispatchTarget.DirectProperty), true, false, false)]
 	public void PropertyAccessorsDispatchIndependently(string name, bool methodAccessors, bool uiGetter, bool uiSetter)
 	{
 		var target = new DispatchTarget();
@@ -191,8 +180,34 @@ public class UIThreadDispatchTests : TestRunner
 		Assert.That(target.Value, Is.EqualTo(17L));
 	}
 
+	[Test]
+	public void ClassPolicyUsesMemberDeclaration()
+	{
+		var target = new ClassTarget();
+		var type = typeof(ClassTarget);
+		var uiThread = Environment.CurrentManagedThreadId;
+		var result = OnWorker(() =>
+		{
+			object Call(string name)
+			{
+				var method = type.GetMethod(name);
+				return new MethodPropertyHolder(method).CallFunc(method.IsStatic ? null : target, []);
+			}
+			return (Method: Call(nameof(ClassTarget.Method)), Partial: Call(nameof(ClassTarget.PartialMethod)),
+				Override: Call(nameof(ClassTarget.VirtualMethod)), Static: Call(nameof(ClassTarget.StaticMethod)),
+				Base: Call(nameof(DirectBase.BaseMethod)), MarkedBase: Call(nameof(DirectBase.MarkedBaseMethod)),
+				Worker: Environment.CurrentManagedThreadId);
+		});
+		Assert.That(result.Method, Is.EqualTo((long)uiThread));
+		Assert.That(result.Partial, Is.EqualTo((long)uiThread));
+		Assert.That(result.Override, Is.EqualTo((long)uiThread));
+		Assert.That(result.Static, Is.EqualTo((long)uiThread));
+		Assert.That(result.MarkedBase, Is.EqualTo((long)uiThread));
+		Assert.That(result.Base, Is.EqualTo((long)result.Worker));
+	}
+
 	[TestCase(false), TestCase(true)]
-	public void ClassPolicyUsesMemberDeclaration(bool methodAccessors)
+	public void ClassPolicyCoversPropertyAccessors(bool methodAccessors)
 	{
 		var target = new ClassTarget();
 		var type = typeof(ClassTarget);
@@ -205,27 +220,13 @@ public class UIThreadDispatchTests : TestRunner
 		var uiThread = Environment.CurrentManagedThreadId;
 		var result = OnWorker(() =>
 		{
-			object Call(string name)
-			{
-				var method = type.GetMethod(name);
-				return new MethodPropertyHolder(method).CallFunc(method.IsStatic ? null : target, []);
-			}
 			var value = getter.CallFunc(target, []);
 			if (methodAccessors) _ = setter.CallFunc(target, [1L]);
 			else holder.SetProp(target, 1L);
-			return (Getter: value, Method: Call(nameof(ClassTarget.Method)), Partial: Call(nameof(ClassTarget.PartialMethod)),
-				Override: Call(nameof(ClassTarget.VirtualMethod)), Static: Call(nameof(ClassTarget.StaticMethod)),
-				Base: Call(nameof(DirectBase.BaseMethod)), MarkedBase: Call(nameof(DirectBase.MarkedBaseMethod)),
-				BaseGetter: baseGetter.CallFunc(target, []), Worker: Environment.CurrentManagedThreadId);
+			return (Getter: value, BaseGetter: baseGetter.CallFunc(target, []), Worker: Environment.CurrentManagedThreadId);
 		});
 		Assert.That(result.Getter, Is.EqualTo((long)uiThread));
-		Assert.That(result.Method, Is.EqualTo((long)uiThread));
-		Assert.That(result.Partial, Is.EqualTo((long)uiThread));
-		Assert.That(result.Override, Is.EqualTo((long)uiThread));
-		Assert.That(result.Static, Is.EqualTo((long)uiThread));
-		Assert.That(result.MarkedBase, Is.EqualTo((long)uiThread));
 		Assert.That(target.SetterThread, Is.EqualTo(uiThread));
-		Assert.That(result.Base, Is.EqualTo((long)result.Worker));
 		Assert.That(result.BaseGetter, Is.EqualTo((long)result.Worker));
 	}
 
@@ -252,21 +253,19 @@ public class UIThreadDispatchTests : TestRunner
 	[TestCase(false), TestCase(true)]
 	public void StaticMembersUseScriptUIThread(bool methodAccessors)
 	{
-		var method = new MethodPropertyHolder(typeof(DispatchTarget).GetMethod(nameof(DispatchTarget.StaticMethod)));
 		var property = typeof(DispatchTarget).GetProperty(nameof(DispatchTarget.StaticProperty));
 		var holder = new MethodPropertyHolder(property);
 		var getter = methodAccessors ? new MethodPropertyHolder(property.GetMethod) : holder;
 		var setter = methodAccessors ? new MethodPropertyHolder(property.SetMethod) : null;
 		var uiThread = Environment.CurrentManagedThreadId;
-		var result = OnWorker(() =>
+		var getterThread = OnWorker(() =>
 		{
 			var value = getter.CallFunc(null, []);
 			if (methodAccessors) _ = setter.CallFunc(null, [1L]);
 			else holder.SetProp(null, 1L);
-			return (Getter: value, Method: method.CallFunc(null, []));
+			return value;
 		});
-		Assert.That(result.Getter, Is.EqualTo((long)uiThread));
-		Assert.That(result.Method, Is.EqualTo((long)uiThread));
+		Assert.That(getterThread, Is.EqualTo((long)uiThread));
 		Assert.That(DispatchTarget.StaticSetterThread, Is.EqualTo(uiThread));
 	}
 
