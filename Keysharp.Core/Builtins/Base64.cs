@@ -27,7 +27,11 @@ namespace Keysharp.Builtins
 
 				//A Buffer encodes straight out of its own memory; the general byte conversion would copy the whole of it first.
 				if (value is Buffer b)
-					return Convert.ToBase64String(b.AsSpan());
+				{
+					var encoded = Convert.ToBase64String(b.AsSpan());
+					GC.KeepAlive(b);
+					return encoded;
+				}
 
 				var raw = Conversions.ToByteArray(value, enc);
 				return raw == null ? "" : Convert.ToBase64String(raw);

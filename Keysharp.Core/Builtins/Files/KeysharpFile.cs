@@ -28,10 +28,6 @@ namespace Keysharp.Builtins
 		// same collection as this File, before a __Delete which may still write to it.
 		private GCHandle streamRoot;
 
-		// The object whose memory a memory-backed file is reading and writing. Held so that it cannot be
-		// collected while this File still points into it; null for a path-backed file.
-		private object memorySource;
-
 		public object AtEOF => stream != null ? (stream.AtEof ? 1L : 0L) : reader != null && reader.Peek() == -1 ? 1L : 0L;
 
 		internal TextStream Stream => stream;
@@ -138,14 +134,11 @@ namespace Keysharp.Builtins
 			if (args.Length > 1 && args[1] != null && !Files.TryGetEncoding(args[1], out encoding))
 				return DefaultObject;
 
-			// Hold the source so its memory cannot be reclaimed while this File still points into it.
-			memorySource = source;
-
 			unsafe
 			{
 				// Fixed capacity: the memory belongs to the source object and cannot be grown, so a write past
 				// the end is refused rather than silently reallocating.
-				stream = new TextStream(new BorrowedMemoryStream((byte*)ptr, size), encoding, 0, keepReadAhead: false);
+				stream = new TextStream(new BorrowedMemoryStream((byte*)ptr, size, source), encoding, 0, keepReadAhead: false);
 			}
 
 			return DefaultObject;
@@ -160,7 +153,19 @@ namespace Keysharp.Builtins
 		/// </summary>
 		private sealed unsafe class BorrowedMemoryStream : UnmanagedMemoryStream
 		{
-			internal BorrowedMemoryStream(byte* pointer, long length) : base(pointer, length, length, FileAccess.ReadWrite) { }
+			// Keeps the backing object reachable while the stream uses its pointer.
+			private object memoryOwner;
+
+			internal BorrowedMemoryStream(byte* pointer, long length, object owner) : base(pointer, length, length, FileAccess.ReadWrite)
+				=> memoryOwner = owner;
+
+			protected override void Dispose(bool disposing)
+			{
+				base.Dispose(disposing);
+
+				if (disposing)
+					memoryOwner = null;
+			}
 
 			public override void Write(byte[] buffer, int offset, int count)
 			{
@@ -255,10 +260,13 @@ namespace Keysharp.Builtins
 			if (!TryGetMemory(buffer, bytes, out var ptr, out var count))
 				return DefaultObject;
 
+			long read;
 			unsafe
 			{
-				return (long)(stream?.ReadBytes(new Span<byte>((void*)ptr, count)) ?? 0);
+				read = stream?.ReadBytes(new Span<byte>((void*)ptr, count)) ?? 0;
 			}
+			GC.KeepAlive(buffer);
+			return read;
 		}
 
 		/// <summary>
@@ -289,10 +297,13 @@ namespace Keysharp.Builtins
 			if (!TryGetMemory(data, bytes, out var ptr, out var count))
 				return 0L;
 
+			long result;
 			unsafe
 			{
-				return stream?.WriteBytes(new ReadOnlySpan<byte>((void*)ptr, count)) ?? 0L;
+				result = stream?.WriteBytes(new ReadOnlySpan<byte>((void*)ptr, count)) ?? 0L;
 			}
+			GC.KeepAlive(data);
+			return result;
 		}
 
 		/// <summary>

@@ -63,7 +63,9 @@ namespace Keysharp.Builtins
 			if (size >= 0 && off > size - width)
 				return Errors.IndexErrorOccurred($"Memory access exceeded buffer size. Offset {off}, length {width}, buffer size {size}.", DefaultObject);
 
-			return NativeType.ReadMemory(code, addr + (nint)off);
+			var value = NativeType.ReadMemory(code, addr + (nint)off);
+			GC.KeepAlive(source);
+			return value;
 		}
 
 		/// <summary>
@@ -120,6 +122,7 @@ namespace Keysharp.Builtins
 				offset += width;
 			}
 
+			GC.KeepAlive(obj);
 			return addr + offset;
 		}
 

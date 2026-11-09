@@ -135,6 +135,9 @@ namespace Keysharp.Internals.Invoke
 				}
 				finally
 				{
+					// Span and pointer arguments borrow storage from the original receiver and argument values.
+					GC.KeepAlive(target);
+					GC.KeepAlive(args);
 					stack.Pop(depth);
 
 					if (switched)

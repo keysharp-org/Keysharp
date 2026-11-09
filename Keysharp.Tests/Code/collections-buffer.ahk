@@ -1,4 +1,6 @@
 #NoTrayIcon
+#ErrorStdOut
+#Warn All, StdOut
 #Include <assert>
 
 buf := Buffer(5, 10)
@@ -32,5 +34,16 @@ buf.Size := 0
 AssertEq(buf.Ptr, 0, A_LineNumber)
 Throws(() => buf.Size := -1, A_LineNumber, ValueError)
 AssertEq(buf.Size, 0, A_LineNumber)
+
+buf := Buffer(4, 23)
+copy := buf.Clone()
+Assert(copy.Ptr != buf.Ptr, A_LineNumber)
+copy.Size := 2
+AssertEq(buf.Size, 4, A_LineNumber)
+buf.Size := 0
+AssertEq(copy.Size, 2, A_LineNumber)
+AssertEq(copy[1], 23, A_LineNumber)
+AssertEq(copy[2], 23, A_LineNumber)
+copy.Size := 0
 
 FileAppend "pass", "*"

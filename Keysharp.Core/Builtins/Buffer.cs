@@ -8,18 +8,12 @@ namespace Keysharp.Builtins
 	public class Buffer : KeysharpObject, IDisposable, IPointable
 	{
 		/// <summary>
-		/// Whether the object has been disposed or not.
-		/// </summary>
-		private bool disposed = false;
-
-		/// <summary>
 		/// The size of the buffer in bytes. Internal, so the paths that read it once per call are spared the
 		/// boxing that the script-facing, object-typed <see cref="Size"/> costs.
 		/// </summary>
 		internal long size;
 
-		// The memory, which only Dispose frees: a __Delete run when the buffer, or an object holding it, is collected
-		// still reads it.
+		// Script destructors can still read this memory, so the cleanup pump owns its release.
 		private nint ptr;
 
 		/// <summary>
@@ -46,24 +40,31 @@ namespace Keysharp.Builtins
 					return;
 				}
 
-				var newptr = val == 0 ? 0 : NativeAllocation.Allocate(val);
+				if (val != 0)
+					MaybeActivateFinalizer();
 
-				if (ptr != 0)
+				var newptr = NativeAllocation.Allocate(val);
+				try
 				{
-					if (newptr != 0)
+					if (ptr != 0 && newptr != 0)
 						unsafe
 						{
 							System.Buffer.MemoryCopy((void*)ptr, (void*)newptr, val, Math.Min(size, val));
 						}
-
-					NativeAllocation.Free(ptr, size);
+				}
+				catch
+				{
+					NativeAllocation.Free(newptr, val);
+					throw;
 				}
 
+				var previous = ptr;
+				var previousSize = size;
 				ptr = newptr;
 				size = val;
+				NativeAllocation.Free(previous, previousSize);
 			}
 		}
-
 
 		/// <summary>
 		/// Creates a buffer from a byte count or byte array.
@@ -126,6 +127,7 @@ namespace Keysharp.Builtins
 					Unsafe.InitBlockUnaligned((void*)ptr, (byte)(fill & 255), (uint)bytecount);
 			}
 
+			GC.KeepAlive(this);
 			return DefaultObject;
 		}
 
@@ -141,34 +143,21 @@ namespace Keysharp.Builtins
 			var copy = (Buffer)MemberwiseClone();
 			copy.ptr = 0;
 			copy.size = 0;
-			copy.disposed = false;
 			copy.Size = size;
 			AsSpan().CopyTo(copy.AsSpan());
+			GC.KeepAlive(this);
 			return copy;
 		}
 
 		/// <summary>
-		/// Dispose the object and set a flag so it doesn't get disposed twice.
-		/// </summary>
-		/// <param name="disposing">If true, disposing already, so skip, else dispose.</param>
-		internal object Dispose(bool disposing)
-		{
-			if (!disposed)
-			{
-				NativeAllocation.Free(ptr, size);
-				ptr = 0;
-				size = 0;
-				disposed = true;
-			}
-			return DefaultObject;
-		}
-
-		/// <summary>
-		/// The implementation for <see cref="IDisposable.Dispose"/> which just calls Dispose(true).
+		/// Frees the buffer's native storage.
 		/// </summary>
 		void IDisposable.Dispose()
 		{
-			Dispose(true);
+			var previousSize = size;
+			var previous = Interlocked.Exchange(ref ptr, 0);
+			size = 0;
+			NativeAllocation.Free(previous, previousSize);
 			HasFinalizer = false;
 		}
 
@@ -183,11 +172,12 @@ namespace Keysharp.Builtins
 			if (size > 0)
 				Marshal.Copy(ptr, dataArray, 0, size);
 
+			GC.KeepAlive(this);
 			return dataArray;
 		}
 
 		/// <summary>
-		/// Returns a mutable Span wrapper for the raw buffer.
+		/// Returns a mutable Span wrapper for the raw buffer. The caller keeps this Buffer alive while using it.
 		/// </summary>
 		internal unsafe Span<byte> AsSpan() => size == 0 ? Span<byte>.Empty : new Span<byte>((byte*)ptr, (int)size);
 
@@ -203,10 +193,13 @@ namespace Keysharp.Builtins
 			{
 				if (index > 0 && index <= size)
 				{
+					long value;
 					unsafe
 					{
-						return ((byte*)ptr)[index - 1];
+						value = ((byte*)ptr)[index - 1];
 					}
+					GC.KeepAlive(this);
+					return value;
 				}
 				else
 					return (long)Errors.IndexErrorOccurred($"Invalid index of {index} for buffer of size {Size}.", DefaultErrorLong);

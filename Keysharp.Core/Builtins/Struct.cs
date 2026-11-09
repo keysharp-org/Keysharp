@@ -67,14 +67,13 @@ namespace Keysharp.Builtins
 		private void Allocate()
 		{
 			memory = MemoryKind.Owned;
+			MaybeActivateFinalizer();
 
 			if (Layout.Size != 0)
 			{
 				data = NativeAllocation.Allocate(Layout.Size);
 				unsafe { NativeMemory.Clear((void*)data, (nuint)Layout.Size); }
 			}
-
-			MaybeActivateFinalizer();
 		}
 
 		// An instance of the prototype's class with no memory, or null after a reported error.
@@ -289,9 +288,9 @@ namespace Keysharp.Builtins
 
 		// Embedded objects are cleaned up by their owner, after its __Delete and before its storage is freed. A view needs
 		// nothing done unless it receives __Delete.
-		internal override bool DisposesWhenCollected => !isEmbedded && (memory == MemoryKind.Owned && data != 0 || initializedFields != null);
+		internal override bool DisposesWhenCollected => !isEmbedded && (memory == MemoryKind.Owned && Layout.Size != 0 || initializedFields != null);
 
-		// Not until the struct has memory, or the address of a view, which construction leaves to its caller.
+		// Construction leaves cleanup inactive until initialization begins or a view attaches its address.
 		internal override void MaybeActivateFinalizer()
 		{
 			if (memory != MemoryKind.Unattached)
@@ -306,9 +305,9 @@ namespace Keysharp.Builtins
 			if (memory == MemoryKind.Disposed)
 				return;
 
-			var owned = memory == MemoryKind.Owned ? data : 0;
+			var ownsMemory = memory == MemoryKind.Owned;
+			var owned = Interlocked.Exchange(ref data, 0);
 			memory = MemoryKind.Disposed;
-			data = 0;
 			HasFinalizer = false;
 
 			ExceptionDispatchInfo failure = null;
@@ -324,7 +323,8 @@ namespace Keysharp.Builtins
 			}
 			finally
 			{
-				NativeAllocation.Free((nint)owned, Layout.Size);
+				if (ownsMemory)
+					NativeAllocation.Free((nint)owned, Layout.Size);
 				addressOwner = null;
 				nestedViews = null;
 				initializedFields = null;
@@ -754,10 +754,15 @@ namespace Keysharp.Builtins
 				_ = Script.TheScript.Vars.Statics[type];
 		}
 
-		private static object ReadPrimitive(NativeTypeCode kind, long address) => NativeType.ReadMemory(kind, (nint)address);
+		private object ReadPrimitive(NativeTypeCode kind, long address)
+		{
+			var value = NativeType.ReadMemory(kind, (nint)address);
+			GC.KeepAlive(this);
+			return value;
+		}
 
 		// As AutoHotkey's SetValueOfTypeAtPtr, a typed number takes a number only: an object or unset is a TypeError.
-		private static unsafe bool WritePrimitive(NativeTypeCode kind, long address, object value)
+		private unsafe bool WritePrimitive(NativeTypeCode kind, long address, object value)
 		{
 			if (value is null or Any)
 			{
@@ -777,6 +782,7 @@ namespace Keysharp.Builtins
 				else
 					Unsafe.WriteUnaligned(ptr, d);
 
+				GC.KeepAlive(this);
 				return true;
 			}
 
@@ -806,6 +812,7 @@ namespace Keysharp.Builtins
 					break;
 			}
 
+			GC.KeepAlive(this);
 			return true;
 		}
 

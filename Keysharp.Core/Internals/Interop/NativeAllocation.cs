@@ -1,8 +1,7 @@
 namespace Keysharp.Internals.Interop
 {
 	/// <summary>
-	/// Native memory for a Buffer or Struct, which the GC cannot see. A large block is reported as memory pressure, so a
-	/// loop allocating big buffers collects, and frees, them instead of committing native memory until a gen0 GC.
+	/// Native memory for a Buffer or Struct, reported as memory pressure when the block is large enough.
 	/// </summary>
 	internal static class NativeAllocation
 	{
@@ -10,12 +9,24 @@ namespace Keysharp.Internals.Interop
 
 		internal static nint Allocate(long bytes)
 		{
-			var ptr = Marshal.AllocHGlobal((nint)bytes);
+			ArgumentOutOfRangeException.ThrowIfNegative(bytes);
+			if (bytes == 0)
+				return 0;
 
-			if (bytes >= PressureThreshold)
-				GC.AddMemoryPressure(bytes);
+			var ptr = Marshal.AllocHGlobal(checked((nint)bytes));
 
-			return ptr;
+			try
+			{
+				if (bytes >= PressureThreshold)
+					GC.AddMemoryPressure(bytes);
+
+				return ptr;
+			}
+			catch
+			{
+				Marshal.FreeHGlobal(ptr);
+				throw;
+			}
 		}
 
 		internal static void Free(nint ptr, long bytes)

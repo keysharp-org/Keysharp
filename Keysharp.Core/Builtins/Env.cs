@@ -435,7 +435,11 @@ namespace Keysharp.Builtins
 					_ = Reflections.TryGetSizeProperty(data, out sourceLength);//0/false when no Size; the > 0 guard below handles it.
 
 				if (sourceLength > 0)
-					return CopyClipboardBytes((nint)ptr, sourceLength, size);
+				{
+					var bytes = CopyClipboardBytes((nint)ptr, sourceLength, size);
+					GC.KeepAlive(data);
+					return bytes;
+				}
 			}
 
 			return System.Array.Empty<byte>();

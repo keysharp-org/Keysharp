@@ -623,6 +623,7 @@ namespace Keysharp.Internals.Strings
 				if (size != 0)
 					Marshal.Copy((nint)ptr, bytes, 0, (int)size);
 
+				GC.KeepAlive(value);
 				return bytes;
 			}
 

@@ -1466,14 +1466,18 @@ namespace Keysharp.Builtins
 			return DefaultObject;
 		}
 
-		private static void Append(TextStream stream, object value, bool raw) => _ = value switch
+		private static void Append(TextStream stream, object value, bool raw)
 		{
-			string s when !raw => stream.WriteText(s),
-			string s => stream.WriteBytes(MemoryMarshal.AsBytes(s.AsSpan())),
-			Buffer buffer => stream.WriteBytes(buffer.AsSpan()),
-			byte[] bytes => stream.WriteBytes(bytes),
-			_ => 0L
-		};
+			_ = value switch
+			{
+				string s when !raw => stream.WriteText(s),
+				string s => stream.WriteBytes(MemoryMarshal.AsBytes(s.AsSpan())),
+				Buffer buffer => stream.WriteBytes(buffer.AsSpan()),
+				byte[] bytes => stream.WriteBytes(bytes),
+				_ => 0L
+			};
+			GC.KeepAlive(value);
+		}
 
 		// AHK takes UTF-16 as code units, preserving unpaired surrogates.
 		private static string DecodeFileText(ReadOnlySpan<byte> bytes, Encoding encoding)

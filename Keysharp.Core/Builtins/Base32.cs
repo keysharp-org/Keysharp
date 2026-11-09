@@ -26,7 +26,11 @@ namespace Keysharp.Builtins
 
 				// A Buffer can be encoded without copying its memory to a managed byte array.
 				if (value is Buffer b)
-					return EncodeBytes(b.AsSpan());
+				{
+					var encoded = EncodeBytes(b.AsSpan());
+					GC.KeepAlive(b);
+					return encoded;
+				}
 
 				var raw = Conversions.ToByteArray(value, enc);
 				return raw == null ? "" : EncodeBytes(raw);

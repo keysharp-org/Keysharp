@@ -145,16 +145,13 @@ namespace Keysharp.Builtins.COM
 			else
 				vt = (VarEnum)vtValue;
 
-			Ptr = value;
 			var flags = args.Length > 2 ? args[2] : null;
 
 			if (!flags.CoerceLong(out var flagsValue))
 				return;
 
 			Flags = flagsValue;
-
-			if (this.vt == VarEnum.VT_BSTR && value is not long)
-				Flags |= F_OWNVALUE;
+			Ptr = value;
 		}
 
 		public static object staticCall(object @this, object varType, object value, object flags = null)

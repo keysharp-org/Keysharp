@@ -26,7 +26,11 @@ namespace Keysharp.Builtins
 
 				// A Buffer can be encoded without copying its memory to a managed byte array.
 				if (value is Buffer b)
-					return Convert.ToHexString(b.AsSpan());
+				{
+					var encoded = Convert.ToHexString(b.AsSpan());
+					GC.KeepAlive(b);
+					return encoded;
+				}
 
 				var raw = Conversions.ToByteArray(value, enc);
 				return raw == null ? "" : Convert.ToHexString(raw);

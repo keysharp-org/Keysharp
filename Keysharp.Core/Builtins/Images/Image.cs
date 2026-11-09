@@ -719,6 +719,7 @@ namespace Keysharp.Builtins
 					ImageHelper.WriteBufferToBitmap(bmp, (byte*)ptr, bpp);
 				}
 
+				GC.KeepAlive(data);
 				return Wrap(bmp, failMsg: "Could not create an image from the given pixel data.");
 			}
 
@@ -2274,6 +2275,7 @@ namespace Keysharp.Builtins
 				baseBitmap = canvas;
 				SyncGcPressure();
 #endif
+				GC.KeepAlive(data);
 				return this;
 			}
 
@@ -2608,13 +2610,8 @@ namespace Keysharp.Builtins
 				return true;
 			}
 
-			// A System.Drawing.Bitmap's real weight is unmanaged GDI memory; the managed KeysharpImage/Bitmap
-			// wrappers are a few dozen bytes, so the GC sees almost nothing, feels no pressure, and doesn't run —
-			// the finalizer that disposes these bitmaps (via DestructorPump) then never fires and undisposed
-			// captures pile into a rising high-water mark. Registering the bitmaps' byte size as GC memory
-			// pressure lets the GC schedule collection on cue, so the automatic cleanup reclaims them and scripts
-			// need no manual Dispose. Self-balancing: it reconciles the amount already registered against the live
-			// bitmaps on every state change, and Dispose (disposed => 0 bytes) drives it back to zero.
+			// Native bitmap bytes are invisible to the GC. Account for their approximate size while this image owns
+			// them; explicit disposal and the script's cleanup pump both balance the registration.
 			private void SyncGcPressure()
 			{
 				long bytes = 0;
@@ -2637,6 +2634,14 @@ namespace Keysharp.Builtins
 					GC.RemoveMemoryPressure(gcPressure - bytes);
 
 				gcPressure = bytes;
+			}
+
+			private void ReleaseGcPressure()
+			{
+				var bytes = Interlocked.Exchange(ref gcPressure, 0);
+
+				if (bytes > 0)
+					GC.RemoveMemoryPressure(bytes);
 			}
 
 			// Approximate unmanaged footprint of a bitmap (32bpp: width * height * 4). Only a GC hint, so the
@@ -2827,19 +2832,26 @@ namespace Keysharp.Builtins
 					return;
 
 				disposed = true;
-				// Before the bitmap: the Graphics is attached to it.
-				ReleaseDrawState();
 
-				// A borrowed canvas bitmap belongs to the OverlaySurface that created it, which frees the GDI+
-				// wrapper and the memory underneath it in the one order that is safe.
-				if (ownsBitmap)
-					baseBitmap?.Dispose();
+				try
+				{
+					// Before the bitmap: the Graphics is attached to it.
+					ReleaseDrawState();
 
-				baseBitmap = null;
-				borrowedSurface = null;
-				pending.Clear();
-				DisposePendingResources();
-				SyncGcPressure();   // disposed => reconciles to 0, releasing all registered pressure
+					// A borrowed canvas bitmap belongs to the OverlaySurface that created it, which frees the GDI+
+					// wrapper and the memory underneath it in the one order that is safe.
+					if (ownsBitmap)
+						baseBitmap?.Dispose();
+
+					baseBitmap = null;
+					borrowedSurface = null;
+					pending.Clear();
+					DisposePendingResources();
+				}
+				finally
+				{
+					ReleaseGcPressure();
+				}
 			}
 
 			#endregion
