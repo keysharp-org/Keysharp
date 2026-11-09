@@ -4026,7 +4026,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "Real COM on Windows; the same late-bound surface is backed by D-Bus on Linux and by Apple Events on macOS, so target strings and member names differ per platform. The macOS backend is implemented but not yet verified on hardware. Functions that need vtables, reference counts or raw pointers throw off Windows."
+                     "notes":  "Windows uses COM; Linux uses D-Bus and macOS Apple Events, with different targets and members. macOS automation remains unverified on hardware. IUnknown object identity and lifetime are supported on every platform independently of these automation backends."
                  },
                  {
                      "category":  "Core Language",
@@ -8979,11 +8979,11 @@
                      "feature":  "ObjAddRef()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "The ObjAddRef and ObjRelease functions increment or decrement an object\u0027s reference count.",
-                     "tested-by":  "external-com.ahk"
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Adds one native IUnknown reference, keeping a managed target alive, and returns the new native count.",
+                     "tested-by":  "misc-object.ahk; ObjectPointerTests; external-com.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -9032,22 +9032,22 @@
                      "feature":  "ObjFromPtr()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "Retrieves the managed object for an IUnknown pointer, or creates a native COM wrapper which takes ownership of the supplied native reference. Returning a managed object does not consume a native reference.",
-                     "tested-by":  "misc-object.ahk"
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Converts an owned native IUnknown reference to a managed reference, releasing the native reference; Windows external COM wrappers take ownership instead.",
+                     "tested-by":  "misc-object.ahk; ObjectPointerTests"
                  },
                  {
                      "category":  "Collections",
                      "feature":  "ObjFromPtrAddRef()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "Retrieves the managed object for an IUnknown pointer, or creates a native COM wrapper which owns an additional native reference. Returning a managed object does not add a native reference. The caller retains ownership of any reference it supplied.",
-                     "tested-by":  "misc-object.ahk"
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Returns an object without consuming the caller\u0027s native reference. A Windows wrapper for an external COM object acquires an additional reference.",
+                     "tested-by":  "misc-object.ahk; ObjectPointerTests"
                  },
                  {
                      "category":  "Core Language",
@@ -9142,33 +9142,33 @@
                      "feature":  "ObjPtr()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "Returns an Integer containing the object's IUnknown address without adding a native reference. Keep the object alive while using the pointer.",
-                     "tested-by":  "misc-object.ahk; external-com.ahk"
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Returns the object\u0027s stable, borrowed IUnknown address. Keep the object alive while using it. Linux and macOS expose IUnknown identity and lifetime only, without IDispatch automation.",
+                     "tested-by":  "misc-object.ahk; ObjectPointerTests; external-com.ahk"
                  },
                  {
                      "category":  "Core Language",
                      "feature":  "ObjPtrAddRef()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "Returns an Integer containing the object's IUnknown address and adds a native reference, released with ObjRelease. This also applies to the COM wrappers of managed objects.",
-                     "tested-by":  "misc-object.ahk"
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Returns ObjPtr\u0027s address and adds one owned native reference, keeping the object alive until ObjRelease or transfer to ObjFromPtr.",
+                     "tested-by":  "misc-object.ahk; ObjectPointerTests"
                  },
                  {
                      "category":  "Collections",
                      "feature":  "ObjRelease()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "unsupported",
-                     "linux_wayland":  "unsupported",
-                     "macos":  "unsupported",
-                     "notes":  "The ObjAddRef and ObjRelease functions increment or decrement an object\u0027s reference count.",
-                     "tested-by":  "external-com.ahk"
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Releases one owned native IUnknown reference and returns the new native count. Ordinary script references are managed separately by the garbage collector.",
+                     "tested-by":  "misc-object.ahk; ObjectPointerTests; external-com.ahk"
                  },
                  {
                      "category":  "Core Language",

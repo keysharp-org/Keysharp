@@ -384,7 +384,7 @@ Status legend:
 | Clipboard | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Text, image, URI, custom MIME, wait, and change-notification operations use the native platform clipboard backends. See ClipboardAll() for the Wayland multi-format restore limitation. |
 | Sound APIs | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | SoundGetName, SoundGetVolume, SoundGetMute, SoundSetVolume and SoundSetMute support input and output devices on every platform. Component selection and SoundGetInterface are Windows-only. The Keysharp-only Ks.Audio class adds polyphonic playback, exact device selection, per-application sessions and recording alongside them. |
 | Registry APIs | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Windows Registry APIs are Windows-only. |
-| COM APIs | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | Real COM on Windows; the same late-bound surface is backed by D-Bus on Linux and by Apple Events on macOS, so target strings and member names differ per platform. The macOS backend is implemented but not yet verified on hardware. Functions that need vtables, reference counts or raw pointers throw off Windows. |
+| COM APIs | 🟢 Full | 🟡 Partial | 🟡 Partial | ⚪ Unknown | Windows uses COM; Linux uses D-Bus and macOS Apple Events, with different targets and members. macOS automation remains unverified on hardware. IUnknown object identity and lifetime are supported on every platform independently of these automation backends. |
 <!-- CAPABILITIES_OVERVIEW:END -->
 
 ## Overview
@@ -457,7 +457,7 @@ Common to both backends:
 * `ComObject()` starts the service or application if it is not running; `ComObjActive()` and `ComObjGet()` attach only, and throw otherwise. Neither platform has monikers, so `ComObjGet` is an alias of `ComObjActive`.
 * `ComObjQuery()` narrows which face of the object is used: a D-Bus interface on Linux, a scripting suite on macOS. Passing it up front as `ComObject`'s second argument does the same thing.
 * `ComValue()` uses a D-Bus signature on Linux or a four-character descriptor on macOS, while also accepting compatible `VT_` constants. `VarType` preserves either notation and is assignable.
-* `ComCall()`, `ObjAddRef()`, `ObjRelease()`, `ComObjValue()`, `ComObjFlags()`, `ComObjFromPtr()` and `ComObjArray()` throw an error stating the reason. They depend on vtables, reference counts or raw interface pointers, none of which exist on either backend.
+* `ComCall()`, `ComObjValue()`, `ComObjFlags()`, `ComObjFromPtr()` and `ComObjArray()` throw an error: D-Bus and Apple Events supply no native COM interfaces or VARIANTs.
 
 ### macOS specifics
 
@@ -558,7 +558,9 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ AutoHotkey therefore reads `"Str"` as a 2-byte short, `"Int16"` as **eight** bytes (it searches the whole name for a `6`), and accepts abbreviations such as `"i"`, `"D"` and `"Integer"`. Keysharp raises a `ValueError` for all of these, so a type that does not name a number cannot silently read or write the wrong bytes.
 	+ The accepted names are `Int`, `UInt`, `Int64`, `UInt64`, `Short`, `UShort`, `Char`, `UChar`, `Float`, `Double`, `Ptr` and `UPtr`.
 	+ A value that does not read as a number raises a `ValueError` rather than being written as a zero. The pointer-width types additionally accept an object carrying a `Ptr`.
-* On Windows, `ObjPtr()` returns an Integer containing the object's IUnknown address without adding a native reference. Keep the object alive while using this borrowed pointer. `ObjPtrAddRef()` returns the same address and adds a native reference, which must be released with `ObjRelease()`. These native reference counts apply to both COM objects and the COM wrappers of managed objects; ordinary script references are managed by .NET's garbage collector.
+* `ObjPtr()` returns a stable, borrowed IUnknown address on every platform; keep the object alive while using it. `ObjPtrAddRef()` adds an owned native reference, released with `ObjRelease()` or transferred to `ObjFromPtr()`.
+	+ `ObjFromPtr()` consumes an owned native reference when returning a managed object; a Windows wrapper for an external COM object owns it instead. `ObjFromPtrAddRef()` preserves the caller's native reference, acquiring an additional reference for an external COM wrapper.
+	+ Linux and macOS expose IUnknown identity and lifetime only, without IDispatch automation. Native reference counts exclude ordinary script references, which follow .NET's garbage collector.
 * `Sleep()` works, but uses `Application.DoEvents()` internally which is not a good programming practice and can lead to hard to solve bugs.
 	+ For this reason, it's recommended that users use timers for repeated execution rather than a loop with calls to `Sleep()`.
 	+ It will not do any sleeping if shutdown has been initiated.

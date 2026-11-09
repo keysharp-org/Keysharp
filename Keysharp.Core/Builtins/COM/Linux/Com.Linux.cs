@@ -4,9 +4,7 @@ using Keysharp.Internals.DBus;
 namespace Keysharp.Builtins.COM
 {
 	/// <summary>
-	/// The ComObj* function surface, backed by D-Bus. Functions whose meaning depends on COM machinery that D-Bus
-	/// simply does not have — vtable slots, reference counts, raw interface pointers — throw a clear error rather
-	/// than returning a fabricated value.
+	/// The ComObj* function surface, backed by D-Bus. Native COM operations without a D-Bus equivalent report an error.
 	/// </summary>
 	public static class Com
 	{
@@ -82,12 +80,6 @@ namespace Keysharp.Builtins.COM
 
 		public static object ComCall(object index, object comObj, params object[] parameters)
 			=> Unsupported("ComCall", "D-Bus has no vtables; call the method by name on the object instead.");
-
-		public static object ObjAddRef(object ptr)
-			=> Unsupported("ObjAddRef", "D-Bus objects are not reference counted.");
-
-		public static object ObjRelease(object ptr)
-			=> Unsupported("ObjRelease", "D-Bus objects are not reference counted.");
 
 		public static object ComObjValue(object comObj)
 			=> comObj is ComValue ? Unsupported("ComObjValue", "A D-Bus object is addressed by name and path, not by pointer.")

@@ -51,7 +51,6 @@ AssertEq(plainObj.Base, Object.Prototype, A_LineNumber)
 
 AssertEq(plainObj.Base.Base, Any.Prototype, A_LineNumber)
 
-#if WINDOWS
 obj := Map(1, "a", "b", 2)
 punk := ObjPtr(obj)
 AssertEq(Type(punk), "Integer", A_LineNumber)
@@ -60,40 +59,52 @@ context := Buffer(A_PtrSize)
 NumPut("Ptr", punk, context)
 contexts := Map(punk, obj)
 Assert(contexts.Has(NumGet(context, "Ptr")), A_LineNumber)
-AssertEq(ObjFromPtrAddRef(NumGet(context, "Ptr")), obj, A_LineNumber)
-ObjAddRef(punk), count := ObjRelease(punk)
-
-AssertEq(count, 0, A_LineNumber)
-
-got := ObjFromPtrAddRef(punk)
-
+got := ObjFromPtrAddRef(NumGet(context, "Ptr"))
+AssertEq(got, obj, A_LineNumber)
 Assert(got is Map, A_LineNumber)
+ptrReads := []
+ptrHolder := {}.DefineProp("Ptr", {Get: (*) => (ptrReads.Push(1), punk)})
+AssertEq(ObjFromPtrAddRef(ptrHolder), obj, A_LineNumber)
+AssertEq(ptrReads.Length, 1, A_LineNumber)
+AssertEq(ObjAddRef(punk), 1, A_LineNumber)
+AssertEq(ObjRelease(punk), 0, A_LineNumber)
 
-ObjAddRef(punk), count := ObjRelease(punk)
-
-AssertEq(count, 0, A_LineNumber)
-
-obj2 := Map(1, "a", "b", 2)
-punk := ObjPtrAddRef(obj2) ; returns a raw pointer with the ref count being 1 initially
-ObjAddRef(punk), count := ObjRelease(punk)
-
-AssertEq(count, 1, A_LineNumber)
-
-punk2 := ObjPtrAddRef(obj2)
-ObjAddRef(punk2), count := ObjRelease(punk2)
-
-AssertEq(count, 2, A_LineNumber)
-ObjRelease(punk2)
-ObjRelease(punk)
-
-obj3 := Map(1, "a", "b", 2)
-punk3 := ObjPtrAddRef(obj3)
-got2 := ObjFromPtrAddRef(punk3)
-
-Assert(got2 is Map, A_LineNumber)
-
-ObjRelease(punk3)
+#if WINDOWS
+AssertEq(ObjAddRef(obj), 1, A_LineNumber)
+AssertEq(ObjRelease(punk), 0, A_LineNumber)
 #endif
+
+Throws(() => ObjFromPtr(0), A_LineNumber, ValueError)
+Throws(() => ObjFromPtrAddRef("invalid"), A_LineNumber, ValueError)
+Throws(() => ObjAddRef(0), A_LineNumber, ValueError)
+Throws(() => ObjRelease(0), A_LineNumber, ValueError)
+
+; Native code can query the pointer's IUnknown interface.
+iid := Buffer(16, 0)
+NumPut("UChar", 0xC0, iid, 8)
+NumPut("UChar", 0x46, iid, 15)
+queryInterface := NumGet(NumGet(punk, "Ptr"), "Ptr")
+queried := 0
+result := DllCall(queryInterface, "Ptr", punk, "Ptr", iid, "Ptr*", &queried, "Int")
+AssertEq(result, 0, A_LineNumber)
+AssertEq(queried, punk, A_LineNumber)
+if result = 0 && queried != 0 {
+	AssertEq(ObjFromPtrAddRef(queried), obj, A_LineNumber)
+	AssertEq(ObjRelease(queried), 0, A_LineNumber)
+}
+
+owned := ObjPtrAddRef(obj)
+second := ObjPtrAddRef(obj)
+AssertEq(owned, punk, A_LineNumber)
+AssertEq(second, punk, A_LineNumber)
+AssertEq(ObjAddRef(punk), 3, A_LineNumber)
+AssertEq(ObjRelease(punk), 2, A_LineNumber)
+AssertEq(ObjRelease(second), 1, A_LineNumber)
+adopted := ObjFromPtr(owned)
+AssertEq(adopted, obj, A_LineNumber)
+AssertEq(ObjAddRef(punk), 1, A_LineNumber)
+AssertEq(ObjRelease(punk), 0, A_LineNumber)
+AssertEq(ObjPtr(adopted), punk, A_LineNumber)
 
 ; GetMethod follows the prototype chain and returns the function object as stored, checking ParamCount against it.
 withMethod := {}

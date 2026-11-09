@@ -380,68 +380,30 @@ namespace Keysharp.Builtins
 
 			return Errors.TypeErrorOccurred(obj, typeof(KeysharpObject));
 		}
-#if WINDOWS
+
 		/// <summary>
 		/// Returns the object's IUnknown address without adding a native reference.
 		/// The caller must keep the object alive while using this borrowed pointer.
 		/// </summary>
-		public static long ObjPtr(object obj)
-		{
-			if (obj == null)
-				return 0;
-
-			var punk = Marshal.GetIUnknownForObject(obj);
-			_ = Marshal.Release(punk);
-			return punk;
-		}
+		public static long ObjPtr(object obj) => ObjectPointers.GetPointer(obj, addRef: false);
 
 		/// <summary>
 		/// Returns the object's IUnknown address and adds a native reference, released with ObjRelease.
 		/// </summary>
-		public static long ObjPtrAddRef(object obj)
-		{
-			if (obj == null)
-				return 0;
+		public static long ObjPtrAddRef(object obj) => ObjectPointers.GetPointer(obj, addRef: true);
 
-			// GetIUnknownForObject always adds one ref
-			return Marshal.GetIUnknownForObject(obj);
-		}
+		public static object ObjAddRef(object ptr) => ObjectPointers.ChangeReference(ptr, addRef: true);
+
+		public static object ObjRelease(object ptr) => ObjectPointers.ChangeReference(ptr, addRef: false);
 
 		/// <summary>
-		/// Returns either a managed object or COM object wrapped in `ComObject` from a pointer.
+		/// Converts one owned native reference to a managed reference or an owning COM wrapper.
 		/// </summary>
-		public static object ObjFromPtr(object ptr)
-		{
-			// A native COM wrapper takes over the caller's counted reference. A Keysharp object's pointer has no reference.
-			if (ObjectFromPointer(ptr, out var punk) is not { } obj)
-				return DefaultObject;
+		public static object ObjFromPtr(object ptr) => ObjectPointers.FromPointer(ptr, takeOwnership: true);
 
-			return Marshal.IsComObject(obj) ? new ComValue(VarEnum.VT_UNKNOWN, (long)punk) : obj;
-		}
-
-		// Mostly for compatibility with AHK
-		public static object ObjFromPtrAddRef(object ptr)
-		{
-			if (ObjectFromPointer(ptr, out _) is not { } obj)
-				return DefaultObject;
-
-			return Marshal.IsComObject(obj) ? new ComValue(VarEnum.VT_UNKNOWN, obj) : obj;
-		}
-
-		private static object ObjectFromPointer(object ptr, out nint punk)
-		{
-			Reflections.TryGetPtrProperty(ptr, out var address);
-			punk = (nint)address;
-
-			if (punk == 0)
-			{
-				_ = Errors.ValueErrorOccurred("The pointer was 0.");
-				return null;
-			}
-
-			return Marshal.GetObjectForIUnknown(punk);
-		}
-
-#endif
+		/// <summary>
+		/// Returns an object reference without consuming the caller's native reference.
+		/// </summary>
+		public static object ObjFromPtrAddRef(object ptr) => ObjectPointers.FromPointer(ptr, takeOwnership: false);
 	}
 }

@@ -430,40 +430,6 @@ namespace Keysharp.Builtins.COM
 		public static object ComObjValue(object comObj)
 			=> comObj is ComValue co ? co.Ptr : Errors.TypeErrorOccurred(comObj, typeof(ComValue), DefaultObject);
 
-		public static object ObjAddRef(object ptr)
-		{
-			nint unk = 0;
-
-			if (ptr is ComValue co)
-				ptr = co.Ptr;
-
-			if (ptr is long l)
-			{
-				unk = new nint(l);
-			}
-			else
-			{
-				unk = Marshal.GetIUnknownForObject(ptr);
-				_ = Marshal.AddRef(unk);
-				return (long)Marshal.Release(unk);//GetIUnknownForObject already added 1.
-			}
-
-			return (long)Marshal.AddRef(unk);
-		}
-
-		public static object ObjRelease(object ptr)
-		{
-			if (ptr is ComValue co)
-				ptr = co.Ptr;
-
-			if (ptr is long l)
-				ptr = new nint(l);
-			else
-				return Errors.TypeErrorOccurred(ptr, typeof(ComValue), DefaultObject);
-
-			return (long)Marshal.Release((nint)ptr);
-		}
-
 		/// <summary>
 		/// Gotten loosely from https://social.msdn.microsoft.com/Forums/vstudio/en-US/cbb92470-979c-4d9e-9555-f4de7befb42e/how-to-directly-access-the-virtual-method-table-of-a-com-interface-pointer?forum=csharpgeneral
 		/// </summary>

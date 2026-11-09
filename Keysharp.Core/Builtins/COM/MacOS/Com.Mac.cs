@@ -4,9 +4,7 @@ using Keysharp.Internals.AppleEvents;
 namespace Keysharp.Builtins.COM
 {
 	/// <summary>
-	/// The ComObj* function surface, backed by Apple Events. Functions whose meaning depends on COM machinery that
-	/// Apple Events simply does not have — vtable slots, reference counts, raw interface pointers — throw a clear
-	/// error rather than returning a fabricated value.
+	/// The ComObj* function surface, backed by Apple Events. Native COM operations without an Apple Events equivalent report an error.
 	/// </summary>
 	public static class Com
 	{
@@ -94,12 +92,6 @@ namespace Keysharp.Builtins.COM
 
 		public static object ComCall(object index, object comObj, params object[] parameters)
 			=> Unsupported("ComCall", "Apple Events have no vtables; send the command by name to the object instead.");
-
-		public static object ObjAddRef(object ptr)
-			=> Unsupported("ObjAddRef", "Apple Events objects are not reference counted.");
-
-		public static object ObjRelease(object ptr)
-			=> Unsupported("ObjRelease", "Apple Events objects are not reference counted.");
 
 		public static object ComObjValue(object comObj)
 			=> comObj is ComValue ? Unsupported("ComObjValue", "An Apple Events object is a query against an application, not a pointer.")
