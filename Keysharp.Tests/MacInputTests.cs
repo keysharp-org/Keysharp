@@ -315,23 +315,33 @@ public class MacInputTests
 			foreach (var physical in new[] { true, false })
 				foreach (var down in new[] { true, false })
 				{
-					var ev = MacNativeInput.CreateKeyboardEvent(VK_MEDIA_REWIND, down, KeyBlockThis, 0, capsLockOn: false);
+					// System-defined CGEvents can retain injected metadata after attempts to clear it.
+					using var pool = new MonoMac.Foundation.NSAutoreleasePool();
+					using var native = physical
+						? MonoMac.AppKit.NSEvent.OtherEvent(MonoMac.AppKit.NSEventType.SystemDefined, default,
+							0, 0, 0, null, 8, (20 << 16) | (down ? 0x0A00 : 0x0B00), -1)
+						: null;
+					var ev = physical ? native.CGEvent
+						: MacNativeInput.CreateKeyboardEvent(VK_MEDIA_REWIND, down, KeyBlockThis, 0, capsLockOn: false);
 					try
 					{
 						Assert.AreNotEqual(nint.Zero, ev);
 						if (physical)
 						{
-							MacNativeInput.CGEventSetIntegerValueField(ev, MacNativeInput.kCGEventSourceUserData, 0);
 							MacNativeInput.CGEventSetIntegerValueField(ev, MacNativeInput.kCGEventSourceUnixProcessID, 0);
 							MacNativeInput.CGEventSetIntegerValueField(ev, MacNativeInput.kCGEventSourceStateID,
 								MacNativeInput.kCGEventSourceStateHIDSystemState);
 						}
 
+						var raw = MacNativeInput.CGEventGetIntegerValueField(ev, MacNativeInput.kCGEventSourceUserData);
+						var metadata = MacNativeInput.TryDecodeInjectedExtraInfo(raw, out _, out _);
+						Assert.AreEqual(physical ? MacKeyboardState.Origin.PhysicalHid : MacKeyboardState.Origin.KeysharpSynthetic,
+							MacNativeInput.ClassifyEventOrigin(ev, metadata), "event fixture origin");
 						Assert.IsTrue(hook.ProcessNativeKeyboardEvent(MacNativeInput.kCGEventSystemDefined, ev));
 						Assert.AreEqual(physical && down, hook.physicalKeyState[VK_MEDIA_REWIND] != 0);
 						Assert.AreEqual(0, hook.physicalKeyState['A']);
 					}
-					finally { if (ev != nint.Zero) MacNativeInput.CFRelease(ev); }
+					finally { if (!physical && ev != nint.Zero) MacNativeInput.CFRelease(ev); }
 				}
 		}
 		finally { script.KeyboardData.blockInput = blocked; }
