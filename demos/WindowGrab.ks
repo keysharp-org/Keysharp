@@ -7,8 +7,8 @@
     WindowGrab — grab ANY window from ANY point with the mouse (no title bar needed, without activating it):
 
         Win + Left-drag    move the window under the cursor around the screen
-        Win + Right-drag   fade the window under the cursor: drag LEFT = more transparent, RIGHT = opaque
-        Win + Right-click   (no drag) toggle: opaque -> 50% transparent -> opaque
+        Win + Right-drag   fade the window under the cursor: drag left = more transparent, right = opaque (Windows/Linux)
+        Win + Right-click   (no drag) toggle: opaque -> 50% transparent -> opaque (Windows/Linux)
         Esc  (while dragging)  cancel — snap the window back to where the grab started
         Ctrl+Alt+Shift+Q   quit
 
@@ -20,7 +20,8 @@
     Config: the Super/Win/Cmd modifier ("#") is the default. On desktops that already use Super+drag to move
     windows (some Linux DEs) rebind ModMove/ModFade below to e.g. "!" (Alt). macOS "#" = Command.
     Cross-platform: moving/fading a foreign window works on Windows and X11 natively; on Wayland it needs a
-    compositor backend (KWin/GNOME/Cinnamon); on macOS it needs Accessibility permission.
+    compositor backend (KWin/GNOME/Cinnamon). On macOS, moving needs Accessibility permission; fading is disabled
+    because other applications' window opacity cannot be changed through public APIs.
 */
 
 class WindowGrab {
@@ -35,12 +36,16 @@ class WindowGrab {
         SetWinDelay(-1)
         Shell.SetTrayIcon("✋")
         Hotkey(this.ModMove "LButton", (*) => this.MoveGrab())
+#if !OSX
         Hotkey(this.ModFade "RButton", (*) => this.FadeGrab())
+#endif
         Hotkey("^!+q", (*) => ExitApp())                 ; Ctrl+Alt+Shift+Q — the shared demo-quit chord
         local lines := [
             [this.PrettyMod() " + Left-drag", "Move the window under the cursor"],
+#if !OSX
             [this.PrettyMod() " + Right-drag", "Fade it — left clearer, right opaque"],
             [this.PrettyMod() " + Right-click", "Toggle 50% / opaque"],
+#endif
             ["Esc (while dragging)", "Cancel — snap back to where it started"],
             ["Ctrl+Alt+Shift+Q", "Exit"] ]
         Shell.Show("Window Grab", lines)
@@ -91,6 +96,7 @@ class WindowGrab {
         }
     }
 
+#if !OSX
     ; --- Win+Right: fade with a horizontal drag, or toggle on a click ----------------------------------
     static FadeGrab() {
         CoordMode("Mouse", "Screen")
@@ -149,6 +155,7 @@ class WindowGrab {
         try t := WinGetTransparent(id)               ; a window closed mid-gesture reads back as opaque, not a crash
         return (t = "" || t = "Off") ? 255 : t
     }
+#endif
 
     ; Guard: a real top-level window exists under the cursor (rejects the no-match / 0-handle case).
     static Movable(id) => id && WinExist(id)
