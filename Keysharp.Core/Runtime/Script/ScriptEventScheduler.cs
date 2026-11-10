@@ -1289,7 +1289,6 @@ namespace Keysharp.Runtime
 			_ = script.MonitorEventManager.RemoveOwned(this);
 			_ = script.AudioEventManager.RemoveOwned(this);
 			_ = script.InputEventManager.RemoveOwned(this);
-			_ = script.ClipboardEventManager.RemoveOwned(this);
 			_ = script.ScriptMessageManager.RemoveOwned(this);
 		}
 

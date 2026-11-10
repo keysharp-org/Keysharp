@@ -187,7 +187,7 @@ namespace Keysharp.Runtime
 		internal static readonly Semver.SemVersion DefaultCompatibilityVersion = new(2, 0, 0);
 		[ThreadStatic]
 		internal static int currentCompatibilityLevel;
-		internal CallbackRegistry ClipFunctions = new(threadName: "OnClipboardChange");
+		internal CallbackRegistry ClipFunctions = new(threadName: "OnClipboardChange", captureQueuedCallbacks: true);
 		internal List<object> hotCriterions = [];
 		internal List<object> hotExprs = [];
 		internal InputType input;
@@ -508,10 +508,6 @@ namespace Keysharp.Runtime
 		/// until the first subscription.</summary>
 		internal MonitorEventManager MonitorEventManager { get; }
 
-		/// <summary>Per-script engine for <c>Clipboard.OnChange</c> subscriptions. Separate from
-		/// <see cref="ClipFunctions"/>, which is the AHK <c>OnClipboardChange</c> handler chain; both want the same
-		/// native monitor, and <see cref="ClipboardMonitoringWanted"/> is what reconciles them.</summary>
-		internal ClipboardEventManager ClipboardEventManager { get; }
 
 		/// <summary>Per-script engine for <c>Script.OnMessage</c> subscriptions, fed by <see cref="endpoint"/>.</summary>
 		internal ScriptMessageManager ScriptMessageManager { get; }
@@ -630,7 +626,6 @@ namespace Keysharp.Runtime
 			DestructorPump = new(this);
 			WinEventManager = new(this);
 			MonitorEventManager = new(this);
-			ClipboardEventManager = new(this);
 			ScriptMessageManager = new(this);
 			ClrEventManager = new();
 			AudioService = new(this);
@@ -1616,7 +1611,6 @@ namespace Keysharp.Runtime
 			// Same reasoning as ClrEventManager below: the monitor backend hangs off the *static*
 			// SystemEvents.DisplaySettingsChanged, so it has to be detached explicitly or it roots this Script.
 			Teardown(MonitorEventManager.Dispose);
-			Teardown(ClipboardEventManager.Dispose);
 			Teardown(() => endpoint?.Dispose());
 			Teardown(ScriptMessageManager.Dispose);
 			// Stops every open output and releases the backend. An output that a script dropped without closing
@@ -1770,7 +1764,7 @@ namespace Keysharp.Runtime
 					|| input != null || HotkeyData.shk.Length > 0)
 				return true;
 
-			return WinEventManager.IsKeepingScriptRunning || ClipboardEventManager.IsKeepingScriptRunning
+			return WinEventManager.IsKeepingScriptRunning
 				   || HotstringManager.Hotstrings.Length > 0 || FlowData.timers.AnyEnabled || ClipFunctions.Count > 0
 				   || includeWindows && Gui.AnyExistingVisibleWindows(this);
 		}
@@ -1840,14 +1834,12 @@ namespace Keysharp.Runtime
 
 		private void PrivateClipboardUpdate(params object[] o)
 		{
-			// The resolved clipboard backend reports the event type (0 = empty, 1 = text, 2 = other), read once for
-			// both consumers so they cannot disagree about what changed.
+			// The resolved clipboard backend reports the event type (0 = empty, 1 = text, 2 = other).
 			var changeType = Clipboard.ChangeType();
 			// Dispatch to the OnClipboardChange handlers and discard the aggregate result. It must NOT be wrapped
 			// in IfTest/ForceBool: InvokeEventHandlers returns null when a handler is deferred (e.g. a re-entrant
 			// A_Clipboard:= from a hotkey thread) or returns nothing, and ForceBool(null) throws "input was unset".
 			ClipFunctions.InvokeEventHandlers(changeType);
-			ClipboardEventManager.Dispatch(changeType);
 		}
 
 		// The native type a built-in type shares with others for rebasing: Class is an Object, and AutoHotkey's BoundFunc,
@@ -1865,9 +1857,8 @@ namespace Keysharp.Runtime
 			return typeof(Any);
 		}
 
-		/// <summary>Whether anything wants the native clipboard-change source: an <c>OnClipboardChange</c> handler,
-		/// or a <c>Clipboard.OnChange</c> hook. The two register separately and either one is enough.</summary>
-		internal bool ClipboardMonitoringWanted => ClipFunctions.Count > 0 || ClipboardEventManager.HasSubscriptions;
+		/// <summary>Whether a clipboard-change handler wants the native source.</summary>
+		internal bool ClipboardMonitoringWanted => ClipFunctions.Count > 0;
 
 		internal void UpdateClipboardMonitoring() => ApplyClipboardMonitoring(ClipboardMonitoringWanted);
 

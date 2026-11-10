@@ -99,18 +99,16 @@ AssertEq(info.StdOut.Read(), "stdin-ok", A_LineNumber)
 AssertEq(info.StdErr.Read(), "stderr-ok", A_LineNumber)
 info.Close()
 
-; A script is among the running scripts and answers its own messages, served while Send waits. Hooks answer in start
-; order, and one returning an empty string leaves the message to the next.
-Echo(Hook, Data, Sender) {
+; A script answers its own messages while Send waits. An empty reply continues the handler chain.
+Echo(Data, Sender) {
 	if (Data is Buffer)
 		return Data
 	return Data = "pass on" ? "" : "echo:" Data ":" Sender.PID
 }
-PassOn(Hook, Data, Sender) => "second"
+PassOn(Data, Sender) => "second"
 
-echoHook := Script.OnMessage(Echo)
-passOnHook := Script.OnMessage(PassOn)
-AssertEq(Script.Hooks.Length, 2, A_LineNumber)
+Script.OnMessage(Echo)
+Script.OnMessage(PassOn)
 self := ""
 
 for running in Script.Running
@@ -133,9 +131,8 @@ Assert(reply is Buffer && reply.Size = 0, A_LineNumber)
 Throws(() => self.Send({Ptr: 0, Size: "bad"}), A_LineNumber, TypeError)
 postTask := self.Post(bytes)
 reply := Await(postTask)
-echoHook.Stop()
-passOnHook.Stop()
-AssertEq(Script.Hooks.Length, 0, A_LineNumber)
+Script.OnMessage(Echo, 0)
+Script.OnMessage(PassOn, 0)
 AssertEq(self.Send("hi"), "", A_LineNumber)
 Assert(!self.IsExited, A_LineNumber)
 
@@ -147,14 +144,14 @@ child := RunScript(headlessDirectives . "
 	SetTimer(() => ExitApp(88), -30000)
 	exitState := {Count: 0}
 	OnExit((Reason, Code) => (FileAppend(Reason, "*"), Reason = "Close" && ++exitState.Count = 1))
-	Script.OnMessage((Hook, Data, Sender) => Data = "slow" ? (Sleep(100), "slow") : Data = "reply" ? Sender.Send("from-child") : "child:" Data)
+	Script.OnMessage((Data, Sender) => Data = "slow" ? (Sleep(100), "slow") : Data = "reply" ? Sender.Send("from-child") : "child:" Data)
 )", true,,, hostBinary)
 Assert(child is Script, A_LineNumber)
 AssertEq(child.Send("x", 20000), "child:x", A_LineNumber)
 Throws(() => child.Send("slow", 10), A_LineNumber, TimeoutError)
-echoHook.Start()
+Script.OnMessage(Echo)
 AssertEq(child.Send("reply", 20000), "echo:from-child:" child.PID, A_LineNumber)
-echoHook.Stop()
+Script.OnMessage(Echo, 0)
 listed := ""
 
 for running in Script.Running

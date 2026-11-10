@@ -1,4 +1,4 @@
-using Keysharp.Internals;
+﻿using Keysharp.Internals;
 using Keysharp.Internals.Input;
 
 namespace Keysharp.Builtins
@@ -32,25 +32,21 @@ namespace Keysharp.Builtins
 			public object IsInternal => device.IsInternal is bool value ? (object)value : DefaultObject;
 
 			private static string Text(string value) => string.IsNullOrEmpty(value) ? DefaultObject : value;
-			public static object staticget_Hooks(object @this) => Script.TheScript.InputEventManager.Hooks();
 
 			[Static]
-			public static object OnDeviceChange(object @this, object Callback)
+			public static object OnDeviceChange(object @this, object Callback, object AddRemove = null)
 			{
-				if (Functions.CheckedCallback(Callback, 3) is not { } callback)
+				if (!Functions.TryAddRemove(AddRemove, out var mode) || Functions.ToCallback(Callback) is not { } callback
+						|| mode != 0 && !Functions.ValidateFunctor(callback, 2))
 					return DefaultObject;
 
-				var hook = new DeviceHook(callback);
-				_ = hook.Start();
-				return hook.InProgress ? hook : Errors.OSErrorOccurredWithMessage("Input device change notifications are unavailable.");
+				var script = Script.TheScript;
+				return script.InputEventManager.Modify(new CallbackRegistration(callback, script.EventScheduler, true, false), mode)
+					? DefaultObject : Errors.OSErrorOccurredWithMessage("Input.OnDeviceChange notifications are unavailable.");
 			}
 
-			public sealed class DeviceHook : EventHook
-			{
-				internal DeviceHook(object callback) : base(callback) { }
-				private protected override EventSubscriptionBase NewRun(ScriptEventScheduler owner)
-					=> new InputEventRegistration(callback, owner, Script.TheScript.InputEventManager);
-			}
+			/// <summary>A snapshot of the current real thread's device-change callbacks, in invocation order.</summary>
+			public static object staticget_Callbacks(object @this) => Script.TheScript.InputEventManager.Callbacks();
 
 			public object GetKeyState(object KeyName)
 			{

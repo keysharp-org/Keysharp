@@ -412,138 +412,117 @@ public partial class ClipboardTests : TestRunner
 		Assert.IsTrue((bool)Ks.KeysharpClipboard.Wait(Clip, 1, 1));
 	}
 
-	/// <summary>Fires one clipboard change at the hooks and drains the scheduler. Hook callbacks run on their
-	/// owner's pseudo-thread rather than inline, so the drain is what makes the effect observable here.</summary>
 	private static void DispatchClipboardChange(long dataType)
 	{
 		var script = Script.TheScript;
-		script.ClipboardEventManager.Dispatch(dataType);
+		script.ClipFunctions.InvokeEventHandlers(dataType);
 		Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, pumpUi: false);
 	}
 
-	/// <summary>The hook's own bookkeeping — Start and Stop — without needing a real clipboard event,
-	/// which no headless environment can be relied on to deliver.</summary>
 	[Test, Category("Clipboard"), Category("Internal"), NonParallelizable]
-	public void OnChangeHookSurface()
+	public void OnChangeRegistration()
 	{
-		var calls = new List<object[]>();
-		var cb = new KeysharpFunc((Func<object, object, object>)((hook, type) =>
-		{
-			calls.Add([hook, type, Environment.CurrentManagedThreadId, Accessors.A_EventInfo]);
-			return "";
-		}));
-
-		if (Ks.KeysharpClipboard.OnChange(null, cb) is not Ks.ClipboardHook hook)
-		{
-			Assert.Fail("OnChange did not return a hook.");
-			return;
-		}
+		var values = new List<object>();
+		var callback = new KeysharpFunc((Func<object, object>)(type => { values.Add(type); return ""; }));
+		_ = Ks.KeysharpClipboard.OnChange(null, callback);
 
 		try
 		{
-			Assert.IsTrue(hook.InProgress);
-			Assert.That(hook.EndReason, Is.Empty);
+			_ = Env.OnClipboardChange(callback);
+			Assert.That(Script.TheScript.ClipFunctions.Count, Is.EqualTo(1), "Both spellings identify the same registration.");
 			DispatchClipboardChange(1L);
-			Assert.That(calls.Count, Is.EqualTo(1));
-			Assert.That(calls[0][0], Is.SameAs(hook), "The callback receives the hook as its first argument.");
-			Assert.That(calls[0][1], Is.EqualTo(1L));
 			DispatchClipboardChange(0L);
-			Assert.That(calls[1][1], Is.Zero);
 			DispatchClipboardChange(2L);
-			Assert.That(calls[2][1], Is.EqualTo(2L));
-			Assert.That(calls[2][3], Is.Zero, "The change type is an argument, and A_EventInfo has its default value.");
-
-			var ownerThread = Environment.CurrentManagedThreadId;
-			var script = Script.TheScript;
-			var dispatch = System.Threading.Tasks.Task.Run(() => script.ClipboardEventManager.Dispatch(0L));
-			Assert.IsTrue(dispatch.Wait(TimeSpan.FromSeconds(5)), "The native producer only queues the notification.");
-			Assert.That(calls.Count, Is.EqualTo(3), "The callback waits for its owning thread.");
-			Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, pumpUi: false);
-			Assert.That(calls.Count, Is.EqualTo(4));
-			Assert.That(calls[3][1], Is.Zero);
-			Assert.That(calls[3][2], Is.EqualTo(ownerThread));
-
-			_ = hook.Stop();
-			Assert.That(hook.EndReason, Is.EqualTo("Stopped"));
+			Assert.That(values, Is.EqualTo(new object[] { 1L, 0L, 2L }));
+			_ = Env.OnClipboardChange(callback, 0L);
 			DispatchClipboardChange(1L);
-			Assert.That(calls.Count, Is.EqualTo(4), "A stopped hook must not fire.");
+			Assert.That(values.Count, Is.EqualTo(3), "Either spelling removes the shared registration.");
+			_ = Ks.KeysharpClipboard.OnChange(null, callback, 0L);
 		}
 		finally
 		{
-			_ = hook.Stop();
+			_ = Ks.KeysharpClipboard.OnChange(null, callback, 0L);
 		}
 	}
 
-	/// <summary>A one-shot is <c>Stop()</c> as the callback's first statement: a second change admitted before the
-	/// first callback ran is discarded when it would run, so it cannot fire twice.</summary>
 	[Test, Category("Clipboard"), Category("Internal"), NonParallelizable]
-	public void OnChangeHookOneShot()
+	public void OnChangeOneShot()
 	{
 		var calls = 0;
-		var cb = new KeysharpFunc((Func<object, object, object>)((h, type) =>
+		KeysharpFunc callback = null;
+		callback = new KeysharpFunc((Func<object, object>)(type =>
 		{
-			_ = ((Ks.ClipboardHook)h).Stop();
+			_ = Ks.KeysharpClipboard.OnChange(null, callback, 0L);
 			calls++;
 			return "";
 		}));
-
-		if (Ks.KeysharpClipboard.OnChange(null, cb) is not Ks.ClipboardHook hook)
-		{
-			Assert.Fail("OnChange did not return a hook.");
-			return;
-		}
+		_ = Ks.KeysharpClipboard.OnChange(null, callback);
 
 		try
 		{
 			var script = Script.TheScript;
-			script.ClipboardEventManager.Dispatch(1L);
-			script.ClipboardEventManager.Dispatch(1L);
+			script.ClipFunctions.InvokeEventHandlers(1L);
+			script.ClipFunctions.InvokeEventHandlers(1L);
 			Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, pumpUi: false);
-			Assert.That(calls, Is.EqualTo(1), "Both changes were queued before the first ran, and the second is discarded.");
-			Assert.That(hook.EndReason, Is.EqualTo("Stopped"));
+			Assert.That(calls, Is.EqualTo(1), "Removing itself also discards an already queued notification.");
 		}
 		finally
 		{
-			_ = hook.Stop();
+			_ = Ks.KeysharpClipboard.OnChange(null, callback, 0L);
 		}
 	}
 
-	/// <summary>A hook's return value is its own business: it must not reach the OnClipboardChange chain, whose
-	/// non-zero rule would otherwise let an incidental return suppress unrelated handlers.</summary>
 	[Test, Category("Clipboard"), Category("Internal"), NonParallelizable]
-	public void OnChangeHookDoesNotSuppressTheHandlerChain()
+	public void OnChangeSharesHandlerChain()
 	{
-		var chainValues = new List<object>();
-		var chain = new KeysharpFunc((Func<object, object>)(type => { chainValues.Add(type); return ""; }));
-		var hookValues = new List<object>();
-		// A hook that returns non-zero — the value that stops the OnClipboardChange chain.
-		var hookCb = new KeysharpFunc((Func<object, object, object>)((_, type) => { hookValues.Add(type); return 1L; }));
-
-		if (Ks.KeysharpClipboard.OnChange(null, hookCb) is not Ks.ClipboardHook hook)
-		{
-			Assert.Fail("OnChange did not return a hook.");
-			return;
-		}
+		var order = new List<string>();
+		var tail = new KeysharpFunc((Func<object, object>)(_ => { order.Add("tail"); return ""; }));
+		var first = new KeysharpFunc((Func<object, object>)(_ => { order.Add("first"); return 1L; }));
+		_ = Env.OnClipboardChange(tail);
+		_ = Ks.KeysharpClipboard.OnChange(null, first, -1L);
 
 		try
 		{
-			_ = Env.OnClipboardChange(chain);
-			var script = Script.TheScript;
-
-			foreach (var dataType in new[] { 0, 1, 2 })
-			{
-				script.ClipFunctions.InvokeEventHandlers(dataType);
-				script.ClipboardEventManager.Dispatch(dataType);
-				Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, pumpUi: false);
-			}
-
-			Assert.That(chainValues, Is.EqualTo([0L, 1L, 2L]).AsCollection, "The chain receives numeric types regardless of what a hook returns.");
-			Assert.That(hookValues, Is.EqualTo([0L, 1L, 2L]).AsCollection, "The hook receives the same numeric types.");
+			DispatchClipboardChange(1L);
+			Assert.That(order, Is.EqualTo(new[] { "first" }), "A nonzero return stops handlers registered through either spelling.");
+			_ = Env.OnClipboardChange(first, 0L);
+			DispatchClipboardChange(2L);
+			Assert.That(order, Is.EqualTo(new[] { "first", "tail" }));
 		}
 		finally
 		{
-			_ = hook.Stop();
-			_ = Env.OnClipboardChange(chain, 0L);
+			_ = Ks.KeysharpClipboard.OnChange(null, first, 0L);
+			_ = Ks.KeysharpClipboard.OnChange(null, tail, 0L);
+		}
+	}
+
+	[Test, Category("Clipboard"), Category("Internal"), NonParallelizable]
+	public void OnChangeReRegistrationDropsQueuedNotification()
+	{
+		var calls = 0;
+		var lateCalls = 0;
+		var callback = new KeysharpFunc((Func<object, object>)(_ => { calls++; return ""; }));
+		var late = new KeysharpFunc((Func<object, object>)(_ => { lateCalls++; return ""; }));
+		_ = Ks.KeysharpClipboard.OnChange(null, callback);
+
+		try
+		{
+			var script = Script.TheScript;
+			script.ClipFunctions.InvokeEventHandlers(1L);
+			_ = Env.OnClipboardChange(callback, 0L);
+			_ = Ks.KeysharpClipboard.OnChange(null, callback);
+			_ = Ks.KeysharpClipboard.OnChange(null, late);
+			Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, pumpUi: false);
+			Assert.That(calls, Is.Zero, "Re-registering the callback does not revive an earlier notification.");
+			Assert.That(lateCalls, Is.Zero, "A new listener cannot receive a notification queued before it registered.");
+			DispatchClipboardChange(2L);
+			Assert.That(calls, Is.EqualTo(1));
+			Assert.That(lateCalls, Is.EqualTo(1));
+		}
+		finally
+		{
+			_ = Ks.KeysharpClipboard.OnChange(null, callback, 0L);
+			_ = Ks.KeysharpClipboard.OnChange(null, late, 0L);
 		}
 	}
 

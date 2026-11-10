@@ -1,28 +1,13 @@
-using Keysharp.Internals.Input;
-
 namespace Keysharp.Tests;
 
 /// <summary>
-/// The surface every factory-created event hook shares — InProgress, EndReason, Start and Stop — run
-/// through one assertion body for Ks.WinEvent, Ks.MonitorHook, Ks.ClipboardHook and Ks.Audio.DeviceHook, so
-/// they cannot drift apart. Members are reached by name, so a rename or a dropped member fails here rather
-/// than silently in a script.
+/// The WinEvent lifecycle and its native event-state contracts.
 /// <para>Most registrations are built directly rather than through the public factories: that installs no
 /// native backend, so the fixture is headless and hooks nothing real.</para>
 /// </summary>
 [TestFixture, Category("Internal"), Category("Curated")]
 public class EventHookTests : TestRunner
 {
-	/// <summary>Every factory-created hook class, so each test covers all of them by construction.</summary>
-	private static (string Name, Func<object> Create)[] Factories =>
-	[
-		("Ks.WinEvent", CreateWinEvent),
-		("Ks.MonitorHook", CreateMonitorHook),
-		("Ks.ClipboardHook", CreateClipboardHook),
-		("Ks.Audio.DeviceHook", CreateDeviceHook),
-		("Ks.Input.DeviceHook", CreateInputDeviceHook),
-	];
-
 	/// <summary>
 	/// OnActive reports every matching activation, and OnNotActive the foreground leaving the matching windows, with
 	/// the window last seen active; the window already active at Start() is recorded, not reported. Fed synthetic
@@ -165,13 +150,10 @@ public class EventHookTests : TestRunner
 	[Test, Category("Internal"), NonParallelizable]
 	public void DeleteDoesNotStopTheSubscription()
 	{
-		foreach (var (name, create) in Factories)
-		{
-			var hook = create();
-			_ = ((KeysharpObject)hook).__Delete();
-			AssertState(name, hook, true, "", "after __Delete: garbage collection never cancels a subscription");
-			Call(hook, "Stop");
-		}
+		var hook = CreateWinEvent();
+		_ = hook.__Delete();
+		AssertState(hook, true, "");
+		_ = hook.Stop();
 	}
 
 	[TestCase(0), TestCase(0x1110)]
@@ -258,8 +240,24 @@ public class EventHookTests : TestRunner
 	[Test, Category("Internal"), NonParallelizable]
 	public void HookSurfaceIsIdenticalAcrossSources()
 	{
-		foreach (var (name, create) in Factories)
-			AssertHookSurface(name, create());
+		var hook = CreateWinEvent();
+		AssertState(hook, true, "");
+		_ = hook.Start();
+		AssertState(hook, true, "");
+		var callback = ((WinEventRegistration)hook.sub).callbacks[(int)WindowEventType.Active];
+		_ = hook.Stop();
+		AssertState(hook, false, "Stopped");
+
+		_ = hook.Start();
+		Assert.That(((WinEventRegistration)hook.sub).callbacks[(int)WindowEventType.Active], Is.SameAs(callback),
+			"A restart preserves the configured callback.");
+		var restarted = hook.EndReason;
+		Assert.IsTrue(restarted is "" or "Failed");
+		AssertState(hook, restarted == "", restarted);
+		_ = hook.Stop();
+		AssertState(hook, false, restarted == "" ? "Stopped" : "Failed");
+		_ = hook.Stop();
+		AssertState(hook, false, restarted == "" ? "Stopped" : "Failed");
 	}
 
 	/// <summary>A running hook keeps the script alive exactly when its AHK counterpart would: a window or clipboard
@@ -269,109 +267,26 @@ public class EventHookTests : TestRunner
 	{
 		var script = Script.TheScript;
 		Assert.IsTrue(script.WinEventManager.KeepsScriptRunning);
-		Assert.IsTrue(script.ClipboardEventManager.KeepsScriptRunning);
 		Assert.That(script.MonitorEventManager.KeepsScriptRunning, Is.False);
 		Assert.That(script.AudioEventManager.KeepsScriptRunning, Is.False);
 		Assert.That(script.InputEventManager.KeepsScriptRunning, Is.False);
-
-		// The script's own answer is checked too, where nothing else in this host already keeps it running: that is
-		// what the exit check reads, through the family's manager.
 		var idle = !script.AnyPersistent(includeWindows: false);
-
-		if (Ks.KeysharpClipboard.OnChange(null, Callback()) is not Ks.ClipboardHook hook)
-		{
-			Assert.Fail("OnChange did not return a hook.");
-			return;
-		}
+		var callback = new KeysharpFunc((Func<object, object>)(_ => ""));
+		_ = Ks.KeysharpClipboard.OnChange(null, callback);
 
 		try
 		{
-			if (hook.EndReason == "Failed")
-				Assert.Ignore("This host has no clipboard monitor, so no hook can run.");
-
-			Assert.IsTrue(script.ClipboardEventManager.IsKeepingScriptRunning, "A running clipboard hook keeps the script alive.");
-
-			if (idle)
-				Assert.IsTrue(script.AnyPersistent(includeWindows: false), "The exit check sees the running clipboard hook.");
-
-			_ = hook.Stop();
-			Assert.That(script.ClipboardEventManager.IsKeepingScriptRunning, Is.False, "A stopped one does not.");
+			Assert.That(script.ClipFunctions.Count, Is.EqualTo(1));
+			Assert.IsTrue(script.AnyPersistent(includeWindows: false));
+			_ = Env.OnClipboardChange(callback, 0L);
+			Assert.That(script.ClipFunctions.Count, Is.Zero);
 
 			if (idle)
-				Assert.That(script.AnyPersistent(includeWindows: false), Is.False, "Nor does the exit check once it stops.");
-
-			_ = hook.Start();
-			Assert.IsTrue(script.ClipboardEventManager.IsKeepingScriptRunning, "A restarted one does again.");
+				Assert.That(script.AnyPersistent(includeWindows: false), Is.False);
 		}
 		finally
 		{
-			_ = hook.Stop();
-		}
-
-		var monitor = CreateMonitorHook();
-		((Ks.MonitorHook)monitor).sub.Register();
-
-		try
-		{
-			Assert.That(script.MonitorEventManager.IsKeepingScriptRunning, Is.False, "A running display-change hook does not.");
-
-			if (idle)
-				Assert.That(script.AnyPersistent(includeWindows: false), Is.False, "Nor does the exit check.");
-		}
-		finally
-		{
-			_ = ((Ks.MonitorHook)monitor).Stop();
-		}
-	}
-
-	/// <summary>
-	/// Stop() takes effect at the call: a callback queued before it is discarded when it would run, rather than
-	/// delivered late.
-	/// </summary>
-	[Test, Category("Internal"), NonParallelizable]
-	public void QueuedCallbacksAreDiscardedAfterStop()
-	{
-		var script = Script.TheScript;
-		var calls = 0;
-		var cb = new KeysharpFunc((Func<object, object, object>)((hook, type) =>
-		{
-			calls++;
-			return "";
-		}));
-
-		if (Ks.KeysharpClipboard.OnChange(null, cb) is not Ks.ClipboardHook hook)
-		{
-			Assert.Fail("OnChange did not return a hook.");
-			return;
-		}
-
-		void Drain() => Keysharp.Internals.Flow.TryDoEvents(script.EventScheduler, propagateExit: false, pumpUi: false);
-
-		try
-		{
-			script.ClipboardEventManager.Dispatch(1L);
-			Drain();
-			Assert.That(calls, Is.EqualTo(1), "An event on a running hook is delivered.");
-
-			script.ClipboardEventManager.Dispatch(1L);
-			_ = hook.Stop();
-			Drain();
-			Assert.That(calls, Is.EqualTo(1), "An event queued before Stop is discarded.");
-
-			// The ended run's queued callbacks hold its registration, so a restart does not revive them.
-			script.ClipboardEventManager.Dispatch(1L);
-			_ = hook.Stop();
-			_ = hook.Start();
-			Drain();
-			Assert.That(calls, Is.EqualTo(1), "An event queued before Stop is discarded even after a restart.");
-
-			script.ClipboardEventManager.Dispatch(1L);
-			Drain();
-			Assert.That(calls, Is.EqualTo(2), "The restarted hook receives new events.");
-		}
-		finally
-		{
-			_ = hook.Stop();
+			_ = Ks.KeysharpClipboard.OnChange(null, callback, 0L);
 		}
 	}
 
@@ -432,17 +347,13 @@ public class EventHookTests : TestRunner
 	[Test, Category("Internal")]
 	public void RetiredMembersAreGone()
 	{
-		foreach (var (name, create) in Factories)
-		{
-			var type = create().GetType();
+		var type = typeof(Ks.WinEvent);
+		foreach (var gone in new[] { "Status", "IsActive", "Count", "Paused" })
+			Assert.IsNull(type.GetProperty(gone), $"WinEvent still exposes {gone}.");
 
-			foreach (var gone in new[] { "Status", "IsActive", "Count", "Paused" })
-				Assert.IsNull(type.GetProperty(gone), $"{name} still exposes {gone}.");
-
-			Assert.IsNull(type.GetMethod("Pause"), $"{name} still exposes Pause, which is cut.");
-			Assert.That(type.GetMethod("__Delete").DeclaringType, Is.EqualTo(typeof(Any)),
-				$"{name} overrides __Delete: garbage collection must never cancel a subscription.");
-		}
+		Assert.IsNull(type.GetMethod("Pause"), "WinEvent still exposes Pause, which is cut.");
+		Assert.That(type.GetMethod("__Delete").DeclaringType, Is.EqualTo(typeof(Any)),
+			"WinEvent overrides __Delete: garbage collection must never cancel a subscription.");
 
 		Assert.IsNull(typeof(Ks.WinEvent).GetMethod("staticPause"), "WinEvent.Pause is gone; loop over WinEvent.Hooks.");
 		Assert.IsNull(typeof(Ks.WinEvent).GetMethod("staticget_Paused"), "WinEvent.Paused is gone.");
@@ -459,7 +370,7 @@ public class EventHookTests : TestRunner
 	[Test, Category("Internal"), NonParallelizable]
 	public void StartAfterAnEndStillUnregisteringBeginsANewRun()
 	{
-		var hook = (Ks.MonitorHook)CreateMonitorHook();
+		var hook = CreateWinEvent();
 		var old = hook.sub;
 		old.Register();
 
@@ -520,25 +431,6 @@ public class EventHookTests : TestRunner
 			_ = restarter.Join(TimeSpan.FromSeconds(30));
 			_ = we.Stop();
 		}
-	}
-
-	/// <summary>A callback that could never run is refused where it is given, not at every event: one that is not a
-	/// function, one requiring more arguments than the hook passes, and one accepting fewer, as AHK's ValidateFunctor
-	/// refuses them.</summary>
-	[Test, Category("Internal")]
-	public void UnusableCallbacksAreRefusedByTheFactory()
-	{
-		Assert.IsInstanceOf<TypeError>(Assert.Throws<KeysharpException>(() => Ks.KeysharpClipboard.OnChange(null, "not a function")).UserError);
-		var needsThree = new KeysharpFunc((Func<object, object, object, object>)((a, b, c) => ""));
-		Assert.IsInstanceOf<ValueError>(Assert.Throws<KeysharpException>(() => Ks.KeysharpClipboard.OnChange(null, needsThree)).UserError);
-		var takesOne = new KeysharpFunc((Func<object, object>)(a => ""));
-		Assert.IsInstanceOf<ValueError>(Assert.Throws<KeysharpException>(() => Ks.KeysharpClipboard.OnChange(null, takesOne)).UserError);
-		// Variadic, but it still requires three parameters where the hook passes two.
-		var needsThreeThenAny = new KeysharpFunc((Func<object, object, object, object[], object>)((a, b, c, rest) => ""));
-		Assert.IsTrue(needsThreeThenAny.IsVariadic);
-		Assert.IsInstanceOf<ValueError>(Assert.Throws<KeysharpException>(() => Ks.KeysharpClipboard.OnChange(null, needsThreeThenAny)).UserError);
-		Assert.That(((Keysharp.Builtins.Array)Ks.KeysharpClipboard.staticget_Hooks(null)).Length, Is.Zero,
-			"A refused callback leaves no hook behind.");
 	}
 
 	/// <summary>
@@ -605,91 +497,14 @@ public class EventHookTests : TestRunner
 		Assert.That(Script.TheScript.WinEventManager.IsKeepingScriptRunning, Is.False);
 	}
 
-	/// <summary>
-	/// The whole state machine of one hook — running, stopped, running again — written once and applied to every
-	/// hook class, so any divergence between them fails naming the class.
-	/// </summary>
-	private static void AssertHookSurface(string name, object hook)
+	private static void AssertState(Ks.WinEvent hook, bool inProgress, string endReason)
 	{
-		AssertState(name, hook, true, "", "on a hook a factory returned");
-
-		Call(hook, "Start");
-		AssertState(name, hook, true, "", "after Start on a running hook, which does nothing");
-
-		var description = Description(hook);
-		Call(hook, "Stop");
-		AssertState(name, hook, false, "Stopped", "after Stop");
-
-		// A restart registers for real, so a host without this event source ends the new run Failed.
-		Call(hook, "Start");
-		Assert.That(Description(hook), Is.EqualTo(description), $"{name}: a restart keeps the hook's description.");
-		var restarted = (string)Get(hook, "EndReason");
-		Assert.IsTrue(restarted is "" or "Failed", $"{name}: EndReason after Start is {restarted}.");
-		AssertState(name, hook, restarted == "", restarted, "after Start: a stopped hook begins a fresh run");
-		Call(hook, "Stop");
-		AssertState(name, hook, false, restarted == "" ? "Stopped" : "Failed", "after stopping the fresh run");
-		Call(hook, "Stop");
-		AssertState(name, hook, false, restarted == "" ? "Stopped" : "Failed", "after a second Stop, which is idempotent");
-	}
-
-	private static void AssertState(string name, object hook, bool inProgress, string endReason, string what)
-	{
-		Assert.That(Get(hook, "InProgress"), Is.EqualTo(inProgress), $"{name}: InProgress {what}.");
-		Assert.That(Get(hook, "EndReason"), Is.EqualTo(endReason), $"{name}: EndReason {what}.");
-	}
-
-	private static void Call(object hook, string name)
-	{
-		var method = hook.GetType().GetMethod(name, Type.EmptyTypes);
-		Assert.That(method, Is.Not.Null, $"{hook.GetType().Name} is missing the {name}() member.");
-		_ = method.Invoke(hook, null);
-	}
-
-	private static KeysharpFunc Callback() => new((Func<object, object, object>)((hook, arg) => ""));
-
-	private static object CreateClipboardHook()
-	{
-		var script = Script.TheScript;
-		var callback = Callback();
-		var reg = new ClipboardEventRegistration(callback, script.EventScheduler, script.ClipboardEventManager);
-		var hook = new Ks.ClipboardHook(callback) { sub = reg };
-		reg.scriptObject = hook;
-		return hook;
-	}
-
-	private static object CreateDeviceHook()
-	{
-		var script = Script.TheScript;
-		var callback = Callback();
-		var reg = new AudioEventRegistration(callback, script.EventScheduler, script.AudioEventManager, "All",
-			(device, removed) => removed ? Ks.Audio.WrapMissing(script.AudioService, device) : Ks.Audio.Wrap(script.AudioService, device));
-		var hook = new Ks.Audio.DeviceHook(callback, "All") { sub = reg };
-		reg.scriptObject = hook;
-		return hook;
-	}
-
-	private static object CreateInputDeviceHook()
-	{
-		var script = Script.TheScript;
-		var callback = SlotCallback();
-		var reg = new InputEventRegistration(callback, script.EventScheduler, script.InputEventManager);
-		var hook = new Ks.Input.DeviceHook(callback) { sub = reg };
-		reg.scriptObject = hook;
-		return hook;
-	}
-
-	private static object CreateMonitorHook()
-	{
-		var script = Script.TheScript;
-		var callback = Callback();
-		var reg = new MonitorEventRegistration(callback, script.EventScheduler, script.MonitorEventManager);
-		var hook = new Ks.MonitorHook(callback) { sub = reg };
-		reg.scriptObject = hook;
-		return hook;
+		Assert.That(hook.InProgress, Is.EqualTo(inProgress));
+		Assert.That(hook.EndReason, Is.EqualTo(endReason));
 	}
 
 	// The idle object is given the run's slot first, so a restart rebuilds the same description from it.
-	private static object CreateWinEvent()
+	private static Ks.WinEvent CreateWinEvent()
 	{
 		var reg = WinEventRun(WindowEventType.Active);
 		var hook = new Ks.WinEvent
@@ -699,21 +514,6 @@ public class EventHookTests : TestRunner
 		};
 		reg.scriptObject = hook;
 		return hook;
-	}
-
-	// What a restart must carry over: the callback and, for a device hook, its kind.
-	private static object Description(object hook) => ((Ks.EventHook)hook).sub switch
-	{
-		WinEventRegistration run => run.callbacks[(int)WindowEventType.Active],
-		AudioEventRegistration run => (run.Callback, run.kind),
-		var run => run.Callback
-	};
-
-	private static object Get(object hook, string name)
-	{
-		var prop = hook.GetType().GetProperty(name);
-		Assert.That(prop, Is.Not.Null, $"{hook.GetType().Name} is missing the {name} member.");
-		return prop.GetValue(hook);
 	}
 
 	private static KeysharpFunc SlotCallback() => new((Func<object, object, object, object>)((hook, hwnd, time) => ""));
@@ -751,6 +551,12 @@ public class EventHookTests : TestRunner
 		protected override void ProcessRefresh() => refresh?.Invoke();
 
 		protected override ThreadKind CallbackThreadKind => ThreadKind.Event;
+		protected override bool IsRunning(Run run) => run.IsRunning;
+		protected override void EndRegistration(Run run, string reason)
+		{
+			_ = run.End(reason);
+			run.Clear();
+		}
 
 		protected override IDisposable CreateBackend() => null;
 

@@ -1,36 +1,16 @@
-using Keysharp.Builtins;
+﻿using Keysharp.Builtins;
 using Keysharp.Internals.Scripting;
 
 namespace Keysharp.Internals.Events
 {
-	/// <summary>Engine-side state for one <c>Script.OnMessage</c> subscription.</summary>
-	internal sealed class ScriptMessageRegistration(object callback, ScriptEventScheduler ownerScheduler, ScriptMessageManager manager,
-		Func<int, string, long, object> senderFactory)
-		: EventSubscriptionBase(callback, ownerScheduler, manager.KeepsScriptRunning)
-	{
-		internal readonly ScriptMessageManager manager = manager;
-		internal readonly Func<int, string, long, object> SenderFactory = senderFactory;
-
-		internal override void Unregister() => manager.Unregister(this);
-
-		internal override void Register() => manager.Register(this);
-	}
-
-	/// <summary>
-	/// The per-<see cref="Script"/> engine behind <c>Script.OnMessage</c>. Messages arrive through the script's
-	/// <see cref="ScriptEndpoint"/>, which listens whether or not a hook exists, so there is no native source to manage.
-	/// <para>
-	/// Unlike other hooks, a callback's return value matters: it is the reply. So a message visits the hooks one after
-	/// another in start order, each on its own thread, until one returns a value other than an empty string, as
-	/// AutoHotkey calls <c>OnMessage</c> callbacks. Hooks do not keep the script running, as <c>OnMessage</c> does not.
-	/// </para>
-	/// </summary>
+	/// <summary>Ordered request/reply delivery for Script.OnMessage. Registration and ownership use the common backend.</summary>
 	internal sealed class ScriptMessageManager(Script script)
-		: EventManagerBase<ScriptMessageRegistration, IDisposable, NoPayload>(script, false)
+		: EventManagerBase<CallbackRegistration, IDisposable, NoPayload>(script, false)
 	{
 		private static readonly byte[] EmptyReply = [ScriptEndpoint.Empty];
 
 		protected override ThreadKind CallbackThreadKind => ThreadKind.Message;
+		protected override string RegistrationName => "Script.OnMessage";
 
 		protected override IDisposable CreateBackend() => null;
 
@@ -39,10 +19,10 @@ namespace Keysharp.Internals.Events
 		/// <summary>Delivers one message and returns the reply frame: its kind, then its bytes.</summary>
 		internal async Task<byte[]> DispatchAsync(byte kind, ReadOnlyMemory<byte> payload, int senderPid, string senderPath, long senderProcessStartTicks)
 		{
-			var snapshot = new TaskCompletionSource<ScriptMessageRegistration[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+			var snapshot = new TaskCompletionSource<CallbackRegistration[]>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-			// The hooks are read on the main thread, behind the work queued there, so a message that arrives while the
-			// auto-execute section runs meets the hooks that section registers.
+			// Registrations are read on the main thread, behind the work queued there, so a message that arrives while the
+			// auto-execute section runs meets the callbacks that section registers.
 			if (!script.MainEventScheduler.EnqueueCallback(() =>
 			{
 				lock (gate)
@@ -54,7 +34,7 @@ namespace Keysharp.Internals.Events
 
 			foreach (var reg in await snapshot.Task.ConfigureAwait(false))
 			{
-				if (!reg.IsRunning || reg.OwnerScheduler is not { IsDisposed: false } scheduler)
+				if (!reg.IsActive || reg.OwnerScheduler is not { IsDisposed: false } scheduler)
 					continue;
 
 				var completed = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -71,7 +51,7 @@ namespace Keysharp.Internals.Events
 					if (Volatile.Read(ref claimed) != 0)
 						return ScriptEventExecutionResult.Dropped;
 
-					if (!reg.IsRunning)
+					if (!reg.IsActive)
 					{
 						Skip();
 						return ScriptEventExecutionResult.Dropped;
@@ -84,26 +64,25 @@ namespace Keysharp.Internals.Events
 							return;
 
 						byte[] encoded = null;
-						object callback = null, hook = null;
+						object callback = null;
 
 						try
 						{
 							lock (gate)
 							{
-								if (disposed || !reg.IsRunning)
+								if (disposed || !reg.IsActive)
 									return;
 
 								callback = reg.Callback;
-								hook = reg.scriptObject;
 							}
 
 							if (data == null)
 							{
 								data = ScriptMessageCodec.Decode(kind, payload.Span);
-								sender = reg.SenderFactory(senderPid, senderPath, senderProcessStartTicks);
+								sender = new Ks.KeysharpScript(senderPid, senderPath, senderProcessStartTicks);
 							}
 
-							var result = Script.InvokeOrNull(callback, null, hook, data, sender);
+							var result = Script.InvokeOrNull(callback, null, data, sender);
 
 							try
 							{
@@ -121,7 +100,6 @@ namespace Keysharp.Internals.Events
 						finally
 						{
 							GC.KeepAlive(callback);
-							GC.KeepAlive(hook);
 							_ = completed.TrySetResult(encoded);
 						}
 					}, ThreadKind.Message);

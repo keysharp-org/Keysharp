@@ -49,14 +49,16 @@ namespace Keysharp.Internals.Scripting
 		private bool snapshotDirty = true;
 		private readonly Func<object, bool> stopRule;
 		private readonly string threadName;
+		private readonly bool captureQueuedCallbacks;
 
 		/// <param name="stopRule">The <see cref="CallbackStop"/> rule that ends this family's chain; NonZero when omitted.</param>
 		/// <param name="threadName">What Error.Stack calls a thread a handler runs in, as AutoHotkey calls it, such as Gui;
 		/// <c>Event</c> when omitted.</param>
-		internal CallbackRegistry(Func<object, bool> stopRule = null, string threadName = null)
+		internal CallbackRegistry(Func<object, bool> stopRule = null, string threadName = null, bool captureQueuedCallbacks = false)
 		{
 			this.stopRule = stopRule ?? CallbackStop.NonZero;
 			this.threadName = threadName;
+			this.captureQueuedCallbacks = captureQueuedCallbacks;
 		}
 
 		internal int Count
@@ -138,6 +140,13 @@ namespace Keysharp.Internals.Scripting
 				EnsureSnapshotLocked();
 				return snapshot;
 			}
+		}
+
+		internal Keysharp.Builtins.Array Callbacks()
+		{
+			var owner = CurrentScheduler;
+			lock (gate)
+				return CallbackRegistration.SnapshotCallbacks(ordered, owner);
 		}
 
 		/// <summary>Applies <paramref name="update"/> to the registration the scheduler made for the callback, under the
@@ -286,10 +295,12 @@ namespace Keysharp.Internals.Scripting
 			if (IsEmpty || CurrentScheduler is not { } scheduler)
 				return;
 
+			var queuedCallbacks = captureQueuedCallbacks ? GetSnapshot() : null;
+
 			// An event whose GUI was destroyed while it waited is dropped, as AutoHotkey's message loop finds no GUI for it.
 			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => args.Length != 0 && Gui.IsDestroyedEventSource(args[0])
 				? ScriptEventExecutionResult.Dropped
-				: InvokeHandlers(args, skipUninterruptible: false, allowEmergencyOverflow: false, stopWhen: null, out _));
+				: InvokeHandlers(args, skipUninterruptible: false, allowEmergencyOverflow: false, stopWhen: null, out _, queuedCallbacks));
 		}
 
 		/// <summary>
@@ -347,7 +358,7 @@ namespace Keysharp.Internals.Scripting
 		/// Executed, since replaying it would call the handlers that already ran a second time.
 		/// </summary>
 		private ScriptEventExecutionResult InvokeHandlers(object[] args, bool skipUninterruptible, bool allowEmergencyOverflow,
-				Func<object, bool> stopWhen, out object result)
+				Func<object, bool> stopWhen, out object result, TRegistration[] queuedCallbacks = null)
 		{
 			stopWhen ??= stopRule;
 			var anyRan = false;
@@ -357,7 +368,7 @@ namespace Keysharp.Internals.Scripting
 			object chainResult = null;
 			var failed = false;
 			result = null;
-			var snapshot = GetSnapshot();
+			var snapshot = queuedCallbacks ?? GetSnapshot();
 
 			if (snapshot.Length == 0)
 				return ScriptEventExecutionResult.Executed;
@@ -537,7 +548,8 @@ namespace Keysharp.Internals.Scripting
 	/// </summary>
 	internal sealed class CallbackRegistry : CallbackRegistry<CallbackRegistration>
 	{
-		internal CallbackRegistry(Func<object, bool> stopRule = null, string threadName = null) : base(stopRule, threadName) { }
+		internal CallbackRegistry(Func<object, bool> stopRule = null, string threadName = null, bool captureQueuedCallbacks = false)
+			: base(stopRule, threadName, captureQueuedCallbacks) { }
 
 		internal bool ModifyEventHandlers(object callback, long addRemove, bool matchCurrentSchedulerOnRemove = true)
 		{

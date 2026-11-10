@@ -78,6 +78,9 @@ namespace Keysharp.Internals.Scripting
 
 		internal object Callback => callback;
 
+		internal static Keysharp.Builtins.Array SnapshotCallbacks(IEnumerable<CallbackRegistration> registrations, ScriptEventScheduler owner)
+			=> new(registrations.Where(reg => reg.IsActive && ReferenceEquals(reg.OwnerScheduler, owner)).Select(reg => reg.Callback).ToArray());
+
 		internal void Set(object callback, ScriptEventScheduler ownerScheduler, bool active)
 		{
 			this.callback = callback;

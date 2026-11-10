@@ -82,15 +82,24 @@ Throws(() => p.SetVCP(256, 0), A_LineNumber, ValueError)
 Throws(() => p.SetVCP(0, -1), A_LineNumber, ValueError)
 Throws(() => p.SetVCP(0, 65536), A_LineNumber, ValueError)
 
-; OnChange returns a running hook that Stop() ends. No display change is made, so the callback never runs.
-changes := []
-hook := Monitor.OnChange((h, kind) => changes.Push(kind))
-Assert(hook.InProgress && hook.EndReason == "", A_LineNumber)
-hook.Stop()
-Assert(!hook.InProgress, A_LineNumber)
-AssertEq(hook.EndReason, "Stopped", A_LineNumber)
-AssertEq(changes.Length, 0, A_LineNumber)
+; Registering and removing a callback does not change the display configuration.
+changed := (Change) => 0
+otherChanged := (Change) => 0
+AssertEq(Monitor.Callbacks.Length, 0, A_LineNumber)
+Monitor.OnChange(changed)
+Monitor.OnChange(changed)
+Monitor.OnChange(otherChanged, -1)
+callbacks := Monitor.Callbacks
+AssertEq(callbacks.Length, 2, A_LineNumber)
+AssertEq(callbacks[1], otherChanged, A_LineNumber)
+AssertEq(callbacks[2], changed, A_LineNumber)
+for callback in Monitor.Callbacks
+    Monitor.OnChange(callback, 0)
+AssertEq(Monitor.Callbacks.Length, 0, A_LineNumber)
+AssertEq(callbacks.Length, 2, A_LineNumber)
 
 Throws(() => Monitor.OnChange("not a function"), A_LineNumber, TypeError)
+Throws(() => Monitor.OnChange(changed, 2), A_LineNumber, ValueError)
+Throws(() => Monitor.OnChange((First, Second) => 0), A_LineNumber, ValueError)
 
 FileAppend "pass", "*"

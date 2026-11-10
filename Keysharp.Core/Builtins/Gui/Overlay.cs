@@ -1,4 +1,4 @@
-using Keysharp.Internals;
+﻿using Keysharp.Internals;
 
 namespace Keysharp.Builtins
 {
@@ -511,18 +511,18 @@ namespace Keysharp.Builtins
 			/// <see cref="Destroy"/> removes them all.</para></summary>
 			public object OnEvent(object eventName, object callback, object addRemove = null)
 			{
-				if (RejectRedrawMutation() || !eventName.CoerceString(out var rawName)) return this;
+				if (RejectRedrawMutation() || !eventName.CoerceString(out var rawName)) return DefaultObject;
 				var name = rawName.ToLowerInvariant();
 
 				if (System.Array.IndexOf(supportedEvents, name) < 0)
 					return Errors.ValueErrorOccurred($"Unknown EventName \"{rawName}\". Expected Click, DoubleClick, ContextMenu or MouseMove.");
 
 				if (!Functions.TryAddRemove(addRemove, out var mode) || Functions.ToCallback(callback) is not { } fo)
-					return this;
+					return DefaultObject;
 
 				// A callback being added is checked against the (overlay, x, y) it is called with; a removal is not.
 				if (mode != 0L && !Functions.ValidateFunctor(fo, 3))
-					return this;
+					return DefaultObject;
 
 				bool Modify()
 				{
@@ -571,7 +571,7 @@ namespace Keysharp.Builtins
 				else
 					_ = Modify();
 
-				return this;
+				return DefaultObject;
 			}
 
 			private void EnsureSinkArmed()

@@ -6,14 +6,11 @@
 #import KS { RealThread, Await, Monitor, WinEvent }
 #Include <assert>
 
-; A display-change hook does not keep the real thread that started it running, as an OnMessage for
-; WM_DISPLAYCHANGE would not: the worker ends once its body returns, and its hook ends with it.
+; A display-change registration does not keep its owning real thread running.
 monitorWorker := RealThread(() => Monitor.OnChange((*) => 0))
-monitorHook := Await(monitorWorker.Task)
+Await(monitorWorker.Task)
 Assert(monitorWorker.Terminated.Wait(5000), A_LineNumber)
 Assert(!monitorWorker.IsAlive, A_LineNumber)
-Assert(!monitorHook.InProgress, A_LineNumber)
-Assert(monitorHook.EndReason = "Exit" || monitorHook.EndReason = "Failed", A_LineNumber)
 
 ; A running WinEvent keeps its real thread running, as the WinEvent library's hooks keep a script running, until it
 ; stops. A host without a window-event source ends it Failed at once, which leaves nothing to check.

@@ -55,11 +55,9 @@ global gClipboardDelayedPayload := ""
 global gHotkeyHitCount := 0
 global gHotstringHitCount := 0
 global gInputHookObj := ""
-global gInputDeviceHook := ""
 global gInputHookLastText := ""
 global gInputHookLastReason := ""
 global gWinEventHooks := []
-global gMonitorHook := ""
 global gMonitorChangeCount := 0
 global gMonitorList := ""
 global gMonitorDetails := ""
@@ -4494,13 +4492,13 @@ VcpCode() {
 ; manual probe. Start it, then plug/unplug a monitor (or dock/undock) to see "Topology", and change resolution,
 ; scale, arrangement or the primary monitor to see "Settings".
 StartMonitorChangeProbe() {
-	global gMonitorHook, gMonitorChangeCount
+	global gMonitorChangeCount
 
 	StopMonitorChangeProbe()
 	gMonitorChangeCount := 0
 
 	try {
-		gMonitorHook := Monitor.OnChange(OnMonitorChange)
+		Monitor.OnChange(OnMonitorChange)
 		SetStatus("monitor_change", "Monitor.OnChange: watching — now re-plug a monitor or change resolution")
 		AppendLog("Monitor.OnChange probe started with " Monitor.Devices.Length " monitor(s). Plug/unplug a display for "
 			. "'Topology'; change resolution, scale, arrangement or the primary display for 'Settings'.")
@@ -4511,18 +4509,12 @@ StartMonitorChangeProbe() {
 }
 
 StopMonitorChangeProbe() {
-	global gMonitorHook
-
-	if (!IsSet(gMonitorHook) || !gMonitorHook)
-		return
-
-	try gMonitorHook.Stop()
-	gMonitorHook := ""
+	try Monitor.OnChange(OnMonitorChange, 0)
 	SetStatus("monitor_change", "Monitor.OnChange: stopped")
 	AppendLog("Monitor.OnChange probe stopped.")
 }
 
-OnMonitorChange(hook, kind) {
+OnMonitorChange(kind) {
 	global gMonitorChangeCount
 
 	gMonitorChangeCount += 1
@@ -4533,7 +4525,7 @@ OnMonitorChange(hook, kind) {
 		names .= (names = "" ? "" : ", ") m.Name " " m.Width "x" m.Height (m.IsPrimary ? " (primary)" : "")
 
 	SetStatus("monitor_change", "Monitor.OnChange: " gMonitorChangeCount " event(s), last=" kind)
-	AppendLog("Monitor.OnChange #" gMonitorChangeCount ": kind=" kind ", count=" A_EventInfo " [" names "]")
+	AppendLog("Monitor.OnChange #" gMonitorChangeCount ": kind=" kind ", count=" Monitor.Devices.Length " [" names "]")
 	; The listing above is a snapshot taken before the change, so bring it up to date — which also shows the
 	; new layout without anyone having to click Refresh.
 	RefreshMonitorList()
@@ -4983,10 +4975,9 @@ FormatInputDevice(Device) => Format("Kind={1} | Name={2} | Id={3} | VendorId={4}
 InputDeviceField(Value?, Hex := false) => !IsSet(Value) || Value == "" ? "(not reported)" : Hex ? Format("0x{:04X}", Value) : Value
 
 StartInputDeviceChanges(*) {
-	global gInputDeviceHook
 	StopInputDeviceChanges()
 	try {
-		gInputDeviceHook := Input.OnDeviceChange(OnInputDeviceChange)
+		Input.OnDeviceChange(OnInputDeviceChange)
 		AppendLog("Input.OnDeviceChange: watching. Reconnect a keyboard or mouse.")
 	} catch as err {
 		AppendLog("Input.OnDeviceChange failed: " err.Message)
@@ -4994,15 +4985,11 @@ StartInputDeviceChanges(*) {
 }
 
 StopInputDeviceChanges(*) {
-	global gInputDeviceHook
-	if gInputDeviceHook {
-		gInputDeviceHook.Stop()
-		gInputDeviceHook := ""
-		AppendLog("Input.OnDeviceChange: stopped.")
-	}
+	Input.OnDeviceChange(OnInputDeviceChange, 0)
+	AppendLog("Input.OnDeviceChange: stopped.")
 }
 
-OnInputDeviceChange(Hook, Change, Device) => AppendLog("Input.OnDeviceChange: " Change " | " FormatInputDevice(Device))
+OnInputDeviceChange(Change, Device) => AppendLog("Input.OnDeviceChange: " Change " | " FormatInputDevice(Device))
 
 StartInputHookProbe() {
 	global gInputHookObj, gInputHookLastText, gInputHookLastReason, gInputHookActual

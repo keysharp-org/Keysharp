@@ -2452,12 +2452,6 @@
                       </Rule>
                     </Rule>
                     <Rule Match="All">
-                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EventHookTests.QueuedCallbacksAreDiscardedAfterStop" />
-                      <Rule Match="Any">
-                        <Property Name="DisplayName" Value="QueuedCallbacksAreDiscardedAfterStop" />
-                      </Rule>
-                    </Rule>
-                    <Rule Match="All">
                       <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EventHookTests.RealThreadRootsFollowTheFamily" />
                       <Rule Match="Any">
                         <Property Name="DisplayName" Value="RealThreadRootsFollowTheFamily" />
@@ -2485,12 +2479,6 @@
                       <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EventHookTests.StopRacingSlotRestartsLeavesTheHookStopped" />
                       <Rule Match="Any">
                         <Property Name="DisplayName" Value="StopRacingSlotRestartsLeavesTheHookStopped" />
-                      </Rule>
-                    </Rule>
-                    <Rule Match="All">
-                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.EventHookTests.UnusableCallbacksAreRefusedByTheFactory" />
-                      <Rule Match="Any">
-                        <Property Name="DisplayName" Value="UnusableCallbacksAreRefusedByTheFactory" />
                       </Rule>
                     </Rule>
                     <Rule Match="All">
@@ -2577,21 +2565,21 @@
                       </Rule>
                     </Rule>
                     <Rule Match="All">
-                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.OnChangeHookDoesNotSuppressTheHandlerChain" />
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.OnChangeSharesHandlerChain" />
                       <Rule Match="Any">
-                        <Property Name="DisplayName" Value="OnChangeHookDoesNotSuppressTheHandlerChain" />
+                        <Property Name="DisplayName" Value="OnChangeSharesHandlerChain" />
                       </Rule>
                     </Rule>
                     <Rule Match="All">
-                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.OnChangeHookOneShot" />
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.OnChangeOneShot" />
                       <Rule Match="Any">
-                        <Property Name="DisplayName" Value="OnChangeHookOneShot" />
+                        <Property Name="DisplayName" Value="OnChangeOneShot" />
                       </Rule>
                     </Rule>
                     <Rule Match="All">
-                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.OnChangeHookSurface" />
+                      <Property Name="TestWithNormalizedFullyQualifiedName" Value="Keysharp.Tests.ClipboardTests.OnChangeRegistration" />
                       <Rule Match="Any">
-                        <Property Name="DisplayName" Value="OnChangeHookSurface" />
+                        <Property Name="DisplayName" Value="OnChangeRegistration" />
                       </Rule>
                     </Rule>
                     <Rule Match="All">

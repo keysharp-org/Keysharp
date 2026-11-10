@@ -1,18 +1,11 @@
-using Keysharp.Builtins;
+﻿using Keysharp.Builtins;
 using Keysharp.Internals.Events;
 using Keysharp.Internals.Scripting;
 
 namespace Keysharp.Internals.Input
 {
-	internal sealed class InputEventRegistration(object callback, ScriptEventScheduler owner, InputEventManager manager)
-		: EventSubscriptionBase(callback, owner, manager.KeepsScriptRunning)
-	{
-		internal override void Register() => manager.Register(this);
-		internal override void Unregister() => manager.Unregister(this);
-	}
-
 	internal sealed class InputEventManager(Script owner)
-		: EventManagerBase<InputEventRegistration, InputEventManager.Watcher, NoPayload>(owner, false)
+		: EventManagerBase<CallbackRegistration, InputEventManager.Watcher, NoPayload>(owner, false)
 	{
 		internal sealed class Watcher(InputEventManager manager) : IDisposable
 		{
@@ -29,17 +22,22 @@ namespace Keysharp.Internals.Input
 			{
 				if (Current != null) return true;
 				var run = new Run();
-				run.Subscription = Platform.WatchInputDevices(manager.script, manager.QueueRefresh,
-					() => { run.Failed = true; manager.QueueRefresh(); });
-				if (run.Subscription == null) return false;
-				run.Devices = manager.Snapshot();
-				if (run.Devices == null || run.Failed)
+
+				try
 				{
-					run.Subscription.Dispose();
-					return false;
+					run.Subscription = Platform.WatchInputDevices(manager.script, manager.QueueRefresh,
+						() => { run.Failed = true; manager.QueueRefresh(); });
+					if (run.Subscription == null) return false;
+					run.Devices = manager.Snapshot();
+					if (run.Devices == null || run.Failed) return false;
+					Current = run;
+					return true;
 				}
-				Current = run;
-				return true;
+				finally
+				{
+					if (Current != run)
+						run.Subscription?.Dispose();
+				}
 			}
 			public void Dispose()
 			{
@@ -51,6 +49,7 @@ namespace Keysharp.Internals.Input
 
 		private bool started;
 		protected override ThreadKind CallbackThreadKind => ThreadKind.Event;
+		protected override string RegistrationName => "Input.OnDeviceChange";
 		protected override Watcher CreateBackend() => new(this);
 
 		protected override void SyncNativeLocked()
@@ -98,7 +97,7 @@ namespace Keysharp.Internals.Input
 		protected override void ProcessRefresh()
 		{
 			List<(string Change, InputDeviceInfo Device)> changes;
-			InputEventRegistration[] active;
+			CallbackRegistration[] active;
 			Watcher.Run run;
 
 			lock (gate)
@@ -131,7 +130,7 @@ namespace Keysharp.Internals.Input
 			{
 				var wrapped = new Ks.Input(device, script);
 				foreach (var registration in active)
-					Fire(registration, registration.Callback, [registration.scriptObject, change, wrapped]);
+					FireNotification(registration, [change, wrapped]);
 			}
 		}
 

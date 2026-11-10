@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 
 namespace Keysharp.Builtins
 {
@@ -57,19 +57,22 @@ namespace Keysharp.Builtins
 				return result;
 			}
 
-			/// <summary>Registers Callback(Hook, Data, Sender). The first nonempty reply answers the message.</summary>
+			/// <summary>Registers Callback(Data, Sender). The first nonempty reply answers the message.
+			/// AddRemove appends (1), prepends (-1), or removes (0) the callback.</summary>
 			[Static]
-			public static object OnMessage(object @this, object Callback)
+			public static object OnMessage(object @this, object Callback, object AddRemove = null)
 			{
-				if (Functions.CheckedCallback(Callback, 3) is not { } function)
+				if (!Functions.TryAddRemove(AddRemove, out var mode) || Functions.ToCallback(Callback) is not { } callback
+						|| mode != 0 && !Functions.ValidateFunctor(callback, 2))
 					return DefaultObject;
 
-				var hook = new MessageHook(function);
-				_ = hook.Start();
-				return hook;
+				var script = Script.TheScript;
+				_ = script.ScriptMessageManager.Modify(new CallbackRegistration(callback, script.EventScheduler, true, false), mode);
+				return DefaultObject;
 			}
 
-			public static object staticget_Hooks(object @this) => Script.TheScript.ScriptMessageManager.Hooks();
+			/// <summary>A snapshot of the current real thread's message callbacks, in invocation order.</summary>
+			public static object staticget_Callbacks(object @this) => Script.TheScript.ScriptMessageManager.Callbacks();
 
 			public long PID => pid != 0 ? pid : pid = process?.Id ?? 0;
 			public object Name => Describe() ? Path.GetFileName(fullPath) : DefaultObject;
@@ -219,14 +222,6 @@ namespace Keysharp.Builtins
 				}
 			}
 
-			public sealed class MessageHook : EventHook
-			{
-				internal MessageHook(object callback) : base(callback) { }
-
-				private protected override EventSubscriptionBase NewRun(ScriptEventScheduler owner)
-					=> new ScriptMessageRegistration(callback, owner, Script.TheScript.ScriptMessageManager,
-						static (pid, path, processStartTicks) => new KeysharpScript(pid, path, processStartTicks));
-			}
 		}
 	}
 }

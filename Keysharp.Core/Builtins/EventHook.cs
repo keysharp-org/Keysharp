@@ -1,4 +1,4 @@
-namespace Keysharp.Builtins
+﻿namespace Keysharp.Builtins
 {
 	public partial class Ks
 	{
@@ -6,10 +6,6 @@ namespace Keysharp.Builtins
 		public class EventHook : KeysharpObject
 		{
 			internal EventSubscriptionBase sub;
-			private protected readonly object callback;
-
-			private protected EventHook(object callback) => this.callback = callback;
-
 			private protected EventHook() { }
 
 			/// <summary>Validates a callback property, treating unset and an empty string as clear.</summary>

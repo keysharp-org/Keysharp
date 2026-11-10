@@ -362,21 +362,26 @@ AssertEq(rec.Result, "", A_LineNumber)
 Throws(() => rec.Stop(), A_LineNumber)               ; never started, so there is nothing to stop
 rec.Dispose()
 
-; Device change events use the shared EventHook contract, and the kind is validated.
-Throws(() => Audio.OnDeviceChange(DeviceChanged, "Sideways"), A_LineNumber)
+; Device change registrations validate their filter and can be updated or removed.
+Throws(() => Audio.OnDeviceChange(DeviceChanged, 1, "Sideways"), A_LineNumber)
 Throws(() => Audio.OnDeviceChange("not a function"), A_LineNumber)
+Throws(() => Audio.OnDeviceChange(DeviceChanged, 2), A_LineNumber, ValueError)
+Throws(() => Audio.OnDeviceChange((Hook, Kind, Device) => 0), A_LineNumber, ValueError)
+AssertEq(Audio.Callbacks.Length, 0, A_LineNumber)
 
 if (Audio.IsDeviceChangeSupported) {
-    hook := Audio.OnDeviceChange(DeviceChanged, "Output")
-    Assert(hook.InProgress, A_LineNumber)
-    AssertEq(hook.EndReason, "", A_LineNumber)
-    Assert(Audio.Hooks.Length >= 1, A_LineNumber)
-    hook.Stop()
-    AssertEq(hook.InProgress, false, A_LineNumber)
-    AssertEq(hook.EndReason, "Stopped", A_LineNumber)
+    Audio.OnDeviceChange(DeviceChanged, 1, "Output")
+    Audio.OnDeviceChange(DeviceChanged, 1, "Input")
+    callbacks := Audio.Callbacks
+    AssertEq(callbacks.Length, 1, A_LineNumber)
+    AssertEq(callbacks[1], DeviceChanged, A_LineNumber)
+    for callback in Audio.Callbacks
+        Audio.OnDeviceChange(callback, 0)
+    AssertEq(Audio.Callbacks.Length, 0, A_LineNumber)
+    AssertEq(callbacks.Length, 1, A_LineNumber)
 }
 
-DeviceChanged(ChangedHook, Kind, Device) {
+DeviceChanged(Kind, Device) {
 }
 
 ; ---- cleanup -----------------------------------------------------------------------------------

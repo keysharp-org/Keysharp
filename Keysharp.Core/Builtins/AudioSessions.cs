@@ -1,4 +1,4 @@
-using Engine = Keysharp.Internals.Audio;
+﻿using Engine = Keysharp.Internals.Audio;
 
 namespace Keysharp.Builtins
 {
@@ -172,55 +172,41 @@ namespace Keysharp.Builtins
 					   || string.Equals(name + ".exe", text, StringComparison.OrdinalIgnoreCase);
 			}
 
-			/// <summary>
-			/// Subscribes to device arrivals, removals, renames and default changes. The callback receives
-			/// <c>(Hook, Change, Device)</c>, where Change is "Added", "Removed", "Changed" or "DefaultChanged". The
-			/// returned hook is started; it does not keep the script running, as an AHK script's device-change
-			/// OnMessage does not, and dropping it does not unsubscribe it. The Kind filter is "Output", "Input" or "All"
-			/// (the default), matched without regard to case.
-			/// </summary>
+			/// <summary>Registers Callback(Change, Device) for device arrivals, removals and changes.
+			/// AddRemove appends (1), prepends (-1), or removes (0). Kind is "All", "Output" or "Input";
+			/// registering the same callback updates its filter without moving it. Does not keep the script running.</summary>
 			[Static]
-			public static object OnDeviceChange(object @this, object callback, object kind = null)
+			public static object OnDeviceChange(object @this, object Callback, object AddRemove = null, object Kind = null)
 			{
-				if (Functions.CheckedCallback(callback, 3) is not { } fo)
+				if (!Functions.TryAddRemove(AddRemove, out var mode) || Functions.ToCallback(Callback) is not { } callback
+						|| mode != 0 && !Functions.ValidateFunctor(callback, 2))
 					return DefaultObject;
 
-				if (!TryKind(kind, out var deviceKind, out var all, out var failure))
+				var script = Script.TheScript;
+				var manager = script.AudioEventManager;
+
+				if (mode == 0)
+				{
+					_ = manager.Modify(new Engine.AudioEventRegistration(callback, script.EventScheduler, "All", null), 0);
+					return DefaultObject;
+				}
+
+				if (!TryKind(Kind, out var deviceKind, out var all, out var failure))
 					return failure;
 
 				if (!Service.Supports(Engine.AudioCapability.DeviceChange))
 					return Unsupported(Engine.AudioCapability.DeviceChange, "Audio.OnDeviceChange");
 
-				var hook = new DeviceHook(fo, all ? "All" : KindName(deviceKind));
-				_ = hook.Start();
-				return hook;
+				var service = script.AudioService;
+				var kind = all ? "All" : KindName(deviceKind);
+				var registration = new Engine.AudioEventRegistration(callback, script.EventScheduler, kind,
+					(device, removed) => removed ? WrapMissing(service, device) : Wrap(service, device));
+				return manager.Modify(registration, mode, static (existing, replacement) => existing.kind == replacement.kind)
+					? DefaultObject : Errors.OSErrorOccurredWithMessage("Audio.OnDeviceChange notifications are unavailable.");
 			}
 
-			/// <summary>
-			/// The handle <c>Audio.OnDeviceChange</c> returns. Its whole surface comes from the shared
-			/// <c>Ks.EventHook</c>, so audio adds no second spelling of a contract every other event source already has.
-			/// </summary>
-			public sealed class DeviceHook : EventHook
-			{
-				private readonly string kind;                  // "Output", "Input" or "All"
-
-				internal DeviceHook(object callback, string kind) : base(callback)
-				{
-					this.kind = kind;
-				}
-
-				private protected override EventSubscriptionBase NewRun(ScriptEventScheduler owner)
-				{
-					var script = Script.TheScript;
-					var service = script.AudioService;
-					return new Engine.AudioEventRegistration(callback, owner, script.AudioEventManager, kind,
-						(device, removed) => removed ? WrapMissing(service, device) : Wrap(service, device));
-				}
-			}
-
-			/// <summary>Every running <c>Audio.OnDeviceChange</c> hook, in start order (script: <c>Audio.Hooks</c>) —
-			/// a snapshot to iterate and drop. Device-change hooks only, never voices or meters.</summary>
-			public static object staticget_Hooks(object @this) => Script.TheScript.AudioEventManager.Hooks();
+			/// <summary>A snapshot of the current real thread's device-change callbacks, in invocation order.</summary>
+			public static object staticget_Callbacks(object @this) => Script.TheScript.AudioEventManager.Callbacks();
 
 			/// <summary>
 			/// One application's audio on one device. The snapshot is generation-bound: it never rebinds to a

@@ -1,4 +1,4 @@
-using Keysharp.Internals;
+﻿using Keysharp.Internals;
 using Keysharp.Internals.Window;
 
 namespace Keysharp.Builtins
@@ -98,31 +98,22 @@ namespace Keysharp.Builtins
 				return From(Monitor.ResolveDisplayForRect(ScreenRect.FromRectangle(win.Bounds), Monitor.AllDisplays));
 			}
 
-			/// <summary>
-			/// Calls <paramref name="callback"/> whenever the display configuration changes, and returns a started
-			/// <see cref="MonitorHook"/> whose <c>Stop()</c> ends the subscription
-			/// (script: <c>hook := Monitor.OnChange(MyCallback)</c>).
-			/// <para>The callback takes <c>(Hook, Change)</c>, where <c>Change</c> is <c>"Topology"</c> when the set of
-			/// attached monitors changed (one was plugged in or unplugged, or the machine docked) and
-			/// <c>"Settings"</c> when the same monitors are attached but something about them changed — resolution,
-			/// position, scale, or which one is primary.</para>
-			/// <para>A running hook does not keep the script running; dropping the handle does not stop it.
-			/// Read <c>Monitor.Devices</c> or call <c>Refresh()</c> on held snapshots to get the current layout.</para>
-			/// </summary>
+			/// <summary>Registers Callback(Change), where Change is "Topology" or "Settings".
+			/// AddRemove appends (1), prepends (-1), or removes (0). Does not keep the script running.</summary>
 			[Static]
-			public static object OnChange(object @this, object callback)
+			public static object OnChange(object @this, object Callback, object AddRemove = null)
 			{
-				if (Functions.CheckedCallback(callback, 2) is not { } fo)
+				if (!Functions.TryAddRemove(AddRemove, out var mode) || Functions.ToCallback(Callback) is not { } callback
+						|| mode != 0 && !Functions.ValidateFunctor(callback, 1))
 					return DefaultObject;
 
-				var hook = new MonitorHook(fo);
-				_ = hook.Start();
-				return hook;
+				var script = Script.TheScript;
+				return script.MonitorEventManager.Modify(new CallbackRegistration(callback, script.EventScheduler, true, false), mode)
+					? DefaultObject : Errors.OSErrorOccurredWithMessage("Monitor.OnChange notifications are unavailable.");
 			}
 
-			/// <summary>Every running <c>Monitor.OnChange</c> hook, in start order (script: <c>Monitor.Hooks</c>) — a
-			/// snapshot to iterate and drop, covering every thread's hooks.</summary>
-			public static object staticget_Hooks(object @this) => Script.TheScript.MonitorEventManager.Hooks();
+			/// <summary>A snapshot of the current real thread's callbacks, in invocation order.</summary>
+			public static object staticget_Callbacks(object @this) => Script.TheScript.MonitorEventManager.Callbacks();
 
 			// ---- identity ----------------------------------------------------------------------------------
 
@@ -419,17 +410,5 @@ namespace Keysharp.Builtins
 					+ Platform.MonitorControl.UnsupportedReason(display, details);
 		}
 
-		/// <summary>
-		/// A live <c>Monitor.OnChange</c> subscription — the object that factory returns and the first argument every
-		/// change callback receives. Its whole surface comes from <see cref="EventHook"/>, so it is managed exactly like
-		/// every other hook.
-		/// </summary>
-		public sealed class MonitorHook : EventHook
-		{
-			internal MonitorHook(object callback) : base(callback) { }
-
-			private protected override EventSubscriptionBase NewRun(ScriptEventScheduler owner)
-				=> new MonitorEventRegistration(callback, owner, Script.TheScript.MonitorEventManager);
-		}
 	}
 }

@@ -1,25 +1,8 @@
-using Keysharp.Builtins;
+﻿using Keysharp.Builtins;
 using Keysharp.Internals.Scripting;
 
 namespace Keysharp.Internals.Window
 {
-	/// <summary>
-	/// Engine-side state for a single <c>Ks.Monitor.OnChange</c> subscription. A display-change subscription has no
-	/// filtering criteria and no per-event state, so it adds nothing to <see cref="EventSubscriptionBase"/>; the
-	/// script-facing <c>Ks.MonitorHook</c> object wraps one of these, mirroring how <c>Ks.WinEvent</c> wraps
-	/// <see cref="WinEventRegistration"/>.
-	/// </summary>
-	internal sealed class MonitorEventRegistration(object callback, ScriptEventScheduler ownerScheduler,
-		MonitorEventManager manager)
-		: EventSubscriptionBase(callback, ownerScheduler, manager.KeepsScriptRunning)
-	{
-		internal readonly MonitorEventManager manager = manager;
-
-		internal override void Unregister() => manager.Unregister(this);
-
-		internal override void Register() => manager.Register(this);
-	}
-
 	/// <summary>
 	/// The per-<see cref="Script"/> engine behind <c>Ks.Monitor.OnChange</c>. <see cref="EventManagerBase{TRegistration, TBackend, TPayload}"/>
 	/// owns the subscriptions, the backend lifecycle and the dispatch tail; what is left here is the part that is
@@ -31,7 +14,7 @@ namespace Keysharp.Internals.Window
 	/// </para>
 	/// </summary>
 	internal sealed class MonitorEventManager(Script script)
-		: EventManagerBase<MonitorEventRegistration, IMonitorEventBackend, NoPayload>(script, false)
+		: EventManagerBase<CallbackRegistration, IMonitorEventBackend, NoPayload>(script, false)
 	{
 		/// <summary>The set of attached monitors changed — one was plugged in, unplugged, or the session docked.</summary>
 		internal const string KindTopology = "Topology";
@@ -52,6 +35,7 @@ namespace Keysharp.Internals.Window
 		private DisplayInfo[] lastTopology = [];
 
 		protected override ThreadKind CallbackThreadKind => ThreadKind.Event;
+		protected override string RegistrationName => "Monitor.OnChange";
 
 		// ---- source hooks --------------------------------------------------------------------
 
@@ -89,7 +73,15 @@ namespace Keysharp.Internals.Window
 					return;
 				}
 
-				b.Start();
+				try
+				{
+					b.Start();
+				}
+				catch
+				{
+					b.Stop();
+					throw;
+				}
 			}
 			else
 			{
@@ -105,7 +97,7 @@ namespace Keysharp.Internals.Window
 		/// which costs one spurious "topology" on the next notification — better than a null baseline, and the
 		/// alternative (refusing to subscribe) would be worse.
 		/// </summary>
-		protected override void PrepareRegistration(MonitorEventRegistration reg, bool isFirst)
+		protected override void PrepareRegistration(CallbackRegistration reg, bool isFirst)
 		{
 			if (!isFirst)
 				return;
@@ -121,7 +113,7 @@ namespace Keysharp.Internals.Window
 		protected override void ProcessRefresh()
 		{
 			string kind;
-			MonitorEventRegistration[] toFire;
+			CallbackRegistration[] toFire;
 
 			lock (classifyGate)
 			{
@@ -154,10 +146,10 @@ namespace Keysharp.Internals.Window
 				toFire = [.. registrations];
 			}
 
-			// Callback shape: (Hook, Change). A handler reads Monitor.Devices at callback time because the layout
+			// A handler reads Monitor.Devices at callback time because the layout
 			// can change again before the callback runs.
 			foreach (var reg in toFire)
-				Fire(reg, reg.Callback, [reg.scriptObject, kind]);
+				FireNotification(reg, [kind]);
 		}
 
 		// ---- topology diffing --------------------------------------------------------------

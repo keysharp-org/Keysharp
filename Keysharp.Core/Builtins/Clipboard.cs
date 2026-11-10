@@ -1,4 +1,4 @@
-using Keysharp.Internals;
+﻿using Keysharp.Internals;
 
 namespace Keysharp.Builtins
 {
@@ -278,25 +278,14 @@ namespace Keysharp.Builtins
 			[Static] public static object Wait(object @this, object timeout = null, object waitFor = null)
 				=> Env.ClipWait(timeout, waitFor);
 
-			/// <summary>
-			/// Calls <paramref name="callback"/> as <c>Callback(Hook, DataType)</c> whenever the clipboard changes, where
-			/// DataType is 0 (empty), 1 (text or files) or 2 (other content). Returns a started hook, which keeps the
-			/// script running as <c>OnClipboardChange</c> does, and whose <c>Stop()</c> ends the subscription. That is the
-			/// reason to prefer it over <c>OnClipboardChange</c>, where unregistering needs the very same function object back.
-			/// </summary>
-			[Static] public static object OnChange(object @this, object callback)
-			{
-				if (Functions.CheckedCallback(callback, 2) is not { } fo)
-					return DefaultObject;
+			/// <summary>Registers Callback(DataType) in the OnClipboardChange handler chain.
+			/// AddRemove appends (1), prepends (-1), or removes (0) the callback.</summary>
+			[Static]
+			public static object OnChange(object @this, object Callback, object AddRemove = null)
+				=> Env.OnClipboardChange(Callback, AddRemove);
 
-				var hook = new ClipboardHook(fo);
-				_ = hook.Start();
-				return hook;
-			}
-
-			/// <summary>Every running <c>Clipboard.OnChange</c> hook, in start order (script: <c>Clipboard.Hooks</c>)
-			/// — a snapshot to iterate and drop. It never includes the AHK <c>OnClipboardChange</c> chain.</summary>
-			public static object staticget_Hooks(object @this) => Script.TheScript.ClipboardEventManager.Hooks();
+			/// <summary>A snapshot of the current real thread's shared clipboard-change callbacks, in invocation order.</summary>
+			public static object staticget_Callbacks(object @this) => Script.TheScript.ClipFunctions.Callbacks();
 
 			#endregion
 
@@ -439,26 +428,5 @@ namespace Keysharp.Builtins
 			#endregion
 		}
 
-		/// <summary>
-		/// One <c>Clipboard.OnChange</c> subscription — the object that factory returns and the first argument every
-		/// change callback receives. Its whole surface comes from <see cref="EventHook"/>, so it is managed exactly like
-		/// every other hook.
-		/// <para>
-		/// A hook is NOT part of the AHK <c>OnClipboardChange</c> handler chain: its return value is discarded, so it
-		/// cannot suppress handlers registered there, and its callback runs on its own pseudo-thread rather than
-		/// inline. Both spellings drive the same single native clipboard monitor.
-		/// </para>
-		/// </summary>
-		public sealed class ClipboardHook : EventHook
-		{
-			internal ClipboardHook(object callback) : base(callback) { }
-
-			// Every run watches the clipboard, so each asks for the permission first.
-			private protected override EventSubscriptionBase NewRun(ScriptEventScheduler owner)
-			{
-				ClipboardPermission.EnsureMonitoring("Clipboard.OnChange");
-				return new ClipboardEventRegistration(callback, owner, Script.TheScript.ClipboardEventManager);
-			}
-		}
 	}
 }

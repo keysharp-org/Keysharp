@@ -1,4 +1,4 @@
-using Keysharp.Builtins;
+﻿using Keysharp.Builtins;
 using Keysharp.Internals.Scripting;
 
 namespace Keysharp.Internals.Events
@@ -14,7 +14,7 @@ namespace Keysharp.Internals.Events
 	/// <typeparam name="TPayload">What one event carries from the native intake to the callback's thread state.
 	/// A struct, so the shared dispatch tail costs no allocation the sources did not already pay.</typeparam>
 	internal abstract class EventManagerBase<TRegistration, TBackend, TPayload> : IDisposable
-		where TRegistration : EventSubscriptionBase
+		where TRegistration : CallbackRegistration
 		where TBackend : class, IDisposable
 		where TPayload : struct
 	{
@@ -28,6 +28,14 @@ namespace Keysharp.Internals.Events
 		private int refreshState; // 0: idle, 1: running, 2: refresh requested.
 		protected bool disposed;
 		private volatile bool keepingScriptRunning;
+		private bool installing;
+		private readonly Dictionary<TRegistration, PendingDelivery> pendingDeliveries = [];
+
+		private sealed class PendingDelivery
+		{
+			internal TRegistration Registration;
+			internal readonly Queue<object[]> Items = [];
+		}
 
 		protected EventManagerBase(Script script, bool keepsScriptRunning)
 		{
@@ -38,7 +46,17 @@ namespace Keysharp.Internals.Events
 		/// <summary>The pseudo-thread kind this source's callbacks run as.</summary>
 		protected abstract ThreadKind CallbackThreadKind { get; }
 
+		/// <summary>The callback registration API, or null for a session with its own lifecycle.</summary>
+		protected virtual string RegistrationName => null;
+
 		internal bool KeepsScriptRunning => keepsScriptRunning;
+
+		internal Keysharp.Builtins.Array Callbacks()
+		{
+			var owner = script.EventScheduler;
+			lock (gate)
+				return CallbackRegistration.SnapshotCallbacks(registrations, owner);
+		}
 
 		/// <summary>Whether a hook of this source keeps the script running now: the rule above, applied to the running
 		/// hooks. Read without the gate by <see cref="Script.AnyPersistent"/>.</summary>
@@ -55,17 +73,6 @@ namespace Keysharp.Internals.Events
 				lock (gate)
 					return registrations.Count > 0;
 			}
-		}
-
-		/// <summary>A snapshot of every running hook in start order.</summary>
-		internal Keysharp.Builtins.Array Hooks()
-		{
-			EventSubscriptionBase[] all;
-
-			lock (gate)
-				all = [.. registrations];
-
-			return EventSubscriptionBase.Handles(all);
 		}
 
 		// ---- source hooks --------------------------------------------------------------------
@@ -125,7 +132,33 @@ namespace Keysharp.Internals.Events
 
 		// ---- registration --------------------------------------------------------------------
 
-		internal void Register(TRegistration reg)
+		protected virtual bool IsRunning(TRegistration reg) => reg.IsActive;
+		protected virtual void EndRegistration(TRegistration reg, string reason) => reg.Clear();
+
+		internal void Register(TRegistration reg) => _ = Register(reg, null, null);
+
+		/// <summary>Changes the calling thread's callback registration.</summary>
+		internal bool Modify(TRegistration reg, long addRemove, Func<TRegistration, TRegistration, bool> sameOptions = null)
+		{
+			if (addRemove != 0)
+				return Register(reg, addRemove, sameOptions);
+
+			lock (gate)
+			{
+				var index = FindRegistration(reg);
+				reg.Clear();
+
+				if (index >= 0)
+					Unregister(registrations[index]);
+			}
+
+			return true;
+		}
+
+		private int FindRegistration(TRegistration reg) => registrations.FindIndex(existing =>
+			ReferenceEquals(existing.OwnerScheduler, reg.OwnerScheduler) && Functions.SameCallback(existing.Callback, reg.Callback));
+
+		private bool Register(TRegistration reg, long? addRemove, Func<TRegistration, TRegistration, bool> sameOptions)
 		{
 			bool first;
 
@@ -133,49 +166,78 @@ namespace Keysharp.Internals.Events
 			{
 				if (disposed)
 				{
-					// Clear, not just return: the registration was born holding a persistence root, and a handle
-					// that is never listed here is never swept to release it.
-					EndAndClear(reg, EventSubscriptionBase.EndReasonExit);
-					return;
+					EndRegistration(reg, EventSubscriptionBase.EndReasonExit);
+					return false;
 				}
 
-				// A Start retries a backend whose creation failed, so a failure that was transient can recover.
 				backendInitFailed = false;
 				first = registrations.Count == 0;
 			}
 
-			PrepareRegistration(reg, first);
-			var scheduler = reg.OwnerScheduler;
+			try
+			{
+				PrepareRegistration(reg, first);
+			}
+			catch
+			{
+				EndRegistration(reg, EventSubscriptionBase.EndReasonFailed);
+				if (addRemove.HasValue) return false;
+				throw;
+			}
 
-			// Adding under the owning scheduler's cleanup gate makes "registered" and "will be swept" one step: a
-			// scheduler that has already torn down refuses, leaving the subscription inactive rather than stranded
-			// in a manager nothing will ever sweep. This is the same rule CallbackRegistry follows, and the same
-			// lock order teardown takes (cleanup gate, then this manager's), so the two cannot invert.
+			var scheduler = reg.OwnerScheduler;
+			var installed = true;
 			if (scheduler != null ? !scheduler.TryRegisterOwnedResource(AddCore) : !AddCore())
-				EndAndClear(reg, EventSubscriptionBase.EndReasonExit);
+			{
+				EndRegistration(reg, EventSubscriptionBase.EndReasonExit);
+				return false;
+			}
+			return installed;
 
 			bool AddCore()
 			{
 				lock (gate)
 				{
-					// A run stopped before it was listed stays out, or it would sit here counted as alive.
-					if (disposed || !reg.IsRunning)
-						return false;
+					if (disposed || !IsRunning(reg)) return false;
+					var index = addRemove.HasValue ? FindRegistration(reg) : -1;
 
-					registrations.Add(reg);
-					RegistrationsChangedLocked();
-
-					if (!TrySyncNativeLocked("install"))
+					if (index >= 0)
 					{
-						// A source that throws while installing ends the run Failed, as a missing one does, rather than
-						// leaving it listed and keeping the script alive while it can never fire. The source is then
-						// synced to the runs that remain, which undoes whatever part of the install took.
-						_ = reg.End(EventSubscriptionBase.EndReasonFailed);
-						_ = RemoveLocked(reg);
-						RegistrationsChangedLocked();
-						_ = TrySyncNativeLocked("recovery");
-					}
+						var existing = registrations[index];
+						if (sameOptions == null || sameOptions(existing, reg))
+						{
+							reg.Clear();
+							return true;
+						}
 
+						EndRegistration(existing, EventSubscriptionBase.EndReasonStopped);
+						registrations[index] = reg;
+						if (pendingDeliveries.Remove(existing, out var pending))
+						{
+							// Keep an executing callback's serial queue while discarding its old-filter work.
+							pending.Items.Clear();
+							pending.Registration = reg;
+							pendingDeliveries.Add(reg, pending);
+						}
+					}
+					else if (addRemove < 0)
+						registrations.Insert(0, reg);
+					else
+						registrations.Add(reg);
+
+					RegistrationsChangedLocked();
+					installing = true;
+					try
+					{
+						if (!TrySyncNativeLocked("install"))
+						{
+							_ = RemoveLocked(reg, EventSubscriptionBase.EndReasonFailed);
+							RegistrationsChangedLocked();
+							_ = TrySyncNativeLocked("recovery");
+						}
+						installed = IsRunning(reg);
+					}
+					finally { installing = false; }
 					return true;
 				}
 			}
@@ -185,64 +247,51 @@ namespace Keysharp.Internals.Events
 		{
 			lock (gate)
 			{
-				// Not listed (stopped before it was, or already swept): cleared, with nothing else to redo.
-				if (!RemoveLocked(reg))
-					return;
-
+				if (!RemoveLocked(reg, EventSubscriptionBase.EndReasonStopped)) return;
 				RegistrationsChangedLocked();
 				_ = TrySyncNativeLocked("uninstall");
 			}
 		}
 
-		/// <summary>Removes every subscription owned by <paramref name="scheduler"/> (deterministic teardown when a
-		/// worker thread's scheduler is disposed — does not rely on GC/__Delete).</summary>
 		internal bool RemoveOwned(ScriptEventScheduler scheduler)
 		{
-			if (scheduler == null)
-				return false;
-
-			var removedAny = false;
-
+			if (scheduler == null) return false;
+			var removed = false;
 			lock (gate)
 			{
 				for (var i = registrations.Count - 1; i >= 0; i--)
 					if (ReferenceEquals(registrations[i].OwnerScheduler, scheduler))
-					{
-						registrations[i].End(EventSubscriptionBase.EndReasonExit);
-						_ = RemoveLocked(registrations[i]);
-						removedAny = true;
-					}
+						removed |= RemoveLocked(registrations[i], EventSubscriptionBase.EndReasonExit);
 
-				if (removedAny)
+				if (removed)
 				{
 					RegistrationsChangedLocked();
 					_ = TrySyncNativeLocked("owner cleanup");
 				}
 			}
-
-			return removedAny;
+			return removed;
 		}
 
-		private bool RemoveLocked(TRegistration reg)
+		private bool RemoveLocked(TRegistration reg, string reason)
 		{
-			reg.Clear();
+			EndRegistration(reg, reason);
+			_ = pendingDeliveries.Remove(reg);
 			return registrations.Remove(reg);
 		}
 
-		private static void EndAndClear(TRegistration reg, string reason)
-		{
-			reg.End(reason);
-			reg.Clear();
-		}
-
-		/// <summary>Ends every subscription after the native source cannot be created.</summary>
 		protected void FailAllLocked()
 		{
+			var owners = !installing && RegistrationName != null
+				? registrations.Select(reg => reg.OwnerScheduler).Where(owner => owner != null).Distinct().ToArray() : [];
 			foreach (var reg in registrations)
-				EndAndClear(reg, EventSubscriptionBase.EndReasonFailed);
-
+				EndRegistration(reg, EventSubscriptionBase.EndReasonFailed);
 			registrations.Clear();
+			pendingDeliveries.Clear();
 			RegistrationsChangedLocked();
+			foreach (var owner in owners)
+				_ = owner.EnqueueThreadLaunch(0, false, false,
+					() => _ = Errors.OSErrorOccurredWithMessage($"{RegistrationName} notifications are unavailable."),
+					useTryCatch: true, kind: CallbackThreadKind);
 		}
 
 		// ---- backend -------------------------------------------------------------------------
@@ -287,7 +336,7 @@ namespace Keysharp.Internals.Events
 		{
 			// No exit check on this path: a drop releases nothing, so there is nothing to re-check. A release made
 			// by the callback is checked when its thread ends.
-			if (!reg.IsRunning)
+			if (!IsRunning(reg))
 				return ScriptEventExecutionResult.Dropped;
 
 			using var thread = scheduler.StartPseudoThreadScope(0, false, false, false, CallbackThreadKind);
@@ -308,14 +357,64 @@ namespace Keysharp.Internals.Events
 			return ScriptEventExecutionResult.Executed;
 		}
 
-		/// <summary>Queues one callback to the thread that owns <paramref name="reg"/>, where <see cref="RunCallback"/>
-		/// decides whether it still runs. A run that has ended, or whose thread is gone, queues nothing.</summary>
+		/// <summary>Queues a session callback carrying its event-specific payload.</summary>
 		protected void Fire(TRegistration reg, object callback, object[] args, TPayload payload = default)
 		{
-			if (!reg.IsRunning || reg.OwnerScheduler is not { IsDisposed: false } scheduler)
-				return;
+			if (IsRunning(reg) && reg.OwnerScheduler is { IsDisposed: false } scheduler)
+				_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => RunCallback(scheduler, reg, callback, args, payload));
+		}
 
-			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => RunCallback(scheduler, reg, callback, args, payload));
+		/// <summary>Queues notifications serially, including when a callback pumps its owner's scheduler.</summary>
+		protected void FireNotification(TRegistration reg, object[] args)
+		{
+			if (!IsRunning(reg) || reg.OwnerScheduler is not { IsDisposed: false } scheduler) return;
+			lock (gate)
+			{
+				if (disposed || !IsRunning(reg)) return;
+				if (pendingDeliveries.TryGetValue(reg, out var pending))
+				{
+					pending.Items.Enqueue(args);
+					return;
+				}
+				pending = new() { Registration = reg };
+				pending.Items.Enqueue(args);
+				pendingDeliveries.Add(reg, pending);
+				_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => DeliverNext(scheduler, pending));
+			}
+		}
+
+		private ScriptEventExecutionResult DeliverNext(ScriptEventScheduler scheduler, PendingDelivery pending)
+		{
+			TRegistration reg;
+			object[] args;
+			lock (gate)
+			{
+				reg = pending.Registration;
+				if (!IsRunning(reg) || !pendingDeliveries.TryGetValue(reg, out var current) || current != pending)
+					return ScriptEventExecutionResult.Dropped;
+				if (pending.Items.Count == 0)
+				{
+					_ = pendingDeliveries.Remove(reg);
+					return ScriptEventExecutionResult.Dropped;
+				}
+				args = pending.Items.Peek();
+			}
+
+			var result = RunCallback(scheduler, reg, reg.Callback, args, default);
+			if (result is ScriptEventExecutionResult.GlobalBlocked or ScriptEventExecutionResult.LocalBlocked) return result;
+			lock (gate)
+			{
+				var current = pending.Registration;
+				if (pendingDeliveries.TryGetValue(current, out var active) && active == pending)
+				{
+					if (current == reg) _ = pending.Items.Dequeue();
+					if (pending.Items.Count == 0)
+						_ = pendingDeliveries.Remove(current);
+					else
+						_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => DeliverNext(scheduler, pending));
+				}
+			}
+			return result;
 		}
 
 		// ---- teardown ------------------------------------------------------------------------
@@ -333,6 +432,7 @@ namespace Keysharp.Internals.Events
 				disposed = true;
 				all = [.. registrations];
 				registrations.Clear();
+				pendingDeliveries.Clear();
 				RegistrationsChangedLocked();
 				_ = TrySyncNativeLocked("teardown");
 				toDispose = backend;
@@ -340,7 +440,7 @@ namespace Keysharp.Internals.Events
 			}
 
 			foreach (var reg in all)
-				EndAndClear(reg, EventSubscriptionBase.EndReasonExit);
+				EndRegistration(reg, EventSubscriptionBase.EndReasonExit);
 
 			// Outside the lock: a backend's Stop/Dispose may marshal onto another thread that calls back in.
 			try

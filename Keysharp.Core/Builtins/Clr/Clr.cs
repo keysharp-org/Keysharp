@@ -396,7 +396,7 @@ namespace Keysharp.Builtins
 						}
 					}
 
-					if (TryEventCall(null, _type, this, name, args, out var evResult))
+					if (TryEventCall(null, _type, name, args, out var evResult))
 						return evResult;
 
 					// Static method: TypeNode.Method(args...)
@@ -405,13 +405,15 @@ namespace Keysharp.Builtins
 
 				// Static prop/field: get
 				internal override object Get(string name, object[] args)
-					=> ManagedInvoke.GetStatic(_type, name);
+					=> TryEventGet(null, _type, name, args, out var value) ? value : ManagedInvoke.GetStatic(_type, name);
 				internal override bool TryGet(string name, object[] args, out object value)
-					=> ManagedInvoke.TryGet(null, _type, name, args, out value);
+					=> TryEventGet(null, _type, name, args, out value) || ManagedInvoke.TryGet(null, _type, name, args, out value);
 
 				// Static prop/field: set
 				internal override void Set(string name, object[] args, object value)
-					=> ManagedInvoke.SetStatic(_type, name, value);
+				{
+					if (!TryEventSet(name)) ManagedInvoke.SetStatic(_type, name, value);
+				}
 
 				// Generics sugar: TypeNode[TArg1, TArg2, ...]
 				internal override object get_Item(object[] typeArgs)
@@ -455,18 +457,20 @@ namespace Keysharp.Builtins
 
 				// Instance method call: obj.Method(args...)
 				internal override object Call(string name, object[] args)
-					=> TryEventCall(_instance, _type, this, name, args, out var evResult)
+					=> TryEventCall(_instance, _type, name, args, out var evResult)
 					   ? evResult
 					   : ManagedInvoke.InvokeInstance(_instance, _type, name, args);
 
 				// Instance prop/field: get/set
 				internal override object Get(string name, object[] args)
-					=> ManagedInvoke.GetInstance(_instance, _type, name, args);
+					=> TryEventGet(_instance, _type, name, args, out var value) ? value : ManagedInvoke.GetInstance(_instance, _type, name, args);
 				internal override bool TryGet(string name, object[] args, out object value)
-					=> ManagedInvoke.TryGet(_instance, _type, name, args, out value);
+					=> TryEventGet(_instance, _type, name, args, out value) || ManagedInvoke.TryGet(_instance, _type, name, args, out value);
 
 				internal override void Set(string name, object[] args, object value)
-					=> ManagedInvoke.SetInstance(_instance, _type, name, args, value);
+				{
+					if (!TryEventSet(name)) ManagedInvoke.SetInstance(_instance, _type, name, args, value);
+				}
 
 
 				// Indexers: obj[args...]  (get & set variants)

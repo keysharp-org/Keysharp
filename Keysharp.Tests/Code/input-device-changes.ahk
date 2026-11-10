@@ -4,20 +4,27 @@
 #Import Ks { Input }
 #Include <assert>
 
-Hook := Input.OnDeviceChange((Hook, Change, Device) => 0)
+Changed := (Change, Device) => 0
+OtherChanged := (Change, Device) => 0
+AssertEq(Input.Callbacks.Length, 0, A_LineNumber)
+Throws(() => Input.OnDeviceChange(Changed, 2), A_LineNumber, ValueError)
+Throws(() => Input.OnDeviceChange((Hook, Change, Device) => 0), A_LineNumber, ValueError)
+Input.OnDeviceChange(Changed)
 try {
-    Assert(Hook is Input.DeviceHook, A_LineNumber)
-    Assert(Hook.InProgress, A_LineNumber)
-    AssertEq(Input.Hooks.Length, 1, A_LineNumber)
-    AssertEq(Input.Hooks[1], Hook, A_LineNumber)
-    Hook.Stop()
-    Assert(!Hook.InProgress, A_LineNumber)
-    AssertEq(Hook.EndReason, "Stopped", A_LineNumber)
-    AssertEq(Input.Hooks.Length, 0, A_LineNumber)
-    Hook.Start()
-    Assert(Hook.InProgress, A_LineNumber)
+    Input.OnDeviceChange(Changed)
+    Input.OnDeviceChange(OtherChanged, -1)
+    Callbacks := Input.Callbacks
+    AssertEq(Callbacks.Length, 2, A_LineNumber)
+    AssertEq(Callbacks[1], OtherChanged, A_LineNumber)
+    AssertEq(Callbacks[2], Changed, A_LineNumber)
+    Callbacks.RemoveAt(1)
+    AssertEq(Input.Callbacks.Length, 2, A_LineNumber)
+    for Callback in Input.Callbacks
+        Input.OnDeviceChange(Callback, 0)
+    AssertEq(Input.Callbacks.Length, 0, A_LineNumber)
 } finally {
-    Hook.Stop()
+    for Callback in Input.Callbacks
+        Input.OnDeviceChange(Callback, 0)
 }
 
 FileAppend "pass", "*"

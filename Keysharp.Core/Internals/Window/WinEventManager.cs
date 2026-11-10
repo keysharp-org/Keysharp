@@ -104,6 +104,18 @@ namespace Keysharp.Internals.Window
 		private long foregroundGeneration;
 
 		protected override ThreadKind CallbackThreadKind => ThreadKind.WinEvent;
+		protected override bool IsRunning(WinEventRegistration reg) => reg.IsRunning;
+		protected override void EndRegistration(WinEventRegistration reg, string reason)
+		{
+			_ = reg.End(reason);
+			reg.Clear();
+		}
+
+		internal Keysharp.Builtins.Array Hooks()
+		{
+			lock (gate)
+				return new Keysharp.Builtins.Array(registrations.Select(reg => reg.scriptObject).ToArray());
+		}
 
 		// ---- foreground tracking -----------------------------------------------------------
 

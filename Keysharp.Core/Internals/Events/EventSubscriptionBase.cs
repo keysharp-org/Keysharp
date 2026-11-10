@@ -1,4 +1,4 @@
-using Keysharp.Builtins;
+﻿using Keysharp.Builtins;
 using Keysharp.Internals.Scripting;
 
 namespace Keysharp.Internals.Events
@@ -37,16 +37,6 @@ namespace Keysharp.Internals.Events
 
 		/// <summary>Registers this run with the manager of its family.</summary>
 		internal abstract void Register();
-
-		internal static Keysharp.Builtins.Array Handles(EventSubscriptionBase[] runs)
-		{
-			var handles = new object[runs.Length];
-
-			for (var i = 0; i < handles.Length; i++)
-				handles[i] = runs[i].scriptObject;
-
-			return new Keysharp.Builtins.Array(handles);
-		}
 
 	}
 }

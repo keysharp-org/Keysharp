@@ -2,7 +2,7 @@
 #Warn All, StdOut
 #NoTrayIcon
 #Warn Experimental, Off
-#import KS { Clipboard, Image, EventHook }
+#import KS { Clipboard, Image }
 #if WINDOWS
 #import KS { RealThread, Await }
 #endif
@@ -130,26 +130,23 @@ WriteDibSlowly()
 alias := Image.FromClipboard()
 Assert(!Clipboard.Has("Image") || (alias is Image && alias.Width == 20), A_LineNumber)
 
-; The hook surface: OnChange returns an object that can stop itself without the callback being kept around.
-hook := Clipboard.OnChange((h, type) => 0)
-Assert(hook.InProgress && hook.EndReason == "", A_LineNumber)
-
-; A handle is listed until it is stopped.
-listed := false
-for h in Clipboard.Hooks
-	listed := listed || h == hook
-Assert(listed, A_LineNumber)
-
-hook.Stop()
-AssertEq(hook.EndReason, "Stopped", A_LineNumber)
-Assert(hook is EventHook, A_LineNumber)
-
-; A stopped hook begins again from the same callback, and a running one keeps the script alive, so stop it.
-hook.Start()
-Assert(hook.InProgress && hook.EndReason == "", A_LineNumber)
-hook.Stop()
-
-AssertEq(Type(hook), "ClipboardHook", A_LineNumber)
+; Both spellings register the same callback in the same chain.
+changed := (DataType) => 0
+otherChanged := (DataType) => 0
+AssertEq(Clipboard.Callbacks.Length, 0, A_LineNumber)
+Clipboard.OnChange(changed)
+OnClipboardChange(changed)
+OnClipboardChange(otherChanged, -1)
+callbacks := Clipboard.Callbacks
+AssertEq(callbacks.Length, 2, A_LineNumber)
+AssertEq(callbacks[1], otherChanged, A_LineNumber)
+AssertEq(callbacks[2], changed, A_LineNumber)
+for callback in Clipboard.Callbacks
+    Clipboard.OnChange(callback, 0)
+AssertEq(Clipboard.Callbacks.Length, 0, A_LineNumber)
+AssertEq(callbacks.Length, 2, A_LineNumber)
+Throws(() => Clipboard.OnChange(changed, 2), A_LineNumber, ValueError)
+Throws(() => Clipboard.OnChange((Hook, DataType) => 0), A_LineNumber, ValueError)
 
 ; Constructing one must fail: there is exactly one clipboard, so the class has no instances.
 Throws(() => Clipboard(), A_LineNumber)

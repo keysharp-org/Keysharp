@@ -8,65 +8,18 @@ namespace Keysharp.Builtins
 													| BindingFlags.Instance | BindingFlags.Static | BindingFlags.IgnoreCase;
 
 			/// <summary>
-			/// A live CLR event subscription. Returned by <c>OnEvent</c> on a <see cref="Clr.Instance"/> (instance
-			/// events) or a <see cref="Clr.Type"/> (static events, e.g. Microsoft.Win32.SystemEvents).
-			/// <para>
-			/// Holding the subscription is what makes detaching reliable. Removing a handler through the CLR requires
-			/// the *same* Delegate instance that was added, and one is built per call from the script function object,
-			/// so passing the same function to a raw remove_X accessor silently removes nothing. This object keeps the
-			/// delegate it attached, so <see cref="Stop"/> always detaches the right one.
-			/// </para>
-			/// </summary>
-			public sealed class EventSubscription : EventHook
-			{
-				private readonly object instance;                  // null for a static event
-				private readonly System.Type declaringType;
-				private readonly EventInfo eventInfo;
-				private readonly object scriptTarget;
-
-				internal EventSubscription(object instance, System.Type type, EventInfo eventInfo, object callback, object scriptTarget)
-					: base(callback)
-				{
-					this.instance = instance;
-					declaringType = type;
-					this.eventInfo = eventInfo;
-					this.scriptTarget = scriptTarget;
-				}
-
-				/// <summary>The event this subscription is attached to.</summary>
-				public string EventName => eventInfo.Name;
-
-				/// <summary>The Clr.Instance or Clr.Type the subscription is attached to.</summary>
-				public object Target => scriptTarget;
-
-				// Each run attaches a delegate of its own when registered.
-				private protected override Keysharp.Internals.Events.EventSubscriptionBase NewRun(ScriptEventScheduler owner)
-				{
-					var script = Script.TheScript;
-					return new ClrEventRegistration(script, instance, declaringType, eventInfo, callback, owner, script.ClrEventManager);
-				}
-			}
-
-			/// <summary>Every running CLR event subscription this script made, in start order (script: <c>Clr.Hooks</c>) —
-			/// a snapshot to iterate and drop. It mixes instance and static events; filter with <c>Target</c>.</summary>
-			public static object staticget_Hooks(object @this) => Script.TheScript.ClrEventManager.Hooks();
-
-			/// <summary>
 			/// Intercepts the event-related spellings on a managed node, before ordinary member dispatch sees them:
-			/// <c>OnEvent(EventName, Callback)</c>, the one way to subscribe, and the compiler-generated
-			/// <c>add_X</c>/<c>remove_X</c> accessors, which raise naming it. A raw accessor would run the callback on
-			/// whatever thread raised the event, and could never be removed again, since a fresh delegate is built per
-			/// call.
+			/// <c>OnEvent(EventName, Callback, AddRemove := 1)</c> registers or removes a callback. Raw
+			/// <c>add_X</c>/<c>remove_X</c> accessors raise so they cannot bypass owner-thread dispatch.
 			/// <para>
-			/// If a CLR type genuinely declares a member called <c>OnEvent</c>, this wins.
+			/// These spellings take precedence over CLR members with the same names.
 			/// </para>
 			/// </summary>
-			private static bool TryEventCall(object instance, System.Type type, object scriptTarget, string name, object[] args, out object result)
+			private static bool TryEventCall(object instance, System.Type type, string name, object[] args, out object result)
 			{
 				result = null;
 
-				// Every ordinary method call through a managed node passes here, so the cheap tests come first: the
-				// accessors take exactly one argument, and a name of another length fails the OnEvent test at once.
+				// Every ordinary managed method call passes here, so test the synthetic name before reflection.
 				var onEvent = name.Equals("OnEvent", StringComparison.OrdinalIgnoreCase);
 
 				if (args.Length == 1 && !onEvent)
@@ -82,23 +35,47 @@ namespace Keysharp.Builtins
 					if (type.GetEvent(eventName, EventFlags) == null)
 						return false;
 
-					result = Errors.MethodErrorOccurred($"Subscribe with OnEvent(\"{eventName}\", Callback), and end the subscription with its Stop().");
+					result = Errors.MethodErrorOccurred($"Register with OnEvent(\"{eventName}\", Callback), or remove with OnEvent(\"{eventName}\", Callback, 0).");
 					return true;
 				}
 
 				if (!onEvent)
 					return false;
 
-				// Any other count is still OnEvent, so it is refused as such rather than reported as a missing member.
-				if (args.Length != 2)
-					result = Errors.ValueErrorOccurred("OnEvent takes (EventName, Callback). End a subscription with the Stop() of the object OnEvent returned.");
+				if (args.Length is < 2 or > 3)
+					result = Errors.ValueErrorOccurred("OnEvent takes (EventName, Callback, AddRemove := 1).");
 				else if (!args[0].CoerceString(out var eventText))
 					result = DefaultObject;
 				else if (type.GetEvent(eventText, EventFlags) is EventInfo ev)
-					result = Subscribe(instance, type, scriptTarget, ev, args[1]);
+					result = Subscribe(instance, ev, args[1], args.Length == 3 ? args[2] : null);
 				else
 					result = Errors.ValueErrorOccurred($"Event '{Errors.Describe(args[0])}' not found on {type.FullName}.");
 
+				return true;
+			}
+
+			/// <summary>Reads the parameterized Callbacks property before native CLR property dispatch.</summary>
+			private static bool TryEventGet(object instance, System.Type type, string name, object[] args, out object result)
+			{
+				result = null;
+				if (!name.Equals("Callbacks", StringComparison.OrdinalIgnoreCase)) return false;
+
+				if (args.Length != 1)
+					result = Errors.ValueErrorOccurred("Callbacks requires one EventName argument.");
+				else if (!args[0].CoerceString(out var eventText))
+					result = DefaultObject;
+				else if (type.GetEvent(eventText, EventFlags) is EventInfo ev)
+					result = Script.TheScript.ClrEventManager.Callbacks(instance, ev, Script.TheScript.EventScheduler);
+				else
+					result = Errors.ValueErrorOccurred($"Event '{Errors.Describe(args[0])}' not found on {type.FullName}.");
+
+				return true;
+			}
+
+			private static bool TryEventSet(string name)
+			{
+				if (!name.Equals("Callbacks", StringComparison.OrdinalIgnoreCase)) return false;
+				_ = Errors.PropertyErrorOccurred("Property 'Callbacks' is read-only.");
 				return true;
 			}
 
@@ -106,90 +83,48 @@ namespace Keysharp.Builtins
 			/// Subscribes <paramref name="callback"/> to <paramref name="ev"/>. Shared by Clr.Instance (instance
 			/// events, <paramref name="instance"/> non-null) and Clr.Type (static events).
 			/// </summary>
-			private static object Subscribe(object instance, System.Type type, object scriptTarget, EventInfo ev, object callback)
+			private static object Subscribe(object instance, EventInfo ev, object callback, object addRemove)
 			{
-				var argCount = ev.EventHandlerType?.GetMethod("Invoke")?.GetParameters().Length ?? 0;
-
-				if (Functions.CheckedCallback(callback, argCount) is not { } fo)
+				if (!Functions.TryAddRemove(addRemove, out var change) || Functions.ToCallback(callback) is not { } fo)
 					return DefaultObject;
 
-				var subscription = new EventSubscription(instance, type, ev, fo, scriptTarget);
-				_ = subscription.Start();
-				return subscription;
+				if (change != 0 && !Functions.ValidateFunctor(fo, ev.EventHandlerType?.GetMethod("Invoke")?.GetParameters().Length ?? 0))
+					return DefaultObject;
+
+				var script = Script.TheScript;
+				script.ClrEventManager.Modify(instance, ev, fo, change, script.EventScheduler);
+				return DefaultObject;
 			}
 		}
 	}
 
 	/// <summary>
-	/// One live CLR event subscription: the target, the event, the script callback, and the Delegate actually
-	/// attached to the event (the only thing that can detach it again). It also owns the dispatch, so the delegate
-	/// handed to the CLR can bind straight to <see cref="Dispatch"/> on this object -- a closure over the manager
-	/// would allocate a display class per subscription to reach the same state.
+	/// A CLR callback and the real thread that registered it. Removed registrations remain inactive even if a
+	/// callback they queued is still waiting on its owner.
 	/// </summary>
-	internal sealed class ClrEventRegistration(Script script, object instance, Type declaringType, EventInfo eventInfo,
-			object callback, ScriptEventScheduler ownerScheduler, ClrEventManager manager)
-		: Keysharp.Internals.Events.EventSubscriptionBase(callback, ownerScheduler, false)
+	internal sealed class ClrEventRegistration(object callback, ScriptEventScheduler ownerScheduler)
+		: CallbackRegistration(callback, ownerScheduler, true, false)
 	{
-		private readonly Script script = script;
-		internal readonly ClrEventManager manager = manager;
-		internal readonly object instance = instance;               // null for a static event
-		internal readonly Type declaringType = declaringType;
-		internal readonly EventInfo eventInfo = eventInfo;
-		internal Delegate handler;
-
-		internal override void Register() => manager.Register(this);
-
-		internal override void Unregister() => manager.Unregister(this);
-
-		/// <summary>Marks the subscription dead and hands back the attached delegate for the caller to remove outside
-		/// every lock. Only the first caller gets it, so it is detached once.</summary>
-		internal Delegate Deactivate()
-		{
-			Clear();
-			return Interlocked.Exchange(ref handler, null);
-		}
-
 		/// <summary>
-		/// The threading rule: run inline when already on the owning script thread, otherwise enqueue.
-		/// <para>
-		/// Inline is not merely an optimisation. A delegate the script itself passed into a synchronous CLR call
-		/// (a comparer, a predicate) and an event a CLR object raises as a direct result of a script-initiated call
-		/// both arrive on the script thread, and handing those to the queue would either reorder them or deadlock --
-		/// the script thread is inside the call and cannot pump until it returns.
-		/// </para>
-		/// <para>
-		/// Off-thread, running the callback where it lands is what made A_ThreadId report the wrong pseudo-thread,
-		/// left every ThreadVariables-backed value (A_LastError, Critical, CoordMode, SendMode) reading state
-		/// belonging to another thread, allowed unsynchronised GUI access, and turned any error in the handler into an
-		/// unhandled CLR exception that killed the process. Enqueueing fixes all four at once, because the callback
-		/// then runs in a normal pseudo-thread on its owner.
-		/// </para>
+		/// Owner-thread calls run inline so the CLR raiser can observe their result or cancellation. Foreign-thread
+		/// calls queue on their owner: waiting synchronously could deadlock a script already inside the CLR call.
 		/// </summary>
-		internal object Dispatch(object[] args)
+		internal object Dispatch(object[] args, object defaultReturn)
 		{
-			if (!IsRunning)
-				return DefaultObject;
+			if (!IsActive || OwnerScheduler is not { IsDisposed: false } scheduler || scheduler.Owner.hasExited)
+				return defaultReturn;
 
-			var scheduler = OwnerScheduler;
-
-			if (scheduler == null || scheduler.IsDisposed || script.hasExited)
-				return DefaultObject;
-
-			// Already on the owning thread: the caller is the script, so run in its current pseudo-thread and let the
-			// value (and any exception) travel back to the CLR caller normally. This is the only path on which a
-			// handler can cancel an event or return a value the raiser observes.
 			if (scheduler.OwnsCurrentThread)
 				return Script.InvokeOrNull(Callback, null, args);
 
 			_ = scheduler.Enqueue(ScriptEventQueue.Normal, 0, () => RunOnSchedulerThread(scheduler, args));
-			return DefaultObject;
+			return defaultReturn;
 		}
 
 		private ScriptEventExecutionResult RunOnSchedulerThread(ScriptEventScheduler scheduler, object[] args)
 		{
-			// The same gate every event family applies when a queued callback would run: stopping takes effect at the
-			// call, so an entry queued before it is discarded rather than delivered late.
-			if (!IsRunning)
+			// Removal cancels work already queued on the owner.
+			if (!IsActive)
 				return ScriptEventExecutionResult.Dropped;
 
 			using var thread = scheduler.StartPseudoThreadScope(0, false, false, false, ThreadKind.Clr);
@@ -203,8 +138,6 @@ namespace Keysharp.Builtins
 			}
 			catch (Exception ex) when (CallStack.RememberAndCatch(ex))
 			{
-				// Reported as an ordinary script error on the owning thread. Letting this escape would put an unhandled
-				// exception on a threadpool thread, which takes the process down.
 				_ = Errors.ReportUncaught(ex);
 			}
 
@@ -213,95 +146,187 @@ namespace Keysharp.Builtins
 	}
 
 	/// <summary>
-	/// Owns every live CLR event subscription so they can be detached deterministically -- on Stop(), when the
-	/// owning thread's scheduler is disposed, and at engine teardown. That last one matters most: a subscription to a
-	/// *static* event (Microsoft.Win32.SystemEvents and friends) is a root the CLR holds forever, so without an
-	/// explicit sweep it keeps the callback, its closure and the engine behind it alive past dispose.
+	/// Keeps one native delegate per CLR target/event and orders the script callbacks behind it. Retaining that
+	/// delegate makes removal deterministic, including for static events that otherwise root the engine.
 	/// </summary>
 	internal sealed class ClrEventManager : IDisposable
 	{
 		private readonly Lock gate = new();
-		private readonly List<ClrEventRegistration> registrations = [];
+		private readonly List<Source> sources = [];
 		private bool disposed;
 
-		/// <summary>The handle of every running subscription, in start order. A snapshot, built outside the gate.</summary>
-		internal Keysharp.Builtins.Array Hooks()
+		internal Keysharp.Builtins.Array Callbacks(object instance, EventInfo eventInfo, ScriptEventScheduler scheduler)
 		{
-			Keysharp.Internals.Events.EventSubscriptionBase[] all;
-
 			lock (gate)
-				all = [.. registrations];
-
-			return Keysharp.Internals.Events.EventSubscriptionBase.Handles(all);
+			{
+				var source = sources.Find(candidate => ReferenceEquals(candidate.Instance, instance) && candidate.Event.Equals(eventInfo));
+				return source == null ? new() : CallbackRegistration.SnapshotCallbacks(source.Registrations, scheduler);
+			}
 		}
 
-		/// <summary>Attaches <paramref name="reg"/>'s delegate and lists it. A run that cannot be attached ends Failed,
-		/// and the error is raised.</summary>
-		internal void Register(ClrEventRegistration reg)
+		private sealed class Source(object instance, EventInfo eventInfo)
 		{
-			var handlerType = reg.eventInfo.EventHandlerType;
+			internal readonly object Instance = instance;
+			internal readonly EventInfo Event = eventInfo;
+			internal readonly List<ClrEventRegistration> Registrations = [];
+			internal Delegate Handler;
+			private ClrEventRegistration[] snapshot = [];
+			private readonly object defaultReturn = DefaultReturn(eventInfo.EventHandlerType?.GetMethod("Invoke")?.ReturnType);
 
-			if (handlerType == null)
+			private static object DefaultReturn(Type returnType) => returnType == null || returnType == typeof(void) || !returnType.IsValueType
+				? null : Activator.CreateInstance(returnType);
+
+			internal void Publish() => Volatile.Write(ref snapshot, [.. Registrations]);
+
+			internal object Dispatch(object[] args)
 			{
-				reg.End(Keysharp.Internals.Events.EventSubscriptionBase.EndReasonFailed);
-				reg.Clear();
-				_ = Errors.ErrorOccurred($"Event '{reg.eventInfo.Name}' has no handler type.");
+				var result = defaultReturn;
+
+				// CLR multicast events call every handler and return the last result; a nonempty script result does
+				// not consume the event as it does for a GUI chain.
+				foreach (var reg in Volatile.Read(ref snapshot))
+					if (reg.IsActive)
+						result = reg.Dispatch(args, defaultReturn);
+
+				return result;
+			}
+		}
+
+		internal void Modify(object instance, EventInfo eventInfo, object callback, long addRemove, ScriptEventScheduler scheduler)
+		{
+			if (addRemove == 0)
+			{
+				Remove(instance, eventInfo, callback, scheduler);
 				return;
 			}
 
-			try
-			{
-				// The shim runs Dispatch, not the script function, so the marshalling decision is made per event.
-				var del = ClrDelegateMarshaler.FromKeysharpFunc(handlerType, new ClrCallbackShim(reg.Dispatch));
-				reg.eventInfo.AddEventHandler(reg.instance, del);
-				reg.handler = del;
-			}
-			catch (Exception ex)
-			{
-				reg.End(Keysharp.Internals.Events.EventSubscriptionBase.EndReasonFailed);
-				reg.Clear();
-				_ = ManagedInvoke.ThrowMapped(ex, $"{reg.declaringType.FullName}.{reg.eventInfo.Name} (subscribe)");
-				return;
-			}
+			Source source = null;
+			var attach = false;
 
-			var scheduler = reg.OwnerScheduler;
-
-			// Listing under the owner's cleanup gate closes the gap between attaching the delegate and scheduler
-			// teardown: cleanup either sees this run, or registration is refused and the delegate is detached below.
-			if (scheduler != null ? scheduler.TryRegisterOwnedResource(AddCore) : AddCore())
-				return;
-
-			// Stopped or disposed while we were attaching: undo rather than leave a handler nothing will ever detach.
-			// A Stop() already recorded its reason, which the first-reason rule keeps.
-			reg.End(Keysharp.Internals.Events.EventSubscriptionBase.EndReasonExit);
-			Detach(reg);
+			// Publish under the owner's cleanup gate before attaching: teardown either sees the registration or
+			// refuses it. Arbitrary CLR event accessors run after both gates have been released.
+			if (scheduler.TryRegisterOwnedResource(AddCore) && attach)
+				Attach(source, scheduler);
 
 			bool AddCore()
 			{
 				lock (gate)
 				{
-					if (disposed || !reg.IsRunning)
+					if (disposed)
 						return false;
 
-					registrations.Add(reg);
+					source = sources.Find(s => ReferenceEquals(s.Instance, instance) && s.Event.Equals(eventInfo));
+
+					if (source == null)
+					{
+						sources.Add(source = new Source(instance, eventInfo));
+						attach = true;
+					}
+					else if (source.Registrations.Exists(r => ReferenceEquals(r.OwnerScheduler, scheduler) && Functions.SameCallback(r.Callback, callback)))
+						return true;
+
+					var reg = new ClrEventRegistration(callback, scheduler);
+
+					if (addRemove < 0)
+						source.Registrations.Insert(0, reg);
+					else
+						source.Registrations.Add(reg);
+
+					source.Publish();
 					return true;
 				}
 			}
 		}
 
-		internal void Unregister(ClrEventRegistration reg)
+		private void Attach(Source source, ScriptEventScheduler installingScheduler)
 		{
-			if (reg == null)
-				return;
+			Delegate handler = null;
 
-			// Cleared under the gate, so a Register racing this Stop cannot list it after it was taken out.
-			lock (gate)
+			try
 			{
-				_ = registrations.Remove(reg);
-				reg.Clear();
+				var handlerType = source.Event.EventHandlerType
+					?? throw new InvalidOperationException($"Event '{source.Event.Name}' has no handler type.");
+				handler = ClrDelegateMarshaler.FromKeysharpFunc(handlerType, new ClrCallbackShim(source.Dispatch));
+				source.Event.AddEventHandler(source.Instance, handler);
+			}
+			catch (Exception ex)
+			{
+				Fail(source, installingScheduler, ex);
+				Detach(source, handler);
+				_ = ManagedInvoke.ThrowMapped(ex, $"{source.Event.DeclaringType?.FullName}.{source.Event.Name} (subscribe)");
+				return;
 			}
 
-			Detach(reg);
+			lock (gate)
+			{
+				if (!disposed && sources.Contains(source))
+				{
+					source.Handler = handler;
+					return;
+				}
+			}
+
+			// Removal can win while a custom event accessor attaches. The delegate only becomes ours to detach
+			// after AddEventHandler returns, so finish the losing attach here.
+			Detach(source, handler);
+		}
+
+		private void Fail(Source source, ScriptEventScheduler installingScheduler, Exception error)
+		{
+			ScriptEventScheduler[] owners;
+
+			lock (gate)
+			{
+				owners = source.Registrations.Select(reg => reg.OwnerScheduler)
+					.Where(owner => owner != null && !ReferenceEquals(owner, installingScheduler)).Distinct().ToArray();
+				_ = sources.Remove(source);
+
+				foreach (var reg in source.Registrations)
+					reg.Clear();
+
+				source.Registrations.Clear();
+				source.Publish();
+			}
+
+			// A native add accessor can re-enter registration or need another owner to run, so waiting for its
+			// completion could deadlock. Concurrent owners learn an install failure on their own callback threads;
+			// same-thread reentrant registrations observe it through the outer registration's exception.
+			foreach (var owner in owners)
+				_ = owner.EnqueueThreadLaunch(0, false, false,
+					() => _ = ManagedInvoke.ThrowMapped(error, $"{source.Event.DeclaringType?.FullName}.{source.Event.Name} (subscribe)"),
+					useTryCatch: true, kind: ThreadKind.Clr);
+		}
+
+		private void Remove(object instance, EventInfo eventInfo, object callback, ScriptEventScheduler scheduler)
+		{
+			Source source;
+			Delegate handler = null;
+
+			lock (gate)
+			{
+				source = sources.Find(s => ReferenceEquals(s.Instance, instance) && s.Event.Equals(eventInfo));
+
+				if (source == null)
+					return;
+
+				var reg = source.Registrations.Find(r => ReferenceEquals(r.OwnerScheduler, scheduler) && Functions.SameCallback(r.Callback, callback));
+
+				if (reg == null)
+					return;
+
+				reg.Clear();
+				_ = source.Registrations.Remove(reg);
+				source.Publish();
+
+				if (source.Registrations.Count == 0)
+				{
+					_ = sources.Remove(source);
+					handler = source.Handler;
+					source.Handler = null;
+				}
+			}
+
+			Detach(source, handler);
 		}
 
 		/// <summary>Detaches every subscription owned by <paramref name="scheduler"/> (deterministic teardown when a
@@ -311,36 +336,46 @@ namespace Keysharp.Builtins
 			if (scheduler == null)
 				return false;
 
-			List<ClrEventRegistration> owned = null;
+			List<(Source Source, Delegate Handler)> detached = null;
+			var removed = false;
 
 			lock (gate)
 			{
-				for (var i = registrations.Count - 1; i >= 0; i--)
+				for (var i = sources.Count - 1; i >= 0; i--)
 				{
-					if (!ReferenceEquals(registrations[i].OwnerScheduler, scheduler))
-						continue;
+					var source = sources[i];
 
-					(owned ??= []).Add(registrations[i]);
-					registrations.RemoveAt(i);
+					for (var j = source.Registrations.Count - 1; j >= 0; j--)
+					{
+						if (!ReferenceEquals(source.Registrations[j].OwnerScheduler, scheduler))
+							continue;
+
+						source.Registrations[j].Clear();
+						source.Registrations.RemoveAt(j);
+						removed = true;
+					}
+
+					source.Publish();
+
+					if (source.Registrations.Count == 0)
+					{
+						sources.RemoveAt(i);
+						(detached ??= []).Add((source, source.Handler));
+						source.Handler = null;
+					}
 				}
 			}
 
-			if (owned == null)
-				return false;
+			if (detached != null)
+				foreach (var (source, handler) in detached)
+					Detach(source, handler);
 
-			// Outside the gate: RemoveEventHandler runs arbitrary CLR code.
-			foreach (var reg in owned)
-			{
-				reg.End(Keysharp.Internals.Events.EventSubscriptionBase.EndReasonExit);
-				Detach(reg);
-			}
-
-			return true;
+			return removed;
 		}
 
 		public void Dispose()
 		{
-			List<ClrEventRegistration> all;
+			List<(Source Source, Delegate Handler)> detached = [];
 
 			lock (gate)
 			{
@@ -348,30 +383,35 @@ namespace Keysharp.Builtins
 					return;
 
 				disposed = true;
-				all = [.. registrations];
-				registrations.Clear();
+				foreach (var source in sources)
+				{
+					foreach (var reg in source.Registrations)
+						reg.Clear();
+
+					source.Registrations.Clear();
+					source.Publish();
+					detached.Add((source, source.Handler));
+					source.Handler = null;
+				}
+
+				sources.Clear();
 			}
 
-			foreach (var reg in all)
-			{
-				reg.End(Keysharp.Internals.Events.EventSubscriptionBase.EndReasonExit);
-				Detach(reg);
-			}
+			foreach (var (source, handler) in detached)
+				Detach(source, handler);
 		}
 
 
-		private static void Detach(ClrEventRegistration reg)
+		private static void Detach(Source source, Delegate handler)
 		{
-			var del = reg.Deactivate();
-
-			if (del == null)
+			if (handler == null)
 				return;
 
 			// A target that is already disposed (or a static event on a type being torn down) can throw here. Teardown
 			// must not fail because of it: the subscription is going away either way.
 			try
 			{
-				reg.eventInfo.RemoveEventHandler(reg.instance, del);
+				source.Event.RemoveEventHandler(source.Instance, handler);
 			}
 			catch
 			{

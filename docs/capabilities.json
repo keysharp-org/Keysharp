@@ -3820,24 +3820,24 @@
                  {
                      "category":  "Keysharp Module (Ks)",
                      "feature":  "Clipboard.OnChange()",
-                     "syntax":  "hook := Clipboard.OnChange(Callback)",
+                     "syntax":  "Clipboard.OnChange(Callback [, AddRemove := 1])",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "unknown",
-                     "notes":  "Calls Callback(Hook, DataType) with 0 (empty), 1 (text or files) or 2 (other). Returns a started ClipboardHook, independent of OnClipboardChange, that keeps the script running; native callbacks are unverified on macOS.",
-                     "tested-by":  "clipboard-class.ahk; ClipboardTests.OnChangeHookSurface; EventHookTests.PersistenceFollowsTheFamily"
+                     "notes":  "Exact alias of OnClipboardChange: Callback(DataType) receives 0 (empty), 1 (text or files) or 2 (other). Both spellings share registrations, ordering, removal and the nonzero-return stop rule. AddRemove is 1 (append), -1 (prepend) or 0 (remove). Keeps the script running; native callbacks are unverified on macOS.",
+                     "tested-by":  "clipboard-class.ahk; ClipboardTests.OnChangeRegistration; ClipboardTests.OnChangeOneShot; ClipboardTests.OnChangeSharesHandlerChain; ClipboardTests.OnChangeReRegistrationDropsQueuedNotification; EventHookTests.PersistenceFollowsTheFamily"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "Clipboard.Hooks",
-                     "syntax":  "for hook in Clipboard.Hooks",
+                     "feature":  "Clipboard.Callbacks",
+                     "syntax":  "Callbacks := Clipboard.Callbacks",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
-                     "macos":  "unknown",
-                     "notes":  "An Array of every running Clipboard.OnChange hook, in start order, from every thread. A snapshot; OnClipboardChange handlers are not included.",
-                     "tested-by":  "clipboard-class.ahk"
+                     "macos":  "full",
+                     "notes":  "Clipboard-change callbacks from the shared Clipboard.OnChange/OnClipboardChange registry. Returns a detached snapshot Array of the exact active callback objects owned by the calling real thread, in invocation or dispatch order. Other threads are excluded; changing the Array has no effect on registrations. Reading the list does not initialize native sources or acquire permissions.",
+                     "tested-by":  "ClipboardTests.ScriptSurface; NotificationTests.RegistrationIdentityAndOrder"
                  },
                  {
                      "category":  "Clipboard",
@@ -3947,24 +3947,24 @@
                  {
                      "category":  "Interop/Memory",
                      "feature":  "Clr.Instance.OnEvent()",
-                     "syntax":  "sub := obj.OnEvent(\"Name\", Callback)",
+                     "syntax":  "Target.OnEvent(EventName, Callback [, AddRemove := 1])",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Subscribes Callback to an instance event, or a Clr.Type's static event, and runs it on the subscribing thread. Returns a started Clr.EventSubscription that Stop() detaches and Start() re-attaches; it does not keep the script running.",
+                     "notes":  "Registers an instance event or a Clr.Type static event without returning a handle. AddRemove is 1 (append), -1 (prepend among script handlers) or 0 (remove). One registration per target, event, callback and owning thread. Native arguments and same-thread return/cancellation behavior are preserved; events from other threads queue on the owner and cannot synchronously cancel the raiser. Does not keep the script running.",
                      "tested-by":  "directive-csharp-events.ahk"
                  },
                  {
                      "category":  "Interop/Memory",
-                     "feature":  "Clr.Hooks",
-                     "syntax":  "for sub in Clr.Hooks",
+                     "feature":  "Clr.Instance.Callbacks",
+                     "syntax":  "Callbacks := Target.Callbacks[EventName]",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "An Array of every running CLR event subscription this script made, in start order, mixing instance and static events. A snapshot.",
-                     "tested-by":  "directive-csharp-events.ahk"
+                     "notes":  "Read-only indexed property of script callbacks for one CLR target and event; works on instance and static events. The synthetic Callbacks property takes precedence over a native .NET property of that name. Returns a detached snapshot Array of the exact active callback objects owned by the calling real thread, in invocation or dispatch order. Other threads are excluded; changing the Array has no effect on registrations. Reading the list does not initialize native sources or acquire permissions.",
+                     "tested-by":  "DirectiveTests.CSharpClrEvents; directive-csharp-events.ahk"
                  },
                  {
                      "category":  "Interop/Memory",
@@ -8452,35 +8452,24 @@
                  {
                      "category":  "Keysharp Module (Ks)",
                      "feature":  "Input.OnDeviceChange()",
-                     "syntax":  "Hook := Input.OnDeviceChange(Callback)",
+                     "syntax":  "Input.OnDeviceChange(Callback [, AddRemove := 1])",
                      "windows":  "partial",
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Calls Callback(Hook, Change, Device) with Added, Removed or Changed and an Input snapshot. Returns a started Input.DeviceHook using the EventHook lifecycle, without keeping the script running. Existing devices form the baseline; coalesced notifications compare inventories. The native watcher runs only while hooks are active. Windows and macOS watch arrivals/removals; property-only metadata changes have no trigger and are discovered only during a subsequent refresh. Managed capture compares its selected inventory on the native watcher's notifications and retains its access requirements; provider-only changes have no trigger. Linux requires keysharp-input client ABI 1.1 and an existing InputMonitoring grant, without prompting or installing input hooks. Source loss or a failed inventory refresh ends hooks with Failed; Start retries explicitly.",
+                     "notes":  "Calls Callback(Change, Device) with Added, Removed or Changed and an Input snapshot. AddRemove is 1 (append), -1 (prepend) or 0 (remove); repeated registration on the same thread keeps one entry. No handle is returned. Callbacks are serialized per registration; removal discards pending delivery. Does not keep the script running. Existing devices form the baseline; coalesced notifications compare inventories. Windows and macOS discover property-only metadata changes during later arrival/removal refreshes. Managed capture compares its selected inventory on native notifications; provider-only changes have no trigger. Linux requires keysharp-input client ABI 1.1 and an existing InputMonitoring grant, without prompting or installing input hooks. Permanent source loss reports an OSError on each affected owner thread and removes registrations; registering again retries.",
                      "tested-by":  "input-device-changes.ahk; InputDeviceTests.InventoryChanges; InputDeviceTests.AnonymousDevicesAreNotMerged; Gui/guitest.ks"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "Input.Hooks",
-                     "syntax":  "for Hook in Input.Hooks",
+                     "feature":  "Input.Callbacks",
+                     "syntax":  "Callbacks := Input.Callbacks",
                      "windows":  "full",
-                     "linux_x11":  "partial",
-                     "linux_wayland":  "partial",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "A read-only property returning a snapshot Array of running Input.DeviceHook subscriptions from all threads, in start order.",
-                     "tested-by":  "input-device-changes.ahk; Gui/guitest.ks"
-                 },
-                 {
-                     "category":  "Keysharp Module (Ks)",
-                     "feature":  "Input.DeviceHook",
-                     "syntax":  "Hook := Input.OnDeviceChange(Callback)",
-                     "windows":  "full",
-                     "linux_x11":  "partial",
-                     "linux_wayland":  "partial",
-                     "macos":  "full",
-                     "notes":  "EventHook subclass returned by Input.OnDeviceChange, with Start, Stop, InProgress and EndReason. No additional instance members. It does not keep the script running.",
-                     "tested-by":  "input-device-changes.ahk; Gui/guitest.ks"
+                     "notes":  "Input-device change callbacks. Returns a detached snapshot Array of the exact active callback objects owned by the calling real thread, in invocation or dispatch order. Other threads are excluded; changing the Array has no effect on registrations. Reading the list does not initialize native sources or acquire permissions.",
+                     "tested-by":  "InputDeviceTests.DeviceNotifications; NotificationTests.RegistrationIdentityAndOrder"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -8561,24 +8550,24 @@
                  {
                      "category":  "Keysharp Module (Ks)",
                      "feature":  "Audio.OnDeviceChange()",
-                     "syntax":  "hook := Audio.OnDeviceChange(Callback, \"Output\")",
+                     "syntax":  "Audio.OnDeviceChange(Callback [, AddRemove := 1, Kind := \"All\"])",
                      "windows":  "full",
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
                      "macos":  "planned",
-                     "notes":  "Calls Callback(Hook, Change, Device) with Change \"Added\", \"Removed\", \"Changed\" or \"DefaultChanged\". Returns a started Audio.DeviceHook that does not keep the script running.",
-                     "tested-by":  "audio-class.ahk; EventHookTests.PersistenceFollowsTheFamily"
+                     "notes":  "Calls Callback(Change, Device) with \"Added\", \"Removed\", \"Changed\" or \"DefaultChanged\". AddRemove is 1 (append), -1 (prepend) or 0 (remove). Kind is \"Output\", \"Input\" or \"All\"; registering the same callback on its owning thread updates Kind without moving its position or duplicating it. Removal needs only Callback and 0. No handle is returned. Per-registration callbacks are serialized on their registering thread, and removal discards pending delivery. Does not keep the script running.",
+                     "tested-by":  "audio-class.ahk; NotificationTests.UpdatedOptionsReplaceQueuedDelivery; EventHookTests.PersistenceFollowsTheFamily"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "Audio.Hooks",
-                     "syntax":  "for hook in Audio.Hooks",
+                     "feature":  "Audio.Callbacks",
+                     "syntax":  "Callbacks := Audio.Callbacks",
                      "windows":  "full",
-                     "linux_x11":  "unknown",
-                     "linux_wayland":  "unknown",
-                     "macos":  "planned",
-                     "notes":  "An Array of every running Audio.OnDeviceChange hook, in start order, from every thread. A snapshot.",
-                     "tested-by":  "audio-class.ahk"
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Audio-device change callbacks across all Kind filters; filters affect delivery only. Returns a detached snapshot Array of the exact active callback objects owned by the calling real thread, in invocation or dispatch order. Other threads are excluded; changing the Array has no effect on registrations. Reading the list does not initialize native sources or acquire permissions.",
+                     "tested-by":  "AudioTests.AudioClass; NotificationTests.RegistrationIdentityAndOrder"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -8759,24 +8748,24 @@
                  {
                      "category":  "Keysharp Module (Ks)",
                      "feature":  "Monitor.OnChange()",
-                     "syntax":  "hook := Monitor.OnChange(Callback)",
+                     "syntax":  "Monitor.OnChange(Callback [, AddRemove := 1])",
                      "windows":  "full",
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
                      "macos":  "unknown",
-                     "notes":  "Calls Callback(Hook, Change) with \"Topology\" or \"Settings\", ignoring notifications that change nothing. Returns a started MonitorHook that does not keep the script running; native callbacks are unverified on Linux and macOS.",
-                     "tested-by":  "MonitorTests.cs; EventHookTests.PersistenceFollowsTheFamily"
+                     "notes":  "Calls Callback(Change) with \"Topology\" or \"Settings\", ignoring notifications that change nothing. AddRemove is 1 (append), -1 (prepend) or 0 (remove); repeated registration of the same callback on the same thread keeps one entry. No handle is returned. Callbacks on their registering thread are serialized per registration, and removal discards pending delivery. Does not keep the script running; native callbacks are unverified on Linux and macOS.",
+                     "tested-by":  "MonitorTests.MonitorChanges; NotificationTests.RegistrationIdentityAndOrder; NotificationTests.CallbacksAreSerialized; NotificationTests.RemovalCancelsQueuedDelivery; NotificationTests.StartupFailureCanRetry; NotificationTests.PermanentSourceLossReportsOncePerOwner"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "Monitor.Hooks",
-                     "syntax":  "for hook in Monitor.Hooks",
+                     "feature":  "Monitor.Callbacks",
+                     "syntax":  "Callbacks := Monitor.Callbacks",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "An Array of every running Monitor.OnChange hook, in start order, from every thread. A snapshot.",
-                     "tested-by":  "EventHookTests.RegisterEnumerateAndStopThroughTheManager"
+                     "notes":  "Display-change callbacks. Returns a detached snapshot Array of the exact active callback objects owned by the calling real thread, in invocation or dispatch order. Other threads are excluded; changing the Array has no effect on registrations. Reading the list does not initialize native sources or acquire permissions.",
+                     "tested-by":  "MonitorTests.MonitorClass; NotificationTests.RegistrationIdentityAndOrder"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -9298,7 +9287,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "Click-through, always-on-top overlay used by Highlight and ToolTip. Draw through Canvas and publish with Present; SetImage copies an image and Redraw builds a replacement canvas. Pointer event callbacks are owned by the registering real thread, as for Gui.OnEvent, and require ClickThrough := false. On GNOME/Cinnamon a click-through overlay is drawn inside the shell, so it is not a window and takes no taskbar entry; frames are transferred as bounded PNG data. Runtime-tested on Windows, covered by automated backing tests on Linux, and unverified on macOS.",
+                     "notes":  "Click-through, always-on-top overlay used by Highlight and ToolTip. Draw through Canvas and publish with Present; SetImage copies an image and Redraw builds a replacement canvas. OnEvent returns no value. Pointer event callbacks are owned by the registering real thread, as for Gui.OnEvent, and require ClickThrough := false. On GNOME/Cinnamon a click-through overlay is drawn inside the shell, so it is not a window and takes no taskbar entry; frames are transferred as bounded PNG data. Runtime-tested on Windows, covered by automated backing tests on Linux, and unverified on macOS.",
                      "tested-by":  "overlay-canvas.ahk; GuiTests.ExplicitPresent; GuiTests.OverlayEventChainStopsOnNonEmptyReturn; RealThreadTests.WorkerOwnership; OverlayLinuxTests.cs"
                  },
                  {
@@ -9353,7 +9342,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Prevents the script from exiting automatically when its last thread completes. A running WinEvent, Clipboard.OnChange hook or InputHook also keeps it running; Monitor.OnChange, Audio.OnDeviceChange, Input.OnDeviceChange, Script.OnMessage and CLR event hooks do not.",
+                     "notes":  "Prevents the script from exiting automatically when its last thread completes. A running WinEvent or InputHook, or an OnClipboardChange/Clipboard.OnChange registration, also keeps it running. Monitor.OnChange, Audio.OnDeviceChange, Input.OnDeviceChange, Script.OnMessage and CLR event registrations do not.",
                      "tested-by":  "FlowTests.FlowExitRequests; EventHookTests.PersistenceFollowsTheFamily; FlowTests.FlowHeadlessPersistence"
                  },
                  {
@@ -9778,7 +9767,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Ks base class of WinEvent, MonitorHook, ClipboardHook, Audio.DeviceHook, Input.DeviceHook, Clr.EventSubscription and InputHook. A running hook lasts until Stop(), its thread ending or script exit, and only WinEvent, ClipboardHook and InputHook keep the script running.",
+                     "notes":  "Ks base class of WinEvent and InputHook. A running WinEvent lasts until Stop(), its owning thread ending or script exit. WinEvent and InputHook keep the script running and retain their respective Start/Stop, InProgress and EndReason contracts.",
                      "tested-by":  "EventHookTests.HookSurfaceIsIdenticalAcrossSources; EventHookTests.DeleteDoesNotStopTheSubscription; EventHookTests.PersistenceFollowsTheFamily; EventHookTests.RealThreadRootsFollowTheFamily"
                  },
                  {
@@ -9812,7 +9801,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Starts a stopped hook with its callback and filter, in a run owned by the calling thread; does nothing to a running hook.",
-                     "tested-by":  "EventHookTests.HookSurfaceIsIdenticalAcrossSources; EventHookTests.QueuedCallbacksAreDiscardedAfterStop; EventHookTests.WinEventIsConstructedIdleAndStarted"
+                     "tested-by":  "EventHookTests.HookSurfaceIsIdenticalAcrossSources; EventHookTests.StartAfterAnEndStillUnregisteringBeginsANewRun; EventHookTests.WinEventIsConstructedIdleAndStarted"
                  },
                  {
                      "category":  "Automation",
@@ -9823,7 +9812,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Ends the run with EndReason \"Stopped\", discarding callbacks already queued while one already running finishes; Start() can begin another run.",
-                     "tested-by":  "EventHookTests.QueuedCallbacksAreDiscardedAfterStop"
+                     "tested-by":  "EventHookTests.RegisterEnumerateAndStopThroughTheManager; EventHookTests.StopRacingSlotRestartsLeavesTheHookStopped"
                  },
                  {
                      "category":  "Automation",
@@ -12203,24 +12192,24 @@
                  {
                      "category":  "Keysharp Module (Ks)",
                      "feature":  "Script.OnMessage()",
-                     "syntax":  "hook := Script.OnMessage(Callback)",
+                     "syntax":  "Script.OnMessage(Callback [, AddRemove := 1])",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "unknown",
-                     "notes":  "Starts a hook that calls Callback(Hook, Data, Sender) for each message; the first non-empty return, in start order, is the reply. It does not keep the script running. An unavailable owner is skipped so the remaining hooks can answer.",
+                     "notes":  "Calls Callback(Data, Sender) for each message. AddRemove is 1 (append), -1 (prepend) or 0 (remove), with one entry per callback and owning thread and no returned handle. Handlers run in registration order on their owning threads; the first nonempty reply, including 0, answers the message. Removal discards pending delivery, and an unavailable owner is skipped. Does not keep the script running.",
                      "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk; ProcessTests.ScriptMessages; process-script-messages.ahk"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
-                     "feature":  "Script.Hooks",
-                     "syntax":  "for hook in Script.Hooks",
+                     "feature":  "Script.Callbacks",
+                     "syntax":  "Callbacks := Script.Callbacks",
                      "windows":  "full",
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
-                     "macos":  "unknown",
-                     "notes":  "An Array of every running Script.OnMessage hook, in start order, from every thread. A snapshot.",
-                     "tested-by":  "ProcessTests.ProcessRunScript; process-runscript.ahk; ProcessTests.ScriptMessages; process-script-messages.ahk"
+                     "macos":  "full",
+                     "notes":  "Script-message callbacks. Returns a detached snapshot Array of the exact active callback objects owned by the calling real thread, in invocation or dispatch order. Other threads are excluded; changing the Array has no effect on registrations. Reading the list does not initialize native sources or acquire permissions.",
+                     "tested-by":  "ProcessTests.ScriptMessages; NotificationTests.RegistrationIdentityAndOrder"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",

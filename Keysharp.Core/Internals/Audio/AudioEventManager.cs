@@ -1,4 +1,4 @@
-using Keysharp.Builtins;
+﻿using Keysharp.Builtins;
 using Keysharp.Internals.Events;
 using Keysharp.Internals.Scripting;
 
@@ -9,18 +9,14 @@ namespace Keysharp.Internals.Audio
 	/// only by kind, so that is all it adds to the shared subscription base.
 	/// </summary>
 	internal sealed class AudioEventRegistration(object callback, ScriptEventScheduler ownerScheduler,
-		AudioEventManager manager, string kind, Func<AudioDeviceDescriptor, bool, object> wrapDevice)
-		: EventSubscriptionBase(callback, ownerScheduler, manager.KeepsScriptRunning)
+		string kind, Func<AudioDeviceDescriptor, bool, object> wrapDevice)
+		: CallbackRegistration(callback, ownerScheduler, true, false)
 	{
-		internal readonly AudioEventManager manager = manager;
 		internal readonly Func<AudioDeviceDescriptor, bool, object> wrapDevice = wrapDevice;
 
 		/// <summary>"Output", "Input" or "All"; anything else was rejected before this was constructed.</summary>
 		internal readonly string kind = kind;
 
-		internal override void Unregister() => manager.Unregister(this);
-
-		internal override void Register() => manager.Register(this);
 	}
 
 	/// <summary>
@@ -76,6 +72,7 @@ namespace Keysharp.Internals.Audio
 		private bool started;
 
 		protected override ThreadKind CallbackThreadKind => ThreadKind.Event;
+		protected override string RegistrationName => "Audio.OnDeviceChange";
 
 		protected override Watcher CreateBackend() => new (this);
 
@@ -162,7 +159,7 @@ namespace Keysharp.Internals.Audio
 					continue;
 
 				var wrapped = reg.wrapDevice(device, kind == KindRemoved);
-				Fire(reg, reg.Callback, [reg.scriptObject, kind, wrapped]);
+				FireNotification(reg, [kind, wrapped]);
 			}
 		}
 
