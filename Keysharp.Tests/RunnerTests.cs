@@ -8,6 +8,24 @@ namespace Keysharp.Tests;
 
 public class RunnerTests : TestRunner
 {
+	[Test, Category("Internal"), Category("Curated")]
+	public void RestartUsesEffectiveArguments()
+	{
+		var previousArgs = s.LaunchArgs;
+		var args = new[] { "--define:RESTART_TEST", Path.Combine(Path.GetTempPath(), "Finder script.ks"), "argument with spaces", "é" };
+
+		try
+		{
+			s.LaunchArgs = args;
+			var start = Runner.CreateRestartStartInfo();
+			Assert.That(start.ArgumentList.TakeLast(args.Length), Is.EqualTo(args));
+			var explicitStart = Runner.CreateRestartStartInfo(["--version"]);
+			Assert.That(explicitStart.ArgumentList.Last(), Is.EqualTo("--version"));
+			Assert.That(explicitStart.ArgumentList.Count, Is.EqualTo(start.ArgumentList.Count - args.Length + 1));
+		}
+		finally { s.LaunchArgs = previousArgs; }
+	}
+
 	[TestCase("net10.0"), TestCase("net10.0/osx-arm64"), TestCase("net10.0-windows/win-arm64")]
 	[Category("Internal"), Category("Curated")]
 	public void FixtureRoot(string outputDirectory)

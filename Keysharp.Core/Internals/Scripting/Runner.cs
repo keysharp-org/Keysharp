@@ -1227,7 +1227,7 @@ namespace Keysharp.Internals.Scripting
 				&& currentArgs[0].EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
 				start.ArgumentList.Add(currentArgs[0]);
 
-			foreach (var arg in args ?? currentArgs.Skip(1))
+			foreach (var arg in args ?? Script.TheScript.LaunchArgs ?? currentArgs.Skip(1))
 				start.ArgumentList.Add(arg);
 
 			return start;

@@ -77,6 +77,14 @@ For nested Wayland tests, point both Keysharp and keysharp-desktop at the nested
 
 The full suite includes interactive and permission-sensitive fixtures. Run the curated filter from the repository `AGENTS.md`, a narrower category, or a specific test. Never add `[Parallelizable]`; the suite shares `Script.TheScript` state.
 
+On macOS, `MacFinderTests` launches isolated copies of `Keysharp.app` through LaunchServices to check Finder reopening and reload. It requires a desktop session and runs the UI in those child processes. The normal macOS settings exclude its `Gui` category; run it explicitly with:
+
+```sh
+dotnet test Keysharp.Tests/Keysharp.Tests.csproj -c Debug \
+  --settings Keysharp.Tests/keysharp.macos.finder.runsettings \
+  --filter 'FullyQualifiedName~MacFinderTests'
+```
+
 On Windows in a restricted sandbox, run tests through `scripts/test-sandbox.ps1` from the repository root:
 
 ```powershell

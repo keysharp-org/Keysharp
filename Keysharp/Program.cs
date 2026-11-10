@@ -23,6 +23,7 @@ public static class Program
 #if OSX
 		args = MacHelper.HandleArgs(args);
 #endif
+		ScriptExecutionState.LaunchArgs = args;
 		var start = DateTime.UtcNow;
 		var command = Runner.Parse(args);
 

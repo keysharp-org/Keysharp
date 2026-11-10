@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+	<NUnit>
+		<Where>class == Keysharp.Tests.MacFinderTests</Where>
+		<NumberOfTestWorkers>1</NumberOfTestWorkers>
+	</NUnit>
+</RunSettings>

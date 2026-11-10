@@ -1,14 +1,14 @@
 ﻿#if OSX
+using MonoMac.Foundation;
+
 namespace Keysharp.Main;
 
 internal class MacHelper
 {
 	/// <summary>
-	/// Canonicalized script paths this instance was launched with; open-document events for these are macOS
-	/// re-delivering our own launch argument (which we already run) and must NOT be re-spawned. Written once in
-	/// Main before the FileOpened handler is subscribed, then only read, so no synchronization is needed.
+	/// Separates AppKit's launch-argument callbacks from later open-document requests.
 	/// </summary>
-	private static readonly HashSet<string> macOsLaunchDocs = new(StringComparer.OrdinalIgnoreCase);
+	private static readonly DocumentOpenFilter macOsDocuments = new(AppContext.BaseDirectory);
 
 	/// <summary>
 	/// Stamping the script's path into the apphost invalidates the signature the template arrived with, and
@@ -61,36 +61,23 @@ internal class MacHelper
 	}
 
 	/// <summary>
-	/// macOS is single-instance by default: while a Keysharp process runs a (GUI) script, opening another
-	/// script from Finder routes an "open document" Apple Event to an already-running instance rather than
-	/// launching a fresh one. Make EVERY instance a dispatcher — run each such document as its own
-	/// independent process — so opens keep working no matter which instance macOS routes them to (in
-	/// particular, after the first one exits).
-	///
-	/// The catch: AppKit ALSO re-delivers this instance's OWN launch argument as an open-document event
-	/// (application:openFiles:), an unpredictable number of times (observed twice for a directly-exec'd
-	/// child) — even though we already run that script from argv. Left unfiltered, a spawned instance would
-	/// re-spawn the script it is already running → runaway loop. Filter deterministically by PATH: record
-	/// the canonicalized script(s) this instance was launched with and ignore open-document events for them;
-	/// any OTHER path is a genuine request to open a new document and gets its own process. Populated before
-	/// subscribing so the launch document is known.
-	/// Only script-running commands can ever receive these events (delivery needs the AppKit run loop,
-	/// which utility commands like --compile/--validate never start), so keep those children away from
-	/// Eto.Mac/AppKit entirely.
+	/// Finder can route document opens to any running Keysharp instance. Each dispatches those requests to a
+	/// separate process, whose normal single-instance policy decides whether to replace an earlier script.
+	/// Utility commands never start the AppKit loop and do not subscribe.
 	/// </summary>
 	internal static void HandleCommand(CliCommand command)
 	{
 		if (command.Kind is CliCommandKind.RunSource or CliCommandKind.RunAssembly)
 		{
 			if (!string.IsNullOrEmpty(command.ScriptName))
-				_ = macOsLaunchDocs.Add(CanonicalPath(command.ScriptName));
+				macOsDocuments.AddLaunchDocument(command.ScriptName);
 
 			// The re-delivery is not limited to the script: any argv entry naming an existing file can come
 			// back as a "document" — for a "dotnet Keysharp.dll <script>" launch that includes Keysharp.dll
 			// itself, and re-spawning THAT is a scriptless launcher stuck on its error dialog forever.
 			foreach (var arg in Environment.GetCommandLineArgs())
 				if (!string.IsNullOrEmpty(arg) && File.Exists(arg))
-					_ = macOsLaunchDocs.Add(CanonicalPath(arg));
+					macOsDocuments.AddLaunchDocument(arg);
 
 			Eto.Mac.AppDelegate.FileOpened += SpawnScriptInNewProcess;
 		}
@@ -158,6 +145,29 @@ internal class MacHelper
 		catch { return path; }
 	}
 
+	internal sealed class DocumentOpenFilter(string runtimeDirectory)
+	{
+		private readonly HashSet<string> launchDocuments = new(StringComparer.OrdinalIgnoreCase);
+		private readonly string runtimeDirectoryPath = CanonicalPath(runtimeDirectory).TrimEnd(Path.DirectorySeparatorChar);
+
+		internal void AddLaunchDocument(string path) => _ = launchDocuments.Add(CanonicalPath(path));
+
+		internal bool ShouldDispatch(string path, bool isOpenDocumentRequest)
+		{
+			if (string.IsNullOrEmpty(path) || !File.Exists(path))
+				return false;
+
+			var canonicalPath = CanonicalPath(path);
+
+			// AppKit synthesizes launch-file callbacks without an Apple event, sometimes more than once.
+			// A real open-document request for the same path must still reach #SingleInstance.
+			if (!isOpenDocumentRequest && launchDocuments.Contains(canonicalPath))
+				return false;
+
+			return !string.Equals(Path.GetDirectoryName(canonicalPath), runtimeDirectoryPath, StringComparison.OrdinalIgnoreCase);
+		}
+	}
+
 	[System.Runtime.InteropServices.DllImport("libc")]
 	private static extern void free(IntPtr ptr);
 
@@ -173,27 +183,10 @@ internal class MacHelper
 	{
 		try
 		{
-			if (string.IsNullOrEmpty(path))
-				return;
+			var appleEvent = NSAppleEventManager.SharedAppleEventManager.CurrentAppleEvent;
+			var isOpenDocumentRequest = appleEvent is { EventClass: AEEventClass.AppleEvent, EventID: AEEventID.OpenDocuments };
 
-			// Ignore macOS re-delivering our own launch argument as an open-document event (see Main): this
-			// instance already runs that script, so re-spawning it would loop. Matched by canonical path, so
-			// it holds however many times AppKit re-delivers it; opening any OTHER script still spawns.
-			if (macOsLaunchDocs.Contains(CanonicalPath(path)))
-				return;
-
-			// Any existing file is a runnable document (the CLI takes scripts of any extension, and a
-			// precompiled .dll runs like a .cks) — except files directly inside Keysharp's own install
-			// directory, which are runtime components: only AppKit's argv re-delivery produces those (the
-			// entry dll of a "dotnet Keysharp.dll …" launch), and respawning one starts a scriptless
-			// launcher that parks on its error dialog holding the caller's pipes.
-			if (!File.Exists(path))
-				return;
-
-			if (string.Equals(
-					Path.GetDirectoryName(CanonicalPath(path)),
-					CanonicalPath(AppContext.BaseDirectory).TrimEnd(Path.DirectorySeparatorChar),
-					StringComparison.OrdinalIgnoreCase))
+			if (!macOsDocuments.ShouldDispatch(path, isOpenDocumentRequest))
 				return;
 
 			var exe = Environment.ProcessPath; // the Keysharp apphost inside this .app bundle

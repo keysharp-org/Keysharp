@@ -154,6 +154,7 @@ namespace Keysharp.Runtime
 		public bool ForceKeybdHook;
 		public string[] ScriptArgs = [];
 		public string[] KeysharpArgs = ScriptExecutionState.KeysharpArgs;
+		internal string[] LaunchArgs = ScriptExecutionState.LaunchArgs;
 		public uint MaxThreadsTotal = 12u;
 		public bool NoMainWindow = false;
 		public bool NoTrayIcon = false;
