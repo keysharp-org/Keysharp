@@ -146,11 +146,8 @@ public class MacFinderTests
 				System.IO.Directory.Delete(Directory, true);
 		}
 
-		private static string Source(bool reload) => $$"""
-			#ErrorStdOut
-			#Warn All, StdOut
-			#NoTrayIcon
-			#SingleInstance Force
+		// The C# preprocessor still reads directives in excluded raw strings.
+		private static string Source(bool reload) => "#ErrorStdOut\n#Warn All, StdOut\n#NoTrayIcon\n#SingleInstance Force\n" + $$"""
 			OnExit((Reason, Code) => FileAppend("exit|" ProcessExist() "|" Reason "`n", A_ScriptDir "/events"))
 			SetTimer(() => ExitApp(88), -20000)
 			initialPath := A_ScriptDir "/initial.pid"
