@@ -169,6 +169,10 @@ namespace Keysharp.Builtins
 			if (!drive.CoerceString(out var text))
 				return DefaultObject;
 
+
+#if WINDOWS
+			return Keysharp.Internals.Mapper.Windows.Drive.ReadSerial(text);
+#else
 			try
 			{
 				return Platform.Drive.CreateDrive(new DriveInfo(text)).Serial;
@@ -177,6 +181,7 @@ namespace Keysharp.Builtins
 			{
 				return Errors.OSErrorOccurred(ex, $"Failed to get serial number for drive {text}.");
 			}
+#endif
 		}
 
 		/// <summary>
