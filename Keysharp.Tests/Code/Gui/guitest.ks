@@ -170,7 +170,7 @@ MySB := MyGui.Add("StatusBar", "h36", "                       ")
 ; │  Start TAB  │
 ; └─────────────┘
 
-Tab := MyGui.Add("Tab3", , ["Lists, Menus && Styles", "Edits && Messages", "Pickers && Sliders", "ControlZoo", "Send && Hotkey", "Dll && COM", "Image", "Windows", "Shell", "Monitors", "Audio", "Clipboard"])
+Tab := MyGui.Add("Tab3", , ["Lists, Menus && Styles", "Edits && Messages", "Pickers && Sliders", "ControlZoo", "Send && Hotkey", "Dll && COM", "Image", "Windows", "Shell", "Monitors", "Audio", "Clipboard", "Joystick"])
 
 Tab.UseTab("Lists, Menus & Styles")
 
@@ -4100,6 +4100,209 @@ FuncBtnSeven.OnEvent("Click", ToggleFromIni)
 MyGui.AddText("xc+16 y+10 w510", "Manual only: hold F1 = slow mouse; in Explorer select files + press F3 to list their names.")
 MyGui.UseGroup()
 Tab.UseTab()
+
+; Joystick lights poll state independently of the hotkey counters, so both input paths can be checked.
+Tab.UseTab("Joystick")
+MyGui.SetFont("s9 norm", "Arial")
+global gJoystick := {Device: 0, Connected: false, ButtonCount: 0, Info: "", Signature: "", NextScan: 0,
+	Keys: [], Buttons: [], Axes: [], Directions: [], Total: 0, Last: "none"}
+joystickDeviceGroup := MyGui.AddGroupBox("xc+16 yc+10 w1114 h112", "Joystick / vJoy")
+MyGui.UseGroup(joystickDeviceGroup)
+MyGui.AddText("xc+16 yc+24 w70 h24", "Device:")
+gJoystick.Selector := MyGui.AddDropDownList("x+4 yp-3 w420", [])
+gJoystick.Selector.OnEvent("Change", SelectJoystick)
+MyGui.AddButton("x+12 yp w150 h26", "Rescan devices").OnEvent("Click", RefreshJoysticks)
+MyGui.AddButton("x+12 yp w150 h26", "Reset hit counts").OnEvent("Click", ResetJoystickHits)
+gJoystick.Status := MyGui.AddText("xc+16 yc+58 w1080 h22", "Select the Joystick tab to start monitoring.")
+MyGui.AddText("xc+16 yc+84 w1080 h22", "Move the stick or use vJoy Feeder. Monitoring stays live while the feeder has focus; leaving this tab stops it.")
+MyGui.UseGroup()
+
+Tab.UseTab("Joystick")
+joystickButtonsGroup := MyGui.AddGroupBox("xc+16 yc+132 w650 h370", "Buttons: held state && hotkey callbacks")
+MyGui.UseGroup(joystickButtonsGroup)
+MyGui.AddText("xc+16 yc+24 w618 h36", "Green = held (GetKeyState). Blue flash + Hits = a Joy hotkey callback. Unavailable buttons are grey. Release and press again for another hit.")
+Loop 32 {
+	buttonX := 16 + Mod(A_Index - 1, 8) * 78
+	buttonY := 70 + Floor((A_Index - 1) / 8) * 62
+	lamp := MyGui.AddText("xc+" buttonX " yc+" buttonY " w70 h28 Center +0x200 BackgroundE5E7EB", "Joy" A_Index)
+	hits := MyGui.AddText("xc+" buttonX " yc+" (buttonY + 29) " w70 h22 Center +0x200 BackgroundE5E7EB", "Hits: 0")
+	gJoystick.Buttons.Push({Lamp: lamp, Counter: hits, Pressed: -1, Lit: -1, Hits: 0, FlashUntil: 0})
+}
+gJoystick.HitStatus := MyGui.AddText("xc+16 yc+326 w618 h32", "Hotkey callbacks: 0 | Last: none")
+MyGui.UseGroup()
+
+Tab.UseTab("Joystick")
+joystickAxesGroup := MyGui.AddGroupBox("xc+680 yc+132 w450 h370", "Axes && POV hat")
+MyGui.UseGroup(joystickAxesGroup)
+for axisIndex, axisName in ["X", "Y", "Z", "R", "U", "V"] {
+	axisY := 28 + (axisIndex - 1) * 34
+	MyGui.AddText("xc+16 yc+" axisY " w42 h22", "Joy" axisName)
+	bar := MyGui.AddProgress("xc+66 yc+" axisY " w280 h20 Range0-100 Smooth c2288CC", 0)
+	value := MyGui.AddText("xc+354 yc+" axisY " w80 h22", "--")
+	gJoystick.Axes.Push({Name: axisName, Bar: bar, Label: value})
+}
+for povIndex, directionName in ["NW", "N", "NE", "W", "Center", "E", "SW", "S", "SE"] {
+	directionX := 16 + Mod(povIndex - 1, 3) * 54
+	directionY := 244 + Floor((povIndex - 1) / 3) * 30
+	lamp := MyGui.AddText("xc+" directionX " yc+" directionY " w50 h26 Center +0x200 BackgroundE5E7EB", directionName)
+	gJoystick.Directions.Push({Lamp: lamp, Lit: false})
+}
+gJoystick.PovStatus := MyGui.AddText("xc+192 yc+252 w240 h70", "JoyPOV: unavailable")
+MyGui.UseGroup()
+Tab.UseTab()
+Tab.OnEvent("Change", UpdateJoystickTab)
+RefreshJoysticks()
+
+RefreshJoysticks(*) {
+	global gJoystick
+	StopJoystickProbe()
+	devices := []
+	firstConnected := 0
+	Loop 16 {
+		connected := IsNumber(GetKeyState(A_Index "JoyX"))
+		name := connected ? GetKeyState(A_Index "JoyName") : "not connected"
+		devices.Push(A_Index " - " name)
+		if (connected && !firstConnected)
+			firstConnected := A_Index
+	}
+	gJoystick.Selector.Delete()
+	gJoystick.Selector.Add(devices)
+	gJoystick.Selector.Choose(gJoystick.Device ? gJoystick.Device : (firstConnected ? firstConnected : 1))
+	SelectJoystick()
+}
+
+SelectJoystick(*) {
+	global gJoystick
+	StopJoystickProbe()
+	gJoystick.Device := gJoystick.Selector.Value
+	ResetJoystickHits()
+	UpdateJoystickTab()
+}
+
+UpdateJoystickTab(*) {
+	global Tab, gJoystick
+	StopJoystickProbe()
+	if (Tab.Text != "Joystick")
+		return
+	gJoystick.NextScan := 0
+	SetTimer(PollJoystick, 40)
+	PollJoystick()
+}
+
+StopJoystickProbe() {
+	global gJoystick
+	SetTimer(PollJoystick, 0)
+	for key in gJoystick.Keys
+		Hotkey(key, , "Off")
+	gJoystick.Keys := []
+	gJoystick.Signature := ""
+}
+
+ResetJoystickHits(*) {
+	global gJoystick
+	gJoystick.Total := 0
+	gJoystick.Last := "none"
+	for button in gJoystick.Buttons {
+		button.Hits := 0
+		button.FlashUntil := 0
+		button.Lit := -1
+		button.Counter.Text := "Hits: 0"
+		button.Counter.Opt("BackgroundE5E7EB")
+	}
+	gJoystick.HitStatus.Text := "Hotkey callbacks: 0 | Last: none"
+}
+
+JoystickHotkey(device, buttonIndex, *) {
+	global Tab, MyGui, gJoystick
+	if (Tab.Text != "Joystick" || !MyGui.Visible || device != gJoystick.Device || !gJoystick.Connected)
+		return
+	button := gJoystick.Buttons[buttonIndex]
+	button.Hits += 1
+	button.FlashUntil := A_TickCount + 300
+	gJoystick.Total += 1
+	gJoystick.Last := device "Joy" buttonIndex
+	button.Counter.Text := "Hits: " button.Hits
+	gJoystick.HitStatus.Text := "Hotkey callbacks: " gJoystick.Total " | Last: " gJoystick.Last
+}
+
+PollJoystick() {
+	global Tab, MyGui, gJoystick
+	if (Tab.Text != "Joystick" || !MyGui.Visible)
+		return
+	try {
+		prefix := gJoystick.Device "Joy"
+		if (A_TickCount >= gJoystick.NextScan) {
+			gJoystick.NextScan := A_TickCount + 500
+			connected := IsNumber(GetKeyState(prefix "X"))
+			count := connected ? Min(32, GetKeyState(prefix "Buttons")) : 0
+			info := connected ? GetKeyState(prefix "Info") : ""
+			signature := connected "|" count "|" info
+			if (signature != gJoystick.Signature) {
+				for key in gJoystick.Keys
+					Hotkey(key, , "Off")
+				gJoystick.Keys := []
+				gJoystick.Connected := connected
+				gJoystick.ButtonCount := count
+				gJoystick.Info := info
+				gJoystick.Signature := signature
+				Loop count {
+					key := prefix A_Index
+					Hotkey(key, JoystickHotkey.Bind(gJoystick.Device, A_Index), "On")
+					gJoystick.Keys.Push(key)
+				}
+			}
+			gJoystick.Status.Text := connected
+				? "Connected: " GetKeyState(prefix "Name") " | " count " buttons (up to 32 shown) | " GetKeyState(prefix "Axes") " axes | Hotkeys listening"
+				: "Device " gJoystick.Device " is not connected. Connect a joystick or enable vJoy, then rescan or wait for reconnection."
+		}
+
+		for buttonIndex, button in gJoystick.Buttons {
+			available := gJoystick.Connected && buttonIndex <= gJoystick.ButtonCount
+			pressed := available && GetKeyState(prefix buttonIndex)
+			state := available ? (pressed ? 1 : 0) : -2
+			if (state != button.Pressed) {
+				button.Lamp.Text := "Joy" buttonIndex (available ? (pressed ? " DOWN" : "") : " --")
+				button.Lamp.Opt("Background" (pressed ? "75DE91" : (available ? "F3F4F6" : "D1D5DB")))
+				button.Pressed := state
+			}
+			lit := available && A_TickCount < button.FlashUntil
+			if (lit != button.Lit) {
+				button.Counter.Opt("Background" (lit ? "7DC8FF" : "E5E7EB"))
+				button.Lit := lit
+			}
+		}
+
+		for axis in gJoystick.Axes {
+			available := gJoystick.Connected && InStr("XY" gJoystick.Info, axis.Name)
+			position := available ? GetKeyState(prefix axis.Name) : ""
+			available := available && IsNumber(position)
+			axis.Bar.Enabled := available
+			axis.Bar.Value := available ? Max(0, Min(100, position)) : 0
+			text := available ? Format("{:.1f}%", position) : "--"
+			if (axis.Label.Text != text)
+				axis.Label.Text := text
+		}
+
+		pov := gJoystick.Connected && InStr(gJoystick.Info, "P") ? GetKeyState(prefix "POV") : ""
+		direction := 0
+		if IsNumber(pov)
+			direction := pov < 0 ? 5 : [2, 3, 6, 9, 8, 7, 4, 1][Mod(Round(pov / 4500), 8) + 1]
+		for directionIndex, indicator in gJoystick.Directions {
+			lit := directionIndex = direction
+			if (lit != indicator.Lit) {
+				indicator.Lamp.Opt("Background" (lit ? "75DE91" : "E5E7EB"))
+				indicator.Lit := lit
+			}
+		}
+		text := !direction ? "JoyPOV: unavailable" : (pov < 0 ? "JoyPOV: centered" : "JoyPOV: " Format("{:.1f}", pov / 100) " degrees`n0 = north, clockwise")
+		if (gJoystick.PovStatus.Text != text)
+			gJoystick.PovStatus.Text := text
+	} catch as err {
+		StopJoystickProbe()
+		gJoystick.Status.Text := "Joystick monitor stopped: " err.Message
+		AppendLog("Joystick monitor error: " err.Message)
+	}
+}
 
 ; --- Shared activity log, placed directly UNDER the Tab control (computed from its actual bottom so it
 ;     never overlaps the tab regardless of how tall the tallest tab's content is). The log spans the tab's
