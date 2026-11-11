@@ -3,6 +3,14 @@ if [ -z "${BASH_VERSION:-}" ]; then exec /usr/bin/env bash "$0" "$@"; fi
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "${1:-}" == --install ]]; then
+  [[ $# -eq 2 && -n "$2" ]] || { echo 'Usage: install.sh --install DESTDIR' >&2; exit 2; }
+  source "${SCRIPT_DIR}/package-tree.sh"
+  install_package_tree "${SCRIPT_DIR}/app" "${SCRIPT_DIR}" "${SCRIPT_DIR}/doc" \
+    "${SCRIPT_DIR}/Keysharp.png" "$2"
+  exit 0
+fi
+
 ROOT_INSTALL=false
 if [[ "${EUID}" -eq 0 ]]; then
   ROOT_INSTALL=true
@@ -43,8 +51,8 @@ DEPENDENCIES_ONLY=false
 case "${1:-}" in
   "") ;;
   --install-dependencies) DEPENDENCIES_ONLY=true ;;
-  -h|--help) echo "Usage: install.sh [--install-dependencies]"; exit 0 ;;
-  *) echo "Usage: install.sh [--install-dependencies]" >&2; exit 2 ;;
+  -h|--help) echo "Usage: install.sh [--install-dependencies | --install DESTDIR]"; exit 0 ;;
+  *) echo "Usage: install.sh [--install-dependencies | --install DESTDIR]" >&2; exit 2 ;;
 esac
 [[ $# -le 1 ]] || exit 2
 

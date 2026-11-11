@@ -129,6 +129,9 @@ The installer:
 
 Run `install.sh` without `sudo` to install under `$HOME/.local` instead. Keysharp still uses any system component already present.
 
+For Arch/AUR and other distribution packages, see the
+[package staging instructions](building.md#create-release-packages).
+
 #### Verifying the installation
 
 ```sh

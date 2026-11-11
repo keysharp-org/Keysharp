@@ -15,7 +15,7 @@ dist/keysharp_<version>_<arch>.deb.
 
   --restore          Restore the NuGet packages the publish needs, and stop.
   --stage            Publish and stage the application tree, and stop.
-  --install DESTDIR  Install the staged tree into DESTDIR in the Debian layout.
+  --install DESTDIR  Stage the published /usr package tree below DESTDIR.
   -h, --help         Show this help.
 
 RID, VERSION and CONFIG select the build. KEYSHARP_DIST_DIR replaces dist/,
@@ -157,35 +157,18 @@ stage() {
   verify_no_local_paths
 }
 
-# The system layout both Debian builds share: this script's own .deb and debian/rules.
 install_tree() {
-  local dest="$1" entry
-  install -d "${dest}/usr/lib/keysharp" "${dest}/usr/bin" "${dest}/usr/share/applications"
-  cp -a "${APP_DIR}/." "${dest}/usr/lib/keysharp/"
-  ln -sfn ../../share/doc/keysharp/copyright "${dest}/usr/lib/keysharp/license.txt"
-  ln -sfn ../lib/keysharp/Keysharp "${dest}/usr/bin/keysharp"
-  ln -sfn ../lib/keysharp/Keyview "${dest}/usr/bin/keyview"
-  for entry in keysharp keyview; do
-    sed -e 's|/usr/local/bin/|/usr/bin/|g' -e 's|/usr/local/lib/keysharp/|/usr/lib/keysharp/|g' \
-      "${ASSETS_DIR}/${entry}.desktop" > "${dest}/usr/share/applications/${entry}.desktop"
-    chmod 0644 "${dest}/usr/share/applications/${entry}.desktop"
-  done
-  install -Dm644 "${ASSETS_DIR}/keysharp.xml" "${dest}/usr/share/mime/packages/keysharp.xml"
-  install -Dm644 "${ROOT}/assets/Keysharp.png" "${dest}/usr/share/icons/hicolor/256x256/apps/keysharp.png"
-  install -Dm644 "${ASSETS_DIR}/70-keysharp-i2c-uaccess.rules" \
-    "${dest}/usr/lib/udev/rules.d/70-keysharp-i2c-uaccess.rules"
-  # postinst sources the notice, so both install channels print the same text.
-  install -Dm644 "${ASSETS_DIR}/component-notice.sh" "${dest}/usr/share/keysharp/component-notice.sh"
-  install -Dm644 "${ROOT}/license.txt" "${dest}/usr/share/doc/keysharp/copyright"
-  install -Dm644 "${ROOT}/README.md" "${dest}/usr/share/doc/keysharp/README.md"
+  source "${ASSETS_DIR}/package-tree.sh"
+  install_package_tree "${APP_DIR}" "${ASSETS_DIR}" "${ROOT}" "${ROOT}/assets/Keysharp.png" "$1"
 }
 
 build_tarball() {
   cp "${ASSETS_DIR}/install.sh" "${ASSETS_DIR}/uninstall.sh" "${ASSETS_DIR}/component-notice.sh" \
     "${ASSETS_DIR}/keyview.desktop" "${ASSETS_DIR}/keysharp.desktop" "${ASSETS_DIR}/keysharp.xml" \
-    "${ASSETS_DIR}/70-keysharp-i2c-uaccess.rules" "${ROOT}/assets/Keysharp.png" "${PKG_DIR}/"
+    "${ASSETS_DIR}/70-keysharp-i2c-uaccess.rules" "${ASSETS_DIR}/package-tree.sh" \
+    "${ROOT}/assets/Keysharp.png" "${PKG_DIR}/"
   chmod 0644 "${PKG_DIR}"/*.desktop "${PKG_DIR}/keysharp.xml" "${PKG_DIR}/70-keysharp-i2c-uaccess.rules" \
-    "${PKG_DIR}/Keysharp.png" "${PKG_DIR}/component-notice.sh"
+    "${PKG_DIR}/Keysharp.png" "${PKG_DIR}/component-notice.sh" "${PKG_DIR}/package-tree.sh"
   chmod 0755 "${PKG_DIR}/install.sh" "${PKG_DIR}/uninstall.sh"
   tar -czf "${DIST_DIR}/${PKG_NAME}.tar.gz" -C "${STAGING_DIR}" "${PKG_NAME}"
   echo "Tarball ready at ${DIST_DIR}/${PKG_NAME}.tar.gz"

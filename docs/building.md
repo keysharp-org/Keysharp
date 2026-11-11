@@ -58,6 +58,20 @@ Windows packaging restores WiX from NuGet. On Linux, generating the Debian packa
 requires `dpkg-dev`; the Launchpad source uploads are described in
 [Keysharp.Install/ppa/README.md](../Keysharp.Install/ppa/README.md).
 
+For Arch/AUR or another distribution package:
+
+```sh
+bash Keysharp.Install/package-linux.sh --stage
+bash Keysharp.Install/package-linux.sh --install "$pkgdir"
+```
+
+From an extracted archive, use `bash ./install.sh --install "$pkgdir"` instead.
+Both stage under `$pkgdir/usr` without root privileges, runtime checks or live
+system changes; the package manager handles dependencies, MIME/udev refreshes and
+removal. Keep any `RID` and `KEYSHARP_DIST_DIR` overrides the same for both commands.
+Arch recipes should also install `license.txt` (archive: `doc/license.txt`) under
+`$pkgdir/usr/share/licenses/keysharp/`.
+
 Build-only project references restore the bundled components without adding their
 parser, compiler or package-provider dependencies to the application's runtime
 dependency graph. The packagers need no separate component restore step.

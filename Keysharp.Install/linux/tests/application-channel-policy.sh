@@ -44,7 +44,7 @@ require_literal "${PACKAGER}" 'for script in preinst postinst prerm postrm; do'
 require_literal "${PACKAGER}" '"${DEBIAN_DIR}/${script}" > "${root}/DEBIAN/${script}"'
 require_literal "${PACKAGER}" '-p:PublishDir="${PUBLISH_DIR}/${project}/"'
 # Both channels name the missing standalone components from one shared notice.
-require_literal "${PACKAGER}" '"${ASSETS_DIR}/component-notice.sh" "${dest}/usr/share/keysharp/component-notice.sh"'
+require_literal "${REPOSITORY_ROOT}/Keysharp.Install/linux/package-tree.sh" '"${assets}/component-notice.sh" "${dest}/usr/share/keysharp/component-notice.sh"'
 require_literal "${DEBIAN_DIR}/postinst" '. /usr/share/keysharp/component-notice.sh'
 require_literal "${PACKAGER}" '"${ASSETS_DIR}/uninstall.sh" "${ASSETS_DIR}/component-notice.sh"'
 require_literal "${INSTALLER}" '. "${SCRIPT_DIR}/component-notice.sh"'

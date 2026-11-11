@@ -70,6 +70,57 @@ assert_same "${REPOSITORY_ROOT}/README.md" "${archive}/doc/README.md"
 assert_same "${REPOSITORY_ROOT}/license.txt" "${archive}/doc/license.txt"
 assert_license_link "${archive}/app/license.txt" ../doc/license.txt
 
+mkdir -p "${temporary}/staging-stubs"
+for name in dotnet pkill dpkg-query rpm pacman apt-get dnf yum zypper pkttyagent \
+    chown udevadm systemctl ldconfig systemd-tmpfiles update-desktop-database \
+    update-mime-database gtk-update-icon-cache; do
+  cat > "${temporary}/staging-stubs/${name}" <<'EOF'
+#!/usr/bin/env bash
+printf '%s %s\n' "${0##*/}" "$*" >> "${COMMAND_LOG}"
+exit 99
+EOF
+done
+chmod 0755 "${temporary}/staging-stubs/"*
+export COMMAND_LOG="${temporary}/staging-commands.log"
+staging_path="${temporary}/staging-stubs:${PATH}"
+(
+  unset HOME
+  PATH="${staging_path}" bash "${archive}/install.sh" --install "${temporary}/arch package"
+  cd "${temporary}"
+  PATH="${staging_path}" RID=linux-x64 KEYSHARP_DIST_DIR="${temporary}/dist" \
+    bash "${PACKAGER}" --install source-package
+)
+for package in 'arch package' source-package; do
+  tree="${temporary}/${package}"
+  diff -r "${temporary}/debian" "${tree}" || fail "staging layouts differ: ${package}"
+  for entry in keysharp keyview; do
+    [[ -x "${tree}/usr/bin/${entry}" ]] || fail "broken staged command: ${entry}"
+    grep -Fq "Exec=/usr/bin/${entry} %f" "${tree}/usr/share/applications/${entry}.desktop" \
+      || fail "desktop entry does not use the final /usr/bin path"
+  done
+  assert_same "${archive}/70-keysharp-i2c-uaccess.rules" \
+    "${tree}/usr/lib/udev/rules.d/70-keysharp-i2c-uaccess.rules"
+  assert_absent "${tree}/usr/share/applications/mimeapps.list"
+  assert_absent "${tree}/usr/share/doc/keysharp/uninstall.sh"
+done
+assert_absent "${COMMAND_LOG}"
+
+# Block filesystem mutations as well, so invalid destination checks stay harmless.
+for name in install cp ln sed chmod; do
+  cp "${temporary}/staging-stubs/dotnet" "${temporary}/staging-stubs/${name}"
+done
+expect_staging_rejection() {
+  local status=0
+  PATH="${staging_path}" \
+    bash "${archive}/install.sh" "$@" > "${temporary}/rejected.log" 2>&1 || status=$?
+  [[ "${status}" -eq 2 ]] || fail "expected argument rejection: $* (status ${status})"
+}
+expect_staging_rejection --install
+expect_staging_rejection --install ''
+expect_staging_rejection --install "${temporary}/extra" unexpected
+expect_staging_rejection --install /
+assert_absent "${COMMAND_LOG}"
+
 mkdir -p "${temporary}/stubs"
 cat > "${temporary}/stubs/dotnet" <<'EOF'
 #!/usr/bin/env bash
