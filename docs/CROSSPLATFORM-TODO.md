@@ -34,11 +34,11 @@ touch core subsystems, so care is needed.
   primary-button settings need to be mapped without double-swapping input that the compositor
   already remaps.
 
-- [ ] **Joystick polling on macOS.** `Keysharp.Core/Internals/Input/Joystick/Joystick.cs`
-  Linux has an evdev implementation in `Internals/Input/Linux/LinuxJoystick.cs`, including
-  state queries and the newly-pressed button mask used by joystick hotkeys. macOS has no joystick
-  backend, so joystick controls report blank and log once; add an IOKit HID or GameController backend mirroring the
-  Windows/Linux polling contract (button-mask XOR → newly-pressed → buffer hotkey messages).
+- [ ] **Joystick backend on macOS needs a first run.** `Internals/Input/MacOS/MacJoystick.cs`
+  reads HID joysticks and gamepads through IOKit's HID manager and feeds the shared polling in
+  `Internals/Input/Joystick/Joystick.cs`. It has only been compile-checked. Verify on hardware
+  that devices list without an Input Monitoring prompt, that values are live before the first
+  report, that hotplug is picked up, and how Xbox and PlayStation controllers lay out their axes.
 
 ---
 
@@ -52,6 +52,10 @@ touch core subsystems, so care is needed.
   top-level window, and that the `A_EventInfo` rectangle is in screen coordinates for a native Wayland
   client — those report their toplevel rooted at (0,0), so the rectangle is shifted by the window
   origin using a containment heuristic that has not been exercised on a real compositor yet.
+- [ ] **Linux controller layout.** The mapping in `Internals/Input/Linux/LinuxJoystick.cs` is tested
+  against simulated listings only. With an Xbox controller, compare `JoyX`/`JoyY`/`JoyZ`/`JoyR`/`JoyU`,
+  `JoyPOV` and `Joy1` to `Joy10` against the same controller on Windows, in particular that the left
+  trigger raises `JoyZ`, and confirm that a `Joy1::` hotkey fires on X11 and on Wayland.
 - [ ] **Linux volume labels.** On disposable ext4, FAT/exFAT, NTFS, XFS and btrfs volumes, change and
   restore the label and record which filesystem utilities/privileges are required.
 - [ ] **Linux BlockInput movement-only mode.** With the `keysharp-input` mouse hook active,

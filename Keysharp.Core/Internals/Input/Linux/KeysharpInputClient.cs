@@ -198,8 +198,12 @@ namespace Keysharp.Internals.Input.Linux
 			bool NumLock, bool ScrollLock, KeyStateBitmap LogicalKeys, KeyStateBitmap PhysicalKeys);
 		internal readonly record struct PointerButtons(uint LogicalButtons, uint PhysicalButtons);
 		internal readonly record struct GamepadAxis(uint Code, int Minimum, int Maximum);
+		/// <summary>ButtonCodes lists the device's evdev button codes in the order its state reports them.</summary>
 		internal readonly record struct GamepadInfo(uint DeviceId, string Name,
-			int ButtonCount, GamepadAxis[] Axes);
+			ushort[] ButtonCodes, GamepadAxis[] Axes)
+		{
+			internal int ButtonCount => ButtonCodes.Length;
+		}
 		/// <summary>Live gamepad reading. Buttons holds the first 32 buttons in the device's
 		/// button order, which is as many as a script can address.</summary>
 		internal readonly record struct GamepadState(uint DeviceId, ulong Generation,
@@ -915,8 +919,9 @@ namespace Keysharp.Internals.Input.Linux
 			for (var i = 0; i < axisCount; i++)
 				axes[i] = new(native[i].Code, native[i].Minimum, native[i].Maximum);
 
-			gamepads.Add(new(device->DeviceId, device->GetName(),
-				(int)Math.Min(device->ButtonCount, DeviceButtonCapacity), axes));
+			var buttons = new ReadOnlySpan<ushort>(device->ButtonCodes,
+				(int)Math.Min(device->ButtonCount, DeviceButtonCapacity)).ToArray();
+			gamepads.Add(new(device->DeviceId, device->GetName(), buttons, axes));
 			return true;
 		}
 

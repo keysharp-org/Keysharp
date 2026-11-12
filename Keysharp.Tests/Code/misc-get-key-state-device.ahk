@@ -48,6 +48,11 @@ AssertEq(GetKeyState("16JoyName"), "", A_LineNumber)
 AssertEq(GetKeyState("16JoyX"), "", A_LineNumber)
 Throws(() => GetKeyState("JoyXtra"), A_LineNumber, ValueError)
 
+; A controller number runs from 1 to 16; no other number falls back to the first controller.
+for BadName in ["0Joy1", "00JoyX", "17JoyName", "999999999999Joy1"]
+	Throws(() => GetKeyState(BadName), A_LineNumber, ValueError)
+Throws(() => Hotkey("0Joy1", (*) => 0), A_LineNumber, ValueError)
+
 ; KeyWait's T reads the number it starts with, 0 when there is none, and rejects a negative one.
 AssertEq(KeyWait("F24", "D L T"), 0, A_LineNumber)
 AssertEq(KeyWait("F24", "L T0.01"), 1, A_LineNumber)

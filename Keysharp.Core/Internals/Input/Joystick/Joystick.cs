@@ -1,4 +1,10 @@
 using Keysharp.Builtins;
+#if LINUX
+using JoystickBackend = Keysharp.Internals.Input.Linux.LinuxJoystick;
+#elif OSX
+using JoystickBackend = Keysharp.Internals.Input.MacOS.MacJoystick;
+#endif
+
 namespace Keysharp.Internals.Input.Joystick
 {
 	internal class JoystickData
@@ -29,31 +35,30 @@ namespace Keysharp.Internals.Input.Joystick
 
 			if (index > 0) // The string starts with a joystick number, e.g. "2JoyX".
 			{
-				var val = (int?)buf.Substring(0, index).ParseLong();
-				var joystick_id = val.HasValue && val.Value > 0 ? (uint)(val.Value - 1) : 0u;
+				// As AHK's ATOI, the number wraps to 32 bits before its range is checked.
+				if (!long.TryParse(buf.AsSpan(0, index), NumberStyles.None, CultureInfo.InvariantCulture, out var number))
+					return JoyControls.Invalid;
 
-				if (joystick_id >= JoystickData.MaxJoysticks)
+				var joystick_id = unchecked((int)number - 1);
+
+				if (joystick_id < 0 || joystick_id >= JoystickData.MaxJoysticks)
 					return JoyControls.Invalid;
 
 				if (joystickID != null)
-					joystickID = joystick_id;  // Use ATOI vs. atoi even though hex isn't supported yet.
+					joystickID = (uint)joystick_id;
 			}
 
 			// Everything after the optional leading joystick number is the control name itself.
-			var rest = index > 0 ? buf.Substring(index) : buf;
+			var rest = buf.AsSpan(index);
 
-			if (rest.StartsWith("Joy", StringComparison.OrdinalIgnoreCase))
+			if (rest.StartsWith("Joy", StringComparison.OrdinalIgnoreCase) && rest.Slice(3).TryParseLong(out var button))
 			{
-				var sub = rest.Substring(3);
-				var val = (int?)sub.ParseLong();
+				var offset = unchecked((int)button);
 
-				if (val.HasValue)
-				{
-					if (val.Value < 1 || val.Value > JoystickData.MaxJoyButtons)
-						return JoyControls.Invalid;
+				if (offset < 1 || offset > JoystickData.MaxJoyButtons)
+					return JoyControls.Invalid;
 
-					return JoyControls.Button1 + (val.Value - 1);
-				}
+				return JoyControls.Button1 + (offset - 1);
 			}
 
 			if (allowOnlyButtons)
@@ -103,18 +108,20 @@ namespace Keysharp.Internals.Input.Joystick
 		/// </summary>
 		internal static void PollJoysticks()
 		{
-#if WINDOWS
 			// Even if joystick hotkeys aren't currently allowed to fire, poll it anyway so that hotkey
 			// messages can be buffered for later.
-			var jie = JOYINFOEX.Default;
 			var script = Script.TheScript;
 			var jd = script.JoystickData;
+#if WINDOWS
+			var jie = JOYINFOEX.Default;
+#endif
 
 			for (var i = 0; i < JoystickData.MaxJoysticks; ++i)
 			{
 				if (!script.HotkeyData.joystickHasHotkeys[i])
 					continue;
 
+#if WINDOWS
 				// Reset these every time in case joyGetPosEx() ever changes them. Also, most systems have only one joystick,
 				// so this code will hardly ever be executed more than once (and sometimes zero times):
 				jie.dwFlags = WindowsAPI.JOY_RETURNBUTTONS; // vs. JOY_RETURNALL
@@ -122,43 +129,40 @@ namespace Keysharp.Internals.Input.Joystick
 				if (WindowsAPI.joyGetPosEx(i, ref jie) != WindowsAPI.JOYERR_NOERROR) // Skip this joystick and try the others.
 					continue;
 
+				var buttons = jie.dwButtons;
+#else
+
+				if (!JoystickBackend.TryGetReading((uint)i, out var reading))
+					continue;
+
+				var buttons = reading.Buttons;
+#endif
 				// The exclusive-or operator determines which buttons have changed state.  After that,
 				// the bitwise-and operator determines which of those have gone from up to down (the
 				// down-to-up events are currently not significant).
-				var buttons_newly_down = (jie.dwButtons ^ jd.buttonsPrev[i]) & jie.dwButtons;
-				jd.buttonsPrev[i] = jie.dwButtons;
+				var buttons_newly_down = (buttons ^ jd.buttonsPrev[i]) & buttons;
+				jd.buttonsPrev[i] = buttons;
 
 				if (buttons_newly_down == 0)
 					continue;
 
 				// See if any of the joystick hotkeys match this joystick ID and one of the buttons that
-				// has just been pressed on it.  If so, queue up (buffer) the hotkey events so that they will
-				// be processed when messages are next checked:
+				// has just been pressed on it.
 				HotkeyDefinition.TriggerJoyHotkeys(i, buttons_newly_down);
 			}
-
-#elif LINUX
-			LinuxJoystick.PollJoysticks();
-#else
-			// No joystick backend on this platform, so there is nothing to poll and joystick hotkeys never fire —
-			// the same outcome as a supported platform with no joystick connected. Deliberately silent: this is the
-			// polling entry point, so anything logged here would repeat at the poll interval.
-#endif
 		}
 
+		/// <summary>
+		/// The value GetKeyState returns for a joystick control: a bool for a button, a percentage for an axis,
+		/// centidegrees or -1 for the POV, and blank when the joystick cannot be read. KeyWait takes a button as
+		/// down only when this is true.
+		/// </summary>
 		internal static object ScriptGetJoyState(JoyControls joy, uint joystickID)
-		// Caller must ensure that aToken.marker is a buffer large enough to handle the longest thing put into
-		// it here, which is currently jc.szPname (size=32). Caller has set aToken.symbol to be SYM_STRING.
-		// aToken is used for the value being returned by GetKeyState() to the script, while this function's
-		// bool return value is used only by KeyWait, so is false for "up" and true for "down".
-		// If there was a problem determining the position/state, aToken is made blank and false is returned.
 		{
-#if WINDOWS
-
-			// Set default in case of early return.
 			if (joy == JoyControls.Invalid) // Currently never called this way.
 				return "";
 
+#if WINDOWS
 			var joyIsButton = IsJoystickButton(joy);
 			var jc = new JOYCAPS();
 
@@ -186,7 +190,6 @@ namespace Keysharp.Internals.Input.Joystick
 			// Otherwise:
 			uint range;
 			var str = "";
-			var resultDouble = 0.0;  // Not initialized to help catch bugs.
 
 			switch (joy)
 			{
@@ -215,12 +218,10 @@ namespace Keysharp.Internals.Input.Joystick
 					return range != 0 ? 100 * (double)jie.dwVpos / range : jie.dwVpos;
 
 				case JoyControls.Pov:
-					if (jie.dwPOV == WindowsAPI.JOY_POVCENTERED) // Need to explicitly compare against JOY_POVCENTERED because it's a WORD not a DWORD.
+					if (jie.dwPOV == WindowsAPI.JOY_POVCENTERED)
 						return -1L;
 					else
 						return (long)jie.dwPOV;
-
-				// No break since above always returns.
 
 				case JoyControls.Name:
 					return jc.szPname ?? "";
@@ -256,30 +257,40 @@ namespace Keysharp.Internals.Input.Joystick
 					}
 
 					return str;
-			} // switch()
+			}
 
-			return resultDouble;// If above didn't return, the result should now be in result_double.
-#elif LINUX
-			return LinuxJoystick.ScriptGetJoyState(joy, joystickID);
-#else
-			// No joystick backend on this platform, so the control reports as unavailable: blank, as for a joystick
-			// which is not connected.
-			LogUnsupportedOnce();
 			return "";
+#else
+
+			switch (joy)
+			{
+				case JoyControls.Name:
+				case JoyControls.Buttons:
+				case JoyControls.Axes:
+				case JoyControls.Info:
+					// A joystick which is not there has no name, buttons or axes, as with the zeroed JOYCAPS above.
+					_ = JoystickBackend.TryGetCaps(joystickID, out var caps);
+					return joy switch
+					{
+						JoyControls.Name => caps.Name ?? "",
+						JoyControls.Buttons => (long)caps.Buttons,
+						JoyControls.Axes => (long)caps.AxisCount,
+						_ => caps.Info
+					};
+			}
+
+			if (!JoystickBackend.TryGetReading(joystickID, out var reading))
+				return "";
+
+			if (IsJoystickButton(joy))
+				return ((reading.Buttons >> ((int)joy - (int)JoyControls.Button1)) & 0x01) != 0;
+
+			if (joy == JoyControls.Pov)
+				return reading.Pov;
+
+			return reading[joy];
 #endif
 		}
-
-#if !WINDOWS && !LINUX
-		private static int loggedUnsupported;
-
-		/// <summary>Notes once that this platform has no joystick backend. Once, because KeyWait polls
-		/// <see cref="ScriptGetJoyState"/> in a loop and would otherwise repeat the message at the sleep interval.</summary>
-		private static void LogUnsupportedOnce()
-		{
-			if (Interlocked.Exchange(ref loggedUnsupported, 1) == 0)
-				Diagnostics.Debug.WriteLine("Joystick support is not implemented on this platform; joystick controls report as unavailable.");
-		}
-#endif
 	}
 
 	internal enum JoyControls

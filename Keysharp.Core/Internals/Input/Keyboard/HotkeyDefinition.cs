@@ -2191,24 +2191,14 @@ namespace Keysharp.Internals.Input.Keyboard
 			{
 				var hk = shk[i];
 
-				// Fix for v1.0.34: If hotkey isn't enabled, or hotkeys are suspended and this one isn't
-				// exempt, don't fire it. These checks are necessary only for joystick hotkeys because
-				// normal hotkeys are completely deactivated when turned off or suspended, but the joystick
-				// is still polled even when some joystick hotkeys are disabled.
+				// A disabled or suspended joystick hotkey is still polled, so CriterionAllowsFiring is what holds it back.
 				if (hk.type == HotkeyTypeEnum.Joystick && hk.vk == joystickID
 						&& (buttonsNewlyDown & (0x01 << (int)(hk.sc - (uint)JoyControls.Button1))) != 0) // This hotkey's button is among those newly pressed.
 				{
-					// Joystick hotkeys are not hook-qualified, so they still resolve their eligible variant
-					// on receipt of the posted message rather than here at poll time.
-					//
-					// Post it to the thread because the message pump itself (not the WindowProc) will handle it.
-					// UPDATE: Posting to NULL would have a risk of discarding the message if a MsgBox pump or
-					// pump other than MsgSleep() were running.  The only reason it doesn't is that this function
-					// is only ever called from MsgSleep(), which is careful to process all messages (at least
-					// those that aren't kept queued due to the message filter) prior to returning to its caller.
-					// But for maintainability, it seems best to change this to g_hWnd vs. NULL to make joystick
-					// hotkeys behave more like standard hotkeys.
-					_ = Platform.Hotkeys.PostHotkeyMessage(script.MainWindowHandle, (uint)i, 0u);
+					// AHK posts WM_HOTKEY to its main window, whose message loop picks the variant on receipt. The poll
+					// already runs on the UI thread, so the hotkey takes that step directly, which also serves the
+					// platforms with no window message to post.
+					script.HookThread.kbdMsSender.ProcessHotkey(i, 0, null, HookThread.WM_HOTKEY);
 				}
 
 				//else continue the loop in case the user has newly pressed more than one joystick button.

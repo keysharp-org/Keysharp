@@ -79,6 +79,51 @@ public class LinuxNativeClientTests
 		Assert.That(client.TryGetGamepadState(uint.MaxValue, generation, out _), Is.False);
 	}
 
+	/// <summary>A controller in the kernel's gamepad layout reads as Windows presents an Xbox controller, and any
+	/// other device keeps the axes and button order it declares. Listings stand in for the hardware.</summary>
+	[Test]
+	public void GamepadLayout()
+	{
+		// As xpad lists one: A, B, X, Y, the bumpers, Select, Start, Mode and the stick clicks; two sticks,
+		// a trigger on each of Z and RZ, and a hat.
+		var pad = new LinuxJoystick.Device(new KeysharpInputClient.GamepadInfo(1, "Pad",
+			[0x130, 0x131, 0x133, 0x134, 0x136, 0x137, 0x13a, 0x13b, 0x13c, 0x13d, 0x13e],
+			[new(0x00, -32768, 32767), new(0x01, -32768, 32767), new(0x02, 0, 255), new(0x03, -32768, 32767),
+				new(0x04, -32768, 32767), new(0x05, 0, 255), new(0x10, -1, 1), new(0x11, -1, 1)]));
+		Assert.That(pad.Caps.Info, Is.EqualTo("ZRUPD"));
+		Assert.That(pad.Caps.AxisCount, Is.EqualTo(5));
+		Assert.That(pad.Caps.Buttons, Is.EqualTo(11));
+
+		// The left trigger held, the right stick pushed right and up, the hat up and right, the left stick clicked.
+		var reading = pad.Read(new KeysharpInputClient.GamepadState(1, 0, 11, 1u << 9, [0, 0, 255, 32767, -32768, 0, 1, -1]));
+		Assert.That(reading.X, Is.EqualTo(50).Within(0.01));
+		Assert.That(reading.Z, Is.EqualTo(100));
+		Assert.That(reading.U, Is.EqualTo(100));
+		Assert.That(reading.R, Is.EqualTo(0));
+		Assert.That(reading.V, Is.EqualTo(0));
+		Assert.That(reading.Pov, Is.EqualTo(4500));
+		Assert.That(reading.Buttons, Is.EqualTo(1u << 8), "A stick click follows Start, as on Windows, and Mode comes after both.");
+
+		// Both triggers held cancel out, and the right one alone lowers the axis.
+		Assert.That(pad.Read(new KeysharpInputClient.GamepadState(1, 0, 11, 0, [0, 0, 255, 0, 0, 255, 0, 0])).Z, Is.EqualTo(50));
+		reading = pad.Read(new KeysharpInputClient.GamepadState(1, 0, 11, 1u << 8, [0, 0, 0, 0, 0, 255, 0, 0]));
+		Assert.That(reading.Z, Is.EqualTo(0));
+		Assert.That(reading.Pov, Is.EqualTo(-1));
+		Assert.That(reading.Buttons, Is.EqualTo(1u << 10));
+
+		// A flight stick: a twist rudder on RZ, a throttle, and a hat which reports one axis only.
+		var stick = new LinuxJoystick.Device(new KeysharpInputClient.GamepadInfo(2, "Stick", [0x120, 0x121],
+			[new(0x00, 0, 1023), new(0x01, 0, 1023), new(0x05, 0, 255), new(0x06, 0, 255), new(0x10, -1, 1)]));
+		Assert.That(stick.Caps.Info, Is.EqualTo("ZR"), "A hat with one axis cannot give a direction, so it is not a POV.");
+		reading = stick.Read(new KeysharpInputClient.GamepadState(2, 0, 2, 0b10, [1023, 0, 255, 0, 1]));
+		Assert.That(reading.X, Is.EqualTo(100));
+		Assert.That(reading.Y, Is.EqualTo(0));
+		Assert.That(reading.Z, Is.EqualTo(0));
+		Assert.That(reading.R, Is.EqualTo(100));
+		Assert.That(reading.Pov, Is.EqualTo(-1));
+		Assert.That(reading.Buttons, Is.EqualTo(0b10u));
+	}
+
 	/// <summary>A managed mirror smaller than its native struct would let an init call write past
 	/// the end of it, so the sizes are checked against the installed library rather than assumed.</summary>
 	[Test]

@@ -434,13 +434,12 @@ namespace Keysharp.Internals
 		bool ExitProgram(uint flags, uint reason);
 	}
 
-	/// <summary>Global hotkey registration + hotkey-message posting. MUST execute on the grab-owning hook
+	/// <summary>Global hotkey registration. MUST execute on the grab-owning hook
 	/// thread (X11 XGrabKey is bound to the [ThreadStatic] connection that established it).</summary>
 	internal interface IHotkeys
 	{
 		bool Register(nint hWnd, uint id, KeyModifiers modifiers, uint vk);
 		bool Unregister(nint hWnd, uint id);
-		bool PostHotkeyMessage(nint hWnd, uint wParam, uint lParam);
 	}
 
 	/// <summary>Live OS/session keyboard state query surface.</summary>

@@ -116,7 +116,7 @@ namespace Keysharp.Internals.Os.Windows
 		internal uint dwVpos;                /* 6th axis position */
 		internal uint dwButtons;             /* button states */
 		internal uint dwButtonNumber;        /* current button number pressed */
-		internal int dwPOV;                 /* point of view state */
+		internal uint dwPOV;                /* point of view state */
 		internal uint dwReserved1;           /* reserved for communication between winmm & driver */
 		internal uint dwReserved2;           /* reserved for future expansion */
 	}

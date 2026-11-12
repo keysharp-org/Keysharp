@@ -68,8 +68,8 @@ Important platform limits remain explicit:
   different group from the one reported while a physical keyboard is main.
 - Key translation does not provide IME-committed text. Raw touch data requires
   gesture interpretation, and relative deltas are not accelerated cursor positions.
-- Joystick discovery and state reads access evdev directly and can require membership
-  in the `input` group; they do not use `keysharp-input` yet.
+- Joystick discovery and state reads use `keysharp-input`'s ungated gamepad listing, so
+  they need neither a grant nor membership in the `input` group.
 - Portal screenshot capture produces an image per request. PipeWire frame
   streaming is a separate capture backend. KWin's restricted capture path uses
   its dedicated one-shot worker.

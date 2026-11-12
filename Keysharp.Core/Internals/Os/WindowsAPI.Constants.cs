@@ -699,7 +699,7 @@ namespace Keysharp.Internals.Os.Windows
 		public const int JOYCAPS_POV4DIR = 0x0020;
 		public const int JOYCAPS_POVCTS = 0x0040;
 
-		public const int JOY_POVCENTERED = -1;
+		public const uint JOY_POVCENTERED = 0xFFFF;//A WORD, so it is not -1 once it sits in the DWORD dwPOV.
 		public const int JOY_POVFORWARD = 0;
 		public const int JOY_POVRIGHT = 9000;
 		public const int JOY_POVBACKWARD = 18000;
