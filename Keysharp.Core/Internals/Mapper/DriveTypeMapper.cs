@@ -10,6 +10,10 @@ namespace Keysharp.Internals.Mapper
 
 		internal override string LookUpKeysharpType(DriveType clrType)
 		{
+			// A path that names no drive has no type, which AutoHotkey reports as an empty string.
+			if (clrType == DriveType.NoRootDirectory)
+				return "";
+
 			var str = base.LookUpKeysharpType(clrType);
 			return string.IsNullOrEmpty(str) ? Keyword_UNKNOWN : str;
 		}
@@ -22,7 +26,6 @@ namespace Keysharp.Internals.Mapper
 			clrMappingTable.Add(DriveType.Ram, Keyword_RAMDISK);
 			clrMappingTable.Add(DriveType.Removable, Keyword_REMOVABLE);
 			clrMappingTable.Add(DriveType.Unknown, Keyword_UNKNOWN);
-			clrMappingTable.Add(DriveType.NoRootDirectory, Keyword_UNKNOWN);
 		}
 	}
 }

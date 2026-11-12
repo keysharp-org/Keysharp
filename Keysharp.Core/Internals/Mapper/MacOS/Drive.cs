@@ -6,14 +6,14 @@ namespace Keysharp.Internals.Mapper.MacOS
 	/// <summary>
 	/// Concrete implementation of Drive for the macOS platform.
 	/// </summary>
-	internal class Drive : DriveBase
+	internal class Drive : UnixDriveBase
 	{
 		// Escapes characters that would otherwise let a volume name break out of the double-quoted
 		// argument when interpolated into a bash -c command string.
 		private static string EscapeForBashDoubleQuotes(string s) =>
 			s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("`", "\\`").Replace("$", "\\$");
 
-		internal override long Serial
+		protected override long SerialNumber
 		{
 			get
 			{
@@ -46,11 +46,14 @@ namespace Keysharp.Internals.Mapper.MacOS
 			}
 		}
 
-		internal Drive(DriveInfo drv)
-			: base(drv) { }
+		internal Drive(string path)
+			: base(path) { }
 
 		internal override void Eject()
 		{
+			if (!HasDrive)
+				return;
+
 			if ($"diskutil eject \"{EscapeForBashDoubleQuotes(drive.Name)}\"".Bash() != 0)
 				Diagnostics.Debug.WriteLine($"Drive.Eject failed for {drive.Name}");
 		}
@@ -62,11 +65,14 @@ namespace Keysharp.Internals.Mapper.MacOS
 
 		internal override void Retract()
 		{
+			if (!HasDrive)
+				return;
+
 			if ("drutil tray close".Bash() != 0)
 				Diagnostics.Debug.WriteLine($"Drive.Retract failed for {drive.Name}");
 		}
 
-		internal override void SetLabel(string label)
+		protected override void WriteLabel(string label)
 		{
 			var result = RunCommand("/usr/sbin/diskutil", ["renameVolume", drive.Name, label]);
 

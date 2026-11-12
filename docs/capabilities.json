@@ -4909,7 +4909,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Returns the volume label of the specified drive.",
-                     "tested-by":  "drive-getsetlabel.ahk"
+                     "tested-by":  "drive-getfilesystem.ahk; drive-getsetlabel.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -4953,7 +4953,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Returns the status of the drive which contains the specified path.",
-                     "tested-by":  "drive-getsetlabel.ahk"
+                     "tested-by":  "drive-getstatus.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -5004,7 +5004,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Changes a volume label. Windows uses DriveInfo, Linux dispatches to the installed filesystem-specific label utility, and macOS uses diskutil renameVolume. Unix operations can require elevated privileges; filesystem/backend coverage needs manual verification.",
+                     "notes":  "Changes a volume label. Windows uses SetVolumeLabel, Linux dispatches to the installed filesystem-specific label utility, and macOS uses diskutil renameVolume. Unix operations can require elevated privileges; filesystem/backend coverage needs manual verification.",
                      "tested-by":  "drive-getsetlabel.ahk"
                  },
                  {

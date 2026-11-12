@@ -3,99 +3,125 @@ using Keysharp.Builtins;
 namespace Keysharp.Internals.Mapper.Windows
 {
 	/// <summary>
-	/// Implementation for native Windows Drive Operations
+	/// Drive operations through the Win32 calls AutoHotkey makes, on the path as the script gave it. Reducing the
+	/// path to its drive letter first, as DriveInfo does, answers for a path that does not exist and rejects UNC
+	/// shares and volume GUID paths.
 	/// </summary>
-	internal partial class Drive : DriveBase
+	internal unsafe partial class Drive : DriveBase
 	{
-		private static readonly string IOPathPrefix = @"\\.\";
+		private const int VolumeTextLength = 261;//MAX_PATH + 1, the most GetVolumeInformation writes.
 
-		internal string CreateDeviceIOPath => IOPathPrefix + drive.Name.Substring(0, 1) + ":";
+		internal override object Capacity => Space(false, "capacity");
 
-		internal override long Serial => ReadSerial(drive.Name);
+		internal override object FileSystem => VolumeText(false, "file system");
 
-		internal static long ReadSerial(string root)
+		internal override object Label => VolumeText(true, "label");
+
+		internal override object Serial
 		{
-			const uint FailCriticalErrors = 0x0001;
-			if (!root.EndsWith('\\')) root += '\\';
-
-			// Empty removable drives must report a failure without an insert-media dialog.
-			if (!SetThreadErrorMode(GetThreadErrorMode() | FailCriticalErrors, out var previousMode))
+			get
 			{
-				_ = Errors.OSErrorOccurred(Marshal.GetLastWin32Error(), $"Failed to query drive {root} without prompting.");
-				return 0L;
+				uint serial;
+				var error = VolumeInformation(null, &serial, null);
+				return error == 0 ? (long)serial : QueryFailed(error, "serial number");
 			}
-
-			uint serial;
-			bool success;
-			int error;
-
-			try
-			{
-				success = GetVolumeInformation(root, 0, 0, out serial, out _, out _, 0, 0);
-				error = Marshal.GetLastWin32Error();
-			}
-			finally
-			{
-				_ = SetThreadErrorMode(previousMode, out _);
-			}
-
-			if (success)
-				return serial;
-
-			_ = Errors.OSErrorOccurred(error, $"Failed to get serial number for drive {root}.");
-			return 0L;
 		}
 
-		[LibraryImport("kernel32.dll")]
-		private static partial uint GetThreadErrorMode();
+		internal override object SpaceFree => Space(true, "free space");
 
-		[LibraryImport("kernel32.dll", SetLastError = true)]
-		[return: MarshalAs(UnmanagedType.Bool)]
-		private static partial bool SetThreadErrorMode(uint mode, out uint previousMode);
+		internal override string Status
+		{
+			get
+			{
+				const int FileNotFound = 2, PathNotFound = 3, WriteProtect = 19, NotReady = 21;
+				int error;
 
-		[LibraryImport("kernel32.dll", EntryPoint = "GetVolumeInformationW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
-		[return: MarshalAs(UnmanagedType.Bool)]
-		private static partial bool GetVolumeInformation(string root, nint name, uint nameLength, out uint serial,
-			out uint maximumComponentLength, out uint flags, nint fileSystemName, uint fileSystemNameLength);
+				using (new CriticalErrorsFail())
+					error = GetDiskFreeSpace(Root, out _, out _, out _, out _) ? 0 : Marshal.GetLastWin32Error();
+
+				return error switch
+				{
+					0 => "Ready",
+					FileNotFound or PathNotFound => "Invalid",
+					NotReady => "NotReady",
+					WriteProtect => "ReadOnly",
+					_ => "Unknown"
+				};
+			}
+		}
 
 		internal override string StatusCD
 		{
 			get
 			{
-				var sb = new StringBuilder(128);
-				var str = $"open {drive.Name} type cdaudio alias cd wait shareable";
+				// The drive is spliced into an MCI command, so only a drive letter is accepted.
+				if (path != null && !IsDriveLetter)
+					return (string)Errors.InvalidParameterErrorOccurred(1, nameof(Builtins.Drive.DriveGetStatusCD), path, DefaultErrorString);
 
-				if (WindowsAPI.mciSendString(str, sb, sb.Capacity, 0) != 0)
-					return (string)Errors.ErrorOccurred($"Opening CD {drive.Name} failed.", DefaultErrorString);
+				var status = new StringBuilder(128);
+				int error;
 
-				var res = WindowsAPI.mciSendString("status cdaudio mode", sb, sb.Capacity, 0);
-				_ = WindowsAPI.mciSendString("close cd wait", null, 0, 0);
+				if (path == null)
+					error = WindowsAPI.mciSendString("status cdaudio mode", status, status.Capacity, 0);
+				else
+				{
+					if (WindowsAPI.mciSendString($"open {path} type cdaudio alias cd wait shareable", null, 0, 0) != 0)
+						return (string)Errors.ErrorOccurred($"Opening CD {path} failed.", DefaultErrorString);
 
-				if (res == 0)
-					return sb.ToString();
+					error = WindowsAPI.mciSendString("status cd mode", status, status.Capacity, 0);
+					_ = WindowsAPI.mciSendString("close cd wait", null, 0, 0);
+				}
 
-				return (string)Errors.ErrorOccurred($"Obtaining status for CD {drive.Name} failed.", DefaultErrorString);
+				return error == 0 ? status.ToString() : (string)Errors.ErrorOccurred("Failed to get CD drive status.", DefaultErrorString);
 			}
 		}
 
-		internal Drive(DriveInfo drv)
-			: base(drv) { }
+		internal override string Type => Script.TheScript.DriveTypeMapper.LookUpKeysharpType(GetDriveType(Root));
 
-		internal override void Eject() => DeviceControl(WindowsAPI.IOCTL_STORAGE_EJECT_MEDIA, WindowsAPI.GENERICREAD | WindowsAPI.GENERICWRITE);
+		// "X", "X:" or "X:\".
+		private bool IsDriveLetter => path.Length is >= 1 and <= 3 && char.IsAsciiLetter(path[0])
+			&& (path.Length == 1 || path[1] == ':') && (path.Length < 3 || path[2] == '\\');
 
-		internal override void Lock() => DeviceControl(WindowsAPI.IOCTL_STORAGE_MEDIA_REMOVAL, WindowsAPI.GENERICREAD, preventRemoval: true);
+		// The volume calls fail on some paths that lack the trailing backslash.
+		private string Root => path.Length == 0 || path.EndsWith('\\') ? path : path + '\\';
 
-		internal override void Retract() => DeviceControl(WindowsAPI.IOCTL_STORAGE_LOAD_MEDIA, WindowsAPI.GENERICREAD | WindowsAPI.GENERICWRITE);
+		internal Drive(string path)
+			: base(path) { }
 
-		internal override void SetLabel(string label) => drive.VolumeLabel = label;
+		internal override void Eject() => LoadMedia(WindowsAPI.IOCTL_STORAGE_EJECT_MEDIA);
 
-		internal override void UnLock() => DeviceControl(WindowsAPI.IOCTL_STORAGE_MEDIA_REMOVAL, WindowsAPI.GENERICREAD, preventRemoval: false);
+		internal override void Lock() => SetMediaRemoval(true);
+
+		internal override void Retract() => LoadMedia(WindowsAPI.IOCTL_STORAGE_LOAD_MEDIA);
+
+		internal override void SetLabel(string label)
+		{
+			int error;
+
+			using (new CriticalErrorsFail())
+				error = SetVolumeLabel(Root, label) ? 0 : Marshal.GetLastWin32Error();
+
+			if (error != 0)
+				_ = Errors.OSErrorOccurred(error, $"Failed to change the volume label for {path}.");
+		}
+
+		internal override void UnLock() => SetMediaRemoval(false);
+
+		private static string DefaultCDDevice()
+		{
+			for (var letter = 'A'; letter <= 'Z'; letter++)
+				if (GetDriveType($@"{letter}:\") == DriveType.CDRom)
+					return DevicePath(letter);
+
+			return null;
+		}
 
 		// As in AutoHotkey: the volume is opened shared, since a drive in use can still be ejected or locked, and
 		// the media-removal request takes a one-byte PREVENT_MEDIA_REMOVAL.
-		private unsafe void DeviceControl(uint control, uint access, bool? preventRemoval = null)
+		private static void DeviceControl(string device, uint control, uint access, bool? preventRemoval = null)
 		{
-			var handle = WindowsAPI.CreateFile(CreateDeviceIOPath, access, WindowsAPI.FILE_SHARE_READ | WindowsAPI.FILE_SHARE_WRITE,
+			using var noMediaPrompt = new CriticalErrorsFail();
+			var handle = WindowsAPI.CreateFile(device, access, WindowsAPI.FILE_SHARE_READ | WindowsAPI.FILE_SHARE_WRITE,
 											   0, WindowsAPI.OPENEXISTING, 0, 0);
 
 			if (handle == WindowsAPI.INVALID_HANDLE)
@@ -112,6 +138,108 @@ namespace Keysharp.Internals.Mapper.Windows
 
 			if (!ok)
 				_ = Errors.OSErrorOccurred(error);
+		}
+
+		// The volume itself, which is what the storage requests are sent to, so no trailing backslash.
+		private static string DevicePath(char letter) => $@"\\.\{letter}:";
+
+		private void LoadMedia(uint control)
+		{
+			// Anything but a drive letter is opened as given, so a volume GUID path works with no letter assigned.
+			var device = path == null ? DefaultCDDevice() : IsDriveLetter ? DevicePath(path[0]) : path;
+
+			if (device == null)
+				_ = Errors.ErrorOccurred("Failed to find any CDROM or DVD drives.");
+			else
+				DeviceControl(device, control, WindowsAPI.GENERICREAD | WindowsAPI.GENERICWRITE);
+		}
+
+		private void SetMediaRemoval(bool prevent)
+		{
+			if (IsDriveLetter)
+				DeviceControl(DevicePath(path[0]), WindowsAPI.IOCTL_STORAGE_MEDIA_REMOVAL, WindowsAPI.GENERICREAD, prevent);
+			else
+				_ = Errors.InvalidParameterErrorOccurred(1, prevent ? nameof(Builtins.Drive.DriveLock) : nameof(Builtins.Drive.DriveUnlock), path);
+		}
+
+		private object Space(bool free, string what)
+		{
+			int error;
+			ulong available, total;
+
+			using (new CriticalErrorsFail())
+				error = GetDiskFreeSpaceEx(Root, out available, out total, out _) ? 0 : Marshal.GetLastWin32Error();
+
+			// The caller's available bytes rather than the volume's, so a disk quota is honored.
+			return error == 0 ? (long)((free ? available : total) / (1024 * 1024)) : QueryFailed(error, what);
+		}
+
+		private object VolumeText(bool label, string what)
+		{
+			var text = stackalloc char[VolumeTextLength];
+			var error = label ? VolumeInformation(text, null, null) : VolumeInformation(null, null, text);
+			return error == 0 ? new string(text) : QueryFailed(error, what);
+		}
+
+		// The Win32 error, or 0. Each buffer is VolumeTextLength characters or null.
+		private int VolumeInformation(char* label, uint* serial, char* fileSystem)
+		{
+			using (new CriticalErrorsFail())
+				return GetVolumeInformation(Root, label, label != null ? VolumeTextLength : 0u, serial, null, null,
+											fileSystem, fileSystem != null ? VolumeTextLength : 0u) ? 0 : Marshal.GetLastWin32Error();
+		}
+
+		[LibraryImport("kernel32.dll", EntryPoint = "GetDiskFreeSpaceW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+		[return: MarshalAs(UnmanagedType.Bool)]
+		private static partial bool GetDiskFreeSpace(string root, out uint sectorsPerCluster, out uint bytesPerSector,
+				out uint freeClusters, out uint totalClusters);
+
+		[LibraryImport("kernel32.dll", EntryPoint = "GetDiskFreeSpaceExW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+		[return: MarshalAs(UnmanagedType.Bool)]
+		private static partial bool GetDiskFreeSpaceEx(string directory, out ulong freeBytesAvailable, out ulong totalBytes,
+				out ulong totalFreeBytes);
+
+		// DriveType's values are the Win32 DRIVE_* constants.
+		[LibraryImport("kernel32.dll", EntryPoint = "GetDriveTypeW", StringMarshalling = StringMarshalling.Utf16)]
+		private static partial DriveType GetDriveType(string root);
+
+		[LibraryImport("kernel32.dll")]
+		private static partial uint GetThreadErrorMode();
+
+		[LibraryImport("kernel32.dll", EntryPoint = "GetVolumeInformationW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+		[return: MarshalAs(UnmanagedType.Bool)]
+		private static partial bool GetVolumeInformation(string root, char* name, uint nameLength, uint* serial,
+				uint* maximumComponentLength, uint* flags, char* fileSystemName, uint fileSystemNameLength);
+
+		// No SetLastError: restoring the mode must not replace the error of the call it wrapped.
+		[LibraryImport("kernel32.dll")]
+		[return: MarshalAs(UnmanagedType.Bool)]
+		private static partial bool SetThreadErrorMode(uint mode, out uint previousMode);
+
+		[LibraryImport("kernel32.dll", EntryPoint = "SetVolumeLabelW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
+		[return: MarshalAs(UnmanagedType.Bool)]
+		private static partial bool SetVolumeLabel(string root, string label);
+
+		/// <summary>
+		/// Makes an empty removable drive report a failure rather than show an insert-media dialog, keeping the
+		/// thread's other error-mode flags.
+		/// </summary>
+		private readonly struct CriticalErrorsFail : IDisposable
+		{
+			private readonly bool changed;
+			private readonly uint previousMode;
+
+			public CriticalErrorsFail()
+			{
+				const uint FailCriticalErrors = 0x0001;
+				changed = SetThreadErrorMode(GetThreadErrorMode() | FailCriticalErrors, out previousMode);
+			}
+
+			public void Dispose()
+			{
+				if (changed)
+					_ = SetThreadErrorMode(previousMode, out _);
+			}
 		}
 	}
 }

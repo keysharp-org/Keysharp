@@ -477,7 +477,7 @@ Status legend:
 | DriveGetType() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the type of the drive which contains the specified path. |
 | DriveLock() | 🟢 Full | 🟢 Full | 🟢 Full | 🔴 Unsupported | Prevents media ejection. Linux uses the eject utility; eject locking is permanently unsupported on macOS. |
 | DriveRetract() | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | The DriveEject and DriveRetract functions eject or retract the tray of the specified CD/DVD drive. DriveEject can also eject a removable drive. |
-| DriveSetLabel() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Changes a volume label. Windows uses DriveInfo, Linux dispatches to the installed filesystem-specific label utility, and macOS uses diskutil renameVolume. Unix operations can require elevated privileges; filesystem/backend coverage needs manual verification. |
+| DriveSetLabel() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Changes a volume label. Windows uses SetVolumeLabel, Linux dispatches to the installed filesystem-specific label utility, and macOS uses diskutil renameVolume. Unix operations can require elevated privileges; filesystem/backend coverage needs manual verification. |
 | DriveUnlock() | 🟢 Full | 🟢 Full | 🟢 Full | 🔴 Unsupported | Restores media ejection. Linux uses the eject utility; eject locking is permanently unsupported on macOS. |
 | Edit() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Opens the script, or the file named by the optional argument, in a text editor rather than the extension's handler. |
 | EditGetCurrentCol() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The EditGetCurrentCol function returns the column number in an edit control where the caret resides. |

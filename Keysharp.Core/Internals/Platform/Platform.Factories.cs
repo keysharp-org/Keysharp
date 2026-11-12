@@ -5,14 +5,14 @@ namespace Keysharp.Internals
 		/// <summary>Per-platform <see cref="Mapper.DriveBase"/> factory (compile-time OS selection).</summary>
 		internal static class Drive
 		{
-			internal static Mapper.DriveBase CreateDrive(DriveInfo drive)
+			internal static Mapper.DriveBase CreateDrive(string path)
 			{
 #if WINDOWS
-				return new Keysharp.Internals.Mapper.Windows.Drive(drive);
+				return new Keysharp.Internals.Mapper.Windows.Drive(path);
 #elif LINUX
-				return new Keysharp.Internals.Mapper.Linux.Drive(drive);
+				return new Keysharp.Internals.Mapper.Linux.Drive(path);
 #elif OSX
-				return new Keysharp.Internals.Mapper.MacOS.Drive(drive);
+				return new Keysharp.Internals.Mapper.MacOS.Drive(path);
 #else
 #error Unsupported platform. Only WINDOWS, LINUX, and OSX are supported.
 #endif

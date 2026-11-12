@@ -6,9 +6,9 @@ namespace Keysharp.Internals.Mapper.Linux
 	/// <summary>
 	/// Concrete implementation of Drive for the linux platfrom.
 	/// </summary>
-	internal class Drive : DriveBase
+	internal class Drive : UnixDriveBase
 	{
-		internal override long Serial
+		protected override long SerialNumber
 		{
 			get
 			{
@@ -39,28 +39,37 @@ namespace Keysharp.Internals.Mapper.Linux
 			}
 		}
 
-		internal Drive(DriveInfo drv)
-			: base(drv) { }
+		internal Drive(string path)
+			: base(path) { }
 
 		internal override void Eject()
 		{
+			if (!HasDrive)
+				return;
+
 			if ($"eject {drive.Name}".Bash() != 0)
 				Diagnostics.Debug.WriteLine($"Drive.Eject failed for {drive.Name}");
 		}
 
 		internal override void Lock()
 		{
+			if (!HasDrive)
+				return;
+
 			if ($"eject -i 1 {drive.Name}".Bash() != 0)
 				Diagnostics.Debug.WriteLine($"Drive.Lock failed for {drive.Name}");
 		}
 
 		internal override void Retract()
 		{
+			if (!HasDrive)
+				return;
+
 			if ($"eject -t {drive.Name}".Bash() != 0)
 				Diagnostics.Debug.WriteLine($"Drive.Retract failed for {drive.Name}");
 		}
 
-		internal override void SetLabel(string label)
+		protected override void WriteLabel(string label)
 		{
 			// DriveInfo.Name is normally a mount point on Linux. Label utilities generally
 			// need the backing block device, so resolve it through findmnt first.
@@ -95,6 +104,9 @@ namespace Keysharp.Internals.Mapper.Linux
 
 		internal override void UnLock()
 		{
+			if (!HasDrive)
+				return;
+
 			if ($"eject -i 0 {drive.Name}".Bash() != 0)
 				Diagnostics.Debug.WriteLine($"Drive.UnLock failed for {drive.Name}");
 		}
