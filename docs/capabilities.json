@@ -382,7 +382,7 @@
                      "linux_wayland":  "full",
                      "macos":  "full",
                      "notes":  "Starts or reopens a file-local module; names use Unicode ordinal case-insensitive comparison. A:B declares a nested module, a Keysharp extension.",
-                     "tested-by":  "module-basic.ahk; module-import.ahk; module-object-members.ahk; ModuleTests.FileIdentity"
+                     "tested-by":  "module-basic.ahk; module-import.ahk; module-object-members.ahk; module-body-thread.ahk; ModuleTests.FileIdentity"
                  },
                  {
                      "category":  "Core Language",

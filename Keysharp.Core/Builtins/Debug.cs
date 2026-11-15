@@ -296,8 +296,8 @@ namespace Keysharp.Builtins
 			else
 				WindowsAPI.OutputDebugString(text);
 #endif
-			// Before any Script exists (launcher and compiler diagnostics) there is no Debug tab to keep it for.
-			Script.TheScript?.DebugOutput.Append(text);
+			// Startup and finalizer diagnostics can arrive before the script's debug buffer exists.
+			Script.TheScript?.DebugOutput?.Append(text);
 			return DefaultObject;
 		}
 

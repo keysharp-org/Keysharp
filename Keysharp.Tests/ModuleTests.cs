@@ -1082,6 +1082,9 @@ public partial class ModuleTests : TestRunner
 	[Test, Category("Module")]
 	public void ScopedImport() => Assert.IsTrue(TestScript("module-scoped-import", false));
 
+	[Test, Category("Module")]
+	public void BodyThread() => Assert.IsTrue(TestScript("module-body-thread", false));
+
 	/// <summary>
 	/// A script without #Module is one module, and a wildcard import supplies no name it assigns or declares, as in
 	/// AutoHotkey: each is the module's own variable, so assigning one leaves the imported module's alone, and one

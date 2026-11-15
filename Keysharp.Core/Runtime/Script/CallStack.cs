@@ -298,8 +298,37 @@ namespace Keysharp.Runtime
 		internal string FunctionName => ScriptFrame(Depth - 1, true) is { } frame ? frame.Scope?.Name ?? Name(frame.Function) : "";
 
 		/// <summary>
+		/// Runs the auto-execute section of a module other than AHK and __Main as a thread of its own, which generated code
+		/// calls for each in turn. What the section sets for its thread ends with it, Exit ends only the section, and its
+		/// settings are a copy of the script's defaults, which only AHK's section and __Main's set.
+		/// </summary>
+		public static object RunModuleThread(Type module, Func<object> section)
+		{
+			var script = Script.TheScript;
+			var threads = script.Threads;
+
+			// Launch always has a thread to spare. Without one the section would run in the launching thread.
+			if (!threads.TryPushThreadVariables(0, false, false, true, true, out var tv, ThreadKind.Auto))
+				return RunModule(module, section);
+
+			try
+			{
+				return RunModule(module, section);
+			}
+			catch (Exception ex) when (tv.requestedExitCode != null && !script.hasExited
+				&& Keysharp.Internals.Flow.TryGetException<Keysharp.Builtins.Flow.UserRequestedExitException>(ex, out _))
+			{
+				return null;
+			}
+			finally
+			{
+				threads.EndThread(tv);
+			}
+		}
+
+		/// <summary>
 		/// Runs a module's auto-execute section in a frame of its own and under that module. Generated code calls this for
-		/// each module in turn.
+		/// the AHK module and __Main, whose sections run in the auto-execute thread itself.
 		/// </summary>
 		public static object RunModule(Type module, Func<object> section)
 		{

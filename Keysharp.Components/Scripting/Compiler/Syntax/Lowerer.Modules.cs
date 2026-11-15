@@ -308,6 +308,8 @@ namespace Keysharp.Compilation.Syntax
 					if (ImportSource(import)?.Script is { } dependency) Visit(dependency);
 				order.Add(module.CodeName);
 			}
+			// Every module uses the AHK module's names, so its body, which sets the defaults the others start from, is first.
+			if (_ahkModule != null) Visit(_ahkModule);
 			for (var index = modules.Count - 1; index >= 0; index--) Visit(modules[index]);
 			return order;
 		}

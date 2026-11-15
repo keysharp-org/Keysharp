@@ -7129,12 +7129,13 @@ namespace Keysharp.Compilation.Syntax
 			if (_dhhrHotIf) stmts.Add(CallStmt("Keysharp.Builtins.Keyboard.HotIf", Str("")));
 			if (_persistent) stmts.Add(CallStmt("Keysharp.Builtins.Flow.Persistent"));
 			stmts.Add(CallStmt("Keysharp.Runtime.Keyboard.HotkeyDefinition.ManifestAllHotkeysHotstringsHooks"));
-			// Run each module's auto-exec in dependency order, in a call stack frame of its own and under that module.
+			// Run each module's auto-exec in dependency order, in a call stack frame of its own and under that module. AHK's
+			// and __Main's run in the auto-execute thread, where a setting is a script default. Any other is a thread of its own.
 			foreach (var mod in execOrder)
 			{
-				var modClass = mod;
-				stmts.Add(ExprStmt(Inv(Access("Keysharp.Runtime.CallStack.RunModule"),
-					SyntaxFactory.TypeOfExpression(Ty("Program." + modClass)), Access("Program." + modClass + "." + NameMangler.AutoExecMethod))));
+				var run = mod == _mainGroup.Root.CodeName || mod == _ahkModule?.CodeName ? "RunModule" : "RunModuleThread";
+				stmts.Add(ExprStmt(Inv(Access("Keysharp.Runtime.CallStack." + run),
+					SyntaxFactory.TypeOfExpression(Ty("Program." + mod)), Access("Program." + mod + "." + NameMangler.AutoExecMethod))));
 			}
 			stmts.Add(SyntaxFactory.ReturnStatement(Str("")));
 			return ObjMethod(NameMangler.AutoExecMethod, EmptyParams(), SyntaxFactory.Block(stmts));
