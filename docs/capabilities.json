@@ -385,6 +385,17 @@
                      "tested-by":  "module-basic.ahk; module-import.ahk; module-object-members.ahk; module-body-thread.ahk; ModuleTests.FileIdentity"
                  },
                  {
+                     "category":  "Environment/System",
+                     "feature":  "Module enumeration",
+                     "syntax":  "for Name [, Value] in ModuleObject",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Keysharp-only: enumerates the names a module declares, in name order, without what it imports. A module's own __Enum takes precedence, as in AutoHotkey.",
+                     "tested-by":  "module-object-members.ahk"
+                 },
+                 {
                      "category":  "Core Language",
                      "feature":  "Module.__Ref()",
                      "syntax":  "ModuleObject.__Ref(Name) / &ModuleObject.Member",
@@ -2955,6 +2966,17 @@
                      "macos":  "full",
                      "notes":  "Snapshot Array of enabled Timer objects on the calling real thread, in registration order.",
                      "tested-by":  "TimerSchedulerTests.TimerHandles"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
+                     "feature":  "A_Modules",
+                     "syntax":  "#Import Ks { A_Modules }",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Map of every module object to its qualified name: the script's, nested ones included, and the built-in ones.",
+                     "tested-by":  "module-object-members.ahk"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",

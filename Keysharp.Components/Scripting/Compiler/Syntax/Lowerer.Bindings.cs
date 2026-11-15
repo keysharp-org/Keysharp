@@ -74,7 +74,7 @@ namespace Keysharp.Compilation.Syntax
 		private static MemberBinding BuiltinBindingTarget(System.Reflection.MemberInfo member)
 		{
 			var type = member as Type;
-			var module = typeof(Module).IsAssignableFrom(type) ? type : null;
+			var module = Script.IsModule(type) ? type : null;
 			var kind = member switch
 			{
 				System.Reflection.PropertyInfo => ModuleBindingKind.BuiltinVariable,
@@ -464,10 +464,14 @@ namespace Keysharp.Compilation.Syntax
 		{
 			if (module == null) return declaration;
 			foreach (var (name, target) in module.Bindings)
-				if ((!module.OwnBindings.ContainsKey(name) || target is { Inline: true, Storage: ModuleBindingKind.Function or ModuleBindingKind.Class })
-					&& !(module.NamedBindings.TryGetValue(name, out var imported) && imported.Bound.Member == null))
-					declaration = declaration.AddAttributeLists(Attr("Keysharp.Runtime.ModuleBinding", Str(name), BindingOwner(target),
-						target.Member == null ? Null : Str(target.Member), BindingKind(target.Storage)));
+			{
+				// What the module declares is its fields and properties, so only inline C#'s functions and classes need naming.
+				var declared = module.OwnBindings.ContainsKey(name);
+				if (!declared || target is { Inline: true, Storage: ModuleBindingKind.Function or ModuleBindingKind.Class })
+					declaration = declaration.AddAttributeLists(Attr("Keysharp.Runtime.ModuleBinding", [Str(name), BindingOwner(target),
+						target.Member == null ? Null : Str(target.Member), BindingKind(target.Storage),
+						.. declared ? new[] { SyntaxFactory.LiteralExpression(SyntaxKind.TrueLiteralExpression) } : []]));
+			}
 			return declaration;
 		}
 	}

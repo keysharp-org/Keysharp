@@ -600,12 +600,7 @@ namespace Keysharp.Compilation.Syntax
 			_ = AnyNode(arrow, AddName);
 		}
 
-		private static IEnumerable<string> AhkMemberNames()
-		{
-			var data = Script.TheScript.ReflectionsData;
-			return data.flatPublicStaticMethods.Keys.Concat(data.flatPublicStaticProperties.Keys)
-				.Concat(data.stringToTypes.Where(entry => Script.IsGlobalClass(entry.Value)).Select(entry => entry.Key)).Distinct(StringComparer.OrdinalIgnoreCase);
-		}
+		private static IEnumerable<string> AhkMemberNames() => Script.TheScript.ReflectionsData.GlobalNames;
 
 		private void ClearPerModuleState()
 		{
@@ -682,11 +677,11 @@ namespace Keysharp.Compilation.Syntax
 			return AssembleProgram(name, [.. enclosed[null].Select(WithNested)], execOrder);
 		}
 
-		// The value of a whole-module import: a script module's KS_module, the built-in AHK module's Ahk meta-object, or a built-in
-		// Module type's object. All derive from Module and implement IMetaObject, so member access and method calls dispatch
-		// through Get/Call, which a Statics class singleton would not.
-		private ExpressionSyntax ModuleObjectExpr(ModuleSource source) =>
-			BuiltinModuleType(source) is { } type ? BindMember(type) : Access(ModuleOwner(source.Script) + ".KS_module");
+		// The value of a whole-module import, which is the module's one object: the built-in AHK module's is the Ahk
+		// meta-object. All derive from Module and implement IMetaObject, so member access and method calls dispatch through
+		// Get/Call, which a Statics class singleton would not.
+		private ExpressionSyntax ModuleObjectExpr(ModuleSource source) => BuiltinModuleType(source) is { } type ? BindMember(type)
+			: Inv(Access("Keysharp.Builtins.Misc.ModuleObject"), SyntaxFactory.TypeOfExpression(Ty(ModuleOwner(source.Script))));
 
 		// The run-time type answering for a built-in module, or null for a script's. A script's own #Module AHK adds to the
 		// built-in one, whose object stays the Ahk meta-object.
@@ -702,7 +697,7 @@ namespace Keysharp.Compilation.Syntax
 					TrackRuntimeComponent(method);
 					return FuncBind(method.DeclaringType.FullName.Replace('+', '.') + "." + method.Name);
 				case Type type:
-					if (typeof(Module).IsAssignableFrom(type))
+					if (Script.IsModule(type))
 						return Inv(Access("Keysharp.Builtins.Misc.ModuleObject"), SyntaxFactory.TypeOfExpression(Ty(type.FullName.Replace('+', '.'))));
 					if (type.IsDefined(typeof(ExperimentalAttribute), false))
 						_ = _experimentalTypes.Add(type);
@@ -746,7 +741,7 @@ namespace Keysharp.Compilation.Syntax
 		private static string ConstantOf(System.Reflection.MemberInfo member) => member switch
 		{
 			System.Reflection.PropertyInfo prop => MethodPropertyHolder.HasScriptSetter(prop) && prop.PropertyType == typeof(object) ? null : "built-in variable",
-			Type type => typeof(Keysharp.Runtime.Module).IsAssignableFrom(type) ? "Module" : "Class",
+			Type type => Script.IsModule(type) ? "Module" : "Class",
 			_ => "Func"
 		};
 
@@ -801,7 +796,7 @@ namespace Keysharp.Compilation.Syntax
 			MemberDeclarationSyntax InlineDeclaration = null);
 
 		private static NameTarget BuiltinTarget(System.Reflection.MemberInfo member) => member == null ? null
-			: new(Builtin: member, Type: member is Type type && !typeof(Keysharp.Runtime.Module).IsAssignableFrom(type) ? type.FullName.Replace('+', '.') : null);
+			: new(Builtin: member, Type: member is Type type && !Script.IsModule(type) ? type.FullName.Replace('+', '.') : null);
 
 		private NameTarget OwnClass(string lower) =>
 			_userClassDeclByLower.TryGetValue(lower, out var cd) ? new(Decl: cd, Type: _userClassByLower[lower]) : null;
@@ -851,7 +846,7 @@ namespace Keysharp.Compilation.Syntax
 				? target with { InlineDeclaration = nested, Type = target.Type + "." + nested.Identifier.Text } : null,
 			{ Module: { } m, Decl: null, InlineDeclaration: null } => BindingTarget(ResolveMemberBinding(new(m), name)),
 			{ Builtin: Type type } when type == typeof(Keysharp.Runtime.Ahk) => BindingTarget(ResolveMemberBinding(AhkSource, name)),
-			{ Builtin: Type type } when typeof(Keysharp.Runtime.Module).IsAssignableFrom(type) => BuiltinTarget(FindModuleMember(type, name)),
+			{ Builtin: Type type } when Script.IsModule(type) => BuiltinTarget(FindModuleMember(type, name)),
 			{ Builtin: Type type } => BuiltinTarget(type.GetNestedTypes(System.Reflection.BindingFlags.Public).FirstOrDefault(n =>
 				typeof(Keysharp.Builtins.Any).IsAssignableFrom(n) && !n.IsDefined(typeof(PublicHiddenFromUser), false) && NamedAs(n, name))),
 			_ => null
@@ -4479,7 +4474,7 @@ namespace Keysharp.Compilation.Syntax
 				return inline.ParameterList.Parameters.Any(IsObjectParams) ? null
 					: inline.ParameterList.Parameters.Select(parameter => InlineDeclaredName(parameter, parameter.Identifier.ValueText)).ToList();
 
-			return target?.Builtin is { } builtin && !(builtin is Type type && typeof(Keysharp.Runtime.Module).IsAssignableFrom(type))
+			return target?.Builtin is { } builtin && !(builtin is Type type && Script.IsModule(type))
 				? BuiltinParamNames(builtin) : null;
 		}
 
@@ -4585,7 +4580,7 @@ namespace Keysharp.Compilation.Syntax
 		// `Ks.DotNet` or `Ks.Cosh`: a built-in nested module or a function is as constant as the chain reaching it.
 		private ExpressionSyntax ConstantMember(MemberExpr member) => !HasImports ? null : NativeCallTarget(member) switch
 		{
-			{ Builtin: Type type } when typeof(Keysharp.Runtime.Module).IsAssignableFrom(type) => BuiltinFieldRef(type),
+			{ Builtin: Type type } when Script.IsModule(type) => BuiltinFieldRef(type),
 			var target => FunctionField(target)
 		};
 
@@ -6936,12 +6931,6 @@ namespace Keysharp.Compilation.Syntax
 		{
 			var className = module.ClassName;
 			var mm = new List<MemberDeclarationSyntax>();
-			// Initialize the shared object before import fields so circular imports retain its identity.
-			if (!module.IsAhk)
-				mm.Add(SyntaxFactory.FieldDeclaration(SyntaxFactory.VariableDeclaration(Ty(className))
-					.AddVariables(SyntaxFactory.VariableDeclarator("KS_module").WithInitializer(SyntaxFactory.EqualsValueClause(New(className)))))
-					.AddModifiers(PublicTok, StaticTok, SyntaxFactory.Token(SyntaxKind.ReadOnlyKeyword))
-					.AddAttributeLists(Attr("Keysharp.Runtime.PublicHiddenFromUser")));
 			if (importMembers != null) mm.AddRange(importMembers);
 			mm.AddRange(fieldDecls);
 			// Avoid building the collision index for scripts without inline C#.

@@ -20,7 +20,6 @@ namespace Keysharp.Runtime
 
 			Prototype proto = new Prototype(t);
 			Class staticInst = new Class { InstancePrototype = proto };
-			var isModuleType = typeof(Module).IsAssignableFrom(t);
 
 			store.Statics.AddLazy(t, () =>
 			{
@@ -42,20 +41,11 @@ namespace Keysharp.Runtime
 				// which accept an explicit `@this` argument when that is more convenient.
 				var isBuiltin = script.ProgramType.Namespace != t.Namespace;
 
-				// Every module object is a Module, whichever module it is, so each has Module's prototype, the one which
-				// names the class, as in AutoHotkey.
-				if (isModuleType)
+				// Every module object is a Module, whichever module it is, so each has Module's prototype, as in AutoHotkey.
+				if (IsModule(t))
 				{
 					staticInst.SetBaseInternal(script.Vars.Statics[t.BaseType]);
-
-					if (t != typeof(Module))
-						return store.Prototypes[t] = script.Vars.Prototypes[typeof(Module)];
-
-					proto.SetBaseInternal(script.Vars.Prototypes[t.BaseType]);
-					proto.DefinePropInternal("__Class", new OwnPropsDesc("Module"));
-					proto.DefinePropInternal(nameof(Module.__Ref), new OwnPropsDesc(null, null, null,
-						new KeysharpFunc(typeof(Module).GetMethod(nameof(Module.__Ref)))));
-					return proto;
+					return store.Prototypes[t] = script.Vars.Prototypes[typeof(Module)];
 				}
 
 				_ = proto.EnsureOwnProps();
@@ -299,19 +289,14 @@ namespace Keysharp.Runtime
 			});
         }
 
-		// A module holds classes without naming them: the built-in Ks and Ahk sit at the top level, a nested built-in
-		// module in its parent, and a generated script module inside the program type.
-		internal static bool IsModuleContainer(Type type, Script script) =>
-			typeof(Module).IsAssignableFrom(type)
-			&& (type.DeclaringType == null || type.DeclaringType == script.ProgramType || IsModuleContainer(type.DeclaringType, script));
-
 		/// <summary>
-		/// Whether a type belongs to a script-visible class rather than a module or generated program type.
+		/// Whether a type belongs to a script-visible class rather than a module, which holds classes without naming them,
+		/// or the generated program type.
 		/// </summary>
 		internal static bool IsNestedInClass(Type type, Script script) =>
 			type.DeclaringType != null
 			&& type.DeclaringType != script.ProgramType
-			&& !IsModuleContainer(type.DeclaringType, script);
+			&& !IsModule(type.DeclaringType);
 
 		/// <summary>
 		/// Whether a built-in type is a global class: top-level, Any-derived and not a module. A class nested in a
@@ -322,7 +307,16 @@ namespace Keysharp.Runtime
 		internal static bool IsGlobalClass(Type type) =>
 			!type.IsNested
 			&& typeof(Any).IsAssignableFrom(type)
-			&& !typeof(Module).IsAssignableFrom(type);
+			&& !IsModule(type);
+
+		/// <summary>
+		/// Whether a type is a module's: a built-in one deriving from Module, or a script's, which has the module's body.
+		/// Module itself is the class every module object is an instance of, as in AutoHotkey, and a script class
+		/// extending it is a class as well.
+		/// </summary>
+		internal static bool IsModule(Type type) => type != typeof(Module) && typeof(Module).IsAssignableFrom(type)
+			&& (type.Assembly == typeof(Module).Assembly || type.GetMethod(Keywords.AutoExecSectionName,
+				BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly, Type.EmptyTypes) != null);
 
 		// Most members carry no such attribute, which IsDefined answers without the arrays GetCustomAttribute builds even
 		// when nothing matches.

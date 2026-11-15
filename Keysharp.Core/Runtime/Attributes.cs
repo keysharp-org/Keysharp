@@ -161,14 +161,18 @@ namespace Keysharp.Runtime
 		Module
 	}
 
-	/// <summary>The terminal declaration an imported module name denotes, without introducing storage.</summary>
+	/// <summary>
+	/// The terminal declaration a module name denotes, without introducing storage: an import's, or with
+	/// <paramref name="declared"/> that of an inline C# function or class the module declares itself.
+	/// </summary>
 	[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
-	public sealed class ModuleBindingAttribute(string name, Type owner, string member, ModuleBindingKind kind) : Attribute
+	public sealed class ModuleBindingAttribute(string name, Type owner, string member, ModuleBindingKind kind, bool declared = false) : Attribute
 	{
 		public string Name { get; } = name;
 		public Type Owner { get; } = owner;
 		public string Member { get; } = member;
 		public ModuleBindingKind Kind { get; } = kind;
+		public bool Declared { get; } = declared;
 	}
 
 	/// <summary>

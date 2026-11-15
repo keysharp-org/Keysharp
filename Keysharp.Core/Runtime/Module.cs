@@ -20,6 +20,21 @@ namespace Keysharp.Runtime
 			return TryGetMember(name, out var member) ? member.MakeRef(name) : null;
 		}
 
+		/// <summary>
+		/// Enumerates what the module declares, in name order: its variables, functions and classes, but not what it
+		/// imports. With two variables each name comes with its value, which is unset for a variable without one.
+		/// </summary>
+		public object __Enum(object Count)
+		{
+			if (!Count.CoerceInt(out var count, 1))
+				return DefaultObject;
+
+			var names = TheScript.Vars.DeclaredNames(GetType());
+			var position = -1;
+			return new Enumerator(this, count, () => ++position < names.Length, () => names[position],
+				() => (names[position], TryGetMember(names[position], out var member) ? member.Get() : null), () => position = -1);
+		}
+
 		// Reads a member of the module, or is false for a name the module lacks, which its prototype may still have. A
 		// module's own names come first, as in AutoHotkey's ScriptModule::Invoke.
 		internal bool TryGetProperty(string name, object[] args, out object value)
@@ -100,6 +115,8 @@ namespace Keysharp.Runtime
 
 		void IMetaObject.set_Item(object[] indexArgs, object value) => _ = Errors.MissingPropertyErrorOccurred(this, "__Item");
 
+		// A module has no ToString a script can call, as in AutoHotkey.
+		[PublicHiddenFromUser]
 		public override string ToString() => QualifiedName(GetType());
 
 		// A nested module, a script's or a built-in, takes its path from the modules declaring it.
@@ -107,7 +124,7 @@ namespace Keysharp.Runtime
 		{
 			var name = Script.GetUserDeclaredName(type) ?? type.Name;
 
-			while ((type = type.DeclaringType) != null && typeof(Module).IsAssignableFrom(type))
+			while ((type = type.DeclaringType) != null && Script.IsModule(type))
 				name = (Script.GetUserDeclaredName(type) ?? type.Name) + ":" + name;
 
 			return name;

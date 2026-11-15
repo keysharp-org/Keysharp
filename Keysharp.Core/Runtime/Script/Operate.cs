@@ -171,7 +171,7 @@ namespace Keysharp.Runtime
 			var names = new List<string>();
 			for (var cur = t; cur != null && cur != script.ProgramType; cur = cur.DeclaringType)
 			{
-				if (IsModuleContainer(cur, script))
+				if (IsModule(cur))
 					continue;
 				names.Add(Script.GetUserDeclaredName(cur) ?? cur.Name);
 			}

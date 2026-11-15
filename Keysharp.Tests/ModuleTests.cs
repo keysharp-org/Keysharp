@@ -768,7 +768,7 @@ public partial class ModuleTests : TestRunner
 		var tables = s.ReflectionsData;
 		Assert.IsFalse(tables.flatPublicStaticMethods.Values.Any(method => method.DeclaringType == dotNet));
 		Assert.IsFalse(tables.stringToTypes.Values.Contains(dotNet));
-		Assert.IsTrue(Script.IsModuleContainer(dotNet, s));
+		Assert.IsTrue(Script.IsModule(dotNet));
 
 		// A named import replaces the global function, so a call naming its arguments has to mean the same through either.
 		foreach (var (name, owner) in new[] { ("Format", typeof(Keysharp.Builtins.Strings)), ("RegExMatch", typeof(Keysharp.Builtins.RegEx)), ("RegExReplace", typeof(Keysharp.Builtins.RegEx)) })

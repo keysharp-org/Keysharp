@@ -24,6 +24,9 @@
 #Import Parent:Unexposed
 #Import Parent:SameName as SameNamedChild
 #Import Parent:Typed
+#Import Listed
+#Import OwnEnum
+#Import Ks { A_Modules }
 #Include <assert>
 
 #CSharp
@@ -301,6 +304,71 @@ class Delayed {
     }
 }
 
+; Module is the class of every module object, as in AutoHotkey, and has no constructor.
+AssertEq(Type(Module), "Class", A_LineNumber)
+Assert(Listed is Module, A_LineNumber)
+Assert(Listed.Base == Module.Prototype, A_LineNumber)
+Assert(Module.Prototype.Base == Any.Prototype, A_LineNumber)
+AssertError(() => Module(), 'MethodError: This value of type "Class" has no method named "Call". []', A_LineNumber)
+
+; A module is enumerable: the names it declares, in name order, without what it imports, and with a second variable
+; their values, a variable which has none being unset. [Keysharp]
+Enumerated(source, withValues := false) {
+	joined := ""
+	if withValues {
+		for memberName, memberValue in source
+			joined .= memberName "=" (IsSet(memberValue) ? Type(memberValue) : "unset") ","
+	} else
+		for memberName in source
+			joined .= memberName ","
+	return joined
+}
+AssertEq(Enumerated(Listed), "Count,Fn,Thing,Unassigned,", A_LineNumber)
+AssertEq(Enumerated(Listed, true), "Count=Integer,Fn=Func,Thing=Class,Unassigned=unset,", A_LineNumber)
+; What inline C# declares is among the names.
+AssertEq(Enumerated(Typed), "Number,Twice,", A_LineNumber)
+
+; A built-in module lists its members, and AHK what a script's #Module AHK declares as well.
+Assert(InStr(Enumerated(AHK), ",MsgBox,"), A_LineNumber)
+Assert(InStr(Enumerated(AHK), ",ScriptCustomVariable33,"), A_LineNumber)
+
+; A module's own __Enum is what a for-loop calls, as in AutoHotkey. The one every module has is still reached through
+; the prototype.
+AssertEq(Enumerated(OwnEnum), "mine,", A_LineNumber)
+AssertEq(Enumerated(Module.Prototype.__Enum.Call(OwnEnum, 1)), "Kept,__Enum,", A_LineNumber)
+
+; A_Modules holds every module with its qualified name: the script's, nested ones included, and the built-in ones. The
+; modules are the keys, as modules of different files can share a name. [Keysharp]
+AssertEq(A_Modules[Listed], "Listed", A_LineNumber)
+AssertEq(A_Modules[Child], "Parent:Child", A_LineNumber)
+AssertEq(A_Modules[AHK], "AHK", A_LineNumber)
+AssertEq(A_Modules[__Main], "__Main", A_LineNumber)
+moduleNames := ","
+for moduleObject, moduleName in A_Modules
+	moduleNames .= moduleName ","
+Assert(InStr(moduleNames, ",Ks,") && InStr(moduleNames, ",Ks:DotNet,"), A_LineNumber)
+
+; A class extending Module is a class with its own members, not a module, and has no constructor either. Its methods
+; are in the module which declares it, and a class nested in it is named through it.
+Assert(!InStr(moduleNames, "ExtendsModule"), A_LineNumber)
+AssertEq(ExtendsModule.Flag, 7, A_LineNumber)
+AssertEq(ExtendsModule.Echo(5), 5, A_LineNumber)
+AssertEq(ExtendsModule.Dynamic("moduleNames"), moduleNames, A_LineNumber)
+AssertEq(Type(ExtendsModule.Inner()), "ExtendsModule.Inner", A_LineNumber)
+AssertError(() => ExtendsModule(), 'MethodError: This value of type "Class" has no method named "Call". []', A_LineNumber)
+
+class ExtendsModule extends Module {
+	static Flag := 7
+	static Echo(value) => value
+	static Dynamic(variableName) => %variableName%
+	class Inner {
+	}
+	; A method with the name of a module's body does not make the class a module.
+	#CSharp
+	public static object AutoExecSection(object @this) => 0L;
+	#EndCSharp
+}
+
 FileAppend "pass", "*"
 
 #Module Members
@@ -436,3 +504,16 @@ Value := "module"
 public static long Number { get; set; } = 1;
 public static object Twice() => Number * 2;
 #EndCSharp
+
+#Module Listed
+#Import Members as Borrowed
+#Import Members { F as BorrowedFunction }
+Count := 1
+Unassigned := unset
+Fn() => BorrowedFunction() Borrowed.Count
+class Thing {
+}
+
+#Module OwnEnum
+Kept := 1
+__Enum(n) => ["mine"].__Enum(n)

@@ -653,7 +653,7 @@ namespace Keysharp.Internals.Invoke
 		{
 			for (var t = type; t != null; t = t.DeclaringType)
 			{
-				if (typeof(Keysharp.Runtime.Module).IsAssignableFrom(t))
+				if (Script.IsModule(t))
 					return t;
 			}
 

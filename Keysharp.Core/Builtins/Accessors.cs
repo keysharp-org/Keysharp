@@ -1839,6 +1839,23 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
+		/// Every module with its qualified name, such as Parent:Child: the script's own and the built-in ones. The module
+		/// objects are the keys, as modules of different files can share a name.
+		/// </summary>
+		public static Map A_Modules
+		{
+			get
+			{
+				var modules = new Map();
+
+				foreach (var (name, module) in Script.TheScript.Vars.AllModules)
+					modules[module] = name;
+
+				return modules;
+			}
+		}
+
+		/// <summary>
 		/// The default case sensitivity of hotstrings.
 		/// </summary>
 		public static bool A_DefaultHotstringCaseSensitive => Script.TheScript.HotstringManager.hsCaseSensitive;

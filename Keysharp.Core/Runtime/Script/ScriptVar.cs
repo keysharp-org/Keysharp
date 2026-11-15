@@ -38,8 +38,8 @@ namespace Keysharp.Runtime
 
 		internal bool Exists => storage != null;
 		private bool IsWritable => builtin != null ? MethodPropertyHolder.HasScriptSetter(builtin) : holder?.HasSetter == true;
-		private bool IsClass => classType != null && !typeof(Module).IsAssignableFrom(classType) || holder?.pi != null && !holder.HasSetter
-			&& typeof(Module).IsAssignableFrom(holder.pi.DeclaringType) && holder.pi.DeclaringType.Assembly != typeof(Module).Assembly
+		private bool IsClass => classType != null && !Script.IsModule(classType) || holder?.pi != null && !holder.HasSetter
+			&& Script.IsModule(holder.pi.DeclaringType) && holder.pi.DeclaringType.Assembly != typeof(Module).Assembly
 			&& !holder.pi.IsDefined(typeof(InlineCSharpAttribute), false);
 
 		// What a writable variable is written through, which FromTarget turns back into it; null for a constant.
@@ -53,7 +53,7 @@ namespace Keysharp.Runtime
 			MethodPropertyHolder member => member.CallFunc(null, null),
 			PropertyInfo property => MethodPropertyHolder.GetOrAdd(property).CallFunc(null, null),
 			MethodInfo method => Functions.MethodFunction(method),
-			Type type when typeof(Module).IsAssignableFrom(type) => Script.TheScript.Vars.ModuleObject(type),
+			Type type when Script.IsModule(type) => Script.TheScript.Vars.ModuleObject(type),
 			Type type when Script.TheScript.Vars.Statics.TryGetValue(type, out var cls) => cls,
 			_ => null
 		};

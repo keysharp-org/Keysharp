@@ -28,6 +28,10 @@ namespace Keysharp.Internals.Invoke
 
 		/// <summary>The built-in global class a name denotes.</summary>
 		internal bool TryGetGlobalClass(string name, out Type type) => stringToTypes.TryGetValue(name, out type) && Script.IsGlobalClass(type);
+
+		/// <summary>The names of the global built-ins: functions, variables and classes.</summary>
+		internal IEnumerable<string> GlobalNames => flatPublicStaticMethods.Keys.Concat(flatPublicStaticProperties.Keys)
+			.Concat(stringToTypes.Where(entry => Script.IsGlobalClass(entry.Value)).Select(entry => entry.Key)).Distinct(StringComparer.OrdinalIgnoreCase);
 	}
 
 	internal class Reflections
@@ -62,6 +66,9 @@ namespace Keysharp.Internals.Invoke
 			return properties;
 		});
 
+		/// <summary>The built-in modules: AHK, Ks and the modules nested in it.</summary>
+		internal static IEnumerable<Type> BuiltinModules => builtinTypes.Value.Where(Script.IsModule).Append(typeof(Keysharp.Runtime.Ahk));
+
 		// Generated calls resolve their built-ins at compile time; dynamic global lookup needs these catalogs.
 		internal static IReadOnlyDictionary<string, MethodInfo> BuiltinMethods => builtinMethods.Value;
 		internal static IReadOnlyDictionary<string, PropertyInfo> BuiltinProperties => builtinProperties.Value;
@@ -91,7 +98,7 @@ namespace Keysharp.Internals.Invoke
 			foreach (var t in builtinTypes.Value)
 			{
 				// A nested module is reached through its parent, so no bare name finds it (Ks.DotNet, DotNet).
-				if (t.IsNested && typeof(Module).IsAssignableFrom(t))
+				if (t.IsNested && Script.IsModule(t))
 					continue;
 
 				var name = Script.GetUserDeclaredName(t) ?? t.Name;
@@ -104,6 +111,8 @@ namespace Keysharp.Internals.Invoke
 			// Runtime.Ahk is intentionally outside Keysharp.Builtins, but parser import resolution
 			// still needs it to support `import AHK`.
 			rd.stringToTypes[nameof(Keysharp.Runtime.Ahk)] = typeof(Keysharp.Runtime.Ahk);
+			// The class of every module object, which is likewise outside Keysharp.Builtins.
+			rd.stringToTypes[nameof(Module)] = typeof(Module);
 
 #if DEBUG
 			//var typelist = tl.ToList();

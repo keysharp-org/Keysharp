@@ -77,7 +77,7 @@ namespace Keysharp.Compilation.Syntax
 			if (StringComparer.OrdinalIgnoreCase.Equals(name, "AHK")) return AhkSource;
 			if (group.Names.TryGetValue(name, out var module)) return new(module);
 			return Script.TheScript.ReflectionsData.stringToTypes.TryGetValue(name, out var type)
-				&& typeof(Module).IsAssignableFrom(type) ? new(BuiltinType: type) : null;
+				&& Script.IsModule(type) ? new(BuiltinType: type) : null;
 		}
 
 		// The child a script declared with `#Module Parent:Name`, a file's module under the file's initial module, or a nested
@@ -85,7 +85,7 @@ namespace Keysharp.Compilation.Syntax
 		private static ModuleSource NestedChild(ModuleSource parent, string name) => parent?.Script is { } script
 			? script.Nested.TryGetValue(name, out var child) || script == script.Group.Root && script.Group.Names.TryGetValue(name, out child)
 				? new(child) : null
-			: parent?.BuiltinType is { } builtin && FindModuleMember(builtin, name) is Type nested && typeof(Module).IsAssignableFrom(nested) ? new(BuiltinType: nested) : null;
+			: parent?.BuiltinType is { } builtin && FindModuleMember(builtin, name) is Type nested && Script.IsModule(nested) ? new(BuiltinType: nested) : null;
 
 		// AutoHotkey's Var::ValidateName, for a module name or one segment of a nested one.
 		private static string ModuleNameError(string name) =>

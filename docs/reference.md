@@ -870,6 +870,7 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ There is exactly one object per pseudo-thread, so "is this the one I am in" is `thr == A_Thread`.
 	+ `A_WinActivateForce` returns whether the forceful method of activating a window is in effect because `#WinActivateForce` was specified.
 	+ `A_Timers` returns a snapshot `Array` of live `Timer` objects for enabled timers on the calling real thread, in registration order.
+	+ `A_Modules` returns a `Map` of every module object to its qualified name, such as `Parent:Child`: the script's own, nested ones included, and the built-in ones.
 * New classes:
 	+ `Timer`: Nonconstructible, read-only metadata shared by `A_Timers` and `A_EventInfo` for one timer lifetime. Exposes `Callback`, `Period`, `Priority`, `RealThread`, `Elapsed`, `InProgress` and `EndReason`; control remains with `SetTimer`.
 	+ `Audio`: Cross-platform polyphonic playback, device discovery and endpoint control. Import with `#Import Ks { Audio }`. The AutoHotkey `Sound*` functions retain their fuzzy device selector and monophonic playback.
@@ -1293,6 +1294,8 @@ Controlling another application needs **Automation** permission, granted per tar
 		+ `#Module` starts or reopens a module, and `#Import` binds module objects or selected members. Script globals are implicitly wildcard-exportable; names beginning with `_` require an explicit import. Ordinary imported aliases remain explicitly importable and visible through the module object, but only `#Import Export` forwards them to wildcard consumers. Bare imports bind the module object; default exports and standalone `Export` declarations do not exist.
 			+ Load-time hotkey and hotstring directives follow file loading order. Imports are resolved from the last-declared module first, in source order within each module, and each imported file's imports finish before the next sibling file loads.
 			+ Module names and imported aliases use ordinal case-insensitive comparison, including Unicode case pairs. `#Module Tools` and `#Module tOOLS` add code and definitions to the same module.
+			+ `Module` is the class of every module object, as in AutoHotkey: `Mod is Module`, and `Module.Prototype` holds `__Ref`.
+			+ A module object is enumerable: `for Name, Value in Mod` gives the names the module declares, in name order, without what it imports. A module's own `__Enum` takes precedence, as in AutoHotkey, where a module is otherwise not enumerable.
 			+ Every module's body runs at startup, a module's imports before it. The `AHK` module's body runs first.
 			+ The body of a module other than `AHK` and `__Main` runs as a thread of its own: `Exit` ends only that body, and a setting it makes, such as `SendMode` or `SetTitleMatchMode`, ends with it. Only the bodies of `AHK` and `__Main` set the defaults new threads start with. In AutoHotkey every module's body runs in the auto-execute thread and sets those defaults.
 			+ `#HotIf` applies only within the current module section. Switching to another module clears the condition, including when reopening an earlier module; repeating the current module leaves it unchanged. Static hotkeys, hotstrings and remaps from all modules are registered before any ordinary module auto-execute code runs.

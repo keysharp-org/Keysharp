@@ -369,7 +369,7 @@ namespace Keysharp.Builtins
 				return "unset";
 
 			// Every module object is an instance of Module, whichever module it is.
-			if (typeof(Keysharp.Runtime.Module).IsAssignableFrom(type))
+			if (Script.IsModule(type))
 				return "Module";
 
 			try

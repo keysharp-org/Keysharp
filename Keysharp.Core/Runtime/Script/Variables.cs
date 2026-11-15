@@ -37,7 +37,7 @@ namespace Keysharp.Runtime
 			void AddModules(Type[] types)
 			{
 				foreach (var type in types)
-					if (IsModuleType(type))
+					if (Script.IsModule(type))
 					{
 						found.Add(type);
 						AddModules(type.GetNestedTypes(flags));
@@ -60,7 +60,7 @@ namespace Keysharp.Runtime
 		{
 			internal readonly Dictionary<string, ScriptVar> Variables;
 			internal readonly KeyValuePair<string, ScriptVar>[] OriginalFields;
-			internal Lazy<Module> Instance;
+			internal Module Instance;
 
 			internal ModuleScope(Type type)
 			{
@@ -191,9 +191,6 @@ namespace Keysharp.Runtime
 
 		internal static bool IsSpecialName(string name) => name.Length > 3 && char.IsAsciiLetterUpper(name[0]) && char.IsAsciiLetterUpper(name[1]) && name[2] == '_';
 
-		private static bool IsModuleType(Type type) =>
-			typeof(Module).IsAssignableFrom(type);
-
 		internal Dictionary<string, ScriptVar> GetModuleVars(Type moduleType)
 		{
 			// A null module means "the global scope": resolve to the main module's store. Only a script with no
@@ -207,12 +204,33 @@ namespace Keysharp.Runtime
 
 		private ModuleScope GetModule(Type type) => modules.GetOrAdd(type, static t => new(t));
 
+		// The one object of a module. Creating it can start the module's initializer, which a circular import leads back
+		// here, so the object stored first is the module's.
 		internal Module ModuleObject(Type type)
 		{
 			var scope = GetModule(type);
-			return LazyInitializer.EnsureInitialized(ref scope.Instance, () => new Lazy<Module>(() =>
-				(Module)FastCtor.Instantiate(type))).Value;
+			return scope.Instance ?? Interlocked.CompareExchange(ref scope.Instance, (Module)FastCtor.Instantiate(type), null) ?? scope.Instance;
 		}
+
+		/// <summary>
+		/// The names a module declares, in name order: its variables, functions and classes, without what it imports. AHK's
+		/// are every global built-in along with what a script's #Module AHK declares.
+		/// </summary>
+		internal string[] DeclaredNames(Type type)
+		{
+			var names = type == typeof(Ahk) ? script.ReflectionsData.GlobalNames.Concat(ahkModuleType != null ? DeclaredNames(ahkModuleType) : [])
+				: GetModule(type).Variables.Keys.Except(type.GetCustomAttributes<ModuleBindingAttribute>()
+					.Where(binding => !binding.Declared).Select(binding => binding.Name), StringComparer.OrdinalIgnoreCase);
+			return [.. names.Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)];
+		}
+
+		/// <summary>
+		/// Every module with its qualified name: the script's, nested ones included, and the built-in ones. A script's
+		/// #Module AHK is the built-in AHK module, whose object answers for both.
+		/// </summary>
+		internal IEnumerable<(string Name, Module Object)> AllModules =>
+			programModules.Where(type => type != ahkModuleType).Concat(Reflections.BuiltinModules)
+				.Select(type => (Module.QualifiedName(type), ModuleObject(type)));
 
 		internal static ScriptVar ResolveMember(Type owner, string member, ModuleBindingKind kind)
 		{
@@ -242,7 +260,7 @@ namespace Keysharp.Runtime
 						}
 						break;
 					case ModuleBindingKind.Class when typeof(Any).IsAssignableFrom(owner):
-					case ModuleBindingKind.Module when IsModuleType(owner):
+					case ModuleBindingKind.Module when Script.IsModule(owner):
 						return ScriptVar.Class(owner);
 				}
 			}

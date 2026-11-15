@@ -214,6 +214,9 @@ e2:
 
 	public class __Main : Module
 	{
+		// The body is what makes the class a module's.
+		public static object AutoExecSection() => "";
+
 		public static object myclass => _ks_s.Vars.Statics[typeof(Myclass)];
 
 		public class Myclass : KeysharpObject

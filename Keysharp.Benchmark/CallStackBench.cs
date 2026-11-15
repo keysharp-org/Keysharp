@@ -72,6 +72,9 @@ public class CallStackBench : BaseTest
 
 	public class __Main : Module
 	{
+		// The body is what makes the class a module's.
+		public static object AutoExecSection() => "";
+
 		internal static object deep = default!;
 
 		public static object Deep(object n) => (long)n == 0 ? new Error("x").Stack : Invoke(deep, null, (long)n - 1);

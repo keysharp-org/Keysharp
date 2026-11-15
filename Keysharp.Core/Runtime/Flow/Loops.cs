@@ -490,6 +490,12 @@ namespace Keysharp.Runtime
 				_ = Errors.UnsetErrorOccurred("object");
 				return default;
 			}
+			// A module's own __Enum is a function of the module, called without it, and comes before the one every module has,
+			// as in AutoHotkey.
+			else if (obj is Keysharp.Runtime.Module module && module.TryCall("__Enum", [count], out var made))
+			{
+				return NormalizeEnumerator(made, obj, ct);
+			}
 			else if (Reflections.FindAndCacheMethod(obj.GetType(), "__Enum", -1) is MethodPropertyHolder mph)
 			{
 				return NormalizeEnumerator(mph.CallFunc(obj, [count]), obj, ct);
