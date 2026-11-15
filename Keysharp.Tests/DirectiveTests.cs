@@ -452,18 +452,18 @@ public class DirectiveTests : TestRunner
 				AssertEq(ExactValue, 9, A_LineNumber)
 				AssertEq(ModernValue, 10, A_LineNumber)
 				AssertEq(FallbackLoaded, 0, A_LineNumber)
-				get := true
-				if get {
+				if true {
 				    #Requires AutoHotkey v2.0
+				    #Include <InsideBlock>
 				}
-				#Include <AfterGetCondition>
-				AssertEq(GetConditionValue, 11, A_LineNumber)
-				class := true
-				if class {
-				    #Requires AutoHotkey v2.1-alpha.35
-				}
-				#Include <AfterClassCondition>
-				AssertEq(ClassConditionValue, 12, A_LineNumber)
+				#Include <AfterBlock>
+				AssertEq(InsideBlockValue, 11, A_LineNumber)
+				AssertEq(AfterBlockValue, 12, A_LineNumber)
+				if true {
+				    #Requires AutoHotkey v2.0
+				    #Include "Nested/Close.ahk"
+				#Include <AfterClose>
+				AssertEq(AfterCloseValue, 13, A_LineNumber)
 				FileAppend "pass", "*"
 				"""),
 			("Lib/Group_Item.ahk", "GroupValue := 1\n"),
@@ -490,10 +490,14 @@ public class DirectiveTests : TestRunner
 			("ModernSuffix.ahk", "ModernValue := 10\n"),
 			("Lib/ModernSuffix.ahk", "ModernValue := -10\n"),
 			("Lib/Modern.ahk", "FallbackLoaded := 1\n"),
-			("AfterGetCondition", "GetConditionValue := -11\n"),
-			("Lib/AfterGetCondition.ahk", "GetConditionValue := 11\n"),
-			("AfterClassCondition", "ClassConditionValue := 12\n"),
-			("Lib/AfterClassCondition.ahk", "ClassConditionValue := -12\n"),
+			("InsideBlock", "InsideBlockValue := -11\n"),
+			("Lib/InsideBlock.ahk", "InsideBlockValue := 11\n"),
+			("AfterBlock", "AfterBlockValue := 12\n"),
+			("Lib/AfterBlock.ahk", "AfterBlockValue := -12\n"),
+			// A brace which another file closes is not closed in this one, so the directive lasts to its end.
+			("Nested/Close.ahk", "}\n"),
+			("AfterClose", "AfterCloseValue := -13\n"),
+			("Lib/AfterClose.ahk", "AfterCloseValue := 13\n"),
 		};
 		try
 		{

@@ -1034,7 +1034,6 @@ namespace Keysharp.Parsing.Syntax
 		{
 			scriptDir ??= System.IO.Path.GetDirectoryName(_mainScriptPath) ?? _includeDir;
 			var moduleFile = sourceTokens.Count > 0 ? sourceTokens[0].File : null;
-			var scopes = new Stack<(bool Definition, bool BackCompat)>();
 			var (rootBackCompat, rootBackCompatSet) = (true, false);
 			var knownModules = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "__Init", "__Main", "AHK" };
 			var outp = new List<Token>(sourceTokens.Count);
@@ -1066,6 +1065,9 @@ namespace Keysharp.Parsing.Syntax
 				var (diagnosticLine, diagnosticColumn) = LexDiagnosticPosition(lexDiagnostic);
 				var diagnosticFile = src.Count > 0 ? src[0].File : null;
 
+				// The load-time mode outside each open brace, which the closing brace restores: a #Requires lasts to the end of
+				// the braces it is written in. A file's braces are its own, as its mode is.
+				var scopes = new Stack<bool>();
 				// Keep the opening directive's index for unterminated-block diagnostics.
 				var stack = new Stack<(bool parentActive, bool taken, bool active, bool seenElse, int dirIdx)>();
 				bool Emit() => stack.Count == 0 || stack.Peek().active;
@@ -1186,13 +1188,13 @@ namespace Keysharp.Parsing.Syntax
 					if (emit)
 					{
 						if (t.Kind == TokenKind.LBrace)
-							scopes.Push((BeginsDefinitionBlock(src, i), backCompat));
-						else if (t.Kind == TokenKind.RBrace && scopes.TryPop(out var scope) && scope.Definition)
-							backCompat = scope.BackCompat;
+							scopes.Push(backCompat);
+						else if (t.Kind == TokenKind.RBrace && scopes.TryPop(out var outer))
+							backCompat = outer;
 						if (i + 2 < src.Count && nameTok.IsKeyword("requires") && RequiresBackCompat(src[i + 2].Text) is { } compatible)
 						{
 							backCompat = compatible;
-							if (!rootBackCompatSet && module.Equals("__Init", StringComparison.OrdinalIgnoreCase) && SourcePathComparer.Equals(moduleFile, t.File) && !scopes.Any(scope => scope.Definition))
+							if (!rootBackCompatSet && module.Equals("__Init", StringComparison.OrdinalIgnoreCase) && SourcePathComparer.Equals(moduleFile, t.File) && scopes.Count == 0)
 								(rootBackCompat, rootBackCompatSet) = (compatible, true);
 						}
 						else if (i + 2 < src.Count && nameTok.IsKeyword("module"))

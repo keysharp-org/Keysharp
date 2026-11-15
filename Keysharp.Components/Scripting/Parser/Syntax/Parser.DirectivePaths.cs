@@ -6,32 +6,6 @@ namespace Keysharp.Parsing.Syntax
 {
 	internal sealed partial class Parser
 	{
-		// Includes are expanded before parsing, so preserve the load-time mode at callable boundaries.
-		private static bool BeginsDefinitionBlock(List<Token> tokens, int index)
-		{
-			var previous = index - 1;
-			while (previous >= 0 && tokens[previous].Kind == TokenKind.Newline) previous--;
-			if (previous < 0) return false;
-			var end = tokens[previous];
-			if (end.Kind == TokenKind.RParen)
-			{
-				var depth = 1;
-				while (previous > 0 && depth > 0)
-				{
-					var kind = tokens[--previous].Kind;
-					if (kind == TokenKind.RParen) depth++;
-					else if (kind == TokenKind.LParen) depth--;
-				}
-			}
-			while (previous > 0 && tokens[previous - 1].Kind is not (TokenKind.Newline or TokenKind.LBrace or TokenKind.RBrace)) previous--;
-			var header = tokens[previous];
-			if (header.IsKeyword("if") || header.IsKeyword("while") || header.IsKeyword("for")
-				|| header.IsKeyword("switch") || header.IsKeyword("catch") || header.IsKeyword("loop")
-				|| header.IsKeyword("else") || header.IsKeyword("try") || header.IsKeyword("finally")) return false;
-			return header.IsKeyword("class") || header.IsKeyword("struct") || end.IsKeyword("get") || end.IsKeyword("set")
-				|| end.Kind is TokenKind.RParen or TokenKind.HotkeyTrigger or TokenKind.HotstringTrigger;
-		}
-
 		internal static bool? RequiresBackCompat(string args)
 		{
 			var words = (args ?? "").Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
