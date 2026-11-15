@@ -230,7 +230,7 @@ public class SchedulerTests : TestRunner
 	}
 
 	[Test, Category("Threading")]
-	public void DestructorCanResurrectResourceCollectedAgain()
+	public void DestructorKeepingResourceDoesNotDelayItsDisposal()
 	{
 		var context = UseQueuedMainContext();
 		var resource = new DestructorProbe();
@@ -250,21 +250,13 @@ public class SchedulerTests : TestRunner
 			// A sentinel detaches before handing its object to the pump; enqueue directly to avoid GC timing.
 			owner.HasFinalizer = false;
 			resource.HasFinalizer = false;
-			s.DestructorPump.Enqueue(resource, again: true);
+			s.DestructorPump.Enqueue(resource);
 			s.DestructorPump.Enqueue(owner);
 			context.DrainAll();
 
 			Assert.That(deletes, Is.EqualTo(1));
 			Assert.That(saved, Is.SameAs(resource));
-			Assert.That(resource.Disposes, Is.Zero);
-			Assert.IsTrue(resource.HasFinalizer);
-
-			saved = null;
-			resource.HasFinalizer = false;
-			s.DestructorPump.Enqueue(resource, again: true);
-			context.DrainAll();
 			Assert.That(resource.Disposes, Is.EqualTo(1));
-			Assert.That(deletes, Is.EqualTo(1));
 		}
 		finally
 		{

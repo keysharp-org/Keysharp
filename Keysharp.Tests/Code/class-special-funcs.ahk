@@ -40,7 +40,8 @@ AssertEq(gval, 999, A_LineNumber)
 ; A built-in type's subclass is collected the same way, and its __Delete, or that of an object holding it, still reads
 ; its memory. A __Delete defined on an object at run time counts too, and so does a clone, as a separate object. Only an
 ; Object or a Struct created normally or by ObjCreateWithDataPtr is given a __Delete call, as in AutoHotkey, so neither
-; a VarRef, a Struct.At view nor a prototype is, whatever defines it. An object its __Delete keeps stays usable.
+; a VarRef, a Struct.At view nor a prototype is, whatever defines it. A built-in object its __Delete keeps is released
+; all the same.
 class DeletedBuffer extends Buffer
 {
 	__Delete() => __Main.gval := NumGet(this, 0, "UChar")
@@ -125,7 +126,7 @@ Loop 3
 
 AssertEq(gval, 42, A_LineNumber)
 AssertEq(gheld, 7, A_LineNumber)
-AssertEq(NumGet(gkept, 0, "UChar"), 9, A_LineNumber)
+AssertEq(gkept.Size, 0, A_LineNumber)
 AssertEq(gtext, "kept", A_LineNumber)
 AssertEq(gdefined, 1, A_LineNumber)
 AssertEq(gclones, 2, A_LineNumber)
@@ -137,14 +138,10 @@ AssertEq(gvarref, 0, A_LineNumber)
 AssertEq(glatestruct, 1, A_LineNumber)
 Object.Prototype.DeleteProp.Call(VarRef.Prototype, "__Delete")
 
-nestedDeletes := "", targetIdentity := 0, resurrectedNested := ""
+nestedDeletes := "", targetIdentity := 0
 struct NestedLifetime {
 	Number : Int32
-	__Delete() {
-		__Main.nestedDeletes .= this.Number ","
-		if this.Number == 11
-			__Main.resurrectedNested := this
-	}
+	__Delete() => __Main.nestedDeletes .= this.Number ","
 }
 struct NestedLifetimeOwner {
 	Left : NestedLifetime
@@ -187,15 +184,6 @@ timeout := A_TickCount + 2000
 while (nestedDeletes == "" && A_TickCount < timeout)
 	Sleep(30), Collect()
 AssertEq(nestedDeletes, "owner,33,22,11,", A_LineNumber)
-CheckResurrectedNested() {
-	AssertEq(__Main.resurrectedNested.Number, 11, A_LineNumber)
-	__Main.resurrectedNested.Number := 12
-	Loop 3
-		Sleep(30), Collect()
-	AssertEq(__Main.resurrectedNested.Number, 12, A_LineNumber)
-	__Main.resurrectedNested := ""
-}
-CheckResurrectedNested()
 Loop 3
 	Sleep(30), Collect()
 AssertEq(nestedDeletes, "owner,33,22,11,", A_LineNumber)

@@ -6,11 +6,9 @@ namespace Keysharp.Internals.Scripting
 	/// It and its owner refer to each other, so they become unreachable together, and its finalizer brings the owner back
 	/// for the pump.
 	/// </summary>
-	internal sealed class GCCleanupSentinel(Any owner, bool again = false)
+	internal sealed class GCCleanupSentinel(Any owner)
 	{
 		internal Any Owner = owner;
-		// The owner was collected before and given its __Delete then (see Any.ArmAgain).
-		internal readonly bool Again = again;
 
 		~GCCleanupSentinel() => Owner?.Collected(this);
 	}
@@ -20,7 +18,7 @@ namespace Keysharp.Internals.Scripting
 		private readonly Script owner;
 		private readonly Lock runGate = new();
 		private readonly Lock _lock = new();
-		private readonly Queue<(Any Owner, bool Again)> _q = new();       // enqueued by finalizers (strong refs -> resurrection)
+		private readonly Queue<Any> _q = new();       // enqueued by finalizers (strong refs -> resurrection)
 		private bool _pending = false;
 		private bool stopped;
 		private bool registered;
@@ -37,7 +35,7 @@ namespace Keysharp.Internals.Scripting
 				Volatile.Write(ref registered, true);
 		}
 
-		public void Enqueue(Any obj, bool again = false)
+		public void Enqueue(Any obj)
 		{
 			bool post;
 			bool disposeOnly;
@@ -52,7 +50,7 @@ namespace Keysharp.Internals.Scripting
 				}
 				else
 				{
-					_q.Enqueue((obj, again));     // keep strong ref: prevents collection until processed
+					_q.Enqueue(obj);     // keep strong ref: prevents collection until processed
 					// Claim the right to post from inside the lock. Enqueue runs on the GC finalizer thread, so the
 					// old unsynchronized check-then-set let two threads both observe false and post twice. Worse, a
 					// _pending stuck at true -- because its post targeted a scheduler that died with the previous
@@ -86,7 +84,7 @@ namespace Keysharp.Internals.Scripting
 		// Called on the script's logical main thread via its dispatch context, but also directly from
 		// ExitAppInternal, so runGate serializes the two: overlapping drains would otherwise split one batch
 		// between them and double-invoke (or lose) __Delete. Returns whether there was anything to run.
-		public bool RunPendingDestructors(bool exiting = false)
+		public bool RunPendingDestructors()
 		{
 			// A collection hands over what it found through many finalizers. Letting them all finish first keeps an object
 			// with __Delete in one batch with what it holds, none of which may be disposed before that __Delete ran.
@@ -100,26 +98,21 @@ namespace Keysharp.Internals.Scripting
 
 				if (stopped || owner.IsDisposed)
 				{
-					foreach (var (any, _) in batch)
+					foreach (var any in batch)
 						DisposeNative(any);
 
 					return true;
 				}
 
-				var deleted = false;
 				// A batch of Buffers and Files, the usual one, has nothing to order.
-				var anyDelete = batch.Exists(static entry => !entry.Again
-					&& (entry.Owner.HasDeleteCall || entry.Owner is Struct { initializedFields: not null }
-						&& WithInitializedFields(entry.Owner).Any(static any => any.HasDeleteCall)));
+				var anyDelete = batch.Exists(static owner => owner.HasDeleteCall || owner is Struct { initializedFields: not null }
+					&& WithInitializedFields(owner).Any(static any => any.HasDeleteCall));
 
-				// Outside-in (parents before children), and each object's __Delete only the first time it is collected.
-				foreach (var any in anyDelete ? OrderOutsideIn([.. batch.Where(entry => !entry.Again).Select(entry => entry.Owner)])
-					.SelectMany(WithInitializedFields) : [])
+				// Outside-in (parents before children).
+				foreach (var any in anyDelete ? OrderOutsideIn(batch).SelectMany(WithInitializedFields) : [])
 				{
 					if (!any.HasDeleteCall)
 						continue;
-
-					deleted = true;
 
 					try
 					{
@@ -130,16 +123,11 @@ namespace Keysharp.Internals.Scripting
 					catch { /* swallow per destructor semantics */ }
 				}
 
-				// Only then is anything disposed, as a __Delete may use what another object of the batch holds. A __Delete
-				// may also have stored its object or another of the batch, as AutoHotkey allows, so after one ran the
-				// batch is disposed once it is collected again, unless the script is exiting.
-				foreach (var (any, _) in batch)
-				{
-					if (deleted && !exiting && any is IDisposable)
-						any.ArmAgain();
-					else
-						DisposeNative(any);
-				}
+				// Only then is anything disposed, as a __Delete may use what another object of the batch holds. An object
+				// one of them kept is disposed with the rest, as waiting to see which were kept would hold every batch
+				// with a __Delete in it until a later collection.
+				foreach (var any in batch)
+					DisposeNative(any);
 
 				return true;
 			}
@@ -149,7 +137,7 @@ namespace Keysharp.Internals.Scripting
 		{
 			lock (runGate)
 			{
-				List<(Any Owner, bool Again)> batch;
+				List<Any> batch;
 
 				lock (_lock)
 				{
@@ -157,20 +145,20 @@ namespace Keysharp.Internals.Scripting
 					batch = DrainUnsafe();
 				}
 
-				foreach (var (any, _) in batch)
+				foreach (var any in batch)
 					DisposeNative(any);
 			}
 		}
 
-		private List<(Any Owner, bool Again)> Drain()
+		private List<Any> Drain()
 		{
 			lock (_lock)
 				return DrainUnsafe();
 		}
 
-		private List<(Any Owner, bool Again)> DrainUnsafe()
+		private List<Any> DrainUnsafe()
 		{
-			var batch = new List<(Any Owner, bool Again)>(_q.Count);
+			var batch = new List<Any>(_q.Count);
 
 			while (_q.Count > 0)
 				batch.Add(_q.Dequeue());

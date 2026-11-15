@@ -27,18 +27,12 @@ public partial class AudioTests : TestRunner
 
 		try
 		{
-			// Direct enqueue tests both collection passes without depending on GC timing or opening a device.
+			// Direct enqueue tests the collection without depending on GC timing or opening a device.
 			output.HasFinalizer = false;
 			s.DestructorPump.Enqueue(output);
 			context.DrainAll();
 			Assert.That(deletes, Is.EqualTo(1));
 			Assert.That(callbackStatus, Is.EqualTo("Closed"));
-			Assert.That(output.Status, Is.EqualTo("Closed"));
-
-			output.HasFinalizer = false;
-			s.DestructorPump.Enqueue(output, again: true);
-			context.DrainAll();
-			Assert.That(deletes, Is.EqualTo(1));
 			Assert.That(output.Status, Is.EqualTo("Disposed"));
 		}
 		finally

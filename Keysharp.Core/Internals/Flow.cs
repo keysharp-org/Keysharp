@@ -182,7 +182,7 @@ namespace Keysharp.Internals
 			{
 				GC.Collect();
 
-				if (!script.DestructorPump.RunPendingDestructors(exiting: true))
+				if (!script.DestructorPump.RunPendingDestructors())
 					break;
 			}
 

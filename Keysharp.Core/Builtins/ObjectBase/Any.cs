@@ -61,18 +61,7 @@ namespace Keysharp.Builtins
 		internal void Collected(GCCleanupSentinel collected)
 		{
 			if (Interlocked.CompareExchange(ref sentinel, null, collected) == collected)
-				TheScript?.DestructorPump.Enqueue(this, collected.Again);
-		}
-
-		// A __Delete ran while the object was being collected and may have kept it, so it is disposed only once it is
-		// collected again, without a second __Delete.
-		internal void ArmAgain()
-		{
-			if (Interlocked.Exchange(ref sentinel, new(this, true)) is { } replaced)
-			{
-				replaced.Owner = null;
-				GC.SuppressFinalize(replaced);
-			}
+				TheScript?.DestructorPump.Enqueue(this);
 		}
 
 		// A copy has own properties and a sentinel of its own, as sharing either would change or clean up only one of the
