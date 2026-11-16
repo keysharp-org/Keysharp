@@ -8,7 +8,6 @@ namespace Keysharp.Builtins
 	/// Menu objects are used to define, modify and display popup menus. <see cref="Menu()"/>, <see cref="MenuFromHandle"/><br/>
 	/// and <see cref="A_TrayMenu"/> return an object of this type.
 	/// </summary>
-	[RequiresUIThread]
 	public class Menu : KeysharpObject
 	{
 		/// <summary>
@@ -263,6 +262,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// How many times the tray icon must be clicked to select its default menu item.
 		/// </summary>
+		[RequiresUIThread]
 		public long ClickCount
 		{
 			get => clickCount;
@@ -278,6 +278,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The default menu item to click when the tray icon is double clicked.
 		/// </summary>
+		[RequiresUIThread]
 		public string Default
 		{
 			get => defaultItem != null ? defaultItem.Text : "";
@@ -316,6 +317,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// The HWND of the menu.
 		/// </summary>
+		[RequiresUIThread]
 		public long Handle => GetMenu().Handle.ToInt64();
 
 		internal bool HasHandle(long handle)
@@ -332,11 +334,13 @@ namespace Keysharp.Builtins
 		/// The backing toolkit menu as an ordinary <c>Ks.Clr</c> object. Its concrete type is platform-dependent
 		/// and unspecified; changes made through it bypass this class's own state and event wiring.
 		/// </summary>
+		[RequiresUIThread]
 		public object ToClr() => ManagedInvoke.WrapManaged(GetMenu());
 
 		/// <summary>
 		/// The number of sub items contained in the menu.
 		/// </summary>
+		[RequiresUIThread]
 		public long MenuItemCount => GetMenu().Items.Count;
 
 		/// <summary>
@@ -417,6 +421,7 @@ namespace Keysharp.Builtins
 		/// To change an existing item's options without affecting its callback or submenu, simply omit the CallbackOrSubmenu parameter.
 		/// </param>
 		/// <returns>Null if a separator was added, else the newly added <see cref="ToolStripMenuItem"/>.</returns>
+		[RequiresUIThread]
 		public object Add(object menuItemName = null, object callbackOrSubmenu = null, object options = null)
 		{
 			if (menuItemName == null && callbackOrSubmenu == null && options == null)
@@ -441,6 +446,7 @@ namespace Keysharp.Builtins
 		/// Adds the standard tray menu items after any existing items.<br/>
 		/// Any standard items already in the menu are not duplicated, but any missing items are added.
 		/// </summary>
+		[RequiresUIThread]
 		public object AddStandard()
 		{
 			var script = Script.TheScript;
@@ -572,6 +578,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The new check state as a boolean.</returns>
+		[RequiresUIThread]
 		public bool Check(object menuItemName) => menuItemName.CoerceString(out var name) && Check(name, eCheckToggle.Check);
 
 		/// <summary>
@@ -580,6 +587,7 @@ namespace Keysharp.Builtins
 		/// <param name="menuItemName">If omitted, all menu items are deleted from the menu,<br/>
 		/// leaving the menu empty. Otherwise, specify the name or position of a menu item.
 		/// </param>
+		[RequiresUIThread]
 		public object Delete(object menuItemName = null)
 		{
 			if (!menuItemName.CoerceString(out var s))
@@ -626,6 +634,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The new enabled state as a boolean.</returns>
+		[RequiresUIThread]
 		public bool Disable(object menuItemName) => menuItemName.CoerceString(out var name) && Enable(name, eCheckToggle.Uncheck);
 
 		/// <summary>
@@ -633,6 +642,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The new enabled state as a boolean.</returns>
+		[RequiresUIThread]
 		public bool Enable(object menuItemName) => menuItemName.CoerceString(out var name) && Enable(name, eCheckToggle.Check);
 
 		/// <summary>
@@ -640,6 +650,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The new visibility state as a boolean.</returns>
+		[RequiresUIThread]
 		public bool HideItem(object menuItemName) => menuItemName.CoerceString(out var name) && MakeVisible(name, eCheckToggle.Uncheck);
 
 		/// <summary>
@@ -654,6 +665,7 @@ namespace Keysharp.Builtins
 		/// <param name="callbackOrSubmenu">See the <see cref="Add"/> method's callbackOrSubmenu parameter.</param>
 		/// <param name="options">See the <see cref="Add"/> method's options parameter.</param>
 		/// <returns>The newly create <see cref="ToolStripMenuItem"/>.</returns>
+		[RequiresUIThread]
 		public object Insert(object menuItemName = null, object itemToInsert = null, object callbackOrSubmenu = null, object options = null)
 		{
 			if (!menuItemName.CoerceString(out var insertBefore) || !itemToInsert.CoerceString(out var name) || !options.CoerceString(out var opts))
@@ -667,6 +679,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The name of the retrieved menu item if found, else empty string.</returns>
+		[RequiresUIThread]
 		public string MenuItemName(object menuItemName) => menuItemName.CoerceString(out var name) && GetMenuItem(name) is ToolStripMenuItem tsmi ? tsmi.Name : "";
 
 		/// <summary>
@@ -676,6 +689,7 @@ namespace Keysharp.Builtins
 		/// <param name="newName">If blank or omitted, menuItemName will be converted into a separator line.<br/>
 		/// Otherwise, specify the new name.
 		/// </param>
+		[RequiresUIThread]
 		public object Rename(object menuItemName, object newName = null)
 		{
 			if (!menuItemName.CoerceString(out var name) || !newName.CoerceString(out var newname))
@@ -751,6 +765,7 @@ namespace Keysharp.Builtins
 		/// If true, the color will be applied to all of the menu's submenus.<br/>
 		/// If false, the color will be applied to the menu only.
 		/// </param>
+		[RequiresUIThread]
 		public object SetColor(object colorValue = null, object applyToSubmenus = null)
 			=> HandleColor(GetMenu(), colorValue, applyToSubmenus.Ab(true), true);
 
@@ -765,6 +780,7 @@ namespace Keysharp.Builtins
 		/// If true, the color will be applied to all of the menu's submenus.<br/>
 		/// If false, the color will be applied to the menu only.
 		/// </param>
+		[RequiresUIThread]
 		public object SetForeColor(object colorValue = null, object applyToSubmenus = null)
 			=> HandleColor(GetMenu(), colorValue, applyToSubmenus.Ab(true), false);
 
@@ -785,6 +801,7 @@ namespace Keysharp.Builtins
 		/// If the icon group indicated by IconNumber contains multiple icon sizes, the closest match is used<br/>
 		/// and the icon is scaled to the specified size.
 		/// </param>
+		[RequiresUIThread]
 		public object SetIcon(object menuItemName, object fileName, object iconNumber = null, object iconWidth = null)
 		{
 			if (!menuItemName.CoerceString(out var name) || !fileName.CoerceString(out var filename))
@@ -863,32 +880,34 @@ namespace Keysharp.Builtins
 
 			var _x = xVal;
 			var _y = yVal;
-			if (hasCoordinates) CoordToScreen(ref _x, ref _y, Builtins.CoordMode.Menu, activeWindow);
+
+			// Coordinates belong to the caller, before display moves to the UI thread.
+			if (hasCoordinates && !CoordToScreen(ref _x, ref _y, Builtins.CoordMode.Menu, activeWindow))
+				return DefaultObject;
+
 			if (x == null) _x = def.X;
 			if (y == null) _y = def.Y;
 #if LINUX
 			Point? pt = hasCoordinates ? new Point(_x, _y) : null;
 #else
-			var pt = new Point(_x, _y);
+			Point? pt = new Point(_x, _y);
 #endif
+			var parentWindow = activeWindow?.Handle ?? 0;
+			return TheScript.IsOnMainThread
+				? ShowPopup(pt, parentWindow, shouldWait)
+				: CallStack.InvokeOnUIThread((_, _) => ShowPopup(pt, parentWindow, shouldWait), this, null);
+		}
+
+		private object ShowPopup(Point? point, nint parentWindow, bool shouldWait)
+		{
 #if !WINDOWS
-			// Non-WinForms backends don't raise Opened, so mark the menu visible here (the ctor's Closed handler
-			// clears it). WinForms uses Opened/Closed for this and needs nothing extra.
+			// These backends have no Opened event; the constructor's Closed handler clears this state.
 			Script.TheScript.SetMenuVisible(menuId, true);
 #endif
 
-			void ShowMenu()
-			{
-#if LINUX
-				MenuItem.Show(pt, activeWindow?.Handle ?? 0);
-#else
-				MenuItem.Show(pt);
-#endif
-			}
-
 			if (!shouldWait)
 			{
-				ShowMenu();
+				ShowAt(point, parentWindow);
 				return DefaultObject;
 			}
 
@@ -902,7 +921,7 @@ namespace Keysharp.Builtins
 			try
 			{
 				MenuItem.Closed += handler;
-				ShowMenu();
+				ShowAt(point, parentWindow);
 #if WINDOWS
 				Keysharp.Internals.Flow.WaitUntil(() => closed || MenuItem.IsDisposed || !MenuItem.Visible);
 #else
@@ -916,11 +935,22 @@ namespace Keysharp.Builtins
 			return DefaultObject;
 		}
 
+		private void ShowAt(Point? point, nint parentWindow)
+		{
+#if LINUX
+			// Popup ownership follows the active window, independently of the coordinate origin.
+			MenuItem.Show(point, parentWindow);
+#else
+			MenuItem.Show(point.Value);
+#endif
+		}
+
 		/// <summary>
 		/// Shows a menu item.
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The new visibility state as a boolean.</returns>
+		[RequiresUIThread]
 		public bool ShowItem(object menuItemName) => menuItemName.CoerceString(out var name) && MakeVisible(name, eCheckToggle.Check);
 
 		/// <summary>
@@ -928,6 +958,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The new check state as a boolean.</returns>
+		[RequiresUIThread]
 		public bool ToggleCheck(object menuItemName) => menuItemName.CoerceString(out var name) && Check(name, eCheckToggle.Toggle);
 
 		/// <summary>
@@ -935,6 +966,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The new enabled state as a boolean.</returns>
+		[RequiresUIThread]
 		public bool ToggleEnable(object menuItemName) => menuItemName.CoerceString(out var name) && Enable(name, eCheckToggle.Toggle);
 
 		/// <summary>
@@ -942,6 +974,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The new visibility state as a boolean.</returns>
+		[RequiresUIThread]
 		public bool ToggleItemVis(object menuItemName) => menuItemName.CoerceString(out var name) && MakeVisible(name, eCheckToggle.Toggle);
 
 		/// <summary>
@@ -949,6 +982,7 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="menuItemName">The name or position of a menu item.</param>
 		/// <returns>The new check state as a boolean.</returns>
+		[RequiresUIThread]
 		public bool UnCheck(object menuItemName) => menuItemName.CoerceString(out var name) && Check(name, eCheckToggle.Uncheck);
 
 		internal void Tsmi_Click(object sender, EventArgs e)

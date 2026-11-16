@@ -86,7 +86,7 @@ foreach ($line in $legendLines) { $docsLines.Add($line) }
 $docsLines.Add("")
 foreach ($line in $tableAll) { $docsLines.Add($line) }
 
-$docsSection = [string]::Join("`n", $docsLines)
+$docsSection = [string]::Join([Environment]::NewLine, $docsLines)
 
 #This expects to be run from the Keysharp folder, not the scripts folder this script resides in.
 $cur = $pwd

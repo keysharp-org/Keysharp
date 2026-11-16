@@ -5,72 +5,75 @@ namespace Keysharp.Internals.Threading
 	internal static class ThreadAccessors
 	{
 		/// <summary>
-		/// Retrieves the coordinate mode for the specified operation.
+		/// Gets the current pseudo-thread's coordinate mode from its innermost scope or baseline configuration.
 		/// </summary>
-		/// <param name="mode">The operation to retrieve the coordinate mode for.</param>
-		/// <returns>The coordinate mode for the specified operation.</returns>
-		/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if an invalid coordinate operation is specified.</exception>
-		internal static CoordModeType GetCoordMode(CoordMode mode)
+		internal static CoordModeType GetCoordMode(CoordMode category)
 		{
-			return mode switch
-			{
-				CoordMode.Caret => A_CoordModeCaret,
-				CoordMode.Menu => A_CoordModeMenu,
-				CoordMode.Mouse => A_CoordModeMouse,
-				CoordMode.Pixel => A_CoordModePixel,
-				CoordMode.Tooltip => A_CoordModeToolTip,
-				_ => (CoordModeType)Errors.ValueErrorOccurred($"Invalid coordinate mode type: {mode}", null, CoordModeType.Client)
-			};
+			var tv = Script.TheScript.Threads.CurrentThread;
+			var scope = tv.CurrentCoordWindow;
+			var mode = scope != null ? scope.CoordModeFor(category)
+				: tv.configData.CoordModeFor(category);
+			GC.KeepAlive(scope);
+			return mode;
+		}
+
+		internal static CoordModeType SetCoordMode(CoordMode category, CoordModeType value)
+		{
+			var tv = Script.TheScript.Threads.CurrentThread;
+			var scope = tv.CurrentCoordWindow;
+			ref var mode = ref (scope != null
+				? ref scope.CoordModeFor(category)
+				: ref tv.configData.CoordModeFor(category));
+			var previous = mode;
+			mode = value;
+
+			GC.KeepAlive(scope);
+			return previous;
 		}
 
 		/// <summary>
 		/// The coordinate mode for positioning the caret.
 		/// </summary>
-		/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if the value couldn't be converted to a <see cref="CoordModeType"/>.</exception>
 		public static CoordModeType A_CoordModeCaret
 		{
-			get => Script.TheScript.Threads.CurrentThread.configData.coordModeCaret;
-			set => Script.TheScript.Threads.CurrentThread.configData.coordModeCaret = value;
+			get => GetCoordMode(CoordMode.Caret);
+			set => SetCoordMode(CoordMode.Caret, value);
 		}
 
 		/// <summary>
 		/// The coordinate mode for positioning menus.
 		/// </summary>
-		/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if the value couldn't be converted to a <see cref="CoordModeType"/>.</exception>
 		public static CoordModeType A_CoordModeMenu
 		{
-			get => Script.TheScript.Threads.CurrentThread.configData.coordModeMenu;
-			set => Script.TheScript.Threads.CurrentThread.configData.coordModeMenu = value;
+			get => GetCoordMode(CoordMode.Menu);
+			set => SetCoordMode(CoordMode.Menu, value);
 		}
 
 		/// <summary>
 		/// The coordinate mode for positioning the mouse.
 		/// </summary>
-		/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if the value couldn't be converted to a <see cref="CoordModeType"/>.</exception>
 		public static CoordModeType A_CoordModeMouse
 		{
-			get => Script.TheScript.Threads.CurrentThread.configData.coordModeMouse;
-			set => Script.TheScript.Threads.CurrentThread.configData.coordModeMouse = value;
+			get => GetCoordMode(CoordMode.Mouse);
+			set => SetCoordMode(CoordMode.Mouse, value);
 		}
 
 		/// <summary>
 		/// The coordinate mode for positioning pixels.
 		/// </summary>
-		/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if the value couldn't be converted to a <see cref="CoordModeType"/>.</exception>
 		public static CoordModeType A_CoordModePixel
 		{
-			get => Script.TheScript.Threads.CurrentThread.configData.coordModePixel;
-			set => Script.TheScript.Threads.CurrentThread.configData.coordModePixel = value;
+			get => GetCoordMode(CoordMode.Pixel);
+			set => SetCoordMode(CoordMode.Pixel, value);
 		}
 
 		/// <summary>
 		/// The coordinate mode for positioning tooltips.
 		/// </summary>
-		/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if the value couldn't be converted to a <see cref="CoordModeType"/>.</exception>
 		public static CoordModeType A_CoordModeToolTip
 		{
-			get => Script.TheScript.Threads.CurrentThread.configData.coordModeToolTip;
-			set => Script.TheScript.Threads.CurrentThread.configData.coordModeToolTip = value;
+			get => GetCoordMode(CoordMode.Tooltip);
+			set => SetCoordMode(CoordMode.Tooltip, value);
 		}
 
 		/// <summary>

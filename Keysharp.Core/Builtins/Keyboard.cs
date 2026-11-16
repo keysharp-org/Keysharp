@@ -55,6 +55,7 @@ namespace Keysharp.Builtins
 		public static bool CaretGetPos([ByRef] object outputVarX = null,
 									   [ByRef] object outputVarY = null)
 		{
+			var hasCoordinates = outputVarX != null || outputVarY != null;
 			outputVarX ??= VarRef.Empty; outputVarY ??= VarRef.Empty;
 #if WINDOWS
             // I believe only the foreground window can have a caret position due to relationship with focused control.
@@ -78,6 +79,9 @@ namespace Keysharp.Builtins
                 return false;
 			}
 
+			if (!hasCoordinates)
+				return true;
+
 			var pt = new POINT
 			{
 				X = info.rcCaret.Left,
@@ -87,7 +91,8 @@ namespace Keysharp.Builtins
 			var caretWnd = WindowQuery.CreateWindow(info.hwndCaret);
 			caretWnd.ClientToScreen(ref pt);// Unconditionally convert to screen coordinates, for simplicity.
 			int x = 0, y = 0;
-			CoordToScreen(ref x, ref y, CoordMode.Caret);// Now convert back to whatever is expected for the current mode.
+			if (!CoordToScreen(ref x, ref y, CoordMode.Caret))
+				return false;
 			pt.X -= x;
 			pt.Y -= y;
 			if (outputVarX != null) Refs.SetValue(outputVarX, (long)pt.X);
@@ -115,10 +120,14 @@ namespace Keysharp.Builtins
 				return false;
 			}
 
+			if (!hasCoordinates)
+				return true;
+
 			//Both sources report screen coordinates; convert back to whatever the current mode expects.
 			var originX = 0;
 			var originY = 0;
-			CoordToScreen(ref originX, ref originY, CoordMode.Caret);
+			if (!CoordToScreen(ref originX, ref originY, CoordMode.Caret))
+				return false;
 			Refs.SetValue(outputVarX, (long)(caret.X - originX));
 			Refs.SetValue(outputVarY, (long)(caret.Y - originY));
 			return true;

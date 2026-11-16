@@ -474,10 +474,10 @@ namespace Keysharp.Internals.Input.Linux
 			]);
 		}
 
-		internal override void MouseMove(ref int x, ref int y, ref uint eventFlags, long speed, bool moveOffset)
+		internal override bool MouseMove(ref int x, ref int y, ref uint eventFlags, long speed, bool moveOffset)
 		{
 			if (x == CoordUnspecified || y == CoordUnspecified)
-				return;
+				return true;
 
 			if (moveOffset && !UsesSenderProvider)
 			{
@@ -497,7 +497,7 @@ namespace Keysharp.Internals.Input.Linux
 				eventFlags = 0;
 				x = CoordUnspecified;
 				y = CoordUnspecified;
-				return;
+				return true;
 			}
 
 			var targetX = x;
@@ -511,8 +511,8 @@ namespace Keysharp.Internals.Input.Linux
 				targetX += sendInputCursorPos.X;
 				targetY += sendInputCursorPos.Y;
 			}
-			else
-				CoordToScreen(ref targetX, ref targetY, CoordMode.Mouse);
+			else if (!CoordToScreen(ref targetX, ref targetY, CoordMode.Mouse))
+				return false;
 
 			// Fall back to uinput when the compositor rejects absolute injection.
 			if (sendMode == SendModes.Event)
@@ -569,7 +569,7 @@ namespace Keysharp.Internals.Input.Linux
 						eventFlags = (uint)MOUSEEVENTF.MOVE | (uint)MOUSEEVENTF.ABSOLUTE;
 						x = targetX;
 						y = targetY;
-						return;
+						return true;
 					}
 				}
 			}
@@ -592,7 +592,7 @@ namespace Keysharp.Internals.Input.Linux
 				eventFlags = (uint)MOUSEEVENTF.MOVE | (uint)MOUSEEVENTF.ABSOLUTE;
 				x = absTargetX;
 				y = absTargetY;
-				return;
+				return true;
 			}
 
 			if (speed < 0)
@@ -640,6 +640,7 @@ namespace Keysharp.Internals.Input.Linux
 			eventFlags = (uint)MOUSEEVENTF.MOVE | (uint)MOUSEEVENTF.ABSOLUTE;
 			x = absTargetX;
 			y = absTargetY;
+			return true;
 		}
 
 

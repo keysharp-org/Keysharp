@@ -636,7 +636,11 @@ namespace Keysharp.Internals.Input.Keyboard
 				// compatibility and peace-of-mind to do it for that too.  For example, some apps may be designed
 				// to expect mouse movement prior to a click at a *new* position, which is not unreasonable given
 				// that this would be the case 99.999% of the time if the user were moving the mouse physically.
-				MouseMove(ref x, ref y, ref eventFlags, speed, moveOffset); // It calls DoMouseDelay() and also converts aX and aY to MOUSEEVENTF_ABSOLUTE coordinates.
+				if (!MouseMove(ref x, ref y, ref eventFlags, speed, moveOffset))
+				{
+					abortArraySend = true;
+					return;
+				}
 				// v1.0.43: eventFlags was added to improve reliability.  Explanation: Since the mouse was just moved to an
 				// explicitly specified set of coordinates, use those coordinates with subsequent clicks.  This has been
 				// shown to significantly improve reliability in cases where the user is moving the mouse during the
@@ -775,6 +779,12 @@ namespace Keysharp.Internals.Input.Keyboard
 			if ((x1 == CoordUnspecified ^ y1 == CoordUnspecified) || (x2 == CoordUnspecified ^ y2 == CoordUnspecified))
 				return;
 
+			if (!relative && x1 == CoordUnspecified && x2 != CoordUnspecified && !ValidateMouseCoordWindow())
+			{
+				abortArraySend = true;
+				return;
+			}
+
 			// I asked Jon, "Have you discovered that insta-drags almost always fail?" and he said
 			// "Yeah, it was weird, absolute lack of drag... Don't know if it was my config or what."
 			// However, testing reveals "insta-drags" work ok, at least on my system, so leaving them enabled.
@@ -827,7 +837,11 @@ namespace Keysharp.Internals.Input.Keyboard
 				// compatibility and peace-of-mind to do it for that too.  For example, some apps may be designed
 				// to expect mouse movement prior to a click at a *new* position, which is not unreasonable given
 				// that this would be the case 99.999% of the time if the user were moving the mouse physically.
-				MouseMove(ref x1, ref y1, ref eventflags, speed, relative); // It calls DoMouseDelay() and also converts aX1 and aY1 to MOUSEEVENTF_ABSOLUTE coordinates.
+				if (!MouseMove(ref x1, ref y1, ref eventflags, speed, relative))
+				{
+					abortArraySend = true;
+					return;
+				}
 				// v1.0.43: event_flags was added to improve reliability.  Explanation: Since the mouse was just moved to an
 				// explicitly specified set of coordinates, use those coordinates with subsequent clicks.  This has been
 				// shown to significantly improve reliability in cases where the user is moving the mouse during the
@@ -835,18 +849,29 @@ namespace Keysharp.Internals.Input.Keyboard
 			}
 
 			MouseEvent(eventflags | eventdown, eventdata, x1, y1); // It ignores aX and aY when MOUSEEVENTF_MOVE is absent.
-			DoMouseDelay(); // Inserts delay for all modes except SendInput, for which it does nothing.
-			// Now that the mouse button has been pushed down, move the mouse to perform the drag:
-			MouseMove(ref x2, ref y2, ref eventflags, speed, relative); // It calls DoMouseDelay() and also converts aX2 and aY2 to MOUSEEVENTF_ABSOLUTE coordinates.
-			DoMouseDelay(); // Duplicate, see below.
-			// Above is a *duplicate* delay because MouseMove() already did one. But it seems best to keep it because:
-			// 1) MouseClickDrag can be a CPU intensive operation for the target window depending on what it does
-			//    during the drag (selecting objects, etc.)  Thus, and extra delay might help a lot of things.
-			// 2) It would probably break some existing scripts to remove the delay, due to timing issues.
-			// 3) Dragging is pretty rarely used, so the added performance of removing the delay wouldn't be
-			//    a big benefit.
-			MouseEvent(eventflags | eventup, eventdata, x2, y2); // It ignores aX and aY when MOUSEEVENTF_MOVE is absent.
-			DoMouseDelay();
+			var moved = false;
+
+			try
+			{
+				DoMouseDelay(); // Inserts delay for all modes except SendInput, for which it does nothing.
+				moved = MouseMove(ref x2, ref y2, ref eventflags, speed, relative);
+
+				if (!moved)
+				{
+					abortArraySend = true;
+					return;
+				}
+
+				DoMouseDelay(); // Duplicate, see below.
+				// Above is a duplicate delay because MouseMove() already did one, but preserves drag timing.
+			}
+			finally
+			{
+				// Release at the current position if the target disappeared after button-down.
+				MouseEvent((moved ? eventflags : 0) | eventup, eventdata,
+					moved ? x2 : CoordUnspecified, moved ? y2 : CoordUnspecified);
+				DoMouseDelay();
+			}
 			// Above line: It seems best to always do this delay too in case the script line that
 			// caused us to be called here is followed immediately by another script line which
 			// is either another mouse click or something that relies upon this mouse drag
@@ -876,15 +901,18 @@ namespace Keysharp.Internals.Input.Keyboard
 		/// <param name="eventFlags"></param>
 		/// <param name="speed"></param>
 		/// <param name="moveOffset"></param>
-		internal virtual void MouseMove(ref int x, ref int y, ref uint eventFlags, long speed, bool moveOffset)
+		internal virtual bool MouseMove(ref int x, ref int y, ref uint eventFlags, long speed, bool moveOffset)
 		{
 			// Most callers have already validated this, but some haven't.  Since it doesn't take too long to check,
 			// do it here rather than requiring all callers to do (helps maintainability).
 			if (x == CoordUnspecified || y == CoordUnspecified)
-				return;
+				return true;
 
 			if (sendMode == SendModes.Play) // Journal playback mode.
 			{
+				if (!moveOffset && !ValidateMouseCoordWindow())
+					return false;
+
 				// Mouse speed (aSpeed) is ignored for SendInput/Play mode: the mouse always moves instantaneously
 				// (though in the case of playback-mode, MouseDelay still applies between each movement and click).
 				// Playback-mode ignores mouse speed because the cases where the user would want to move the mouse more
@@ -915,7 +943,7 @@ namespace Keysharp.Internals.Input.Keyboard
 					y = CoordUnspecified;
 				}
 
-				return; // Other parts below rely on this returning early to avoid converting aX/aY into MOUSEEVENTF_ABSOLUTE.
+				return true; // Other parts below rely on this returning early to avoid converting aX/aY into MOUSEEVENTF_ABSOLUTE.
 			}
 
 			// The playback mode returned from above doesn't need these flags added because they're ignored for clicks:
@@ -955,7 +983,8 @@ namespace Keysharp.Internals.Input.Keyboard
 			{
 				// Convert relative coords to screen coords if necessary (depends on CoordMode).
 				// None of this is done for playback mode since that mode already returned higher above.
-				CoordToScreen(ref x, ref y, CoordMode.Mouse);
+				if (!CoordToScreen(ref x, ref y, CoordMode.Mouse))
+					return false;
 			}
 
 			if (sendMode == SendModes.Input) // Track predicted cursor position for use by subsequent events put into the array.
@@ -995,7 +1024,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				// See the comments in the playback-mode section at the top of this function for why SM_INPUT ignores aSpeed.
 				MouseEvent((uint)MOUSEEVENTF.MOVE | (uint)MOUSEEVENTF.ABSOLUTE | virtualDesk, 0, x, y);
 				DoMouseDelay(); // Inserts delay for all modes except SendInput, for which it does nothing.
-				return;
+				return true;
 			}
 
 			// Since above didn't return, use the incremental mouse move to gradually move the cursor until
@@ -1008,6 +1037,14 @@ namespace Keysharp.Internals.Input.Keyboard
 					MouseCoordToAbs(cursor_pos.Y, screen_height),
 					x, y, speed);                             //Destination/ending coords.
 			}
+
+			return true;
+		}
+
+		private bool ValidateMouseCoordWindow()
+		{
+			var scope = script.Threads.CurrentThread.CurrentCoordWindow;
+			return scope == null || TryGetReferenceWindow(scope, scope.CoordModeFor(CoordMode.Mouse), out _);
 		}
 
 		internal abstract int PbEventCount();
@@ -1015,12 +1052,14 @@ namespace Keysharp.Internals.Input.Keyboard
 		internal virtual void PerformMouseCommon(Actions actionType, uint vk, int x1, int y1, int x2, int y2,
 										 long repeatCount, KeyEventTypes eventType, long speed, bool relative)
 		{
+			var coordWindow = script.Threads.CurrentThread.CurrentCoordWindow;
 			// The maximum number of events, which in this case would be from a MouseClickDrag.  To be conservative
 			// (even though INPUT is a much larger struct than PlaybackEvent and SendInput doesn't use mouse-delays),
 			// include room for the maximum number of mouse delays too.
 			// Drag consists of at most:
 			// 1) Move; 2) Delay; 3) Down; 4) Delay; 5) Move; 6) Delay; 7) Delay (dupe); 8) Up; 9) Delay.
 			const int MAX_PERFORM_MOUSE_EVENTS = 10;
+			abortArraySend = false;
 			var ht = script.HookThread;
 			sendMode = ThreadAccessors.A_SendMode;
 
@@ -1088,7 +1127,7 @@ namespace Keysharp.Internals.Input.Keyboard
 				{
 					case Actions.ACT_MOUSEMOVE:
 						var unused = 0u;
-						MouseMove(ref x1, ref y1, ref unused, speed, relative); // Does nothing if coords are invalid.
+						abortArraySend = !MouseMove(ref x1, ref y1, ref unused, speed, relative);
 						break;
 
 					case Actions.ACT_MOUSEMOVEDELTA:
@@ -1124,11 +1163,15 @@ namespace Keysharp.Internals.Input.Keyboard
 				}
 				finally
 				{
-					if (selectiveBlockInputApplied && !blockinputPrev) // Turn it back off only if it was off before we started.
-						_ = Builtins.Keyboard.ScriptBlockInput(ToggleValueType.Off);
+					try
+					{
+						if (selectiveBlockInputApplied && !blockinputPrev) // Turn it back off only if it was off before we started.
+							_ = Builtins.Keyboard.ScriptBlockInput(ToggleValueType.Off);
 
-					senderBatch = outerBatch;
-					_ = provider?.Exit();
+						senderBatch = outerBatch;
+						_ = provider?.Exit();
+					}
+					finally { GC.KeepAlive(coordWindow); }
 				}
 			}
 		}
@@ -1412,6 +1455,8 @@ namespace Keysharp.Internals.Input.Keyboard
 				// Update: If this key is itself a modifier, don't change the state of the other
 				// modifier keys just for it, since most of the time that is unnecessary and in
 				// some cases, the extra generated keystrokes would cause complications/side-effects.
+				var modifiersBefore = 0u;
+
 				if (keyAsModifiersLR == 0)
 				{
 					// DISGUISE UP: Pass "true" to disguise UP-events on WIN and ALT due to hotkeys such as:
@@ -1428,7 +1473,8 @@ namespace Keysharp.Internals.Input.Keyboard
 					// a possibly unwanted disguising.  Also note that hotkeys such as #LButton automatically use
 					// both hooks so that the Start Menu doesn't appear when the Win key is released, so we're
 					// not responsible for that type of disguising here.
-					SetModifierLRState(modifiersLRSpecified, sendMode != SendModes.Event ? eventModifiersLR : GetModifierLRState()
+					modifiersBefore = sendMode != SendModes.Event ? eventModifiersLR : GetModifierLRState();
+					SetModifierLRState(modifiersLRSpecified, modifiersBefore
 									   , targetWindow, false, true, sendLevel != 0 ? KeyIgnoreLevel(sendLevel) : KeyIgnore); // See keyboard_mouse.h for explanation of KEY_IGNORE.
 					// Above: Fixed for v1.1.27 to use KEY_IGNORE except when SendLevel is non-zero (since that
 					// would indicate that the script probably wants to trigger a hotkey).  KEY_IGNORE is used
@@ -1441,7 +1487,27 @@ namespace Keysharp.Internals.Input.Keyboard
 				// will be readjusted (above) if the user presses/releases modifier keys during the mouse clicks.
 				if (vkIsMouse && targetWindow == 0)
 				{
-					MouseClick(vk, x, y, 1, tv.defaultMouseSpeed, eventType, moveOffset);
+					var completed = false;
+
+					try
+					{
+						MouseClick(vk, x, y, 1, tv.defaultMouseSpeed, eventType, moveOffset);
+						completed = !abortArraySend;
+					}
+					finally
+					{
+						if (!completed && sendMode == SendModes.Event)
+						{
+							var introduced = GetModifierLRState() & modifiersLRSpecified & ~modifiersBefore;
+
+							if (introduced != 0)
+								SetModifierLRState(0u, introduced, targetWindow, true, false);
+						}
+					}
+
+					if (abortArraySend)
+						break;
+
 					x = y = CoordUnspecified;
 				}
 				// Above: Since it's rare to send more than one click, it seems best to simplify and reduce code size
@@ -1560,6 +1626,8 @@ namespace Keysharp.Internals.Input.Keyboard
 			if (keys?.Length == 0)
 				return;
 
+			var coordWindow = script.Threads.CurrentThread.CurrentCoordWindow;
+
 			if (targetWindow == 0 || TargetWindowSendUsesGlobalInput)
 				script.Permissions.EnsureInputControl(operation: "SendKeys");
 
@@ -1572,7 +1640,8 @@ namespace Keysharp.Internals.Input.Keyboard
 			}
 			finally
 			{
-				OnSendKeysFinished();
+				try { OnSendKeysFinished(); }
+				finally { GC.KeepAlive(coordWindow); }
 			}
 		}
 
@@ -1956,8 +2025,9 @@ namespace Keysharp.Internals.Input.Keyboard
 			//var msg = new Msg();//May not be needed.//TOOD
 			var keyIndex = 0;
 
-			//for (; *aKeys; ++aKeys, prevEventModifierDown = this_event_modifier_down)
-			for (; keyIndex < sub.Length; ++keyIndex, prevEventModifierDown = thisEventModifierDown)
+			abortArraySend = false;
+
+			for (; keyIndex < sub.Length && !abortArraySend; ++keyIndex, prevEventModifierDown = thisEventModifierDown)
 			{
 				thisEventModifierDown = 0; // Set default for this iteration, overridden selectively below.
 
@@ -2044,8 +2114,14 @@ namespace Keysharp.Internals.Input.Keyboard
 								HookThread.ParseClickOptions(braceSpan.Slice(5).TrimStart(SpaceTab), ref clickX, ref clickY, ref vk
 													 , ref eventType, ref repeatCount, ref moveOffset);
 
+								if (!moveOffset && clickX != CoordUnspecified && clickY != CoordUnspecified && !ValidateMouseCoordWindow())
+								{
+									abortArraySend = true;
+									goto bracecaseend;
+								}
+
 								if (repeatCount < 1) // Allow {Click 100, 100, 0} to do a mouse-move vs. click (but modifiers like ^{Click..} aren't supported in this case.
-									MouseMove(ref clickX, ref clickY, ref placeholder, tv.defaultMouseSpeed, moveOffset);
+									abortArraySend = !MouseMove(ref clickX, ref clickY, ref placeholder, tv.defaultMouseSpeed, moveOffset);
 								else // Use SendKey because it supports modifiers (e.g. ^{Click}) SendKey requires repeat_count>=1.
 									SendKey(vk, 0, modsForNextKey.Value, persistentModifiersForThisSendKeys
 											, repeatCount, eventType, 0, targetWindow, clickX, clickY, moveOffset);

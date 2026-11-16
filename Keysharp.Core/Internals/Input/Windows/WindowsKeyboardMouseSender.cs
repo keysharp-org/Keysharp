@@ -58,6 +58,10 @@ namespace Keysharp.Internals.Input.Windows
 		private bool thisEventHasBeenLogged, thisEventIsScreenCoord;
 		// Held for as long as the journal hook may call it.
 		private readonly PlaybackProc playbackHandlerDel;
+		private Ks.CoordWindow playbackCoordWindow;
+		private CoordModeType playbackCoordMode;
+		private enum CoordWindowFailure { None, Target, Geometry, NativeGeometry }
+		private CoordWindowFailure playbackCoordWindowFailure;
 		//private bool dead;
 		//private List<uint> deadKeys;
 		//private bool ignore;
@@ -404,7 +408,51 @@ namespace Keysharp.Internals.Input.Windows
 							{
 								var tx = (int)ev.paramL;
 								var ty = (int)ev.paramH;
-								CoordToScreen(ref tx, ref ty, CoordMode.Mouse);   // Playback uses screen coords.
+
+								if (playbackCoordWindow is { } scope)
+								{
+									var mode = scope.CoordModeFor(CoordMode.Mouse);
+
+									if (mode != CoordModeType.Screen)
+									{
+										var window = WindowQuery.CreateWindow(scope.Handle);
+
+										if (!window.Exists || window.IsIconic
+											|| !TryGetCoordBounds(window, mode == CoordModeType.Client, out var bounds))
+										{
+											// Script error handlers run on the sending thread after the native hook stops.
+											if (!Platform.Window.GetExists(scope.Handle) || Platform.Window.GetWindowState(scope.Handle) == FormWindowState.Minimized)
+												playbackCoordWindowFailure = CoordWindowFailure.Target;
+											else if (Platform.Window is WindowsWindow)
+												playbackCoordWindowFailure = CoordWindowFailure.NativeGeometry;
+											else
+												playbackCoordWindowFailure = CoordWindowFailure.Geometry;
+
+											if (AppendPlaybackReleases())
+												return PlaybackHandler(code, wParam, ref lParam);
+
+											// The system may consume this return even after the hook removes itself.
+											ev = default;
+
+											if (Platform.Pointer.GetCursorPos(out var cursor))
+											{
+												ev.message = WM_MOUSEMOVE;
+												ev.paramL = (uint)cursor.X;
+												ev.paramH = (uint)cursor.Y;
+											}
+
+											ht.Unhook(script.playbackHook);
+											script.playbackHook = 0;
+											return 0;
+										}
+
+										tx += bounds.X;
+										ty += bounds.Y;
+									}
+								}
+								else if (playbackCoordMode != CoordModeType.Screen)
+									CoordToScreen(ref tx, ref ty, playbackCoordMode, WindowQuery.ActiveWindow);
+
 								ev.paramL = (uint)tx;
 								ev.paramH = (uint)ty;
 							}
@@ -490,6 +538,56 @@ namespace Keysharp.Internals.Input.Windows
 			} // switch().
 
 			// Execution should never reach since all cases do their own custom return above.
+		}
+
+		private bool AppendPlaybackReleases()
+		{
+			var start = eventPb.Count;
+			HashSet<uint> settled = [];
+
+			// HC_SKIP acknowledged this prefix; a supplied but unconsumed HC_GETNEXT is excluded.
+			for (var i = currentEvent - 1; i >= 0; i--)
+			{
+				var item = eventPb[i];
+				var message = item.messagetype & ~MSG_OFFSET_MOUSE_MOVE;
+				uint up = message switch
+				{
+					WM_LBUTTONDOWN or WM_LBUTTONUP => WM_LBUTTONUP,
+					WM_RBUTTONDOWN or WM_RBUTTONUP => WM_RBUTTONUP,
+					WM_MBUTTONDOWN or WM_MBUTTONUP => WM_MBUTTONUP,
+					// Journal packets carry no X1/X2 identifier.
+					WM_XBUTTONDOWN or WM_XBUTTONUP => WM_XBUTTONUP,
+					_ => 0u
+				};
+
+				if (up != 0)
+				{
+					if (!settled.Add(0x80000000u | up) || message == up)
+						continue;
+
+					item.messagetype = up;
+					item.pt.x = item.pt.y = CoordUnspecifiedShort;
+				}
+				else if (message is WM_KEYDOWN or WM_KEYUP or WM_SYSKEYDOWN or WM_SYSKEYUP)
+				{
+					if (!settled.Add((uint)item.scvk.sc | (uint)item.scvk.vk << 16)
+						|| message is WM_KEYUP or WM_SYSKEYUP)
+						continue;
+
+					item.messagetype = (uint)(message == WM_SYSKEYDOWN ? WM_SYSKEYUP : WM_KEYUP);
+				}
+				else
+					continue;
+
+				eventPb.Add(item);
+			}
+
+			if (eventPb.Count == start)
+				return false;
+
+			currentEvent = start;
+			firstCallForThisEvent = true;
+			return true;
 		}
 
 		internal override void PutDelayIntoArray(uint delay)
@@ -772,7 +870,38 @@ namespace Keysharp.Internals.Input.Windows
 				return;
 			}
 
-			// Since above didn't return, sSendMode == SM_PLAY.
+			// The journal hook runs on the hook thread, so retain the calling pseudo-thread's scope explicitly.
+			var previous = playbackCoordWindow;
+			var previousMode = playbackCoordMode;
+			var previousFailure = playbackCoordWindowFailure;
+			var tv = script.Threads.CurrentThread;
+			playbackCoordWindow = tv.CurrentCoordWindow;
+			playbackCoordMode = tv.configData.CoordModeFor(CoordMode.Mouse);
+			playbackCoordWindowFailure = CoordWindowFailure.None;
+
+			try
+			{
+				SendPlaybackEvents(ref finalKeyDelay);
+
+				if (playbackCoordWindowFailure == CoordWindowFailure.Target)
+					_ = Errors.TargetErrorOccurred("The coordinate window does not exist or is minimized.", (long)playbackCoordWindow.Handle, null);
+				else if (playbackCoordWindowFailure == CoordWindowFailure.Geometry)
+					_ = Errors.UnsupportedErrorOccurred("The coordinate window's position is not available on this platform.");
+				else if (playbackCoordWindowFailure == CoordWindowFailure.NativeGeometry)
+					_ = Errors.OSErrorOccurredWithMessage("Could not retrieve the coordinate window's bounds.");
+			}
+			finally
+			{
+				playbackCoordWindow = previous;
+				playbackCoordMode = previousMode;
+				playbackCoordWindowFailure = previousFailure;
+			}
+		}
+
+		private void SendPlaybackEvents(ref long finalKeyDelay)
+		{
+			var ht = script.HookThread;
+
 			// It seems best not to call IsWindowHung() here because:
 			// 1) It might improve script reliability to allow playback to a hung window because even though
 			//    the entire system would appear frozen, if the window becomes unhung, the keystrokes would
@@ -833,10 +962,29 @@ namespace Keysharp.Internals.Input.Windows
 			// affect performance because there used to be the following here in place of the loop,
 			// and it didn't perform any better:
 			// GetMessage(&msg, NULL, WM_CANCELJOURNAL, WM_CANCELJOURNAL);
-			while (script.playbackHook != 0)
-				Keysharp.Internals.Flow.SleepWithoutInterruption(); // For maintainability, macro is used rather than optimizing/splitting the code it contains.
+			try
+			{
+				while (Volatile.Read(ref script.playbackHook) != 0)
+					Keysharp.Internals.Flow.SleepWithoutInterruption();
+			}
+			finally
+			{
+				if (playbackCoordWindow != null || Volatile.Read(ref script.playbackHook) != 0)
+				{
+					// Wait for the final scoped callback or cancel playback interrupted by an exception.
+					_ = ht.Invoke(() =>
+					{
+						if (script.playbackHook != 0)
+							_ = UnhookWindowsHookEx(script.playbackHook);
 
-			ht.blockWinKeys = false;
+						script.playbackHook = 0;
+						ht.blockWinKeys = false;
+						return null;
+					});
+				}
+				else
+					ht.blockWinKeys = false;
+			}
 
 			// Either the hook unhooked itself or the OS did due to Ctrl-Esc or Ctrl-Alt-Del.
 			// MSDN: When an application sees a [system-generated] WM_CANCELJOURNAL message, it can assume

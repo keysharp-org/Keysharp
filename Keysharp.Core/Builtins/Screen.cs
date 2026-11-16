@@ -145,7 +145,8 @@ namespace Keysharp.Builtins
 			{
 				// As in AutoHotkey, the origin is read once, so the found point is relative to the window searched.
 				int originX = 0, originY = 0;
-				CoordToScreen(ref originX, ref originY, CoordMode.Pixel);
+				if (!CoordToScreen(ref originX, ref originY, CoordMode.Pixel))
+					return DefaultObject;
 				var boundsFailure = ResolveSearchBounds(left + originX, top + originY, right + originX, bottom + originY,
 														out var searchBounds);
 
@@ -201,7 +202,8 @@ namespace Keysharp.Builtins
 
 			try
 			{
-				CoordToScreen(ref _x, ref _y, CoordMode.Pixel);
+				if (!CoordToScreen(ref _x, ref _y, CoordMode.Pixel))
+					return DefaultErrorString;
 				_ = Script.TheScript?.Permissions?.EnsureScreenCapture(operation: "screen capture");
 
 				if (!Platform.Screen.TryGetPixel(_x, _y, out var pixel))
@@ -250,7 +252,8 @@ namespace Keysharp.Builtins
 			variationv = Math.Clamp(variationv, byte.MinValue, byte.MaxValue);
 			// As in AutoHotkey, the origin is read once, so the found point is relative to the window searched.
 			int originX = 0, originY = 0;
-			CoordToScreen(ref originX, ref originY, CoordMode.Pixel);
+			if (!CoordToScreen(ref originX, ref originY, CoordMode.Pixel))
+				return DefaultErrorLong;
 			x1v += originX;
 			y1v += originY;
 			x2v += originX;

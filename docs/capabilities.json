@@ -12064,6 +12064,17 @@
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
+                     "feature":  "CoordWindow",
+                     "syntax":  "Scope := CoordWindow(WinTitle?, WinText?, ExcludeTitle?, ExcludeText?) / CoordWindow.Current / Scope.Hwnd",
+                     "windows":  "full",
+                     "linux_x11":  "unknown",
+                     "linux_wayland":  "unknown",
+                     "macos":  "unknown",
+                     "notes":  "Pseudo-thread window coordinate scope with Client defaults, nesting and Current/Hwnd inspection. Ends through using, __Delete, collection or thread exit.",
+                     "tested-by":  "ks-coord-window.ahk; MiscTests.KsCoordWindow; CoordWindowTests; mouse-delta.ahk"
+                 },
+                 {
+                     "category":  "Keysharp Module (Ks)",
                      "feature":  "Boolean",
                      "syntax":  "x is Boolean / Boolean(Value)",
                      "windows":  "full",

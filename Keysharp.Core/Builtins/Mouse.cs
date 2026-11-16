@@ -92,9 +92,7 @@ namespace Keysharp.Builtins
 
 			CoordModeType rel;
 
-			if (relativeTo is CoordModeType cmt)
-				rel = cmt;
-			else if (Options.IsOption(mode, Keyword_Relative))
+			if (Options.IsOption(mode, Keyword_Relative))
 				rel = CoordModeType.Window;
 			else if (Options.IsOption(mode, Keyword_Client))
 				rel = CoordModeType.Client;
@@ -105,40 +103,20 @@ namespace Keysharp.Builtins
 			else
 				return Errors.ValueErrorOccurred($"Invalid RelativeTo \"{mode}\". Expected Screen, Window, Client or Relative.");
 
-			object prev;
-
-			switch (target)
+			var category = target switch
 			{
-				case var x when x.Equals(Keyword_ToolTip, StringComparison.OrdinalIgnoreCase):
-					prev = A_CoordModeToolTip;
-					A_CoordModeToolTip = rel;
-					break;
+				var x when x.Equals(Keyword_ToolTip, StringComparison.OrdinalIgnoreCase) => Builtins.CoordMode.Tooltip,
+				var x when x.Equals(Keyword_Pixel, StringComparison.OrdinalIgnoreCase) => Builtins.CoordMode.Pixel,
+				var x when x.Equals(Keyword_Mouse, StringComparison.OrdinalIgnoreCase) => Builtins.CoordMode.Mouse,
+				var x when x.Equals(Keyword_Caret, StringComparison.OrdinalIgnoreCase) => Builtins.CoordMode.Caret,
+				var x when x.Equals(Keyword_Menu, StringComparison.OrdinalIgnoreCase) => Builtins.CoordMode.Menu,
+				_ => (Builtins.CoordMode)(-1)
+			};
 
-				case var x when x.Equals(Keyword_Pixel, StringComparison.OrdinalIgnoreCase):
-					prev = A_CoordModePixel;
-					A_CoordModePixel = rel;
-					break;
+			if ((int)category < 0)
+				return Errors.ValueErrorOccurred($"Invalid TargetType \"{target}\". Expected ToolTip, Pixel, Mouse, Caret or Menu.");
 
-				case var x when x.Equals(Keyword_Mouse, StringComparison.OrdinalIgnoreCase):
-					prev = A_CoordModeMouse;
-					A_CoordModeMouse = rel;
-					break;
-
-				case var x when x.Equals(Keyword_Caret, StringComparison.OrdinalIgnoreCase):
-					prev = A_CoordModeCaret;
-					A_CoordModeCaret = rel;
-					break;
-
-				case var x when x.Equals(Keyword_Menu, StringComparison.OrdinalIgnoreCase):
-					prev = A_CoordModeMenu;
-					A_CoordModeMenu = rel;
-					break;
-
-				default:
-					return Errors.ValueErrorOccurred($"Invalid TargetType \"{target}\". Expected ToolTip, Pixel, Mouse, Caret or Menu.");
-			}
-
-			return prev;
+			return CoordModeTypeToString(ThreadAccessors.SetCoordMode(category, rel));
 		}
 
 		/// <summary>
@@ -270,13 +248,16 @@ namespace Keysharp.Builtins
 			if (!flag.CoerceLong(out var mode))
 				return DefaultObject;
 
+			var hasCoordinates = outputVarX != null || outputVarY != null;
 			GetCursorPos(out POINT pos);
-			var aX = 0;
-			var aY = 0;
+			int originX = 0, originY = 0;
+
+			if (hasCoordinates && !CoordToScreen(ref originX, ref originY, Builtins.CoordMode.Mouse))
+				return DefaultObject;
+
 			var script = Script.TheScript;
-			CoordToScreen(ref aX, ref aY, Builtins.CoordMode.Mouse);//Determine where 0,0 in window or client coordinates are on the screen.
-			if (outputVarX != null) Refs.SetValue(outputVarX, (long)(pos.X - aX));//Convert the mouse position in screen coordinates to window coordinates.
-			if (outputVarY != null) Refs.SetValue(outputVarY, (long)(pos.Y - aY));
+			if (outputVarX != null) Refs.SetValue(outputVarX, (long)(pos.X - originX));
+			if (outputVarY != null) Refs.SetValue(outputVarY, (long)(pos.Y - originY));
 
 			if (outputVarWin == null && outputVarControl == null)
 				return DefaultObject;

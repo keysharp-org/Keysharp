@@ -21,6 +21,15 @@ public partial class MiscTests : TestRunner
 		Assert.IsTrue(TestScript("ks-font", false));
 	}
 
+	// Hidden script-owned windows exercise scope lifetime without showing UI or sending input.
+	// The subclass declaration needs the unwrapped script form.
+	[Test, Category("Misc"), NonParallelizable]
+	public void KsCoordWindow()
+	{
+		SkipIfUiInitializationBlocked("Coordinate scopes require script-owned windows.");
+		Assert.IsTrue(TestScript("ks-coord-window", false));
+	}
+
 	[Test, Category("Misc")]
 	public void OptionalMetadata() => Assert.IsTrue(TestScript("misc-optional-metadata", false));
 

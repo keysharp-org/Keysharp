@@ -48,6 +48,31 @@ namespace Keysharp.Internals
 			return new Rectangle(pt.X, pt.Y, rect.Right - rect.Left, rect.Bottom - rect.Top);
 		}
 
+		internal bool TryGetCoordBounds(nint h, bool client, out Rectangle bounds)
+		{
+			bounds = default;
+
+			if (!IsSpecified(h))
+				return false;
+
+			if (client && Control.FromHandle(h) is KeysharpForm form)
+				h = form.ContentContainer.Handle;
+
+			RECT rect;
+			var found = client ? WindowsAPI.GetClientRect(h, out rect) : WindowsAPI.GetWindowRect(h, out rect);
+
+			if (!found)
+				return false;
+
+			var pt = new POINT(rect.Left, rect.Top);
+
+			if (client && !WindowsAPI.ClientToScreen(h, ref pt))
+				return false;
+
+			bounds = new Rectangle(pt.X, pt.Y, rect.Right - rect.Left, rect.Bottom - rect.Top);
+			return true;
+		}
+
 		public override long GetStyle(nint h)
 			=> IsSpecified(h) ? WindowsAPI.GetWindowLongPtr(h, WindowsAPI.GWL_STYLE).ToInt64() : 0;
 

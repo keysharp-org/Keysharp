@@ -295,9 +295,15 @@ namespace Keysharp.Internals.Input.MacOS
 		internal override void PerformMouseCommon(Actions actionType, uint vk, int x1, int y1, int x2, int y2,
 			long repeatCount, KeyEventTypes eventType, long speed, bool relative)
 		{
-			using var scope = ((UnixHookThread)script.HookThread).EnterSendScope();
-			RefreshButtonsWithoutHook();
-			base.PerformMouseCommon(actionType, vk, x1, y1, x2, y2, repeatCount, eventType, speed, relative);
+			var coordWindow = script.Threads.CurrentThread.CurrentCoordWindow;
+
+			try
+			{
+				using var scope = ((UnixHookThread)script.HookThread).EnterSendScope();
+				RefreshButtonsWithoutHook();
+				base.PerformMouseCommon(actionType, vk, x1, y1, x2, y2, repeatCount, eventType, speed, relative);
+			}
+			finally { GC.KeepAlive(coordWindow); }
 		}
 
 		internal override void MouseEvent(uint eventFlags, uint data, int x = CoordUnspecified, int y = CoordUnspecified)
@@ -329,10 +335,10 @@ namespace Keysharp.Internals.Input.MacOS
 			DoMouseDelay();
 		}
 
-		internal override void MouseMove(ref int x, ref int y, ref uint eventFlags, long speed, bool moveOffset)
+		internal override bool MouseMove(ref int x, ref int y, ref uint eventFlags, long speed, bool moveOffset)
 		{
 			if (x == CoordUnspecified || y == CoordUnspecified)
-				return;
+				return true;
 
 			if (sendMode == SendModes.Play)
 			{
@@ -345,7 +351,7 @@ namespace Keysharp.Internals.Input.MacOS
 					y = CoordUnspecified;
 				}
 
-				return;
+				return true;
 			}
 
 			if (moveOffset)
@@ -374,7 +380,8 @@ namespace Keysharp.Internals.Input.MacOS
 			}
 			else
 			{
-				CoordToScreen(ref x, ref y, CoordMode.Mouse);
+				if (!CoordToScreen(ref x, ref y, CoordMode.Mouse))
+					return false;
 			}
 
 			if (sendMode == SendModes.Input)
@@ -384,7 +391,7 @@ namespace Keysharp.Internals.Input.MacOS
 				sendInputCursorPos.Y = y;
 				AddArrayEvent(ArrayEvent.MouseMoveAbs(x, y));
 				DoMouseDelay();
-				return;
+				return true;
 			}
 
 			if (speed < 0)
@@ -396,7 +403,7 @@ namespace Keysharp.Internals.Input.MacOS
 			{
 				mouseStream.MoveAbsolute(x, y, KeyIgnoreLevel(ThreadAccessors.A_SendLevel));
 				DoMouseDelay();
-				return;
+				return true;
 			}
 
 			long cx = cursorPos.X;
@@ -426,6 +433,8 @@ namespace Keysharp.Internals.Input.MacOS
 				mouseStream.MoveAbsolute((int)cx, (int)cy, extraInfo);
 				DoMouseDelay();
 			}
+
+			return true;
 		}
 
 		// The stream preserves pending posts, then reads the cursor to account for other applications' warps.

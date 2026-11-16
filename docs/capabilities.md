@@ -434,6 +434,7 @@ Status legend:
 | ControlShow() | 🟢 Full | 🟡 Partial* | 🟡 Partial* | 🟡 Partial* | The ControlShow function shows a control if it was previously hidden. |
 | ControlShowDropDown() | 🟢 Full | 🟡 Partial* | 🟡 Partial* | 🟡 Partial* | The ControlShowDropDown function shows the popup list of a combo box or drop-down list. |
 | CoordMode() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The CoordMode function sets coordinate mode for various built-in functions to be relative to either the active window or the screen. |
+| CoordWindow | 🟢 Full | ⚪ Unknown | ⚪ Unknown | ⚪ Unknown | Pseudo-thread window coordinate scope with Client defaults, nesting and Current/Hwnd inspection. Ends through using, __Delete, collection or thread exit. |
 | Copilot declaration/remap alias | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Keysharp extension: in static hotkey and remap declarations only, `Copilot` lowers to the generic `<#<+F23` chord. When used as a remap source, the firmware-generated LWin and LShift modifiers are released but not restored. It is intentionally not a runtime key name for Hotkey(), Send, KeyWait, GetKeyState, InputHook or related APIs. There is no Office alias. |
 | Cos() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the cosine of a number. |
 | Cosh() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the hyperbolic cosine of a number. |

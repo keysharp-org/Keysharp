@@ -83,7 +83,8 @@ namespace Keysharp.Builtins
 				return 0L;
 			}
 
-			var nearCursor = ResolveTooltipPos(_x, _y, out var px, out var py, out var cursor);
+			if (!TryResolveTooltipPos(_x, _y, out var px, out var py, out var cursor, out var nearCursor))
+				return DefaultObject;
 #if WINDOWS
 			var error = 0;
 			var hwnd = script.InvokeOnUIThread(() =>
@@ -127,11 +128,10 @@ namespace Keysharp.Builtins
 
 		// Resolves ToolTip's X and Y to screen coordinates as AutoHotkey does: a given coordinate is relative to the
 		// A_CoordModeToolTip origin, and a missing one is 16 past the cursor, which clears even a large cursor.
-		// True when the tooltip goes by the cursor, which PlaceTooltip then keeps uncovered. An origin
-		// failure (e.g. Window/Client mode on Wayland) propagates so the script sees the unsupported-operation error.
-		private static bool ResolveTooltipPos(int xArg, int yArg, out int x, out int y, out POINT cursor)
+		// A continued origin error stops placement before any tooltip is shown.
+		private static bool TryResolveTooltipPos(int xArg, int yArg, out int x, out int y, out POINT cursor, out bool nearCursor)
 		{
-			var nearCursor = xArg == int.MinValue || yArg == int.MinValue;
+			nearCursor = xArg == int.MinValue || yArg == int.MinValue;
 			cursor = default;
 			x = y = 0;
 
@@ -145,7 +145,8 @@ namespace Keysharp.Builtins
 			if (xArg != int.MinValue || yArg != int.MinValue)
 			{
 				int originX = 0, originY = 0;
-				CoordToScreen(ref originX, ref originY, CoordMode.Tooltip);
+				if (!CoordToScreen(ref originX, ref originY, CoordMode.Tooltip))
+					return false;
 
 				if (xArg != int.MinValue)
 					x = xArg + originX;
@@ -154,7 +155,7 @@ namespace Keysharp.Builtins
 					y = yArg + originY;
 			}
 
-			return nearCursor;
+			return true;
 		}
 
 		// AHK's placement: a tooltip which would cross the work area's right or bottom edge is pulled back inside

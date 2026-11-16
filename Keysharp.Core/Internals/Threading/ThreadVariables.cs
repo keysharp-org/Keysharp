@@ -59,6 +59,19 @@ namespace Keysharp.Internals.Threading
 
 		public ThreadConfigData Clone() => (ThreadConfigData)MemberwiseClone();
 
+		internal ref CoordModeType CoordModeFor(CoordMode category)
+		{
+			switch (category)
+			{
+				case CoordMode.Caret: return ref coordModeCaret;
+				case CoordMode.Menu: return ref coordModeMenu;
+				case CoordMode.Mouse: return ref coordModeMouse;
+				case CoordMode.Pixel: return ref coordModePixel;
+				case CoordMode.Tooltip: return ref coordModeToolTip;
+				default: throw new ArgumentOutOfRangeException(nameof(category), category, "Invalid coordinate category.");
+			}
+		}
+
 		internal void CopyFromPrototypeConfigData(Script script)
 		{
 			var protoConfigData = script.AccessorData.threadConfigDataPrototype;
@@ -168,6 +181,26 @@ namespace Keysharp.Internals.Threading
 		// Exit unwinds the thread, and cleared on reuse. The wrapper captures pseudoThreadId and validates it on every
 		// access, so a wrapper held past this slot's reuse reports itself inactive rather than describing a later thread.
 		internal Keysharp.Builtins.KeysharpThread threadObject;
+		// Weak entries allow collection; only this thread prunes its stack.
+		internal List<WeakReference<Ks.CoordWindow>> coordWindows;
+
+		internal Ks.CoordWindow CurrentCoordWindow
+		{
+			get
+			{
+				while (coordWindows is { Count: > 0 })
+				{
+					var last = coordWindows.Count - 1;
+
+					if (coordWindows[last].TryGetTarget(out var scope) && !scope.IsReleased)
+						return scope;
+
+					coordWindows.RemoveAt(last);
+				}
+
+				return null;
+			}
+		}
 
 		// These describe the configuration defaults of the pseudo-thread,
 		// inherited from (and set by) the auto-execute section thread
@@ -233,6 +266,7 @@ namespace Keysharp.Internals.Threading
 			lastError = 0;
 			kind = ThreadKind.None;
 			threadObject = null;
+			coordWindows = null;
 			// Instead of cloning the instance, copy the data because
 			// allocating the memory for new instances is expensive
 			configData.CopyFromPrototypeConfigData(owner);
@@ -250,6 +284,7 @@ namespace Keysharp.Internals.Threading
 			caughtException = null;
 			hotCriterion = null;
 			threadObject = null;
+			coordWindows = null;
 		}
 
 		/// <summary>
