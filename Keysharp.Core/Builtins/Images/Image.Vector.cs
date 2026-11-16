@@ -102,7 +102,7 @@ namespace Keysharp.Builtins
 							return InvalidFillRule(fillRule);
 					}
 
-					SetFillMode(geometry, nonZero);
+					SetFillMode(Geometry, nonZero);
 					constructed = true;
 					return this;
 				}
@@ -110,8 +110,10 @@ namespace Keysharp.Builtins
 				private object InvalidFillRule(object value) => Errors.ValueErrorOccurred(
 					$"Invalid FillRule {value}; accepted values are EvenOdd and NonZero.", value, this);
 
-				internal GraphicsPath Geometry => geometry;
-				internal GraphicsPath CloneGeometry() => ClonePath(geometry);
+				// Made again once the path is used after its disposal emptied it.
+				internal GraphicsPath Geometry => geometry ??= NewPath(nonZero);
+
+				internal GraphicsPath CloneGeometry() => ClonePath(Geometry);
 				internal bool HasGeometry => hasGeometry;
 
 				internal bool TryGetBounds(out RectangleF bounds)
@@ -166,7 +168,7 @@ namespace Keysharp.Builtins
 					if (!TryVectorPoint(x, y, out current))
 						return this;
 
-					geometry.StartFigure();
+					Geometry.StartFigure();
 					hasCurrent = true;
 					return this;
 				}
@@ -179,7 +181,7 @@ namespace Keysharp.Builtins
 					if (!hasCurrent)
 						return Errors.ValueErrorOccurred("LineTo requires an active figure; call MoveTo first.", ret: this);
 
-					geometry.AddLine(current, end);
+					Geometry.AddLine(current, end);
 					Include(current);
 					hasGeometry = true;
 					Include(end);
@@ -198,7 +200,7 @@ namespace Keysharp.Builtins
 					if (!hasCurrent)
 						return Errors.ValueErrorOccurred("CubicTo requires an active figure; call MoveTo first.", ret: this);
 
-					geometry.AddBezier(current, control1, control2, end);
+					Geometry.AddBezier(current, control1, control2, end);
 					Include(current);
 					hasGeometry = true;
 					Include(control1);
@@ -226,14 +228,14 @@ namespace Keysharp.Builtins
 
 					if (hasCurrent)
 					{
-						geometry.AddLine(current, first);
+						Geometry.AddLine(current, first);
 						Include(current);
 						Include(first);
 					}
 					else
-						geometry.StartFigure();
+						Geometry.StartFigure();
 
-					geometry.AddArc(rect.X, rect.Y, rect.Width, rect.Height, (float)startAngleValue, (float)sweepAngleValue);
+					Geometry.AddArc(rect.X, rect.Y, rect.Width, rect.Height, (float)startAngleValue, (float)sweepAngleValue);
 					hasGeometry = true;
 					Include(rect);
 					current = ArcPoint(rect, startAngleValue + sweepAngleValue);
@@ -253,7 +255,7 @@ namespace Keysharp.Builtins
 				{
 					if (hasCurrent)
 					{
-						geometry.CloseFigure();
+						Geometry.CloseFigure();
 						hasCurrent = false;
 					}
 
@@ -267,7 +269,7 @@ namespace Keysharp.Builtins
 
 					if (rect.Width > 0 && rect.Height > 0)
 					{
-						geometry.AddRectangle(rect);
+						Geometry.AddRectangle(rect);
 						hasGeometry = true;
 						Include(rect);
 						hasCurrent = false;
@@ -287,7 +289,7 @@ namespace Keysharp.Builtins
 
 					using var rounded = MakeRoundRectPath(rect,
 						(float)Math.Clamp(radiusValue, 0, Math.Min(rect.Width, rect.Height) / 2));
-					geometry.AddPath(rounded, false);
+					Geometry.AddPath(rounded, false);
 					hasGeometry = true;
 					Include(rect);
 					hasCurrent = false;
@@ -301,7 +303,7 @@ namespace Keysharp.Builtins
 
 					if (rect.Width > 0 && rect.Height > 0)
 					{
-						geometry.AddEllipse(rect);
+						Geometry.AddEllipse(rect);
 						hasGeometry = true;
 						Include(rect);
 						hasCurrent = false;
@@ -335,9 +337,9 @@ namespace Keysharp.Builtins
 							return this;
 					}
 
-					geometry.StartFigure();
-					geometry.AddLines(nativePoints);
-					geometry.CloseFigure();
+					Geometry.StartFigure();
+					Geometry.AddLines(nativePoints);
+					Geometry.CloseFigure();
 					hasGeometry = true;
 
 					foreach (var point in nativePoints)
@@ -368,7 +370,7 @@ namespace Keysharp.Builtins
 						copy.Transform(matrix);
 					}
 
-					geometry.AddPath(copy, false);
+					Geometry.AddPath(copy, false);
 					hasGeometry = true;
 
 					if (!other.TryGetBounds(out var sourceBounds)
@@ -383,10 +385,7 @@ namespace Keysharp.Builtins
 
 				public object Clear()
 				{
-					geometry.Dispose();
-					geometry = NewPath(nonZero);
-					hasCurrent = hasGeometry = hasBounds = false;
-					boundsValid = true;
+					((IDisposable)this).Dispose();
 					return this;
 				}
 
@@ -414,10 +413,13 @@ namespace Keysharp.Builtins
 					return clone;
 				}
 
+				// Leaves the path empty and usable, which Clear relies on, as does a using statement.
 				void IDisposable.Dispose()
 				{
 					try { geometry?.Dispose(); } catch { }
 					geometry = null;
+					hasCurrent = hasGeometry = hasBounds = false;
+					boundsValid = true;
 				}
 			}
 

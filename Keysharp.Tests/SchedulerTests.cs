@@ -219,7 +219,7 @@ public class SchedulerTests : TestRunner
 	{
 		var context = UseQueuedMainContext();
 		var probe = new DestructorProbe();
-		s.DestructorPump.Enqueue(probe);
+		s.DestructorPump.Enqueue(new GCCleanupSentinel(probe));
 		Assert.That(context.PendingCount, Is.EqualTo(1));
 
 		s.Dispose();
@@ -250,8 +250,8 @@ public class SchedulerTests : TestRunner
 			// A sentinel detaches before handing its object to the pump; enqueue directly to avoid GC timing.
 			owner.HasFinalizer = false;
 			resource.HasFinalizer = false;
-			s.DestructorPump.Enqueue(resource);
-			s.DestructorPump.Enqueue(owner);
+			s.DestructorPump.Enqueue(new GCCleanupSentinel(resource));
+			s.DestructorPump.Enqueue(new GCCleanupSentinel(owner));
 			context.DrainAll();
 
 			Assert.That(deletes, Is.EqualTo(1));

@@ -378,9 +378,31 @@ namespace Keysharp.Parsing.Syntax
 				&& (Peek(2).Kind == TokenKind.Newline || Peek(2).Kind == TokenKind.EOF))
 			{ var lbl = Advance().Text; Advance(); return new LabelStmt(lbl); }
 			if (IsFunctionDefinition()) return ParseFunctionDecl();
-			if (IsCommandStatement()) return ParseCommandCall();
+			if (IsCommandStatement()) return IsUsingStatement() ? ParseUsing() : ParseCommandCall();
 
 			return new ExpressionStmt(ParseSequence());
+		}
+
+		// `using` is not reserved, as AutoHotkey has no such word: a command call of that name with a first argument is the
+		// statement, so `using := 1` and `using(x)` keep their meaning.
+		private bool IsUsingStatement() => AtKeyword("using") && Peek(1).LeadingWhitespace
+			&& Peek(1).Kind is not (TokenKind.Newline or TokenKind.EOF or TokenKind.RBrace or TokenKind.Comma);
+
+		private Stmt ParseUsing()
+		{
+			Advance(); // using
+			var resources = new List<Expr>();
+
+			do
+			{
+				SkipNewlines();
+				var resource = ParseCondExpr();
+				if (resource is SequenceExpr list) resources.AddRange(list.Items);   // using (a, b)
+				else resources.Add(resource);
+			}
+			while (Match(TokenKind.Comma));
+
+			return new UsingStmt(resources, ParseBodyStatement());
 		}
 
 		private Expr ParseSequence()

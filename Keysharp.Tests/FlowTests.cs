@@ -754,6 +754,9 @@ public partial class FlowTests : TestRunner
 	[Test, Category("Flow")]
 	public void FlowUntil() => Assert.IsTrue(TestScript("flow-until", true));
 
+	[Test, Category("Flow")]
+	public void FlowUsing() => Assert.IsTrue(TestScript("flow-using", false));
+
 	[Test, Category("Flow"), NonParallelizable]
 	public void FlowWhile() => Assert.IsTrue(TestScript("flow-while", true));
 }

@@ -2828,7 +2828,8 @@ namespace Keysharp.Builtins
 
 			void IDisposable.Dispose()
 			{
-				if (disposed)
+				// A canvas goes with the surface whose pixels it borrows, which disposes of it, and not before.
+				if (disposed || borrowedSurface is { IsDisposed: false })
 					return;
 
 				disposed = true;

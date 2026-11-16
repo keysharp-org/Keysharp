@@ -51,7 +51,8 @@ namespace Keysharp.Internals.Interop
 		{
 #if WINDOWS
 			var address = value is ComValue wrapper ? wrapper.Ptr : value;
-			if (address is not long)
+			// A wrapper whose interface was released holds null, which is no pointer.
+			if (address is not (long or null))
 			{
 				if (!addRef)
 					return Errors.TypeErrorOccurred(address, typeof(ComValue), Script.DefaultObject);

@@ -168,6 +168,7 @@ namespace Keysharp.Language
 		internal const string FlowThrow = "throw";
 		internal const string FlowTry = "try";
 		internal const string FlowUntil = "until";
+		internal const string FlowUsing = "using";
 		internal const string FlowWhile = "while";
 		internal const string FunctionGlobal = "global";
 		internal const string FunctionLocal = "local";
@@ -702,6 +703,7 @@ namespace Keysharp.Language
 			FlowCatch,
 			FlowFinally,
 			FlowUntil,
+			FlowUsing,
 			FlowSwitch,
 			FlowThrow);
 

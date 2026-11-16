@@ -933,7 +933,8 @@ namespace Keysharp.Compilation
 				Visit(node.Expression);
 			_sb.AppendLine(")");
 
-			if (node.Statement is BlockSyntax)
+			// Stacked using statements share an indent, as Roslyn's normalizer writes them.
+			if (node.Statement is BlockSyntax or UsingStatementSyntax)
 			{
 				Visit(node.Statement);
 			}
@@ -1562,9 +1563,7 @@ namespace Keysharp.Compilation
 					=> true,
 
 				// using / fixed / lock / unsafe with body
-				UsingStatementSyntax uss
-					when uss.Statement is BlockSyntax
-					=> true,
+				UsingStatementSyntax uss => EndsWithBlock(uss.Statement),
 				FixedStatementSyntax _
 				or LockStatementSyntax _
 				or UnsafeStatementSyntax _

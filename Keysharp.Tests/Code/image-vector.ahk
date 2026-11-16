@@ -186,6 +186,15 @@ Throws(() => Image.Path().MoveTo(1, 1e300), A_LineNumber, ValueError)
 
 Throws(() => Image.Path("BadRule"), A_LineNumber, ValueError)
 Throws(() => Image.Path().LineTo(1, 1), A_LineNumber, ValueError)
+
+; A using statement leaves a path empty and usable, as Clear does.
+Emptied := Image.Path()
+
+using Emptied
+	Emptied.MoveTo(0, 0).LineTo(5, 5)
+
+Throws(() => Emptied.LineTo(2, 2), A_LineNumber, ValueError)
+Emptied.MoveTo(1, 1).LineTo(2, 2)
 Throws(() => Image.Brush.LinearGradient(1, 1, 1, 1, "Red", "Blue"), A_LineNumber, ValueError)
 Throws(() => Image.Brush.RadialGradient(1, 1, 0, 1, "Red", "Blue"), A_LineNumber, ValueError)
 Throws(() => Image.Create(2, 2).Clone(), A_LineNumber, Error)

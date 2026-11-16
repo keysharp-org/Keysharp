@@ -27,7 +27,7 @@ namespace Keysharp.Builtins
 
 		// Only an object needing cleanup when collected carries a sentinel, since a type with a finalizer allocates far more
 		// slowly even when it is suppressed.
-		private GCCleanupSentinel sentinel;
+		internal GCCleanupSentinel sentinel;
 		protected internal bool HasFinalizer
 		{
 			get => sentinel != null;
@@ -41,8 +41,9 @@ namespace Keysharp.Builtins
 						TheScript?.DestructorPump.NoteRegistration();
 					}
 				}
-				//The finalizer thread may be clearing it at the same time (see Collected).
-				else if (sentinel != null && Interlocked.Exchange(ref sentinel, null) is { } detached)
+				// The finalizer thread may be clearing it at the same time (see Collected). One which says the object was
+				// given its __Delete stays, so that arming the object again brings no second call.
+				else if (sentinel is { Deleted: false } && Interlocked.Exchange(ref sentinel, null) is { } detached)
 				{
 					detached.Owner = null;
 					GC.SuppressFinalize(detached);
@@ -61,7 +62,7 @@ namespace Keysharp.Builtins
 		internal void Collected(GCCleanupSentinel collected)
 		{
 			if (Interlocked.CompareExchange(ref sentinel, null, collected) == collected)
-				TheScript?.DestructorPump.Enqueue(this);
+				TheScript?.DestructorPump.Enqueue(collected);
 		}
 
 		// A copy has own properties and a sentinel of its own, as sharing either would change or clean up only one of the

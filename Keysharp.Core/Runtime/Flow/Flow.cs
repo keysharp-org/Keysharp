@@ -45,6 +45,27 @@ namespace Keysharp.Runtime
 			}
 		}
 
+		/// <summary>Enters a using statement over the object <paramref name="value"/>, cleaned up as it is left.</summary>
+		[StackTraceHidden]
+		public static UsingScope Using(object value)
+		{
+			if (value is not Any)
+				_ = Errors.TypeErrorOccurred(value, typeof(Any));
+
+			// Read before the body moves the frame on, so that a cleanup error reports the statement's line.
+			var frame = CallStack.Top;
+			return new(value as Any, frame, frame.Location);
+		}
+
+		public readonly struct UsingScope(Any resource, CallStack.Frame frame, int location) : IDisposable
+		{
+			public void Dispose()
+			{
+				frame.Location = location;
+				DestructorPump.RunDestructor(resource);
+			}
+		}
+
 		/// <summary>
 		/// Reports an error which passed a try statement, its catches and its finally block included, unless an enclosing
 		/// try may still catch it. The generated code rethrows it afterwards.

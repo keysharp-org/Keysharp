@@ -719,7 +719,6 @@ namespace Keysharp.Builtins
 		private ScriptEventScheduler.PendingCallbackRegistration callbackRegistration;
 		private Task<string> capturedStdOut;
 		private Task<string> capturedStdErr;
-		private bool disposed;
 
 		public ScriptProcess(params object[] args) : base(args[0] as Process) => WatchForExit();
 
@@ -761,7 +760,12 @@ namespace Keysharp.Builtins
 
 		public object Close()
 		{
-			Dispose(true);
+			CancelCallback();
+			process.Exited -= ProcessExited;
+			(stdIn as IDisposable)?.Dispose();
+			(stdOut as IDisposable)?.Dispose();
+			(stdErr as IDisposable)?.Dispose();
+			process.Dispose();
 			return DefaultObject;
 		}
 
@@ -879,28 +883,11 @@ namespace Keysharp.Builtins
 			catch (UnauthorizedAccessException) { }
 		}
 
-		protected virtual void Dispose(bool disposing)
-		{
-			if (disposed)
-				return;
-
-			disposed = true;
-			CancelCallback();
-
-			if (disposing)
-			{
-				process.Exited -= ProcessExited;
-				(stdIn as IDisposable)?.Dispose();
-				(stdOut as IDisposable)?.Dispose();
-				(stdErr as IDisposable)?.Dispose();
-				process?.Dispose();
-			}
-		}
-
-		// Collection and exit only stop the exit callback: the streams it handed out may still be in use.
+		// Collection, exit and a using statement only stop the exit callback: the streams it handed out may still be in use,
+		// and Close still closes them.
 		void IDisposable.Dispose()
 		{
-			Dispose(false);
+			CancelCallback();
 			HasFinalizer = false;
 		}
 	}

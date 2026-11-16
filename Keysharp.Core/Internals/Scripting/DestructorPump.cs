@@ -9,6 +9,19 @@ namespace Keysharp.Internals.Scripting
 	internal sealed class GCCleanupSentinel(Any owner)
 	{
 		internal Any Owner = owner;
+		private bool cleaning;
+		private bool deleted;
+
+		// The owner was given its __Delete while it was still in use, so its collection only disposes it.
+		internal bool Deleted => Volatile.Read(ref deleted);
+
+		// Whether this call is the one to give the owner its __Delete: only the first is.
+		internal bool ClaimDelete() => !Interlocked.Exchange(ref deleted, true);
+
+		// Whether this call is the one to clean the owner up, until EndCleanup: a second one, as from the owner's own
+		// __Delete or another thread, would dispose of what the first is still using.
+		internal bool BeginCleanup() => !Interlocked.Exchange(ref cleaning, true);
+		internal void EndCleanup() => Volatile.Write(ref cleaning, false);
 
 		~GCCleanupSentinel() => Owner?.Collected(this);
 	}
@@ -18,7 +31,7 @@ namespace Keysharp.Internals.Scripting
 		private readonly Script owner;
 		private readonly Lock runGate = new();
 		private readonly Lock _lock = new();
-		private readonly Queue<Any> _q = new();       // enqueued by finalizers (strong refs -> resurrection)
+		private readonly Queue<GCCleanupSentinel> _q = new();       // enqueued by finalizers (strong refs -> resurrection)
 		private bool _pending = false;
 		private bool stopped;
 		private bool registered;
@@ -35,7 +48,48 @@ namespace Keysharp.Internals.Scripting
 				Volatile.Write(ref registered, true);
 		}
 
-		public void Enqueue(Any obj)
+		/// <summary>
+		/// Cleans <paramref name="obj"/> up for the using statement being left, as its collection would: its __Delete and
+		/// those of a struct's nested structs, then its disposal, whatever they threw. An object which takes hold of
+		/// something again is disposed again, by a later statement or its collection, without another __Delete. Each call
+		/// is this thread's, so the first error is thrown from here once the rest has run.
+		/// </summary>
+		internal static void RunDestructor(Any obj)
+		{
+			// Without a sentinel the object has nothing to clean up.
+			if (obj?.sentinel is not { } sentinel || !sentinel.BeginCleanup())
+				return;
+
+			ExceptionDispatchInfo failure = null;
+
+			try
+			{
+				if (sentinel.ClaimDelete())
+				{
+					foreach (var any in WithInitializedFields(obj))
+					{
+						try
+						{
+							// As at a collection, an exiting script calls no __Delete, also when an earlier one exited it.
+							if (any.HasDeleteCall && TheScript is { IsDisposed: false })
+								InvokeMeta(any, "__Delete");
+						}
+						catch (Exception ex) { failure ??= ExceptionDispatchInfo.Capture(ex); }
+					}
+				}
+
+				try { (obj as IDisposable)?.Dispose(); }
+				catch (Exception ex) { failure ??= ExceptionDispatchInfo.Capture(ex); }
+			}
+			finally
+			{
+				sentinel.EndCleanup();
+			}
+
+			failure?.Throw();
+		}
+
+		public void Enqueue(GCCleanupSentinel collected)
 		{
 			bool post;
 			bool disposeOnly;
@@ -50,7 +104,7 @@ namespace Keysharp.Internals.Scripting
 				}
 				else
 				{
-					_q.Enqueue(obj);     // keep strong ref: prevents collection until processed
+					_q.Enqueue(collected);     // keep strong ref: prevents collection until processed
 					// Claim the right to post from inside the lock. Enqueue runs on the GC finalizer thread, so the
 					// old unsynchronized check-then-set let two threads both observe false and post twice. Worse, a
 					// _pending stuck at true -- because its post targeted a scheduler that died with the previous
@@ -64,7 +118,7 @@ namespace Keysharp.Internals.Scripting
 
 			if (disposeOnly)
 			{
-				DisposeNative(obj);
+				DisposeNative(collected.Owner);
 				return;
 			}
 
@@ -98,20 +152,23 @@ namespace Keysharp.Internals.Scripting
 
 				if (stopped || owner.IsDisposed)
 				{
-					foreach (var any in batch)
-						DisposeNative(any);
+					foreach (var entry in batch)
+						DisposeNative(entry.Owner);
 
 					return true;
 				}
 
 				// A batch of Buffers and Files, the usual one, has nothing to order.
-				var anyDelete = batch.Exists(static owner => owner.HasDeleteCall || owner is Struct { initializedFields: not null }
-					&& WithInitializedFields(owner).Any(static any => any.HasDeleteCall));
+				var anyDelete = batch.Exists(static entry => !entry.Deleted
+					&& (entry.Owner.HasDeleteCall || entry.Owner is Struct { initializedFields: not null }
+						&& WithInitializedFields(entry.Owner).Any(static any => any.HasDeleteCall)));
 
 				// Outside-in (parents before children).
-				foreach (var any in anyDelete ? OrderOutsideIn(batch).SelectMany(WithInitializedFields) : [])
+				foreach (var any in anyDelete ? OrderOutsideIn([.. batch.Where(static entry => !entry.Deleted).Select(static entry => entry.Owner)])
+					.SelectMany(WithInitializedFields) : [])
 				{
-					if (!any.HasDeleteCall)
+					// A __Delete may have exited the script, after which none is called.
+					if (!any.HasDeleteCall || owner.IsDisposed)
 						continue;
 
 					try
@@ -126,8 +183,8 @@ namespace Keysharp.Internals.Scripting
 				// Only then is anything disposed, as a __Delete may use what another object of the batch holds. An object
 				// one of them kept is disposed with the rest, as waiting to see which were kept would hold every batch
 				// with a __Delete in it until a later collection.
-				foreach (var any in batch)
-					DisposeNative(any);
+				foreach (var entry in batch)
+					DisposeNative(entry.Owner);
 
 				return true;
 			}
@@ -137,7 +194,7 @@ namespace Keysharp.Internals.Scripting
 		{
 			lock (runGate)
 			{
-				List<Any> batch;
+				List<GCCleanupSentinel> batch;
 
 				lock (_lock)
 				{
@@ -145,20 +202,20 @@ namespace Keysharp.Internals.Scripting
 					batch = DrainUnsafe();
 				}
 
-				foreach (var any in batch)
-					DisposeNative(any);
+				foreach (var entry in batch)
+					DisposeNative(entry.Owner);
 			}
 		}
 
-		private List<Any> Drain()
+		private List<GCCleanupSentinel> Drain()
 		{
 			lock (_lock)
 				return DrainUnsafe();
 		}
 
-		private List<Any> DrainUnsafe()
+		private List<GCCleanupSentinel> DrainUnsafe()
 		{
-			var batch = new List<Any>(_q.Count);
+			var batch = new List<GCCleanupSentinel>(_q.Count);
 
 			while (_q.Count > 0)
 				batch.Add(_q.Dequeue());

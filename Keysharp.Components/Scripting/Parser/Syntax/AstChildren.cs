@@ -35,6 +35,7 @@ namespace Keysharp.Parsing.Syntax
 			TryStmt attempt => new(TryParts(attempt)),
 			ReturnStmt ret => One(ret.Value),
 			ThrowStmt thrown => One(thrown.Value),
+			UsingStmt scope => new(UsingParts(scope)),
 			GotoStmt jump => One(jump.Expression),
 			DeclStmt declaration => new(declaration.Items),
 			HotkeyDef hotkey => Two(hotkey.Body, hotkey.Func),
@@ -180,6 +181,12 @@ namespace Keysharp.Parsing.Syntax
 			foreach (var catcher in attempt.Catches) yield return catcher.Body;
 			yield return attempt.Else;
 			yield return attempt.Finally;
+		}
+
+		private static IEnumerable<Node> UsingParts(UsingStmt scope)
+		{
+			foreach (var resource in scope.Resources) yield return resource;
+			yield return scope.Body;
 		}
 
 		private static IEnumerable<Node> ClassParts(ClassDecl type)

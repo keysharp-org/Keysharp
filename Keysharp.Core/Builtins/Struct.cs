@@ -9,8 +9,10 @@ namespace Keysharp.Builtins
 		private bool isEmbedded;
 		// As AutoHotkey's NoCallDelete, for a view other than ObjCreateWithDataPtr's and for a callback's copy.
 		private bool noDelete;
-		// The object whose Ptr a view was created from, kept alive for as long as the view.
-		private object addressOwner;
+		// The supplied Ptr provider stays alive after rebinding; for an embedded view it is the immediate parent.
+		private Any source;
+		// Keep the allocation independently of the source, which may itself be rebound or disposed.
+		private Struct allocationOwner;
 		// The structs handed out for nested and pointer fields, by field name, so a field reads back as the same object.
 		private Dictionary<string, Struct> nestedViews;
 		// The nested structs whose script initialization began, which receive __Delete after their owner even when it threw.
@@ -109,14 +111,14 @@ namespace Keysharp.Builtins
 		}
 
 		// As AutoHotkey's CreateStructPtr: memory the struct does not own, without initialization.
-		internal static Struct CreateView(Any prototype, long address, object owner = null, bool embedded = false, bool callDelete = false)
+		internal static Struct CreateView(Any prototype, long address, Any source = null, bool embedded = false, bool callDelete = false)
 		{
 			if (Create(prototype) is not { } view)
 				return null;
 
-			view.data = address;
 			view.memory = MemoryKind.Borrowed;
-			view.addressOwner = owner;
+			view.source = source;
+			view.SetDataPtr(address);
 			view.isEmbedded = embedded;
 			// An embedded struct's __Delete comes from its owner, which calls it only once the struct was initialized.
 			view.noDelete = !(callDelete || embedded);
@@ -127,7 +129,8 @@ namespace Keysharp.Builtins
 			return view;
 		}
 
-		public long Ptr => data;
+		// A view into a struct which was disposed of while the view is in use, as by a using statement, has no memory left.
+		public long Ptr => allocationOwner is { memory: MemoryKind.Disposed } ? 0 : data;
 		internal bool IsPointerView => memory == MemoryKind.Borrowed;
 
 		// As AutoHotkey's StructNew: one value per field, so that X(Y) cannot act as a cast, assigned from the last field
@@ -297,7 +300,7 @@ namespace Keysharp.Builtins
 				HasFinalizer = DisposesWhenCollected || !isEmbedded && HasDeleteCall;
 		}
 
-		internal bool IsEmbeddedIn(Struct owner) => isEmbedded && ReferenceEquals(addressOwner, owner);
+		internal bool IsEmbeddedIn(Struct owner) => isEmbedded && ReferenceEquals(source, owner);
 
 		[PublicHiddenFromUser]
 		public virtual void Dispose()
@@ -315,7 +318,7 @@ namespace Keysharp.Builtins
 			{
 				if (nestedViews != null)
 					foreach (var nested in nestedViews.Values)
-						if (nested.isEmbedded && ReferenceEquals(nested.addressOwner, this))
+						if (nested.IsEmbeddedIn(this))
 						{
 							try { nested.Dispose(); }
 							catch (Exception ex) { failure ??= ExceptionDispatchInfo.Capture(ex); }
@@ -325,7 +328,8 @@ namespace Keysharp.Builtins
 			{
 				if (ownsMemory)
 					NativeAllocation.Free((nint)owned, Layout.Size);
-				addressOwner = null;
+				source = null;
+				allocationOwner = null;
 				nestedViews = null;
 				initializedFields = null;
 			}
@@ -335,8 +339,10 @@ namespace Keysharp.Builtins
 		internal override List<Any> GetEnumerableMembersOrEmpty()
 		{
 			var members = base.GetEnumerableMembersOrEmpty();
-			if (addressOwner is Any owner)
-				members.Add(owner);
+			if (source != null)
+				members.Add(source);
+			if (allocationOwner != null && !ReferenceEquals(allocationOwner, source))
+				members.Add(allocationOwner);
 			if (nestedViews != null)
 				members.AddRange(nestedViews.Values);
 			return members;
@@ -632,7 +638,7 @@ namespace Keysharp.Builtins
 		// MAKEINTRESOURCE value, rather than read it. [v2.1-alpha.38+]
 		internal bool TryGetDataPointer(out long address)
 		{
-			address = data;
+			address = Ptr;
 			return TryGetDataPointer(address);
 		}
 
@@ -645,8 +651,25 @@ namespace Keysharp.Builtins
 			return false;
 		}
 
-		// Rebinding does not move embedded objects already obtained from the view.
-		internal void SetDataPtr(long ptr) => data = ptr;
+		// Rebinding does not move embedded objects already obtained from the view, which stay in the memory they were in.
+		internal void SetDataPtr(long ptr)
+		{
+			Struct allocation = null;
+
+			for (var from = this; from != null; from = from.source as Struct)
+			{
+				var owner = from.memory == MemoryKind.Owned ? from : from.allocationOwner;
+
+				if (owner is { memory: MemoryKind.Owned } && unchecked((ulong)(ptr - owner.data)) < (ulong)owner.Layout.Size)
+				{
+					allocation = owner;
+					break;
+				}
+			}
+
+			data = ptr;
+			allocationOwner = allocation;
+		}
 
 		private static bool HasPrototypeType(Struct value, Type type)
 		{

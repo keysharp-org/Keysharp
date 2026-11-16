@@ -853,6 +853,7 @@ namespace Keysharp.Builtins
 
 			void IDisposable.Dispose()
 			{
+				if (RejectRedrawMutation()) return;
 				ReleaseNative();
 				HasFinalizer = false;
 			}

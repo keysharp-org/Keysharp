@@ -9211,8 +9211,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Rebinds the external data pointer of a Struct.At view or an object created by ObjCreateWithDataPtr. Other instances cannot be rebound.",
-                     "tested-by":  "struct-pack.ahk"
+                     "notes":  "Rebinds a Struct.At view or an object created by ObjCreateWithDataPtr; other instances cannot be rebound. Retrieved nested views keep their addresses. Rebinding within the same known struct allocation retains its lifetime tracking.",
+                     "tested-by":  "struct-pack.ahk; flow-using.ahk"
                  },
                  {
                      "category":  "Clipboard",
@@ -11204,6 +11204,17 @@
                      "macos":  "full",
                      "notes":  "Loop-until condition syntax for terminating a loop when condition becomes true.",
                      "tested-by":  "flow-loop-return.ahk"
+                 },
+                 {
+                     "category":  "Core Language",
+                     "feature":  "Using",
+                     "syntax":  "using Expression [, Expression2, ...]",
+                     "windows":  "full",
+                     "linux_x11":  "full",
+                     "linux_wayland":  "full",
+                     "macos":  "full",
+                     "notes":  "Keysharp extension that calls each listed object's __Delete and releases what a built-in object holds as soon as the statement's body is left. Views tracking a released struct allocation become invalid.",
+                     "tested-by":  "flow-using.ahk"
                  },
                  {
                      "category":  "Errors",

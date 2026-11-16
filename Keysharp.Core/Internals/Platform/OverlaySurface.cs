@@ -28,6 +28,7 @@ namespace Keysharp.Internals
 		internal DamageList Damage { get; } = new ();
 
 		private bool disposed;
+		internal bool IsDisposed => disposed;
 		private long memoryPressure;
 
 		internal OverlaySurface(Bitmap bitmap, PixelSize size, bool premultiplied)

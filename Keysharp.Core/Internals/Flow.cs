@@ -230,10 +230,10 @@ namespace Keysharp.Internals
 					if (!f.IsInitOnly && !f.IsLiteral && !f.IsDefined(typeof(PublicHiddenFromUser), false) && f.GetValue(null) is Any)
 						f.SetValue(null, null);
 
-				if (script.Vars.Statics.IsInitialized(t) && script.Vars.Statics.TryGetValue(t, out Class cls) && cls.HasOwnPropInternal("__Delete"))
+				// Unless a using statement gave the class its __Delete already.
+				if (script.Vars.Statics.IsInitialized(t) && script.Vars.Statics.TryGetValue(t, out Class cls) && cls.HasOwnPropInternal("__Delete")
+					&& cls.sentinel?.ClaimDelete() == true)
 				{
-					cls.HasFinalizer = false;
-
 					try
 					{
 						_ = Script.InvokeMeta(cls, "__Delete");

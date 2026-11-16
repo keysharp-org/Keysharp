@@ -29,7 +29,7 @@ public partial class AudioTests : TestRunner
 		{
 			// Direct enqueue tests the collection without depending on GC timing or opening a device.
 			output.HasFinalizer = false;
-			s.DestructorPump.Enqueue(output);
+			s.DestructorPump.Enqueue(new GCCleanupSentinel(output));
 			context.DrainAll();
 			Assert.That(deletes, Is.EqualTo(1));
 			Assert.That(callbackStatus, Is.EqualTo("Closed"));

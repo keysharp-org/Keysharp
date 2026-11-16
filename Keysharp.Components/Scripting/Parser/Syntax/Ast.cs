@@ -312,6 +312,13 @@ namespace Keysharp.Parsing.Syntax
 		public ThrowStmt(Expr value) => Value = value;
 	}
 
+	internal sealed class UsingStmt : Stmt
+	{
+		public readonly List<Expr> Resources;
+		public readonly Stmt Body;
+		public UsingStmt(List<Expr> resources, Stmt body) { Resources = resources; Body = body; }
+	}
+
 	// A jump's target as written: Target is the raw text after the keyword (a label name, or a loop level for break and
 	// continue; null when there is none), and Expression is the expression of the `keyword(...)` form instead.
 	internal abstract class JumpStmt(string target, Expr expression) : Stmt

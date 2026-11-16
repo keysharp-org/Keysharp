@@ -1806,6 +1806,7 @@ namespace Keysharp.Compilation.Syntax
 				case SwitchStmt sw: return LowerSwitch(sw);
 				case TryStmt tr: return LowerTry(tr);
 				case ThrowStmt th: return LowerThrow(th);
+				case UsingStmt us: return LowerUsing(us);
 				case BreakStmt bs: return LowerBreakContinue(bs, isBreak: true);
 				case ContinueStmt cs: return LowerBreakContinue(cs, isBreak: false);
 				case GotoStmt g: return LowerGoto(g);
@@ -5514,6 +5515,18 @@ namespace Keysharp.Compilation.Syntax
 		private StatementSyntax LowerThrow(ThrowStmt th) => th.Value == null
 			? ExprStmt(Inv(Access("Keysharp.Runtime.Flow.Rethrow")))
 			: SyntaxFactory.ThrowStatement(Inv(Access("Keysharp.Runtime.Flow.Throw"), LowerExpr(th.Value)));
+
+		// using (Flow.Using(a)) using (Flow.Using(b)) { body }: each scope is disposed however the body is left, the last first.
+		private StatementSyntax LowerUsing(UsingStmt us)
+		{
+			var resources = us.Resources.ConvertAll(resource => Inv(Access("Keysharp.Runtime.Flow.Using"), LowerExpr(resource)));
+			StatementSyntax stmt = LowerBody(us.Body);
+
+			for (var i = resources.Count - 1; i >= 0; i--)
+				stmt = SyntaxFactory.UsingStatement(null, resources[i], stmt);
+
+			return stmt;
+		}
 
 		// ---- classes ----
 

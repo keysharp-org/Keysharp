@@ -40,6 +40,11 @@ Throws(() => c.Resize(8, 8), A_LineNumber)
 Throws(() => c.Grayscale(), A_LineNumber)
 AssertEq(c.GetPixel(2, 2), 0xFFFF0000, A_LineNumber)       ; no refusal damaged it
 
+; A using statement leaves the canvas to its overlay.
+using c
+    ov.Present()
+AssertEq(c.GetPixel(2, 2), 0xFFFF0000, A_LineNumber)
+
 ; Copy escapes all of that: an ordinary image, independent and transformable.
 copy := c.Copy()
 AssertEq(copy.GetPixel(2, 2), 0xFFFF0000, A_LineNumber)
@@ -106,6 +111,18 @@ ov.Redraw((canvas) => canvas.FillRect(0, 0, 4, 4, "0x00FF00"))
 Assert(stale != ov.Canvas, A_LineNumber)
 Throws(() => stale.GetPixel(0, 0), A_LineNumber)
 AssertEq(ov.Canvas.GetPixel(1, 1), 0xFF00FF00, A_LineNumber)
+
+; Inside its Redraw callback an overlay refuses a using statement, as it refuses Destroy, and stays as it was.
+current := ov.Canvas
+Throws(() => ov.Redraw(UsingOverlay), A_LineNumber, ValueError)
+Assert(current == ov.Canvas, A_LineNumber)
+AssertEq(current.GetPixel(1, 1), 0xFF00FF00, A_LineNumber)
+
+UsingOverlay(*) {
+    global ov
+    using ov
+        return
+}
 
 ov.Destroy()
 
