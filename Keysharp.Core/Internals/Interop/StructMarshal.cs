@@ -62,7 +62,7 @@ namespace Keysharp.Internals.Interop
 			if (info.Invalid)
 			{
 				conversion = default;
-				error = "Invalid struct.";
+				error = StructLayout.InvalidMessage;
 				return false;
 			}
 
@@ -80,7 +80,7 @@ namespace Keysharp.Internals.Interop
 				return true;
 			}
 
-			if (info.IsPrimitive)
+			if (info.IsNativePrimitive)
 			{
 				conversion = new(info.PrimitiveKind, null);
 				return true;

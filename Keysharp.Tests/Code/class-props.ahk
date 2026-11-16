@@ -482,7 +482,7 @@ visibleDesc := Object.Prototype.GetOwnPropDesc.Call(HiddenField.Prototype, "Visi
 Assert(visibleDesc.Type == Int32 && !visibleDesc.HasOwnProp("Value"), A_LineNumber)
 fieldNames := PropNames(HiddenField())
 Assert(InStr(fieldNames, "Shown,") && InStr(fieldNames, "VisibleAgain,") && !InStr(fieldNames, "Hidden,"), A_LineNumber)
-AssertEq(HiddenField.Prototype.Size, 12, A_LineNumber)
+AssertEq(ObjGetDataSize(HiddenField.Prototype), 12, A_LineNumber)
 ; `Static` followed by `:=` or `=>` names a member rather than marking one static.
 class StaticNamedMembers {
 	Static := 1

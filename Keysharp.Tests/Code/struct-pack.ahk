@@ -212,7 +212,7 @@ struct TaggedValue {
     After : UInt8
 }
 tagged := TaggedValue()
-AssertEq(TaggedValue.Prototype.Size, 8, A_LineNumber)
+AssertEq(ObjGetDataSize(TaggedValue.Prototype), 8, A_LineNumber)
 tagged.AsInt := 0x3F800000
 AssertEq(tagged.AsFloat, 1.0, A_LineNumber)
 AssertEq(tagged.AsByte, 0, A_LineNumber)
@@ -225,7 +225,7 @@ struct InitializedUnion {
         Narrow : UInt16 := 7
     }
 }
-AssertEq(InitializedUnion.Prototype.Size, 16, A_LineNumber)
+AssertEq(ObjGetDataSize(InitializedUnion.Prototype), 16, A_LineNumber)
 AssertEq(InitializedUnion().Wide, 7, A_LineNumber)
 class UnionProperty {
     union {

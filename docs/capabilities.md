@@ -113,7 +113,7 @@ Status legend:
 | __New | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when constructing a new object. |
 | __Set | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Meta-function invoked when setting a missing property. |
 | A_AhkPath | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The full path to the executable compiling the script. For compiled scripts, it's the path to the compiled executable. |
-| A_AhkVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | AutoHotkey compatibility target: 2.1-alpha.38. |
+| A_AhkVersion | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | AutoHotkey compatibility target: 2.1-alpha.39. |
 | A_AllowMainWindow | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_AppData | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. %APPDATA% on Windows; $XDG_CONFIG_HOME else ~/.config on Linux; ~/Library/Application Support on macOS. |
 | A_AppDataCommon | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. %ProgramData% on Windows; the first entry of $XDG_CONFIG_DIRS else /etc/xdg on Linux; /Library/Application Support on macOS. Writable only by an administrator, like %ProgramData%. |
@@ -344,7 +344,7 @@ Status legend:
 | Buffer.__Item[] | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Indexer for reading/writing bytes in Buffer by offset. |
 | Buffer.__New() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Constructs a new Buffer object. |
 | Buffer.Clone() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns a buffer of the same class and size holding a copy of the bytes, where AutoHotkey raises a TypeError. An instance created by ObjCreateWithDataPtr raises TypeError. |
-| CallbackCreate() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a native callback address which redirects to a script function. Supports both parameter-count callbacks and typed parameter/return signatures on every platform. By-value structs follow the platform restrictions of DllCall. |
+| CallbackCreate() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates native callbacks with parameter-count or typed signatures; invalid class types raise ValueError. Numeric subclasses retain __Value conversion, and by-value structs follow DllCall's platform restrictions. |
 | CallbackFree() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Releases a live address returned by CallbackCreate; an invalid or already-freed address raises ValueError. |
 | CaretGetPos() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the caret position. If no caret position is available, it returns false and sets both output variables to blank. Linux uses native GTK geometry for script-owned controls and AT-SPI for foreign applications, normalizing Wayland-local coordinates through compositor window geometry when needed. macOS uses the Accessibility API and requires Accessibility permission. |
 | Case | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Case branch label used by switch. |
@@ -452,7 +452,7 @@ Status legend:
 | DateAdd() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The DateAdd function adds or subtracts time from a date-time value. |
 | DateDiff() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The DateDiff function compares two date-time values and returns the difference. |
 | Default | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Default branch label used by switch. |
-| DefineProp() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Defines own properties with callable accessors; Enumerable: false hides one from Props. Struct instances raise TypeError. |
+| DefineProp() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Defines own properties with callable accessors; Enumerable: false hides one from Props. Struct instances raise TypeError. Invalid typed-property classes, including prototypes and COM values, raise ValueError. |
 | DetectHiddenText() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The DetectHiddenText function determines whether invisible text in a window is "seen" for the purpose of finding the window. |
 | DetectHiddenWindows() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Determines whether invisible windows are seen by the script. On macOS, application hiding affects title searches; direct handles still work. |
 | DirCopy() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Copies a folder along with all its sub-folders and files (similar to xcopy). A .zip, .tar, .tar.gz or .tgz source is extracted into the destination folder; a plain .gz is decompressed to the destination as a single file. |
@@ -462,7 +462,7 @@ Status legend:
 | DirExist() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Checks for the existence of a folder and returns its attributes. |
 | DirMove() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Moves a folder along with all its sub-folders and files. It can also rename a folder. |
 | DirSelect() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Displays the native folder-selection dialog on every platform. Some legacy Windows folder-dialog option flags have no portable equivalent. |
-| DllCall() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Calls native functions; supports numeric type classes and void returns. Structured arrays pass by address but cannot be returned. Outside Windows x64, a struct passed or returned by value must be 1, 2, 4 or 8 bytes, with naturally aligned fields that are not all floating-point. |
+| DllCall() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Calls native functions with numeric classes, structures and void returns; arrays pass by address and cannot be returned. Numeric subclasses retain __Value, and pointer returns preserve target-class instances except for native numeric targets. Outside Windows x64, by-value structs must be 1, 2, 4 or 8 bytes, naturally aligned and not entirely floating-point. |
 | DotNet.Format() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats text using .NET composite format placeholders (1-based indexing adaptation). |
 | DotNet.RegExMatch() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Runs a .NET regex match and returns match details. |
 | DotNet.RegExReplace() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Runs a .NET regex replace. |
@@ -556,7 +556,7 @@ Status legend:
 | Font | 🟡 Partial | 🟡 Partial | 🟡 Partial | ⚪ Unknown | Optional font attributes and system font selections. Linux resolves unavailable GTK theme fonts through Pango substitution. GUI/image weights map to normal or bold; Windows RichEdit preserves numeric weights. Windows applies quality to GUI fonts and image text, Linux and macOS ignore it, and per-range RichEdit formatting rejects non-default quality everywhere. Unspecified attributes follow reference.md's compatibility-mode rule; Options remains a valid empty string. |
 | For | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Iterates over enumerable values or key/value pairs. |
 | Foreign window management (non-Keysharp apps) | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | On Linux, Control* functions are not supported for foreign apps; use the included AtSpi library for cross-process control interaction. COSMIC supplies native listing, active state, geometry, focus, close, minimize, maximize and restore, plus native window events when advertised by keysharp-desktop, with polling fallback. wlroots compositors can supply listing, active/state facts and the same actions except geometry. Hyprland adds geometry, PID, move/resize, WinMoveTop/WinMoveBottom, hit-testing, window capture, transparency, WinKill and pushed window events through its IPC; a floating window stays above tiled ones, so WinMoveBottom cannot place it beneath them. On other wlroots compositors coordinate hit-testing remains limited without stacking order, and general move/resize is unavailable. macOS currently relies on Accessibility APIs with permission requirements. |
-| Format() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats text by substituting placeholders with argument values. A {} without an index takes the argument after the previous valid placeholder, as in AutoHotkey. |
+| Format() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats text by substituting placeholders with argument values. A {} without an index takes the argument after the previous valid placeholder, as in AutoHotkey. Invalid placeholders, including flags/width/precision longer than 46 characters, remain literal and consume no argument. |
 | FormatTime | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats a timestamp in the current user's locale, as in AutoHotkey. The Dn and Tn options are not supported, except for 0x80000000. |
 | Func | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Function object type. A callback is passed as a function object, with %"Name"% resolving a name known only at run time to one. |
 | Func.IsBuiltIn | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Whether the function itself is built-in. BoundFunc objects always return false, even when binding a built-in function with no arguments. |
@@ -873,8 +873,8 @@ Status legend:
 | Named parameters | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Binds an argument to the callee's parameter of that name instead of by position; must trail the positional arguments. Works for script functions, built-ins, methods, constructors (built-in classes included: Buffer(ByteCount: 16), Error(Message: msg)), bound functions, COM objects (via IDispatch DISPIDs) and Clr calls (where they also drive overload selection). Not available in '[]' (that is the map literal), and not for the receiver. A call's named arguments travel as one first-class value (Ks.NamedArgs, a case-insensitive Map whose keys are the names; the last argument slot is reserved for it): any variadic parameter collects the ones it does not declare as an ordinary trailing element and a variadic call re-emits it, so a wrapper forwards names without knowing they exist, and NamedArgs(name, value) — imported from the Ks module — makes a named call dynamically; a variadic that consumes its tail as values (Format, Push, Max) receives it as data. See #Warn NamedArg. |
 | not | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Logical NOT operator. |
 | Number() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Number function converts a numeric string to a pure integer or floating-point number. |
-| NumGet() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The NumGet function returns the binary number stored at the specified address+offset. The type is a name or a numeric type class such as UInt32; one which does not name a number raises a ValueError, and a name is matched in full where AutoHotkey reads only its first character. |
-| NumPut() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The NumPut function stores one or more numbers in binary format at the specified address+offset. Each type is a name or a numeric type class such as UInt32; a type or value which does not name a number raises a ValueError. |
+| NumGet() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reads a binary number at an address plus offset using a native numeric class or a type name matched in full. Invalid types, including prototypes, numeric subclasses and other non-class objects, raise ValueError without invoking conversion hooks or closing layouts. |
+| NumPut() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Writes binary numbers at an address plus offset using native numeric classes or type names. Invalid types, including prototypes, numeric subclasses and other non-class objects, raise ValueError without invoking conversion hooks or closing layouts; non-numeric values also raise ValueError. |
 | ObjAddRef() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Adds one native IUnknown reference, keeping a managed target alive, and returns the new native count. |
 | ObjBindMethod() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The ObjBindMethod function creates a BoundFunc object which calls a method of a given object. |
 | ObjCreateWithDataPtr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates a directly constructible Object or Struct instance with an external data pointer, without calling __Init, __New or static Call. Enables __Delete without freeing the external memory; ObjSetDataPtr can rebind it. Typed properties remain restricted to struct classes. |
@@ -886,7 +886,7 @@ Status legend:
 | ObjGetBase | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the value's base object. Differs in that it only returns the name of the base type as a string. |
 | ObjGetCapacity() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns own-property storage capacity; structs raise TypeError. |
 | ObjGetDataPtr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the address of structured data or the external data pointer attached by ObjCreateWithDataPtr. |
-| ObjGetDataSize() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the size of the object's structure (typed properties), in bytes. Accepts struct prototypes and returns zero for ordinary objects. |
+| ObjGetDataSize() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns structure size in bytes for instances and prototypes; ordinary objects and invalid structures return zero. Prototype.Size raises TypeError without closing the layout. |
 | ObjHasOwnProp() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Checks for an own property; structs raise TypeError. |
 | ObjOwnPropCount() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Counts own properties; structs raise TypeError. |
 | ObjOwnProps | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Enumerates own properties; structs raise TypeError. |
@@ -1027,9 +1027,9 @@ Status legend:
 | StrTitle() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The StrLower, StrUpper and StrTitle functions convert a string to lowercase, uppercase or title case. |
 | Struct.__Ref() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves a nested struct or virtual property reference. |
 | struct.__Value | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Backing value property for struct instances. |
-| Struct.Array | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fixed-length typed arrays; DllCall parameters pass their storage address, and an array is accepted where a pointer to its element class is expected. |
+| Struct.Array | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fixed-length typed arrays; DllCall parameters pass their storage address, and an array is accepted where a pointer to its element class is expected. An Int32[2] subclass with an added Int32 field keeps element 2 at byte offset 4, unlike AutoHotkey v2.1-alpha.39. |
 | Struct.Ptr | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Pointer class/property used for pointer-to-struct fields, native parameters and struct addresses. |
-| structures | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | User-defined structures via the struct keyword: typed fields, union blocks, nesting, At, numeric types, pointer classes, #StructPack alignment, and structured arrays (Int32[10] / Struct.Array). |
+| structures | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | User-defined structures via the struct keyword: typed fields, union blocks, nesting, At, numeric types, pointer classes, #StructPack alignment, and structured arrays (Int32[10] / Struct.Array). Numeric subclasses retain inherited __Value storage, including when they add typed fields, and initialize as nested structs when used as fields. |
 | StrUpper() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Converts a string to uppercase. |
 | SubStr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves one or more characters from the specified position in a string. |
 | super | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keyword that accesses base-class methods and properties. |

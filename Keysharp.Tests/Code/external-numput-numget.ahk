@@ -258,4 +258,37 @@ if A_PtrSize = 8
 Throws(() => NumGet(classBuf, Struct), A_LineNumber, ValueError)
 Throws(() => NumPut(Struct, 1, classBuf), A_LineNumber, ValueError)
 
+; A type is a name or numeric class; object conversion hooks do not supply type names.
+typeStringCalls := []
+memoryTypeObject := {}
+DefineProp(memoryTypeObject, "ToString", {Call: (this) => (typeStringCalls.Push(1), "Int")})
+for invalidMemoryType in [Int32.Prototype, {}, memoryTypeObject] {
+	Throws(() => NumGet(classBuf, invalidMemoryType), A_LineNumber, ValueError)
+	Throws(() => NumPut(invalidMemoryType, 1, classBuf), A_LineNumber, ValueError)
+}
+NumPut("Int", 123, classBuf)
+memoryTypeErrors := []
+continueMemoryTypeError := (error, mode) => (memoryTypeErrors.Push(Type(error)), -1)
+OnError(continueMemoryTypeError)
+invalidRead := NumGet(classBuf, memoryTypeObject)
+NumPut(memoryTypeObject, 456, classBuf)
+OnError(continueMemoryTypeError, 0)
+AssertEq(invalidRead ?? "", "", A_LineNumber)
+AssertEq(NumGet(classBuf, "Int"), 123, A_LineNumber)
+AssertEq(memoryTypeErrors.Length, 2, A_LineNumber)
+for memoryTypeError in memoryTypeErrors
+	AssertEq(memoryTypeError, "ValueError", A_LineNumber)
+AssertEq(typeStringCalls.Length, 0, A_LineNumber)
+
+; Rejecting an open subclass as a numeric type leaves its field definitions open.
+openNumber := Class(Int32)
+Throws(() => NumGet(classBuf, openNumber), A_LineNumber, ValueError)
+Throws(() => NumPut(openNumber, 1, classBuf), A_LineNumber, ValueError)
+DefineProp(openNumber.Prototype, "Extra", {Type: Int32})
+AssertEq(ObjGetDataSize(openNumber.Prototype), 8, A_LineNumber)
+closedNumber := Class(Int32)
+closedNumber()
+Throws(() => NumGet(classBuf, closedNumber), A_LineNumber, ValueError)
+Throws(() => NumPut(closedNumber, 1, classBuf), A_LineNumber, ValueError)
+
 FileAppend "pass", "*"

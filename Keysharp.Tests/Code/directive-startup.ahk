@@ -1,7 +1,7 @@
 #NoTrayIcon
 #ErrorStdOut
 #Warn All, StdOut
-#Requires AutoHotkey v2.1-alpha.38
+#Requires AutoHotkey v2.1-alpha.39
 #Import Consumer
 #Import Recorder
 #Include <assert>

@@ -515,6 +515,23 @@ for v in Filter([1, -2, 3], (x) { return x > 0 })
 	count++
 AssertEq(count, 7, A_LineNumber)
 
+; A block function expression in a single-statement flow body obeys that branch or loop.
+flowCallbacks := []
+if false
+    flowCallbacks.Push(() { return "skipped" })
+else
+    flowCallbacks.Push(() { return "else" })
+if true
+    flowCallbacks.Push(flowNamed() { return "if" })
+else
+    flowCallbacks.Push(() { return "skipped" })
+loop 2
+    flowCallbacks.Push(() { return "loop" })
+AssertEq(flowCallbacks.Length, 4, A_LineNumber)
+AssertEq(flowCallbacks[1](), "else", A_LineNumber)
+AssertEq(flowCallbacks[2](), "if", A_LineNumber)
+AssertEq(flowCallbacks[3]() "," flowCallbacks[4](), "loop,loop", A_LineNumber)
+
 class CallbackReceiver {
 	Value := 100
 	Create() {

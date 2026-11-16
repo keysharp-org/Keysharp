@@ -162,6 +162,7 @@ AssertEq(numbers[2], 7, A_LineNumber)
 ; Overflowing layouts are rejected before allocation or any access through a pointer.
 overflowArray := Int64[0x7FFFFFFFFFFFFFFF]
 Throws(() => overflowArray.Prototype.Size, A_LineNumber, TypeError)
+AssertEq(ObjGetDataSize(overflowArray.Prototype), 0, A_LineNumber)
 Throws(() => overflowArray(), A_LineNumber, TypeError)
 Throws(() => overflowArray.At(0), A_LineNumber, TypeError)
 

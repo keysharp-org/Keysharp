@@ -342,9 +342,17 @@ dynamic.c[3] := 9
 Assert(!(dynamic.a != 0x12345678 || dynamic.b != 0x1234
     || dynamic.c[1] != 7 || dynamic.c[2] != 8 || dynamic.c[3] != 9), A_LineNumber)
 
-; A prototype reports the struct size of the class it belongs to, matching its instances. [v2.1-alpha.23]
-Assert(!(POINT.Prototype.Size != 8 || POINT.Prototype.Size != POINT().Size
-    || DYNAMIC_TYPES.Prototype.Size != dynamic.Size), A_LineNumber)
+AssertEq(ObjGetDataSize(POINT.Prototype), 8, A_LineNumber)
+AssertEq(ObjGetDataSize(POINT.Prototype), POINT().Size, A_LineNumber)
+AssertEq(ObjGetDataSize(DYNAMIC_TYPES.Prototype), dynamic.Size, A_LineNumber)
+Throws(() => POINT.Prototype.Size, A_LineNumber, TypeError)
+
+; Reading Size on a prototype is invalid and leaves its layout open.
+openSize := Class(Struct)
+DefineProp(openSize.Prototype, "First", {Type: Int32})
+Throws(() => openSize.Prototype.Size, A_LineNumber, TypeError)
+DefineProp(openSize.Prototype, "Second", {Type: Int32})
+AssertEq(ObjGetDataSize(openSize.Prototype), 8, A_LineNumber)
 
 ; Base is read-only on both a prototype and an instance carrying typed properties. [v2.1-alpha.27]
 threw := false
@@ -449,7 +457,7 @@ struct NATIVE_PACKED {
     Value: UInt32
     Tail: UInt8[3]
 }
-AssertEq(NATIVE_PACKED.Prototype.Size, 8, A_LineNumber)
+AssertEq(ObjGetDataSize(NATIVE_PACKED.Prototype), 8, A_LineNumber)
 nativeDerived := NATIVE_DERIVED()
 nativeDerived.x := 37
 nativeCalls := {Count: 0}
@@ -564,6 +572,74 @@ AssertEq(plainInstance.P ?? "unset", "unset", A_LineNumber)
 plainInstance.P := Int32(7)
 AssertEq(plainInstance.P.__Value, 7, A_LineNumber)
 
+; Numeric subclasses keep their initialization and __Value when used as fields or native values.
+numberNews := []
+customNumber := Class(Int32)
+DefineProp(customNumber.Prototype, "__Value", {Get: (this) => 70, Set: (this, value) => NumPut("Int", value + 1, this)})
+DefineProp(customNumber.Prototype, "__New", {Call: (this, *) => numberNews.Push(1)})
+numberHolder := Class(Struct)
+DefineProp(numberHolder.Prototype, "Number", {Type: customNumber})
+numberInstance := numberHolder()
+AssertEq(numberNews.Length, 1, A_LineNumber)
+numberInstance.Number := 4
+AssertEq(NumGet(numberInstance, "Int"), 5, A_LineNumber)
+AssertEq(numberInstance.Number, 70, A_LineNumber)
+AssertEq(Object.Prototype.GetOwnPropDesc.Call(numberHolder.Prototype, "Number").Type, customNumber, A_LineNumber)
+plainNumber := Class(Int32)
+plainNumberHolder := Class(Struct)
+DefineProp(plainNumberHolder.Prototype, "Number", {Type: plainNumber})
+plainNumberInstance := plainNumberHolder(13)
+AssertEq(plainNumberInstance.Number, 13, A_LineNumber)
+
+; Added fields preserve inherited numeric storage and the subclass's initialization.
+extendedNumber := Class(Int32)
+DefineProp(extendedNumber.Prototype, "Extra", {Type: Int32})
+extendedValue := extendedNumber()
+AssertEq(extendedValue.__Value, 0, A_LineNumber)
+extendedValue.__Value := 11
+extendedValue.Extra := 22
+AssertEq(extendedValue.__Value, 11, A_LineNumber)
+AssertEq(NumGet(extendedValue, "Int"), 11, A_LineNumber)
+AssertEq(extendedValue.Extra, 22, A_LineNumber)
+DefineProp(extendedNumber.Prototype, "__New", {Call: (this, *) => this.Extra := 6})
+extendedHolder := Class(Struct)
+DefineProp(extendedHolder.Prototype, "Number", {Type: extendedNumber})
+extendedInstance := extendedHolder()
+AssertEq(extendedInstance.Number, 0, A_LineNumber)
+AssertEq(NumGet(extendedInstance, 4, "Int"), 6, A_LineNumber)
+extendedInstance.Number := 9
+AssertEq(extendedInstance.Number, 9, A_LineNumber)
+AssertEq(NumGet(extendedInstance, "Int"), 9, A_LineNumber)
+AssertEq(NumGet(extendedInstance, 4, "Int"), 6, A_LineNumber)
+extendedCallback := CallbackCreate(value => value + 1, "Fast", [extendedNumber, extendedNumber])
+AssertEq(DllCall(extendedCallback, extendedNumber, 7, extendedNumber), 8, A_LineNumber)
+CallbackFree(extendedCallback)
+
+mixedNumber := Class(Float32)
+DefineProp(mixedNumber.Prototype, "Tag", {Type: Int32})
+mixedCallback := CallbackCreate(value => value + 0.5, "Fast", [mixedNumber, mixedNumber])
+AssertEq(DllCall(mixedCallback, mixedNumber, 1.5, mixedNumber), 2.0, A_LineNumber)
+CallbackFree(mixedCallback)
+#if !WINDOWS || !X64
+unalignedNumber := Class(Int32)
+DefineProp(unalignedNumber.Prototype, "Extra", {Type: Int16, Offset: 5})
+Throws(() => CallbackCreate(value => value, "Fast", [unalignedNumber, Int32]), A_LineNumber, ValueError)
+#endif
+
+numberCallback := CallbackCreate(value => value, "Fast", [customNumber, Int32])
+AssertEq(DllCall(numberCallback, customNumber, 4, "Int"), 70, A_LineNumber)
+CallbackFree(numberCallback)
+numberCallback := CallbackCreate(() => 4, "Fast", [customNumber])
+AssertEq(DllCall(numberCallback, "Int"), 5, A_LineNumber)
+AssertEq(DllCall(numberCallback, customNumber), 70, A_LineNumber)
+CallbackFree(numberCallback)
+#if WINDOWS && X64
+floatNumber := Class(Float32)
+floatNumberCallback := CallbackCreate(value => value, "Fast", [floatNumber, floatNumber])
+AssertEq(DllCall(floatNumberCallback, floatNumber, 1.5, floatNumber), 1.5, A_LineNumber)
+CallbackFree(floatNumberCallback)
+#endif
+
 ; As in AutoHotkey, a nested struct reads as its __Value when it has one, and is constructed with its owner: its own
 ; initializers and a __New without parameters run before the owner's.
 struct NESTED_VALUE {
@@ -619,11 +695,11 @@ callOwner := NESTED_CALL_OWNER()
 AssertEq(callOwner.Child, -1, A_LineNumber)
 AssertEq(callOwner.Child(5), 12, A_LineNumber)
 
-; A struct which contains itself, directly or through another, has no layout. AutoHotkey does not check for this.
+; A struct which contains itself by value has no valid layout; pointers remain valid.
 selfContained := Class(Struct)
 DefineProp(selfContained.Prototype, "Self", {Type: selfContained})
-AssertError(() => ObjGetDataSize(selfContained.Prototype), "TypeError: Invalid struct. []", A_LineNumber)
-AssertError(() => selfContained.Prototype.Size, "TypeError: Invalid struct. []", A_LineNumber)
+AssertEq(ObjGetDataSize(selfContained.Prototype), 0, A_LineNumber)
+Throws(() => selfContained.Prototype.Size, A_LineNumber, TypeError)
 AssertError(() => selfContained(), "TypeError: Invalid struct. []", A_LineNumber)
 
 continuedLayout := {Errors: 0, Constructed: 0}
@@ -640,10 +716,65 @@ AssertEq(invalidInstance ?? "", "", A_LineNumber)
 AssertEq(invalidView ?? "", "", A_LineNumber)
 AssertEq(invalidExternal ?? "", "", A_LineNumber)
 
+mutualFirst := Class(Struct)
+mutualSecond := Class(Struct)
+DefineProp(mutualFirst.Prototype, "Other", {Type: mutualSecond})
+DefineProp(mutualSecond.Prototype, "Other", {Type: mutualFirst})
+arrayContained := Class(Struct)
+DefineProp(arrayContained.Prototype, "Items", {Type: arrayContained[2]})
+baseContained := Class(Struct)
+derivedContained := Class(baseContained)
+DefineProp(baseContained.Prototype, "Child", {Type: derivedContained})
+invalidDerived := Class(selfContained)
+DefineProp(invalidDerived.Prototype, "Number", {Type: Int32})
+for invalidStruct in [mutualFirst, mutualSecond, arrayContained, baseContained, derivedContained, invalidDerived] {
+    AssertEq(ObjGetDataSize(invalidStruct.Prototype), 0, A_LineNumber)
+    Throws(() => invalidStruct.Prototype.Size, A_LineNumber, TypeError)
+    Throws(() => invalidStruct(), A_LineNumber, TypeError)
+    Throws(() => invalidStruct.At(0), A_LineNumber, TypeError)
+    Throws(() => ObjCreateWithDataPtr(invalidStruct, 0), A_LineNumber, TypeError)
+    Throws(() => CallbackCreate((*) => 0, "Fast", [invalidStruct, Int32]), A_LineNumber, ValueError)
+}
+nativeArray := Int32[2]
+Throws(() => DefineProp(nativeArray.Prototype, "Extra", {Type: Int32}), A_LineNumber, Error)
+; Keysharp preserves the element stride when an array subclass adds fields.
+; AutoHotkey alpha.39 loses this write and raises UnsetItemError when element 2 is read.
+arraySubclass := Class(nativeArray)
+DefineProp(arraySubclass.Prototype, "Extra", {Type: Int32})
+AssertEq(ObjGetDataSize(arraySubclass.Prototype), 12, A_LineNumber)
+arraySubclassInstance := arraySubclass()
+arraySubclassInstance[2] := 9
+AssertEq(arraySubclassInstance[2], 9, A_LineNumber)
+AssertEq(NumGet(arraySubclassInstance, 4, "Int"), 9, A_LineNumber)
+offsetNames := Class(Struct)
+DefineProp(offsetNames.Prototype, "Zulu", {Type: Int32})
+DefineProp(offsetNames.Prototype, "Alpha", {Type: Int32, Offset: "Zulu"})
+AssertEq(DescribeField(offsetNames.Prototype, "Alpha"), "Zulu/-", A_LineNumber)
+Throws(() => DefineProp(Class(Struct).Prototype, "Invalid", {Type: Int32.Prototype}), A_LineNumber, ValueError)
+Throws(() => CallbackCreate((*) => 0, "Fast", [Int32.Prototype, Int32]), A_LineNumber, ValueError)
+Throws(() => CallbackCreate(() => 0, "Fast", [Int32.Prototype]), A_LineNumber, ValueError)
+Throws(() => DefineProp(Class(Struct).Prototype, "Invalid", {Type: {Prototype: Int32.Prototype}}), A_LineNumber, ValueError)
+typeProbeReads := []
+fakeType := {}
+DefineProp(fakeType, "Prototype", {Get: (this) => (typeProbeReads.Push(1), Int32.Prototype)})
+Throws(() => DefineProp(Class(Struct).Prototype, "Invalid", {Type: fakeType}), A_LineNumber, ValueError)
+AssertEq(typeProbeReads.Length, 0, A_LineNumber)
+#if WINDOWS
+Throws(() => DefineProp(Class(Struct).Prototype, "Invalid", {Type: ComValue(3, 0)}), A_LineNumber, ValueError)
+#endif
+pointerHolder := Class(Struct)
+DefineProp(pointerHolder.Prototype, "Pointer", {Type: Int32.Ptr})
+pointerInstance := pointerHolder()
+Throws(() => pointerInstance.Pointer := Any.Prototype, A_LineNumber, TypeError)
+pointerCallback := CallbackCreate(value => value, "Fast", 1)
+Throws(() => DllCall(pointerCallback, Int32.Ptr, Any.Prototype), A_LineNumber, TypeError)
+CallbackFree(pointerCallback)
+
 for offset in [0x7FFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFF7] {
     overflowOffset := Class(Struct)
     DefineProp(overflowOffset.Prototype, "Value", {Type: Int64, Offset: offset})
     Throws(() => overflowOffset.Prototype.Size, A_LineNumber, TypeError)
+    AssertEq(ObjGetDataSize(overflowOffset.Prototype), 0, A_LineNumber)
     Throws(() => overflowOffset(), A_LineNumber, TypeError)
     Throws(() => overflowOffset.At(0), A_LineNumber, TypeError)
 }

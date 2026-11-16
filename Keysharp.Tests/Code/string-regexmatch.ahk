@@ -381,6 +381,11 @@ AssertEq(calls, "12", A_LineNumber)
 Throws(() => RegExMatch("ab", "a(?C:FailingCallout)"), A_LineNumber, ValueError)
 Throws(() => RegExMatch("ab", "a(?C:NoSuchCallout)"), A_LineNumber, ValueError)
 
+; An unmatched surrogate at either boundary raises an error, while a valid pair matches.
+Throws(() => RegExMatch(Chr(0xDC00), "(?<=([^0]))"), A_LineNumber, Error)
+Throws(() => RegExMatch("a" Chr(0xD800), "."), A_LineNumber, Error)
+AssertEq(RegExMatch(Chr(0x1F600), "^.$"), 1, A_LineNumber)
+
 FirstCallout(*) {
 	global calls
 	calls .= "1"

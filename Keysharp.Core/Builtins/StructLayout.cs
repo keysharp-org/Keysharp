@@ -24,6 +24,7 @@ namespace Keysharp.Builtins
 
 	internal sealed class StructLayout
 	{
+		internal const string InvalidMessage = "Invalid struct.";
 		private readonly List<StructFieldInfo> Fields = [];
 		// Constructor arguments include inherited fields first; numeric classes contribute __Value.
 		internal StructFieldInfo[] ConstructorFields;
@@ -155,7 +156,7 @@ namespace Keysharp.Builtins
 			var info = Get(type);
 
 			if (info.Invalid)
-				_ = Errors.TypeErrorOccurred("Invalid struct.");
+				_ = Errors.TypeErrorOccurred(InvalidMessage);
 
 			return info;
 		}
@@ -174,6 +175,7 @@ namespace Keysharp.Builtins
 			info.ConstructorFields = [new StructFieldInfo("__Value", type, 0) { Kind = kind, Placed = true }];
 			info.NestedFields = [];
 			info.Closed = true;
+			closedInfos[type] = info;
 		}
 
 		// The struct a pointer class or a subclass of one points to, or null for any other class.
@@ -258,7 +260,7 @@ namespace Keysharp.Builtins
 					invalid |= fieldInfo.Invalid;
 					field.Offset = field.OffsetOf?.Offset ?? (field.ExplicitOffset >= 0 ? field.ExplicitOffset : AlignUp(offset, fieldAlignment));
 					field.PointerTarget = pointerTargets.GetValueOrDefault(field.FieldType);
-					field.Kind = IsPointerSubclass(field.FieldType) ? NativeTypeCode.Invalid : fieldInfo.PrimitiveKind;
+					field.Kind = fieldInfo.IsNativePrimitive ? fieldInfo.PrimitiveKind : NativeTypeCode.Invalid;
 					field.Placed = true;
 					offset = checked(field.Offset + fieldInfo.Size);
 					size = Math.Max(size, offset);
@@ -269,7 +271,7 @@ namespace Keysharp.Builtins
 				info.Size = info.Invalid ? 0 : AlignUp(size, alignment);
 				_ = checked((nint)info.Size);
 				info.Alignment = alignment;
-				info.PrimitiveKind = info.Fields.Count == 0 ? primitiveKind : NativeTypeCode.Invalid;
+				info.PrimitiveKind = primitiveKind;
 				info.ConstructorFields = [.. baseInfo?.ConstructorFields ?? [], .. info.Fields];
 				info.NestedFields = [.. baseInfo?.NestedFields ?? [], .. info.Fields.Where(f => f.Kind == NativeTypeCode.Invalid && f.PointerTarget == null)];
 				info.PointerSubclass = IsPointerSubclass(type);
@@ -359,16 +361,18 @@ namespace Keysharp.Builtins
 		internal static bool IsAutoPointerClass(Type type) => type != null && pointerTargets.ContainsKey(type);
 		internal static Type GetNativePointerTarget(Type type) => pointerTargets.GetValueOrDefault(type);
 
-		// Pointer classes retain their dereferencing behavior instead of scalar DllCall conversion.
+		// Only native numeric classes convert directly; subclasses retain initialization and __Value.
+		// Looking up a NumGet/NumPut type must not close an open layout.
 		internal static NativeTypeCode GetPrimitiveTypeCode(Type structType) =>
-			IsAutoPointerClass(structType) ? NativeTypeCode.Invalid : Get(structType).PrimitiveKind;
+			!IsAutoPointerClass(structType) && closedInfos.TryGetValue(structType, out var info) && info.IsNativePrimitive
+				? info.PrimitiveKind : NativeTypeCode.Invalid;
 
 		// ABI classification includes inherited fields; an empty struct is not floating-point.
 		internal static bool IsAllFloatingPoint(Type structType)
 		{
 			var info = Get(structType);
 
-			if (info.IsPrimitive)
+			if (info.IsNativePrimitive)
 				return NativeType.IsFloating(info.PrimitiveKind);
 
 			if (info.IsArray)
@@ -397,7 +401,7 @@ namespace Keysharp.Builtins
 		internal static bool IsUnaligned(Type type, long offset = 0)
 		{
 			var info = Get(type);
-			if (info.IsPrimitive)
+			if (info.IsNativePrimitive)
 				return offset % NativeType.SizeOf(info.PrimitiveKind) != 0;
 
 			if (info.IsArray)

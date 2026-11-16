@@ -336,7 +336,7 @@ namespace Keysharp.Builtins
 		public static object ObjGetDataSize(object obj) => obj switch
 		{
 			Struct st => Struct.get_Size(st),
-			Any { isPrototype: true } proto when Struct.IsStructType(proto.type) => StructLayout.GetValidated(proto.type).Size,
+			Any { isPrototype: true } proto when Struct.IsStructType(proto.type) => StructLayout.Get(proto.type).Size,
 			KeysharpObject => 0L,
 			_ => Errors.TypeErrorOccurred(obj, typeof(KeysharpObject))
 		};

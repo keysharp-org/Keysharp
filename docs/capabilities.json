@@ -1370,7 +1370,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "AutoHotkey compatibility target: 2.1-alpha.38.",
+                     "notes":  "AutoHotkey compatibility target: 2.1-alpha.39.",
                      "tested-by":  "props-script-properties.ahk"
                  },
                  {
@@ -3631,7 +3631,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Creates a native callback address which redirects to a script function. Supports both parameter-count callbacks and typed parameter/return signatures on every platform. By-value structs follow the platform restrictions of DllCall.",
+                     "notes":  "Creates native callbacks with parameter-count or typed signatures; invalid class types raise ValueError. Numeric subclasses retain __Value conversion, and by-value structs follow DllCall's platform restrictions.",
                      "tested-by":  "external-callbackcreate.ahk"
                  },
                  {
@@ -4876,7 +4876,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Calls native functions; supports numeric type classes and void returns. Structured arrays pass by address but cannot be returned. Outside Windows x64, a struct passed or returned by value must be 1, 2, 4 or 8 bytes, with naturally aligned fields that are not all floating-point.",
+                     "notes":  "Calls native functions with numeric classes, structures and void returns; arrays pass by address and cannot be returned. Numeric subclasses retain __Value, and pointer returns preserve target-class instances except for native numeric targets. Outside Windows x64, by-value structs must be 1, 2, 4 or 8 bytes, naturally aligned and not entirely floating-point.",
                      "tested-by":  "external-dllcall.ahk; struct-array.ahk; struct-basic.ahk"
                  },
                  {
@@ -5753,8 +5753,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Formats text by substituting placeholders with argument values. A {} without an index takes the argument after the previous valid placeholder, as in AutoHotkey.",
-                     "tested-by":  "ControlTests/control_exstyle_cb.ahk"
+                     "notes":  "Formats text by substituting placeholders with argument values. A {} without an index takes the argument after the previous valid placeholder, as in AutoHotkey. Invalid placeholders, including flags/width/precision longer than 46 characters, remain literal and consume no argument.",
+                     "tested-by":  "string-format.ahk"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -8971,7 +8971,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The NumGet function returns the binary number stored at the specified address+offset. The type is a name or a numeric type class such as UInt32; one which does not name a number raises a ValueError, and a name is matched in full where AutoHotkey reads only its first character.",
+                     "notes":  "Reads a binary number at an address plus offset using a native numeric class or a type name matched in full. Invalid types, including prototypes, numeric subclasses and other non-class objects, raise ValueError without invoking conversion hooks or closing layouts.",
                      "tested-by":  "external-numput-numget.ahk; external-callbackcreate.ahk"
                  },
                  {
@@ -8982,7 +8982,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The NumPut function stores one or more numbers in binary format at the specified address+offset. Each type is a name or a numeric type class such as UInt32; a type or value which does not name a number raises a ValueError.",
+                     "notes":  "Writes binary numbers at an address plus offset using native numeric classes or type names. Invalid types, including prototypes, numeric subclasses and other non-class objects, raise ValueError without invoking conversion hooks or closing layouts; non-numeric values also raise ValueError.",
                      "tested-by":  "external-numput-numget.ahk; external-dllcall.ahk"
                  },
                  {
@@ -9112,8 +9112,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns the size of the object's structure (typed properties), in bytes. Accepts struct prototypes and returns zero for ordinary objects.",
-                     "tested-by":  "struct-pack.ahk"
+                     "notes":  "Returns structure size in bytes for instances and prototypes; ordinary objects and invalid structures return zero. Prototype.Size raises TypeError without closing the layout.",
+                     "tested-by":  "struct-pack.ahk; struct-basic.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -10767,7 +10767,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "User-defined structures via the struct keyword: typed fields, union blocks, nesting, At, numeric types, pointer classes, #StructPack alignment, and structured arrays (Int32[10] / Struct.Array).",
+                     "notes":  "User-defined structures via the struct keyword: typed fields, union blocks, nesting, At, numeric types, pointer classes, #StructPack alignment, and structured arrays (Int32[10] / Struct.Array). Numeric subclasses retain inherited __Value storage, including when they add typed fields, and initialize as nested structs when used as fields.",
                      "tested-by":  "struct-basic.ahk; struct-pack.ahk; struct-array.ahk; class-special-funcs.ahk"
                  },
                  {
@@ -11885,7 +11885,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Defines own properties with callable accessors; Enumerable: false hides one from Props. Struct instances raise TypeError.",
+                     "notes":  "Defines own properties with callable accessors; Enumerable: false hides one from Props. Struct instances raise TypeError. Invalid typed-property classes, including prototypes and COM values, raise ValueError.",
                      "tested-by":  "struct-basic.ahk; class-props.ahk; class-ownprops.ahk"
                  },
                  {
@@ -12167,8 +12167,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Fixed-length typed arrays; DllCall parameters pass their storage address, and an array is accepted where a pointer to its element class is expected.",
-                     "tested-by":  "struct-array.ahk"
+                     "notes":  "Fixed-length typed arrays; DllCall parameters pass their storage address, and an array is accepted where a pointer to its element class is expected. An Int32[2] subclass with an added Int32 field keeps element 2 at byte offset 4, unlike AutoHotkey v2.1-alpha.39.",
+                     "tested-by":  "struct-array.ahk; struct-basic.ahk"
                  },
                  {
                      "category":  "Interop/Memory",

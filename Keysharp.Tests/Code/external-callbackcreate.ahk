@@ -367,6 +367,27 @@ ptrCb := CallbackCreate((*) => retBuf.Ptr, "Fast")
 AssertEq(DllCall(ptrCb, "int64*"), 9876543210, A_LineNumber)
 NumPut("int", 12345, retBuf)
 AssertEq(DllCall(ptrCb, "int*"), 12345, A_LineNumber)
+numberSubclass := Class(Int32)
+DefineProp(numberSubclass.Prototype, "__Value", {Get: (this) => NumGet(this, "Int") + 1,
+	Set: (this, value) => NumPut("Int", value * 2, this)})
+returnedNumber := DllCall(ptrCb, numberSubclass.Ptr)
+Assert(returnedNumber is numberSubclass, A_LineNumber)
+AssertEq(returnedNumber.Ptr, retBuf.Ptr, A_LineNumber)
+AssertEq(returnedNumber.__Value, 12346, A_LineNumber)
+returnedNumber.__Value := 7
+AssertEq(NumGet(retBuf, "Int"), 14, A_LineNumber)
+AssertEq(DllCall(ptrCb, Int32.Ptr), 14, A_LineNumber)
+pointerValue := Int32.Ptr()
+pointerValue.__Value := Int32.At(retBuf)
+pointerPointerCallback := CallbackCreate((*) => pointerValue.Ptr, "Fast")
+returnedPointer := DllCall(pointerPointerCallback, Int32.Ptr.Ptr)
+Assert(returnedPointer is Int32.Ptr, A_LineNumber)
+AssertEq(returnedPointer.Ptr, pointerValue.Ptr, A_LineNumber)
+AssertEq(returnedPointer.__Value.Ptr, retBuf.Ptr, A_LineNumber)
+AssertEq(returnedPointer.__Value.__Value, 14, A_LineNumber)
+returnedPointer.__Value.__Value := 19
+AssertEq(NumGet(retBuf, "Int"), 19, A_LineNumber)
+CallbackFree(pointerPointerCallback)
 CallbackFree(ptrCb)
 
 ; A 'str*' output receives the string the callee pointed at, not the raw address.
@@ -392,7 +413,7 @@ Throws(() => CallbackFree(0), A_LineNumber, ValueError)
 Throws(() => CallbackFree({}), A_LineNumber, TypeError)
 
 identityCb := CallbackCreate(value => value, "Fast", 1)
-for nativeType in ["Str", "WStr", "AStr", "Int*", "DoubleP"]
+for nativeType in ["Str", "WStr", "AStr", "Int*", "Int64*", "Double*", "DoubleP"]
 	AssertEq(DllCall(identityCb, nativeType, unset, "Ptr"), 0, A_LineNumber)
 AssertEq(DllCall(identityCb, IntPtr, IntPtr(42), "Ptr"), 42, A_LineNumber)
 #if WINDOWS && X64
@@ -405,5 +426,35 @@ Throws(() => DllCall(identityCb, "Int", unset), A_LineNumber, ArgumentError)
 DllCall(identityCb, "Int*", &unsetOutput := unset)
 AssertEq(unsetOutput, 0, A_LineNumber)
 CallbackFree(identityCb)
+
+arrayArgument := Int32[3]()
+arrayArgument[1] := 12
+arrayArgument[3] := 30
+arrayCallback := CallbackCreate((values, extra) => values[1] + values[3] + extra, "Fast", [Int32[3], Int32, Int32])
+AssertEq(DllCall(arrayCallback, Int32[3], arrayArgument, "Int", 1, "Int"), 43, A_LineNumber)
+CallbackFree(arrayCallback)
+
+; Native signatures require classes, and invalid layouts fail before entering native code.
+nativeTypeCalls := []
+typeCheckCallback := CallbackCreate((*) => nativeTypeCalls.Push(1), "Fast")
+Throws(() => DllCall(typeCheckCallback, Int32.Prototype, 1, "Int"), A_LineNumber, ValueError)
+Throws(() => DllCall(typeCheckCallback, Int32.Prototype), A_LineNumber, ValueError)
+invalidCallStruct := Class(Struct)
+DefineProp(invalidCallStruct.Prototype, "Self", {Type: invalidCallStruct})
+for invalidCallType in [invalidCallStruct, invalidCallStruct[2]] {
+	Throws(() => DllCall(typeCheckCallback, invalidCallType, 0, "Int"), A_LineNumber, ValueError)
+	Throws(() => DllCall(typeCheckCallback, invalidCallType), A_LineNumber, ValueError)
+}
+nativeTypeErrors := []
+continueTypeError := (error, mode) => (nativeTypeErrors.Push(Type(error)), -1)
+OnError(continueTypeError)
+DllCall(typeCheckCallback, invalidCallStruct, 0, "Int")
+DllCall(typeCheckCallback, invalidCallStruct)
+OnError(continueTypeError, 0)
+AssertEq(nativeTypeErrors.Length, 2, A_LineNumber)
+for nativeTypeError in nativeTypeErrors
+	AssertEq(nativeTypeError, "ValueError", A_LineNumber)
+AssertEq(nativeTypeCalls.Length, 0, A_LineNumber)
+CallbackFree(typeCheckCallback)
 
 FileAppend "pass", "*"

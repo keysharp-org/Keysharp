@@ -40,14 +40,7 @@ namespace Keysharp.Builtins
 			else
 				_ = offset.TryCoerceLong(out off);
 
-			NativeTypeCode code;
-
-			if (type is Class cls)
-				code = StructMarshal.GetNumericTypeCode(cls);
-			else if (type.CoerceString(out var name, "UInt"))
-				code = NativeType.Parse(name);
-			else
-				return DefaultObject;
+			var code = type is Class cls ? StructMarshal.GetNumericTypeCode(cls) : NativeType.Parse(type as string);
 
 			if (!NativeType.IsNumeric(code))
 				return Errors.ValueErrorOccurred($"Type of {Errors.Describe(type)} is not a number that can be read from memory.", type, DefaultObject);

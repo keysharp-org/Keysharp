@@ -26,7 +26,7 @@ namespace Keysharp.Builtins
 		{
 			var info = StructLayout.Get(type);
 			// Native construction cannot return the unset result of a continued script error.
-			Layout = info.Invalid ? throw new TypeError("Invalid struct.") : info;
+			Layout = info.Invalid ? throw new TypeError(StructLayout.InvalidMessage) : info;
 		}
 
 		// As AutoHotkey's Object::Initialize: the struct's memory, then each nested struct initialized in its place, before
@@ -153,15 +153,8 @@ namespace Keysharp.Builtins
 		internal override bool HasDeleteCall => !noDelete && memory != MemoryKind.Disposed
 			&& (HasOwnPropInternal("__Delete") || _base is KeysharpObject { HasDeleteInChain: true });
 
-		// Resolved from the receiver rather than declared as an instance property, so that it also answers on a
-		// struct class's Prototype: the prototype defines the layout but is not itself a Struct. A prototype
-		// reports the struct size rather than the allocated size. [v2.1-alpha.23+]
-		public static object get_Size(object @this) => @this switch
-		{
-			Struct st => st.Layout.Size,
-			Any any when GetStructType(any) is Type structType => StructLayout.GetValidated(structType).Size,
-			_ => Errors.TypeErrorOccurred(@this, typeof(Struct))
-		};
+		public static object get_Size(object @this) => @this is Struct st
+			? st.Layout.Size : Errors.TypeErrorOccurred(@this, typeof(Struct));
 
 		[PublicHiddenFromUser]
 		[UserDeclaredName("Ptr")]
@@ -759,14 +752,8 @@ namespace Keysharp.Builtins
 			if (value is Type type && IsStructType(type))
 				return type;
 
-			if (value is Any any)
-			{
-				if (GetStructType(any) is Type structType)
-					return structType;
-
-				if (Script.GetPropertyValueOrNull(any, "Prototype") is Any proto)
-					return GetStructType(proto);
-			}
+			if (value is Class cls)
+				return GetStructType(cls.InstancePrototype);
 
 			return null;
 		}

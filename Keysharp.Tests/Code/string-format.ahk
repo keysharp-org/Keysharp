@@ -151,4 +151,19 @@ FormatWildcard(Text, Value) {
 }
 AssertEq(FormatWildcard("{1:03d}", 7), "007", A_LineNumber)
 
+; An incomplete specifier stays literal, including when it ends after flags, width or precision.
+for incompleteFormat in ["{1:", "{1:+", "{1:08", "{1:.2", "before {1:"]
+	AssertEq(Format(incompleteFormat, 7), incompleteFormat, A_LineNumber)
+
+; Flags, width and precision occupy at most 46 characters, as in AutoHotkey v2.1-alpha.39.
+formatFlags := ""
+Loop 46
+	formatFlags .= "+"
+AssertEq(Format("{1:" formatFlags "d}", 7), "+7", A_LineNumber)
+for formatType in ["d", "f", "s"] {
+	overlongFormat := "{1:" formatFlags "+" formatType "}"
+	AssertEq(Format(overlongFormat, 7), overlongFormat, A_LineNumber)
+}
+AssertEq(Format(overlongFormat "|{}", 7), overlongFormat "|7", A_LineNumber)
+
 FileAppend "pass", "*"

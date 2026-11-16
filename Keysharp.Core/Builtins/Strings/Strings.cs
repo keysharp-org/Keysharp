@@ -163,6 +163,14 @@ namespace Keysharp.Builtins
 
 					// The specCore is the substring with flags, width and precision.
 					var specCore = format.AsSpan(specStart, pos - specStart);
+
+					// AutoHotkey reserves six characters of its 52-character format buffer.
+					if (specCore.Length > 46)
+					{
+						_ = result.Append(format, placeholderStart, pos - placeholderStart);
+						continue;
+					}
+
 					// Next comes the conversion type (if any)
 					var typeChar = 's'; // default conversion is to string.
 

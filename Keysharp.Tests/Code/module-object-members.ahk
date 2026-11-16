@@ -151,6 +151,15 @@ AssertEq(Members.Count, 21, A_LineNumber)
 AssertEq(WriteMembersCount(25), 25, A_LineNumber)
 AssertEq(ReadMembersCount(), 25, A_LineNumber)
 AssertEq(moduleRef.__Value, 25, A_LineNumber)
+; Discarding returned references leaves the module's variable and later references alive.
+loop 3 {
+    discardedRef := &Members.Count
+    discardedRef := unset
+    Members.__Ref("Count")
+}
+AssertEq(Members.Count, 25, A_LineNumber)
+freshModuleRef := &Members.Count
+Assert(freshModuleRef == moduleRef, A_LineNumber)
 Assert(Relayed.__Ref("AliasCount") == moduleRef, A_LineNumber)
 Assert(Relayed.DynamicRef("AliasCount") == moduleRef, A_LineNumber)
 Relayed.__Ref("AliasCount").__Value := 30

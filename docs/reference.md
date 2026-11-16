@@ -2,7 +2,7 @@
 
 This document contains detailed platform, implementation, and AutoHotkey v2 compatibility notes. For the concise project introduction and quick-start instructions, see the [main README](../README.md).
 
-The compatibility target is AutoHotkey v2.1-alpha.38. `A_AhkVersion` reports this target; `A_KsVersion` identifies the Keysharp release.
+The compatibility target is AutoHotkey v2.1-alpha.39. `A_AhkVersion` reports this target; `A_KsVersion` identifies the Keysharp release.
 
 Jump directly to:
 
@@ -407,7 +407,8 @@ Some general notes about Keysharp's implementation of the [AutoHotkey v2 specifi
 * A structured array class used as a `DllCall` parameter type passes the array's storage address regardless of its size. A structured array return type raises `ValueError`.
 * Outside Windows x64, a struct passed or returned by value through `DllCall` or `CallbackCreate` must be 1, 2, 4 or 8 bytes, with naturally aligned fields that are not all floating-point; other structs raise `ValueError`.
 * Typed properties can be declared only in a struct class. Declaring one in another class, which AutoHotkey allows, raises an error.
-* A struct prototype with typed properties has a read-only `Base` even while its structure is open, and a struct which contains itself raises `TypeError`.
+* A struct prototype with typed properties has a read-only `Base` even while its structure is open. `ObjGetDataSize(Prototype)` reports 0 for an invalid structure, such as one which contains itself by value. Construction, `At` and `ObjCreateWithDataPtr` raise `TypeError`; using it as a native call or callback type raises `ValueError`. `Size` requires a struct instance; reading `Prototype.Size` raises `TypeError` without closing the layout.
+* A subclass of a structured array can add typed fields while preserving the element stride. For `Class(Int32[2])` with an added `Int32` field, element 2 is stored at byte offset 4 and can be read normally. AutoHotkey v2.1-alpha.39 loses that write and raises `UnsetItemError` when reading the element.
 * The operation of Keysharp is different than AutoHotkey. While AutoHotkey is an interpreted scripting language, Keysharp actually creates a compiled .NET executable and runs it.
 
 * The process for reading and running a script is:
@@ -558,10 +559,11 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ As in AutoHotkey, a library a call had to load itself is unloaded again when the call returns. A function is looked up once only in a library nothing can unload, a standard system library or one `#DllLoad` loaded, and found again on every call in any other, so a script can free a library it loaded itself, such as with `FreeLibrary`.
 	+ Native `Float32` values widen exactly to 64-bit floats, as in AutoHotkey.
 * Encoding names also accept `ASCII` and .NET aliases such as `windows-1252`; invalid names raise `ValueError`.
-* `NumGet()` and `NumPut()` match a type name in full, where AutoHotkey looks only at its first character (after an optional leading `U`).
+* `NumGet()` and `NumPut()` match a type name in full, where AutoHotkey looks only at its first character (after an optional leading `U`). Numeric type classes such as `Int32` are accepted; their subclasses raise `ValueError` without closing an open structure, as in AutoHotkey v2.1-alpha.39.
 	+ AutoHotkey therefore reads `"Str"` as a 2-byte short, `"Int16"` as **eight** bytes (it searches the whole name for a `6`), and accepts abbreviations such as `"i"`, `"D"` and `"Integer"`. Keysharp raises a `ValueError` for all of these, so a type that does not name a number cannot silently read or write the wrong bytes.
 	+ The accepted names are `Int`, `UInt`, `Int64`, `UInt64`, `Short`, `UShort`, `Char`, `UChar`, `Float`, `Double`, `Ptr` and `UPtr`.
 	+ A value that does not read as a number raises a `ValueError` rather than being written as a zero. The pointer-width types additionally accept an object carrying a `Ptr`.
+* A numeric subclass used as a field or native signature type is a struct: its initialization and `__Value` conversion apply. Only the predefined numeric classes use direct scalar conversion; pointer classes retain their pointer conversion rules.
 * `ObjPtr()` returns a stable, borrowed IUnknown address on every platform; keep the object alive while using it. `ObjPtrAddRef()` adds an owned native reference, released with `ObjRelease()` or transferred to `ObjFromPtr()`.
 	+ `ObjFromPtr()` consumes an owned native reference when returning a managed object; a Windows wrapper for an external COM object owns it instead. `ObjFromPtrAddRef()` preserves the caller's native reference, acquiring an additional reference for an external COM wrapper.
 	+ Linux and macOS expose IUnknown identity and lifetime only, without IDispatch automation. Native reference counts exclude ordinary script references, which follow .NET's garbage collector.

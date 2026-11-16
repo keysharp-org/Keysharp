@@ -330,6 +330,25 @@ FnNestedWildcardReads() {
 }
 AssertEq(FnNestedWildcardReads(), "0,42,0", A_LineNumber)
 
+; Import lookup crosses enclosing functions which have no imports of their own.
+FnEmptyImportScopes() {
+    #Import ScopedWildcardSource { * }
+    Middle() {
+        Inner() => ImportedValue "," %"ImportedValue"%
+        return Inner()
+    }
+    return Middle()
+}
+AssertEq(FnEmptyImportScopes(), "source,source", A_LineNumber)
+
+; A wildcard re-export is resolved in its source module, independently of the caller's imports.
+FnRelayedWildcardScope() {
+    #Import ScopedWildcardDecoy { * }
+    #Import ScopedWildcardRelay { * }
+    return ImportedValue "," %"ImportedValue"%
+}
+AssertEq(FnRelayedWildcardScope(), "source,source", A_LineNumber)
+
 AssertEq(BeforeModuleWildcard(), "1.0,1.0", A_LineNumber)
 AssertEq(AfterModuleWildcard(), "1.0,1.0", A_LineNumber)
 
@@ -396,3 +415,12 @@ AfterModuleWildcard() {
 #Module ScopedOuter:ScopedInner
 InnerValue := "initial"
 InnerFn() => "inner"
+
+#Module ScopedWildcardSource
+ImportedValue := "source"
+
+#Module ScopedWildcardDecoy
+ImportedValue := "decoy"
+
+#Module ScopedWildcardRelay
+#Import Export ScopedWildcardSource { * }

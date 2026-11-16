@@ -242,9 +242,19 @@ namespace Keysharp.Internals.Interop
 			}
 			else if (Struct.TryResolveClass(rawTag, out var structType))
 			{
-				if (StructLayout.Get(structType).IsArray)
+				var layout = StructLayout.Get(structType);
+
+				if (layout.IsArray)
+				{
+					if (layout.Invalid)
+					{
+						_ = Errors.ValueErrorOccurred(StructLayout.InvalidMessage);
+						return false;
+					}
+
 					return NormalizeStructPointerArg(parameters, p, n, valueIndex, null, structType) is { } arrayArgument
 						&& ConvertPtr(n, arrayArgument);
+				}
 
 				//A numeric type class is handled as the built-in type it mirrors, so that e.g. a Float64
 				//argument is passed in a floating-point register rather than as raw bits in an integer one.
@@ -646,7 +656,7 @@ namespace Keysharp.Internals.Interop
 			}
 
 			if (returnPointerTarget != null)
-				return value == 0 ? null : StructLayout.Get(returnPointerTarget).IsPrimitive
+				return value == 0 ? null : StructLayout.GetPrimitiveTypeCode(returnPointerTarget) != NativeTypeCode.Invalid
 					? StructMarshal.ReadPrimitiveValue(returnPointerTarget, value)
 					: Script.Invoke(Script.TheScript.Vars.Statics[returnPointerTarget], "At", value);
 
@@ -712,9 +722,10 @@ namespace Keysharp.Internals.Interop
 			if (!Struct.TryResolveClass(rawReturnType, out var structType))
 				return false;
 
-			var layout = StructLayout.GetValidated(structType);
+			var layout = StructLayout.Get(structType);
 			if (layout.Invalid)
 			{
+				_ = Errors.ValueErrorOccurred(StructLayout.InvalidMessage);
 				failed = true;
 				return true;
 			}
@@ -750,9 +761,12 @@ namespace Keysharp.Internals.Interop
 		{
 			slot = 0L;
 
-			var layout = StructLayout.GetValidated(structType);
+			var layout = StructLayout.Get(structType);
 			if (layout.Invalid)
+			{
+				_ = Errors.ValueErrorOccurred(StructLayout.InvalidMessage);
 				return false;
+			}
 
 			if (StructMarshal.AggregateError(structType, layout) is { } error)
 			{
