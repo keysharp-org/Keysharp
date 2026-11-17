@@ -678,6 +678,7 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 	/// <param name="length">The number of items to remove. Default: 1.</param>
 	/// <returns>The item removed if length equals 1, else unset.</returns>
 	/// <exception cref="ValueError">A <see cref="ValueError"/> exception is thrown if index or index + length is out of bounds.</exception>
+	/// <exception cref="TypeError">A <see cref="TypeError"/> exception is thrown if length is nonnumeric.</exception>
 	public object RemoveAt(params object[] args)
 	{
 		var o = args;
@@ -689,7 +690,9 @@ public class Array : KeysharpObject, I__Enum, IEnumerable<object>, IEnumerable<(
 
 			if (o.Length > 1 && o[1] != null)
 			{
-				_ = o[1].TryCoerceInt(out var len, 1);
+				// A nonnumeric Length is a TypeError in both modes, as in AutoHotkey.
+				if (!o[1].TryCoerceInt(out var len, 1))
+					return Errors.ExpectedTypeErrorOccurred("Number", o[1]);
 
 				if (len >= 0 && len <= array.Count - i)
 					array.RemoveRange(i, len);

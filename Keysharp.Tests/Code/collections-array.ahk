@@ -504,6 +504,12 @@ val := arr.RemoveAt(-3, 3)
 
 Assert(val = "" && arr.Length == 0, A_LineNumber)
 
+arr := [10, 20, 30]
+for badLength in ["x", "", {}]
+	Throws(() => arr.RemoveAt(1, badLength), A_LineNumber, TypeError)
+arr.RemoveAt(1, "2")
+Assert(arr.Length == 1 && arr[1] = 30, A_LineNumber)
+
 sumarray(arr)
 {
 	temp := 0
