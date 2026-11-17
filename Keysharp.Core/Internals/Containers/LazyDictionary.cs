@@ -2,7 +2,7 @@ using Keysharp.Builtins;
 namespace Keysharp.Internals.Containers
 {
 	[PublicHiddenFromUser]
-	public class LazyDictionary<TKey, TValue>(IEqualityComparer<TKey> comparer)
+	public class LazyDictionary<TKey, TValue>(IEqualityComparer<TKey> comparer, Func<TKey, bool> missing = null)
 	{
 		// TValue or Lazy<TValue>. Concurrent, because a class can register itself while a RealThread reads the map.
 		private readonly ConcurrentDictionary<TKey, object> _inner = new(comparer ?? EqualityComparer<TKey>.Default);
@@ -29,7 +29,15 @@ namespace Keysharp.Internals.Containers
 
 		public ICollection<TKey> Keys => _inner.Keys;
 
-		public bool ContainsKey(TKey key) => _inner.ContainsKey(key);
+		// A key with no entry is offered to missing, which answers whether it gave the key one.
+		private bool Find(TKey key, out object boxed) =>
+			_inner.TryGetValue(key, out boxed) || missing != null && missing(key) && _inner.TryGetValue(key, out boxed);
+
+		// Whether the key has an entry now, without registering it.
+		internal bool Registered(TKey key) => _inner.ContainsKey(key);
+
+		// Whether the key has an entry or is given one.
+		public bool ContainsKey(TKey key) => Find(key, out _);
 
 		public bool ContainsValue(TValue value)
 		{
@@ -76,7 +84,7 @@ namespace Keysharp.Internals.Containers
 		{
 			get
 			{
-				if (!_inner.TryGetValue(key, out var boxed))
+				if (!Find(key, out var boxed))
 					throw new KeyNotFoundException(key?.ToString());
 				// if it's still a factory, invoke & replace
 				if (boxed is Lazy<TValue> lv)
@@ -94,10 +102,10 @@ namespace Keysharp.Internals.Containers
 			}
 		}
 
-		/// <summary>Optional: check without creating.</summary>
+		/// <summary>Get the value where the key has an entry or is given one, creating the value as the indexer does.</summary>
 		public bool TryGetValue(TKey key, out TValue value)
 		{
-			if (_inner.TryGetValue(key, out var boxed))
+			if (Find(key, out var boxed))
 			{
 				if (boxed is Lazy<TValue> lv)
 				{

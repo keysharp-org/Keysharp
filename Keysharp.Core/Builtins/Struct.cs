@@ -270,17 +270,11 @@ namespace Keysharp.Builtins
 
 			var vars = Script.TheScript.Vars;
 
-			// Two threads meeting the same new pointer type must not both register it.
-			lock (pointerTypeLock)
-			{
-				if (vars.Prototypes.ContainsKey(ptrType))
-					_ = vars.Prototypes[ptrType];
-				else
-					Script.InitClass(ptrType);
-			}
+			if (vars.Prototypes.ContainsKey(ptrType))
+				_ = vars.Prototypes[ptrType];
+			else
+				Script.InitClass(ptrType);
 		}
-
-		private static readonly object pointerTypeLock = new();
 
 		// Embedded objects are cleaned up by their owner, after its __Delete and before its storage is freed. A view needs
 		// nothing done unless it receives __Delete.

@@ -6,14 +6,14 @@ namespace Keysharp.Runtime
 	{
 		private readonly Script script;
 
-		public LazyDictionary<Type, Prototype> Prototypes = new();
-		public LazyDictionary<Type, Class> Statics = new();
+		public LazyDictionary<Type, Prototype> Prototypes;
+		public LazyDictionary<Type, Class> Statics;
 		internal List<(string, bool)> preloadedDlls = [];
 		internal DateTime startTime = DateTime.UtcNow;
 		private readonly ConcurrentDictionary<Type, ModuleScope> modules = new();
 		// Physical members use (declaring type, CLR name); classes and nested built-in modules use (their type, null).
 		internal readonly ConcurrentDictionary<(Type, string), VarRef> VariableRefs = new();
-		private readonly Type[] programModules;
+		private readonly Lazy<Type[]> programModules;
 		// Defensive fallback for a script with no modules at all (the generated program always has the main module,
 		// so this is effectively never used).
 		private Dictionary<string, ScriptVar> programVars;
@@ -22,14 +22,25 @@ namespace Keysharp.Runtime
 		internal Dictionary<string, ScriptVar> GlobalVars => GetModuleVars(script.CurrentModuleType);
 		// All modules and their global-variable stores, in declaration order, for ListVars.
 		internal IEnumerable<KeyValuePair<Type, KeyValuePair<string, ScriptVar>[]>> AllModuleVars =>
-			programModules.Select(type => KeyValuePair.Create(type, modules[type].OriginalFields));
+			programModules.Value.Select(type => KeyValuePair.Create(type, GetModule(type).OriginalFields));
 		private readonly Type defaultModuleType;
-		private readonly Type ahkModuleType;
+		private readonly Lazy<Type> ahkModuleType;
 		internal Type DefaultModuleType => defaultModuleType;
 
 		internal Variables(Script script)
 		{
 			this.script = script ?? throw new ArgumentNullException(nameof(script));
+			programModules = new(FindProgramModules);
+			ahkModuleType = new(() => programModules.Value.FirstOrDefault(type => type.Name == "AHK"));
+			Prototypes = new(null, RegisterProgramClass);
+			Statics = new(null, RegisterProgramClass);
+			// Generated programs name their main module, so startup need not enumerate every nested type.
+			var main = script.ProgramType?.GetNestedType(Keywords.MainModuleName);
+			defaultModuleType = main != null && Script.IsModule(main) ? main : programModules.Value.FirstOrDefault();
+		}
+
+		private Type[] FindProgramModules()
+		{
 			var flags = BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public;
 			// A module class can be declared inside another: a nested module's in its parent's, and an imported file's other
 			// modules' in the file's initial module's.
@@ -44,25 +55,41 @@ namespace Keysharp.Runtime
 					}
 			}
 			if (script.ProgramType != null) AddModules(script.ProgramType.GetNestedTypes(flags));
-			programModules = [.. found];
-			ahkModuleType = programModules.FirstOrDefault(type => type.Name == "AHK");
-
-			foreach (var type in programModules)
-				modules[type] = new(type);
-
-			if (programModules.Length == 0)
-				return;
-
-			defaultModuleType = programModules.FirstOrDefault(t => t.Name.Equals(Keywords.MainModuleName, StringComparison.OrdinalIgnoreCase)) ?? programModules[0];
+			return [.. found];
 		}
 
-		private sealed class ModuleScope
+		// Only classes the script uses need registry entries. A class is the script's when it and each type around it, up
+		// to the program type, is public, as generated classes are and as built-in classes are found.
+		internal bool RegisterProgramClass(Type type)
+		{
+			// Nesting is tested first, as it alone settles a lookup of a built-in type which has no entry.
+			for (var nested = type; nested != script.ProgramType; nested = nested.DeclaringType)
+				if (!nested.IsNestedPublic)
+					return false;
+
+			if (!typeof(Any).IsAssignableFrom(type))
+				return false;
+
+			Script.InitClass(type);
+			return true;
+		}
+
+		private sealed class ModuleScope(Type type)
+		{
+			// Module identity is available without reflecting over its variables, functions and classes.
+			private readonly Lazy<ModuleNames> names = new(() => new ModuleNames(type));
+			internal Module Instance;
+
+			internal Dictionary<string, ScriptVar> Variables => names.Value.Variables;
+			internal KeyValuePair<string, ScriptVar>[] OriginalFields => names.Value.OriginalFields;
+		}
+
+		private sealed class ModuleNames
 		{
 			internal readonly Dictionary<string, ScriptVar> Variables;
 			internal readonly KeyValuePair<string, ScriptVar>[] OriginalFields;
-			internal Module Instance;
 
-			internal ModuleScope(Type type)
+			internal ModuleNames(Type type)
 			{
 				var declared = GatherTypeVariables(type);
 				var builtin = type.Assembly == typeof(Module).Assembly;
@@ -218,7 +245,7 @@ namespace Keysharp.Runtime
 		/// </summary>
 		internal string[] DeclaredNames(Type type)
 		{
-			var names = type == typeof(Ahk) ? script.ReflectionsData.GlobalNames.Concat(ahkModuleType != null ? DeclaredNames(ahkModuleType) : [])
+			var names = type == typeof(Ahk) ? script.ReflectionsData.GlobalNames.Concat(ahkModuleType.Value != null ? DeclaredNames(ahkModuleType.Value) : [])
 				: GetModule(type).Variables.Keys.Except(type.GetCustomAttributes<ModuleBindingAttribute>()
 					.Where(binding => !binding.Declared).Select(binding => binding.Name), StringComparer.OrdinalIgnoreCase);
 			return [.. names.Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)];
@@ -229,7 +256,7 @@ namespace Keysharp.Runtime
 		/// #Module AHK is the built-in AHK module, whose object answers for both.
 		/// </summary>
 		internal IEnumerable<(string Name, Module Object)> AllModules =>
-			programModules.Where(type => type != ahkModuleType).Concat(Reflections.BuiltinModules)
+			programModules.Value.Where(type => type != ahkModuleType.Value).Concat(Reflections.BuiltinModules)
 				.Select(type => (Module.QualifiedName(type), ModuleObject(type)));
 
 		internal static ScriptVar ResolveMember(Type owner, string member, ModuleBindingKind kind)
@@ -322,11 +349,7 @@ namespace Keysharp.Runtime
 					.Where(type => type.IsClass && !type.IsAbstract && anyType.IsAssignableFrom(type))
 			);
 
-			if (script.ProgramType != null)
-			{
-				var nested = Reflections.GetNestedTypes(script.ProgramType.GetNestedTypes()).Where(type => type.IsClass && anyType.IsAssignableFrom(type));
-				types = types.Concat(nested);
-			}
+			// The script's own classes are registered as they are first used (see RegisterProgramClass).
 			types = types.Distinct();
 
 			/*
@@ -448,7 +471,7 @@ namespace Keysharp.Runtime
 
 		// AHK holds script-created variables as well as built-in variables, functions and classes.
 		internal bool TryGetAhkMember(string key, out ScriptVar v) =>
-			ahkModuleType != null && TryGetModuleVar(ahkModuleType, key, out v)
+			ahkModuleType.Value != null && TryGetModuleVar(ahkModuleType.Value, key, out v)
 			|| TryGetBuiltinVar(key, out v) || TryGetBuiltinFunction(key, out v) || TryGetGlobalClass(key, out v);
 
 		// What a global name finds from a module: its effective binding, then an AHK name.

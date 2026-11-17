@@ -9,13 +9,18 @@ namespace Keysharp.Runtime
 	{
 		internal readonly ConditionalWeakTable<KeysharpObject, StrongBox<long>> ExternalDataPointers = new();
 
+		// Callers meeting at one class register it once, and a class which has its entries keeps them.
+		private static readonly Lock classRegistration = new();
+
 		public static void InitClass(Type t, Type alias = null)
 		{
 			var script = Script.TheScript;
 			var store = script.Vars;
 			Type actual = alias ?? t;
 
-			if (store.Prototypes.IsInitialized(t))
+			using var registering = classRegistration.EnterScope();
+
+			if (store.Prototypes.Registered(t))
 				return;
 
 			Prototype proto = new Prototype(t);

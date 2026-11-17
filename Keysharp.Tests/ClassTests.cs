@@ -35,6 +35,99 @@ public class ClassTests : TestRunner
 	[Test, Category("Class")]
 	public void ClassWithStaticVar() => Assert.IsTrue(TestScript("class-static", false));
 
+	[Test, Category("Class"), Category("Internal")]
+	public void ConcurrentClassRegistration()
+	{
+		var vars = s.Vars;
+		var program = s.ProgramType;
+		Type[] cold =
+		[
+			typeof(RegistrationProgram.Cold1), typeof(RegistrationProgram.Cold2),
+			typeof(RegistrationProgram.Cold3), typeof(RegistrationProgram.Cold4)
+		];
+		RegistrationProgram.Initializations = 0;
+		var arrived = new int[cold.Length];
+		// Ends a worker's wait when the other has stopped or does not arrive.
+		using var stop = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+		// Both workers enter registration itself, which a lookup would skip for a key the other had just added, and they
+		// meet at each class before either registers it.
+		bool Register()
+		{
+			try
+			{
+				var registered = true;
+
+				for (var i = 0; i < cold.Length; i++)
+				{
+					_ = Interlocked.Increment(ref arrived[i]);
+
+					while (Volatile.Read(ref arrived[i]) < 2 && !stop.IsCancellationRequested)
+						Thread.SpinWait(1);
+
+					registered &= vars.RegisterProgramClass(cold[i]);
+				}
+
+				return registered;
+			}
+			finally
+			{
+				stop.Cancel();
+			}
+		}
+
+		try
+		{
+			s.ProgramType = typeof(RegistrationProgram);
+			var first = Task.Factory.StartNew(Register,
+				CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+			var second = Task.Factory.StartNew(Register,
+				CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+			Assert.That(Task.WaitAll([first, second], TimeSpan.FromSeconds(15)), Is.True);
+			Assert.That(first.Result && second.Result, Is.True);
+
+			foreach (var type in cold)
+				Assert.That(vars.Prototypes.Registered(type) && vars.Statics.Registered(type), Is.True);
+
+			// Registering a class does not initialize it.
+			Assert.That(RegistrationProgram.Initializations, Is.Zero);
+
+			foreach (var type in cold)
+			{
+				var prototype = vars.Prototypes[type];
+				var cls = vars.Statics[type];
+				Assert.That(cls.InstancePrototype, Is.SameAs(prototype));
+				Assert.That(vars.Prototypes[type], Is.SameAs(prototype));
+				Assert.That(vars.Statics[type], Is.SameAs(cls));
+			}
+
+			Assert.That(RegistrationProgram.Initializations, Is.EqualTo(cold.Length));
+			Assert.That(vars.Prototypes.ContainsKey(typeof(RegistrationProgram.Hidden)), Is.False);
+		}
+		finally
+		{
+			s.ProgramType = program;
+		}
+	}
+
+	private sealed class RegistrationProgram
+	{
+		internal static int Initializations;
+
+		private static object Count()
+		{
+			_ = Interlocked.Increment(ref Initializations);
+			return string.Empty;
+		}
+
+		public sealed class Cold1 : KeysharpObject { public new static object static__New(params object[] args) => Count(); }
+		public sealed class Cold2 : KeysharpObject { public new static object static__New(params object[] args) => Count(); }
+		public sealed class Cold3 : KeysharpObject { public new static object static__New(params object[] args) => Count(); }
+		public sealed class Cold4 : KeysharpObject { public new static object static__New(params object[] args) => Count(); }
+
+		// Not public, so the registry does not take it for a class of the script's.
+		internal sealed class Hidden : KeysharpObject { }
+	}
+
 	// A struct extends only a struct class and a class only a class which is not one, reported at the class's line.
 	[Test, Category("Class")]
 	public void InvalidBaseClass()
