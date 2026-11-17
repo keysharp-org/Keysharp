@@ -260,6 +260,7 @@ namespace Keysharp.Builtins
 
 					service = Service;
 					core = new Engine.AudioOutputCore(service, deviceId, (int)voices, policy, latency);
+					MaybeActivateFinalizer();
 					return DefaultObject;
 				}
 
@@ -385,7 +386,7 @@ namespace Keysharp.Builtins
 						return Unsupported(service, Engine.AudioCapability.Playback, "Audio.Output.Open");
 
 					if (!service.TryRegisterOpenOutput(c))
-						return Errors.OSErrorOccurredWithMessage($"This script already has {Engine.AudioService.MaxOpenOutputs} audio outputs open. Close one with Close() or Dispose() before opening another.");
+						return Errors.OSErrorOccurredWithMessage($"This script already has {Engine.AudioService.MaxOpenOutputs} audio outputs open. Close one with Close() before opening another.");
 
 					if (!c.TryOpen(out var error))
 					{
@@ -412,7 +413,7 @@ namespace Keysharp.Builtins
 						return Unsupported(service, Engine.AudioCapability.Playback, "Audio.Output.TryOpen");
 
 					if (!service.TryRegisterOpenOutput(c))
-						return Errors.OSErrorOccurredWithMessage($"This script already has {Engine.AudioService.MaxOpenOutputs} audio outputs open. Close one with Close() or Dispose() before opening another.");
+						return Errors.OSErrorOccurredWithMessage($"This script already has {Engine.AudioService.MaxOpenOutputs} audio outputs open. Close one with Close() before opening another.");
 
 					if (c.TryOpen(out _))
 						return true;
@@ -499,18 +500,15 @@ namespace Keysharp.Builtins
 					return this;
 				}
 
-				void IDisposable.Dispose() => _ = Dispose();
-
-				/// <summary>Terminal. Releases caches and native state; later operations raise.</summary>
-				public object Dispose()
+				// Terminal, at collection or the end of a using statement: later operations raise.
+				void IDisposable.Dispose()
 				{
 					if (core != null)
 					{
 						service.UnregisterOutput(core);
 						core.Dispose();
 					}
-
-					return DefaultObject;
+					HasFinalizer = false;
 				}
 			}
 

@@ -376,7 +376,12 @@ namespace Keysharp.Builtins
 			public class Meter : KeysharpObject, IDisposable
 			{
 				/// <summary>Lets the owning service release a meter a script dropped without stopping.</summary>
-				void IDisposable.Dispose() => _ = Dispose();
+				void IDisposable.Dispose()
+				{
+					_ = Stop();
+					status = "Disposed";
+					HasFinalizer = false;
+				}
 
 				internal Engine.AudioService service;
 				internal Engine.AudioMeterCore native;
@@ -509,6 +514,7 @@ namespace Keysharp.Builtins
 					}
 
 					native = core;
+					MaybeActivateFinalizer();
 					status = "Active";
 					error = null;
 					return this;
@@ -536,13 +542,6 @@ namespace Keysharp.Builtins
 						status = "Stopped";
 
 					return this;
-				}
-
-				public object Dispose()
-				{
-					_ = Stop();
-					status = "Disposed";
-					return DefaultObject;
 				}
 			}
 		}

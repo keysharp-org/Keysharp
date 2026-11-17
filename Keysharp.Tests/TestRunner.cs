@@ -35,6 +35,12 @@ public abstract class TestRunner
 
 		public override void Send(SendOrPostCallback d, object state) => d(state);
 
+		// The cleanup pump posts from a pool thread once the collection's finalizers have run.
+		internal void WaitForPosts(int count)
+		{
+			Assert.That(SpinWait.SpinUntil(() => posted.Count >= count, 5000), Is.True);
+		}
+
 		internal void DrainAll()
 		{
 			while (posted.TryDequeue(out var item))
@@ -128,6 +134,17 @@ public abstract class TestRunner
 		// Drain wakes posted through the previous transport before they can coalesce new work.
 		s.UIEventScheduler.PumpThreadQueuedEventsCore();
 		return context;
+	}
+
+	protected void QueueCollected(Any owner)
+	{
+		if (owner.sentinel is { } sentinel)
+		{
+			GC.SuppressFinalize(sentinel);
+			owner.Collected(sentinel);
+		}
+		else
+			s.DestructorPump.Enqueue(owner);
 	}
 
 	protected void InvokeCompiledScript(Action action)

@@ -247,7 +247,7 @@ class InputHUD {
             this.leds.Push({name: lk[1], label: lk[3], X: cx - d / 2, Y: this.Pad + 1, d: d,
                             lx: cx - sz.Width / 2, ly: this.Pad + 1 + d + 2})
         }
-        tmp.Dispose()
+        tmp.Destroy()
     }
 
     ; The bottom modifier row differs per OS (Command/Option on macOS; Win/Alt/Menu elsewhere).
@@ -271,7 +271,7 @@ class InputHUD {
             local tmp := Image.Create(1, 1)
             local sz := tmp.MeasureText(label, this.Font, this.FontName)
             tw := sz.Width, th := sz.Height
-            tmp.Dispose()
+            tmp.Destroy()
         }
         ; A lock key on the board (only Caps, here) carries a toggle name so it gets an on-key toggle pip.
         local tog := (vk = 20) ? "caps" : (vk = 144) ? "num" : (vk = 145) ? "scroll" : ""
@@ -321,7 +321,7 @@ class InputHUD {
     ; Frees a HUD's cached zoom-drag preview base (if any). Called from the crisp render that supersedes it.
     static DropBase(o) {
         if (o.zoomImg != "") {
-            o.zoomImg.Dispose()
+            o.zoomImg.Destroy()
             o.zoomImg := ""
         }
     }

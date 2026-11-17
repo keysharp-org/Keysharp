@@ -142,6 +142,22 @@ using out := FileOpen(scriptPath, "w")
 	out.Write("written")
 
 AssertEq(FileRead(scriptPath), "written", A_LineNumber)
+
+; Closing the native handle preserves the File's pending script destructor.
+closed := FileOpen(scriptPath, "r")
+closed.DefineProp("__Delete", {Call: (*) => __Main.trail .= "-closed"})
+closed.Close()
+AssertEq(Take(), "", A_LineNumber)
+using closed {
+}
+using closed {
+}
+AssertEq(Take(), "-closed", A_LineNumber)
+closed := ""
+Loop 2
+	Sleep(30), Collect()
+AssertEq(Take(), "", A_LineNumber)
+
 FileDelete(scriptPath)
 
 using buf := Buffer(16)

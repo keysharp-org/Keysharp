@@ -10,7 +10,7 @@ namespace Keysharp.Builtins
 		private readonly Func<object> currentValue;
 		private readonly Func<(object, object)> currentPair;
 		private readonly Action reset;
-		private readonly Action dispose;
+		private Action dispose;
 		private readonly Func<bool> hasValue;
 		private readonly KeysharpFunc callback;
 
@@ -33,7 +33,7 @@ namespace Keysharp.Builtins
 		public Enumerator() { }
 
 		// Loops own disposal.
-		internal override bool DisposesWhenCollected => false;
+		internal override void MaybeActivateFinalizer() => base.MaybeActivateFinalizer(false);
 
 		internal Enumerator(
 			object source,
@@ -82,7 +82,11 @@ namespace Keysharp.Builtins
 
 		void IEnumerator.Reset() => reset?.Invoke();
 
-		void IDisposable.Dispose() => dispose?.Invoke();
+		void IDisposable.Dispose()
+		{
+			Interlocked.Exchange(ref dispose, null)?.Invoke();
+			HasFinalizer = false;
+		}
 
 		// Reached through Func.Prototype.Call, so Enumerator.Prototype has no members of its own, as in AutoHotkey.
 		[PublicHiddenFromUser]

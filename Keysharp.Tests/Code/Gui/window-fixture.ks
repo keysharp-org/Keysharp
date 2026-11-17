@@ -50,10 +50,10 @@ CaptureFixtureWindow(title) {
 				. " red=" CaptureMatchText(img, redMatch) " teal=" CaptureMatchText(img, tealMatch)
 		} finally {
 			if IsObject(redPatch)
-				redPatch.Dispose()
+				redPatch.Destroy()
 			if IsObject(tealPatch)
-				tealPatch.Dispose()
-			img.Dispose()
+				tealPatch.Destroy()
+			img.Destroy()
 		}
 	} catch as err
 		result := (err is UnsupportedError ? "UNSUPPORTED" : "ERROR") "`n" err.Message

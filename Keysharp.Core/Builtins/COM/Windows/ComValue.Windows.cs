@@ -25,6 +25,7 @@ namespace Keysharp.Builtins.COM
 				if ((vt & VarEnum.VT_BYREF) != 0 || (vt & VarEnum.VT_ARRAY) != 0)
 				{
 					item = value switch { long lp => lp, nint ip => (long)ip, _ => 0L };
+					MaybeActivateFinalizer();
 					return;
 				}
 
@@ -33,7 +34,7 @@ namespace Keysharp.Builtins.COM
 					case VarEnum.VT_EMPTY:
 					case VarEnum.VT_NULL:
 						item = null;
-						return;
+						break;
 
 					// store as canonical long for integer vts
 					case VarEnum.VT_I1:
@@ -48,14 +49,14 @@ namespace Keysharp.Builtins.COM
 					case VarEnum.VT_UINT:
 					case VarEnum.VT_ERROR:
 						item = value is long l ? l : Convert.ToInt64(value);
-						return;
+						break;
 
 					// store as double for floats and dates
 					case VarEnum.VT_R4:
 					case VarEnum.VT_R8:
 					case VarEnum.VT_DATE:
 						item = value is double d ? d : Convert.ToDouble(value);
-						return;
+						break;
 
 					case VarEnum.VT_CY:
 						// keep 64-bit *scaled* integer in tenthousandths if caller already passed one,
@@ -64,28 +65,22 @@ namespace Keysharp.Builtins.COM
 						else if (value is double dcy) item = checked((long)Math.Round(dcy * 10000.0));
 						else if (value is decimal mcy) item = checked((long)Math.Round(mcy * 10000m));
 						else item = checked((long)Math.Round(Convert.ToDouble(value) * 10000.0));
-						return;
+						break;
 
 					case VarEnum.VT_BOOL:
 						item = value is bool b ? b : (value is long lb ? lb != 0 : Convert.ToBoolean(value));
-						return;
+						break;
 
 					case VarEnum.VT_BSTR:
 						// allow either managed string or a raw BSTR pointer (long/nint)
-						if (value is string s)
-						{
-							item = Marshal.StringToBSTR(s);
-							Flags |= F_OWNVALUE;
-						}
-						else if (value is long lp) item = lp;
+						if (value is long lp) item = lp;
 						else if (value is nint ip) item = (long)ip;
 						else
 						{
-							string str = Convert.ToString(value, System.Globalization.CultureInfo.CurrentCulture) ?? string.Empty;
-							item = Marshal.StringToBSTR(str);
+							item = Marshal.StringToBSTR(value as string ?? Convert.ToString(value, System.Globalization.CultureInfo.CurrentCulture) ?? string.Empty);
 							Flags |= F_OWNVALUE;
 						}
-						return;
+						break;
 
 					case VarEnum.VT_DISPATCH:
 					case VarEnum.VT_UNKNOWN:
@@ -100,18 +95,20 @@ namespace Keysharp.Builtins.COM
 								: Marshal.GetIUnknownForObject(value);
 							item = (long)p;
 						}
-						return;
+
+						break;
 
 					case VarEnum.VT_VARIANT:
 						// ambiguous to store — keep value as-is; ToVariant() delegates to VariantHelper
 						item = value;
-						return;
+						break;
 
 					default:
 						// safest fallback
 						item = value;
-						return;
+						break;
 				}
+				MaybeActivateFinalizer();
 			}
 		}
 
@@ -126,9 +123,31 @@ namespace Keysharp.Builtins.COM
 					return;
 
 				vt = (VarEnum)vtValue;
+				MaybeActivateFinalizer();
 			}
 		}
-		internal long Flags { get; set; }
+		private long flags;
+		internal long Flags
+		{
+			get => flags;
+			set { flags = value; MaybeActivateFinalizer(); }
+		}
+
+		private bool countsHandle;
+
+		internal override void MaybeActivateFinalizer()
+		{
+			var pointer = NintPtr;
+			var ownsInterface = pointer != 0 && vt is VarEnum.VT_UNKNOWN or VarEnum.VT_DISPATCH;
+			base.MaybeActivateFinalizer(ownsInterface || this is ComObject { EventSink: not null }
+				|| (flags & F_OWNVALUE) != 0 && (this is ComObjArray { _psa: not 0 }
+					|| pointer != 0 && (vt == VarEnum.VT_BSTR || (vt & (VarEnum.VT_ARRAY | VarEnum.VT_BYREF)) == VarEnum.VT_ARRAY)));
+			if (Interlocked.Exchange(ref countsHandle, ownsInterface) != ownsInterface)
+			{
+				if (ownsInterface) HandlePressure.Com.Add();
+				else HandlePressure.Com.Remove();
+			}
+		}
 
 		protected ComValue() { }
 
@@ -211,33 +230,29 @@ namespace Keysharp.Builtins.COM
 		[PublicHiddenFromUser]
 		public virtual void Dispose()
 		{
-			if (Ptr == null) return;
-
-			nint ip = NintPtr;
-			if (ip != 0)
-			{
-				if (vt == VarEnum.VT_UNKNOWN || vt == VarEnum.VT_DISPATCH)
-				{
-					_ = Marshal.Release(ip);
-				}
-				else if (vt == VarEnum.VT_BSTR && (Flags & F_OWNVALUE) != 0)
-				{
-					WindowsAPI.SysFreeString(ip);
-				}
-			}
-
-			item = null;
-			Flags &= ~F_OWNVALUE;
+			var valueType = vt;
+			var ownsValue = (flags & F_OWNVALUE) != 0;
+			// Taken out first, so that disposals which overlap release the value once.
+			var value = Interlocked.Exchange(ref item, null);
+			flags &= ~F_OWNVALUE;
 			typeScope = null;
-			HasFinalizer = false;
+			MaybeActivateFinalizer();
+
+			nint ip = value switch { long lp => (nint)lp, nint p => p, _ => 0 };
+			if (ip == 0) return;
+			if (valueType == VarEnum.VT_UNKNOWN || valueType == VarEnum.VT_DISPATCH)
+				_ = Marshal.Release(ip);
+			else if (valueType == VarEnum.VT_BSTR && ownsValue)
+				WindowsAPI.SysFreeString(ip);
 		}
 
 		internal void Clear()
 		{
 			vt = 0;
 			item = null;
-			Flags = 0L;
+			flags = 0L;
 			typeScope = null;
+			MaybeActivateFinalizer();
 		}
 
 		internal const int DISP_E_MEMBERNOTFOUND = unchecked((int)0x80020003);

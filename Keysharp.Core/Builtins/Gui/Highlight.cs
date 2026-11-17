@@ -146,17 +146,11 @@ namespace Keysharp.Builtins
 			/// (a later Show rebuilds it).</summary>
 			public object Destroy()
 			{
-				ReleaseNative();
+				((IDisposable)this).Dispose();
 				return DefaultObject;
 			}
 
 			void IDisposable.Dispose()
-			{
-				ReleaseNative();
-				HasFinalizer = false;
-			}
-
-			private void ReleaseNative()
 			{
 				visible = false;
 				shown = false;
@@ -165,6 +159,7 @@ namespace Keysharp.Builtins
 				builtW = builtH = builtD = int.MinValue;
 				builtPixels = default;
 				builtColor = -1;
+				HasFinalizer = false;
 			}
 
 			#endregion
@@ -217,7 +212,11 @@ namespace Keysharp.Builtins
 				// A same-size frame moved to a display of another density needs a raster of its own too.
 				var pixels = Platform.Overlay.GetCanvasSize(new ScreenRect(bx, by, bw, bh));
 
-				overlay ??= new KeysharpOverlay();
+				if (overlay == null)
+				{
+					overlay = new KeysharpOverlay();
+					MaybeActivateFinalizer();
+				}
 
 				if (bw != builtW || bh != builtH || d != builtD || pixels != builtPixels)
 				{

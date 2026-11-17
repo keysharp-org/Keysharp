@@ -1766,7 +1766,7 @@ LoadSC(*) {
 		if clipPicture != ""
 			clipPicture.Value := ""
 		if clip != ""
-			clip.Dispose()
+			clip.Destroy()
 		Tab.UseTab()
 		running := false
 	}
@@ -2603,7 +2603,7 @@ ImgSrch(*) {
 		AppendLog("ImageSearch threw: " e.Message)
 	} finally {
 		if IsSet(needle)
-			needle.Dispose()
+			needle.Destroy()
 	}
 }
 
@@ -3292,7 +3292,7 @@ OpenAudioOutput()
 	}
 	if (gAudioOutput != "")
 	{
-		try gAudioOutput.Dispose()
+		try gAudioOutput.Close()
 		gAudioOutput := ""
 	}
 	d := SelectedAudioDevice()

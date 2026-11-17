@@ -27,7 +27,7 @@ namespace Keysharp.Builtins.COM
 		internal string className;
 		internal bool isCollection;
 		internal ComAESink sink;               // live ComObjConnect subscription, if any
-		internal override bool DisposesWhenCollected => sink != null;
+		internal override void MaybeActivateFinalizer() => base.MaybeActivateFinalizer(sink != null);
 
 		private AEContext context;
 
@@ -489,8 +489,8 @@ namespace Keysharp.Builtins.COM
 		[PublicHiddenFromUser]
 		public void Dispose()
 		{
-			Interlocked.Exchange(ref sink, null)?.Dispose();
-			MaybeActivateFinalizer();
+			try { Interlocked.Exchange(ref sink, null)?.Dispose(); }
+			finally { MaybeActivateFinalizer(); }
 		}
 
 		// ---- diagnostics -------------------------------------------------------------------------

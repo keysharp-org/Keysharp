@@ -260,15 +260,17 @@ if (Audio.IsPlaybackSupported && Audio.IsOutputAvailable) {
                 Assert(bound.Device is Audio, A_LineNumber)
                 AssertEq(bound.Device.Id, outDevices[1].Id, A_LineNumber)
             }
-            bound.Dispose()
+            bound.Close()
         }
 
-        ; Close is reversible and keeps the prepared set; Dispose is terminal.
+        ; Close is reversible and keeps the prepared set; the end of a using statement is terminal.
         o.Close()
         AssertEq(o.Status, "Closed", A_LineNumber)
         o.StopAll()                                  ; still valid while closed
         AssertEq(o.Play(clip), "", A_LineNumber)     ; a closed output refuses in bounds, not by raising
-        o.Dispose()
+        using o {
+            AssertEq(o.Status, "Closed", A_LineNumber)
+        }
         AssertEq(o.Status, "Disposed", A_LineNumber)
         Throws(() => o.Open(), A_LineNumber)
     }
@@ -318,7 +320,6 @@ for d in devices {
         Assert(probe.Target is Audio, A_LineNumber)
         AssertEq(probe.Target.Id, d.Id, A_LineNumber)
         AssertEq(probe.Status, "Stopped", A_LineNumber)
-        probe.Dispose()
     }
 }
 
@@ -331,15 +332,16 @@ OnError(continueSelection, 0)
 AssertEq(selectionErrors.Length, 1, A_LineNumber)
 Assert(selectionErrors[1] is OSError, A_LineNumber)
 AssertEq(refused.Target, "", A_LineNumber)
-refused.Dispose()
 
 m := Audio.Meter()
 Assert(m is Audio.Meter, A_LineNumber)
 AssertEq(m.Status, "Stopped", A_LineNumber)
 AssertEq(m.IntervalMilliseconds, 50, A_LineNumber)
 AssertEq(m.Peak, "", A_LineNumber)          ; nothing observed yet
-m.Dispose()
+using m {
+}
 AssertEq(m.Status, "Disposed", A_LineNumber)
+Throws(() => m.Start(), A_LineNumber, ValueError)
 
 ; A recorder validates every option before it touches a device.
 Throws(() => Audio.Recorder("Sideways"), A_LineNumber)
@@ -360,7 +362,6 @@ AssertEq(rec.SampleFormat, "Signed16", A_LineNumber)
 AssertEq(rec.Peak, "", A_LineNumber)                 ; nothing captured yet
 AssertEq(rec.Result, "", A_LineNumber)
 Throws(() => rec.Stop(), A_LineNumber)               ; never started, so there is nothing to stop
-rec.Dispose()
 
 ; Device change registrations validate their filter and can be updated or removed.
 Throws(() => Audio.OnDeviceChange(DeviceChanged, 1, "Sideways"), A_LineNumber)

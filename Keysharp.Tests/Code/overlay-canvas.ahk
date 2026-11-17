@@ -30,7 +30,7 @@ AssertEq(c.GetPixel(2, 2), 0xFFFF0000, A_LineNumber)
 
 ; The canvas is the platform's presentable buffer, so anything that would replace or
 ; free those pixels is refused rather than silently detaching the overlay.
-Throws(() => c.Dispose(), A_LineNumber)
+Throws(() => c.Destroy(), A_LineNumber)
 Throws(() => c.__New("nonexistent.png"), A_LineNumber)
 Throws(() => c.SetPixelData(Buffer(32 * 16 * 4)), A_LineNumber)
 Throws(() => c.Scale(2), A_LineNumber)
@@ -51,14 +51,14 @@ AssertEq(copy.GetPixel(2, 2), 0xFFFF0000, A_LineNumber)
 copy.Grayscale()
 Assert(copy.GetPixel(2, 2) != 0xFFFF0000, A_LineNumber)
 AssertEq(c.GetPixel(2, 2), 0xFFFF0000, A_LineNumber)       ; original untouched
-copy.Dispose()
+copy.Destroy()
 
 ; Immediate DrawImage consumes the current source without taking ownership.
 sprite := Image.Create(4, 4, "Red")
 c.Clear().DrawImage(sprite, 2, 2)
 sprite.Clear("Blue")
 c.DrawImage(sprite, 10, 2)
-sprite.Dispose()
+sprite.Destroy()
 AssertEq(c.GetPixel(Round(3 * sx), Round(3 * sy)), 0xFFFF0000, A_LineNumber)
 AssertEq(c.GetPixel(Round(11 * sx), Round(3 * sy)), 0xFF0000FF, A_LineNumber)
 c.DrawImage(c, 2, 0, 32, 16)
@@ -129,7 +129,7 @@ ov.Destroy()
 ; Fractional geometry and unequal drawing scales must not leave antialiased edges after Clear.
 scaledSource := Image.Create(128, 96)
 scaled := Overlay.FromImage(scaledSource, 0, 0, 64, 64)
-scaledSource.Dispose()
+scaledSource.Destroy()
 draws := [
     (target) => target.DrawLine(12.25, 10.5, 33.75, 32.25, "Red", 3.5),
     (target) => target.FillRect(12.25, 10.5, 21.5, 17.25, "Red"),
@@ -169,7 +169,7 @@ Throws(() => Overlay(7, 9, 24), A_LineNumber)
 named := Overlay(X: 7, Y: 9, Width: 24, Height: 12)
 Assert(named.X == 7 && named.Y == 9 && named.Width == 24 && named.Height == 12, A_LineNumber)
 named.Destroy()
-src.Dispose()
+src.Destroy()
 
 ; Toolkit windows survive Hide; Wayland layer-shell rebuilds its surface.
 sessionType := StrLower(EnvGet("XDG_SESSION_TYPE"))
@@ -197,6 +197,16 @@ AssertEq(shown.Hwnd, 0, A_LineNumber)
 Assert(!WinExist(hwnd), A_LineNumber)
 #endif
 
+; Leaving a using statement destroys the overlay as Destroy does, and a later Show builds it again.
+using scoped := Overlay(0, 0, 8, 8) {
+    scoped.Show()
+    Assert(scoped.Hwnd != 0, A_LineNumber)
+}
+AssertEq(scoped.Hwnd, 0, A_LineNumber)
+scoped.Show()
+Assert(scoped.Hwnd != 0, A_LineNumber)
+scoped.Destroy()
+
 ; Highlight: Thickness 0 hides the border, an invalid color raises and keeps the previous one, and Hide keeps
 ; the window as Overlay's does.
 hl := Highlight(0, 0, 10, 10, "Red", 0)
@@ -219,6 +229,11 @@ Assert(!hl.IsVisible, A_LineNumber)
 hl.Hide()
 hl.Destroy()
 AssertEq(hl.Hwnd, 0, A_LineNumber)
+using scopedHighlight := Highlight(0, 0, 10, 10, "Red") {
+    scopedHighlight.Show()
+    Assert(scopedHighlight.Hwnd != 0, A_LineNumber)
+}
+AssertEq(scopedHighlight.Hwnd, 0, A_LineNumber)
 
 ; ToolTip shows a native tooltip window per slot, keeps it across updates and destroys it for empty text.
 CoordMode("ToolTip", "Screen")

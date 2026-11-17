@@ -10,6 +10,25 @@ public partial class AudioTests : TestRunner
 	[Test, Category("Curated"), NonParallelizable]
 	public void AudioClass() => Assert.IsTrue(TestScript("audio-class", true));
 
+	[TestCase("Output"), TestCase("Meter"), TestCase("Recorder"), TestCase("Http")]
+	[Category("Internal"), Category("Curated"), NonParallelizable]
+	public void DisposalDisarmsRegistration(string kind)
+	{
+		Any resource = kind switch
+		{
+			"Output" => new Ks.Audio.Output(),
+			"Meter" => new Ks.Audio.Meter(),
+			"Recorder" => new Ks.Audio.Recorder(),
+			_ => new Ks.Http()
+		};
+		using var disposable = (IDisposable)resource;
+		Assert.That(resource.HasFinalizer, Is.True);
+		disposable.Dispose();
+		Assert.That(resource.HasFinalizer, Is.False);
+		disposable.Dispose();
+		Assert.That(resource.HasFinalizer, Is.False);
+	}
+
 	[Test, Category("Internal"), Category("Curated"), NonParallelizable]
 	public void NativeCleanupWithDeleteOverride()
 	{
@@ -27,9 +46,8 @@ public partial class AudioTests : TestRunner
 
 		try
 		{
-			// Direct enqueue tests the collection without depending on GC timing or opening a device.
-			output.HasFinalizer = false;
-			s.DestructorPump.Enqueue(new GCCleanupSentinel(output));
+			QueueCollected(output);
+			context.WaitForPosts(1);
 			context.DrainAll();
 			Assert.That(deletes, Is.EqualTo(1));
 			Assert.That(callbackStatus, Is.EqualTo("Closed"));
@@ -37,8 +55,7 @@ public partial class AudioTests : TestRunner
 		}
 		finally
 		{
-			output.HasFinalizer = false;
-			_ = output.Dispose();
+			((IDisposable)output).Dispose();
 		}
 	}
 }

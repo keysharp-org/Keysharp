@@ -931,11 +931,14 @@ public class GuiTests : TestRunner
 		_ = canvas.PrepareForRead();
 		Assert.That(canvas.PrepareForPixelAccess(), Is.SameAs(bitmap), "materializing must not dispose or replace a borrowed base");
 
-		// Disposing through the interface is the surface's own teardown path and does release the view; the
-		// borrowed pixels must survive it, since the surface frees those separately and in order.
+		// The live surface owns the canvas, so neither direct nor runtime disposal may release it.
 		((IDisposable)canvas).Dispose();
+		Keysharp.Internals.Scripting.DestructorPump.RunDestructor(canvas);
+		Assert.That(canvas.HasFinalizer, Is.True);
 		Assert.That(bitmap.Width, Is.EqualTo(8), "the borrowed bitmap must outlive the image that drew into it");
 		Assert.That(bitmap.Height, Is.EqualTo(4));
+		surface.Dispose();
+		Assert.That(canvas.HasFinalizer, Is.False);
 	}
 
 	// Damage decides how much of a frame is transferred, so under-reporting is a stale pixel on screen.
@@ -1165,7 +1168,7 @@ public class GuiTests : TestRunner
 		}
 		finally
 		{
-			_ = image.Dispose();
+			_ = image.Destroy();
 		}
 	}
 
@@ -1294,9 +1297,9 @@ public class GuiTests : TestRunner
 		finally
 		{
 			_ = overlay.Destroy();
-			_ = frameA.Dispose();
-			_ = frameB.Dispose();
-			_ = frameC.Dispose();
+			_ = frameA.Destroy();
+			_ = frameB.Destroy();
+			_ = frameC.Destroy();
 		}
 	}
 

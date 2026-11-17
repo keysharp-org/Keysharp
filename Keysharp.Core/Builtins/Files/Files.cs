@@ -1025,7 +1025,7 @@ namespace Keysharp.Builtins
 				// A handle stays the caller's to close and is taken as it stands, with no byte order mark handling.
 				return new KeysharpFile(useHandle
 										? new TextStream(new FileStream(new Microsoft.Win32.SafeHandles.SafeFileHandle((nint)(file.ParseLong() ?? 0), false), FileAccess.ReadWrite), enc, eol)
-										: TextStream.Open(file, mode, (FileShare)(int)((bits >> 8) & 7), enc, eol, true));
+										: TextStream.Open(file, mode, (FileShare)(int)((bits >> 8) & 7), enc, eol, true), !useHandle);
 			}
 			catch (Exception ex)
 			{

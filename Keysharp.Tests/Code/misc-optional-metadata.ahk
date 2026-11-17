@@ -40,23 +40,19 @@ try {
     CheckValue21(optionalImage, "OriginX", 0)
     CheckValue21(optionalImage, "ScaleX", 1)
 } finally
-    optionalImage.Dispose()
+    optionalImage.Destroy()
 
-output := Audio.Output()
-try {
+using output := Audio.Output() {
     for name in ["Device", "SampleRate", "Channels", "LatencyMilliseconds", "Peak", "Error"]
         CheckOptional(output, name)
     CheckValue21(output, "ActiveVoiceCount", 0)
-} finally
-    output.Dispose()
+}
 
-recorder := Audio.Recorder()
-try {
+using recorder := Audio.Recorder() {
     for name in ["Device", "Path", "Peak", "Error", "Result"]
         CheckOptional(recorder, name)
     CheckValue21(recorder, "DurationMilliseconds", 0)
-} finally
-    recorder.Dispose()
+}
 
 process := MetadataProcess()
 try {

@@ -71,7 +71,7 @@ class Shell {
         } catch {
         } finally {
             if IsObject(img)
-                img.Dispose()
+                img.Destroy()
         }
     }
 
@@ -180,7 +180,7 @@ class Shell {
         }
         local footerW := m.MeasureText(footer, hintFont, fontName).Width
         local closeW := m.MeasureText(closeHint, hintFont, fontName).Width
-        m.Dispose()
+        m.Destroy()
 
         local pillCol := 0
         for kw in keyWs

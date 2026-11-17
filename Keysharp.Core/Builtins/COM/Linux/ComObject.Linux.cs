@@ -22,7 +22,7 @@ namespace Keysharp.Builtins.COM
 		internal string iface;             // pinned interface, or null to search all of them
 		internal ComDBusSink sink;         // live ComObjConnect subscription, if any
 		private int connectionGeneration;
-		internal override bool DisposesWhenCollected => sink != null;
+		internal override void MaybeActivateFinalizer() => base.MaybeActivateFinalizer(sink != null);
 
 		public ComObject() { }
 
@@ -334,8 +334,8 @@ namespace Keysharp.Builtins.COM
 		public void Dispose()
 		{
 			_ = Interlocked.Increment(ref connectionGeneration);
-			Interlocked.Exchange(ref sink, null)?.Dispose();
-			MaybeActivateFinalizer();
+			try { Interlocked.Exchange(ref sink, null)?.Dispose(); }
+			finally { MaybeActivateFinalizer(); }
 		}
 
 		internal IEnumerable<(DBusInterfaceInfo Interface, DBusSignalInfo Signal)> AllSignals()

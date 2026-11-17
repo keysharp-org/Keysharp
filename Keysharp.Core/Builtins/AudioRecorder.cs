@@ -232,6 +232,7 @@ namespace Keysharp.Builtins
 					}
 
 					core = created;
+					MaybeActivateFinalizer();
 					return this;
 				}
 
@@ -286,9 +287,7 @@ namespace Keysharp.Builtins
 					result = Recording.Wrap(core);
 				}
 
-				void IDisposable.Dispose() => _ = Dispose();
-
-				public object Dispose()
+				void IDisposable.Dispose()
 				{
 					if (core != null)
 					{
@@ -297,7 +296,7 @@ namespace Keysharp.Builtins
 					}
 
 					EnsureResult();
-					return DefaultObject;
+					HasFinalizer = false;
 				}
 			}
 

@@ -472,6 +472,20 @@ try
 	NumPut("UChar", 122, mem, 3)
 	AssertEq(mf.Read(2), "zd", A_LineNumber)
 	mf.Close()
+	mf.__New(mem)
+	AssertEq(mf.Read(2), "ab", A_LineNumber)
+	mf.Close()
+	AssertEq(mf.Read(1), "", A_LineNumber)
+	mf.__New(mem)
+	using mf
+		AssertEq(mf.Read(2), "ab", A_LineNumber)
+	AssertEq(mf.Read(1), "", A_LineNumber)
+	f := FileOpen(path, "r-")
+	f.__New(mem)
+	using reopened := FileOpen(path, "r-")
+		Assert(reopened.Handle != 0, A_LineNumber)
+	f.Close()
+	AssertEq(f.Read(1), "", A_LineNumber)
 
 	; Shift bytes belong to the next character; committed state survives a line boundary.
 	WriteBytesFile(path, [97, 97, 27, 36, 66, 36, 34, 10, 36, 36, 10])
@@ -537,12 +551,58 @@ try
 	AssertEq(f.Pos, 8196, A_LineNumber)
 	f.Close()
 
-	; A File nothing keeps is closed once the access made on it returns, so its writes are on disk and the file is
-	; free on the next line.
+	; A File nothing keeps is closed once the expression using it is evaluated, so its writes are on disk and the file
+	; is free on the next line, while its handle stays valid for the rest of the expression.
 	FileOpen(path, "w").Write("temporary")
 	AssertEq(FileRead(path), "temporary", A_LineNumber)
 	AssertEq(FileOpen(path, "r").Length, 9, A_LineNumber)
 	AssertEq((FileOpen(path, "r")).Read(), "temporary", A_LineNumber)
+	AssertEq(FileOpen(path, "r")?.Read(), "temporary", A_LineNumber)
+	caught := false
+	try FileOpen(path, "r-").MissingMember()
+	catch {
+		caught := true
+		reopened := FileOpen(path, "r-")
+		reopened.Close()
+	}
+	Assert(caught, A_LineNumber)
+#if WINDOWS
+	; FILE_TYPE_DISK while the File is open, FILE_TYPE_UNKNOWN once it is closed.
+	AssertEq(DllCall("GetFileType", "ptr", FileOpen(path, "r").Handle), 1, A_LineNumber)
+	TemporaryFileType(filePath) => DllCall("GetFileType", "ptr", FileOpen(filePath, "r").Handle)
+	AssertEq(TemporaryFileType(path), 1, A_LineNumber)
+	AssertEq(DllCall("GetFileType", "ptr", FileOpen(path, "r")?.Handle), 1, A_LineNumber)
+	handle := FileOpen(path, "r")?.Handle
+	AssertEq(DllCall("GetFileType", "ptr", handle), 0, A_LineNumber)
+	ThrowFileHandle(Handle, &SavedHandle) {
+		SavedHandle := Handle
+		throw Error("file temporary unwind")
+	}
+	failedHandle := 0
+	try ThrowFileHandle(FileOpen(path, "r").Handle, &failedHandle)
+	catch as err {
+		AssertEq(err.Message, "file temporary unwind", A_LineNumber)
+		AssertEq(DllCall("GetFileType", "ptr", failedHandle), 0, A_LineNumber)
+	}
+	handle := FileOpen(path, "r").Handle
+	AssertEq(DllCall("GetFileType", "ptr", handle), 0, A_LineNumber)
+
+	; Files nothing references any more bring a collection which closes them, so their handles stay few, also in a
+	; loop which never lets the script's thread wait.
+	DllCall("GetProcessHandleCount", "ptr", -1, "uint*", &handlesBefore := 0)
+	handlePeak := 0
+	Loop 4000
+	{
+		kept := FileOpen(path, "r")
+		if !Mod(A_Index, 200)
+		{
+			DllCall("GetProcessHandleCount", "ptr", -1, "uint*", &handleCount := 0)
+			handlePeak := Max(handlePeak, handleCount - handlesBefore)
+		}
+	}
+	kept := ""
+	Assert(handlePeak < 600, A_LineNumber)
+#endif
 	FileDelete(path)
 	Assert(!FileExist(path), A_LineNumber)
 }

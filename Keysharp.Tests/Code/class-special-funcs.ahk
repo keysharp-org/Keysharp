@@ -188,6 +188,21 @@ Loop 3
 	Sleep(30), Collect()
 AssertEq(nestedDeletes, "owner,33,22,11,", A_LineNumber)
 
+; A File collected with an object that holds it, even through an Array, closes only after that object's __Delete wrote
+; to it.
+heldFilePath := A_Temp "\ks-held-file-" A_TickCount ".txt"
+class HoldsFile
+{
+	__New(path) => this.items := [FileOpen(path, "w")]
+	__Delete() => this.items[1].Write("written in __Delete")
+}
+HoldsFile(heldFilePath)
+timeout := A_TickCount + 2000
+while (!FileExist(heldFilePath) || FileRead(heldFilePath) == "") && A_TickCount < timeout
+	Sleep(30), Collect()
+AssertEq(FileRead(heldFilePath), "written in __Delete", A_LineNumber)
+FileDelete(heldFilePath)
+
 struct FailingNestedLifetime extends NestedLifetime {
 	static Created := 0
 	__New() {

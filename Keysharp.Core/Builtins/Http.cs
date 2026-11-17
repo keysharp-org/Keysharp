@@ -83,6 +83,7 @@ namespace Keysharp.Builtins
 				session = parsed;
 				session.Headers = RequestOptions.CaseInsensitive(parsed.Headers) ?? new Map(eCaseSense.Off);
 				client = parsed.NewClient();
+				MaybeActivateFinalizer();
 				return DefaultObject;
 			}
 
@@ -157,6 +158,7 @@ namespace Keysharp.Builtins
 				unusable ??= "This Http session has been closed.";
 				client?.Dispose();
 				client = null;
+				HasFinalizer = false;
 				return DefaultObject;
 			}
 

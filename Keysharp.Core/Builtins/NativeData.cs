@@ -6,9 +6,9 @@ namespace Keysharp.Builtins
 	/// allocation it lies in, which keeps that binding's object alive, as AutoHotkey's nested objects retain the object they
 	/// are part of, and reads zero once the allocation is released. Rebinding a view moves only the view.
 	/// </summary>
-	internal sealed class NativeData
+	internal sealed class NativeData : IDisposable
 	{
-		private enum State : byte { Owned, Borrowed, Released }
+		private enum State : byte { Owned, Borrowed, Disposed }
 
 		internal readonly Any Owner;
 		// The definition's layout, kept here since field access reads it often.
@@ -36,14 +36,14 @@ namespace Keysharp.Builtins
 			NoDelete = noDelete;
 		}
 
-		internal long Ptr => state == State.Released || allocationOwner is { IsReleased: true } ? 0 : address;
+		internal long Ptr => state == State.Disposed || allocationOwner is { IsDisposed: true } ? 0 : address;
 		internal bool IsBorrowed => state == State.Borrowed;
-		internal bool IsReleased => state == State.Released;
+		internal bool IsDisposed => state == State.Disposed;
 		internal bool IsEmbeddedIn(Any owner) => IsEmbedded && ReferenceEquals(source, owner);
 
 		// Embedded objects are cleaned up by their owner, after its __Delete and before its storage is freed. A view needs
 		// nothing done unless it receives __Delete.
-		internal bool NeedsRelease => !IsEmbedded && (state == State.Owned && Layout.Size != 0 || InitializedFields != null);
+		internal bool NeedsDispose => !IsEmbedded && (state == State.Owned && Layout.Size != 0 || InitializedFields != null);
 
 		// The binding a typed property of item is read through. A prototype, or an object given the class's typed
 		// properties without being constructed by it, has none.
@@ -338,15 +338,15 @@ namespace Keysharp.Builtins
 			return true;
 		}
 
-		// Releasing an owned binding frees its allocation, which every view bound into it then reads as zero; releasing a
-		// view only detaches it. Embedded structs are released with their owner.
-		internal void Release()
+		// Disposing an owned binding frees its allocation, which every view bound into it then reads as zero; disposing a
+		// view only detaches it. Embedded structs are disposed with their owner.
+		public void Dispose()
 		{
-			if (state == State.Released)
+			if (state == State.Disposed)
 				return;
 
 			var owned = state == State.Owned ? Interlocked.Exchange(ref address, 0) : 0;
-			state = State.Released;
+			state = State.Disposed;
 			address = 0;
 
 			ExceptionDispatchInfo failure = null;

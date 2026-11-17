@@ -57,7 +57,7 @@ ShowPreview() {
         previewImage.Show("Image worker wait", true)
         return A_RealThread.Id
     } finally
-        previewImage.Dispose()
+        previewImage.Destroy()
 }
 
 CheckPreview() {

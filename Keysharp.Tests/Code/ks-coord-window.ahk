@@ -188,7 +188,7 @@ try {
     AssertEq(Modes(), "Client Client Client Client Client", A_LineNumber)
 } finally {
     if IsSet(SearchImage)
-        SearchImage.Dispose()
+        SearchImage.Destroy()
     First.Destroy()
     Second.Destroy()
 }

@@ -250,6 +250,7 @@ namespace Keysharp.Compilation.Syntax
 		private int _tempCounter;
 		private List<string> _scopeTemps = new();   // object temps the current scope needs (declared at its top)
 		private List<string> _scopeKeptTemps = new();   // those of them its keep-alive epilogue reads (see KeptStrPtrArgument)
+		private List<(string Temp, bool Free)> _receiverTemps;   // the temporary receivers the full expression being lowered ends (see FullExpression)
 
 		//Scratch lists are declared here and reused to avoid allocating a new list for every call that uses them.
 		private readonly List<DirectiveStmt> _scratchManifestDirectives = new();
@@ -262,6 +263,7 @@ namespace Keysharp.Compilation.Syntax
 		private readonly ObjectStackPool<HashSet<string>> _scratchCaseSensitiveHashStrings = new(() => new(StringComparer.OrdinalIgnoreCase), item => item.Clear());
 		private readonly ObjectStackPool<HashSet<string>> _scratchCaseInsensitiveHashStrings = new(() => new(StringComparer.OrdinalIgnoreCase), item => item.Clear());
 		private readonly ObjectStackPool<List<string>> _scratchListStrings = new(() => [], item => item.Clear());
+		private readonly ObjectStackPool<List<(string Temp, bool Free)>> _scratchReceiverTemps = new(() => [], item => item.Clear());
 		private readonly ObjectStackPool<Settlement> _scratchLowerCallableBodySettlements = new(() => new(), item =>
 		{
 			item.Refs.Clear();
@@ -283,16 +285,18 @@ namespace Keysharp.Compilation.Syntax
 
 		// Evaluate the target once. An explicit ? permits its final access to be unset;
 		// a propagated unset only skips the remaining access and its arguments.
-		private ExpressionSyntax NullCondWrap(Expr target, System.Func<ExpressionSyntax, ExpressionSyntax> access, bool maybe = false)
+		private ExpressionSyntax NullCondWrap(Expr target, System.Func<ExpressionSyntax, ExpressionSyntax> access, bool maybe = false, bool retain = false, bool free = false)
 		{
-			var t = NewTemp();
+			var t = NewTemp(!(retain || free));
 			var value = LowerExpr(target);
-			return Op("MultiStatement",
+			var result = Op("MultiStatement",
 				Assign(Id(t), maybe ? RewriteToOrNull(value, throughChain: target is MemberExpr or DynMemberExpr or IndexExpr or CallExpr) : value),
 				SyntaxFactory.ParenthesizedExpression(SyntaxFactory.ConditionalExpression(
 					SyntaxFactory.BinaryExpression(SyntaxKind.EqualsExpression, Id(t), Null),
 					Null,
 					access(Id(t)))));
+			if (retain || free) _receiverTemps.Add((t, free));
+			return result;
 		}
 
 		// `obj.%name%` in a chain that may yield unset. Either the target or the name can short-circuit the access, the
@@ -1778,12 +1782,15 @@ namespace Keysharp.Compilation.Syntax
 			{
 				case ExpressionStmt es:
 					if (es.Expr is GroupExpr group) return LowerStmt(new ExpressionStmt(group.Inner));
-					if (es.Expr is CallExpr call) return ExprStmt(LowerCall(call, statement: true));
-					// A comma list as a statement (`a(), b()`) discards every item's value, the last one included.
-					if (es.Expr is SequenceExpr stmtSeq)
-						return ExprStmt(Op("MultiStatement", stmtSeq.Items.Select(LowerAllowingUnset).ToArray()));
-					// A `:=` statement on its own fills its target as an output variable, as AutoHotkey words writing a constant.
-					var le = es.Expr is AssignExpr { Op: ":=" } statement ? LowerAssign(statement, VarUsage.OutputVar) : LowerExpr(es.Expr);
+					var le = FullExpression(lower: () => es.Expr switch
+					{
+						CallExpr call => LowerCall(call, statement: true),
+						// A comma list as a statement (`a(), b()`) discards every item's value, the last one included.
+						SequenceExpr stmtSeq => Op("MultiStatement", stmtSeq.Items.Select(LowerAllowingUnset).ToArray()),
+						// A `:=` statement on its own fills its target as an output variable, as AutoHotkey words writing a constant.
+						AssignExpr { Op: ":=" } statement => LowerAssign(statement, VarUsage.OutputVar),
+						_ => LowerExpr(es.Expr)
+					});
 					// C# only allows call/assignment/new as a statement; wrap anything else (bare value, ternary, …).
 					return ExprStmt(le is InvocationExpressionSyntax or AssignmentExpressionSyntax ? le : Op("MultiStatement", le));
 				case ReturnStmt r:
@@ -3876,7 +3883,9 @@ namespace Keysharp.Compilation.Syntax
 				Inv(Access("System.IO.Path.Combine"), Access("Keysharp.Builtins.Accessors.A_ScriptDir"), Str(relative)));
 		}
 
-		private ExpressionSyntax LowerExpr(Expr e)
+		private ExpressionSyntax LowerExpr(Expr e) => _receiverTemps == null ? FullExpression(e) : LowerExprCore(e);
+
+		private ExpressionSyntax LowerExprCore(Expr e)
 		{
 			switch (e)
 			{
@@ -3921,9 +3930,12 @@ namespace Keysharp.Compilation.Syntax
 				case MemberExpr mem:
 					TrackLoadPackageMember(mem);
 					if (ConstantMember(mem) is { } constant) return constant;
+					var opens = OpensFile(mem.Target);
+					var retain = opens || ReadsAddress(mem);
 					return mem.NullConditional || MayYieldUnset(mem.Target)
-						? NullCondWrap(mem.Target, tt => Op("GetPropertyValue", tt, Str(mem.Name)), mem.NullConditional)
-						: OpensFile(mem.Target) ? ReleasingReceiver(mem.Target, tt => Op("GetPropertyValue", tt, Str(mem.Name)))
+						? NullCondWrap(mem.Target, tt => Op("GetPropertyValue", tt, Str(mem.Name)), mem.NullConditional, retain, opens)
+						: retain
+						? TemporaryReceiver(mem.Target, tt => Op("GetPropertyValue", tt, Str(mem.Name)), free: opens)
 						: Op("GetPropertyValue", LowerExpr(mem.Target), Str(mem.Name));
 				case DynMemberExpr dmem:
 					return MayYieldUnset(dmem)
@@ -4168,7 +4180,10 @@ namespace Keysharp.Compilation.Syntax
 				// A declaration item may also be an executable operation (`global x := 1`, `global x += 1`,
 				// `global log .= "x"`, `global x++`): the name is declared and the operation runs.
 				else if (item is AssignExpr a)
-					stmts.Add(ExprStmt(LowerAssign(a)));
+				{
+					var assigned = FullExpression(lower: () => LowerAssign(a));
+					stmts.Add(ExprStmt(assigned is InvocationExpressionSyntax or AssignmentExpressionSyntax ? assigned : Op("MultiStatement", assigned)));
+				}
 				else if (item is UnaryExpr)
 					stmts.Add(LowerStmt(new ExpressionStmt(item)));
 			}
@@ -4527,7 +4542,7 @@ namespace Keysharp.Compilation.Syntax
 			var constant = c.Callee is MemberExpr && HasImports ? NativeCallTarget(c.Callee) : null;
 			var field = FunctionField(constant);
 			if (c.Callee is MemberExpr mc && field == null && (mc.NullConditional || MayYieldUnset(mc.Target)))
-				return NullCondWrap(mc.Target, tt => Op(statement ? "InvokeOrNull" : "Invoke", Cons2(tt, Str(mc.Name), CallArgs())), mc.NullConditional);
+				return NullCondWrap(mc.Target, tt => Op(statement ? "InvokeOrNull" : "Invoke", Cons2(tt, Str(mc.Name), CallArgs())), mc.NullConditional, free: OpensFile(mc.Target));
 			if (c.Callee is DynMemberExpr dmc && MayYieldUnset(dmc))
 				return DynMemberWrap(dmc, (tt, name) => Op(statement ? "InvokeOrNull" : "Invoke", Cons2(tt, name, CallArgs())));
 			if (c.NullConditional || MayYieldUnset(c.Callee))
@@ -4537,7 +4552,7 @@ namespace Keysharp.Compilation.Syntax
 			// runtime distinguishes by a null name (see Script.InvokeOrNull).
 			ExpressionSyntax[] args;
 			if (c.Callee is MemberExpr fm && OpensFile(fm.Target))
-				return ReleasingReceiver(fm.Target, tt => Op(statement ? "InvokeOrNull" : "Invoke", Cons2(tt, Str(fm.Name), CallArgs())));
+				return TemporaryReceiver(fm.Target, tt => Op(statement ? "InvokeOrNull" : "Invoke", Cons2(tt, Str(fm.Name), CallArgs())), free: true);
 			// A no-value error names the callee as written, so a spelling other than the function's goes along, unless a statement
 			// discards the value.
 			if (c.Callee is MemberExpr m)
@@ -4656,9 +4671,8 @@ namespace Keysharp.Compilation.Syntax
 			_ => null
 		};
 
-		// A File that FileOpen returns straight into a member access is reachable from that access alone, so it is
-		// closed when the access ends, where AutoHotkey's reference count frees it: `FileOpen(p, "w").Write(s)` has
-		// written the file before the next line reads it.
+		// A File FileOpen returns straight into a member access is closed where AutoHotkey frees it, at the end of the full
+		// expression, so `FileOpen(p).Handle` stays open for the rest of it.
 		private bool OpensFile(Expr target) => target switch
 		{
 			GroupExpr group => OpensFile(group.Inner),
@@ -4667,10 +4681,53 @@ namespace Keysharp.Compilation.Syntax
 			_ => false
 		};
 
-		private ExpressionSyntax ReleasingReceiver(Expr target, System.Func<ExpressionSyntax, ExpressionSyntax> access)
+		// The Ptr or Handle of a call's result, kept valid until the full expression ends: `DllCall(f, "ptr", Buffer(16).Ptr)`.
+		private static bool ReadsAddress(MemberExpr member) => Unparen(member.Target) is CallExpr
+			&& (member.Name.Equals("Ptr", System.StringComparison.OrdinalIgnoreCase) || member.Name.Equals("Handle", System.StringComparison.OrdinalIgnoreCase));
+
+		// Keeps a temporary receiver until its full expression ends (see FullExpression), then frees it if it is unreachable.
+		private ExpressionSyntax TemporaryReceiver(Expr target, System.Func<ExpressionSyntax, ExpressionSyntax> access, bool free)
 		{
-			var t = NewTemp();
-			return Op("ReleaseTemporary", Assign(Id(t), LowerExpr(target)), access(Id(t)));
+			var t = NewTemp(false);
+			var accessed = access(SyntaxFactory.ParenthesizedExpression(Assign(Id(t), LowerExpr(target))));
+
+			_receiverTemps.Add((t, free));
+			return accessed;
+		}
+
+		// A directly called local function keeps receivers through evaluation and releases them even if it throws.
+		private ExpressionSyntax FullExpression(Expr expression = null, System.Func<ExpressionSyntax> lower = null)
+		{
+			var saved = _receiverTemps;
+			_receiverTemps = _scratchReceiverTemps.Get();
+
+			try
+			{
+				var value = lower != null ? lower() : LowerExprCore(expression);
+				if (_receiverTemps.Count == 0)
+					return value;
+
+				var result = NewTemp(false);
+				var name = NewTemp(false);
+				var body = new List<StatementSyntax> { DeclLocal(ObjType, result, Null) };
+				StatementSyntax cleanup = null;
+				foreach (var (temp, free) in _receiverTemps)
+				{
+					body.Add(DeclLocal(ObjType, temp, Null));
+					var release = free ? ExprStmt(Op("ReleaseTemporary", Id(result), Id(temp))) : CallStmt("System.GC.KeepAlive", Id(temp));
+					cleanup = cleanup == null ? release : TryFinally(SyntaxFactory.Block(cleanup), SyntaxFactory.Block(release));
+				}
+
+				body.Add(TryFinally(SyntaxFactory.Block(SyntaxFactory.ReturnStatement(Assign(Id(result), value))), SyntaxFactory.Block(cleanup)));
+				_pendingScopeFuncs.Add(SyntaxFactory.LocalFunctionStatement(ObjType, SyntaxFactory.Identifier(name))
+					.WithParameterList(EmptyParams()).WithBody(SyntaxFactory.Block(body)));
+				return Inv(Id(name));
+			}
+			finally
+			{
+				_scratchReceiverTemps.Return(_receiverTemps);
+				_receiverTemps = saved;
+			}
 		}
 
 		// Resolve the built-in itself so shadowing names or methods retain their parameter contracts. A value keyword is
@@ -5777,6 +5834,7 @@ namespace Keysharp.Compilation.Syntax
 			var savedClosureInits = _pendingScopeClosureInits; _pendingScopeClosureInits = new();
 			var savedTemps = _scopeTemps; _scopeTemps = new();
 			var savedKept = _scopeKeptTemps; _scopeKeptTemps = new();
+			var savedReceivers = _receiverTemps; _receiverTemps = null;
 			var savedScope = _scope; var savedDeref = _derefScope; var savedDerefReferences = _derefReferences;
 			// AutoHotkey parses each field initializer as an expression statement inside __Init, so only the field's
 			// own name becomes a property on `this`; every other name assigned there is a local of this __Init, and a
@@ -5857,6 +5915,7 @@ namespace Keysharp.Compilation.Syntax
 			_scope = savedScope;
 			_scopeTemps = savedTemps;
 			_scopeKeptTemps = savedKept;
+			_receiverTemps = savedReceivers;
 			_pendingScopeFuncs = savedScopeFuncs;
 			_pendingScopeClosureInits = savedClosureInits;
 			_currentThisFuncName = savedThisFuncName;
@@ -6328,6 +6387,7 @@ namespace Keysharp.Compilation.Syntax
 			_currentThisFuncName = thisFuncName;
 			_loweringParamDefault = false;
 			var savedKept = _scopeKeptTemps; _scopeKeptTemps = _scratchListStrings.Get();
+			var savedReceivers = _receiverTemps; _receiverTemps = null;
 			var savedTemps = _scopeTemps; _scopeTemps = _scratchListStrings.Get();
 			var savedScopeFuncs = _pendingScopeFuncs; _pendingScopeFuncs = _scratchListStatements.Get();   // fat-arrow local funcs for this scope
 			var savedClosureInits = _pendingScopeClosureInits; _pendingScopeClosureInits = _scratchListStatements.Get();
@@ -6428,7 +6488,7 @@ namespace Keysharp.Compilation.Syntax
 			// A fat-arrow `=> expr` propagates the unset result of a call rather than raising (unlike an explicit
 			// `return f()`), so its outermost call uses the non-raising *OrNull form - see ArrowOrNull.
 			var setupEnd = body.Count;   // boundary after local hoists + param setup, before the executable body
-			if (arrowBody != null) body.AddRange([Stamp(arrowBody), SyntaxFactory.ReturnStatement(RewriteToOrNull(LowerExpr(arrowBody), ArrowOrNull))]);
+			if (arrowBody != null) body.AddRange([Stamp(arrowBody), SyntaxFactory.ReturnStatement(FullExpression(lower: () => RewriteToOrNull(LowerExpr(arrowBody), ArrowOrNull)))]);
 			else if (bodyBlock != null) body.AddRange(LowerStmtList(bodyBlock.Body));
 
 			// Roslyn reports a default return after a body which cannot complete as unreachable.
@@ -6476,6 +6536,7 @@ namespace Keysharp.Compilation.Syntax
 			_scratchListStrings.Return(_scopeKeptTemps);
 			_scratchListStrings.Return(_scopeTemps);
 			_scopeTemps = savedTemps; _pendingScopeFuncs = savedScopeFuncs; _pendingScopeClosureInits = savedClosureInits; _scopeKeptTemps = savedKept;
+			_receiverTemps = savedReceivers;
 			scope.Labels = LabelsAttribute();
 			(_callableStmts, _callableLabels) = (savedCallableStmts, savedCallableLabels);
 			(_loopBase, _pendingLoopLabels) = (savedLoopBase, savedLoopLabels);

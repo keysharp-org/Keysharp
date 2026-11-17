@@ -1,6 +1,6 @@
 namespace Keysharp.Builtins
 {
-	public class Struct : Any, IDisposable, IPointable
+	public class Struct : Any, IFinalizerSafeDisposable, IPointable
 	{
 		// A constructor cannot use the memory: an instance gets it when it is initialized, and a view is given its address
 		// once it is constructed. Native construction cannot return the unset result of a continued script error, so an
@@ -79,7 +79,7 @@ namespace Keysharp.Builtins
 			return DefaultObject;
 		}
 
-		internal override bool HasDeleteCall => nativeData is not ({ NoDelete: true } or { IsReleased: true })
+		internal override bool HasDeleteCall => nativeData is not ({ NoDelete: true } or { IsDisposed: true })
 			&& (HasOwnPropInternal("__Delete") || _base is KeysharpObject { HasDeleteInChain: true });
 
 		public static object get_Size(object @this) => @this is Struct st
@@ -189,24 +189,22 @@ namespace Keysharp.Builtins
 
 		private static object GetPointerClass(object @this) => (object)ResolveStructClass(@this)?.GetPointerClass() ?? DefaultObject;
 
-		internal override bool DisposesWhenCollected => nativeData?.NeedsRelease == true;
-
 		// Construction leaves cleanup inactive until initialization begins or a view attaches its address.
 		internal override void MaybeActivateFinalizer()
 		{
 			if (nativeData is { } data)
-				HasFinalizer = DisposesWhenCollected || !data.IsEmbedded && HasDeleteCall;
+				base.MaybeActivateFinalizer(data.NeedsDispose || !data.IsEmbedded && HasDeleteCall);
 		}
 
 		[PublicHiddenFromUser]
 		public virtual void Dispose()
 		{
-			if (nativeData is not { IsReleased: false } data)
+			if (nativeData is not { IsDisposed: false } data)
 				return;
 
 			try
 			{
-				data.Release();
+				data.Dispose();
 			}
 			finally
 			{

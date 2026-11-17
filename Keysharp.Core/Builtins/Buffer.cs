@@ -5,7 +5,7 @@ namespace Keysharp.Builtins
 	/// Buffer objects are typically created by calling <see cref="Buffer"/>,<br/>
 	/// but can also be returned by <see cref="Files.FileRead"/> with the "RAW" option.
 	/// </summary>
-	public class Buffer : KeysharpObject, IDisposable, IPointable
+	public class Buffer : KeysharpObject, IFinalizerSafeDisposable, IPointable
 	{
 		/// <summary>
 		/// The size of the buffer in bytes. Internal, so the paths that read it once per call are spared the
@@ -63,6 +63,8 @@ namespace Keysharp.Builtins
 				ptr = newptr;
 				size = val;
 				NativeAllocation.Free(previous, previousSize);
+				if (val == 0)
+					HasFinalizer = false;
 			}
 		}
 

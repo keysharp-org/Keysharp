@@ -54,7 +54,11 @@ namespace Keysharp.Builtins
 
 			void IDisposable.Dispose() => Release();
 
-			private void Release() => Interlocked.Exchange(ref released, 1);
+			private void Release()
+			{
+				Interlocked.Exchange(ref released, 1);
+				HasFinalizer = false;
+			}
 
 			internal ref CoordModeType CoordModeFor(CoordMode category) => ref modes[(int)category];
 		}

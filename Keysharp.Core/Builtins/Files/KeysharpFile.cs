@@ -6,7 +6,7 @@ namespace Keysharp.Builtins
 	/// <see cref="UserDeclaredNameAttribute"/>.
 	/// </summary>
 	[UserDeclaredName("File")]
-	public class KeysharpFile : KeysharpObject, IDisposable
+	public class KeysharpFile : KeysharpObject, IFinalizerSafeDisposable
 	{
 		private bool disposed = false;
 
@@ -24,9 +24,10 @@ namespace Keysharp.Builtins
 
 		private readonly System.Text.Encoding textEncoding;
 
-		// Keeps a file's stream reachable until Dispose, as its own finalizer would otherwise close the file in the
-		// same collection as this File, before a __Delete which may still write to it.
+		// Keeps the stream alive until script-thread cleanup, after any __Delete that still uses it.
 		private GCHandle streamRoot;
+
+		private bool countsHandle;
 
 		public object AtEOF => stream != null ? (stream.AtEof ? 1L : 0L) : reader != null && reader.Peek() == -1 ? 1L : 0L;
 
@@ -94,10 +95,14 @@ namespace Keysharp.Builtins
 				FlushAtExit();
 		}
 
-		internal KeysharpFile(TextStream stream)
+		internal KeysharpFile(TextStream stream, bool ownsHandle = true)
 		{
 			this.stream = stream;
 			streamRoot = GCHandle.Alloc(stream);
+			MaybeActivateFinalizer();
+			countsHandle = ownsHandle && stream.BaseStream is FileStream;
+			if (countsHandle)
+				HandlePressure.Files.Add();
 			FlushAtExit();
 		}
 
@@ -134,13 +139,19 @@ namespace Keysharp.Builtins
 			if (args.Length > 1 && args[1] != null && !Files.TryGetEncoding(args[1], out encoding))
 				return DefaultObject;
 
+			TextStream replacement;
 			unsafe
 			{
 				// Fixed capacity: the memory belongs to the source object and cannot be grown, so a write past
 				// the end is refused rather than silently reallocating.
-				stream = new TextStream(new BorrowedMemoryStream((byte*)ptr, size, source), encoding, 0, keepReadAhead: false);
+				replacement = new TextStream(new BorrowedMemoryStream((byte*)ptr, size, source), encoding, 0, keepReadAhead: false);
 			}
 
+			if (stream != null || reader != null || writer != null)
+				_ = Close();
+			stream = replacement;
+			disposed = countsHandle = false;
+			MaybeActivateFinalizer();
 			return DefaultObject;
 		}
 
@@ -194,7 +205,31 @@ namespace Keysharp.Builtins
 
 		public object Close()
 		{
-			Dispose(false);
+			if (Interlocked.Exchange(ref disposed, true))
+				return DefaultObject;
+
+			try
+			{
+				stream?.Dispose();
+				reader?.Close();
+				writer?.Close();
+			}
+			finally
+			{
+				// Also when the final flush failed, which leaves the file closed all the same.
+				if (streamRoot.IsAllocated)
+					streamRoot.Free();
+
+				if (countsHandle)
+					HandlePressure.Files.Remove();
+
+				// Closed files return no data rather than raising ObjectDisposedException.
+				reader = null;
+				writer = null;
+
+				HasFinalizer = false;
+			}
+
 			return DefaultObject;
 		}
 
@@ -224,25 +259,6 @@ namespace Keysharp.Builtins
 				catch
 				{
 				}
-			}
-		}
-
-		internal virtual void Dispose(bool disposing)
-		{
-			if (!disposed)
-			{
-				stream?.Dispose();
-				reader?.Close();
-				writer?.Close();
-
-				if (streamRoot.IsAllocated)
-					streamRoot.Free();
-
-				// A closed File reads and writes nothing, as in AutoHotkey, rather than raising the reader's or
-				// writer's ObjectDisposedException, which a script cannot catch. A closed stream already does.
-				reader = null;
-				writer = null;
-				disposed = true;
 			}
 		}
 
@@ -417,11 +433,7 @@ namespace Keysharp.Builtins
 
 		public long WriteUShort(object num) => num.CoerceLong(out var n) ? WriteNumber((ushort)n) : 0L;
 
-		void IDisposable.Dispose()
-		{
-			Dispose(true);
-			HasFinalizer = false;
-		}
+		void IDisposable.Dispose() => _ = Close();
 
 		// RawRead's and RawWrite's byte count: at most max, and the whole of whole when omitted.
 		private static bool TryGetByteCount(object bytes, long whole, long max, out int count)

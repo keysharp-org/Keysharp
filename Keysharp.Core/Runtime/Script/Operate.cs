@@ -565,14 +565,11 @@ namespace Keysharp.Runtime
 
 		public static object MultiStatement(params object[] args) => args[ ^ 1];
 
-		// AutoHotkey frees a File nothing references once the access made on it ends, which closes it there. The lowerer
-		// calls this for a File it knows only the one access sees.
-		public static object ReleaseTemporary(object temporary, object result)
+		// A temporary File is disposed at its full expression's end unless that expression returns it.
+		public static void ReleaseTemporary(object result, object temporary)
 		{
-			if (temporary is KeysharpFile file && !ReferenceEquals(file, result))
-				_ = file.Close();
-
-			return result;
+			if (temporary is Any any && !ReferenceEquals(any, result))
+				Keysharp.Internals.Scripting.DestructorPump.RunDestructor(any);
 		}
 
 		public static void InitStaticVariable(ref object variable, string name, Func<object> initFunc)

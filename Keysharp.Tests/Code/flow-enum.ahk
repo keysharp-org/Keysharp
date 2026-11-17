@@ -1,6 +1,7 @@
 #NoTrayIcon
 #ErrorStdOut
 #Warn All, StdOut
+#Import Ks { Collect }
 #Include <assert>
 
 ; Return true to continue enumerating, false to stop
@@ -31,6 +32,20 @@ while (e(&i, &j))
     a += j
 
 AssertEq(a, 9, A_LineNumber)
+
+MakeDisposedEnumerator(deleted) {
+    iterator := [1].__Enum(1)
+    iterator.DefineProp("__Delete", {Value: (*) => deleted.Push(1)})
+    for disposedValue in iterator {
+    }
+    AssertEq(deleted.Length, 0, A_LineNumber)
+}
+deletedEnumerators := []
+MakeDisposedEnumerator(deletedEnumerators)
+timeout := A_TickCount + 2000
+while !deletedEnumerators.Length && A_TickCount < timeout
+    Sleep(30), Collect()
+AssertEq(deletedEnumerators.Length, 1, A_LineNumber)
 
 entries := Map("alpha", "A", "bravo", "B")
 RegExMatch("hello", "(?<word>hello)", &match)

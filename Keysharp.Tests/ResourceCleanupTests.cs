@@ -3,6 +3,123 @@ namespace Keysharp.Tests;
 [TestFixture, Category("Internal"), Category("Curated")]
 public class ResourceCleanupTests : TestRunner
 {
+	[TestCase(false), TestCase(true)]
+	public void EnumeratorDisposesOnce(bool fails)
+	{
+		var calls = 0;
+		var enumerator = new Keysharp.Builtins.Enumerator(null, 0, () => false, null, null, null, () =>
+		{
+			calls++;
+			if (fails) throw new InvalidOperationException("enumerator disposal");
+		});
+		Assert.That(enumerator.HasFinalizer, Is.False);
+		enumerator.HasFinalizer = true;
+		if (fails)
+		{
+			Assert.Throws<InvalidOperationException>(() => ((IDisposable)enumerator).Dispose());
+			Assert.That(enumerator.HasFinalizer, Is.True);
+		}
+		else
+		{
+			Assert.That(enumerator.Call(), Is.False);
+			Assert.That(enumerator.HasFinalizer, Is.False);
+		}
+		((IDisposable)enumerator).Dispose();
+		Assert.That(enumerator.Call(), Is.False);
+		Assert.That(enumerator.HasFinalizer, Is.False);
+		Assert.That(calls, Is.EqualTo(1));
+	}
+
+	[Test]
+	public void UnarmedEnumeratorDisposesWithScope()
+	{
+		var calls = 0;
+		var enumerator = new Keysharp.Builtins.Enumerator(null, 0, () => false, null, null, null, () => calls++);
+		Assert.That(enumerator.HasFinalizer, Is.False);
+		Keysharp.Internals.Scripting.DestructorPump.RunDestructor(enumerator);
+		Keysharp.Internals.Scripting.DestructorPump.RunDestructor(enumerator);
+		Assert.That(calls, Is.EqualTo(1));
+		Assert.That(enumerator.HasFinalizer, Is.False);
+	}
+
+	// A File a using statement or the end of an expression closed leaves its collection nothing to do.
+	[TestCase(false), TestCase(true)]
+	public void ReleasedFileNeedsNoCollection(bool closeDirectly)
+	{
+		var path = System.IO.Path.GetTempFileName();
+		try
+		{
+			var file = (KeysharpFile)Files.FileOpen(path, "r");
+			Assert.That(file.HasFinalizer, Is.True);
+			if (closeDirectly)
+				_ = file.Close();
+			else
+				Keysharp.Internals.Scripting.DestructorPump.RunDestructor(file);
+			Assert.That(file.HasFinalizer, Is.False);
+			_ = file.Close();
+			Assert.That(file.HasFinalizer, Is.False);
+		}
+		finally
+		{
+			System.IO.File.Delete(path);
+		}
+	}
+
+	[Test]
+	public void ReleasedBufferRearmsWhenStorageReturns()
+	{
+		using var buffer = new Keysharp.Builtins.Buffer(4L);
+		((IDisposable)buffer).Dispose();
+		Assert.That(buffer.HasFinalizer, Is.False);
+		((IDisposable)buffer).Dispose();
+		Assert.That(buffer.HasFinalizer, Is.False);
+		buffer.Size = 4L;
+		Assert.That(buffer.HasFinalizer, Is.True);
+		buffer.Size = 0L;
+		Assert.That(buffer.HasFinalizer, Is.False);
+	}
+
+	[Test]
+	public void DirectDisposeKeepsPendingDelete()
+	{
+		using var buffer = new Keysharp.Builtins.Buffer(4L);
+		var deletes = 0;
+		buffer.DefinePropInternal("__Delete", new OwnPropsDesc(null, null, null,
+			new KeysharpFunc((Func<object, object>)(_ => ++deletes))));
+		((IDisposable)buffer).Dispose();
+		Assert.That(buffer.HasFinalizer, Is.True);
+		Keysharp.Internals.Scripting.DestructorPump.RunDestructor(buffer);
+		Keysharp.Internals.Scripting.DestructorPump.RunDestructor(buffer);
+		Assert.That(deletes, Is.EqualTo(1));
+	}
+
+	[Test]
+	public void ReleasedDrawingResourcesNeedNoCollection()
+	{
+		if (Script.IsHeadless)
+			Assert.Ignore("Drawing resource lifetimes need an initialized graphics backend.");
+
+		using var path = new KeysharpImage.KeysharpPath();
+		_ = path.Clear();
+		Assert.That(path.HasFinalizer, Is.False);
+		_ = path.Clear();
+		Assert.That(path.HasFinalizer, Is.False);
+		_ = path.AddRect(0L, 0L, 4L, 4L);
+		Assert.That(path.HasFinalizer, Is.True);
+		using var image = (KeysharpImage)KeysharpImage.Create(null, 4L, 4L);
+		using var emptyState = (IDisposable)image.SaveState();
+		Assert.That(((Any)emptyState).HasFinalizer, Is.False);
+		_ = image.Clip(path);
+		using var clippedState = (IDisposable)image.SaveState();
+		Assert.That(((Any)clippedState).HasFinalizer, Is.True);
+		clippedState.Dispose();
+		clippedState.Dispose();
+		Assert.That(((Any)clippedState).HasFinalizer, Is.False);
+		_ = image.Destroy();
+		_ = image.Destroy();
+		Assert.That(image.HasFinalizer, Is.False);
+	}
+
 	[TestCase(false, false), TestCase(false, true), TestCase(true, false)]
 	public void NativeBackingSurvivesUntilScriptCleanup(bool structure, bool reinitialize)
 	{
@@ -55,6 +172,7 @@ public class ResourceCleanupTests : TestRunner
 		return result;
 	}
 
+	// The bitmap and draw state survive too, as the __Delete of an object collected with the image may still draw on it.
 	[Test]
 	public void ImagePressureSurvivesUntilScriptCleanup()
 	{
@@ -74,13 +192,25 @@ public class ResourceCleanupTests : TestRunner
 				CollectFinalizers();
 				Assert.That(abandoned.TryGetTarget(out image), Is.True);
 				Assert.That((long)pressure.GetValue(image), Is.EqualTo(65536L));
+				Assert.That(image.GetPixel(17L, 17L), Is.EqualTo(0xFFFF0000L));
+				Assert.That(image.GetPixel(25L, 25L), Is.EqualTo(0xFF00FF00L));
+				Assert.That(image.GetPixel(33L, 33L), Is.EqualTo(0xFF0000FFL));
+				Assert.That(image.GetPixel(30L, 30L), Is.EqualTo(0L));
+				_ = image.RestoreState(Script.GetPropertyValue(image, "SavedState"));
+				_ = image.FillRect(30L, 30L, 8L, 8L, 0xFFFFFF00L);
+				_ = image.Clip();
+				Assert.That(image.GetPixel(33L, 33L), Is.EqualTo(0xFFFFFF00L));
+				Assert.That(image.GetPixel(30L, 30L), Is.EqualTo(0L));
+				_ = image.FillRect(0L, 0L, 4L, 4L, 0xFF00FF00L);
+				_ = image.DrawLine(0L, 8L, 8L, 8L, 0xFF0000FFL);
+				Assert.That(image.GetPixel(1L, 1L), Is.EqualTo(0xFF00FF00L));
 			}
 			pump.RunPendingDestructors();
 			Assert.That((long)pressure.GetValue(image), Is.Zero);
 		}
 		finally
 		{
-			image?.Dispose();
+			image?.Destroy();
 		}
 	}
 
@@ -88,6 +218,22 @@ public class ResourceCleanupTests : TestRunner
 	private static WeakReference<KeysharpImage> AbandonImage()
 	{
 		var image = (KeysharpImage)KeysharpImage.Create(null, 128L, 128L);
+		_ = image.FillRect(0L, 0L, 2L, 2L, 0xFFFF0000L);
+		_ = image.DrawLine(0L, 4L, 4L, 4L, 0xFFFF0000L);
+		_ = image.GetPixel(0L, 0L);
+		using var clip = new KeysharpImage.KeysharpPath();
+		_ = clip.AddRect(32L, 32L, 4L, 4L);
+		_ = image.Clip(clip);
+		image.DefinePropInternal("SavedState", new OwnPropsDesc(image.SaveState()));
+		_ = image.Clip();
+		using var source = (KeysharpImage)KeysharpImage.Create(null, 4L, 4L, 0xFFFF0000L);
+		_ = image.DrawImage(source, 16L, 16L);
+		using var path = new KeysharpImage.KeysharpPath();
+		_ = path.AddRect(24L, 24L, 4L, 4L);
+		_ = image.FillPath(path, 0xFF00FF00L);
+		_ = image.Clip(clip);
+		_ = image.FillRect(30L, 30L, 8L, 8L, 0xFF0000FFL);
+		_ = image.Clip();
 		var result = new WeakReference<KeysharpImage>(image, trackResurrection: true);
 		GC.KeepAlive(image);
 		return result;
@@ -103,6 +249,7 @@ public class ResourceCleanupTests : TestRunner
 		{
 			value = new Keysharp.Builtins.COM.ComValue(VarEnum.VT_BSTR, pointer);
 			Assert.That(value.Flags & Keysharp.Builtins.COM.ComValue.F_OWNVALUE, Is.Zero);
+			Assert.That(value.HasFinalizer, Is.False);
 		}
 		finally
 		{
@@ -110,6 +257,61 @@ public class ResourceCleanupTests : TestRunner
 			value?.Dispose();
 			Marshal.FreeBSTR(pointer);
 		}
+	}
+
+	[TestCase(false), TestCase(true)]
+	public void OwnedBstrRearmsAfterDisposal(bool rawPointer)
+	{
+		var source = rawPointer ? (object)Marshal.StringToBSTR("owned") : "owned";
+		using var value = new Keysharp.Builtins.COM.ComValue(VarEnum.VT_BSTR, source, 1L);
+		Assert.That(value.HasFinalizer, Is.True);
+		value.Dispose();
+		value.Dispose();
+		Assert.That(value.HasFinalizer, Is.False);
+		value.Ptr = "reacquired";
+		Assert.That(value.HasFinalizer, Is.True);
+		value.Dispose();
+		Assert.That(value.HasFinalizer, Is.False);
+	}
+
+	[TestCase(VarEnum.VT_I4), TestCase(VarEnum.VT_I4 | VarEnum.VT_BYREF)]
+	public void BorrowedComValuesNeedNoCollection(VarEnum type)
+	{
+		using var value = new Keysharp.Builtins.COM.ComValue(type, 1L);
+		Assert.That(value.HasFinalizer, Is.False);
+		value.Dispose();
+		Assert.That(value.HasFinalizer, Is.False);
+	}
+
+	[Test]
+	public void OwnedComArrayDisarmsAfterDisposal()
+	{
+		using var value = new Keysharp.Builtins.COM.ComObjArray(VarEnum.VT_I4, 1);
+		Assert.That(value.HasFinalizer, Is.True);
+		value.Dispose();
+		value.Dispose();
+		Assert.That(value.HasFinalizer, Is.False);
+	}
+
+	[Test]
+	public void LockedComArrayKeepsCleanupRegistration()
+	{
+		using var value = new Keysharp.Builtins.COM.ComObjArray(VarEnum.VT_I4, 1);
+		var pointer = (nint)(long)value.Ptr;
+		Assert.That(Keysharp.Builtins.COM.OleAuto.SafeArrayLock(pointer), Is.Zero);
+		try
+		{
+			Keysharp.Internals.Scripting.DestructorPump.RunDestructor(value);
+			Assert.That(value.Ptr, Is.EqualTo((long)pointer));
+			Assert.That(value.HasFinalizer, Is.True);
+		}
+		finally
+		{
+			_ = Keysharp.Builtins.COM.OleAuto.SafeArrayUnlock(pointer);
+		}
+		Keysharp.Internals.Scripting.DestructorPump.RunDestructor(value);
+		Assert.That(value.Ptr, Is.Null);
+		Assert.That(value.HasFinalizer, Is.False);
 	}
 #endif
 
@@ -155,13 +357,13 @@ public class ResourceCleanupTests : TestRunner
 		{
 			var error = Assert.Throws<InvalidOperationException>(() => Keysharp.Internals.Scripting.DestructorPump.RunDestructor(owner));
 			Assert.That(error.Message, Is.EqualTo("owner disposal"));
-			Assert.That(owner.nativeData.IsReleased, Is.True);
-			Assert.That(child.nativeData.IsReleased, Is.True);
+			Assert.That(owner.nativeData.IsDisposed, Is.True);
+			Assert.That(child.nativeData.IsDisposed, Is.True);
 			Assert.That(child.Ptr, Is.Zero);
 		}
 		finally
 		{
-			owner.nativeData.Release();
+			owner.nativeData.Dispose();
 		}
 	}
 
@@ -180,11 +382,12 @@ public class ResourceCleanupTests : TestRunner
 			Assert.That(buffer.nativeData.Ptr, Is.Not.Zero);
 			Assert.That(buffer.HasFinalizer, Is.True);
 			Keysharp.Internals.Scripting.DestructorPump.RunDestructor(buffer);
-			Assert.That(buffer.nativeData.IsReleased, Is.True);
+			Assert.That(buffer.nativeData.IsDisposed, Is.True);
+			Assert.That(buffer.HasFinalizer, Is.False);
 		}
 		finally
 		{
-			buffer.nativeData.Release();
+			buffer.nativeData.Dispose();
 			((IDisposable)buffer).Dispose();
 		}
 	}

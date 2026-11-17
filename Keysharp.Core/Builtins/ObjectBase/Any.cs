@@ -19,6 +19,7 @@ namespace Keysharp.Builtins
 		internal Dictionary<string, OwnPropsDesc> op = null;
 		internal WeakCollection<Any> children = null;
 		internal bool isPrototype = false;
+		internal bool deleteCalled, cleaning;
 		// The memory the object's typed properties are stored in, which a struct always has and any other object has when
 		// its class declares typed properties or it was created with a data pointer.
 		internal NativeData nativeData;
@@ -36,38 +37,41 @@ namespace Keysharp.Builtins
 			get => sentinel != null;
 			set
 			{
-				if (value)
+				if (value && sentinel == null)
 				{
-					if (sentinel == null)
-					{
-						sentinel = new(this);
-						TheScript?.DestructorPump.NoteRegistration();
-					}
+					var pump = TheScript?.DestructorPump;
+					var added = new GCCleanupSentinel(this, pump);
+					if (Interlocked.CompareExchange(ref sentinel, added, null) == null)
+						pump?.Armed();
+					else
+						GC.SuppressFinalize(added);
 				}
-				// The finalizer thread may be clearing it at the same time (see Collected). One which says the object was
-				// given its __Delete stays, so that arming the object again brings no second call. Disposing another native
-				// resource must leave pending typed-storage cleanup armed.
-				else if (sentinel is { Deleted: false } && nativeData is not { NeedsRelease: true }
-						&& Interlocked.Exchange(ref sentinel, null) is { } detached)
+				// Preserve pending __Delete and typed storage not already being cleaned up.
+				else if (!value && sentinel is { } detached && (Volatile.Read(ref deleteCalled) || !HasDeleteCall)
+						&& (Volatile.Read(ref cleaning) || nativeData is not { NeedsDispose: true })
+						&& Interlocked.CompareExchange(ref sentinel, null, detached) == detached)
 				{
 					detached.Owner = null;
 					GC.SuppressFinalize(detached);
+					detached.Pump?.Disarmed();
 				}
 			}
 		}
 
-		// Whether the object has something to release when collected, so it needs a sentinel even without a __Delete.
-		internal virtual bool DisposesWhenCollected => this is IDisposable || nativeData is { NeedsRelease: true };
-
-		// Whether collecting the object calls its __Delete (see KeysharpObject and Struct).
+		// Whether the object has a __Delete for the runtime to call (see KeysharpObject and Struct).
 		internal virtual bool HasDeleteCall => false;
+
+		internal bool ClaimDelete() => !Interlocked.Exchange(ref deleteCalled, true);
 
 		// The owner is being collected: its sentinel's finalizer hands it to the pump for __Delete and Dispose. A sentinel
 		// a concurrent arming replaced is collected while its owner lives on, so it hands over nothing.
 		internal void Collected(GCCleanupSentinel collected)
 		{
-			if (Interlocked.CompareExchange(ref sentinel, null, collected) == collected)
-				TheScript?.DestructorPump.Enqueue(collected);
+			if (Interlocked.CompareExchange(ref sentinel, null, collected) == collected && collected.Pump is { } pump)
+			{
+				pump.Disarmed();
+				pump.Enqueue(this);
+			}
 		}
 
 		// A copy has own properties and a sentinel of its own, as sharing either would change or clean up only one of the
@@ -86,6 +90,7 @@ namespace Keysharp.Builtins
 			copy.sentinel = null;
 			copy.children = null;
 			copy.isPrototype = false;
+			copy.deleteCalled = copy.cleaning = false;
 			copy.nativeData = null;
 
 			if (op != null)
@@ -223,7 +228,10 @@ namespace Keysharp.Builtins
 			}
 		}
 
-		internal virtual void MaybeActivateFinalizer() => HasFinalizer = DisposesWhenCollected;
+		internal virtual void MaybeActivateFinalizer() => MaybeActivateFinalizer(this is IDisposable || nativeData is { NeedsDispose: true });
+
+		internal void MaybeActivateFinalizer(bool needsCleanup) => HasFinalizer = needsCleanup
+			|| !Volatile.Read(ref deleteCalled) && this is KeysharpObject { HasDeleteInChain: true };
 
 		internal bool HasOwnPropInternal(string name) => op != null && op.ContainsKey(name);
 

@@ -26,7 +26,7 @@ try {
     Canvas := Image.Create(240, 180, , Target.PixelScale)
     AssertEq(Canvas.Width, Round(240 * Target.PixelScale), A_LineNumber)
     AssertEq(Canvas.Height, Round(180 * Target.PixelScale), A_LineNumber)
-    Canvas.Dispose()
+    Canvas.Destroy()
 #if WINDOWS
     Target.Opt("-DPIScale")
     AssertEq(Target.PixelScale, 1, A_LineNumber)

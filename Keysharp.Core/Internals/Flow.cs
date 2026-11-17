@@ -175,16 +175,7 @@ namespace Keysharp.Internals
 			script.SuppressErrorOccurredDialog = true;
 
 			ReleaseVariables(script);
-
-			// A blocking full collection costs in proportion to the whole heap, so pay it only when something can be found,
-			// and again while a __Delete leaves more unreferenced.
-			for (var pass = 0; pass < 4 && script.DestructorPump.HasRegistrations; pass++)
-			{
-				GC.Collect();
-
-				if (!script.DestructorPump.RunPendingDestructors())
-					break;
-			}
+			script.DestructorPump.RunAtExit();
 
 			script.hasExited = true;
 			script.WakeAllEventSchedulers();
@@ -232,7 +223,7 @@ namespace Keysharp.Internals
 
 				// Unless a using statement gave the class its __Delete already.
 				if (script.Vars.Statics.IsInitialized(t) && script.Vars.Statics.TryGetValue(t, out Class cls) && cls.HasOwnPropInternal("__Delete")
-					&& cls.sentinel?.ClaimDelete() == true)
+					&& cls.HasFinalizer && cls.ClaimDelete())
 				{
 					try
 					{
@@ -241,6 +232,7 @@ namespace Keysharp.Internals
 					catch
 					{
 					}
+					cls.HasFinalizer = false;
 				}
 			}
 		}

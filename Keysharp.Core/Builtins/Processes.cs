@@ -766,6 +766,7 @@ namespace Keysharp.Builtins
 			(stdOut as IDisposable)?.Dispose();
 			(stdErr as IDisposable)?.Dispose();
 			process.Dispose();
+			HasFinalizer = false;
 			return DefaultObject;
 		}
 
@@ -776,6 +777,7 @@ namespace Keysharp.Builtins
 
 			exitCallback = callback;
 			callbackScheduler = scheduler;
+			MaybeActivateFinalizer();
 
 			if ((callbackRegistration = scheduler?.RegisterPendingCallback(CancelCallback)) != null)
 				return true;

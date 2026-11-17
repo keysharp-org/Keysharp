@@ -51,22 +51,35 @@ namespace Keysharp.Builtins
 
 			private readonly record struct VectorDrawingState(VectorTransform Transform, VectorClip Clip);
 
-			private sealed class VectorState : KeysharpObject
+			private sealed class VectorState : KeysharpObject, IFinalizerSafeDisposable
 			{
 				internal readonly object Owner;
 				internal readonly VectorDrawingState State;
+				private GCHandle clipRoot;
 
 				internal VectorState(object owner, VectorDrawingState state)
 				{
 					Owner = owner;
 					State = state;
+					if (state.Clip != null)
+						clipRoot = GCHandle.Alloc(state.Clip);
+					MaybeActivateFinalizer();
+				}
+
+				internal override void MaybeActivateFinalizer() => base.MaybeActivateFinalizer(clipRoot.IsAllocated);
+				void IDisposable.Dispose()
+				{
+					if (clipRoot.IsAllocated)
+						clipRoot.Free();
+					HasFinalizer = false;
 				}
 			}
 
 			[UserDeclaredName("Path")]
-			public class KeysharpPath : KeysharpObject, IDisposable
+			public class KeysharpPath : KeysharpObject, IFinalizerSafeDisposable
 			{
-				private GraphicsPath geometry = NewPath(false);
+				private GraphicsPath geometry;
+				private GCHandle geometryRoot;
 				private bool constructed;
 				private bool nonZero;
 				private bool hasCurrent;
@@ -85,6 +98,14 @@ namespace Keysharp.Builtins
 				protected KeysharpPath() { }
 
 				public object __New(object fillRule = null) => ConfigureFillRule(fillRule);
+
+				// The GDI+ path has a finalizer of its own, which a __Delete still using this path must not see run first.
+				private GraphicsPath SetGeometry(GraphicsPath path)
+				{
+					geometryRoot = GCHandle.Alloc(path);
+					MaybeActivateFinalizer();
+					return geometry = path;
+				}
 
 				private object ConfigureFillRule(object fillRule)
 				{
@@ -111,7 +132,7 @@ namespace Keysharp.Builtins
 					$"Invalid FillRule {value}; accepted values are EvenOdd and NonZero.", value, this);
 
 				// Made again once the path is used after its disposal emptied it.
-				internal GraphicsPath Geometry => geometry ??= NewPath(nonZero);
+				internal GraphicsPath Geometry => geometry ?? SetGeometry(NewPath(nonZero));
 
 				internal GraphicsPath CloneGeometry() => ClonePath(Geometry);
 				internal bool HasGeometry => hasGeometry;
@@ -408,8 +429,7 @@ namespace Keysharp.Builtins
 						right = right,
 						bottom = bottom
 					};
-					clone.geometry.Dispose();
-					clone.geometry = CloneGeometry();
+					_ = clone.SetGeometry(CloneGeometry());
 					return clone;
 				}
 
@@ -418,8 +438,11 @@ namespace Keysharp.Builtins
 				{
 					try { geometry?.Dispose(); } catch { }
 					geometry = null;
+					if (geometryRoot.IsAllocated)
+						geometryRoot.Free();
 					hasCurrent = hasGeometry = hasBounds = false;
 					boundsValid = true;
+					HasFinalizer = false;
 				}
 			}
 
@@ -515,6 +538,7 @@ namespace Keysharp.Builtins
 				if (path == null)
 				{
 					drawingClip = null;
+					RootNativeState();
 					return this;
 				}
 
@@ -532,13 +556,14 @@ namespace Keysharp.Builtins
 				}
 
 				drawingClip = new VectorClip(drawingClip, snapshot, bounds);
+				RootNativeState();
 				return this;
 			}
 
 			public object SaveState()
 			{
 				ThrowIfDisposed();
-				return new VectorState(vectorOwner, SnapshotDrawingState());
+				return new VectorState(vectorOwner, new(drawingTransform, drawingClip));
 			}
 
 			public object RestoreState(object state)
@@ -554,6 +579,7 @@ namespace Keysharp.Builtins
 				var drawingState = stateValue.State;
 				drawingTransform = drawingState.Transform;
 				drawingClip = drawingState.Clip;
+				RootNativeState();
 				return this;
 			}
 
@@ -649,7 +675,12 @@ namespace Keysharp.Builtins
 				return this;
 			}
 
-			private VectorDrawingState SnapshotDrawingState() => new(drawingTransform, drawingClip);
+			private VectorDrawingState SnapshotDrawingState()
+			{
+				if (!eagerDraw && drawingClip != null)
+					pendingReferences.Add(drawingClip);
+				return new(drawingTransform, drawingClip);
+			}
 
 			// A live surface draws at once, straight from the path. A queued draw replays later, so it takes a
 			// snapshot the script cannot change, freed with the queue.

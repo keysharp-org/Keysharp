@@ -23,8 +23,6 @@ namespace Keysharp.Builtins
 		internal override bool HasDeleteCall => !HasOwnPropInternal("__Class")
 			&& (HasOwnPropInternal("__Delete") || _base is KeysharpObject { hasDeleteInChain: true });
 
-		internal override void MaybeActivateFinalizer() => HasFinalizer = DisposesWhenCollected || hasDeleteInChain;
-
 		internal override void OnPropertyChanged(string name)
 		{
 			if (!name.Equals("__Delete", StringComparison.OrdinalIgnoreCase) && !name.Equals("base", StringComparison.OrdinalIgnoreCase))

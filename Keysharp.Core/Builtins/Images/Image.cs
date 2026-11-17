@@ -33,7 +33,7 @@ namespace Keysharp.Builtins
 		/// finishing with it first, or give each its own.
 		/// </summary>
 		[UserDeclaredName("Image"), Experimental]
-		public partial class KeysharpImage : KeysharpObject, IDisposable
+		public partial class KeysharpImage : KeysharpObject, IFinalizerSafeDisposable
 		{
 			// The current pixels. A lazy image folds pending work into this bitmap; a borrowed overlay canvas keeps
 			// the platform bitmap identity fixed.
@@ -43,6 +43,7 @@ namespace Keysharp.Builtins
 			// returns it, or returns a replacement. Only a lazy image queues, and a lazy image owns its base.
 			private readonly List<Func<Bitmap, Bitmap>> pending = new ();
 			private readonly List<IDisposable> pendingResources = new ();
+			private readonly List<object> pendingReferences = new ();
 
 			// Image pixels per native screen unit at capture time (1.0 for files and one-pixel-per-unit captures).
 			// All Image coordinates (Width/Height, Get/SetPixel, Search) are in the image's own pixels,
@@ -72,6 +73,9 @@ namespace Keysharp.Builtins
 
 			// Bytes of GC memory pressure currently registered for this image's bitmaps (see SyncGcPressure).
 			private long gcPressure;
+
+			private object[] nativeState;
+			private GCHandle nativeRoot;
 
 			// False when baseBitmap's pixels belong to someone else — an Overlay canvas, whose memory is the
 			// platform backing's presentable buffer (a DIB section on Windows). Dispose then leaves the bitmap
@@ -163,6 +167,7 @@ namespace Keysharp.Builtins
 					liveGraphics = ImageHelper.MakeGraphics(b, highQuality);
 					liveGraphicsFor = b;
 					liveHighQuality = highQuality;
+					RootNativeState();
 				}
 				else if (liveHighQuality != highQuality)
 				{
@@ -211,7 +216,11 @@ namespace Keysharp.Builtins
 
 			private SolidBrush Brush(int argb)
 			{
-				brushCache ??= [];
+				if (brushCache == null)
+				{
+					brushCache = [];
+					RootNativeState();
+				}
 
 				if (!brushCache.TryGetValue(argb, out var brush))
 				{
@@ -235,7 +244,11 @@ namespace Keysharp.Builtins
 			/// <summary>A pen for one colour and width, created once and reused. Never disposed by a caller.</summary>
 			private Pen GetPen(int argb, float width)
 			{
-				penCache ??= [];
+				if (penCache == null)
+				{
+					penCache = [];
+					RootNativeState();
+				}
 
 				if (!penCache.TryGetValue((argb, width), out var pen))
 				{
@@ -1257,6 +1270,9 @@ namespace Keysharp.Builtins
 					return this;
 
 				var state = SnapshotDrawingState();
+
+				if (!eagerDraw)
+					pendingReferences.Add(font);
 
 				QueueDraw(b =>
 				{
@@ -2618,6 +2634,8 @@ namespace Keysharp.Builtins
 
 				if (!disposed)
 				{
+					RootNativeState();
+
 					// A borrowed canvas is deliberately excluded: collecting this wrapper would not free those
 					// bytes (its owner holds them for the overlay's lifetime), so charging for them would only
 					// nag the GC into collections that can reclaim nothing.
@@ -2634,6 +2652,27 @@ namespace Keysharp.Builtins
 					GC.RemoveMemoryPressure(gcPressure - bytes);
 
 				gcPressure = bytes;
+			}
+
+			// GDI+ objects have their own finalizers, which must not free them before a __Delete still drawing on this image.
+			private void RootNativeState()
+			{
+				if (disposed)
+					return;
+
+				nativeState ??= new object[7];
+				nativeState[0] = baseBitmap;
+				nativeState[1] = liveGraphics;
+				nativeState[2] = brushCache;
+				nativeState[3] = penCache;
+				nativeState[4] = pendingResources;
+				nativeState[5] = drawingClip;
+				nativeState[6] = pendingReferences;
+				if (!nativeRoot.IsAllocated)
+				{
+					nativeRoot = GCHandle.Alloc(nativeState);
+					MaybeActivateFinalizer();
+				}
 			}
 
 			private void ReleaseGcPressure()
@@ -2797,27 +2836,22 @@ namespace Keysharp.Builtins
 				}
 
 				pendingResources.Clear();
+				pendingReferences.Clear();
 			}
 
 			// Number of still-parked draw-source resources, exposed for tests to prove the eager DrawImage path
 			// disposes eagerly (never parks) rather than leaking a bitmap per call.
 			internal int PendingResourcesCount => pendingResources.Count;
 
-			// Raises a ValueError from every public method/property once this image has been disposed, so a
-			// use-after-Dispose fails loudly and consistently instead of silently returning 0/"". Errors.*Occurred
-			// throws when the error is not suppressed by an OnError handler (the normal case), matching the rest
-			// of the class's error contract.
 			private void ThrowIfDisposed()
 			{
 				if (disposed)
-					_ = Errors.ValueErrorOccurred("This Image has been disposed.");
+					_ = Errors.ValueErrorOccurred("This Image has been destroyed.");
 			}
 
-			public object Dispose()
+			public object Destroy()
 			{
-				// An Overlay canvas belongs to its Overlay. Disposing it from a script would not free the pixels
-				// (the surface owns those) but would leave the overlay holding a disposed image. Destroy is the
-				// operation that owns canvas teardown.
+				// The surface owns a borrowed canvas and its teardown.
 				if (borrowedSurface != null)
 					return Errors.ValueErrorOccurred(
 						"An Overlay canvas is owned by its Overlay; call Overlay.Destroy instead.");
@@ -2852,6 +2886,10 @@ namespace Keysharp.Builtins
 				finally
 				{
 					ReleaseGcPressure();
+					if (nativeRoot.IsAllocated)
+						nativeRoot.Free();
+					nativeState = null;
+					HasFinalizer = false;
 				}
 			}
 

@@ -30,9 +30,9 @@ try {
     AssertEq(ImageSearch(&x, &y, left, top, right, bottom, "*w8 *h8 *4 HBITMAP:" near.ToBitmap()), 1, A_LineNumber)
 } finally {
     if IsSet(capture)
-        capture.Dispose()
+        capture.Destroy()
     if IsSet(needle)
-        needle.Dispose()
+        needle.Destroy()
     fixture.Window.Destroy()
 }
 

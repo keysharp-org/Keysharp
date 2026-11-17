@@ -219,7 +219,8 @@ public class SchedulerTests : TestRunner
 	{
 		var context = UseQueuedMainContext();
 		var probe = new DestructorProbe();
-		s.DestructorPump.Enqueue(new GCCleanupSentinel(probe));
+		QueueCollected(probe);
+		context.WaitForPosts(1);
 		Assert.That(context.PendingCount, Is.EqualTo(1));
 
 		s.Dispose();
@@ -227,6 +228,37 @@ public class SchedulerTests : TestRunner
 
 		Assert.That(probe.Deletes, Is.Zero);
 		Assert.That(probe.Disposes, Is.EqualTo(1));
+	}
+
+	[Test, Category("Threading")]
+	public void StoppedPumpDisposesOnlyKnownThreadSafeResources()
+	{
+		var probe = new FinalizerThreadStruct();
+		NativeData.AttachOwned(probe, StructDefinition.Of(s.Vars.Prototypes[typeof(StructInt32)]), false);
+		using var buffer = new Keysharp.Builtins.Buffer(4L);
+		try
+		{
+			s.DestructorPump.Stop();
+			QueueCollected(probe);
+			QueueCollected(buffer);
+			Assert.That(probe.Disposes, Is.Zero);
+			Assert.That(probe.Ptr, Is.Not.Zero);
+			Assert.That(buffer.Ptr, Is.Zero);
+		}
+		finally
+		{
+			probe.Dispose();
+		}
+	}
+
+	private sealed class FinalizerThreadStruct : Struct
+	{
+		internal int Disposes;
+		public override void Dispose()
+		{
+			Disposes++;
+			base.Dispose();
+		}
 	}
 
 	[Test, Category("Threading")]
@@ -245,24 +277,112 @@ public class SchedulerTests : TestRunner
 				return 0L;
 			}))));
 
-		try
-		{
-			// A sentinel detaches before handing its object to the pump; enqueue directly to avoid GC timing.
-			owner.HasFinalizer = false;
-			resource.HasFinalizer = false;
-			s.DestructorPump.Enqueue(new GCCleanupSentinel(resource));
-			s.DestructorPump.Enqueue(new GCCleanupSentinel(owner));
-			context.DrainAll();
+		QueueCollected(resource);
+		QueueCollected(owner);
+		context.WaitForPosts(1);
+		context.DrainAll();
 
-			Assert.That(deletes, Is.EqualTo(1));
-			Assert.That(saved, Is.SameAs(resource));
-			Assert.That(resource.Disposes, Is.EqualTo(1));
-		}
-		finally
+		Assert.That(deletes, Is.EqualTo(1));
+		Assert.That(saved, Is.SameAs(resource));
+		Assert.That(resource.Disposes, Is.EqualTo(1));
+	}
+
+	[TestCase(false), TestCase(true), Category("Threading")]
+	public void DestructorOrderingVisitsEachObjectOnce(bool cyclic)
+	{
+		_ = UseQueuedMainContext();
+		var deleted = new List<string>();
+		KeysharpObject Probe(string name)
 		{
-			owner.HasFinalizer = false;
-			resource.HasFinalizer = false;
+			var probe = new KeysharpObject();
+			probe.DefinePropInternal("__Delete", new OwnPropsDesc(null, null, null,
+				new KeysharpFunc((Func<object, object>)(_ => { deleted.Add(name); return 0L; }))));
+			return probe;
 		}
+		var parent = Probe("parent");
+		var child = Probe("child");
+		parent.DefinePropInternal("Child", new OwnPropsDesc(child));
+		if (cyclic) child.DefinePropInternal("Parent", new OwnPropsDesc(parent));
+		QueueCollected(child);
+		QueueCollected(parent);
+		_ = s.DestructorPump.RunPendingDestructors();
+
+		Assert.That(deleted, cyclic ? Is.EquivalentTo(new[] { "parent", "child" }) : Is.EqualTo(new[] { "parent", "child" }));
+	}
+
+	[Test, Category("Threading")]
+	public void ReentrantDestructorDrainWaitsForOuterCleanup()
+	{
+		var context = UseQueuedMainContext();
+		var resource = new DestructorProbe();
+		var owner = new KeysharpObject();
+		var nestedDrained = true;
+		var resourceSurvived = false;
+		owner.DefinePropInternal("__Delete", new OwnPropsDesc(null, null, null,
+			new KeysharpFunc((Func<object, object>)(_ =>
+			{
+				QueueCollected(resource);
+				nestedDrained = s.DestructorPump.RunPendingDestructors();
+				resourceSurvived = resource.Disposes == 0;
+				return 0L;
+			}))));
+
+		QueueCollected(owner);
+		context.WaitForPosts(1);
+		context.DrainAll();
+
+		Assert.That(nestedDrained, Is.False);
+		Assert.That(resourceSurvived, Is.True);
+		Assert.That(resource.Disposes, Is.EqualTo(1));
+	}
+
+	[TestCase(false), TestCase(true), Category("Threading")]
+	public void CollectedDestructorStaysOnceAfterStorageReturns(bool reacquireInDelete)
+	{
+		_ = UseQueuedMainContext();
+		using var buffer = new Keysharp.Builtins.Buffer(4L);
+		var deletes = 0;
+		var callbackSize = 0L;
+		buffer.DefinePropInternal("__Delete", new OwnPropsDesc(null, null, null,
+			new KeysharpFunc((Func<object, object>)(_ =>
+			{
+				deletes++;
+				if (reacquireInDelete) buffer.Size = 8L;
+				DestructorPump.RunDestructor(buffer);
+				callbackSize = (long)buffer.Size;
+				return 0L;
+			}))));
+		QueueCollected(buffer);
+		_ = s.DestructorPump.RunPendingDestructors();
+		Assert.That(callbackSize, Is.EqualTo(reacquireInDelete ? 8L : 4L));
+		Assert.That(buffer.HasFinalizer, Is.False);
+		Assert.That(buffer.Size, Is.EqualTo(0L));
+		buffer.Size = 4L;
+		Assert.That(buffer.HasFinalizer, Is.True);
+		QueueCollected(buffer);
+		_ = s.DestructorPump.RunPendingDestructors();
+		Assert.That(deletes, Is.EqualTo(1));
+		Assert.That(buffer.HasFinalizer, Is.False);
+		Assert.That(buffer.Size, Is.EqualTo(0L));
+	}
+
+	[Test, Category("Threading")]
+	public void CloneStartsItsOwnDestructorLifetime()
+	{
+		_ = UseQueuedMainContext();
+		var deleted = 0;
+		var original = new KeysharpObject();
+		original.DefinePropInternal("__Delete", new OwnPropsDesc(null, null, null,
+			new KeysharpFunc((Func<object, object>)(_ => ++deleted))));
+		QueueCollected(original);
+		_ = s.DestructorPump.RunPendingDestructors();
+		var clone = (KeysharpObject)original.Clone();
+		Assert.That(clone.HasFinalizer, Is.True);
+		QueueCollected(clone);
+		_ = s.DestructorPump.RunPendingDestructors();
+		Assert.That(deleted, Is.EqualTo(2));
+		Assert.That(original.HasFinalizer, Is.False);
+		Assert.That(clone.HasFinalizer, Is.False);
 	}
 
 	[Test, Category("Threading")]

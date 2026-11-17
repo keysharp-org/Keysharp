@@ -241,7 +241,7 @@ Render() {
     ; a DllCall("DeleteObject") on the PREVIOUS handle after every one of these redraws - a leak
     ; per hover with no portable spelling, since the handle is a Pixbuf/NSImage off Windows.
     Pic.Value := "HBITMAP:" img.ToBitmap()
-    img.Dispose()
+    img.Destroy()
 }
 
 ; --- draw callbacks: (img, m, hov), where m is the model entry's own rect -----

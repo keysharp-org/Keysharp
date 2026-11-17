@@ -27,6 +27,8 @@ public static object BufferAlive()
     return alive;
 }
 
+public static object AliveDuring(object pointer) => BufferAlive();
+
 public static object HostReference() => new Keysharp.Builtins.VarRef(() => hostStoredValue, value => hostStoredValue = value);
 public static object HostValue() => hostStoredValue;
 #EndCSharp
@@ -88,6 +90,47 @@ ReturnLifetime() {
 }
 AssertEq(ReturnLifetime(), 1, A_LineNumber)
 AssertEq(BufferAlive(), 0, A_LineNumber)
+
+; The Ptr of a temporary stays valid until the full expression is evaluated, as the temporary lives until then.
+TemporaryLifetime() => AssertEq(AliveDuring(TrackedBuffer().Ptr), 1, A_LineNumber)
+TemporaryLifetime()
+AssertEq(BufferAlive(), 0, A_LineNumber)
+OptionalTemporaryLifetime() => AssertEq(AliveDuring(TrackedBuffer()?.Ptr), 1, A_LineNumber)
+OptionalTemporaryLifetime()
+AssertEq(BufferAlive(), 0, A_LineNumber)
+
+DefaultLifetime(value := AliveDuring(TrackedBuffer().Ptr)) => value
+AssertEq(DefaultLifetime(), 1, A_LineNumber)
+AssertEq(BufferAlive(), 0, A_LineNumber)
+
+class FieldLifetime {
+    Alive := AliveDuring(TrackedBuffer().Ptr)
+}
+AssertEq(FieldLifetime().Alive, 1, A_LineNumber)
+AssertEq(BufferAlive(), 0, A_LineNumber)
+
+Loop AliveDuring(TrackedBuffer().Ptr)
+    AssertEq(BufferAlive(), 0, A_LineNumber)
+
+switch AliveDuring(TrackedBuffer().Ptr) {
+case 1: AssertEq(BufferAlive(), 0, A_LineNumber)
+default: Assert(false, A_LineNumber)
+}
+switch {
+case AliveDuring(TrackedBuffer().Ptr): AssertEq(BufferAlive(), 0, A_LineNumber)
+default: Assert(false, A_LineNumber)
+}
+
+ThrowDuring(pointer) {
+    AssertEq(BufferAlive(), 1, A_LineNumber)
+    throw Error("temporary unwind")
+}
+Loop 2 {
+    try A_Index == 1 && ThrowDuring(TrackedBuffer().Ptr)
+    catch as err
+        AssertEq(err.Message, "temporary unwind", A_LineNumber)
+    AssertEq(BufferAlive(), 0, A_LineNumber)
+}
 
 UnwindLifetime() {
     owner := TrackedBuffer()

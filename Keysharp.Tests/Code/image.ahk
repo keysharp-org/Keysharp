@@ -140,7 +140,7 @@ target := Image.Create(8, 8)
 target.DrawImage(source, 2, 1)
 source.Clear("Blue")
 AssertEq(target.GetPixel(3, 2), 0xFF112233, A_LineNumber)
-source.Dispose()
+source.Destroy()
 target.FillRect(0, 0, 1, 1, "Red")
 AssertEq(target.GetPixel(3, 2), 0xFF112233, A_LineNumber)
 
@@ -475,9 +475,9 @@ Assert(aspect.Width == 20 && aspect.Height == 10, A_LineNumber)
 Throws(() => Image.Create(20, 10).Resize(0, 10), A_LineNumber)
 Throws(() => Image.Create(20, 10).Resize(-1, -1), A_LineNumber)
 
-disposed := Image.Create(8, 6)
-disposed.Dispose()
-Throws(() => disposed.Width, A_LineNumber)
-Throws(() => disposed.Scale(2), A_LineNumber)
+destroyed := Image.Create(8, 6)
+destroyed.Destroy()
+Throws(() => destroyed.Width, A_LineNumber)
+Throws(() => destroyed.Scale(2), A_LineNumber)
 
 FileAppend "pass", "*"

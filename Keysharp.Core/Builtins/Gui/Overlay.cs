@@ -478,7 +478,7 @@ namespace Keysharp.Builtins
 					replacement?.Dispose();
 
 					if (ownsLoaded)
-						_ = loaded.Dispose();
+						((IDisposable)loaded).Dispose();
 				}
 			}
 
@@ -846,20 +846,13 @@ namespace Keysharp.Builtins
 			/// <summary>Frees the window and the canvas and removes every event handler.</summary>
 			public object Destroy()
 			{
-				if (RejectRedrawMutation()) return DefaultObject;
-				ReleaseNative();
+				((IDisposable)this).Dispose();
 				return DefaultObject;
 			}
 
 			void IDisposable.Dispose()
 			{
 				if (RejectRedrawMutation()) return;
-				ReleaseNative();
-				HasFinalizer = false;
-			}
-
-			private void ReleaseNative()
-			{
 				ClearEventHandlers();
 
 				// No confirmation is awaited: Destroy cannot leave a backing behind without an owner to retry it.
@@ -874,6 +867,7 @@ namespace Keysharp.Builtins
 				surface = null;
 				autoW = 0;
 				autoH = 0;
+				HasFinalizer = false;
 			}
 
 			#endregion
@@ -922,7 +916,10 @@ namespace Keysharp.Builtins
 				var created = Platform.Overlay.CreateOverlaySurface(pixels);
 
 				if (created?.Bitmap != null && created.Image != null)
+				{
+					MaybeActivateFinalizer();
 					return created;
+				}
 
 				created?.Dispose();
 				return null;

@@ -180,7 +180,7 @@ try
 	try
 		Check("missing theme font measures image text", themeImage.MeasureText("Keysharp", nativeDefault).Width > 0, true)
 	finally
-		themeImage.Dispose()
+		themeImage.Destroy()
 }
 finally
 	FontTestGtkTheme(previousGtkFont)
@@ -357,7 +357,7 @@ Rejects("image rejects Font in name slot", () => img.MeasureText("Wg", "s20", Fo
 ; A Font carrying a colour must not raise the way a "cRRGGBB" option string does.
 img.DrawText("hi", 0, 0, , Font("s10 cFF0000", "Arial"))
 Rejects("colour option still rejected", () => img.MeasureText("Wg", "s10 cFF0000", "Arial"))
-img.Dispose()
+img.Destroy()
 
 #if WINDOWS
 pixelCounts(quality, previousQuality := "") {
@@ -377,7 +377,7 @@ pixelCounts(quality, previousQuality := "") {
 				gray++
 		}
 	}
-	canvas.Dispose()
+	canvas.Destroy()
 	return {Gray: gray, Black: black}
 }
 aliased := pixelCounts(3)

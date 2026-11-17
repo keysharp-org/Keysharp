@@ -986,8 +986,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Meta-function invoked when an object is being deleted.",
-                     "tested-by":  "class-special-funcs.ahk"
+                     "notes":  "Runs on the script's thread after an object becomes unreachable, before native resources collected with it are disposed. Collection timing is unspecified. Resource release such as File.Close() preserves a pending __Delete. A Using statement calls it and disposes the object immediately; __Delete is called at most once, including after resource reacquisition. See reference.md for resurrection differences from AutoHotkey.",
+                     "tested-by":  "class-special-funcs.ahk; flow-using.ahk; ResourceCleanupTests; SchedulerTests"
                  },
                  {
                      "category":  "Core Language",
@@ -5420,7 +5420,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Platform statuses inherited from curated \u0027File and directory operations\u0027; per-function validation pending. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. An omitted encoding uses A_FileEncoding; an explicit empty string uses the system ANSI encoding.",
+                     "notes":  "Platform statuses inherited from curated \u0027File and directory operations\u0027; per-function validation pending. An encoding name which cannot be resolved raises a ValueError rather than falling back to another encoding. An omitted encoding uses A_FileEncoding; an explicit empty string uses the system ANSI encoding. A File returned straight into a member access closes after the full expression; Close() or Using releases a stored File immediately.",
                      "tested-by":  "external-com.ahk; file-fileopen.ahk"
                  },
                  {
@@ -6874,7 +6874,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The current pixels as a Ks.Clr object over the underlying toolkit bitmap, with pending work materialized first. The reference is to the live surface, so it goes stale once the image is next transformed or disposed.",
+                     "notes":  "The current pixels as a Ks.Clr object over the underlying toolkit bitmap, with pending work materialized first. The reference is to the live surface, so it goes stale once the image is next transformed or destroyed. Image.Destroy() releases the bitmap immediately; Using and collection also release it.",
                      "tested-by":  "image.ahk"
                  },
                  {
@@ -8523,7 +8523,7 @@
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
                      "macos":  "planned",
-                     "notes":  "Many sounds at once through one managed float32 mixer and one native stream, which is what SoundPlay cannot do. After Open() and Prepare() a play performs no decode, resample or blocking call, so it is safe from a frame timer. Each admitted play returns a stable Audio.Playback with Volume, Pan, Loop, Mute, PositionMilliseconds, Pause, Resume and Stop; a bounded refusal returns blank rather than raising. VoicePolicy is \"Oldest\", \"RoundRobin\" or \"Reject\". One script may hold 16 outputs open. Unavailable Device, output SampleRate/Channels/LatencyMilliseconds/Peak/Error and playback DurationMilliseconds/PositionMilliseconds/Peak follow reference.md's compatibility-mode rule.",
+                     "notes":  "Many sounds at once through one managed float32 mixer and one native stream, which is what SoundPlay cannot do. After Open() and Prepare() a play performs no decode, resample or blocking call, so it is safe from a frame timer. Each admitted play returns a stable Audio.Playback with Volume, Pan, Loop, Mute, PositionMilliseconds, Pause, Resume and Stop; a bounded refusal returns blank rather than raising. VoicePolicy is \"Oldest\", \"RoundRobin\" or \"Reject\". One script may hold 16 outputs open. Unavailable Device, output SampleRate/Channels/LatencyMilliseconds/Peak/Error and playback DurationMilliseconds/PositionMilliseconds/Peak follow reference.md's compatibility-mode rule. Close() releases an output immediately and permits reopening; Using or collection disposes it permanently. No Dispose() method is exposed to scripts.",
                      "tested-by":  "audio-class.ahk; AudioInternalsTests.cs; Gui/guitest.ks; MiscTests.OptionalMetadata"
                  },
                  {
@@ -8610,7 +8610,7 @@
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
                      "macos":  "planned",
-                     "notes":  "An explicit lifetime for observing a device or session level, because metering a target whose frames do not pass through Keysharp costs a live native stream on some backends. Peak is 0 through 100 when observed. Unresolved Target, unobserved Peak and absent Error follow reference.md's compatibility-mode rule, keeping no data distinct from silence. Output, playback and recorder Peak need no meter, since Keysharp already owns those frames.",
+                     "notes":  "An explicit lifetime for observing a device or session level, because metering a target whose frames do not pass through Keysharp costs a live native stream on some backends. Peak is 0 through 100 when observed. Unresolved Target, unobserved Peak and absent Error follow reference.md's compatibility-mode rule, keeping no data distinct from silence. Output, playback and recorder Peak need no meter, since Keysharp already owns those frames. Stop() releases the meter immediately; Using or collection disposes it permanently. No Dispose() method is exposed to scripts.",
                      "tested-by":  "audio-class.ahk"
                  },
                  {
@@ -8621,7 +8621,7 @@
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
                      "macos":  "planned",
-                     "notes":  "Captures a microphone or what an output device is playing, to a WAV file or to memory. Configured first and started second so handlers can be registered before capture begins and a permission failure is observable. A recorder is single-use once capture is admitted, and every way it can end competes for one terminal transition, so exactly one reason and one result are published. Capture is gated on the AudioCapture permission strictly, rather than the usual log-and-continue. Implemented on all three backends but not yet exercised on hardware; macOS system-output capture is unsupported pending its process-tap spike. Unavailable recorder Device/Path/Peak/Error/Result and the unused Recording.Clip or Path follow reference.md's compatibility-mode rule.",
+                     "notes":  "Captures a microphone or what an output device is playing, to a WAV file or to memory. Configured first and started second so handlers can be registered before capture begins and a permission failure is observable. A recorder is single-use once capture is admitted, and every way it can end competes for one terminal transition, so exactly one reason and one result are published. Capture is gated on the AudioCapture permission strictly, rather than the usual log-and-continue. Implemented on all three backends but not yet exercised on hardware; macOS system-output capture is unsupported pending its process-tap spike. Unavailable recorder Device/Path/Peak/Error/Result and the unused Recording.Clip or Path follow reference.md's compatibility-mode rule. Stop() ends recording immediately; Using or collection disposes the recorder permanently. No Dispose() method is exposed to scripts.",
                      "tested-by":  "audio-class.ahk; MiscTests.OptionalMetadata"
                  },
                  {
