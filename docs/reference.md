@@ -405,10 +405,9 @@ Some general notes about Keysharp's implementation of the [AutoHotkey v2 specifi
 * Indexing an unset result from a parameterless property getter, for retrieval or assignment, raises `UnsetError` with `No value was returned.` and the property name in `Extra`, including in a `??` expression.
 * An unset final getter or indexed result can use `??` or `IsSet`; an absent indexed property still raises `PropertyError`. Callable-object property accessors honor `MinParams`, `MaxParams` and `IsVariadic`, including forwarding indices to a parameterless getter's result.
 * A structured array class used as a `DllCall` parameter type passes the array's storage address regardless of its size. A structured array return type raises `ValueError`.
-* Outside Windows x64, a struct passed or returned by value through `DllCall` or `CallbackCreate` must be 1, 2, 4 or 8 bytes, with naturally aligned fields that are not all floating-point; other structs raise `ValueError`.
-* Typed properties can be declared only in a struct class. Declaring one in another class, which AutoHotkey allows, raises an error.
-* A struct prototype with typed properties has a read-only `Base` even while its structure is open. `ObjGetDataSize(Prototype)` reports 0 for an invalid structure, such as one which contains itself by value. Construction, `At` and `ObjCreateWithDataPtr` raise `TypeError`; using it as a native call or callback type raises `ValueError`. `Size` requires a struct instance; reading `Prototype.Size` raises `TypeError` without closing the layout.
-* A subclass of a structured array can add typed fields while preserving the element stride. For `Class(Int32[2])` with an added `Int32` field, element 2 is stored at byte offset 4 and can be read normally. AutoHotkey v2.1-alpha.39 loses that write and raises `UnsetItemError` when reading the element.
+* Outside Windows x64, by-value structs in `DllCall`/`CallbackCreate` must be 1, 2, 4 or 8 bytes, naturally aligned and not entirely floating-point. Zero-size fields are ignored; unsupported layouts raise `ValueError`.
+* Invalid layouts report size 0 through `ObjGetDataSize`; construction/views raise `TypeError` and native signatures raise `ValueError`. Use `ObjGetDataSize` for prototypes; `Prototype.Size` raises `TypeError` without closing the layout.
+* Structured-array subclasses preserve element stride when adding fields. For `Class(Int32[2])` with an added `Int32` field, AutoHotkey v2.1-alpha.39 loses writes to element 2; Keysharp preserves its offset of 4 bytes.
 * The operation of Keysharp is different than AutoHotkey. While AutoHotkey is an interpreted scripting language, Keysharp actually creates a compiled .NET executable and runs it.
 
 * The process for reading and running a script is:

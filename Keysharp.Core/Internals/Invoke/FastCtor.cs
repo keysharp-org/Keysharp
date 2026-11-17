@@ -34,7 +34,6 @@ namespace Keysharp.Internals.Invoke
 		{
 			private readonly ConstructorInfo ctor;
 			private readonly ConstructorInvoker invoker;
-			private readonly bool isStruct;
 			private int callsUntilCompilation = DelegateFactory.CompilationThreshold;
 			private Func<Any> compiled;
 
@@ -42,15 +41,17 @@ namespace Keysharp.Internals.Invoke
 			{
 				this.ctor = ctor;
 				invoker = ConstructorInvoker.Create(ctor);
-				isStruct = Struct.IsStructType(ctor.DeclaringType);
 			}
 
 			// An instance of the prototype's class without running any of its script code, as AutoHotkey's NewInstance before
-			// Initialize.
+			// Initialize. The first instance closes the structure the prototype declares.
 			internal Any Create(Any prototype)
 			{
-				if (isStruct && StructLayout.GetValidated(prototype.type).Invalid)
+				if (StructDefinition.ForInstance(prototype).IsInvalid)
+				{
+					_ = Errors.TypeErrorOccurred(StructDefinition.InvalidMessage);
 					return null;
+				}
 
 				var instance = Instantiate();
 				if (instance._base != prototype)

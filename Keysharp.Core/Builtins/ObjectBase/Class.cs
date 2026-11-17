@@ -3,7 +3,7 @@ namespace Keysharp.Builtins
     public class Class : KeysharpObject
     {
 		// Fixed at construction, independently of the mutable Base and Prototype properties.
-		internal Any InstancePrototype;
+		internal Prototype InstancePrototype;
 
 		public new static object staticCall(object @this, params object[] args)
         {
@@ -26,37 +26,32 @@ namespace Keysharp.Builtins
             }
             args = args[skip..^0];
 
-			if (baseClass is not Class { InstancePrototype: { } baseProto } original)
+			if (baseClass is not Class { InstancePrototype: not null } original)
 				return Errors.ErrorOccurred("The base class must have a prototype");
 
-			var baseType = baseProto.type;
-			var isStruct = Struct.IsStructType(baseType);
-			var userType = isStruct ? StructLayout.CreateDerivedType(name, baseType) : baseType;
-			if (isStruct)
-				TheScript.Operators.RegisterAlias(userType, baseType);
-			var staticInst = (Class)FastCtor.Instantiate(original.GetType());
-			staticInst.SetBaseInternal(baseClass);
-            staticInst.type = userType;
+			var staticInst = Create(name, original);
+			_ = Script.InvokeMeta(staticInst, "__New", args);
+			return staticInst;
+        }
 
-            // As AHK's Class_New: the prototype inherits the base's members through its base rather than copies of
-            // them, and the base class's static __Init is not run again for the new class, which has none of its own.
-            var proto = new Prototype(userType);
-            proto.SetBaseInternal(baseProto);
+		// As AHK's Class_New: the prototype inherits the base's members through its base rather than copies of them, and
+		// the base class's static __Init is not run again for the new class, which has none of its own. The new class's
+		// instances are of its base's native type; its prototype is what identifies it.
+		internal static Class Create(string name, Class baseClass)
+		{
+			using var registering = Script.classRegistration.EnterScope();
+			var baseProto = baseClass.InstancePrototype;
+			var staticInst = (Class)FastCtor.Instantiate(baseClass.GetType());
+			staticInst.SetBaseInternal(baseClass);
+			staticInst.type = baseProto.type;
+
+			var proto = new Prototype(baseProto.type) { owner = staticInst };
+			proto.SetBaseInternal(baseProto);
 			proto.DefinePropInternal("__Class", new OwnPropsDesc(name));
 			staticInst.DefinePropInternal("Prototype", new OwnPropsDesc(proto));
 			staticInst.InstancePrototype = proto;
-
-			// A struct class has a type of its own, by which its fields, DllCall and callbacks create its instances.
-			if (isStruct)
-			{
-				vars.Prototypes[userType] = proto;
-				vars.Statics[userType] = staticInst;
-			}
-
-			_ = Script.InvokeMeta(staticInst, "__New", args);
-
 			return staticInst;
-        }
+		}
 
         // Construction relays its arguments straight to __New, so a named argument names one of __New's parameters,
         // not one of Call's (it has none of its own): the container rides the tail of args and binds there.
@@ -108,6 +103,10 @@ namespace Keysharp.Builtins
     public class Prototype : KeysharpObject
     {
         internal FastCtor.Factory factory;
+		// The class the prototype belongs to.
+		internal Class owner;
+		// The native structure the prototype declares, created when first needed.
+		internal StructDefinition definition;
 
         internal Prototype(Type t)
         {

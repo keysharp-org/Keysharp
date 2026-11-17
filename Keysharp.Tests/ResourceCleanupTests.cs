@@ -123,7 +123,7 @@ public class ResourceCleanupTests : TestRunner
 			backing.Initialize([]);
 			Assert.That(backing.Ptr, Is.Not.Zero);
 			Marshal.WriteInt32((nint)backing.Ptr, 42);
-			view = Struct.CreateView(new Prototype(typeof(StructInt32)), backing.Ptr, backing, embedded);
+			view = Struct.CreateView(StructDefinition.Of(Script.TheScript.Vars.Prototypes[typeof(StructInt32)]), backing.Ptr, backing, embedded);
 			view.Dispose();
 			view.Dispose();
 			Assert.That(view.Ptr, Is.Zero);
@@ -137,6 +137,81 @@ public class ResourceCleanupTests : TestRunner
 		{
 			view?.Dispose();
 			backing.Dispose();
+		}
+	}
+
+	[TestCase(false), TestCase(true)]
+	public void TypedStorageReleasedAfterDisposeFailure(bool nestedFailure)
+	{
+		var number = StructDefinition.Of(s.Vars.Prototypes[typeof(StructInt32)]);
+		var childDefinition = DefineData(typeof(FailingChild), typeof(Struct), "Value", number);
+		var definition = DefineData(typeof(FailingOwner), typeof(KeysharpObject), "Child", childDefinition);
+		var owner = new FailingOwner();
+		owner.SetBaseInternal(definition.Prototype);
+		owner.Initialize([]);
+		var child = (FailingChild)Script.GetPropertyValue(owner, "Child");
+		child.Fail = nestedFailure;
+		try
+		{
+			var error = Assert.Throws<InvalidOperationException>(() => Keysharp.Internals.Scripting.DestructorPump.RunDestructor(owner));
+			Assert.That(error.Message, Is.EqualTo("owner disposal"));
+			Assert.That(owner.nativeData.IsReleased, Is.True);
+			Assert.That(child.nativeData.IsReleased, Is.True);
+			Assert.That(child.Ptr, Is.Zero);
+		}
+		finally
+		{
+			owner.nativeData.Release();
+		}
+	}
+
+	[Test]
+	public void DirectBufferDisposeKeepsTypedCleanupArmed()
+	{
+		var number = StructDefinition.Of(s.Vars.Prototypes[typeof(StructInt32)]);
+		var definition = DefineData(typeof(Keysharp.Builtins.Buffer), typeof(Keysharp.Builtins.Buffer), "Value", number);
+		var buffer = new Keysharp.Builtins.Buffer(4L, 23L);
+		buffer.SetBaseInternal(definition.Prototype);
+		NativeData.Initialize(buffer);
+		try
+		{
+			((IDisposable)buffer).Dispose();
+			Assert.That(buffer.Ptr, Is.Zero);
+			Assert.That(buffer.nativeData.Ptr, Is.Not.Zero);
+			Assert.That(buffer.HasFinalizer, Is.True);
+			Keysharp.Internals.Scripting.DestructorPump.RunDestructor(buffer);
+			Assert.That(buffer.nativeData.IsReleased, Is.True);
+		}
+		finally
+		{
+			buffer.nativeData.Release();
+			((IDisposable)buffer).Dispose();
+		}
+	}
+
+	private StructDefinition DefineData(Type type, Type baseType, string name, StructDefinition fieldType)
+	{
+		var prototype = new Prototype(type);
+		prototype.SetBaseInternal(s.Vars.Prototypes[baseType]);
+		Assert.That(StructDefinition.DefineField(prototype, name, fieldType), Is.EqualTo(StructFieldDefinition.Defined));
+		return StructDefinition.Of(prototype);
+	}
+
+	private sealed class FailingOwner : KeysharpObject, IDisposable
+	{
+		public FailingOwner() { }
+		void IDisposable.Dispose() => throw new InvalidOperationException("owner disposal");
+	}
+
+	private sealed class FailingChild : Struct
+	{
+		internal bool Fail;
+		public FailingChild() { }
+		public override void Dispose()
+		{
+			base.Dispose();
+			if (Fail)
+				throw new InvalidOperationException("child disposal");
 		}
 	}
 

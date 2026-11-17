@@ -50,7 +50,7 @@ namespace Keysharp.Internals.Scripting
 
 		/// <summary>
 		/// Cleans <paramref name="obj"/> up for the using statement being left, as its collection would: its __Delete and
-		/// those of a struct's nested structs, then its disposal, whatever they threw. An object which takes hold of
+		/// those of its nested structs, then its disposal, whatever they threw. An object which takes hold of
 		/// something again is disposed again, by a later statement or its collection, without another __Delete. Each call
 		/// is this thread's, so the first error is thrown from here once the rest has run.
 		/// </summary>
@@ -78,7 +78,7 @@ namespace Keysharp.Internals.Scripting
 					}
 				}
 
-				try { (obj as IDisposable)?.Dispose(); }
+				try { ReleaseNative(obj); }
 				catch (Exception ex) { failure ??= ExceptionDispatchInfo.Capture(ex); }
 			}
 			finally
@@ -160,7 +160,7 @@ namespace Keysharp.Internals.Scripting
 
 				// A batch of Buffers and Files, the usual one, has nothing to order.
 				var anyDelete = batch.Exists(static entry => !entry.Deleted
-					&& (entry.Owner.HasDeleteCall || entry.Owner is Struct { initializedFields: not null }
+					&& (entry.Owner.HasDeleteCall || entry.Owner.nativeData?.InitializedFields != null
 						&& WithInitializedFields(entry.Owner).Any(static any => any.HasDeleteCall)));
 
 				// Outside-in (parents before children).
@@ -226,20 +226,33 @@ namespace Keysharp.Internals.Scripting
 
 		private static void DisposeNative(Any obj)
 		{
-			try
-			{
-				if (obj is IDisposable disposable)
-					disposable.Dispose();
-			}
+			try { ReleaseNative(obj); }
 			catch { }
 		}
 
-		// A struct's own __Delete runs before those of the nested structs its construction initialized, the last first.
+		// Memory and nested structs the object owns go with it; an address it only views stays, so an object its __Delete
+		// kept still reads where it did.
+		private static void ReleaseNative(Any obj)
+		{
+			ExceptionDispatchInfo failure = null;
+			try { (obj as IDisposable)?.Dispose(); }
+			catch (Exception ex) { failure = ExceptionDispatchInfo.Capture(ex); }
+
+			try
+			{
+				if (obj.nativeData is { NeedsRelease: true } data)
+					data.Release();
+			}
+			catch (Exception ex) { failure ??= ExceptionDispatchInfo.Capture(ex); }
+			failure?.Throw();
+		}
+
+		// An object's own __Delete runs before those of the nested structs its construction initialized, the last first.
 		private static IEnumerable<Any> WithInitializedFields(Any owner)
 		{
 			yield return owner;
 
-			if (owner is Struct { initializedFields: { } fields })
+			if (owner.nativeData?.InitializedFields is { } fields)
 				for (var i = fields.Count - 1; i >= 0; --i)
 					foreach (var field in WithInitializedFields(fields[i]))
 						yield return field;
@@ -258,7 +271,7 @@ namespace Keysharp.Internals.Scripting
 			return TopoSort(batch, edges);
 		}
 
-		// What a struct's embedded structs hold, it holds itself, so they are looked through, and only they.
+		// What an object's embedded structs hold, it holds itself, so they are looked through, and only they.
 		private static void AddReferenceEdges(Any from, Any holder, HashSet<Any> set, Dictionary<Any, HashSet<Any>> edges)
 		{
 			foreach (var child in TryEnumerateChildren(holder))
@@ -271,7 +284,7 @@ namespace Keysharp.Internals.Scripting
 					if (!edges.TryGetValue(from, out var to)) edges[from] = to = new(ReferenceEqualityComparer.Instance);
 					to.Add(child);
 				}
-				else if (child is Struct nested && holder is Struct owner && nested.IsEmbeddedIn(owner))
+				else if (child is Struct nested && nested.nativeData?.IsEmbeddedIn(holder) == true)
 					AddReferenceEdges(from, nested, set, edges);
 			}
 		}

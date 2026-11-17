@@ -218,25 +218,6 @@ public sealed class OperatorRegistry
 		}
 	}
 
-	internal void RegisterAlias(Type alias, Type source)
-	{
-		if (alias == source) return;
-
-		lock (registrationLock)
-		{
-			var current = tables;
-			if (!current.TryGetValue(source, out var entry)) return;
-			if (current.TryGetValue(alias, out var existing))
-			{
-				if (existing != entry) throw new InvalidOperationException("Class operators cannot be replaced.");
-				return;
-			}
-
-			var updated = new Dictionary<Type, ClassOperators>(current) { [alias] = entry };
-			Volatile.Write(ref tables, updated);
-		}
-	}
-
 	public bool TryInvoke(OperatorKind kind, object left, object right, out object result)
 	{
 		var classType = (left as Class)?.InstancePrototype?.type;

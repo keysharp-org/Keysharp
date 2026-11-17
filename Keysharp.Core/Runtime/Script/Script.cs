@@ -1851,7 +1851,7 @@ namespace Keysharp.Runtime
 		// The built-in type of the nearest prototype in the chain which is not one of the script's own classes.
 		internal Type GetNativeType(Any obj)
 		{
-			for (; obj != null; obj = obj.Base)
+			for (; obj != null; obj = obj._base)
 				if (!string.Equals(obj.type.Namespace, ProgramNamespace, StringComparison.OrdinalIgnoreCase))
 					return NativeKind(obj.type);
 

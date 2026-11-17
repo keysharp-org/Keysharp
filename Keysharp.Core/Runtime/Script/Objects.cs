@@ -7,10 +7,8 @@ namespace Keysharp.Runtime
 {
 	public partial class Script
 	{
-		internal readonly ConditionalWeakTable<KeysharpObject, StrongBox<long>> ExternalDataPointers = new();
-
 		// Callers meeting at one class register it once, and a class which has its entries keeps them.
-		private static readonly Lock classRegistration = new();
+		internal static readonly Lock classRegistration = new();
 
 		public static void InitClass(Type t, Type alias = null)
 		{
@@ -25,6 +23,7 @@ namespace Keysharp.Runtime
 
 			Prototype proto = new Prototype(t);
 			Class staticInst = new Class { InstancePrototype = proto };
+			proto.owner = staticInst;
 
 			store.Statics.AddLazy(t, () =>
 			{
@@ -251,9 +250,6 @@ namespace Keysharp.Runtime
 
 				foreach (var nestedType in nestedTypes)
 				{
-					if (StructLayout.IsAutoPointerClass(nestedType))
-						continue;
-
 					// Same opt-out the method loop above honors. Without it a public nested type is always
 					// registered, and its getter indexes Vars.Statics with a type that was never initialized.
 					if (nestedType.IsDefined(typeof(PublicHiddenFromUser), false))

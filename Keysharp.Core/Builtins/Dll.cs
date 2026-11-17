@@ -210,12 +210,12 @@ namespace Keysharp.Builtins
 					if (isReturn && typedVoid)
 						break;
 
-					if (!Struct.TryResolveClass(typeSpecs[i], out var structType))
+					if (!Struct.TryResolveClass(typeSpecs[i], out var definition))
 						return Errors.ValueErrorOccurred(isReturn
 														 ? "Invalid callback return type."
 														 : $"Invalid callback parameter type at position {i + 1}.");
 
-					if (!StructMarshal.TryGetCallbackConversion(structType, isReturn, out conversions[i], out var error))
+					if (!StructMarshal.TryGetCallbackConversion(definition, isReturn, out conversions[i], out var error))
 						return Errors.ValueErrorOccurred(error);
 				}
 

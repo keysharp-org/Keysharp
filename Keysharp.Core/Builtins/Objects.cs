@@ -5,10 +5,6 @@ namespace Keysharp.Builtins
 	/// </summary>
 	public static class Objects
 	{
-		// Borrowed data is kept separately so ordinary objects need no extra storage.
-		internal static bool HasExternalDataPointer(object value) => value is KeysharpObject obj
-			&& Script.TheScript?.ExternalDataPointers.TryGetValue(obj, out _) == true;
-
 		/// <summary>
 		/// Builds the <c>{ X, Y, Width, Height }</c> rectangle object that is Keysharp's one shape for handing a rectangle
 		/// back to a script — <c>WinEvent</c>'s Move/CaretMove <c>A_EventInfo</c>, <c>Monitor.Bounds</c> and
@@ -130,12 +126,10 @@ namespace Keysharp.Builtins
 			var objVal = obj as KeysharpObject;
 			var baseObjVal = baseObj as KeysharpObject;
 
-			// A fixed layout or an external data pointer makes the base read-only. Check Any before narrowing to Object,
-			// because Struct extends Any directly.
-			if (obj is Struct { IsPointerView: true } || HasExternalDataPointer(obj) || Struct.HasTypedProperties(obj as Any))
+			if (obj is Any { nativeData: not null } || obj is Prototype prototype && StructDefinition.Of(prototype).HasClosedData)
 				return Errors.ValueErrorOccurred("Property is read-only.");
 
-			if (Struct.HasTypedProperties(baseObj as Any))
+			if (!StructDefinition.CanBeBase(baseObj as Any))
 				return Errors.ValueErrorOccurred("Invalid base.");
 
 			if (objVal == null)
@@ -145,7 +139,7 @@ namespace Keysharp.Builtins
 				return Errors.TypeErrorOccurred(baseObj, typeof(KeysharpObject));
 
 			// find each object's "native" (built‐in) prototype type
-			var nativeObj = Script.TheScript.GetNativeType(objVal.Base);
+			var nativeObj = Script.TheScript.GetNativeType(objVal._base);
 			var nativeBase = Script.TheScript.GetNativeType(baseObjVal);
 			// For Prototype wrappers, use the underlying runtime type carried by Any.type.
 			if (nativeObj == typeof(Prototype))
@@ -234,7 +228,7 @@ namespace Keysharp.Builtins
 			var enumerable = DescriptorSlot(kso, "Enumerable").Ab(true);
 
 			if (typed)
-				return TypedFieldResult(Struct.DefineFieldOnPrototype(target, nameVal, Struct.TryResolveClass(type, out var fieldType) ? fieldType : null,
+				return TypedFieldResult(StructDefinition.DefineField(target, nameVal, Struct.TryResolveClass(type, out var fieldType) ? fieldType : null,
 										(long?)pack ?? 0, offset, false, enumerable), target, nameIndex + 1);
 
 			var op = target.EnsureOwnProps();
@@ -271,20 +265,14 @@ namespace Keysharp.Builtins
 				return DefaultObject;
 
 			_ = Struct.TryResolveClass(type, out var fieldType);
-			return TypedFieldResult(Struct.DefineFieldOnPrototype(target, fieldName, fieldType, pack, offsetOf, true), target, 3);
+			return TypedFieldResult(StructDefinition.DefineField(target, fieldName, fieldType, pack, offsetOf, true), target, 3);
 		}
-
-		[PublicHiddenFromUser]
-		public static object DefineStructFieldOnPrototype(object obj0, object obj1, Type type) => DefineDeclaredField(obj0, obj1, type, 0, null);
 
 		[PublicHiddenFromUser]
 		public static object DefineStructFieldOnPrototype(object obj0, object obj1, object type) => DefineDeclaredField(obj0, obj1, type, 0, null);
 
-		// Typed-field registration with an explicit #StructPack alignment (emitted by the lowerer for packed struct fields).
-		[PublicHiddenFromUser]
-		public static object DefineStructFieldOnPrototype(object obj0, object obj1, Type type, long pack) => DefineDeclaredField(obj0, obj1, type, pack, null);
-
-		// offsetOf names the field whose offset a union block's member after the first shares.
+		// pack is the #StructPack alignment in effect, and offsetOf names the field whose offset a union block's member after
+		// the first shares.
 		[PublicHiddenFromUser]
 		public static object DefineStructFieldOnPrototype(object obj0, object obj1, object type, long pack, string offsetOf = null) =>
 			DefineDeclaredField(obj0, obj1, type, pack, offsetOf);
@@ -292,8 +280,7 @@ namespace Keysharp.Builtins
 		/// <summary>Creates an instance without initialization, using a borrowed structured-data address.</summary>
 		public static object ObjCreateWithDataPtr(object ClassObj, object Address)
 		{
-			if (ClassObj is not Class { InstancePrototype: { } proto }
-					|| !CanCreateWithDataPointer(proto.type))
+			if (ClassObj is not Class { InstancePrototype: { } proto } || !StructDefinition.CanHoldData(proto))
 				return Errors.ErrorOccurred("Invalid class.");
 
 			// An object gives its Ptr and is kept alive by the new instance, and any address is accepted, as Struct.At
@@ -301,42 +288,34 @@ namespace Keysharp.Builtins
 			if (!Struct.TryGetAddress(Address, out var address))
 				return DefaultObject;
 
-			if (Struct.IsStructType(proto.type))
-				return (object)Struct.CreateView(proto, address, Address as Any, callDelete: true) ?? DefaultObject;
+			var definition = StructDefinition.Of(proto);
 
-			var instance = (KeysharpObject)FastCtor.Create(proto);
-			AttachDataPointer(instance, address, Address as Any);
+			if (definition.IsStruct)
+				return (object)Struct.CreateView(definition, address, Address as Any, callDelete: true) ?? DefaultObject;
+
+			if (FastCtor.Create(proto) is not { } instance)
+				return DefaultObject;
+
+			_ = NativeData.AttachBorrowed(instance, definition, address, Address as Any, embedded: false, noDelete: false);
 			return instance;
 		}
-
-		internal static void AttachDataPointer(KeysharpObject instance, long address, object owner) =>
-			Script.TheScript.ExternalDataPointers.Add(instance, owner != null ? new OwnedDataPointer(address, owner) : new StrongBox<long>(address));
-
-		private sealed class OwnedDataPointer(long address, object owner) : StrongBox<long>(address)
-		{
-			internal readonly object Owner = owner;
-		}
-
-		private static bool CanCreateWithDataPointer(Type type) => Struct.IsStructType(type)
-			|| Class.CanConstruct(type) && typeof(KeysharpObject).IsAssignableFrom(type)
-			&& !typeof(KeysharpFunc).IsAssignableFrom(type) && !typeof(KeysharpFile).IsAssignableFrom(type)
-			&& !typeof(Module).IsAssignableFrom(type);
 
 		/// <summary>Returns the address of the object's structured data (typed properties). [v2.1-alpha.3+]</summary>
 		/// <remarks>An object without structured data or a data pointer returns unset. [v2.1-alpha.38+]</remarks>
 		public static object ObjGetDataPtr(object obj) => obj switch
 		{
-			Struct st => st.IsPointerView || st.Ptr != 0 ? (object)st.Ptr : null,
-			KeysharpObject instance when Script.TheScript.ExternalDataPointers.TryGetValue(instance, out var pointer) => pointer.Value,
+			Any { nativeData: { } data } => data.IsBorrowed || data.Ptr != 0 ? (object)data.Ptr : null,
 			Any => null,
 			_ => Errors.TypeErrorOccurred(obj, typeof(KeysharpObject))
 		};
 
 		/// <summary>Returns the size of the object's structure (typed properties), in bytes. [v2.1-alpha.3+]</summary>
+		/// <remarks>Asking a prototype closes its structure, as asking AutoHotkey does.</remarks>
 		public static object ObjGetDataSize(object obj) => obj switch
 		{
 			Struct st => Struct.get_Size(st),
-			Any { isPrototype: true } proto when Struct.IsStructType(proto.type) => StructLayout.Get(proto.type).Size,
+			Prototype proto => StructDefinition.Of(proto).Layout.Size,
+			Any { nativeData: { } data } => data.Layout.Size,
 			KeysharpObject => 0L,
 			_ => Errors.TypeErrorOccurred(obj, typeof(KeysharpObject))
 		};
@@ -347,17 +326,13 @@ namespace Keysharp.Builtins
 			if (obj is not (Struct or KeysharpObject))
 				return Errors.TypeErrorOccurred(obj, typeof(KeysharpObject));
 
-			var pointer = obj is KeysharpObject instance && Script.TheScript.ExternalDataPointers.TryGetValue(instance, out var data) ? data : null;
-			if (obj is not Struct { IsPointerView: true } && pointer == null)
+			if (obj is not Any { nativeData: { IsBorrowed: true } data })
 				return Errors.ErrorOccurred("Operation failed.");
 
 			if (!ptr.CoerceLong(out var ptrVal))
 				return DefaultObject;
 
-			if (obj is Struct st)
-				st.SetDataPtr(ptrVal);
-			else
-				pointer.Value = ptrVal;
+			data.SetDataPtr(ptrVal);
 			return Script.DefaultObject;
 		}
 

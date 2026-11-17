@@ -268,13 +268,14 @@ public class ScriptingComponentTests : TestRunner
 
 		var storageType = classes.Single(type => typeof(Struct).IsAssignableFrom(type));
 		var storagePrototype = new Prototype(storageType);
-		Assert.That(Struct.DefineFieldOnPrototype(storagePrototype, "Later", typeof(StructInt32)), Is.EqualTo(StructFieldDefinition.Defined),
+		var int32 = StructDefinition.Of(Script.TheScript.Vars.Prototypes[typeof(StructInt32)]);
+		Assert.That(StructDefinition.DefineField(storagePrototype, "Later", int32), Is.EqualTo(StructFieldDefinition.Defined),
 			"a prototype alone must leave the struct layout open");
 		using var storage = (Struct)FastCtor.Create(storagePrototype);
 		Assert.That(storage.GetType(), Is.EqualTo(storageType));
 		Assert.That(storage.Base, Is.SameAs(storagePrototype));
 		Assert.That(storage.Ptr, Is.Zero, "memory comes from initialization");
-		Assert.That(StructLayout.GetValidated(storageType).Size, Is.EqualTo(4));
+		Assert.That(StructDefinition.Of(storagePrototype).Layout.Size, Is.EqualTo(4));
 	}
 
 	[Test]

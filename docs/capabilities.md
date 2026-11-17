@@ -462,7 +462,7 @@ Status legend:
 | DirExist() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Checks for the existence of a folder and returns its attributes. |
 | DirMove() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Moves a folder along with all its sub-folders and files. It can also rename a folder. |
 | DirSelect() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Displays the native folder-selection dialog on every platform. Some legacy Windows folder-dialog option flags have no portable equivalent. |
-| DllCall() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Calls native functions with numeric classes, structures and void returns; arrays pass by address and cannot be returned. Numeric subclasses retain __Value, and pointer returns preserve target-class instances except for native numeric targets. Outside Windows x64, by-value structs must be 1, 2, 4 or 8 bytes, naturally aligned and not entirely floating-point. |
+| DllCall() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Numeric/struct arguments and void returns; arrays pass by address and cannot be returned. Numeric subclasses use __Value. Pointer returns retain target types except native numbers. Outside Windows x64, aggregates require 1/2/4/8 bytes, natural alignment and some non-floating data; zero-size fields are ignored. |
 | DotNet.Format() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats text using .NET composite format placeholders (1-based indexing adaptation). |
 | DotNet.RegExMatch() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Runs a .NET regex match and returns match details. |
 | DotNet.RegExReplace() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Runs a .NET regex replace. |
@@ -893,7 +893,7 @@ Status legend:
 | ObjPtr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the object's stable, borrowed IUnknown address. Keep the object alive while using it. Linux and macOS expose IUnknown identity and lifetime only, without IDispatch automation. |
 | ObjPtrAddRef() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns ObjPtr's address and adds one owned native reference, keeping the object alive until ObjRelease or transfer to ObjFromPtr. |
 | ObjRelease() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Releases one owned native IUnknown reference and returns the new native count. Ordinary script references are managed separately by the garbage collector. |
-| ObjSetBase() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Sets an object's base object. The native type cannot change and the base chain may not become circular. Neither object may have typed properties, since those fix the memory layout; a prototype which has none is writable. A Struct.At view or ObjCreateWithDataPtr instance has a read-only base. |
+| ObjSetBase() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Rejects native-type changes, cycles and rebasing data-bearing instances or closed nonempty prototypes. Rebasing preserves closed layouts and leaves open replacements open. |
 | ObjSetCapacity() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Ensures capacity instead of setting an exact size; structs raise TypeError. |
 | ObjSetDataPtr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Rebinds a Struct.At view or an object created by ObjCreateWithDataPtr; other instances cannot be rebound. Retrieved nested views keep their addresses. Rebinding within the same known struct allocation retains its lifetime tracking. |
 | OnClipboardChange() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Registers callbacks for native platform clipboard content changes. |
@@ -1029,7 +1029,7 @@ Status legend:
 | struct.__Value | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Backing value property for struct instances. |
 | Struct.Array | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Fixed-length typed arrays; DllCall parameters pass their storage address, and an array is accepted where a pointer to its element class is expected. An Int32[2] subclass with an added Int32 field keeps element 2 at byte offset 4, unlike AutoHotkey v2.1-alpha.39. |
 | Struct.Ptr | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Pointer class/property used for pointer-to-struct fields, native parameters and struct addresses. |
-| structures | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | User-defined structures via the struct keyword: typed fields, union blocks, nesting, At, numeric types, pointer classes, #StructPack alignment, and structured arrays (Int32[10] / Struct.Array). Numeric subclasses retain inherited __Value storage, including when they add typed fields, and initialize as nested structs when used as fields. |
+| structures | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Typed fields on ordinary classes and structs, including unions, nesting, At views, pointers, fixed arrays and #StructPack. Numeric subclasses retain __Value and initialize as nested fields. |
 | StrUpper() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Converts a string to uppercase. |
 | SubStr() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves one or more characters from the specified position in a string. |
 | super | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keyword that accesses base-class methods and properties. |

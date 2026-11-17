@@ -166,7 +166,8 @@ namespace Keysharp.Runtime
 			{
 				if (TryResolveMember(kso, key, true, out var opm, checkBase))
 				{
-					if (opm.StructField != null && item is Struct getStruct) return (item, getStruct.GetFieldValue(opm.StructField, true));
+					if (opm.StructField != null)
+						return (item, NativeData.For(item, key) is { } getData ? getData.GetFieldValue(opm.StructField, true) : DefaultObject);
 					if (opm.Call != null) return (item, opm.Call); // (this, …)
 					if (opm.Get != null) return (item, InvokeOrNull(opm.Get, null, item) ?? UnsetResultErrorOccurred(item, key));
 					if (opm.Value != null) return (item, opm.Value);
@@ -306,11 +307,14 @@ namespace Keysharp.Runtime
 
 				if (TryGetGettableProp(kso, namestr, out var opm))
 				{
-					if (opm.StructField != null && item is Struct getStruct)
+					if (opm.StructField != null)
 					{
+						if (NativeData.For(item, namestr) is not { } getData)
+							return DefaultObject;
+
 						// `s.field[i]` folds to GetPropertyValue(s, "field", i); apply any trailing index to the field
 						// value (e.g. a structured-array field element) rather than dropping it.
-						var fieldValue = getStruct.GetFieldValue(opm.StructField, args.Length > 0);
+						var fieldValue = getData.GetFieldValue(opm.StructField, args.Length > 0);
 						return args.Length > 0 ? GetPropertyResultIndex(item, namestr, fieldValue, args) : fieldValue;
 					}
 
@@ -764,10 +768,10 @@ namespace Keysharp.Runtime
 				{
 					if (field.StructField != null)
 					{
-						if (item is not Struct setStruct)
-							return Errors.ErrorOccurred("Property invalid for object with null data.", null, namestr);
-						if (argCount > 1) return SetPropertyResultIndex(setStruct.GetFieldValue(field.StructField, true));
-						_ = setStruct.SetFieldValue(field.StructField, value);
+						if (NativeData.For(item, namestr) is not { } setData)
+							return DefaultObject;
+						if (argCount > 1) return SetPropertyResultIndex(setData.GetFieldValue(field.StructField, true));
+						_ = setData.SetFieldValue(field.StructField, value);
 						return value;
 					}
 					if (argCount > 1)

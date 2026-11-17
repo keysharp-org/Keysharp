@@ -68,7 +68,7 @@ namespace Keysharp.Internals.Interop
 		private bool disposed;
 		private NativeTypeCode returnCode;
 		// A pointer class's target, which a returned address is read as.
-		private Type returnPointerTarget;
+		private StructDefinition returnPointerTarget;
 		// The struct a struct return type comes back in, created before the call as AutoHotkey creates it.
 		private Struct returnStruct;
 
@@ -234,41 +234,40 @@ namespace Keysharp.Internals.Interop
 					code = NativeType.Parse(hasPtrSuffix ? span[..^1].TrimEnd() : span);
 				}
 			}
-			else if (Struct.TryResolvePointerClass(rawTag, out var pointerType, out var targetType))
+			else if (Struct.TryResolveClass(rawTag, out var definition))
 			{
 				//A struct pointer class passes the address of the struct value, materializing one when needed.
-				return NormalizeStructPointerArg(parameters, p, n, valueIndex, pointerType, targetType) is { } pointerArgument
-					&& ConvertPtr(n, pointerArgument);
-			}
-			else if (Struct.TryResolveClass(rawTag, out var structType))
-			{
-				var layout = StructLayout.Get(structType);
+				if (definition.NativePointerTarget is { } targetType)
+					return NormalizeStructPointerArg(parameters, p, n, valueIndex, definition, targetType) is { } pointerArgument
+						&& ConvertPtr(n, pointerArgument);
+
+				var layout = definition.Layout;
 
 				if (layout.IsArray)
 				{
-					if (layout.Invalid)
+					if (layout.IsInvalid)
 					{
-						_ = Errors.ValueErrorOccurred(StructLayout.InvalidMessage);
+						_ = Errors.ValueErrorOccurred(StructDefinition.InvalidMessage);
 						return false;
 					}
 
-					return NormalizeStructPointerArg(parameters, p, n, valueIndex, null, structType) is { } arrayArgument
+					return NormalizeStructPointerArg(parameters, p, n, valueIndex, null, definition) is { } arrayArgument
 						&& ConvertPtr(n, arrayArgument);
 				}
 
 				//A numeric type class is handled as the built-in type it mirrors, so that e.g. a Float64
 				//argument is passed in a floating-point register rather than as raw bits in an integer one.
-				code = StructLayout.GetPrimitiveTypeCode(structType);
+				code = definition.NumericKind;
 
 				if (code == NativeTypeCode.Invalid)
-					return ConvertAggregate(parameters, valueIndex, structType, out args[n]);
+					return ConvertAggregate(parameters, valueIndex, definition, out args[n]);
 
 				//An instance passes the bits it stores at the class's width, so a float keeps its exact pattern.
 				if (p is Any)
 				{
-					if (!Struct.IsStructInstance(p, structType))
+					if (!Struct.IsStructInstance(p, definition))
 					{
-						_ = Errors.TypeErrorOccurred(p, structType);
+						_ = Errors.ExpectedTypeErrorOccurred(definition.Name, p);
 						return false;
 					}
 
@@ -656,9 +655,16 @@ namespace Keysharp.Internals.Interop
 			}
 
 			if (returnPointerTarget != null)
-				return value == 0 ? null : StructLayout.GetPrimitiveTypeCode(returnPointerTarget) != NativeTypeCode.Invalid
-					? StructMarshal.ReadPrimitiveValue(returnPointerTarget, value)
-					: Script.Invoke(Script.TheScript.Vars.Statics[returnPointerTarget], "At", value);
+			{
+				if (value == 0)
+					return null;
+
+				var kind = returnPointerTarget.NumericKind;
+				if (kind == NativeTypeCode.Invalid)
+					return Script.Invoke(returnPointerTarget.Class, "At", value);
+
+				return NativeData.CheckAddress(value) ? NativeType.ReadMemory(kind, (nint)value) : Script.DefaultObject;
+			}
 
 			//A '*'-suffixed return type means the register holds the address of the value, so read the value
 			//out of it: its own width, since only that many bytes at the address are the callee's to define.
@@ -713,19 +719,20 @@ namespace Keysharp.Internals.Interop
 		{
 			builtinCode = NativeTypeCode.Invalid;
 
-			if (Struct.TryResolvePointerClass(rawReturnType, out _, out returnPointerTarget))
+			if (!Struct.TryResolveClass(rawReturnType, out var definition))
+				return false;
+
+			returnPointerTarget = definition.NativePointerTarget;
+			if (returnPointerTarget != null)
 			{
 				returnCode = NativeTypeCode.Ptr;
 				return true;
 			}
 
-			if (!Struct.TryResolveClass(rawReturnType, out var structType))
-				return false;
-
-			var layout = StructLayout.Get(structType);
-			if (layout.Invalid)
+			var layout = definition.Layout;
+			if (layout.IsInvalid)
 			{
-				_ = Errors.ValueErrorOccurred(StructLayout.InvalidMessage);
+				_ = Errors.ValueErrorOccurred(StructDefinition.InvalidMessage);
 				failed = true;
 				return true;
 			}
@@ -739,16 +746,16 @@ namespace Keysharp.Internals.Interop
 
 			// A numeric type class converts directly rather than being instantiated, so it behaves exactly like the
 			// built-in type it mirrors — including floats, which are returned in a different register.
-			builtinCode = StructLayout.GetPrimitiveTypeCode(structType);
+			builtinCode = definition.NumericKind;
 
 			if (builtinCode != NativeTypeCode.Invalid)
 				return false;
 
 			returnCode = NativeTypeCode.Ptr;
 
-			if (StructMarshal.AggregateError(structType, layout) is { } error)
+			if (StructMarshal.AggregateError(definition) is { } error)
 				_ = Errors.ValueErrorOccurred(error);
-			else if (Struct.CreateInstance(structType) is { } result && result.TryGetDataPointer(out _))
+			else if (Struct.CreateInstance(definition) is { } result && result.TryGetDataPointer(out _))
 				returnStruct = result;
 
 			failed |= returnStruct == null;
@@ -757,24 +764,24 @@ namespace Keysharp.Internals.Interop
 
 		// An aggregate passes its bytes in a register when it fits one and otherwise its own address, as AutoHotkey passes it.
 		// Returns false after a continued error, so the call is not made with a slot the callee would misread.
-		private static bool ConvertAggregate(object[] parameters, int valueIndex, Type structType, out long slot)
+		private static bool ConvertAggregate(object[] parameters, int valueIndex, StructDefinition definition, out long slot)
 		{
 			slot = 0L;
 
-			var layout = StructLayout.Get(structType);
-			if (layout.Invalid)
+			var layout = definition.Layout;
+			if (layout.IsInvalid)
 			{
-				_ = Errors.ValueErrorOccurred(StructLayout.InvalidMessage);
+				_ = Errors.ValueErrorOccurred(StructDefinition.InvalidMessage);
 				return false;
 			}
 
-			if (StructMarshal.AggregateError(structType, layout) is { } error)
+			if (StructMarshal.AggregateError(definition) is { } error)
 			{
 				_ = Errors.ValueErrorOccurred(error);
 				return false;
 			}
 
-			if (StructMarshal.ToStruct(structType, parameters[valueIndex]) is not { } value)
+			if (StructMarshal.ToStruct(definition, parameters[valueIndex]) is not { } value)
 				return false;
 
 			if (StructMarshal.InRegister(layout.Size))
@@ -786,7 +793,7 @@ namespace Keysharp.Internals.Interop
 			return true;
 		}
 
-		private object NormalizeStructPointerArg(object[] parameters, object value, int n, int paramIndex, Type pointerType, Type targetType)
+		private object NormalizeStructPointerArg(object[] parameters, object value, int n, int paramIndex, StructDefinition pointerType, StructDefinition targetType)
 		{
 			// The caller's ref, read through the property so a subclass overriding __Value is honored. The plain-ref
 			// fast path lives inside GetPropertyValueOrNull, so reading it this way costs nothing extra.

@@ -9,13 +9,13 @@ namespace Keysharp.Internals.Interop
 		// reads a Double on a 64-bit process, and a pointer to an unsigned integer reads signed there. [v2.1-alpha.34+]
 		internal static NativeTypeCode GetNumericTypeCode(Class cls)
 		{
-			if (!Struct.TryResolveClass(cls, out var structType))
+			if (!Struct.TryResolveClass(cls, out var definition))
 				return NativeTypeCode.Invalid;
 
-			if (StructLayout.GetNativePointerTarget(structType) is not Type target)
-				return StructLayout.GetPrimitiveTypeCode(structType);
+			if (definition.NativePointerTarget is not { } target)
+				return definition.NumericKind;
 
-			return StructLayout.GetPrimitiveTypeCode(target) switch
+			return target.NumericKind switch
 			{
 				NativeTypeCode.Invalid => NativeTypeCode.Invalid,
 				NativeTypeCode.Float or NativeTypeCode.Double => IntPtr.Size == 8 ? NativeTypeCode.Double : NativeTypeCode.Float,
@@ -28,10 +28,10 @@ namespace Keysharp.Internals.Interop
 		internal enum CallbackSlot : byte { Integer, Float32, Float64 }
 
 		// Resolved once when the callback is registered. Aggregate arguments need fresh storage because script may retain them.
-		internal readonly struct CallbackConversion(NativeTypeCode kind, Type aggregate, long size = 0, bool isArray = false)
+		internal readonly struct CallbackConversion(NativeTypeCode kind, StructDefinition aggregate, long size = 0, bool isArray = false)
 		{
 			internal readonly NativeTypeCode Kind = kind;
-			internal readonly Type Aggregate = aggregate;
+			internal readonly StructDefinition Aggregate = aggregate;
 			internal readonly long Size = size;
 			internal readonly bool IsArray = isArray;
 
@@ -54,15 +54,15 @@ namespace Keysharp.Internals.Interop
 		internal static bool InRegister(long size) => size is 1 or 2 or 4 or 8;
 
 		// Resolves how a declared callback type is passed and converted. Returns false and sets error if unsupported.
-		internal static bool TryGetCallbackConversion(Type structType, bool isReturn, out CallbackConversion conversion, out string error)
+		internal static bool TryGetCallbackConversion(StructDefinition definition, bool isReturn, out CallbackConversion conversion, out string error)
 		{
-			var info = StructLayout.Get(structType);
+			var info = definition.Layout;
 			error = null;
 
-			if (info.Invalid)
+			if (info.IsInvalid)
 			{
 				conversion = default;
-				error = StructLayout.InvalidMessage;
+				error = StructDefinition.InvalidMessage;
 				return false;
 			}
 
@@ -76,7 +76,7 @@ namespace Keysharp.Internals.Interop
 					return false;
 				}
 
-				conversion = new(NativeTypeCode.Invalid, structType, isArray: true);
+				conversion = new(NativeTypeCode.Invalid, definition, isArray: true);
 				return true;
 			}
 
@@ -87,30 +87,30 @@ namespace Keysharp.Internals.Interop
 			}
 
 			conversion = default;
-			error = AggregateError(structType, info);
+			error = AggregateError(definition);
 			if (error != null)
 				return false;
 
-			conversion = new(NativeTypeCode.Invalid, structType, info.Size);
+			conversion = new(NativeTypeCode.Invalid, definition, info.Size);
 			return true;
 		}
 
-		internal static string AggregateError(Type type, StructLayout layout) =>
-			layout.Size == 0 ? $"A native value of type {type.Name} must not be empty."
+		internal static string AggregateError(StructDefinition definition) =>
+			definition.Layout.Size == 0 ? $"A native value of type {definition.Name} must not be empty."
 			: passesAnyAggregate ? null
-			: !InRegister(layout.Size) ? $"A native value of type {type.Name} must be 1, 2, 4 or 8 bytes on this platform."
-			: StructLayout.IsAllFloatingPoint(type) ? $"A native value of type {type.Name} contains only floating-point fields, which is not supported on this platform."
-			: StructLayout.IsUnaligned(type) ? $"A native value of type {type.Name} contains unaligned fields, which is not supported on this platform."
+			: !InRegister(definition.Layout.Size) ? $"A native value of type {definition.Name} must be 1, 2, 4 or 8 bytes on this platform."
+			: definition.IsAllFloatingPoint() ? $"A native value of type {definition.Name} contains only floating-point fields, which is not supported on this platform."
+			: definition.IsUnaligned() ? $"A native value of type {definition.Name} contains unaligned fields, which is not supported on this platform."
 			: null;
 
 		// The struct a native value of the type is read from: the input itself, or a new instance assigned the input through
 		// its __Value, as AutoHotkey converts it. Returns null after a reported error.
-		internal static Struct ToStruct(Type structType, object input)
+		internal static Struct ToStruct(StructDefinition definition, object input)
 		{
-			if (Struct.IsStructInstance(input, structType))
+			if (Struct.IsStructInstance(input, definition))
 				return (Struct)input;
 
-			var value = Struct.CreateInstance(structType);
+			var value = Struct.CreateInstance(definition);
 
 			if (value != null && input != null && !value.TrySetInputValue(input))
 				return null;
@@ -138,7 +138,7 @@ namespace Keysharp.Internals.Interop
 			}
 
 			if (conversion.IsArray)
-				return Struct.CreateView(Script.TheScript.Vars.Prototypes[conversion.Aggregate], slot)?.GetOutputValue() ?? Script.DefaultObject;
+				return Struct.CreateView(conversion.Aggregate, slot)?.GetOutputValue() ?? Script.DefaultObject;
 
 			// A copy, since the script may keep it after the memory it arrived in is gone.
 			return Struct.CreateCopy(conversion.Aggregate, conversion.ByAddress ? slot : (long)&slot)?.GetOutputValue() ?? Script.DefaultObject;
@@ -179,16 +179,6 @@ namespace Keysharp.Internals.Interop
 				NativeMemory.Clear((void*)buffer, (nuint)conversion.Size);
 
 			return buffer;
-		}
-
-		internal static object ReadPrimitiveValue(Type structType, long address)
-		{
-			var info = StructLayout.Get(structType);
-
-			if (!info.IsPrimitive)
-				return Errors.TypeErrorOccurred(structType, typeof(Struct));
-
-			return Struct.TryGetDataPointer(address) ? NativeType.ReadMemory(info.PrimitiveKind, (nint)address) : Script.DefaultObject;
 		}
 
 		internal static unsafe bool TryReadArgumentSlot(Struct value, long size, out long slot)

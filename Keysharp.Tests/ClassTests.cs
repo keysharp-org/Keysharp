@@ -109,6 +109,99 @@ public class ClassTests : TestRunner
 		}
 	}
 
+	[TestCase(false), TestCase(true), Category("Class"), Category("Internal"), Category("Curated")]
+	public void ConcurrentDerivedClassRegistration(bool pointers)
+	{
+		const int workers = 4;
+		const int rounds = 32;
+		var baseClass = s.Vars.Statics[typeof(Struct)];
+		var derivedBase = s.Vars.Prototypes[pointers ? typeof(Struct.StructPtr) : typeof(Struct.StructArray)];
+		var definitions = Enumerable.Range(0, pointers ? workers * rounds + 1 : 1)
+			.Select(index => StructDefinition.Of(Class.Create("Concurrent" + index, baseClass).InstancePrototype)).ToArray();
+		Class GetDerived(int index) => pointers ? definitions[index].GetPointerClass() : definitions[0].GetArrayClass(index + 1);
+
+		using var start = new Barrier(workers);
+		var registrations = Enumerable.Range(0, workers).Select(worker => Task.Factory.StartNew(() =>
+		{
+			var classes = new Class[rounds + 1];
+			for (var round = 0; round <= rounds; ++round)
+			{
+				if (!start.SignalAndWait(TimeSpan.FromSeconds(5)))
+					throw new TimeoutException("Concurrent class registration did not reach the barrier.");
+				classes[round] = GetDerived(round == 0 ? 0 : 1 + (round - 1) * workers + worker);
+			}
+			return classes;
+		}, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default)).ToArray();
+		Task.WaitAll(registrations);
+
+		var shared = registrations[0].Result[0];
+		Assert.That(registrations.Select(task => task.Result[0]), Is.All.SameAs(shared));
+		var derivedClasses = registrations.SelectMany(task => task.Result).Distinct().ToArray();
+		Assert.That(derivedClasses, Has.Length.EqualTo(workers * rounds + 1));
+		for (var index = 0; index < derivedClasses.Length; ++index)
+			Assert.That(derivedClasses, Does.Contain(GetDerived(index)));
+
+		derivedBase.DefinePropInternal("__Delete", new OwnPropsDesc(null, null, null,
+			new KeysharpFunc((Func<object, object>)(_ => 0L))));
+		Assert.That(derivedClasses.All(cls => cls.InstancePrototype.HasDeleteInChain), Is.True,
+			"every derived prototype must receive inherited property changes");
+	}
+
+	[Test, Category("Class"), Category("Internal"), Category("Curated")]
+	public void NativeClassificationIgnoresEmptyFields()
+	{
+		var structClass = s.Vars.Statics[typeof(Struct)];
+		var empty = StructDefinition.Of(Class.Create("Empty", structClass).InstancePrototype);
+		var emptyBase = Class.Create("EmptyBase", structClass);
+		var number = StructDefinition.Of(s.Vars.Prototypes[typeof(StructFloat32)]);
+		Assert.That(StructDefinition.DefineField(emptyBase.InstancePrototype, "Empty", empty), Is.EqualTo(StructFieldDefinition.Defined));
+		var inherited = StructDefinition.Of(Class.Create("InheritedFloat", emptyBase).InstancePrototype);
+		Assert.That(StructDefinition.DefineField(inherited.Prototype, "Value", number), Is.EqualTo(StructFieldDefinition.Defined));
+		var own = StructDefinition.Of(Class.Create("OwnEmpty", structClass).InstancePrototype);
+		Assert.That(StructDefinition.DefineField(own.Prototype, "Value", number), Is.EqualTo(StructFieldDefinition.Defined));
+		Assert.That(StructDefinition.DefineField(own.Prototype, "Empty", empty), Is.EqualTo(StructFieldDefinition.Defined));
+
+		Assert.That(empty.IsAllFloatingPoint(), Is.False);
+		Assert.That(StructDefinition.Of(emptyBase.InstancePrototype).IsAllFloatingPoint(), Is.False);
+		foreach (var definition in new[] { inherited, own })
+		{
+			Assert.That(definition.Layout.Size, Is.EqualTo(4));
+			Assert.That(definition.IsAllFloatingPoint(), Is.True);
+			Assert.That(definition.IsUnaligned(), Is.False);
+		}
+	}
+
+	[Test, Category("Class"), Category("Internal"), Category("Curated")]
+	public void NativeClassificationRetainsClosedLayout()
+	{
+		var structClass = s.Vars.Statics[typeof(Struct)];
+		var emptyBase = Class.Create("EmptyBase", structClass);
+		var definition = StructDefinition.Of(Class.Create("Float", emptyBase).InstancePrototype);
+		var number = StructDefinition.Of(s.Vars.Prototypes[typeof(StructFloat32)]);
+		Assert.That(StructDefinition.DefineField(definition.Prototype, "Value", number), Is.EqualTo(StructFieldDefinition.Defined));
+		var layout = definition.Layout;
+		var replacement = Class.Create("Unaligned", structClass);
+		var integer = StructDefinition.Of(s.Vars.Prototypes[typeof(StructInt32)]);
+		Assert.That(StructDefinition.DefineField(replacement.InstancePrototype, "Value", integer, offsetSpec: 1L), Is.EqualTo(StructFieldDefinition.Defined));
+
+		emptyBase.InstancePrototype.SetBaseInternal(replacement.InstancePrototype);
+		Assert.That(definition.Layout, Is.SameAs(layout));
+		Assert.That(definition.IsAllFloatingPoint(), Is.True);
+		Assert.That(definition.IsUnaligned(), Is.False);
+	}
+
+	[TestCase(false), TestCase(true), Category("Class"), Category("Internal"), Category("Curated")]
+	public void NativeArrayClassificationIncludesSubclassFields(bool unaligned)
+	{
+		var element = StructDefinition.Of(s.Vars.Prototypes[unaligned ? typeof(StructUInt8) : typeof(StructFloat32)]);
+		var definition = StructDefinition.Of(Class.Create("ExtendedArray", element.GetArrayClass(1)).InstancePrototype);
+		var integer = StructDefinition.Of(s.Vars.Prototypes[typeof(StructInt32)]);
+		Assert.That(StructDefinition.DefineField(definition.Prototype, "Tag", integer, offsetSpec: unaligned ? 1L : null), Is.EqualTo(StructFieldDefinition.Defined));
+		Assert.That(definition.Layout.Size, Is.EqualTo(8));
+		Assert.That(definition.IsAllFloatingPoint(), Is.False);
+		Assert.That(definition.IsUnaligned(), Is.EqualTo(unaligned));
+	}
+
 	private sealed class RegistrationProgram
 	{
 		internal static int Initializations;

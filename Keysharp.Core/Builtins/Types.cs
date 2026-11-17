@@ -18,7 +18,7 @@ namespace Keysharp.Builtins
 			if (Builtins.Primitive.IsNative(value))
 				any = TheScript.Vars.Prototypes[Builtins.Primitive.MapPrimitiveToNativeType(value)];
 			else if (value is Any obj)
-				any = obj.Base;
+				any = obj._base;
 			else
 				return baseObj.GetType().IsAssignableFrom(value.GetType()) ? 1L : 0L;
 
@@ -26,7 +26,7 @@ namespace Keysharp.Builtins
             {
 				if (baseObj == any)
 					return 1L;
-				any = any.Base;
+				any = any._base;
             }
 			return 0L;
         }
@@ -337,7 +337,7 @@ namespace Keysharp.Builtins
 			// exception would replace the diagnostic being reported. Any failure falls back to the CLR name.
 			try
 			{
-				if (value is KeysharpObject kso)
+				if (value is Any kso and (KeysharpObject or Struct))
 				{
 					// An own __Class names the class a prototype belongs to, not the prototype's own type.
 					// Everything else is named by the first base that declares one, so an instance carrying no

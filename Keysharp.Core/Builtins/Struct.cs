@@ -2,81 +2,16 @@ namespace Keysharp.Builtins
 {
 	public class Struct : Any, IDisposable, IPointable
 	{
-		private enum MemoryKind : byte { Unattached, Owned, Borrowed, Disposed }
-
-		private long data;
-		private MemoryKind memory;
-		private bool isEmbedded;
-		// As AutoHotkey's NoCallDelete, for a view other than ObjCreateWithDataPtr's and for a callback's copy.
-		private bool noDelete;
-		// The supplied Ptr provider stays alive after rebinding; for an embedded view it is the immediate parent.
-		private Any source;
-		// Keep the allocation independently of the source, which may itself be rebound or disposed.
-		private Struct allocationOwner;
-		// The structs handed out for nested and pointer fields, by field name, so a field reads back as the same object.
-		private Dictionary<string, Struct> nestedViews;
-		// The nested structs whose script initialization began, which receive __Delete after their owner even when it threw.
-		internal List<Struct> initializedFields;
-		// Closed before allocation; field access needs no metadata lookup.
-		internal readonly StructLayout Layout;
-
 		// A constructor cannot use the memory: an instance gets it when it is initialized, and a view is given its address
-		// once it is constructed.
+		// once it is constructed. Native construction cannot return the unset result of a continued script error, so an
+		// invalid layout throws.
 		public Struct()
 		{
-			var info = StructLayout.Get(type);
-			// Native construction cannot return the unset result of a continued script error.
-			Layout = info.Invalid ? throw new TypeError(StructLayout.InvalidMessage) : info;
+			if (_base is Prototype prototype && StructDefinition.Of(prototype).Layout.IsInvalid)
+				throw new TypeError(StructDefinition.InvalidMessage);
 		}
 
-		// As AutoHotkey's Object::Initialize: the struct's memory, then each nested struct initialized in its place, before
-		// the instance's own __Init and __New.
-		internal override void Initialize(object[] args)
-		{
-			if (memory == MemoryKind.Unattached)
-				Allocate();
-
-			// Before the nested structs, so that their __Delete still runs when one of them fails.
-			if (Layout.IsArray ? !Layout.ArrayElement.IsNativePrimitive : Layout.NestedFields.Length != 0)
-			{
-				initializedFields = [];
-				MaybeActivateFinalizer();
-
-				if (Layout.IsArray)
-				{
-					var element = Layout.ArrayElement;
-
-					for (var slot = 0L; slot < Layout.ArrayLength; ++slot)
-						InitializeField(GetNestedView(ArrayElementKey(slot, element), Layout.ArrayElementType, data + slot * element.Size));
-				}
-				else
-					foreach (var field in Layout.NestedFields)
-						InitializeField(GetNestedView(field.Name, field.FieldType, data + field.Offset));
-			}
-
-			base.Initialize(args);
-		}
-
-		private void InitializeField(Struct field)
-		{
-			if (field == null)
-				return;
-
-			initializedFields.Add(field);
-			field.Initialize([]);
-		}
-
-		private void Allocate()
-		{
-			memory = MemoryKind.Owned;
-			MaybeActivateFinalizer();
-
-			if (Layout.Size != 0)
-			{
-				data = NativeAllocation.Allocate(Layout.Size);
-				unsafe { NativeMemory.Clear((void*)data, (nuint)Layout.Size); }
-			}
-		}
+		internal StructLayout Layout => nativeData?.Layout ?? StructDefinition.ForInstance(_base);
 
 		// An instance of the prototype's class with no memory, or null after a reported error.
 		private static Struct Create(Any prototype)
@@ -89,9 +24,9 @@ namespace Keysharp.Builtins
 		}
 
 		// As AutoHotkey's CreateStruct: initialized as Class.Call initializes one without arguments.
-		internal static Struct CreateInstance(Type structType)
+		internal static Struct CreateInstance(StructDefinition definition)
 		{
-			if (Create(Script.TheScript.Vars.Prototypes[structType]) is not { } instance)
+			if (Create(definition.Prototype) is not { } instance)
 				return null;
 
 			instance.Initialize([]);
@@ -99,29 +34,24 @@ namespace Keysharp.Builtins
 		}
 
 		// As AutoHotkey's CreateStructCopyNoDelete: a copy in memory of its own, neither initialized nor given __Delete.
-		internal static unsafe Struct CreateCopy(Type structType, long source)
+		internal static unsafe Struct CreateCopy(StructDefinition definition, long source)
 		{
-			if (Create(Script.TheScript.Vars.Prototypes[structType]) is not { } copy)
+			if (Create(definition.Prototype) is not { } copy)
 				return null;
 
-			copy.noDelete = true;
-			copy.Allocate();
-			System.Buffer.MemoryCopy((void*)source, (void*)copy.data, copy.Layout.Size, copy.Layout.Size);
+			var data = NativeData.AttachOwned(copy, definition, noDelete: true);
+			System.Buffer.MemoryCopy((void*)source, (void*)data.Ptr, data.Layout.Size, data.Layout.Size);
 			return copy;
 		}
 
-		// As AutoHotkey's CreateStructPtr: memory the struct does not own, without initialization.
-		internal static Struct CreateView(Any prototype, long address, Any source = null, bool embedded = false, bool callDelete = false)
+		// As AutoHotkey's CreateStructPtr: memory the struct does not own, without initialization. An embedded struct's
+		// __Delete comes from its owner, which calls it only once the struct was initialized.
+		internal static Struct CreateView(StructDefinition definition, long address, Any source = null, bool embedded = false, bool callDelete = false)
 		{
-			if (Create(prototype) is not { } view)
+			if (Create(definition.Prototype) is not { } view)
 				return null;
 
-			view.memory = MemoryKind.Borrowed;
-			view.source = source;
-			view.SetDataPtr(address);
-			view.isEmbedded = embedded;
-			// An embedded struct's __Delete comes from its owner, which calls it only once the struct was initialized.
-			view.noDelete = !(callDelete || embedded);
+			_ = NativeData.AttachBorrowed(view, definition, address, source, embedded, !(callDelete || embedded));
 
 			if (callDelete)
 				view.MaybeActivateFinalizer();
@@ -130,27 +60,26 @@ namespace Keysharp.Builtins
 		}
 
 		// A view into a struct which was disposed of while the view is in use, as by a using statement, has no memory left.
-		public long Ptr => allocationOwner is { memory: MemoryKind.Disposed } ? 0 : data;
-		internal bool IsPointerView => memory == MemoryKind.Borrowed;
+		public long Ptr => nativeData?.Ptr ?? 0;
 
 		// As AutoHotkey's StructNew: one value per field, so that X(Y) cannot act as a cast, assigned from the last field
 		// back and stopping at the first that fails.
 		public override object __New(params object[] FieldValues)
 		{
-			if (FieldValues.Length == 0)
+			if (FieldValues.Length == 0 || nativeData is not { } data)
 				return DefaultObject;
 
-			var fields = Layout.ConstructorFields;
+			var fields = data.Layout.ConstructorFields;
 
 			if (fields.Length != FieldValues.Length)
 				return Errors.ErrorOccurred("Invalid number of parameters.");
 
-			for (var i = fields.Length - 1; i >= 0 && SetFieldValue(fields[i], FieldValues[i]); --i) { }
+			for (var i = fields.Length - 1; i >= 0 && data.SetFieldValue(fields[i], FieldValues[i]); --i) { }
 
 			return DefaultObject;
 		}
 
-		internal override bool HasDeleteCall => !noDelete && memory != MemoryKind.Disposed
+		internal override bool HasDeleteCall => nativeData is not ({ NoDelete: true } or { IsReleased: true })
 			&& (HasOwnPropInternal("__Delete") || _base is KeysharpObject { HasDeleteInChain: true });
 
 		public static object get_Size(object @this) => @this is Struct st
@@ -170,15 +99,14 @@ namespace Keysharp.Builtins
 
 		public static object staticAt(object @this, object address)
 		{
-			if (@this is not Class { InstancePrototype: { } proto }
-				|| GetStructType(proto) is not Type)
+			if (!TryResolveClass(@this, out var definition))
 				return Errors.ErrorOccurred("Invalid class.");
 
 			if (!TryGetAddress(address, out var addr))
 				return DefaultObject;
 
 			// Resource IDs are valid addresses here; typed access checks whether they can be dereferenced.
-			return (object)CreateView(proto, addr, address as Any) ?? DefaultObject;
+			return (object)CreateView(definition, addr, address as Any) ?? DefaultObject;
 		}
 
 		// Unlike native argument coercion, this must invoke Ptr overrides and require an Integer result.
@@ -211,128 +139,79 @@ namespace Keysharp.Builtins
 		// Class-level indexing `StructClass[N]` yields the structured-array class with N elements of StructClass.
 		public static object staticget___Item(object @this, object index)
 		{
-			if (@this is not Class cls)
-				return Errors.TypeErrorOccurred(@this, typeof(Class));
-
-			if (Script.GetPropertyValueOrNull(cls, "Prototype") is not Any proto)
-				return Errors.PropertyErrorOccurred("Struct class does not have a prototype.");
-
-			var elementType = GetStructType(proto);
-
-			if (elementType == null)
-				return Errors.TypeErrorOccurred(@this, typeof(Struct));
-
-			if (!index.CoerceLong(out var length))
+			if (ResolveStructClass(@this) is not { } definition || !index.CoerceLong(out var length))
 				return DefaultObject;
 
 			if (length <= 0)
 				return Errors.ValueErrorOccurred("Struct array length must be a positive integer.");
 
-			var arrType = StructLayout.GetArrayType(elementType, length);
-			EnsurePointerTypeInitialized(arrType);
-			return Script.TheScript.Vars.Statics[arrType];
+			return definition.GetArrayClass(length);
+		}
+
+		// The definition of a struct class given as the receiver of a class member, or null after a reported TypeError.
+		private static StructDefinition ResolveStructClass(object @this)
+		{
+			if (TryResolveClass(@this, out var definition))
+				return definition;
+
+			_ = Errors.TypeErrorOccurred(@this, @this is Class ? typeof(Struct) : typeof(Class));
+			return null;
 		}
 
 		internal static bool IsStructType(Type type) => typeof(Struct).IsAssignableFrom(type);
 
-		internal static bool IsStructInstance(object value, Type expectedType = null)
+		internal static bool IsStructInstance(object value, StructDefinition expected = null)
 		{
-			if (value is not Struct st)
+			if (value is not Struct instance)
 				return false;
 
-			return expectedType == null
-				|| expectedType.IsAssignableFrom(st.type)
-				|| HasPrototypeType(st, expectedType);
+			if (expected == null)
+				return true;
+
+			for (var prototype = instance._base; prototype != null; prototype = prototype._base)
+				if (ReferenceEquals(prototype, expected.Prototype))
+					return true;
+
+			return false;
 		}
 
-		private static object GetPointerClass(object @this)
+		// Whether value is a structured array whose element class is exactly element. Such an array decays to the address of
+		// its first element wherever an element.Ptr is expected. [v2.1-alpha.34+]
+		internal static bool IsArrayOf(object value, StructDefinition element) =>
+			value is Struct st && st.Layout is { IsArray: true } info && info.ArrayElement == element;
+
+		// The definition of a struct class, which only a class whose prototype derives from Struct has.
+		internal static bool TryResolveClass(object value, out StructDefinition definition)
 		{
-			if (@this is not Class cls)
-				return Errors.TypeErrorOccurred(@this, typeof(Class));
-
-			if (Script.GetPropertyValueOrNull(cls, "Prototype") is not Any proto)
-				return Errors.PropertyErrorOccurred("Struct class does not have a prototype.");
-
-			var structType = GetStructType(proto);
-
-			if (structType == null)
-				return Errors.TypeErrorOccurred(@this, typeof(Struct));
-
-			var ptrType = StructLayout.GetPointerType(structType);
-			EnsurePointerTypeInitialized(ptrType);
-			return Script.TheScript.Vars.Statics[ptrType];
+			definition = value is Class { InstancePrototype: Prototype p } && IsStructType(p.type) ? StructDefinition.Of(p) : null;
+			return definition != null;
 		}
 
-		private static void EnsurePointerTypeInitialized(Type ptrType)
-		{
-			if (ptrType?.BaseType != null && StructLayout.IsAutoPointerClass(ptrType.BaseType))
-				EnsurePointerTypeInitialized(ptrType.BaseType);
+		private static object GetPointerClass(object @this) => (object)ResolveStructClass(@this)?.GetPointerClass() ?? DefaultObject;
 
-			var vars = Script.TheScript.Vars;
-
-			if (vars.Prototypes.ContainsKey(ptrType))
-				_ = vars.Prototypes[ptrType];
-			else
-				Script.InitClass(ptrType);
-		}
-
-		// Embedded objects are cleaned up by their owner, after its __Delete and before its storage is freed. A view needs
-		// nothing done unless it receives __Delete.
-		internal override bool DisposesWhenCollected => !isEmbedded && (memory == MemoryKind.Owned && Layout.Size != 0 || initializedFields != null);
+		internal override bool DisposesWhenCollected => nativeData?.NeedsRelease == true;
 
 		// Construction leaves cleanup inactive until initialization begins or a view attaches its address.
 		internal override void MaybeActivateFinalizer()
 		{
-			if (memory != MemoryKind.Unattached)
-				HasFinalizer = DisposesWhenCollected || !isEmbedded && HasDeleteCall;
+			if (nativeData is { } data)
+				HasFinalizer = DisposesWhenCollected || !data.IsEmbedded && HasDeleteCall;
 		}
-
-		internal bool IsEmbeddedIn(Struct owner) => isEmbedded && ReferenceEquals(source, owner);
 
 		[PublicHiddenFromUser]
 		public virtual void Dispose()
 		{
-			if (memory == MemoryKind.Disposed)
+			if (nativeData is not { IsReleased: false } data)
 				return;
 
-			var ownsMemory = memory == MemoryKind.Owned;
-			var owned = Interlocked.Exchange(ref data, 0);
-			memory = MemoryKind.Disposed;
-			HasFinalizer = false;
-
-			ExceptionDispatchInfo failure = null;
 			try
 			{
-				if (nestedViews != null)
-					foreach (var nested in nestedViews.Values)
-						if (nested.IsEmbeddedIn(this))
-						{
-							try { nested.Dispose(); }
-							catch (Exception ex) { failure ??= ExceptionDispatchInfo.Capture(ex); }
-						}
+				data.Release();
 			}
 			finally
 			{
-				if (ownsMemory)
-					NativeAllocation.Free((nint)owned, Layout.Size);
-				source = null;
-				allocationOwner = null;
-				nestedViews = null;
-				initializedFields = null;
+				HasFinalizer = false;
 			}
-			failure?.Throw();
-		}
-
-		internal override List<Any> GetEnumerableMembersOrEmpty()
-		{
-			var members = base.GetEnumerableMembersOrEmpty();
-			if (source != null)
-				members.Add(source);
-			if (allocationOwner != null && !ReferenceEquals(allocationOwner, source))
-				members.Add(allocationOwner);
-			if (nestedViews != null)
-				members.AddRange(nestedViews.Values);
-			return members;
 		}
 
 		public object get___Value() => GetValue();
@@ -340,123 +219,6 @@ namespace Keysharp.Builtins
 		public object get___Item(params object[] indexArgs) => GetPrimitiveItem(indexArgs);
 		// Item setters take the index keys first and the assigned value last: set___Item(keys[], value).
 		public object set___Item(object[] keys, object value) => SetPrimitiveItem(keys, value);
-
-		// Validate the descriptor before checking whether the prototype can accept a field.
-		internal static StructFieldDefinition DefineFieldOnPrototype(Any proto, string fieldName, Type fieldType, long pack = 0, object offsetSpec = null,
-				bool ignoreExisting = false, bool enumerable = true)
-		{
-			// An offset is a field name or a non-negative Integer.
-			if (!IsStructType(fieldType) || pack is not (0 or 1 or 2 or 4 or 8) || offsetSpec is not (null or string or >= 0L))
-				return StructFieldDefinition.InvalidArgument;
-
-			if (GetStructType(proto) is not Type structType)
-				return offsetSpec is string ? StructFieldDefinition.InvalidArgument : StructFieldDefinition.CannotAdd;
-
-			EnsureFieldTypeInitialized(fieldType);
-			var result = StructLayout.RegisterField(structType, fieldName, fieldType, pack, offsetSpec, ignoreExisting, out var field);
-
-			if (result != StructFieldDefinition.Defined)
-				return result;
-
-			var desc = new OwnPropsDesc();
-			desc.SetStructProperty(field);
-			desc.Enumerable = enumerable;
-			proto.EnsureOwnProps()[fieldName] = desc;
-			return StructFieldDefinition.Defined;
-		}
-
-		// As AutoHotkey's GetTypedValue, a nested struct with a __Value reads as that value, unless the caller wants the
-		// struct itself to index, call or enumerate.
-		internal object GetFieldValue(StructFieldInfo field, bool bypassValue = false)
-		{
-			if (!TryGetDataPointer(out var address))
-				return DefaultObject;
-
-			return GetTypedValue(field.Name, field.FieldType, field.Kind, field.PointerTarget, address + field.Offset, bypassValue);
-		}
-
-		private object GetTypedValue(string key, Type fieldType, NativeTypeCode kind, Type pointerTarget, long address, bool bypassValue = false)
-		{
-			if (pointerTarget is Type targetType)
-				return GetPointedValue(key, targetType, (long)ReadPrimitive(NativeTypeCode.Ptr, address));
-
-			if (kind != NativeTypeCode.Invalid)
-				return ReadPrimitive(kind, address);
-
-			var nested = GetNestedView(key, fieldType, address);
-			if (nested == null)
-				return DefaultObject;
-
-			return bypassValue ? nested
-				   : HasCustomValueProperty(nested, Script.OwnPropsMapType.Get | Script.OwnPropsMapType.Value) ? Refs.GetValueOrNull(nested)
-				   : nested.Layout.PointerSubclass || nested.Layout.IsPrimitive ? nested.GetValue()
-				   : nested;
-		}
-
-		private Struct GetNestedView(string key, Type fieldType, long address)
-		{
-			if (nestedViews?.TryGetValue(key, out var nested) == true)
-				return nested;
-
-			nested = CreateView(Script.TheScript.Vars.Prototypes[fieldType], address, this, embedded: true);
-			if (nested != null)
-				(nestedViews ??= new(StringComparer.OrdinalIgnoreCase))[key] = nested;
-			return nested;
-		}
-
-		internal bool SetFieldValue(StructFieldInfo field, object value)
-		{
-			if (!TryGetDataPointer(out var address))
-				return false;
-
-			return SetTypedValue(field.Name, field.FieldType, field.Kind, field.PointerTarget, address + field.Offset, value);
-		}
-
-		private bool SetTypedValue(string key, Type fieldType, NativeTypeCode kind, Type pointerTarget, long address, object value)
-		{
-			if (pointerTarget is Type targetType)
-				return SetPointerValue(address, value, targetType, fieldType, key);
-
-			if (kind != NativeTypeCode.Invalid)
-				return WritePrimitive(kind, address, value);
-
-			var nested = GetNestedView(key, fieldType, address);
-			if (nested == null)
-				return false;
-
-			if (HasCustomValueProperty(nested, Script.OwnPropsMapType.Set))
-			{
-				_ = Refs.SetValue(nested, value);
-				return true;
-			}
-
-			if (nested.Layout.PointerSubclass || nested.Layout.IsPrimitive)
-				return nested.TrySetValue(value);
-
-			_ = Errors.ErrorOccurred("Assignment to struct is not supported.");
-			return false;
-		}
-
-		internal static bool TryResolveClass(object value, out Type structType)
-		{
-			structType = ResolveFieldType(value);
-			return structType != null;
-		}
-
-		internal static bool HasTypedProperties(Any value) => value != null
-			&& StructLayout.HasFields(value.isPrototype ? GetStructType(value) : IsStructType(value.type) ? value.type : null);
-
-		internal static bool TryResolvePointerClass(object value, out Type pointerType, out Type targetType)
-		{
-			pointerType = null;
-			targetType = null;
-
-			if (!TryResolveClass(value, out pointerType))
-				return false;
-
-			targetType = StructLayout.GetNativePointerTarget(pointerType);
-			return targetType != null;
-		}
 
 		internal object GetOutputValue() =>
 			HasCustomValueProperty(this, Script.OwnPropsMapType.Get | Script.OwnPropsMapType.Value)
@@ -474,34 +236,28 @@ namespace Keysharp.Builtins
 			if (Layout.IsPrimitive)
 				return TrySetValue(input);
 
-			_ = Errors.TypeErrorOccurred(input, type);
+			_ = Errors.ExpectedTypeErrorOccurred(Types.Type(this), input);
 			return false;
 		}
 
-		private static bool HasCustomValueProperty(Struct value, Script.OwnPropsMapType requiredType)
+		// Whether a class below Struct itself defines __Value. Struct's own prototype is the one in the chain whose base is
+		// Any's, so the walk stops there without looking it up.
+		internal static bool HasCustomValueProperty(Struct value, Script.OwnPropsMapType requiredType)
 		{
-			for (var current = value._base; current != null; current = current._base)
-			{
-				if (current.op == null || !current.op.TryGetValue("__Value", out var desc))
-					continue;
-
-				if (current.type == typeof(Struct))
-					return false;
-
-				if ((desc.Type & requiredType) != 0)
+			for (var current = value._base; current?._base is { } next && next.type != typeof(Any); current = next)
+				if (current.op != null && current.op.TryGetValue("__Value", out var desc) && (desc.Type & requiredType) != 0)
 					return true;
-			}
 
 			return false;
 		}
 
 		internal object GetValue()
 		{
-			if (StructLayout.GetPointerTarget(type) is not Type targetType)
+			if (Layout.PointerTarget is not { } target)
 				return GetPrimitiveValue();
 
 			return TryGetDataPointer(out var address)
-				? GetPointedValue("__Value", targetType, (long)ReadPrimitive(NativeTypeCode.Ptr, address))
+				? nativeData.GetPointedValue("__Value", target, (long)nativeData.ReadPrimitive(NativeTypeCode.Ptr, address))
 				: DefaultObject;
 		}
 
@@ -512,12 +268,12 @@ namespace Keysharp.Builtins
 			if (!info.IsPrimitive)
 				return Errors.PropertyErrorOccurred("This struct does not define __Value.");
 
-			return TryGetDataPointer(out var address) ? ReadPrimitive(info.PrimitiveKind, address) : DefaultObject;
+			return TryGetDataPointer(out var address) ? nativeData.ReadPrimitive(info.PrimitiveKind, address) : DefaultObject;
 		}
 
 		internal object SetPrimitiveValue(object value)
 		{
-			if (StructLayout.GetPointerTarget(type) == null && !Layout.IsPrimitive)
+			if (Layout.PointerTarget == null && !Layout.IsPrimitive)
 				return Errors.PropertyErrorOccurred("This struct does not define __Value.");
 
 			_ = TrySetValue(value);
@@ -530,10 +286,10 @@ namespace Keysharp.Builtins
 			if (!TryGetDataPointer(out var address))
 				return false;
 
-			if (StructLayout.GetPointerTarget(type) is Type targetType)
-				return SetPointerValue(address, value, targetType, null, "__Value");
+			if (Layout.PointerTarget is { } target)
+				return nativeData.SetPointerValue(address, value, target, StructDefinition.Find(_base), "__Value");
 
-			return Layout is { IsPrimitive: true } info && WritePrimitive(info.PrimitiveKind, address, value);
+			return Layout is { IsPrimitive: true } info && nativeData.WritePrimitive(info.PrimitiveKind, address, value);
 		}
 
 		protected object GetPrimitiveItem(params object[] indexArgs)
@@ -577,247 +333,50 @@ namespace Keysharp.Builtins
 			return SetPrimitiveValue(value);
 		}
 
-		// Normalizes a 1-based (negative = from end) array index to a 0-based element offset, or returns -1 if out of range.
-		private static long NormalizeArrayIndex(StructLayout info, long index)
-		{
-			var len = info.ArrayLength;
-			var norm = index < 0 ? len + index + 1 : index;
-			return norm < 1 || norm > len ? -1 : norm - 1;
-		}
-
-		private static string ArrayElementKey(long slot, StructLayout elementInfo) =>
-			elementInfo.IsNativePrimitive && elementInfo.PrimitiveKind != NativeTypeCode.Ptr ? null : slot.ToString(CultureInfo.InvariantCulture);
-
-		private object GetArrayElement(StructLayout info, long index)
-		{
-			var slot = NormalizeArrayIndex(info, index);
-
-			if (slot < 0)
-				return Errors.IndexErrorOccurred($"Structured array index {index} is out of bounds (1..{info.ArrayLength}).");
-
-			if (!TryGetDataPointer(out var address))
-				return DefaultObject;
-
-			var elemInfo = info.ArrayElement;
-			address += slot * elemInfo.Size;
-
-			return GetTypedValue(ArrayElementKey(slot, elemInfo), info.ArrayElementType, elemInfo.IsNativePrimitive ? elemInfo.PrimitiveKind : NativeTypeCode.Invalid,
-				StructLayout.GetNativePointerTarget(info.ArrayElementType), address);
-		}
+		private object GetArrayElement(StructLayout info, long index) => TryGetElement(info, index, out var key, out var address)
+			? nativeData.GetTypedValue(key, info.ElementField, address) : DefaultObject;
 
 		private object SetArrayElement(StructLayout info, long index, object value)
 		{
-			var slot = NormalizeArrayIndex(info, index);
-
-			if (slot < 0)
-				return Errors.IndexErrorOccurred($"Structured array index {index} is out of bounds (1..{info.ArrayLength}).");
-
-			var elemInfo = info.ArrayElement;
-
-			if (TryGetDataPointer(out var address))
-				_ = SetTypedValue(ArrayElementKey(slot, elemInfo), info.ArrayElementType, elemInfo.IsNativePrimitive ? elemInfo.PrimitiveKind : NativeTypeCode.Invalid,
-					StructLayout.GetNativePointerTarget(info.ArrayElementType), address + slot * elemInfo.Size, value);
+			if (TryGetElement(info, index, out var key, out var address))
+				_ = nativeData.SetTypedValue(key, info.ElementField, address, value);
 
 			return value;
 		}
 
-		// As AutoHotkey's GetTypedValue, typed properties refuse an address below 65536, such as null or a
-		// MAKEINTRESOURCE value, rather than read it. [v2.1-alpha.38+]
+		// An element which is a struct or a pointer is kept under its slot, as a field is kept under its name.
+		private bool TryGetElement(StructLayout info, long index, out string key, out long address)
+		{
+			var normalized = index < 0 ? info.ArrayLength + index + 1 : index;
+			key = null;
+			address = 0;
+
+			if (normalized < 1 || normalized > info.ArrayLength)
+			{
+				_ = Errors.IndexErrorOccurred($"Structured array index {index} is out of bounds (1..{info.ArrayLength}).");
+				return false;
+			}
+
+			if (!TryGetDataPointer(out address))
+				return false;
+
+			var slot = normalized - 1;
+			var element = info.ElementField;
+			address += slot * info.ElementSize;
+
+			if (element.Kind == NativeTypeCode.Invalid || element.PointerTarget != null)
+				key = slot.ToString(CultureInfo.InvariantCulture);
+
+			return true;
+		}
+
 		internal bool TryGetDataPointer(out long address)
 		{
-			address = Ptr;
-			return TryGetDataPointer(address);
-		}
+			if (nativeData is { } data)
+				return data.TryGetAddress(out address);
 
-		internal static bool TryGetDataPointer(long address)
-		{
-			if ((ulong)address >= 65536)
-				return true;
-
-			_ = Errors.ErrorOccurred("Invalid pointer");
-			return false;
-		}
-
-		// Rebinding does not move embedded objects already obtained from the view, which stay in the memory they were in.
-		internal void SetDataPtr(long ptr)
-		{
-			Struct allocation = null;
-
-			for (var from = this; from != null; from = from.source as Struct)
-			{
-				var owner = from.memory == MemoryKind.Owned ? from : from.allocationOwner;
-
-				if (owner is { memory: MemoryKind.Owned } && unchecked((ulong)(ptr - owner.data)) < (ulong)owner.Layout.Size)
-				{
-					allocation = owner;
-					break;
-				}
-			}
-
-			data = ptr;
-			allocationOwner = allocation;
-		}
-
-		private static bool HasPrototypeType(Struct value, Type type)
-		{
-			for (var current = value._base; current != null; current = current._base)
-				if (current.type == type)
-					return true;
-
-			return false;
-		}
-
-		private bool SetPointerValue(long address, object value, Type targetType, Type pointerType, string key)
-		{
-			Struct pointed = null;
-			var ptr = 0L;
-
-			if (value == null)
-				ptr = 0;
-			else if (IsStructInstance(value, targetType) || IsArrayOf(value, targetType))
-				ptr = (pointed = (Struct)value).Ptr;
-			else if (IsStructInstance(value, pointerType ?? type))
-			{
-				var pointer = (Struct)value;
-
-				if (!pointer.TryGetDataPointer(out var pointerAddress))
-					return false;
-
-				ptr = (long)ReadPrimitive(NativeTypeCode.Ptr, pointerAddress);
-
-				if (pointer.nestedViews?.TryGetValue("__Value", out var cached) == true && cached.Ptr == ptr)
-					pointed = cached;
-			}
-			else
-			{
-				_ = Errors.TypeErrorOccurred(value, targetType);
-				return false;
-			}
-
-			_ = WritePrimitive(NativeTypeCode.Ptr, address, ptr);
-
-			// The object stored is kept, and any earlier one released, so the pointer keeps alive only what it points to.
-			if (ptr != 0 && pointed != null)
-				(nestedViews ??= new(StringComparer.OrdinalIgnoreCase))[key] = pointed;
-			else
-				_ = nestedViews?.Remove(key);
-
-			return true;
-		}
-
-		// Whether value is a structured array whose element class is exactly elementType. Such an array decays to the
-		// address of its first element wherever an elementType.Ptr is expected. [v2.1-alpha.34+]
-		internal static bool IsArrayOf(object value, Type elementType) =>
-			value is Struct st && st.Layout is { IsArray: true } info && info.ArrayElementType == elementType;
-
-		// The struct a pointer reads back as: the one last stored or handed out while the pointer still holds its address,
-		// as AutoHotkey keeps it, so an assigned struct or array reads back as the same object.
-		private object GetPointedValue(string key, Type targetType, long ptr)
-		{
-			if (ptr != 0 && nestedViews?.TryGetValue(key, out var pointed) == true && pointed.Ptr == ptr)
-				return pointed;
-
-			if (ptr == 0)
-			{
-				_ = nestedViews?.Remove(key);
-				return null;
-			}
-
-			pointed = CreateView(Script.TheScript.Vars.Prototypes[targetType], ptr);
-			if (pointed != null)
-				(nestedViews ??= new(StringComparer.OrdinalIgnoreCase))[key] = pointed;
-			return pointed;
-		}
-
-		private static Type GetStructType(Any proto)
-		{
-			if (proto == null || !proto.isPrototype)
-				return null;
-
-			for (var current = proto; current != null; current = current._base)
-				if (current.type != null && current.type != typeof(Prototype) && IsStructType(current.type))
-					return current.type;
-
-			return null;
-		}
-
-		private static Type ResolveFieldType(object value)
-		{
-			if (value is Type type && IsStructType(type))
-				return type;
-
-			if (value is Class cls)
-				return GetStructType(cls.InstancePrototype);
-
-			return null;
-		}
-
-		private static void EnsureFieldTypeInitialized(Type type)
-		{
-			if (type != typeof(Struct) && Script.TheScript?.Vars?.Statics.ContainsKey(type) == true)
-				_ = Script.TheScript.Vars.Statics[type];
-		}
-
-		private object ReadPrimitive(NativeTypeCode kind, long address)
-		{
-			var value = NativeType.ReadMemory(kind, (nint)address);
-			GC.KeepAlive(this);
-			return value;
-		}
-
-		// As AutoHotkey's SetValueOfTypeAtPtr, a typed number takes a number only: an object or unset is a TypeError.
-		private unsafe bool WritePrimitive(NativeTypeCode kind, long address, object value)
-		{
-			if (value is null or Any)
-			{
-				_ = Errors.TypeErrorOccurred(value, typeof(double));
-				return false;
-			}
-
-			var ptr = (void*)address;
-
-			if (kind is NativeTypeCode.Float or NativeTypeCode.Double)
-			{
-				if (!value.CoerceDouble(out var d))
-					return false;
-
-				if (kind == NativeTypeCode.Float)
-					Unsafe.WriteUnaligned(ptr, (float)d);
-				else
-					Unsafe.WriteUnaligned(ptr, d);
-
-				GC.KeepAlive(this);
-				return true;
-			}
-
-			if (!value.CoerceLong(out var l))
-				return false;
-
-			switch (kind)
-			{
-				case NativeTypeCode.Char or NativeTypeCode.UChar:
-					Unsafe.WriteUnaligned(ptr, unchecked((byte)l));
-					break;
-
-				case NativeTypeCode.Short or NativeTypeCode.UShort:
-					Unsafe.WriteUnaligned(ptr, unchecked((ushort)l));
-					break;
-
-				case NativeTypeCode.Int or NativeTypeCode.UInt:
-					Unsafe.WriteUnaligned(ptr, unchecked((uint)l));
-					break;
-
-				case NativeTypeCode.Int64:
-					Unsafe.WriteUnaligned(ptr, l);
-					break;
-
-				case NativeTypeCode.Ptr:
-					Unsafe.WriteUnaligned(ptr, (nint)l);
-					break;
-			}
-
-			GC.KeepAlive(this);
-			return true;
+			address = 0;
+			return NativeData.CheckAddress(0);
 		}
 
 	}

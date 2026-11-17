@@ -779,4 +779,282 @@ for offset in [0x7FFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFF7] {
     Throws(() => overflowOffset.At(0), A_LineNumber, TypeError)
 }
 
+; Any class can declare typed properties, as in AutoHotkey. Its instances keep own properties beside the structured data.
+class TypedObject {
+    X : Int32
+    Y : Int32
+    Name := "typed"
+    static Seen := 0
+    __Delete() => TypedObject.Seen := this.X
+}
+class TypedDerived extends TypedObject {
+    Z : Int64
+}
+class TypedArray extends Array {
+    Count : Int32
+}
+class TypedMap extends Map {
+    N : Int32
+}
+class TypedBuffer extends Buffer {
+    N : Int32
+}
+class TypedHolder {
+    Pt : POINT
+    P : POINT.Ptr
+}
+typedObj := TypedObject()
+typedObj.X := 5
+typedObj.Y := -2
+typedObj.Extra := 1
+AssertEq(typedObj.X + typedObj.Y, 3, A_LineNumber)
+AssertEq(typedObj.Name, "typed", A_LineNumber)
+AssertEq(typedObj.Extra, 1, A_LineNumber)
+Assert(!(typedObj is Struct) && !typedObj.HasOwnProp("X"), A_LineNumber)
+AssertEq(Type(typedObj), "TypedObject", A_LineNumber)
+AssertEq(ObjGetDataSize(typedObj), 8, A_LineNumber)
+AssertEq(NumGet(ObjGetDataPtr(typedObj), 0, "Int"), 5, A_LineNumber)
+AssertEq(PropNames(typedObj), "Extra,Name,X,Y,", A_LineNumber)
+Throws(() => typedObj.Clone(), A_LineNumber, TypeError)
+Throws(() => ObjSetBase(typedObj, Object.Prototype), A_LineNumber, ValueError)
+AssertError(() => TypedObject.Prototype.X, "Error: Property invalid for object with null data. [X]", A_LineNumber)
+derivedObj := TypedDerived()
+derivedObj.Z := 7
+AssertEq(ObjGetDataSize(derivedObj), 16, A_LineNumber)
+AssertEq(derivedObj.Z, 7, A_LineNumber)
+arrayObj := TypedArray()
+arrayObj.Push(1, 2)
+arrayObj.Count := arrayObj.Length
+AssertEq(arrayObj.Count, 2, A_LineNumber)
+Throws(() => arrayObj.Clone(), A_LineNumber, TypeError)
+mapObj := TypedMap()
+mapObj.N := 4
+mapObj["k"] := 1
+AssertEq(mapObj.N mapObj.Count, "41", A_LineNumber)
+bufferObj := TypedBuffer(4)
+bufferObj.N := 9
+AssertEq(bufferObj.N "/" bufferObj.Size, "9/4", A_LineNumber)
+holderObj := TypedHolder()
+holderObj.Pt.x := 3
+holderObj.P := holderObj.Pt
+AssertEq(holderObj.P.x, 3, A_LineNumber)
+AssertEq(Type(holderObj.Pt), "POINT", A_LineNumber)
+AssertEq(ObjGetDataSize(holderObj), 16, A_LineNumber)
+
+; A class created at run time takes typed properties until its first instance closes its structure, as any class does.
+runtimeTyped := Class("RuntimeTyped")
+DefineProp(runtimeTyped.Prototype, "Value", {Type: Int16})
+runtimeInstance := runtimeTyped()
+runtimeInstance.Value := 70000
+AssertEq(runtimeInstance.Value, 4464, A_LineNumber)
+AssertError(() => DefineProp(runtimeTyped.Prototype, "Later", {Type: Int8}), "Error: Cannot add typed property. []", A_LineNumber)
+plainClass := Class("PlainClass")
+plainClass()
+Throws(() => DefineProp(plainClass.Prototype, "Late", {Type: Int8}), A_LineNumber, Error)
+for builtinPrototype in [Object.Prototype, Array.Prototype, {}]
+    Throws(() => DefineProp(builtinPrototype, "Bad", {Type: Int8}), A_LineNumber, Error)
+AssertEq(Type(Class("RuntimeStruct", Struct)()), "RuntimeStruct", A_LineNumber)
+AssertEq(Type(POINT.Ptr()), "POINT.Ptr", A_LineNumber)
+AssertEq(Int32[3].Prototype.__Class, "Int32[3]", A_LineNumber)
+
+; Ordinary objects in a base chain preserve the nearest class's structured data.
+inheritedTyped := Class("InheritedTyped")
+typedMiddle := {}
+ObjSetBase(typedMiddle, inheritedTyped.Prototype)
+throughObject := Class("ThroughObject")
+ObjSetBase(throughObject.Prototype, typedMiddle)
+DefineProp(inheritedTyped.Prototype, "X", {Type: Int64})
+DefineProp(throughObject.Prototype, "Y", {Type: Int8})
+AssertEq(ObjGetDataSize(inheritedTyped.Prototype), 8, A_LineNumber)
+AssertEq(ObjGetDataSize(throughObject.Prototype), 16, A_LineNumber)
+throughInstance := throughObject()
+throughInstance.X := 0x0102030405060708
+throughInstance.Y := 9
+AssertEq(throughInstance.X, 0x0102030405060708, A_LineNumber)
+AssertEq(throughInstance.Y, 9, A_LineNumber)
+throughFactory := Class("ThroughFactory")
+throughFactory.Prototype := typedMiddle
+throughView := throughFactory()
+throughView.X := 42
+AssertEq(ObjGetDataSize(throughView), 8, A_LineNumber)
+AssertEq(throughView.X, 42, A_LineNumber)
+
+; A prototype clone is an ordinary object, so inspecting it cannot close or extend the original definition.
+cloneSource := Class("CloneSource")
+DefineProp(cloneSource.Prototype, "X", {Type: Int32})
+prototypeCopy := cloneSource.Prototype.Clone()
+AssertEq(ObjGetDataSize(prototypeCopy), 0, A_LineNumber)
+Throws(() => DefineProp(prototypeCopy, "Extra", {Type: Int64}), A_LineNumber, Error)
+DefineProp(cloneSource.Prototype, "Y", {Type: Int32})
+AssertEq(ObjGetDataSize(cloneSource.Prototype), 8, A_LineNumber)
+Assert(!cloneSource.Prototype.HasOwnProp("Extra"), A_LineNumber)
+
+cloneChild := Class("CloneChild", cloneSource)
+DefineProp(cloneChild.Prototype, "Wide", {Type: Int64})
+ObjGetDataSize(cloneChild.Prototype)
+clonedFieldFactory := Class("ClonedFieldFactory")
+clonedFieldFactory.Prototype := cloneChild.Prototype.Clone()
+Throws(() => clonedFieldFactory(), A_LineNumber, TypeError)
+
+; Empty ancestors and ordinary intermediates can be rebased without changing a derived object's existing data.
+layoutAncestor := Class("LayoutAncestor")
+layoutMiddle := {}
+ObjSetBase(layoutMiddle, layoutAncestor.Prototype)
+layoutChild := Class("LayoutChild")
+ObjSetBase(layoutChild.Prototype, layoutMiddle)
+DefineProp(layoutChild.Prototype, "Y", {Type: Int8})
+closedChild := layoutChild()
+closedChild.Y := 37
+AssertEq(ObjGetDataSize(closedChild), 1, A_LineNumber)
+replacementBase := Class("ReplacementBase")
+DefineProp(replacementBase.Prototype, "Label", {Call: (this) => "replacement"})
+ObjSetBase(layoutAncestor.Prototype, replacementBase.Prototype)
+AssertEq(closedChild.Label(), "replacement", A_LineNumber)
+AssertEq(closedChild.Y, 37, A_LineNumber)
+AssertEq(ObjGetDataSize(closedChild), 1, A_LineNumber)
+DefineProp(replacementBase.Prototype, "TooWide", {Type: Int64})
+
+replacementAncestor := Class("ReplacementAncestor")
+replacementMiddle := {}
+ObjSetBase(replacementMiddle, replacementAncestor.Prototype)
+DefineProp(replacementAncestor.Prototype, "Label", {Call: (this) => "middle"})
+ObjSetBase(layoutMiddle, replacementMiddle)
+AssertEq(closedChild.Label(), "middle", A_LineNumber)
+DefineProp(replacementAncestor.Prototype, "TooWide", {Type: Int64})
+secondReplacement := Class("SecondReplacement")
+DefineProp(secondReplacement.Prototype, "Label", {Call: (this) => "second"})
+ObjSetBase(replacementMiddle, secondReplacement.Prototype)
+AssertEq(closedChild.Label(), "second", A_LineNumber)
+AssertEq(closedChild.Y, 37, A_LineNumber)
+AssertEq(ObjGetDataSize(closedChild), 1, A_LineNumber)
+DefineProp(secondReplacement.Prototype, "TooWide", {Type: Int64})
+Throws(() => ObjSetBase(layoutChild.Prototype, replacementBase.Prototype), A_LineNumber, ValueError)
+
+; Cloned typed descriptors cannot introduce fields into a replacement whose structure is otherwise empty.
+typedReplacementCopy := cloneSource.Prototype.Clone()
+Throws(() => ObjSetBase(replacementMiddle, typedReplacementCopy), A_LineNumber, ValueError)
+AssertEq(closedChild.Y, 37, A_LineNumber)
+
+deleteState := {Value: 0}
+deleteBase := Class("DeleteBase")
+DefineProp(deleteBase.Prototype, "__Delete", {Call: (this) => HasProp(this, "Y") ? (deleteState.Value := this.Y) : 0})
+ObjSetBase(secondReplacement.Prototype, deleteBase.Prototype)
+using closedChild
+    closedChild.Y := 38
+AssertEq(deleteState.Value, 38, A_LineNumber)
+
+; An empty type embedded by value keeps its closed layout after its base changes.
+emptyValueType := Class("EmptyValueType", Struct)
+DefineProp(emptyValueType.Prototype, "Empty", {Type: Class(Struct)})
+emptyValueHolder := Class("EmptyValueHolder", Struct)
+DefineProp(emptyValueHolder.Prototype, "Empty", {Type: emptyValueType})
+DefineProp(emptyValueHolder.Prototype, "Value", {Type: Int8})
+emptyValueInstance := emptyValueHolder()
+emptyValueInstance.Value := 23
+emptyValueBase := Class("EmptyValueBase", Struct)
+ObjSetBase(emptyValueType.Prototype, emptyValueBase.Prototype)
+DefineProp(emptyValueBase.Prototype, "TooWide", {Type: Int64})
+AssertEq(ObjGetDataSize(emptyValueBase.Prototype), 8, A_LineNumber)
+AssertEq(ObjGetDataSize(emptyValueType.Prototype), 0, A_LineNumber)
+Throws(() => emptyValueInstance.Empty.TooWide, A_LineNumber, Error)
+Throws(() => emptyValueInstance.Empty.TooWide := 1, A_LineNumber, Error)
+AssertEq(ObjGetDataSize(emptyValueHolder.Prototype), 1, A_LineNumber)
+AssertEq(emptyValueInstance.Value, 23, A_LineNumber)
+
+middleCopy := layoutMiddle.Clone()
+cloneReplacement := Class("CloneReplacement")
+ObjSetBase(middleCopy, cloneReplacement.Prototype)
+DefineProp(cloneReplacement.Prototype, "Late", {Type: Int8})
+AssertEq(ObjGetDataSize(cloneReplacement.Prototype), 1, A_LineNumber)
+
+; Replacing an ordinary construction prototype's base also preserves the instance's existing storage.
+directAncestor := Class("DirectAncestor")
+directMiddle := {}
+ObjSetBase(directMiddle, directAncestor.Prototype)
+DefineProp(directAncestor.Prototype, "X", {Type: Int64})
+directFactory := Class("DirectFactory")
+directFactory.Prototype := directMiddle
+directInstance := directFactory()
+directInstance.X := 51
+AssertEq(ObjGetDataSize(directInstance), 8, A_LineNumber)
+ObjSetBase(directMiddle, replacementBase.Prototype)
+AssertEq(directInstance.Label(), "replacement", A_LineNumber)
+AssertEq(ObjGetDataSize(directInstance), 8, A_LineNumber)
+AssertEq(NumGet(ObjGetDataPtr(directInstance), 0, "Int64"), 51, A_LineNumber)
+Throws(() => directInstance.TooWide, A_LineNumber, Error)
+AssertEq(ObjGetDataSize(replacementBase.Prototype), 8, A_LineNumber)
+AssertEq(directInstance.TooWide, 51, A_LineNumber)
+directInstance.TooWide := 52
+AssertEq(NumGet(ObjGetDataPtr(directInstance), 0, "Int64"), 52, A_LineNumber)
+
+emptyAncestor := Class("EmptyAncestor")
+emptyMiddle := {}
+ObjSetBase(emptyMiddle, emptyAncestor.Prototype)
+emptyChild := Class("EmptyChild")
+ObjSetBase(emptyChild.Prototype, emptyMiddle)
+emptyChild()
+ObjSetBase(emptyMiddle, Object.Prototype)
+AssertEq(emptyMiddle.Base, Object.Prototype, A_LineNumber)
+
+; Rebasing an empty class preserves its closed layout and leaves its new base open.
+cachedEmptyAncestor := Class("CachedEmptyAncestor")
+cachedEmptyMiddle := {}
+ObjSetBase(cachedEmptyMiddle, cachedEmptyAncestor.Prototype)
+cachedEmptyClass := Class("CachedEmptyClass")
+ObjSetBase(cachedEmptyClass.Prototype, cachedEmptyMiddle)
+oldEmptyInstance := cachedEmptyClass()
+newTypedAncestor := Class("NewTypedAncestor")
+ObjSetBase(cachedEmptyMiddle, newTypedAncestor.Prototype)
+DefineProp(newTypedAncestor.Prototype, "X", {Type: Int64})
+Throws(() => DefineProp(cachedEmptyClass.Prototype, "Late", {Type: Int8}), A_LineNumber, Error)
+AssertError(() => oldEmptyInstance.X, "Error: Property invalid for object with null data. [X]", A_LineNumber)
+cachedEmptyChild := Class("CachedEmptyChild", cachedEmptyClass)
+DefineProp(cachedEmptyChild.Prototype, "Y", {Type: Int8})
+rebasedChild := cachedEmptyChild()
+AssertEq(ObjGetDataSize(rebasedChild), 1, A_LineNumber)
+rebasedChild.Y := 7
+AssertEq(rebasedChild.Y, 7, A_LineNumber)
+DefineProp(newTypedAncestor.Prototype, "Z", {Type: Int16})
+AssertEq(ObjGetDataSize(newTypedAncestor.Prototype), 16, A_LineNumber)
+newEmptyInstance := cachedEmptyClass()
+AssertEq(ObjGetDataSize(newEmptyInstance), 0, A_LineNumber)
+AssertError(() => oldEmptyInstance.X, "Error: Property invalid for object with null data. [X]", A_LineNumber)
+
+; Open typed prototypes can detach from closed parents or adopt open typed replacements.
+openTyped := Class("OpenTyped", cloneSource)
+DefineProp(openTyped.Prototype, "Own", {Type: Int32})
+Throws(() => ObjSetBase(openTyped.Prototype, cloneSource.Prototype), A_LineNumber, ValueError)
+openBase := Class("OpenBase")
+DefineProp(openBase.Prototype, "Inherited", {Type: Int64})
+ObjSetBase(openTyped.Prototype, openBase.Prototype)
+DefineProp(openBase.Prototype, "Later", {Type: Int16})
+openInstance := openTyped()
+openInstance.Own := 42
+openInstance.Inherited := 99
+AssertEq(ObjGetDataSize(openInstance), 24, A_LineNumber)
+AssertEq(openInstance.Own "/" openInstance.Inherited, "42/99", A_LineNumber)
+Throws(() => DefineProp(openBase.Prototype, "Closed", {Type: Int8}), A_LineNumber, Error)
+Throws(() => ObjSetBase(openTyped.Prototype, Object.Prototype), A_LineNumber, ValueError)
+
+; A typed object can view memory it does not own, and its __Delete still sees its own data before it is released.
+typedExternal := Buffer(8, 0)
+NumPut("Int", 11, "Int", 22, typedExternal)
+viewedObject := ObjCreateWithDataPtr(TypedObject, typedExternal)
+AssertEq(viewedObject.X + viewedObject.Y, 33, A_LineNumber)
+Assert(!viewedObject.HasOwnProp("Name"), A_LineNumber)
+viewedObject := ""
+deletedObject := TypedObject()
+deletedObject.X := 12
+using deletedObject
+    deletedObject.X += 1
+AssertEq(TypedObject.Seen, 13, A_LineNumber)
+AssertEq(ObjGetDataPtr(deletedObject) ?? "unset", "unset", A_LineNumber)
+
+PropNames(obj) {
+    names := ""
+    for name in obj.Props()
+        names .= name ","
+    return names
+}
+
 FileAppend "pass", "*"

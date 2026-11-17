@@ -20,7 +20,8 @@ namespace Keysharp.Builtins
 		internal bool HasDeleteInChain => hasDeleteInChain;
 
 		// A prototype is not, as in AutoHotkey, which skips an object with an own __Class.
-		internal override bool HasDeleteCall => hasDeleteInChain && !HasOwnPropInternal("__Class");
+		internal override bool HasDeleteCall => !HasOwnPropInternal("__Class")
+			&& (HasOwnPropInternal("__Delete") || _base is KeysharpObject { hasDeleteInChain: true });
 
 		internal override void MaybeActivateFinalizer() => HasFinalizer = DisposesWhenCollected || hasDeleteInChain;
 
@@ -124,7 +125,7 @@ namespace Keysharp.Builtins
 		/// An object holding a native resource or structured data raises a TypeError instead.
 		/// </summary>
 		/// <returns>A cloned copy of the object.</returns>
-		public virtual object Clone() => this is IDisposable or InputHook || Objects.HasExternalDataPointer(this)
+		public virtual object Clone() => this is IDisposable or InputHook || nativeData != null
 			? Errors.TypeErrorOccurred("An object holding native data cannot be cloned.")
 			: MemberwiseClone();
 

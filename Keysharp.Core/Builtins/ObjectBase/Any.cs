@@ -19,6 +19,9 @@ namespace Keysharp.Builtins
 		internal Dictionary<string, OwnPropsDesc> op = null;
 		internal WeakCollection<Any> children = null;
 		internal bool isPrototype = false;
+		// The memory the object's typed properties are stored in, which a struct always has and any other object has when
+		// its class declares typed properties or it was created with a data pointer.
+		internal NativeData nativeData;
 
 		// C# code's text for a script object, as in an interpolated error message: its type, without running script code,
 		// such as a __Class getter, which Types.Type would.
@@ -42,8 +45,10 @@ namespace Keysharp.Builtins
 					}
 				}
 				// The finalizer thread may be clearing it at the same time (see Collected). One which says the object was
-				// given its __Delete stays, so that arming the object again brings no second call.
-				else if (sentinel is { Deleted: false } && Interlocked.Exchange(ref sentinel, null) is { } detached)
+				// given its __Delete stays, so that arming the object again brings no second call. Disposing another native
+				// resource must leave pending typed-storage cleanup armed.
+				else if (sentinel is { Deleted: false } && nativeData is not { NeedsRelease: true }
+						&& Interlocked.Exchange(ref sentinel, null) is { } detached)
 				{
 					detached.Owner = null;
 					GC.SuppressFinalize(detached);
@@ -52,7 +57,7 @@ namespace Keysharp.Builtins
 		}
 
 		// Whether the object has something to release when collected, so it needs a sentinel even without a __Delete.
-		internal virtual bool DisposesWhenCollected => this is IDisposable;
+		internal virtual bool DisposesWhenCollected => this is IDisposable || nativeData is { NeedsRelease: true };
 
 		// Whether collecting the object calls its __Delete (see KeysharpObject and Struct).
 		internal virtual bool HasDeleteCall => false;
@@ -69,10 +74,19 @@ namespace Keysharp.Builtins
 		// two, and is no prototype. It hides object's, so every copy a subclass makes goes through it.
 		protected new object MemberwiseClone()
 		{
-			var copy = (Any)base.MemberwiseClone();
+			Any copy;
+			if (this is Prototype)
+			{
+				copy = new KeysharpObject();
+				copy.HasFinalizer = false;
+				copy._base = _base;
+			}
+			else
+				copy = (Any)base.MemberwiseClone();
 			copy.sentinel = null;
 			copy.children = null;
 			copy.isPrototype = false;
+			copy.nativeData = null;
 
 			if (op != null)
 			{
@@ -82,7 +96,7 @@ namespace Keysharp.Builtins
 					copy.op[name] = desc.Clone();
 			}
 
-			copy.MaybeActivateFinalizer();
+			copy.OnPropertyChanged("base");
 			return copy;
 		}
 
@@ -112,8 +126,9 @@ namespace Keysharp.Builtins
 		}
 
 		// As AutoHotkey's Object::Initialize, which a class's Call runs on a new instance.
-		internal virtual void Initialize(object[] args)
+		internal void Initialize(object[] args)
 		{
+			NativeData.Initialize(this);
 			_ = Script.InvokeMeta(this, "__Init");
 			_ = Script.InvokeMeta(this, "__New", args);
 		}
@@ -144,9 +159,9 @@ namespace Keysharp.Builtins
 
 		internal virtual List<Any> GetEnumerableMembersOrEmpty()
 		{
+			var list = new List<Any>(op?.Count ?? 0);
+
 			if (op != null)
-			{
-				var list = new List<Any>(op.Count);
 				foreach (var (name, opm) in op)
 				{
 					if (opm.Value is Any a1) list.Add(a1);
@@ -154,9 +169,9 @@ namespace Keysharp.Builtins
 					if (opm.Set is Any a3) list.Add(a3);
 					if (opm.Call is Any a4) list.Add(a4);
 				}
-				return list;
-			}
-			return new List<Any>(0);
+
+			nativeData?.AddMembers(list);
+			return list;
 		}
 
 		// Internal method to define or update an own property, and notify children of the change

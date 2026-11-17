@@ -5710,7 +5710,7 @@ namespace Keysharp.Compilation.Syntax
 			if (instFields.Any() || c.InstanceInit.Count > 0)
 				members.Add(InitMethod(NameMangler.InstanceInit, baseType, instFields, null, c.InstanceInit, staticCtx: false));
 			var statFields = c.Fields.Where(f => f.Static && f.Init != null);
-			// A struct's typed fields are registered on the prototype (DefineStructFieldOnPrototype with the field's .NET type) in the
+			// A class's typed fields are registered on the prototype (DefineStructFieldOnPrototype with the field's class) in the
 			// static initializer, so the runtime knows the struct layout.
 			var typedFields = c.Fields.Where(f => f.TypeExpr != null);
 			_structTypeName = typeName;

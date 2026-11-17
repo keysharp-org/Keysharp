@@ -116,7 +116,7 @@ namespace Keysharp.Runtime
 				if (builtin)
 				{
 					foreach (var nested in type.GetNestedTypes(BindingFlags.Public)
-						.Where(t => !StructLayout.IsAutoPointerClass(t) && typeof(Any).IsAssignableFrom(t)
+						.Where(t => typeof(Any).IsAssignableFrom(t)
 							&& !t.IsDefined(typeof(PublicHiddenFromUser), false)))
 						Variables[Script.GetUserDeclaredName(nested) ?? nested.Name] = ScriptVar.Class(nested);
 					foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)

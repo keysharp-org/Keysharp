@@ -120,6 +120,25 @@ Throws(() => NoDefaultNumber.At(65536), A_LineNumber, ValueError)
 DefineProp(RecursiveNative.Prototype, "Self", {Type: RecursiveNative})
 Throws(() => NewRecursiveNative(), A_LineNumber, TypeError)
 
+; Native type compatibility does not invoke the public Base property.
+baseOverrideNumber := NativeBaseOverride(37)
+struct NativeBaseOverrideHolder {
+    Number: NativeBaseOverride.Ptr
+}
+baseOverrideHolder := NativeBaseOverrideHolder()
+baseOverrideCallback := CallbackCreate(value => value, "Fast", [Int32, Int32])
+GuardNativeBaseOverride(baseOverrideNumber, 1)
+try {
+    Assert(HasBase(baseOverrideNumber, Int32.Prototype), A_LineNumber)
+    baseOverrideHolder.Number := baseOverrideNumber
+    Assert(baseOverrideHolder.Number == baseOverrideNumber, A_LineNumber)
+    AssertEq(DllCall(baseOverrideCallback, Int32, baseOverrideNumber, "Int"), 37, A_LineNumber)
+    AssertEq(DllCall(baseOverrideCallback, NativeBaseOverride, baseOverrideNumber, "Int"), 37, A_LineNumber)
+} finally {
+    GuardNativeBaseOverride(baseOverrideNumber, 0)
+    CallbackFree(baseOverrideCallback)
+}
+
 ; Dispose runs for a struct which owns memory, after its __Delete; a view gets neither.
 lifetimeDeletes := {Count: 0}
 DefineProp(NativeLifetime.Prototype, "__Delete", {Call: (this) => ++lifetimeDeletes.Count})
@@ -235,6 +254,17 @@ public class ProtectedNumber : Keysharp.Builtins.StructInt32
     protected ProtectedNumber() { }
 }
 public class ImplicitNumber : Keysharp.Builtins.StructInt32 { }
+public class NativeBaseOverride : Keysharp.Builtins.StructInt32
+{
+    internal bool GuardBaseRead;
+    public override Keysharp.Builtins.Any Base
+    {
+        get => GuardBaseRead ? throw new System.InvalidOperationException("Native compatibility invoked Base.") : base.Base;
+        set => base.Base = value;
+    }
+}
+public static object GuardNativeBaseOverride(object value, object enabled) =>
+    ((NativeBaseOverride)value).GuardBaseRead = (long)enabled != 0;
 public class RecursiveNative : Keysharp.Builtins.Struct { }
 public class NoDefaultNumber : Keysharp.Builtins.StructInt32
 {

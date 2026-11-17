@@ -15,7 +15,7 @@ namespace Keysharp.Builtins
 		/// Linux system with that sysctl deliberately lowered could map memory beneath the floor, and a script
 		/// reading it would get an IndexError here.</para>
 		/// </summary>
-		private const long MinValidAddress = 65536;
+		internal const long MinValidAddress = 65536;
 
 		/// <summary>
 		/// Returns the binary number stored at the specified address+offset.

@@ -4876,7 +4876,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Calls native functions with numeric classes, structures and void returns; arrays pass by address and cannot be returned. Numeric subclasses retain __Value, and pointer returns preserve target-class instances except for native numeric targets. Outside Windows x64, by-value structs must be 1, 2, 4 or 8 bytes, naturally aligned and not entirely floating-point.",
+                     "notes":  "Numeric/struct arguments and void returns; arrays pass by address and cannot be returned. Numeric subclasses use __Value. Pointer returns retain target types except native numbers. Outside Windows x64, aggregates require 1/2/4/8 bytes, natural alignment and some non-floating data; zero-size fields are ignored.",
                      "tested-by":  "external-dllcall.ahk; struct-array.ahk; struct-basic.ahk"
                  },
                  {
@@ -9189,8 +9189,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Sets an object's base object. The native type cannot change and the base chain may not become circular. Neither object may have typed properties, since those fix the memory layout; a prototype which has none is writable. A Struct.At view or ObjCreateWithDataPtr instance has a read-only base.",
-                     "tested-by":  "class-prototype.ahk; struct-pack.ahk"
+                     "notes":  "Rejects native-type changes, cycles and rebasing data-bearing instances or closed nonempty prototypes. Rebasing preserves closed layouts and leaves open replacements open.",
+                     "tested-by":  "class-prototype.ahk; struct-basic.ahk; struct-pack.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -10767,8 +10767,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "User-defined structures via the struct keyword: typed fields, union blocks, nesting, At, numeric types, pointer classes, #StructPack alignment, and structured arrays (Int32[10] / Struct.Array). Numeric subclasses retain inherited __Value storage, including when they add typed fields, and initialize as nested structs when used as fields.",
-                     "tested-by":  "struct-basic.ahk; struct-pack.ahk; struct-array.ahk; class-special-funcs.ahk"
+                     "notes":  "Typed fields on ordinary classes and structs, including unions, nesting, At views, pointers, fixed arrays and #StructPack. Numeric subclasses retain __Value and initialize as nested fields.",
+                     "tested-by":  "struct-basic.ahk; struct-pack.ahk; struct-array.ahk; class-special-funcs.ahk; directive-csharp-modules.ahk; ClassTests; ResourceCleanupTests"
                  },
                  {
                      "category":  "Interop/Memory",

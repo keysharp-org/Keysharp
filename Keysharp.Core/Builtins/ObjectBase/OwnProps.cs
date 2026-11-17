@@ -81,7 +81,7 @@ namespace Keysharp.Builtins
 			return entry switch
 			{
 				//NoEnumGet already means "this getter needs more than the receiver", set where the descriptor is built.
-				OwnPropsDesc op => op.Value != null || (op.Get != null && !op.NoEnumGet) || (op.StructField != null && obj is Struct),
+				OwnPropsDesc op => op.Value != null || (op.Get != null && !op.NoEnumGet) || (op.StructField != null && obj is Any { nativeData: not null }),
 				MethodPropertyHolder mph => mph.MinParams + mph.ReceiverCorrection(obj) <= 0,
 				KeysharpFunc fo => fo.MinParams <= 1,
 				_ => true
@@ -95,7 +95,7 @@ namespace Keysharp.Builtins
 				if (op.Value != null)
 					return (kv.Key, op.Value);
 				else if (op.StructField != null)
-					return (kv.Key, obj is Struct st ? st.GetFieldValue(op.StructField, true) : null);
+					return (kv.Key, obj is Any { nativeData: { } data } ? data.GetFieldValue(op.StructField, true) : null);
 				else if (op.Get is KeysharpFunc fo)
 					return (kv.Key, fo.Call(obj));
 				else if (op.Get != null)
@@ -324,9 +324,7 @@ namespace Keysharp.Builtins
 
 			if (StructField != null)
 			{
-				object typeValue = Script.TheScript?.Vars?.Statics.TryGetValue(StructField.FieldType, out var classObj) == true
-					? classObj
-					: Script.GetUserDeclaredName(StructField.FieldType) ?? StructField.FieldType.Name;
+				object typeValue = (object)StructField.FieldType.Class ?? StructField.FieldType.Name;
 
 				map.DefinePropInternal("Type", new OwnPropsDesc(typeValue));
 
