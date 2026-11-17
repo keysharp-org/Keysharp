@@ -1258,7 +1258,7 @@ namespace Keysharp.Compilation
 				}
 
 				// expression-bodied accessors: "{ get => ...; set => ...; }"
-				if (accessors.All(a => a.Body == null && a.ExpressionBody != null))
+				if (accessors.All(a => a.Body == null))
 				{
 					_sb.Append(" { ");
 					for (int i = 0; i < accessors.Count; i++)
