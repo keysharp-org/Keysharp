@@ -492,7 +492,7 @@ namespace Keysharp.Builtins
 
 				// The window's screen-absolute frame rectangle. Its top-left is the on-screen origin recorded on
 				// the Image so OCR (and any other consumer) can map image coordinates back to the screen.
-				var bounds = w.Bounds;
+				var boundsKnown = w.TryGetBounds(false, out var bounds);
 				var (bmp, pixelScale) = GuiHelper.CaptureWindowContent(w.Handle, mode, includeDeco);
 
 				if (bmp != null)
@@ -533,20 +533,24 @@ namespace Keysharp.Builtins
 						// when KWin doesn't expose clientGeometry); if it's unreliable (equals the frame), derive the
 						// insets from the capture: the client image is smaller than the frame by the borders, so
 						// side = (frameW - capW)/2 and titleTop = (frameH - capH) - side.
-						var clientPt = w.ClientToScreen();
 						double capW = pixelScale.X != 0 ? bmp.Width / pixelScale.X : bmp.Width;
 						double capH = pixelScale.Y != 0 ? bmp.Height / pixelScale.Y : bmp.Height;
-						bool clientUnreliable = clientPt.X == bounds.X && clientPt.Y == bounds.Y && capH < bounds.Height - 1;
 
-						if (clientUnreliable)
+						// A capture as tall as the frame (Cinnamon's) includes the title bar and keeps the frame origin.
+						if (capH < bounds.Height - 1)
 						{
-							int side = (int)Math.Max(0, Math.Round((bounds.Width - capW) / 2));
-							int titleTop = (int)Math.Max(0, Math.Round(bounds.Height - capH - side));
-							(ox, oy) = (bounds.X + side, bounds.Y + titleTop);
-						}
-						else if (clientPt.X >= bounds.X && clientPt.Y >= bounds.Y && (clientPt.X != 0 || clientPt.Y != 0))
-						{
-							(ox, oy) = (clientPt.X, clientPt.Y);
+							var clientPt = w.ClientToScreen();
+
+							if (clientPt.X == bounds.X && clientPt.Y == bounds.Y)
+							{
+								int side = (int)Math.Max(0, Math.Round((bounds.Width - capW) / 2));
+								int titleTop = (int)Math.Max(0, Math.Round(bounds.Height - capH - side));
+								(ox, oy) = (bounds.X + side, bounds.Y + titleTop);
+							}
+							else if (clientPt.X >= bounds.X && clientPt.Y >= bounds.Y && (clientPt.X != 0 || clientPt.Y != 0))
+							{
+								(ox, oy) = (clientPt.X, clientPt.Y);
+							}
 						}
 					}
 #endif
@@ -554,7 +558,11 @@ namespace Keysharp.Builtins
 				}
 
 				// No platform window capture: grab the window's on-screen rectangle. That grab is frame-aligned
-				// (it includes the title bar), so the frame origin is correct for this path.
+				// (it includes the title bar), so the frame origin is correct for this path. Without a known
+				// rectangle the grab would return whatever else is on screen.
+				if (!boundsKnown)
+					return Errors.UnsupportedErrorOccurred("Image.FromWindow is unavailable: the compositor can neither capture this window nor report its frame geometry.");
+
 				bmp = GuiHelper.GetScreen(bounds.X, bounds.Y, bounds.Width, bounds.Height);
 
 				if (bmp == null)

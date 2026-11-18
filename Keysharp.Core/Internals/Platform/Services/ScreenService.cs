@@ -284,7 +284,19 @@ namespace Keysharp.Internals
 
 			var backend = Backend;
 
-			if (backend == null || !backend.TryGetNativeWindowId(handle, out var id))
+			if (backend == null)
+				return false;
+
+			// The compositor does not know our own window's toolkit handle, only the window correlated with it.
+			var target = handle;
+			if (!backend.IsKnown(handle) && Eto.Forms.Control.FromHandle(handle) is Eto.Forms.Window form)
+			{
+				if (!Wl.WaylandOwnToplevels.TryGetOwnWindow(form, out var own))
+					return false;
+				target = own.Handle;
+			}
+
+			if (!backend.TryGetNativeWindowId(target, out var id))
 				return false;
 
 			bmp = DesktopClient.Current.CaptureWindow(id, includeDecoration);
@@ -292,12 +304,22 @@ namespace Keysharp.Internals
 			if (bmp == null)
 				return false;
 
+			// Without decorations a backend captures the frame or, where it can, the client area, and the reply does
+			// not say which. They differ by the title bar, so the scale is measured against the one whose proportions
+			// the bitmap shares.
 			var bounds = Platform.Window.GetBounds(handle);
+
+			if (!includeDecoration && Platform.Window.GetClientBounds(handle) is { Width: > 0, Height: > 0 } client
+					&& Skew(bmp, client) < Skew(bmp, bounds))
+				bounds = client;
 
 			if (bounds.Width > 0 && bounds.Height > 0)
 				pixelScale = PixelScale.From(bmp, bounds);
 
 			return true;
+
+			static double Skew(Bitmap b, Rectangle r) => r.Width > 0 && r.Height > 0
+				? Math.Abs((double)b.Width / r.Width - (double)b.Height / r.Height) : double.MaxValue;
 		}
 	}
 

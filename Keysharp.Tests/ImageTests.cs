@@ -29,6 +29,15 @@ public class ImageTests : TestRunner
 		Assert.IsTrue(TestScript("image-show-worker", false));
 	}
 
+	[Test, Category("Image"), Category("Gui")]
+	public void FromOwnWindow()
+	{
+		if (Script.IsHeadless)
+			Assert.Ignore("Window capture requires a desktop session.");
+
+		Assert.IsTrue(TestScript("image-fromwindow-own", false));
+	}
+
 	[Test, Category("Image"), Category("Internal")]
 	public void DrawImageResources()
 	{

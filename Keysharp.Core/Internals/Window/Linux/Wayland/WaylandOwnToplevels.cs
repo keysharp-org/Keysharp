@@ -584,9 +584,14 @@ namespace Keysharp.Internals.Window.Linux.Wayland
 				Unbind(state, generation, handle);
 			}
 
-			info = CorrelateCore(backend, state, retryNow: true);
+			// Correlation picks from the window list, whose geometry can predate the compositor's placement of a
+			// new window, so answer with an explicit query as for a window already bound.
+			if (CorrelateCore(backend, state, retryNow: true) is not { } correlated
+					|| !backend.TryGetWindow(correlated.Handle, out info))
+				return false;
+
 			lock (sync)
-				return info != null && IsBoundLocked(state, generation, info.Handle);
+				return IsBoundLocked(state, generation, info.Handle);
 		}
 
 		/// <summary>
