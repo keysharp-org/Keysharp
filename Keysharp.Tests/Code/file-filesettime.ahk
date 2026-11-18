@@ -65,8 +65,12 @@ DirCreate("./FileSetTime/sub")
 FileSetTime("20190101000001", "./FileSetTime/sub", "C")
 AssertEq("20190101000001", FileGetTime("./FileSetTime/sub", "C"), A_LineNumber)
 #endif
-FileSetTime("20190101000002", "./FileSetTime/sub", "A")
-AssertEq("20190101000002", FileGetTime("./FileSetTime/sub", "A"), A_LineNumber)
+; A file watcher lists a new folder in the working tree, and under relatime that read refreshes the access time.
+accessed := A_Temp A_DirSeparator "ks-settime-dir-" A_TickCount
+DirCreate(accessed)
+FileSetTime("20190101000002", accessed, "A")
+AssertEq("20190101000002", FileGetTime(accessed, "A"), A_LineNumber)
+DirDelete(accessed)
 FileSetTime("20190101000003", "./FileSetTime/sub")
 AssertEq("20190101000003", FileGetTime("./FileSetTime/sub"), A_LineNumber)
 FileSetTime("20190101000004", "./FileSetTime/su*")

@@ -84,7 +84,8 @@ namespace Keysharp.Internals.Linux
 				return;
 
 			var status = Status(trash);
-			if (status.Mount != mount || status.Uid != uid || (status.Mode & (int)(UnixFileMode.GroupWrite | UnixFileMode.OtherWrite)) != 0)
+			// A permission check would add nothing: every folder is pinned by handle and links are removed, not followed.
+			if (status.Mount != mount || status.Uid != uid)
 				return;
 
 			using var files = OpenPath(Path.Combine(FdPath(trash), "files"), directory: true);

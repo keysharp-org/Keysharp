@@ -190,7 +190,7 @@ AssertEq(nestedDeletes, "owner,33,22,11,", A_LineNumber)
 
 ; A File collected with an object that holds it, even through an Array, closes only after that object's __Delete wrote
 ; to it.
-heldFilePath := A_Temp "\ks-held-file-" A_TickCount ".txt"
+heldFilePath := A_Temp "/ks-held-file-" A_TickCount ".txt"
 class HoldsFile
 {
 	__New(path) => this.items := [FileOpen(path, "w")]

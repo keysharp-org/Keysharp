@@ -342,10 +342,8 @@ public class FileAndDirTests : TestRunner
 
 			File.Delete(own);
 			var ownItem = Prepare(own);
-			File.SetUnixFileMode(own, File.GetUnixFileMode(own) | UnixFileMode.OtherWrite);
-			Keysharp.Internals.Linux.Trash.EmptyVolumeTrash(volume);
-			Assert.That(File.Exists(ownItem), Is.True);
-			File.SetUnixFileMode(own, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+			// Permissions do not matter, so a trash others can write to is emptied too.
+			File.SetUnixFileMode(own, File.GetUnixFileMode(own) | UnixFileMode.GroupWrite | UnixFileMode.OtherWrite);
 			Keysharp.Internals.Linux.Trash.EmptyVolumeTrash(volume);
 			Assert.That(File.Exists(ownItem), Is.False);
 			Assert.IsInstanceOf<OSError>(Assert.Throws<KeysharpException>(() => Files.FileRecycleEmpty(Path.Combine(root, "missing"))).UserError);

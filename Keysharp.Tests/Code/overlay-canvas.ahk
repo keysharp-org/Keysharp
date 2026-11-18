@@ -198,13 +198,15 @@ Assert(!WinExist(hwnd), A_LineNumber)
 #endif
 
 ; Leaving a using statement destroys the overlay as Destroy does, and a later Show builds it again.
+; A compositor-drawn backing has no handle, so visibility is what shows the overlay exists.
 using scoped := Overlay(0, 0, 8, 8) {
     scoped.Show()
-    Assert(scoped.Hwnd != 0, A_LineNumber)
+    Assert(scoped.IsVisible, A_LineNumber)
 }
+Assert(!scoped.IsVisible, A_LineNumber)
 AssertEq(scoped.Hwnd, 0, A_LineNumber)
 scoped.Show()
-Assert(scoped.Hwnd != 0, A_LineNumber)
+Assert(scoped.IsVisible, A_LineNumber)
 scoped.Destroy()
 
 ; Highlight: Thickness 0 hides the border, an invalid color raises and keeps the previous one, and Hide keeps
@@ -231,8 +233,9 @@ hl.Destroy()
 AssertEq(hl.Hwnd, 0, A_LineNumber)
 using scopedHighlight := Highlight(0, 0, 10, 10, "Red") {
     scopedHighlight.Show()
-    Assert(scopedHighlight.Hwnd != 0, A_LineNumber)
+    Assert(scopedHighlight.IsVisible, A_LineNumber)
 }
+Assert(!scopedHighlight.IsVisible, A_LineNumber)
 AssertEq(scopedHighlight.Hwnd, 0, A_LineNumber)
 
 ; ToolTip shows a native tooltip window per slot, keeps it across updates and destroys it for empty text.
