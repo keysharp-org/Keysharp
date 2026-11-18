@@ -24,9 +24,6 @@ namespace Keysharp.Internals.Interop
 			};
 		}
 
-		// Integer slots carry raw bits; floating-point parameters require their native register class.
-		internal enum CallbackSlot : byte { Integer, Float32, Float64 }
-
 		// Resolved once when the callback is registered. Aggregate arguments need fresh storage because script may retain them.
 		internal readonly struct CallbackConversion(NativeTypeCode kind, StructDefinition aggregate, long size = 0, bool isArray = false)
 		{
@@ -34,14 +31,6 @@ namespace Keysharp.Internals.Interop
 			internal readonly StructDefinition Aggregate = aggregate;
 			internal readonly long Size = size;
 			internal readonly bool IsArray = isArray;
-
-			// Which register file the value travels in, and so whether it needs a native signature of its own.
-			internal CallbackSlot Slot => Kind switch
-			{
-				NativeTypeCode.Float => CallbackSlot.Float32,
-				NativeTypeCode.Double => CallbackSlot.Float64,
-				_ => CallbackSlot.Integer
-			};
 
 			// An aggregate whose slot holds its address rather than its bytes, and which is returned through memory the caller provides.
 			internal bool ByAddress => Aggregate != null && !IsArray && !InRegister(Size);

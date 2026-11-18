@@ -3,30 +3,31 @@ using Keysharp.Builtins;
 namespace Keysharp.Internals.Interop
 {
 	/// <summary>
-	/// A generated native call: the function pointer plus the argument slots it reads, which live in the
-	/// caller's stack frame. The two forms differ only in which register the return value comes back in.
+	/// Calls a native function with slots from the caller's stack frame and returns the raw result bits.
 	/// </summary>
 	internal unsafe delegate long NativeCall(nint fn, long* args);
-	internal unsafe delegate double NativeCallFloat(nint fn, long* args);
 
 	internal class DllData
 	{
 		// These caches are unbounded in principle but small in practice: delegateCache is keyed by the call's
 		// shape (argument count plus which slots are floating point), of which a script uses a handful, and
 		// procAddressCache by the function strings it writes.
-		internal readonly ConcurrentDictionary<ulong, Delegate> delegateCache = new ();
+		internal readonly ConcurrentDictionary<ulong, NativeCall> delegateCache = new ();
 		// Signatures with more than 57 arguments, whose float mask does not fit alongside the count in the
 		// packed key above. Vanishingly rare, so a tuple key costs nothing worth measuring.
-		internal readonly ConcurrentDictionary<(int, ulong), Delegate> wideDelegateCache = new ();
+		internal readonly ConcurrentDictionary<(int, ulong), NativeCall> wideDelegateCache = new ();
+#if OSX
+		internal readonly ConcurrentDictionary<string, NativeCall> packedInvokers = new (StringComparer.Ordinal);
+#endif
 		// The signature nearly every call has -- every argument and the return value an integer -- is indexed by
 		// argument count alone, so the common case is an array read rather than a hash lookup.
-		internal readonly Delegate[] integerInvokers = new Delegate[NativeInvoker.MaxArguments + 1];
+		internal readonly NativeCall[] integerInvokers = new NativeCall[NativeInvoker.MaxArguments + 1];
 		// Ordinal, matching the case-sensitive GetProcAddress/dlsym this memoises: a differently spelled function
 		// name does not resolve there either, so an ignore-case cache would only paper over the failure for
 		// whichever spelling happened to be looked up first, at the cost of a slower hash on every call.
 		internal readonly ConcurrentDictionary<string, nint> procAddressCache = new (StringComparer.Ordinal);
 #if WINDOWS
-		// x64 register-duplication shims, one per (function, floating-point argument pattern); see Dll.GetShim.
+		// x64 register-duplication shims, one per (function, floating-point argument pattern).
 		internal readonly ConcurrentDictionary<(nint, int), nint> shimCache = new ();
 		internal readonly Lock shimLock = new ();
 #endif
@@ -40,10 +41,10 @@ namespace Keysharp.Internals.Interop
 	/// </summary>
 	internal static class NativeInvoker
 	{
+		internal static readonly MethodInfo DoubleToBits = typeof(BitConverter).GetMethod(nameof(BitConverter.DoubleToInt64Bits), [typeof(double)]);
+
 		/// <summary>
-		/// The most arguments one call may take. The generated-invoker cache key packs the argument count into
-		/// the top six bits of a 64-bit word, so a longer list would collide with another signature's entry;
-		/// it also bounds the stack space each call reserves for its argument slots.
+		/// The mask needs one bit per native argument and one for the return register.
 		/// </summary>
 		internal const int MaxArguments = 63;
 
@@ -56,7 +57,7 @@ namespace Keysharp.Internals.Interop
 		/// <param name="args">The argument list, which the call may write back through.</param>
 		/// <param name="mask">64-bit mask containing information about floating point arguments and return value</param>
 		/// <returns>The raw contents of the return register; a floating-point return arrives as its bits.</returns>
-		internal static unsafe long NativeInvoke(nint fnPtr, Span<long> args, ulong mask)
+		internal static unsafe long NativeInvoke(nint fnPtr, Span<long> args, ulong mask, ReadOnlySpan<ArgumentSlot> slots = default)
 		{
 			int n = args.Length;
 
@@ -67,23 +68,25 @@ namespace Keysharp.Internals.Interop
 				return (long)Errors.ValueErrorOccurred($"A native call cannot take more than {MaxArguments} arguments.", ret: 0L);
 
 			var dllData = TheScript.DllData;
-			Delegate del;
+			NativeCall invoke;
 
+#if OSX
+			if (packsStack && slots.Length > RegisterCount && GetPackedInvoker(dllData, slots, mask) is { } packed)
+				invoke = packed;
+			else
+#endif
 			if (mask == 0)
-				del = dllData.integerInvokers[n] ??= CreateInvoker(n, 0);
+				invoke = dllData.integerInvokers[n] ??= CreateInvoker(n, 0);
 			else if (n > 57)
 				//The packed key below cannot carry mask bits this high, so these signatures get their own cache
 				//rather than colliding. Rare enough to be worth a tuple key, but not worth re-JITting per call.
-				del = dllData.wideDelegateCache.GetOrAdd((n, mask), static k => CreateInvoker(k.Item1, k.Item2));
+				invoke = dllData.wideDelegateCache.GetOrAdd((n, mask), static k => CreateInvoker(k.Item1, k.Item2));
 			else
 			{
 				// pack n into bits 58–63, mask occupies bits 0–57
 				ulong key = ((ulong)n << 58) | mask;
 
-				// TryGetValue first: GetOrAdd's factory would capture n and mask into a fresh closure on every
-				// call, including the common one where the delegate is already there.
-				if (!dllData.delegateCache.TryGetValue(key, out del))
-					del = dllData.delegateCache.GetOrAdd(key, static (_, state) => CreateInvoker(state.n, state.mask), (n, mask));
+				invoke = dllData.delegateCache.GetOrAdd(key, static (_, state) => CreateInvoker(state.n, state.mask), (n, mask));
 			}
 
 #if WINDOWS
@@ -114,13 +117,8 @@ namespace Keysharp.Internals.Interop
 #endif
 			long result;
 
-			// invoke with the correct delegate type
 			fixed (long* p = args)
-			{
-				result = ((mask >> n) & 1) != 0
-						 ? BitConverter.DoubleToInt64Bits(((NativeCallFloat)del)(fnPtr, p))
-						 : ((NativeCall)del)(fnPtr, p);
-			}
+				result = invoke(fnPtr, p);
 
 			ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 			return result;
@@ -191,9 +189,7 @@ namespace Keysharp.Internals.Interop
 				return shim;
 			}
 		}
-#endif
 
-#if WINDOWS
 		/// <summary>
 		/// Drops every cached shim for <paramref name="fnPtr"/> and gives the executable chunks back. Only for a
 		/// function pointer that is about to become invalid: an ordinary library export keeps its shim, which is
@@ -214,33 +210,29 @@ namespace Keysharp.Internals.Interop
 #endif
 
 		/// <summary>
-		/// Generates (and returns) a <see cref="NativeCall"/> or <see cref="NativeCallFloat"/> for a function
-		/// pointer that accepts exactly n arguments. It reads each argument out of the slot array as either a
-		/// long or a double, then loads the function pointer and calls it.
-		/// <para>The slots arrive as a raw pointer rather than a long[] so that the caller can hand over stack
-		/// space: an argument list allocated per call would be pure garbage, since nothing outlives the call.</para>
+		/// Generates an invoker for a signature using word-sized arguments and result registers.
 		/// </summary>
 		/// <param name="n">The number of argument slots expected.</param>
 		/// <param name="mask">Bitmask containing info about possible floating point number argument positions</param>
-		private static unsafe Delegate CreateInvoker(int n, ulong mask)
+		private static NativeCall CreateInvoker(int n, ulong mask)
 		{
 			var floatReturn = ((mask >> n) & 1) != 0;
-			Type returnType = floatReturn ? typeof(double) : typeof(long);
-			// method name only depends on n and floatingTypeMask
-			string name = $"NativeCall_{n}_{mask}";
-			var dm = new DynamicMethod(
-				name,
-				returnType,
-				[typeof(nint), typeof(long*)],
-				typeof(Dll).Module,
-				skipVisibility: true);
-			var il = dm.GetILGenerator();
-			var paramTypes = new Type[n];
+			var parameterTypes = new Type[n];
 
-			// 1) load each argument slot
-			for (int i = 0; i < n; i++)
+			for (var i = 0; i < n; i++)
+				parameterTypes[i] = ((mask >> i) & 1) != 0 ? typeof(double) : typeof(long);
+
+			return EmitInvoker($"NativeCall_{n}_{mask}", parameterTypes, floatReturn);
+		}
+
+		private static unsafe NativeCall EmitInvoker(string name, Type[] parameterTypes, bool floatReturn)
+		{
+			var dm = new DynamicMethod(name, typeof(long), [typeof(nint), typeof(long*)], typeof(Dll).Module, skipVisibility: true);
+			var il = dm.GetILGenerator();
+
+			for (var i = 0; i < parameterTypes.Length; i++)
 			{
-				il.Emit(OpCodes.Ldarg_1);           // args
+				il.Emit(OpCodes.Ldarg_1);
 
 				if (i != 0)
 				{
@@ -248,21 +240,89 @@ namespace Keysharp.Internals.Interop
 					il.Emit(OpCodes.Add);
 				}
 
-				var isFloat = ((mask >> i) & 1) != 0;
-				il.Emit(isFloat ? OpCodes.Ldind_R8 : OpCodes.Ldind_I8);
-				paramTypes[i] = isFloat ? typeof(double) : typeof(long);
+				il.Emit(OpCodes.Ldobj, parameterTypes[i]);
 			}
 
-			// 2) load fn pointer
 			il.Emit(OpCodes.Ldarg_0);
-			// 3) emit the unmanaged cdecl calli
-			il.EmitCalli(
-				OpCodes.Calli,
-				CallingConvention.Cdecl,
-				returnType,
-				paramTypes);
+			il.EmitCalli(OpCodes.Calli, CallingConvention.Cdecl, floatReturn ? typeof(double) : typeof(long), parameterTypes);
+			if (floatReturn)
+				il.Emit(OpCodes.Call, DoubleToBits);
 			il.Emit(OpCodes.Ret);
-			return dm.CreateDelegate(floatReturn ? typeof(NativeCallFloat) : typeof(NativeCall));
+			return dm.CreateDelegate<NativeCall>();
+		}
+
+		internal static Type[] ParameterTypes(ReadOnlySpan<char> slots)
+		{
+			var types = new Type[slots.Length];
+			for (var i = 0; i < types.Length; i++)
+				types[i] = ParameterType((NativeTypeCode)slots[i]);
+			return types;
+		}
+
+		internal static Type ParameterType(NativeTypeCode slot) => slot switch
+		{
+			NativeTypeCode.Float => typeof(float),
+			NativeTypeCode.Double => typeof(double),
+			NativeTypeCode.UChar => typeof(byte),
+			NativeTypeCode.UShort => typeof(ushort),
+			NativeTypeCode.UInt => typeof(uint),
+			_ => typeof(long)
+		};
+
+#if OSX
+		private const int RegisterCount = 8;
+		private static readonly bool packsStack = RuntimeInformation.ProcessArchitecture == Architecture.Arm64;
+
+		// Each register bank fills independently. Spilled scalars occupy their native widths,
+		// while a supported non-HFA aggregate still occupies an eight-byte slot.
+		private static NativeCall GetPackedInvoker(DllData data, ReadOnlySpan<ArgumentSlot> slots, ulong mask)
+		{
+			Span<char> shape = stackalloc char[slots.Length + 1];
+			var integers = 0;
+			var floats = 0;
+			var packed = false;
+
+			for (var i = 0; i < slots.Length; i++)
+			{
+				var type = slots[i].ScalarType;
+				if (NativeType.IsFloating(type))
+				{
+					if (floats++ < RegisterCount)
+						type = NativeTypeCode.Double;
+				}
+				else
+					type = IntegerSlot(type, ref integers);
+
+				shape[i] = (char)type;
+				packed |= type is not (NativeTypeCode.Int64 or NativeTypeCode.Double);
+			}
+
+			if (!packed)
+				return null;
+
+			shape[^1] = (char)(((mask >> slots.Length) & 1) != 0 ? NativeTypeCode.Double : NativeTypeCode.Int64);
+			if (data.packedInvokers.GetAlternateLookup<ReadOnlySpan<char>>().TryGetValue(shape, out var invoker))
+				return invoker;
+
+			return data.packedInvokers.GetOrAdd(new string(shape), static key =>
+				EmitInvoker("NativeCallPackedStack", ParameterTypes(key.AsSpan(..^1)), (NativeTypeCode)key[^1] == NativeTypeCode.Double));
+		}
+#endif
+
+		// Integer registers already hold the extended value. Only a spill on Apple ARM64 needs its width.
+		internal static NativeTypeCode IntegerSlot(NativeTypeCode type, ref int integers)
+		{
+#if OSX
+			if (packsStack && integers++ >= RegisterCount)
+				return type switch
+				{
+					NativeTypeCode.Char or NativeTypeCode.UChar => NativeTypeCode.UChar,
+					NativeTypeCode.Short or NativeTypeCode.UShort => NativeTypeCode.UShort,
+					NativeTypeCode.Int or NativeTypeCode.UInt or NativeTypeCode.HResult => NativeTypeCode.UInt,
+					_ => NativeTypeCode.Int64
+				};
+#endif
+			return NativeTypeCode.Int64;
 		}
 	}
 }

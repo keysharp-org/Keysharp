@@ -3631,8 +3631,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Creates native callbacks with parameter-count or typed signatures; invalid class types raise ValueError. Numeric subclasses retain __Value conversion, and by-value structs follow DllCall's platform restrictions.",
-                     "tested-by":  "external-callbackcreate.ahk"
+                     "notes":  "Creates native callbacks with parameter-count or typed signatures; invalid class types raise ValueError. Numeric subclasses retain __Value conversion, and by-value structs follow DllCall's platform restrictions. On macOS ARM64, typed signatures preserve the native widths of stack-passed parameters.",
+                     "tested-by":  "external-callbackcreate.ahk; ExternalTests.CallbackStackArguments"
                  },
                  {
                      "category":  "Interop/Memory",
@@ -4876,8 +4876,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Numeric/struct arguments and void returns; arrays pass by address and cannot be returned. Numeric subclasses use __Value. Pointer returns retain target types except native numbers. Outside Windows x64, aggregates require 1/2/4/8 bytes, natural alignment and some non-floating data; zero-size fields are ignored.",
-                     "tested-by":  "external-dllcall.ahk; struct-array.ahk; struct-basic.ahk"
+                     "notes":  "Numeric/struct arguments and void returns; arrays pass by address and cannot be returned. Numeric subclasses use __Value. Pointer returns retain target types except native numbers. Outside Windows x64, aggregates require 1/2/4/8 bytes, natural alignment and some non-floating data; zero-size fields are ignored. macOS ARM64 preserves narrow stack argument widths. Native calls accept 63 argument slots, including hidden pointers.",
+                     "tested-by":  "external-dllcall.ahk; struct-array.ahk; struct-basic.ahk; ExternalTests.DllCall_StackArguments"
                  },
                  {
                      "category":  "FileSystem",

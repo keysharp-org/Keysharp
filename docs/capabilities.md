@@ -344,7 +344,7 @@ Status legend:
 | Buffer.__Item[] | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Indexer for reading/writing bytes in Buffer by offset. |
 | Buffer.__New() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Constructs a new Buffer object. |
 | Buffer.Clone() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keysharp extension. Returns a buffer of the same class and size holding a copy of the bytes, where AutoHotkey raises a TypeError. An instance created by ObjCreateWithDataPtr raises TypeError. |
-| CallbackCreate() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates native callbacks with parameter-count or typed signatures; invalid class types raise ValueError. Numeric subclasses retain __Value conversion, and by-value structs follow DllCall's platform restrictions. |
+| CallbackCreate() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Creates native callbacks with parameter-count or typed signatures; invalid class types raise ValueError. Numeric subclasses retain __Value conversion, and by-value structs follow DllCall's platform restrictions. On macOS ARM64, typed signatures preserve the native widths of stack-passed parameters. |
 | CallbackFree() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Releases a live address returned by CallbackCreate; an invalid or already-freed address raises ValueError. |
 | CaretGetPos() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Retrieves the caret position. If no caret position is available, it returns false and sets both output variables to blank. Linux uses native GTK geometry for script-owned controls and AT-SPI for foreign applications, normalizing Wayland-local coordinates through compositor window geometry when needed. macOS uses the Accessibility API and requires Accessibility permission. |
 | Case | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Case branch label used by switch. |
@@ -462,7 +462,7 @@ Status legend:
 | DirExist() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Checks for the existence of a folder and returns its attributes. |
 | DirMove() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Moves a folder along with all its sub-folders and files. It can also rename a folder. |
 | DirSelect() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Displays the native folder-selection dialog on every platform. Some legacy Windows folder-dialog option flags have no portable equivalent. |
-| DllCall() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Numeric/struct arguments and void returns; arrays pass by address and cannot be returned. Numeric subclasses use __Value. Pointer returns retain target types except native numbers. Outside Windows x64, aggregates require 1/2/4/8 bytes, natural alignment and some non-floating data; zero-size fields are ignored. |
+| DllCall() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Numeric/struct arguments and void returns; arrays pass by address and cannot be returned. Numeric subclasses use __Value. Pointer returns retain target types except native numbers. Outside Windows x64, aggregates require 1/2/4/8 bytes, natural alignment and some non-floating data; zero-size fields are ignored. macOS ARM64 preserves narrow stack argument widths. Native calls accept 63 argument slots, including hidden pointers. |
 | DotNet.Format() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Formats text using .NET composite format placeholders (1-based indexing adaptation). |
 | DotNet.RegExMatch() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Runs a .NET regex match and returns match details. |
 | DotNet.RegExReplace() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Runs a .NET regex replace. |

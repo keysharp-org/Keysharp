@@ -8,6 +8,87 @@ public partial class ExternalTests : TestRunner
 	[Test, Category("External")]
 	public void Clr() => Assert.IsTrue(TestScript("external-clr", false));
 
+	[UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+	private static float SpilledArguments(
+		int a, int b, int c, int d, int e, int f, int g, int h, int i, short j, sbyte k, byte l,
+		float m, float n, float o, float p, float q, float r, float s, float t, float u, double v)
+		=> (float)(a + b + c + d + e + f + g + h + i + j + k + l + m + n + o + p + q + r + s + t + u + v);
+
+	[StructLayout(LayoutKind.Sequential)]
+	private struct ShortPair(short first, short second)
+	{
+		public short First = first;
+		public short Second = second;
+	}
+
+	[UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+	private static long SpilledAggregate(long a, long b, long c, long d, long e, long f, long g, long h,
+		sbyte before, ShortPair pair, sbyte after) => before + pair.First + 2 * pair.Second + after;
+
+	[Test, Category("External"), Category("Internal"), Category("Curated")]
+	public unsafe void DllCall_StackArguments()
+	{
+		delegate* unmanaged[Cdecl]<int, int, int, int, int, int, int, int, int, short, sbyte, byte,
+			float, float, float, float, float, float, float, float, float, double, float> function = &SpilledArguments;
+		var result = Dll.DllCall((long)function,
+			"Int", 1L, "Int", 2L, "Int", 3L, "Int", 4L, "Int", 5L, "Int", 6L, "Int", 7L, "Int", 8L,
+			"Int", -9L, "Short", -10L, "Char", -11L, "UChar", 200L,
+			"Float", 0.25, "Float", 0.5, "Float", 0.75, "Float", 1.0, "Float", 1.25,
+			"Float", 1.5, "Float", 1.75, "Float", 2.0, "Float", 2.25, "Double", 0.5, "CDecl Float");
+		Assert.That(result, Is.EqualTo(217.75));
+
+		delegate* unmanaged[Cdecl]<long, long, long, long, long, long, long, long, sbyte, ShortPair, sbyte, long> aggregate = &SpilledAggregate;
+		var output = RunScript($$"""
+			#NoTrayIcon
+			#ErrorStdOut
+			#Warn All, StdOut
+			#Include <assert>
+			struct STACK_PAIR {
+				First: Int16
+				Second: Int16
+			}
+			pair := STACK_PAIR()
+			pair.First := 7
+			pair.Second := 11
+			AssertEq(DllCall({{(long)aggregate}},
+				"Int64", 1, "Int64", 2, "Int64", 3, "Int64", 4,
+				"Int64", 5, "Int64", 6, "Int64", 7, "Int64", 8,
+				"Char", -1, STACK_PAIR, pair, "Char", -2, "Cdecl Int64"), 26, A_LineNumber)
+			FileAppend "pass", "*"
+			""", "stack-aggregate", true, false);
+		Assert.That(output.Trim(), Is.EqualTo("pass"), output);
+	}
+
+	[UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
+	private static unsafe long CallStackCallback(nint address)
+	{
+		var callback = (delegate* unmanaged[Cdecl]<long, long, long, long, long, long, long, long, int, short, sbyte, byte, long>)address;
+		return callback(1, 2, 3, 4, 5, 6, 7, 8, -100, -200, -5, 250);
+	}
+
+	[Test, Category("External"), Category("Internal"), Category("Curated")]
+	public unsafe void CallbackStackArguments()
+	{
+		delegate* unmanaged[Cdecl]<nint, long> invoke = &CallStackCallback;
+		var output = RunScript($$"""
+			#NoTrayIcon
+			#ErrorStdOut
+			#Warn All, StdOut
+			#Include <assert>
+			Check(args*) {
+				for i, expected in [1, 2, 3, 4, 5, 6, 7, 8, -100, -200, -5, 250]
+					AssertEq(args[i], expected, A_LineNumber)
+				return args[9] + args[10] + args[11] + args[12]
+			}
+			callback := CallbackCreate(Check, "Fast C", [Int64, Int64, Int64, Int64, Int64, Int64, Int64, Int64,
+				Int32, Int16, Int8, UInt8, Int64])
+			AssertEq(DllCall({{(long)invoke}}, "Ptr", callback, "Cdecl Int64"), -55, A_LineNumber)
+			CallbackFree(callback)
+			FileAppend "pass", "*"
+			""", "stack-callback", true, false);
+		Assert.That(output.Trim(), Is.EqualTo("pass"), output);
+	}
+
 #if WINDOWS
 
 	[Test, Category("External")]

@@ -33,7 +33,7 @@ namespace Keysharp.Builtins
 		/// <see cref="StrGet"/> must be called to retrieve any memory allocated and returned inside of function.
 		/// </param>
 		/// <param name="parameters">Type1, Arg1<br/>
-		/// Each of these pairs represents a single parameter to be passed to the function. At most <see cref="NativeInvoker.MaxArguments"/> pairs may be given (one fewer for ComCall, whose object pointer takes a slot).<br/>
+		/// Each pair takes one of the <see cref="NativeInvoker.MaxArguments"/> native argument slots. A ComCall object pointer and an indirect struct return each require an additional slot.<br/>
 		/// The argument types can be: Str, WStr, AStr, Int64, Int, Short, Char, Float, Double, Ptr or HRESULT (a 32-bit integer).<br/>
 		/// Append an asterisk (with optional preceding space) to any of the above types to cause the address of the argument to be passed rather than the value itself.<br/>
 		/// Prepend the letter U to any of the integer types above to interpret it as an unsigned integer (UInt64, UInt, UShort, and UChar).<br/>
@@ -50,6 +50,10 @@ namespace Keysharp.Builtins
 			// assembly and reflects over its namespaces/types/instances (incl. generics, indexers, enumerators and
 			// delegates) far more dynamically than DllCall could, so DllCall stays focused on native (C ABI) calls.
 			// See Keysharp.Tests/Code/external-clr.ahk for usage.
+			var argCount = parameters.Length / 2;
+			if (argCount > NativeInvoker.MaxArguments)
+				return Errors.ValueErrorOccurred($"A DllCall cannot take more than {NativeInvoker.MaxArguments} arguments.");
+
 			nint address;
 			//A library this call has to load is unloaded again once it returns, matching AutoHotkey: a script
 			//which wants one to stay loaded says so with #DllLoad, or loads it itself with LoadLibrary.
@@ -91,11 +95,6 @@ namespace Keysharp.Builtins
 			else
 				return Errors.TypeErrorOccurred(function, typeof(nint), DefaultObject);
 
-			var argCount = parameters.Length / 2;
-
-			if (argCount > NativeInvoker.MaxArguments)//Also what keeps the stack allocation below bounded.
-				return Errors.ValueErrorOccurred($"A DllCall cannot take more than {NativeInvoker.MaxArguments} arguments.");
-
 			//The first slot is for the memory a struct is returned through, which goes ahead of the arguments.
 			Span<long> args = stackalloc long[argCount + 1];
 			Span<ArgumentSlot> slots = stackalloc ArgumentSlot[argCount];
@@ -111,7 +110,7 @@ namespace Keysharp.Builtins
 				args[0] = returnBuffer;
 				var value = returnBuffer != 0
 					? NativeInvoker.NativeInvoke(address, args, helper.floatingTypeMask << 1)
-					: NativeInvoker.NativeInvoke(address, args[1..], helper.floatingTypeMask);
+					: NativeInvoker.NativeInvoke(address, args[1..], helper.floatingTypeMask, slots);
 				helper.CopyBack(parameters);
 				return helper.ConvertReturnValue(value);
 			}

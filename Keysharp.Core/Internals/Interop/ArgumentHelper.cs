@@ -32,6 +32,10 @@ namespace Keysharp.Internals.Interop
 		internal int OutputParam;
 		internal NativeTypeCode Code;
 		internal OutputTarget Kind;
+#if OSX
+		// The native type of a scalar passed by value. Pointers and aggregates use the default slot width.
+		internal NativeTypeCode ScalarType;
+#endif
 	}
 
 	/// <summary>
@@ -131,7 +135,19 @@ namespace Keysharp.Internals.Interop
 			//The return type, when present, is the unpaired last element. Handling it first keeps the loop
 			//below purely about type/value pairs, and its bit in the mask needs only the argument count.
 			if ((parameters.Length & 1) != 0)
+			{
 				ParseReturnType(parameters[^1], argCount);
+				if (failed)
+					return;
+
+				var maxWithReturnBuffer = NativeInvoker.MaxArguments - (isCom ? 2 : 1);
+				if (argCount > maxWithReturnBuffer && ReturnBuffer != 0)
+				{
+					_ = Errors.ValueErrorOccurred($"A {(isCom ? "ComCall" : "DllCall")} returning a structure through memory cannot take more than {maxWithReturnBuffer} arguments.");
+					failed = true;
+					return;
+				}
+			}
 
 			for (var n = 0; n < argCount; n++)
 			{
@@ -204,7 +220,8 @@ namespace Keysharp.Internals.Interop
 
 				case NativeTypeCode.Float:
 				case NativeTypeCode.Double:
-					floatingTypeMask |= 1UL << argCount;
+					if (!returnByAddress)
+						floatingTypeMask |= 1UL << argCount;
 					break;
 			}
 		}
@@ -290,6 +307,9 @@ namespace Keysharp.Internals.Interop
 					if (NativeType.IsFloating(code))
 						floatingTypeMask |= 1UL << n;
 
+#if OSX
+					slots[n].ScalarType = code;
+#endif
 					return true;
 				}
 			}
@@ -462,6 +482,9 @@ namespace Keysharp.Internals.Interop
 					return ConvertString(parameters, valueIndex, n, code, p);
 			}
 
+#if OSX
+			slots[n].ScalarType = code;
+#endif
 			return true;
 		}
 
@@ -669,11 +692,16 @@ namespace Keysharp.Internals.Interop
 			//A '*'-suffixed return type means the register holds the address of the value, so read the value
 			//out of it: its own width, since only that many bytes at the address are the callee's to define.
 			//A null address is left as 0 rather than faulting; the callee reported no value.
-			if (returnByAddress)
+			if (returnByAddress && value != 0)
 			{
-				value = value == 0 ? 0
-						: NativeType.SizeOf(returnCode) == 8 ? Unsafe.ReadUnaligned<long>((void*)value)
-						: Unsafe.ReadUnaligned<int>((void*)value);
+				var address = (void*)value;
+				value = NativeType.SizeOf(returnCode) switch
+				{
+					1 => Unsafe.ReadUnaligned<byte>(address),
+					2 => Unsafe.ReadUnaligned<ushort>(address),
+					4 => Unsafe.ReadUnaligned<uint>(address),
+					_ => Unsafe.ReadUnaligned<long>(address)
+				};
 			}
 
 			//An omitted return type on a COM call is an HRESULT, which reports a failure as an OSError.

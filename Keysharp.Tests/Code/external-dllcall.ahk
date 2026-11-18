@@ -539,4 +539,27 @@ DllCall("msvcrt\wcscpy", "Ptr", copied, "Str", "x", Int32[3])
 OnError(ContinueError, 0)
 AssertEq(NumGet(copied, "UShort"), 0, A_LineNumber)
 
+#if X64
+; Both the return buffer and the COM object pointer count toward the native argument limit.
+tooMany := []
+Loop 62
+	tooMany.Push("Int64", 1)
+tooMany.Push(LLDIV)
+limitErrors := []
+continueLimit := (err, mode) => (limitErrors.Push(Type(err)), -1)
+safeMethod := CallbackCreate((*) => 0, "Fast", 0)
+NumPut("Ptr", safeMethod, vtbl)
+OnError(continueLimit)
+comResult := ComCall(0, comObj.Ptr, tooMany*)
+tooMany.InsertAt(1, "Int64", 1)
+dllResult := DllCall("ucrtbase\lldiv", tooMany*)
+OnError(continueLimit, 0)
+CallbackFree(safeMethod)
+AssertEq(limitErrors.Length, 2, A_LineNumber)
+for errType in limitErrors
+	AssertEq(errType, "ValueError", A_LineNumber)
+AssertEq(comResult, "", A_LineNumber)
+AssertEq(dllResult, "", A_LineNumber)
+#endif
+
 FileAppend "pass", "*"

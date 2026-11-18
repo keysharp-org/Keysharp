@@ -38,8 +38,7 @@ namespace Keysharp.Builtins
 		readonly SchedulerRegistration _ownerState;
 		readonly int _slotId;
 		// Non-null only for a typed callback: how to convert each parameter, and the return value (default
-		// when the return type is "void"). These decide conversion only; they do not affect the native
-		// signature beyond which register file each value arrives in (see StructMarshal.CallbackSlot).
+		// when the return type is "void").
 		// All of these are written before AritySlots.Rent publishes the holder, whose lock and Volatile.Write
 		// pair with Get's Volatile.Read, so Dispatch on another thread always sees them fully initialised.
 		readonly StructMarshal.CallbackConversion[] _typedParameters;
@@ -117,9 +116,7 @@ namespace Keysharp.Builtins
 		/// <summary>
 		/// Creates a holder for a typed callback from conversions already resolved by <see cref="Dll.CallbackCreate"/>:
 		/// one per parameter, followed by the return value's (or a default one when the return type is "void").
-		/// The declared types only decide how each value is converted, so a signature whose values all travel in
-		/// integer registers reuses the same arity-based delegates and slots as an untyped callback; only a
-		/// floating-point parameter or return value needs a native signature of its own.
+		/// Typed callbacks reuse the untyped delegate when each native slot can be represented by a long.
 		/// </summary>
 		internal DelegateHolder(Any function, StructMarshal.CallbackConversion[] conversions, bool typedVoid, bool fast, bool cdecl)
 		{
@@ -150,9 +147,7 @@ namespace Keysharp.Builtins
 				throw new ObjectDisposedException(nameof(Script));
 			}
 
-			_slotId = Publish(id => TypedCallbackSignature.IsAllInteger(conversions)
-								? CallbackPointerCache.GetOrCreateForArity(_arity, id)
-								: TypedCallbackSignature.GetOrCreate(conversions, cdecl, id));
+			_slotId = Publish(id => TypedCallbackSignature.GetOrCreate(conversions, cdecl, id));
 		}
 
 		// DelegateHolder doesn't need a finalizer because the scheduler owns it until it is disposed.
@@ -468,12 +463,8 @@ namespace Keysharp.Builtins
 	}
 
 	/// <summary>
-	/// Native entry points for typed callbacks whose values do not all travel in integer registers, which are the
-	/// only ones needing a signature the pre-declared arity delegates cannot express. A signature is reduced to
-	/// its register-file shape (see <see cref="StructMarshal.CallbackSlot"/>), so only floating-point positions and the
-	/// return kind vary; everything integer-like is declared as a long and read at its declared width by
-	/// <see cref="DelegateHolder.Dispatch"/>. The stub reinterprets its floating-point arguments as raw bits and
-	/// hands them to that same dispatcher, so typed and untyped callbacks share one dispatch path.
+	/// Native entry points for typed callbacks. The generated signature preserves floating-point types and
+	/// native stack widths where required. Its stub passes each argument's bits to <see cref="DelegateHolder.Dispatch"/>.
 	///
 	/// Both the emitted signature and the stub are cached, the latter per slot exactly as
 	/// <see cref="CallbackPointerCache"/> does, since GetFunctionPointerForDelegate is far too costly to repeat
@@ -486,59 +477,47 @@ namespace Keysharp.Builtins
 		private static int _nextId;
 
 		private static readonly MethodInfo singleToBits = typeof(BitConverter).GetMethod(nameof(BitConverter.SingleToInt32Bits), [typeof(float)]);
-		private static readonly MethodInfo doubleToBits = typeof(BitConverter).GetMethod(nameof(BitConverter.DoubleToInt64Bits), [typeof(double)]);
 		private static readonly MethodInfo bitsToSingle = typeof(BitConverter).GetMethod(nameof(BitConverter.Int32BitsToSingle), [typeof(int)]);
 		private static readonly MethodInfo bitsToDouble = typeof(BitConverter).GetMethod(nameof(BitConverter.Int64BitsToDouble), [typeof(long)]);
 		private static readonly MethodInfo dispatch = typeof(DelegateHolder).GetMethod(nameof(DelegateHolder.Dispatch),
 				BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public, null, [typeof(int), typeof(long[])], null);
 
-		internal static bool IsAllInteger(StructMarshal.CallbackConversion[] conversions)
-		{
-			foreach (var conversion in conversions)
-				if (conversion.Slot != StructMarshal.CallbackSlot.Integer)
-					return false;
-
-			return true;
-		}
-
 		internal static nint GetOrCreate(StructMarshal.CallbackConversion[] conversions, bool cdecl, int slotId)
 		{
-			var shape = (cdecl ? "c" : "s") + string.Concat(conversions.Select(c => (char)('a' + (int)c.Slot)));
+			var arity = conversions.Length - 1;
+			Span<char> signature = stackalloc char[conversions.Length + 1];
+			signature[0] = cdecl ? 'c' : 's';
+			var integers = 0;
+			for (var i = 0; i < arity; i++)
+			{
+				var type = conversions[i].Kind;
+				signature[i + 1] = (char)(NativeType.IsFloating(type) ? type : NativeInvoker.IntegerSlot(type, ref integers));
+			}
+
+			var result = conversions[^1].Kind;
+			signature[^1] = (char)(NativeType.IsFloating(result) ? result : NativeTypeCode.Int64);
+			if (signature[1..].IndexOfAnyExcept((char)NativeTypeCode.Int64) < 0)
+				return CallbackPointerCache.GetOrCreateForArity(arity, slotId);
+
+			var shape = new string(signature);
 			// Called under the cache's lock, which is also what guards _delegateTypes, _module and _nextId.
 			return CallbackPointerCache.GetOrCreate(shape, slotId, () =>
 			{
+				var parameterTypes = NativeInvoker.ParameterTypes(shape.AsSpan(1, arity));
+				var returnType = NativeInvoker.ParameterType((NativeTypeCode)shape[^1]);
 				if (!_delegateTypes.TryGetValue(shape, out var delegateType))
-					_delegateTypes[shape] = delegateType = CreateDelegateType(conversions, cdecl);
+					_delegateTypes[shape] = delegateType = CreateDelegateType(parameterTypes, returnType, cdecl);
 
-				return CreateStub(conversions, slotId, delegateType);
+				return CreateStub(parameterTypes, returnType, slotId, delegateType);
 			});
-		}
-
-		private static Type NativeTypeOf(StructMarshal.CallbackSlot slot) => slot switch
-		{
-			StructMarshal.CallbackSlot.Float32 => typeof(float),
-			StructMarshal.CallbackSlot.Float64 => typeof(double),
-			_ => typeof(long)
-		};
-
-		// The native parameter types of a shape, which is its conversions minus the trailing return value.
-		private static Type[] NativeParameterTypes(StructMarshal.CallbackConversion[] conversions)
-		{
-			var parameterTypes = new Type[conversions.Length - 1];
-
-			for (var i = 0; i < parameterTypes.Length; ++i)
-				parameterTypes[i] = NativeTypeOf(conversions[i].Slot);
-
-			return parameterTypes;
 		}
 
 		// Emits the stub body: pack every argument into a long[] of raw bits, call the shared dispatcher, then
 		// reinterpret its result as the declared return type.
-		private static Delegate CreateStub(StructMarshal.CallbackConversion[] conversions, int slotId, Type delegateType)
+		private static Delegate CreateStub(Type[] parameterTypes, Type returnType, int slotId, Type delegateType)
 		{
-			var arity = conversions.Length - 1;
-			var returnSlot = conversions[arity].Slot;
-			var dm = new DynamicMethod("TypedCallbackStub", NativeTypeOf(returnSlot), NativeParameterTypes(conversions),
+			var arity = parameterTypes.Length;
+			var dm = new DynamicMethod("TypedCallbackStub", returnType, parameterTypes,
 									   typeof(DelegateHolder).Module, skipVisibility: true);
 			var il = dm.GetILGenerator();
 			il.Emit(OpCodes.Ldc_I4, slotId);
@@ -553,25 +532,28 @@ namespace Keysharp.Builtins
 				// would write 4 bytes and leave two stray bytes in the instruction stream.
 				il.Emit(OpCodes.Ldarg, (short)i);
 
-				if (conversions[i].Slot == StructMarshal.CallbackSlot.Float32)
+				var type = parameterTypes[i];
+				if (type == typeof(float))
 				{
 					il.Emit(OpCodes.Call, singleToBits);
 					il.Emit(OpCodes.Conv_U8);// The reader only looks at the low 32 bits, so keep them unpolluted.
 				}
-				else if (conversions[i].Slot == StructMarshal.CallbackSlot.Float64)
-					il.Emit(OpCodes.Call, doubleToBits);
+				else if (type == typeof(double))
+					il.Emit(OpCodes.Call, NativeInvoker.DoubleToBits);
+				else if (type != typeof(long))
+					il.Emit(OpCodes.Conv_I8); // The conversion reads the declared width from the low bits.
 
 				il.Emit(OpCodes.Stelem_I8);
 			}
 
 			il.Emit(OpCodes.Call, dispatch);
 
-			if (returnSlot == StructMarshal.CallbackSlot.Float32)
+			if (returnType == typeof(float))
 			{
 				il.Emit(OpCodes.Conv_I4);
 				il.Emit(OpCodes.Call, bitsToSingle);
 			}
-			else if (returnSlot == StructMarshal.CallbackSlot.Float64)
+			else if (returnType == typeof(double))
 				il.Emit(OpCodes.Call, bitsToDouble);
 
 			il.Emit(OpCodes.Ret);
@@ -579,11 +561,10 @@ namespace Keysharp.Builtins
 		}
 
 		// A delegate type is the one thing DynamicMethod cannot express, so the shape's signature is emitted once.
-		private static Type CreateDelegateType(StructMarshal.CallbackConversion[] conversions, bool cdecl)
+		private static Type CreateDelegateType(Type[] parameterTypes, Type returnType, bool cdecl)
 		{
 			_module ??= AssemblyBuilder.DefineDynamicAssembly(new AssemblyName("Keysharp.TypedCallbacks"),
 						AssemblyBuilderAccess.Run).DefineDynamicModule("Keysharp.TypedCallbacks");
-			var parameterTypes = NativeParameterTypes(conversions);
 			var builder = _module.DefineType("TypedCallback_" + (++_nextId),
 											 TypeAttributes.Class | TypeAttributes.Public | TypeAttributes.Sealed,
 											 typeof(MulticastDelegate));
@@ -596,7 +577,7 @@ namespace Keysharp.Builtins
 			ctor.SetImplementationFlags(MethodImplAttributes.Runtime | MethodImplAttributes.Managed);
 			var invoke = builder.DefineMethod("Invoke",
 											  MethodAttributes.Public | MethodAttributes.HideBySig | MethodAttributes.NewSlot | MethodAttributes.Virtual,
-											  NativeTypeOf(conversions[^1].Slot), parameterTypes);
+											  returnType, parameterTypes);
 			invoke.SetImplementationFlags(MethodImplAttributes.Runtime | MethodImplAttributes.Managed);
 			return builder.CreateType();
 		}
