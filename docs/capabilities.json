@@ -477,7 +477,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Determines whether a script may run again while the same script path is running; without the directive it acts as Prompt, as in AutoHotkey, and Prompt acts as Off when no desktop is available. A replaced instance exits with OnExit reason Single. On Windows the instance is found by its main window title, as in AutoHotkey, so one whose window reports another Keysharp version is not found; an instance without a main window is found through its socket. Failed retirement ends the replacement with exit code 2. Headless runs and #ErrorStdOut use a bounded wait without retry dialogs.",
+                     "notes":  "Determines whether a script may run again while the same script path is running. Without the directive it acts as Prompt, as in AutoHotkey. Prompt acts as Off when no desktop is available. A replaced instance exits with OnExit reason Single. Windows matches the main window's default title, which includes the Keysharp version for scripts run by Keysharp.exe. A headless launch can also find a previous instance without a main window through its socket. A desktop launch can run alongside a previous instance that has no main window. Failed retirement ends the replacement with exit code 2. Headless runs and #ErrorStdOut use a bounded wait without retry dialogs.",
                      "tested-by":  "RunnerTests.HeadlessSingleInstance; RunnerTests.WindowSingleInstance; RunnerTests.InstanceReplacementWaitTimeout"
                  },
                  {

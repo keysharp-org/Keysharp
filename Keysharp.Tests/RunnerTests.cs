@@ -457,9 +457,12 @@ public class RunnerTests : TestRunner
 #if WINDOWS
 	[Test, Category("Curated")]
 	public void WindowSingleInstance() => CheckSingleInstance("Force", false);
+
+	[Test, Category("Curated")]
+	public void WindowSingleInstanceWithHeadlessPredecessor() => CheckSingleInstance("Ignore", true, nextHeadless: false, expectedOutput: "new");
 #endif
 
-	private static void CheckSingleInstance(string mode, bool headless)
+	private static void CheckSingleInstance(string mode, bool headless, bool? nextHeadless = null, string expectedOutput = null)
 	{
 		var launcher = Path.Combine(AppContext.BaseDirectory, OperatingSystem.IsWindows() ? "Keysharp.exe" : "Keysharp");
 
@@ -468,6 +471,9 @@ public class RunnerTests : TestRunner
 
 		var script = Path.Combine(Path.GetTempPath(), "keysharp-instance-" + Guid.NewGuid().ToString("N") + ".ahk");
 		var closeMonitor = headless ? "" : "OnMessage(0x10, (WParam, LParam, Msg, Hwnd) => (FileAppend(\"WM_CLOSE:\", \"*\"), \"\"))";
+#if WINDOWS
+		var endpointRoot = Directory.CreateTempSubdirectory("ks-");
+#endif
 		Process previous = null, next = null;
 
 		try
@@ -500,7 +506,7 @@ public class RunnerTests : TestRunner
 			Assert.That(next.WaitForExit(30000), Is.True, "Forced replacement and headless launch policies must not open a dialog.");
 			Assert.That(next.ExitCode, Is.Zero, newError.GetAwaiter().GetResult());
 			Assert.That(newError.GetAwaiter().GetResult(), Is.Empty);
-			Assert.That(newOutput.GetAwaiter().GetResult(), Is.EqualTo(mode == "Ignore" ? "" : "new"));
+			Assert.That(newOutput.GetAwaiter().GetResult(), Is.EqualTo(expectedOutput ?? (mode == "Ignore" ? "" : "new")));
 
 			if (mode == "Force")
 			{
@@ -526,6 +532,9 @@ public class RunnerTests : TestRunner
 				}
 
 			File.Delete(script);
+#if WINDOWS
+			endpointRoot.Delete(recursive: true);
+#endif
 		}
 
 		ProcessStartInfo Start(string role)
@@ -539,7 +548,10 @@ public class RunnerTests : TestRunner
 				ArgumentList = { script, role, (previous?.Id ?? 0).ToString(CultureInfo.InvariantCulture), mode }
 			};
 			start.Environment["KEYSHARP_DAEMON"] = "0";
-			start.Environment["KEYSHARP_FORCE_HEADLESS"] = headless ? "1" : "0";
+			start.Environment["KEYSHARP_FORCE_HEADLESS"] = (role == "new" ? nextHeadless ?? headless : headless) ? "1" : "0";
+#if WINDOWS
+			start.Environment["LOCALAPPDATA"] = endpointRoot.FullName;
+#endif
 			return start;
 		}
 	}

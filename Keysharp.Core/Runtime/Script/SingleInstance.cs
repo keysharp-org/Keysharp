@@ -47,7 +47,7 @@ namespace Keysharp.Runtime
 
 			if (hwnd == 0)
 			{
-				if (ScriptEndpoint.FindOtherInstance(TheScript.scriptPath) is not { } peer)
+				if (!IsHeadless || ScriptEndpoint.FindOtherInstance(TheScript.scriptPath) is not { } peer)
 					return false;
 
 				pid = peer.Pid;
