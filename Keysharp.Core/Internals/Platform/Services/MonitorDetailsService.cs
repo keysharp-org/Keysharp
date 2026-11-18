@@ -565,19 +565,7 @@ namespace Keysharp.Internals
 			internal double Height;
 		}
 
-		[StructLayout(LayoutKind.Sequential)]
-		private struct CGRect
-		{
-			internal double X, Y, Width, Height;
-		}
-
 		private const string CoreGraphics = "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics";
-
-		[DllImport(CoreGraphics)]
-		private static extern int CGGetActiveDisplayList(uint maxDisplays, [Out] uint[] displays, out uint count);
-
-		[DllImport(CoreGraphics)]
-		private static extern CGRect CGDisplayBounds(uint display);
 
 		[DllImport(CoreGraphics)]
 		private static extern CGSize CGDisplayScreenSize(uint display);
@@ -687,48 +675,19 @@ namespace Keysharp.Internals
 		}
 
 		/// <summary>
-		/// Finds the CGDirectDisplayID whose bounds match this display. Matching on geometry rather than asking
-		/// AppKit for NSScreenNumber keeps the lookup on the thread-safe CoreGraphics path.
+		/// Uses the captured native CGDirectDisplayID; missing or out-of-range IDs remain unresolved.
+		/// Resolution needs no native calls and is safe off the main thread.
 		/// </summary>
 		internal static bool TryResolveDisplayId(DisplayInfo display, out uint id)
 		{
-			id = 0;
-
-			try
+			if (display.NativeId is > 0 and <= uint.MaxValue)
 			{
-				var ids = new uint[16];
-
-				if (CGGetActiveDisplayList((uint)ids.Length, ids, out var count) != 0 || count == 0)
-					return false;
-
-				var best = -1;
-				var bestError = double.MaxValue;
-
-				for (var i = 0; i < count && i < ids.Length; i++)
-				{
-					var bounds = CGDisplayBounds(ids[i]);
-					var error = Math.Abs(bounds.X - display.Bounds.X) + Math.Abs(bounds.Y - display.Bounds.Y)
-						+ Math.Abs(bounds.Width - display.Bounds.Width) + Math.Abs(bounds.Height - display.Bounds.Height);
-
-					if (error < bestError)
-					{
-						best = i;
-						bestError = error;
-					}
-				}
-
-				// A few points of slack absorbs point-vs-pixel rounding; anything further apart is a different
-				// display and must not be silently substituted.
-				if (best < 0 || bestError > 4.0)
-					return false;
-
-				id = ids[best];
+				id = (uint)display.NativeId;
 				return true;
 			}
-			catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
-			{
-				return false;
-			}
+
+			id = 0;
+			return false;
 		}
 	}
 #endif

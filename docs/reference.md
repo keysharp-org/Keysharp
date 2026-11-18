@@ -1495,7 +1495,7 @@ Controlling another application needs **Automation** permission, granted per tar
 			+ Platform support:
 				+ Windows: DisplayConfig and cached EDID metadata; WMI brightness for built-in panels and DDC/CI for external monitors.
 				+ Linux: EDID from `/sys/class/drm/*/edid`; refresh rate and rotation from keysharp-desktop on X11, `wl_output` on Wayland. Built-in brightness uses sysfs or logind. External DDC/CI requires `i2c-dev` and bus access granted by the packaged udev rule.
-				+ macOS: CoreGraphics metadata; `Model` and `Adapter` are unavailable, and `Connection` only identifies built-in panels. Brightness uses DisplayServices for built-in and Apple displays, DDC/CI for other external monitors. Intel DDC/CI remains unverified.
+				+ macOS: CoreGraphics metadata; `Model` and `Adapter` are unavailable, and `Connection` only identifies built-in panels. Metadata and hardware controls require the native display ID captured during enumeration. Brightness uses DisplayServices for built-in and Apple displays, DDC/CI for other external monitors. Intel DDC/CI remains unverified.
 				+ Change notifications use Windows SystemEvents, Linux GDK signals and macOS CoreGraphics callbacks; native Linux and macOS notifications remain unverified.
 
 Notification registration uses `AddRemove` 1/-1/0 to append/prepend/remove by callback identity on the registering real thread, without returning a handle. Monitor, device, script-message and CLR registrations do not make a script persistent.

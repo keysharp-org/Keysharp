@@ -221,10 +221,31 @@ public partial class MonitorTests : TestRunner
 	}
 }
 
-/// <summary>
-/// The EDID parser is the one piece of the monitor stack that is pure logic, so it is the one piece that can
-/// be tested without any particular hardware attached.
-/// </summary>
+#if OSX
+[Category("Monitor"), Category("Internal"), Category("Curated")]
+public class MacMonitorDetailsTests
+{
+	[TestCase(0UL, false)]
+	[TestCase(1UL, true)]
+	[TestCase(0x80000000UL, true)]
+	[TestCase((ulong)uint.MaxValue, true)]
+	[TestCase((ulong)uint.MaxValue + 1, false)]
+	[TestCase(ulong.MaxValue, false)]
+	public void NativeDisplayId(ulong nativeId, bool usable)
+	{
+		// Resolution depends only on the ID, including when the geometry cannot describe a real display.
+		foreach (var bounds in new[] { new ScreenRect(0, 0, 1920, 1080), new ScreenRect(0, 0, -1920, -1080) })
+		{
+			var display = new DisplayInfo("Synthetic", bounds, bounds, 1.0, true, nativeId);
+
+			Assert.That(MacMonitorDetails.TryResolveDisplayId(display, out var id), Is.EqualTo(usable));
+			Assert.That(id, Is.EqualTo(usable ? (uint)nativeId : 0U));
+		}
+	}
+}
+#endif
+
+/// <summary>Exercises EDID parsing with synthetic data, without requiring physical monitors.</summary>
 [Category("Internal"), Category("Curated")]
 public class EdidTests
 {
