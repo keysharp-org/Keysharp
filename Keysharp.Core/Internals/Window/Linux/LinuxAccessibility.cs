@@ -11,7 +11,8 @@ namespace Keysharp.Internals.Window.Linux
 		private const int AtspiCollectionMatchAll = 1;
 		private const int AtspiCollectionSortOrderCanonical = 1;
 		private const int MaxVisitedNodes = 20000;
-		private const int GeometryTolerance = 8;
+		// Two providers can round either edge of the same rectangle independently.
+		private const int GeometryTolerance = 2;
 		private static readonly Lock initializationGate = new();
 		private static int initializationState;
 		private static nint focusedRule;
@@ -335,7 +336,8 @@ namespace Keysharp.Internals.Window.Linux
 			y = 0;
 
 			if (!TryFindFocusedCaret(window, ref budget, out var rect)
-				|| !TryNormalizeCoordinates(window, activeWindow, ref rect))
+				|| !TryGetCoordinateOrigin(window, activeWindow, out var origin)
+				|| !TryOffsetCaret(origin, ref rect))
 				return false;
 
 			x = rect.X;
@@ -540,52 +542,108 @@ namespace Keysharp.Internals.Window.Linux
 			return new(active.Handle, active.PID, active.Bounds, active.ClientBounds);
 		}
 
-		/// <summary>Normalizes an AT-SPI caret rectangle to screen coordinates. Queries can provide the
-		/// top-level accessible for a definitive Wayland-local check; event callbacks use the same method's
-		/// containment fallback because walking to the top level for every keystroke would add D-Bus traffic.</summary>
-		private static bool TryNormalizeCoordinates(nint topLevel, ActiveWindowSnapshot activeWindow, ref AtspiRect caret)
+		/// <summary>Finds the screen position of the origin that a top level's AT-SPI coordinates start from.
+		/// An X11 client reports screen coordinates. A native Wayland client is not told where its window is, so
+		/// it reports positions within its own surface, and where the window sits in that surface is inferred.</summary>
+		private static bool TryGetCoordinateOrigin(nint topLevel, ActiveWindowSnapshot activeWindow, out Point origin)
 		{
+			origin = Point.Empty;
+
 			if (!Platform.Desktop.IsWaylandSession)
 				return true;
 
-			if (topLevel != 0 && TryGetComponentRect(topLevel, out var root))
+			// A top level without extents is resolved as an empty one at (0,0), which leaves the window's own
+			// position as the estimate.
+			var root = topLevel != 0 && TryGetComponentRect(topLevel, out var rect)
+				? new Rectangle(rect.X, rect.Y, rect.Width, rect.Height)
+				: Rectangle.Empty;
+			var window = activeWindow.Bounds.IsEmpty ? activeWindow.ClientBounds : activeWindow.Bounds;
+
+			// Without the window, only coordinates that are on screen already can be used.
+			if (activeWindow.Handle == 0 || window.IsEmpty)
+				return root.X != 0 || root.Y != 0;
+
+			origin = ResolveCoordinateOrigin(root,
+				() => root.IsEmpty ? Rectangle.Empty : GetChildBounds(topLevel, root), window, activeWindow.ClientBounds);
+			return true;
+		}
+
+		/// <summary>Infers where the origin of a top level's coordinates lies on screen from the sizes involved.
+		/// <c>AtSpi.ks</c> applies the same rules in the same order.</summary>
+		/// <param name="content">Reads the bounds of the top level's children. Called only when the root does
+		/// not settle the answer, because it costs a round trip per child.</param>
+		internal static Point ResolveCoordinateOrigin(Rectangle root, Func<Rectangle> content, Rectangle window,
+			Rectangle client)
+		{
+			// A window-sized top level is the window itself, wherever its own space puts it: at (0,0), at its
+			// client-side shadow inset as Gecko does, or on screen already.
+			if (SameSize(root, window))
+				return new Point(window.X - root.X, window.Y - root.Y);
+
+			// Any other top level away from (0,0) is taken to be in screen coordinates.
+			if (root.X != 0 || root.Y != 0)
+				return Point.Empty;
+
+			// GTK reports the whole surface, shadow included, and lays the window out as children inside it.
+			var inner = content();
+
+			if (SameSize(inner, window))
+				return new Point(window.X - inner.X, window.Y - inner.Y);
+
+			if (SameSize(root, client))
+				return client.Location;
+
+			// A tiling compositor clips a client below its minimum size, but the surface still starts where
+			// the window does.
+			return window.Location;
+		}
+
+		/// <summary>Returns the bounds of a top level's children, or an empty rectangle when one of them reaches
+		/// outside the top level, since they then cannot be laying out a window inside its surface.</summary>
+		private static Rectangle GetChildBounds(nint topLevel, Rectangle root)
+		{
+			int left = int.MaxValue, top = int.MaxValue, right = int.MinValue, bottom = int.MinValue;
+			var count = GetChildCount(topLevel);
+
+			for (var index = 0; index < count; index++)
 			{
-				// Native Wayland clients may expose a top level rooted at (0,0). A non-zero root is
-				// already in the toolkit's screen-coordinate space and needs no translation.
-				if (Math.Abs((long)root.X) > GeometryTolerance || Math.Abs((long)root.Y) > GeometryTolerance)
-					return true;
+				var child = GetChild(topLevel, index);
 
-				if (activeWindow.Handle == 0)
-					return false;
+				if (child == 0)
+					continue;
 
-				var bounds = activeWindow.Bounds;
-				var client = activeWindow.ClientBounds;
+				try
+				{
+					// ATK reports G_MININT for a position it cannot give.
+					if (!TryGetComponentRect(child, out var rect) || rect.Width <= 0 || rect.Height <= 0
+							|| rect.X == int.MinValue || rect.Y == int.MinValue)
+						continue;
 
-				if (bounds.IsEmpty && client.IsEmpty)
-					return false;
+					long childRight = (long)rect.X + rect.Width, childBottom = (long)rect.Y + rect.Height;
 
-				var useClient = !client.IsEmpty
-					&& NearlyEqual(root.Width, client.Width, GeometryTolerance * 2)
-					&& NearlyEqual(root.Height, client.Height, GeometryTolerance * 2);
-				var origin = useClient || bounds.IsEmpty ? client.Location : bounds.Location;
-				return TryOffsetCaret(origin, ref caret);
+					if (rect.X < root.X || rect.Y < root.Y
+							|| childRight > (long)root.X + root.Width + GeometryTolerance
+							|| childBottom > (long)root.Y + root.Height + GeometryTolerance)
+						return Rectangle.Empty;
+
+					left = Math.Min(left, rect.X);
+					top = Math.Min(top, rect.Y);
+					right = Math.Max(right, (int)childRight);
+					bottom = Math.Max(bottom, (int)childBottom);
+				}
+				finally
+				{
+					Unref(child);
+				}
 			}
 
-			// Event callbacks do not have the top-level accessible. Preserve rectangles already inside
-			// the active window; otherwise translate plausible window-local coordinates through its client.
-			if (activeWindow.Handle == 0
-				|| activeWindow.Bounds.Contains(caret.X, caret.Y)
-				|| activeWindow.ClientBounds.Contains(caret.X, caret.Y))
-				return true;
-
-			var localSpace = activeWindow.ClientBounds.IsEmpty ? activeWindow.Bounds : activeWindow.ClientBounds;
-
-			if (localSpace.IsEmpty || caret.X < 0 || caret.Y < 0
-				|| caret.X > localSpace.Width || caret.Y > localSpace.Height)
-				return true;
-
-			return TryOffsetCaret(localSpace.Location, ref caret);
+			return right > left ? new Rectangle(left, top, right - left, bottom - top) : Rectangle.Empty;
 		}
+
+		private static bool SameSize(Rectangle left, Rectangle right)
+			=> left.Width > 0 && left.Height > 0 && right.Width > 0 && right.Height > 0
+				&& NearlyEqual(left.Width, right.Width, GeometryTolerance)
+				&& NearlyEqual(left.Height, right.Height, GeometryTolerance);
 
 		private static bool TryOffsetCaret(Point origin, ref AtspiRect caret)
 		{

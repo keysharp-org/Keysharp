@@ -11,6 +11,8 @@ namespace Keysharp.Internals.Window.Linux
 	internal static partial class LinuxAccessibility
 	{
 		private const string CaretMovedEvent = "object:text-caret-moved";
+		private const int AtspiRoleApplication = 75;
+		private const int MaxAncestors = 1024;
 
 		// void (*AtspiEventListenerCB) (AtspiEvent *event, void *user_data)
 		[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
@@ -30,6 +32,47 @@ namespace Keysharp.Internals.Window.Linux
 
 		[LibraryImport("libgobject-2.0.so.0")]
 		private static partial void g_boxed_free(nuint type, nint value);
+
+		[LibraryImport("libatspi.so.0")]
+		private static partial nint atspi_accessible_get_parent(nint accessible, ref nint error);
+
+		[LibraryImport("libatspi.so.0")]
+		private static partial int atspi_accessible_get_role(nint accessible, ref nint error);
+
+		[LibraryImport("libgobject-2.0.so.0")]
+		private static partial nint g_object_ref(nint instance);
+
+		/// <summary>Returns a new reference to the top level an accessible is in, which is the ancestor directly
+		/// below its application, or 0 when its parents end before reaching one.</summary>
+		private static nint GetTopLevel(nint accessible)
+		{
+			var current = g_object_ref(accessible);
+
+			for (var depth = 0; depth < MaxAncestors; depth++)
+			{
+				var error = (nint)0;
+				var parent = atspi_accessible_get_parent(current, ref error);
+
+				if (ConsumeError(ref error) || parent == 0)
+					break;
+
+				// A failed read gives the invalid role, which is not the application's.
+				var role = atspi_accessible_get_role(parent, ref error);
+				_ = ConsumeError(ref error);
+
+				if (role == AtspiRoleApplication)
+				{
+					Unref(parent);
+					return current;
+				}
+
+				Unref(current);
+				current = parent;
+			}
+
+			Unref(current);
+			return 0;
+		}
 
 		/// <summary>
 		/// Subscribes to AT-SPI's <c>object:text-caret-moved</c> signal and turns each notification into a
@@ -72,6 +115,8 @@ namespace Keysharp.Internals.Window.Linux
 			// UI-thread-only (the AT-SPI callback and attach/detach all run on the GDK main loop).
 			private ActiveWindowSnapshot activeCached;
 			private long activeCachedAt;
+			private ActiveWindowSnapshot originWindow;   // the window placement originCached was resolved for
+			private Point? originCached;
 
 			internal void Start(Action<WindowEventRaw> eventSink)
 			{
@@ -215,7 +260,8 @@ namespace Keysharp.Internals.Window.Linux
 
 					var offset = Marshal.ReadInt32(atspiEvent, nint.Size * 2);
 
-					if (!TryGetCaretRect(source, offset, out var caret) || !TryNormalizeCoordinates(0, active, ref caret))
+					if (!TryGetCaretRect(source, offset, out var caret) || !TryGetOrigin(source, active, out var origin)
+							|| !TryOffsetCaret(origin, ref caret))
 						return;
 
 					currentSink(new WindowEventRaw(WindowEventType.CaretMove, active.Handle, Environment.TickCount64)
@@ -247,6 +293,23 @@ namespace Keysharp.Internals.Window.Linux
 
 				var pid = GetProcessId(source);
 				return pid <= 0 || active.Pid <= 0 || pid == active.Pid;
+			}
+
+			/// <summary>Resolves where the active window's coordinates start. Finding the top level takes a walk up
+			/// from the event source, and caret events arrive per keystroke, so the answer is kept for as long as
+			/// the window stays where it is.</summary>
+			private bool TryGetOrigin(nint source, ActiveWindowSnapshot active, out Point origin)
+			{
+				if (originWindow != active)
+				{
+					var topLevel = Platform.Desktop.IsWaylandSession ? GetTopLevel(source) : 0;
+					originCached = TryGetCoordinateOrigin(topLevel, active, out var resolved) ? resolved : null;
+					originWindow = active;
+					Unref(topLevel);
+				}
+
+				origin = originCached.GetValueOrDefault();
+				return originCached.HasValue;
 			}
 
 			/// <summary>Returns the short-lived active-window snapshot used to attribute this event.</summary>

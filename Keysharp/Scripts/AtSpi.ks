@@ -655,16 +655,16 @@ class AtSpi {
     static __SmallestAccessibleAtPoint(root, x, y) {
         if !root
             return 0
-        local stack, item, el, depth, loc, area, best := 0, bestArea := 0x7FFFFFFF, bestDepth := -1
-        stack := [[root, 0]]
+        local stack, item, el, depth, inPage, loc, area, best := 0, bestArea := 0x7FFFFFFF, bestDepth := -1
+        stack := [[root, 0, false]]
         while stack.Length {
             item := stack.Pop()
-            el := item[1], depth := item[2]
+            el := item[1], depth := item[2], inPage := item[3]
             inPt := false
             try {
                 loc := el.Location
                 if loc.Width > 0 && loc.Height > 0 && x >= loc.X && y >= loc.Y && x <= loc.X + loc.Width && y <= loc.Y + loc.Height {
-                    if this.__IsHiddenByAncestor(el)
+                    if !inPage && this.__IsHiddenByAncestor(el)
                         continue
                     inPt := true
                     area := loc.Width * loc.Height
@@ -679,11 +679,12 @@ class AtSpi {
                 try count := el.ChildCount
                 catch
                     continue
+                inPage := inPage || this.__IsGeckoDocument(el)
                 Loop count {
                     try child := el.GetNthChild(A_Index)
                     catch
                         continue
-                    stack.Push([child, depth + 1])
+                    stack.Push([child, depth + 1, inPage])
                 }
             }
         }
@@ -710,6 +711,16 @@ class AtSpi {
             }
         }
         return visible && !showing
+    }
+
+    ; Below a document, Gecko does not report Showing dependably: a container can lack it while its
+    ; children are on screen. The document's own state still tells a page on screen from a
+    ; background one, so a walk tests the document and then stops testing below it.
+    static __IsGeckoDocument(el) {
+        try
+            return el.ToolkitName = "Gecko" && el.RoleId == this.Role.DocumentWeb
+        catch
+            return false
     }
 
     static __NewCoordinateContext(hwnd := 0) => { hwnd: hwnd, dx: 0, dy: 0, scale: 1, chromium: false,
@@ -763,14 +774,16 @@ class AtSpi {
         ctx.rx := wx, ctx.ry := wy, ctx.rw := ww, ctx.rh := wh
         try ctx.chromium := win.ToolkitName = "Chromium"
 
-        if raw.X != 0 || raw.Y != 0
-            return ctx
-
+        ; A window-sized frame is the window itself, wherever the provider's own space puts it: at
+        ; (0, 0), at its client-side shadow inset as Gecko does, or on screen already.
         tol := this.__CoordinateTolerance
         if Abs(raw.Width - ww) <= tol && Abs(raw.Height - wh) <= tol {
-            ctx.dx := wx, ctx.dy := wy
+            ctx.dx := wx - raw.X, ctx.dy := wy - raw.Y
             return ctx
         }
+        ; Any other frame away from (0, 0) is taken to be in screen coordinates.
+        if raw.X != 0 || raw.Y != 0
+            return ctx
         if this.__FindFrameSurfaceInset(win, raw, ww, wh, &ix, &iy) {
             ctx.dx := wx - ix, ctx.dy := wy - iy
             return ctx
@@ -3424,16 +3437,17 @@ class AtSpi {
             }
         }
 
-        RecurseTreeView(oContext, parent:=0, path:="", depth := 0) {
+        RecurseTreeView(oContext, parent:=0, path:="", depth := 0, inPage := false) {
             if AtSpi.MaxRecurseDepth >= 0 && ++depth > AtSpi.MaxRecurseDepth
                 return
             if !oContext
                 return
             this.Stored.TreeView[TWEl := this.TVContext.Add(this.GetShortDescription(oContext), parent, "Expand")] := oContext.DefineProp("Path", {value:path})
             i := 0
+            inPage := inPage || (this.OnlyVisibleElements && AtSpi.__IsGeckoDocument(oContext))
             for v in oContext.Children {
-                if !this.OnlyVisibleElements || this.IsVisible(v)
-                    ++i, this.RecurseTreeView(v, TWEl, path (path?",":"") i, depth)
+                if !this.OnlyVisibleElements || this.IsVisible(v, inPage)
+                    ++i, this.RecurseTreeView(v, TWEl, path (path?",":"") i, depth, inPage)
             }
         }
 
@@ -3446,12 +3460,13 @@ class AtSpi {
             return elDesc
         }
 
-        IsVisible(oContext) {
+        IsVisible(oContext, inPage := false) {
             try {
                 loc := oContext.Location
                 if loc.X == -2147483648 || loc.Y == -2147483648
                     return false
-                ; Showing excludes content an ancestor hides, as AtSpi.__IsHiddenByAncestor does for hit-testing.
+                ; Showing excludes content an ancestor hides, as AtSpi.__IsHiddenByAncestor does for
+                ; hit-testing, and like it is not tested below a Gecko document.
                 visible := false, showing := false
                 for _, id in oContext.StateIds {
                     if id = AtSpi.StateType.Visible
@@ -3459,7 +3474,7 @@ class AtSpi {
                     else if id = AtSpi.StateType.Showing
                         showing := true
                 }
-                return visible && showing
+                return visible && (showing || inPage)
             } catch
                 return false
         }
