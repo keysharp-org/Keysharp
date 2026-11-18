@@ -115,25 +115,17 @@ namespace Keysharp.Runtime
 		/// <returns>Yield return an <see cref="IEnumerable"/> for each file/folder so the caller can run the loop.</returns>
 		public static IEnumerable LoopFile(object filePattern, object mode = null)
 		{
-			bool d = false, f = true, r = false;
 			var info = Peek(LoopType.Directory);//The calling code must have called Push() with this type.
 
 			if (!filePattern.CoerceString(out var path) || !mode.CoerceString(out var m))
 				yield break;
 
+			if (!Conversions.TryParseLoopMode(m, out var f, out var d, out var r))
+				yield break;
+
 			// As in AutoHotkey, an empty pattern matches nothing.
 			if (path.Length == 0)
 				yield break;
-
-			if (!string.IsNullOrEmpty(m))
-			{
-				d = m.Contains('d', StringComparison.OrdinalIgnoreCase);
-				f = m.Contains('f', StringComparison.OrdinalIgnoreCase);
-				r = m.Contains('r', StringComparison.OrdinalIgnoreCase);
-			}
-
-			if (!d && !f)
-				f = true;
 
 			// Resolved once, so SetWorkingDir inside the loop moves neither the search nor A_LoopFileFullPath.
 			var pattern = Path.GetFileName(path);
@@ -365,20 +357,11 @@ namespace Keysharp.Runtime
 		/// <returns>Yield return an <see cref="IEnumerable"/> for each registry item so the caller can run the loop.</returns>
 		public static IEnumerable LoopRegistry(object keyName, object mode = null)
 		{
-			bool k = false, v = true, r = false;
-
 			if (!keyName.CoerceString(out var keyname) || !mode.CoerceString(out var m))
 				yield break;
 
-			if (!string.IsNullOrEmpty(m))
-			{
-				k = m.Contains('k', StringComparison.OrdinalIgnoreCase);
-				v = m.Contains('v', StringComparison.OrdinalIgnoreCase);
-				r = m.Contains('r', StringComparison.OrdinalIgnoreCase);
-			}
-
-			if (!k && !v)
-				v = true;
+			if (!Conversions.TryParseLoopMode(m, out var v, out var k, out var r))
+				yield break;
 
 			var info = Peek(LoopType.Registry);//The calling code must have called Push() with this type.
 			RegistryKey root, subkey;

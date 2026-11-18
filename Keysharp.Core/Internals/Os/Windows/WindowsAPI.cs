@@ -985,11 +985,11 @@ namespace Keysharp.Internals.Os.Windows
 		[LibraryImport(user32, EntryPoint = "GetDesktopWindow")]
 		internal static partial long GetDesktopWindow();
 
-		[LibraryImport(version, EntryPoint = "GetFileVersionInfoW", StringMarshalling = StringMarshalling.Utf16)]
+		[LibraryImport(version, EntryPoint = "GetFileVersionInfoW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
 		[return: MarshalAs(UnmanagedType.Bool)]
-		internal static partial bool GetFileVersionInfo(string sFileName, int handle, int size, byte[] infoBuffer);
+		internal static partial bool GetFileVersionInfo(string sFileName, int handle, int size, nint infoBuffer);
 
-		[LibraryImport(version, EntryPoint = "GetFileVersionInfoSizeW", StringMarshalling = StringMarshalling.Utf16)]
+		[LibraryImport(version, EntryPoint = "GetFileVersionInfoSizeW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
 		internal static partial int GetFileVersionInfoSize(string sFileName, out int handle);
 
 		[LibraryImport(user32, EntryPoint = "GetFocus")]
@@ -1566,9 +1566,9 @@ namespace Keysharp.Internals.Os.Windows
 		[return: MarshalAs(UnmanagedType.Bool)]
 		internal static partial bool UnhookWindowsHookEx(nint hhk);
 
-		[LibraryImport(version, EntryPoint = "VerQueryValueW", StringMarshalling = StringMarshalling.Utf16)]
+		[LibraryImport(version, EntryPoint = "VerQueryValueW", StringMarshalling = StringMarshalling.Utf16, SetLastError = true)]
 		[return: MarshalAs(UnmanagedType.Bool)]
-		internal static partial bool VerQueryValue(byte[] pBlock, string pSubBlock, out string pValue, out uint len);
+		internal static partial bool VerQueryValue(nint pBlock, string pSubBlock, out nint pValue, out uint len);
 
 		[LibraryImport(winmm, EntryPoint = "waveOutGetVolume")]
 		internal static partial uint waveOutGetVolume(nint hwo, out uint dwVolume);

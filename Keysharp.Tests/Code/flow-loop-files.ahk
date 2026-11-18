@@ -37,6 +37,10 @@ AssertEq(Visit(root A_DirSeparator "*", "FR"), 7, A_LineNumber)
 ; A name without wildcards matches that name in every folder searched.
 AssertEq(Visit(root A_DirSeparator "same.txt", "R"), 2, A_LineNumber)
 
+; As in AutoHotkey, Mode takes only F, D and R (or V and K), with spaces and tabs between.
+Throws(() => Visit(root A_DirSeparator "*", "FX"), A_LineNumber, ValueError)
+AssertEq(Visit(root A_DirSeparator "*", " v`tK r "), 10, A_LineNumber)
+
 ; *.* keeps its Windows meaning, which includes names without an extension.
 AssertEq(Visit(root A_DirSeparator "*.*"), 3, A_LineNumber)
 

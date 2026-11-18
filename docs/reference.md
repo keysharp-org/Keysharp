@@ -109,7 +109,7 @@ Keysharp recommends the virtual packages `keysharp-input-client-abi-1` (version 
 
 The `.deb` recommends WebKitGTK (`libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37`) for `Gui.WebView`, so a normal `apt install` brings the version available for the distribution. The tarball and `keysharp-linux-setup.sh` do not install WebKitGTK; install the available package separately if a script uses `WebView`.
 
-`FileRecycle()` invokes the system `gio` tool. `FileRecycleEmpty()` also requires the GVfs trash backend and a session D-Bus connection. These are optional feature prerequisites, installed separately when a script uses these functions: `libglib2.0-bin` provides `gio` on Debian/Ubuntu, and `gvfs` provides the trash backend.
+`FileRecycle()` invokes the system `gio` tool. `FileRecycleEmpty()` without a drive also requires the GVfs trash backend and a session D-Bus connection. These are optional feature prerequisites, installed separately when a script uses these functions: `libglib2.0-bin` provides `gio` on Debian/Ubuntu, and `gvfs` provides the trash backend.
 
 #### Keysharp on its own
 
@@ -566,6 +566,11 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ As in AutoHotkey, a library a call had to load itself is unloaded again when the call returns. A function is looked up once only in a library nothing can unload, a standard system library or one `#DllLoad` loaded, and found again on every call in any other, so a script can free a library it loaded itself, such as with `FreeLibrary`.
 	+ Native `Float32` values widen exactly to 64-bit floats, as in AutoHotkey.
 * Encoding names also accept `ASCII` and .NET aliases such as `windows-1252`; invalid names raise `ValueError`.
+* On Linux and macOS, `FileCreateShortcut()` creates a symlink or freedesktop Desktop Entry, replacing existing links without modifying their targets. `FileGetShortcut()` returns `Exec` arguments using Windows command-line quoting.
+* `FileGetVersion()` reads numeric `a.b.c.d` versions from Windows resources or .NET assemblies and raises `OSError` when absent. macOS also reads bundle versions from `Info.plist`.
+* On Linux, `FileSetTime()` with *WhichTime* `C` counts every item as a failure, since Linux keeps no settable creation time.
+* On Linux and macOS, `FileRecycleEmpty(Path)` empties the current user's trash on that volume; omission selects all volumes. A missing path raises `OSError`.
+* On macOS, `FileRecycle()` uses the system trash on the item's volume.
 * `NumGet()` and `NumPut()` match a type name in full, where AutoHotkey looks only at its first character (after an optional leading `U`). Numeric type classes such as `Int32` are accepted; their subclasses raise `ValueError` without closing an open structure, as in AutoHotkey v2.1-alpha.39.
 	+ AutoHotkey therefore reads `"Str"` as a 2-byte short, `"Int16"` as **eight** bytes (it searches the whole name for a `6`), and accepts abbreviations such as `"i"`, `"D"` and `"Integer"`. Keysharp raises a `ValueError` for all of these, so a type that does not name a number cannot silently read or write the wrong bytes.
 	+ The accepted names are `Int`, `UInt`, `Int64`, `UInt64`, `Short`, `UShort`, `Char`, `UChar`, `Float`, `Double`, `Ptr` and `UPtr`.

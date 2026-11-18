@@ -301,6 +301,62 @@ public class FileAndDirTests : TestRunner
 	[Test, Category("FileAndDir"), NonParallelizable]
 	public void FileRecycleEmpty() => Assert.IsTrue(TestScript("file-filerecycleempty", true));
 
+#if LINUX
+	// A scratch directory stands in for a mounted volume to keep the user's own trash out of the test.
+	[Test, Category("FileAndDir"), Category("Internal")]
+	[System.Runtime.Versioning.SupportedOSPlatform("linux")]
+	public void LinuxVolumeTrash()
+	{
+		var root = Directory.CreateTempSubdirectory("ks-trash-").FullName;
+		var volume = Path.Combine(root, "volume");
+		var outside = Path.Combine(root, "outside");
+		var uid = Keysharp.Internals.Platform.Process.EffectiveUserId();
+		var shared = Directory.CreateDirectory(Path.Combine(volume, ".Trash")).FullName;
+		var sharedTrash = Path.Combine(shared, uid.ToString(CultureInfo.InvariantCulture));
+		var own = Path.Combine(volume, ".Trash-" + uid);
+		string Prepare(string trash)
+		{
+			var files = Directory.CreateDirectory(Path.Combine(trash, "files")).FullName;
+			_ = Directory.CreateDirectory(Path.Combine(trash, "info"));
+			File.WriteAllText(Path.Combine(files, "item"), "keep");
+			File.WriteAllText(Path.Combine(trash, "info", "item.trashinfo"), "[Trash Info]");
+			return Path.Combine(files, "item");
+		}
+
+		try
+		{
+			var keep = Prepare(outside);
+			var item = Prepare(sharedTrash);
+			_ = Directory.CreateSymbolicLink(own, outside);
+			Keysharp.Internals.Linux.Trash.EmptyVolumeTrash(volume);
+			Assert.That(File.Exists(item), Is.True);
+			Assert.That(File.Exists(keep), Is.True);
+
+			File.SetUnixFileMode(shared, File.GetUnixFileMode(shared) | UnixFileMode.StickyBit);
+			_ = Directory.CreateSymbolicLink(Path.Combine(sharedTrash, "files", "link"), outside);
+			_ = Directory.CreateDirectory(Path.Combine(sharedTrash, "files", "nested", "child"));
+			Keysharp.Internals.Linux.Trash.EmptyVolumeTrash(volume);
+			Assert.That(Directory.EnumerateFileSystemEntries(Path.Combine(sharedTrash, "files")), Is.Empty);
+			Assert.That(Directory.EnumerateFileSystemEntries(Path.Combine(sharedTrash, "info")), Is.Empty);
+			Assert.That(File.ReadAllText(keep), Is.EqualTo("keep"));
+
+			File.Delete(own);
+			var ownItem = Prepare(own);
+			File.SetUnixFileMode(own, File.GetUnixFileMode(own) | UnixFileMode.OtherWrite);
+			Keysharp.Internals.Linux.Trash.EmptyVolumeTrash(volume);
+			Assert.That(File.Exists(ownItem), Is.True);
+			File.SetUnixFileMode(own, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+			Keysharp.Internals.Linux.Trash.EmptyVolumeTrash(volume);
+			Assert.That(File.Exists(ownItem), Is.False);
+			Assert.IsInstanceOf<OSError>(Assert.Throws<KeysharpException>(() => Files.FileRecycleEmpty(Path.Combine(root, "missing"))).UserError);
+		}
+		finally
+		{
+			Directory.Delete(root, true);
+		}
+	}
+#endif
+
 	[Test, Category("FileAndDir")]
 	public void FileSetAttrib() => Assert.IsTrue(TestScript("file-filesetattrib", true));
 

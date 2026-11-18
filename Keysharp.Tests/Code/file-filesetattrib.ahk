@@ -75,6 +75,10 @@ FileSetAttrib "-R", attribRoot A_DirSeparator "t.txt", "R"
 unchanged := FileGetAttrib(attribRoot A_DirSeparator "sub" A_DirSeparator "u.txt")
 Throws(() => FileSetAttrib("Q", attribRoot A_DirSeparator "sub" A_DirSeparator "u.txt"), A_LineNumber, ValueError)
 AssertEq(FileGetAttrib(attribRoot A_DirSeparator "sub" A_DirSeparator "u.txt"), unchanged, A_LineNumber)
+; So is a letter Mode does not take, and an empty pattern, as in AutoHotkey.
+Throws(() => FileSetAttrib("+R", attribRoot A_DirSeparator "sub" A_DirSeparator "u.txt", "Q"), A_LineNumber, ValueError)
+AssertEq(FileGetAttrib(attribRoot A_DirSeparator "sub" A_DirSeparator "u.txt"), unchanged, A_LineNumber)
+Throws(() => FileSetAttrib("+R", ""), A_LineNumber, ValueError)
 DirDelete attribRoot, true
 
 

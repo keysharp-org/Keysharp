@@ -187,6 +187,13 @@ Loop Reg "HKCU", "K"
 Assert(n > 0, A_LineNumber)
 AssertEq(RegRead("HKCU", "ks-no-such-value", "none"), "none", A_LineNumber)
 
+; As in AutoHotkey, Mode takes only K, V and R (or D and F).
+BadRegMode() {
+	Loop Reg "HKCU", "KQ"
+		break
+}
+Throws(BadRegMode, A_LineNumber, ValueError)
+
 ; RegCreateKey creates a key with no value, which the RegDeleteKey below removes with its parent.
 RegCreateKey("HKCU\SOFTWARE\KeysharpTest\ks_create")
 n := 0

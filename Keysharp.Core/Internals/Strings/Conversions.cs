@@ -649,103 +649,85 @@ namespace Keysharp.Internals.Strings
 			return i == 0 ? DateTime.MinValue : new DateTime((t[0] * 100) + t[1], t[2], t[3], t[4], t[5], t[6], cal);
 		}
 
-		internal static FileAttributes ToFileAttribs(string set, FileAttributes attribs)
+		// File and registry loops accept each other's letters. With neither kind specified, F/V is the default.
+		internal static bool TryParseLoopMode(string mode, out bool files, out bool folders, out bool recurse)
+		{
+			files = folders = recurse = false;
+
+			foreach (var c in mode)
+			{
+				switch (c)
+				{
+					case 'F' or 'f' or 'V' or 'v': files = true; break;
+					case 'D' or 'd' or 'K' or 'k': folders = true; break;
+					case 'R' or 'r': recurse = true; break;
+					case ' ' or '\t': break;
+					default:
+						_ = Errors.ValueErrorOccurred($"Invalid Mode \"{mode}\". Expected F, D, R, V or K.", mode);
+						return false;
+				}
+			}
+
+			files |= !folders;
+			return true;
+		}
+
+		// Apply the parsed operations in one step per file: (attributes & Keep) ^ Toggle.
+		internal static bool TryParseFileAttribs(string set, out (FileAttributes Keep, FileAttributes Toggle) masks)
 		{
 			var op = '=';
-			var mask = 0u;
-			var attrMask = new FileSetAttribData();
-			attrMask.and_mask = 0xFFFFFFFF; // Set default: keep all bits.
-			attrMask.xor_mask = 0; // Set default: affect none.
+			masks = (~(FileAttributes)0, 0);
 
 			foreach (var flag in set)
 			{
-				switch (flag)
+				if (flag is '+' or '-' or '^')
 				{
-					case '+':
-					case '-':
-					case '^':
-						op = flag;
-						continue;
+					op = flag;
+					continue;
+				}
 
-					case ' ':
-					case '\t':
-						continue;
+				if (flag is ' ' or '\t')
+					continue;
 
-					case 'r':
-					case 'R':
-						mask = (uint)FileAttributes.ReadOnly;
-						break;
+				var mask = flag switch
+				{
+					'R' or 'r' => FileAttributes.ReadOnly,
+					'A' or 'a' => FileAttributes.Archive,
+					'S' or 's' => FileAttributes.System,
+					'H' or 'h' => FileAttributes.Hidden,
+					'N' or 'n' => FileAttributes.Normal,
+					'O' or 'o' => FileAttributes.Offline,
+					'T' or 't' => FileAttributes.Temporary,
+					_ => (FileAttributes)0
+				};
 
-					case 'a':
-					case 'A':
-						mask = (uint)FileAttributes.Archive;
-						break;
-
-					case 's':
-					case 'S':
-						mask = (uint)FileAttributes.System;
-						break;
-
-					case 'h':
-					case 'H':
-						mask = (uint)FileAttributes.Hidden;
-						break;
-
-					case 'n':
-					case 'N':
-						mask = (uint)FileAttributes.Normal;
-						break;
-
-					//case 'd':
-					//case 'D':
-					//  mask = (uint)FileAttributes.Directory;
-					//  break;
-
-					case 'o':
-					case 'O':
-						mask = (uint)FileAttributes.Offline;
-						break;
-
-					//case 'c':
-					//case 'C':
-					//  mask = (uint)FileAttributes.Compressed;
-					//  break;
-
-					case 't':
-					case 'T':
-						mask = (uint)FileAttributes.Temporary;
-						break;
-
-					default:
-						_ = Errors.ValueErrorOccurred($"Invalid file attribute \"{flag}\" in \"{set}\". Expected R, A, S, H, N, O or T, each optionally after +, - or ^.");
-						return attribs;
+				if (mask == 0)
+				{
+					_ = Errors.ValueErrorOccurred($"Invalid file attribute \"{flag}\" in \"{set}\". Expected R, A, S, H, N, O or T, each optionally after +, - or ^.");
+					return false;
 				}
 
 				switch (op)
 				{
 					case '+':
-						attrMask.and_mask &= ~mask;//Reset bit to 0.
-						attrMask.xor_mask |= mask;//Set bit to 1.
+						masks.Keep &= ~mask;
+						masks.Toggle |= mask;
 						break;
-
 					case '-':
-						attrMask.and_mask &= ~mask;//Reset bit to 0.
-						attrMask.xor_mask &= ~mask;//Override any prior + or ^.
+						masks.Keep &= ~mask;
+						masks.Toggle &= ~mask;
 						break;
-
 					case '^':
-						attrMask.xor_mask ^= mask;//Toggle bit. ^= vs |= to invert any prior + or ^.
-						//Leave and_mask as is, so any prior + or - will be inverted.
+						masks.Toggle ^= mask;
 						break;
-
-					default: //No +/-/^ specified, so overwrite attributes (equal and opposite to FileGetAttrib).
-						attrMask.and_mask = 0;//Reset all bits to 0.
-						attrMask.xor_mask |= mask;//Set bit to 1. |= to accumulate if multiple attributes are present.
+					default:
+						masks.Keep = 0;
+						masks.Toggle |= mask;
 						break;
 				}
 			}
 
-			return (FileAttributes)(((uint)attribs & attrMask.and_mask) ^ attrMask.xor_mask);
+			return true;
 		}
 
 		// S (study) is implied by compiling every pattern, and X (PCRE_EXTRA's strict escapes) is always in effect in PCRE2.
@@ -923,11 +905,6 @@ namespace Keysharp.Internals.Strings
 			c = default;
 			return false;
 #endif
-		}
-
-		internal struct FileSetAttribData
-		{
-			internal uint and_mask, xor_mask;
 		}
 	}
 }

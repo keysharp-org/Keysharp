@@ -3,6 +3,8 @@ using System.Runtime.CompilerServices;
 using System.Windows.Forms;
 #if WINDOWS
 using Microsoft.VisualBasic.FileIO;
+#elif OSX
+using Foundation = MonoMac.Foundation;
 #endif
 
 namespace Keysharp.Builtins
@@ -14,12 +16,13 @@ namespace Keysharp.Builtins
 	{
 		private static readonly SearchValues<char> wildcardsSv = SearchValues.Create("*?");
 		private static readonly SearchValues<char> fileOptionSeparators = SearchValues.Create(" \t\n");
+		private static readonly System.IO.EnumerationOptions timestampMatches = new()
+		{
+			AttributesToSkip = 0, IgnoreInaccessible = false, MatchType = MatchType.Win32, MatchCasing = MatchCasing.CaseInsensitive,
+		};
 		// Opened on first use: a GUI-subsystem process that touches the console before the script allocates one is
 		// pinned to the null stream.
 		private static Stream standardOutput, standardError;
-#if OSX
-		private static readonly char[] dirSeparators = [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar];
-#endif
 		private static void EnsureFilePermission(string path, FilePermissionAccess access, string operation)
 		{
 			if (string.IsNullOrEmpty(path) || path.StartsWith("*", StringComparison.Ordinal))
@@ -267,57 +270,20 @@ namespace Keysharp.Builtins
 			if (t == "")
 				return Errors.ValueErrorOccurred("Shortcut target cannot be an empty string.");
 
-			t = Path.GetFullPath(t);
-
 #if !WINDOWS
 			if (!shortcutType.CoerceString(out var type))
 				return DefaultObject;
 
-			if (w != "" || a != "" || d != "" || icon != "")
+			try
 			{
-				var creator = new ShortcutCreator();
-				icon = Path.GetFullPath(icon);
-				creator.Add("Icon", icon);
-				creator.Add("Path", w);
-				creator.Add("Comment", d);
-
-				if (a != "")
-					creator.Add("Exec", t + " " + a);
-				else
-					creator.Add("Exec", t);
-
-				if (type != "")
-				{
-					if (long.TryParse(type, out var tp))
-					{
-						if (tp == 0)//Wasn't a number, assume text and use verbatim.
-							creator.Add("Type", type);
-						else if (tp == 1)//Was a number, test for 1 2 or 3.
-							creator.Add("Type", "Application");
-						else if (tp == 2)
-							creator.Add("Type", "Link");
-						else if (tp == 3)
-							creator.Add("Type", "Directory");
-						else//Was something else, so just assume it's of type Application.
-							creator.Add("Type", "Application");
-					}
-					else
-						creator.Add("Type", type);
-				}
-				else//Was not specified, so just assume it's of type Application.
-					creator.Add("Type", "Application");
-
-				creator.Save(l);
-				if ($"chmod +x '{l}'".Bash() != 0)
-					return Errors.OSErrorOccurred("", $"Failed to set executable bit on shortcut {l}.");
+				DesktopEntry.Save(t, Path.GetFullPath(l), w, a, d, icon, type);
 			}
-			else
+			catch (Exception ex)
 			{
-				if ($"ln -sf '{t}' '{l}'".Bash() != 0)
-					return Errors.OSErrorOccurred("", $"Failed to create symlink {l}.");
+				return Errors.OSErrorOccurred(ex, $"Error creating shortcut {l}");
 			}
-
 #elif WINDOWS
+			t = Path.GetFullPath(t);
 			if (!shortcutKey.CoerceString(out var sc))
 				return DefaultObject;
 
@@ -549,21 +515,22 @@ namespace Keysharp.Builtins
 #else
 		/// <summary>
 		/// Retrieves information about a shortcut file.<br/>
-		/// Takes different action based on whether it's a simple symlink or a full desktop shortcut.<br/>
-		/// If it's a symlink, then only the outTarget field will be populated and all others will be blank.<br/>
-		/// If it's a full desktop shortcut, then the following mapping will be used to populate the passed in reference variables:<br/>
-		/// outTarget=Exec including any arguments<br/>
+		/// Takes different action based on whether it's a symlink or a desktop entry.<br/>
+		/// If it's a symlink, then outTarget receives its final target, outDir that target's folder, and all others are blank.<br/>
+		/// If it's a desktop entry, then the following mapping will be used to populate the passed in reference variables:<br/>
+		/// outTarget=the program of Exec, or the link's URL (local path for file URLs)<br/>
 		/// outDir=Path<br/>
-		/// outArgs=Exec text after first space<br/>
+		/// outArgs=the arguments of Exec, in Windows command-line form<br/>
 		/// outDescription=Comment<br/>
 		/// outIcon=Icon<br/>
-		/// outIconNum=Type<br/>
-		/// outRunState is ignored<br/>
+		/// outType=Type<br/>
+		/// outRunState is blank<br/>
+		/// Any other file raises an <see cref="OSError"/>.
 		/// </summary>
 		/// <param name="linkFile">Name of the shortcut file to be analyzed, which is assumed to be in <see cref="A_WorkingDir"/> if an absolute path isn't specified.<br/>
 		/// </param>
 		/// <param name="outTarget">If omitted, the corresponding value will not be stored.<br/>
-		/// Otherwise, specify a reference to the output variable in which to store the shortcut's target and any arguments it might have.</param>
+		/// Otherwise, specify a reference to the output variable in which to store the shortcut's target, not including any arguments.</param>
 		/// <param name="outDir">If omitted, the corresponding value will not be stored.<br/>
 		/// Otherwise, specify a reference to the output variable in which to store the shortcut's working directory.
 		/// </param>
@@ -602,41 +569,11 @@ namespace Keysharp.Builtins
 				link = Path.GetFullPath(linkText);
 #if !WINDOWS
 				var linkInfo = new FileInfo(link);
-				var resolved = linkInfo.ResolveLinkTarget(true);
-				var dest = resolved?.FullName;
 
-				if (string.IsNullOrEmpty(dest) || link == dest)//Was not just a simple symlink.
+				if (linkInfo.LinkTarget is { } linkTarget)
 				{
-					var sc = new ShortcutCreator(link);
-					if (outTarget != null) Refs.SetValue(outTarget, sc.Get("Exec"));
-					if (outDir != null) Refs.SetValue(outDir, sc.Get("Path"));
-					if (outDescription != null) Refs.SetValue(outDescription, sc.Get("Comment"));
-					if (outIcon != null) Refs.SetValue(outIcon, sc.Get("Icon"));
-					if (outType != null) Refs.SetValue(outType, sc.Get("Type"));
-
-					if (outTarget != null && Refs.GetValue(outTarget) is string s && s.Length > 0)
-					{
-						if (s[0] != '"' && s[0] != '\'')
-						{
-							var splits = s.Split(SpaceTab, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-							if (splits.Length > 1)
-								Refs.SetValue(outArgs, splits[1]);
-							else
-								Refs.SetValue(outArgs, "");
-						}
-						else//It was quoted.
-						{
-							var firstArgIndex = s.FindFirstNotInQuotes(" ");
-							var tempArgs = firstArgIndex != -1 && firstArgIndex < s.Length - 1 ? s.AsSpan(firstArgIndex + 1) : ReadOnlySpan<char>.Empty;
-							Refs.SetValue(outArgs, tempArgs.Trim().ToString());
-						}
-					}
-					else if (outArgs != null)
-						Refs.SetValue(outArgs, "");//No way to determine args.
-				}
-				else
-				{
+					// The final target, which need not exist.
+					var dest = linkInfo.ResolveLinkTarget(true)?.FullName ?? Path.GetFullPath(linkTarget, Path.GetDirectoryName(link));
 					if (outTarget != null) Refs.SetValue(outTarget, dest);
 					if (outDir != null) Refs.SetValue(outDir, Path.GetDirectoryName(dest));
 					if (outArgs != null) Refs.SetValue(outArgs, "");
@@ -644,8 +581,22 @@ namespace Keysharp.Builtins
 					if (outIcon != null) Refs.SetValue(outIcon, "");
 					if (outType != null) Refs.SetValue(outType, "");
 				}
+				else
+				{
+					var entry = DesktopEntry.Read(link);
+					if (outTarget != null || outArgs != null)
+					{
+						var (target, args) = DesktopEntry.ReadCommand(entry, outArgs != null);
+						if (outTarget != null) Refs.SetValue(outTarget, target);
+						if (outArgs != null) Refs.SetValue(outArgs, args);
+					}
+					if (outDir != null) Refs.SetValue(outDir, entry.GetValueOrDefault("Path", entry.GetValueOrDefault("X-Keysharp-WorkingDirectory", "")));
+					if (outDescription != null) Refs.SetValue(outDescription, entry.GetValueOrDefault("Comment", ""));
+					if (outIcon != null) Refs.SetValue(outIcon, entry.GetValueOrDefault("Icon", ""));
+					if (outType != null) Refs.SetValue(outType, entry.GetValueOrDefault("Type", ""));
+				}
 
-				Refs.SetValue(outRunState, "");
+				if (outRunState != null) Refs.SetValue(outRunState, "");
 #elif WINDOWS
 
 				var shellLink = (WindowsAPI.IShellLinkW)new WindowsAPI.ShellLink();
@@ -798,40 +749,65 @@ namespace Keysharp.Builtins
 		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown on failure.</exception>
 		public static string FileGetTime(object filename = null, object whichTime = null)
 		{
-			if (!filename.CoerceString(out var file))
-				return "";
-
 			ThreadAccessors.A_LastError = 0;
 
-			if (!whichTime.CoerceString(out var time, "M"))
+			if (!CoerceFilePattern(filename, out var file) || !whichTime.CoerceString(out var time))
 				return "";
+
+			if (file.Length == 0)
+				return (string)Errors.InvalidParameterErrorOccurred(1, "FileGetTime", file);
+
+			var which = TimestampKind(time);
+
+			if (which is not ('M' or 'C' or 'A'))
+				return (string)Errors.ValueErrorOccurred($"Invalid WhichTime \"{time}\". Expected M, C or A.", time);
 
 			try
 			{
-				if (file?.Length == 0)
-					file = A_LoopFileFullPath;
-
-				if (!File.Exists(file))
-					return DefaultObject;
-
-				var date = new DateTime();
-				var info = new FileInfo(file);
-
-				date = time[0] switch
+				FileSystemInfo info;
+				if (file.AsSpan().IndexOfAny(wildcardsSv) < 0)
 				{
-					'c' or 'C' => info.CreationTime,
-					'a' or 'A' => info.LastAccessTime,
-					_ => info.LastWriteTime,
-				};
+					info = new FileInfo(file);
+					// FileInfo caches the timestamps with Attributes, but returns -1 for a missing file or parent.
+					if ((int)info.Attributes == -1)
+						_ = File.GetAttributes(file);
+				}
+				else
+				{
+					var dir = new DirectoryInfo(Path.GetDirectoryName(Path.GetFullPath(file)));
+					info = dir.EnumerateFileSystemInfos(Path.GetFileName(file), timestampMatches).FirstOrDefault()
+						?? throw new FileNotFoundException("No matching file.", file);
+				}
 
-				return Conversions.ToYYYYMMDDHH24MISS(date);
+				return Conversions.ToYYYYMMDDHH24MISS(which switch
+				{
+					'C' => info.CreationTime,
+					'A' => info.LastAccessTime,
+					_ => info.LastWriteTime,
+				});
 			}
 			catch (Exception ex)
 			{
-				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
-				return (string)Errors.OSErrorOccurred(ex, $"Error getting file time for file {file}");
+				var code = FileErrorCode(ex);
+				ThreadAccessors.A_LastError = code;
+				return (string)Errors.OSErrorOccurred(OperatingSystem.IsWindows() && code != 0 ? code : (object)ex, $"Error getting file time for {file}");
 			}
 		}
+
+		// Looking up a loop's path walks the thread's loop stack and can resolve the directory's on-disk casing.
+		private static bool CoerceFilePattern(object value, out string file) =>
+			value.CoerceString(out file, value is string ? null : A_LoopFileFullPath);
+
+		// Managed file operations can leave the P/Invoke error unchanged.
+		private static int FileErrorCode(Exception error) => error switch
+		{
+			Win32Exception native => native.NativeErrorCode,
+			IOException { HResult: > 0 } io => io.HResult,
+			{ InnerException: { } inner } => FileErrorCode(inner),
+			_ => (uint)error.HResult >> 16 == 0x8007 ? error.HResult & 0xffff : 0,
+		};
+
+		private static char TimestampKind(string whichTime) => whichTime.Length == 0 ? 'M' : char.ToUpperInvariant(whichTime[0]);
 
 		/// <summary>
 		/// Retrieves the version of a file.
@@ -839,29 +815,97 @@ namespace Keysharp.Builtins
 		/// <param name="filename">If omitted, the current file of the innermost enclosing file loop will be used.<br/>
 		/// Otherwise, specify the name of the target file.
 		/// </param>
-		/// <returns>This function returns the version number of the specified file.</returns>
-		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown on failure.</exception>
-		public static string FileGetVersion(object filename)
+		/// <returns>The file version as four numbers, such as 1.2.3.4.</returns>
+		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown on failure, such as if the file lacks version information.</exception>
+		public static string FileGetVersion(object filename = null)
 		{
-			if (!filename.CoerceString(out var file))
+			ThreadAccessors.A_LastError = 0;
+
+			if (!CoerceFilePattern(filename, out var file))
 				return "";
 
-			ThreadAccessors.A_LastError = 0;
+			if (file.Length == 0)
+				return (string)Errors.InvalidParameterErrorOccurred(1, "FileGetVersion", file);
+
+#if WINDOWS
+			// As AutoHotkey does, the fixed numeric version, not the FileVersion text, which may carry more than numbers.
+			var size = WindowsAPI.GetFileVersionInfoSize(file, out _);
+			var block = size > 0 ? Marshal.AllocHGlobal(size) : 0;
 
 			try
 			{
-				if (file?.Length == 0)
-					file = A_LoopFileFullPath;
+				if (block != 0 && WindowsAPI.GetFileVersionInfo(file, 0, size, block)
+						&& WindowsAPI.VerQueryValue(block, "\\", out var fixedInfo, out var length) && length >= 16)
+				{
+					// dwFileVersionMS and dwFileVersionLS of VS_FIXEDFILEINFO.
+					var ms = (uint)Marshal.ReadInt32(fixedInfo, 8);
+					var ls = (uint)Marshal.ReadInt32(fixedInfo, 12);
+					return $"{ms >> 16}.{ms & 0xFFFF}.{ls >> 16}.{ls & 0xFFFF}";
+				}
 
+				var error = Marshal.GetLastPInvokeError();
+				ThreadAccessors.A_LastError = error == 0 ? 1812 : error; // ERROR_RESOURCE_DATA_NOT_FOUND
+				return (string)Errors.OSErrorOccurred(null, $"Error getting file version for file {file}");
+			}
+			finally
+			{
+				if (block != 0)
+					Marshal.FreeHGlobal(block);
+			}
+#else
+			try
+			{
+#if OSX
+				// A folder has no version of its own, so a bundle's Info.plist is the only source.
+				if (Directory.Exists(file))
+					return MacBundleVersion(file, false) ?? throw new InvalidDataException($"{file} is a folder without bundle version information.");
+#endif
+				// Outside Windows, .NET reads only a managed assembly's AssemblyFileVersion, and reports nothing for other files.
 				var info = FileVersionInfo.GetVersionInfo(file);
-				return info.FileVersion;
+
+				if (!string.IsNullOrEmpty(info.FileVersion))
+					return $"{info.FileMajorPart}.{info.FileMinorPart}.{info.FileBuildPart}.{info.FilePrivatePart}";
+#if OSX
+				// A bundle's executable usually carries no version, while the bundle that names it does.
+				if (MacBundleVersion(file, true) is { } bundleVersion)
+					return bundleVersion;
+#endif
+				throw new InvalidDataException($"{file} has no version information.");
 			}
 			catch (Exception ex)
 			{
-				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
+				ThreadAccessors.A_LastError = FileErrorCode(ex);
 				return (string)Errors.OSErrorOccurred(ex, $"Error getting file version for file {file}");
 			}
+#endif
 		}
+
+#if OSX
+		private static string MacBundleVersion(string path, bool asExecutable)
+		{
+			using var pool = new Foundation.NSAutoreleasePool();
+			var file = new FileInfo(Path.GetFullPath(path));
+			var resolved = file.ResolveLinkTarget(true)?.FullName ?? file.FullName;
+			var bundle = asExecutable ? Path.GetDirectoryName(Path.GetDirectoryName(Path.GetDirectoryName(resolved))) : resolved;
+			if (bundle == null || asExecutable && Path.Combine(bundle, "Contents", "MacOS", Path.GetFileName(resolved)) != resolved)
+				return null;
+
+			var plist = Path.Combine(bundle, "Contents", "Info.plist");
+			if (!asExecutable && !File.Exists(plist))
+				plist = Path.Combine(bundle, "Resources", "Info.plist");
+
+			// Read the file on each call so bundle metadata edits are visible within the process.
+			using var info = Foundation.NSDictionary.FromFile(plist);
+			if (info == null || asExecutable && Text(info["CFBundleExecutable"]) != Path.GetFileName(resolved))
+				return null;
+
+			return Text(info["CFBundleShortVersionString"]) ?? Text(info["CFBundleVersion"]);
+
+			static string Text(Foundation.NSObject value) =>
+				value is Foundation.NSString text && ((string)text).Trim() is { Length: > 0 } version ? version : null;
+		}
+
+#endif
 
 		/// <summary>
 		/// Extracts a file embedded into the script's assembly via `#App { Files: [...] }` to dest. Source must
@@ -1185,7 +1229,7 @@ namespace Keysharp.Builtins
 						return Errors.OSErrorOccurred(new InvalidOperationException(result.ErrorMessage),
 							$"gio trash failed for {target.FullName}.");
 #elif OSX
-					MovePathToMacTrash(target.FullName);
+					MoveToMacTrash(target.FullName);
 #elif WINDOWS
 					if ((target.Attributes & FileAttributes.Directory) != 0)
 						FileSystem.DeleteDirectory(target.FullName, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
@@ -1194,7 +1238,7 @@ namespace Keysharp.Builtins
 #endif
 				}
 			}
-			catch (Exception ex)
+			catch (Exception ex) when (ex is not KeysharpException)
 			{
 				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return Errors.OSErrorOccurred(ex, $"Error recycling file(s) with pattern {s}");
@@ -1220,68 +1264,91 @@ namespace Keysharp.Builtins
 			if (!driveLetter.CoerceString(out var s))
 				return DefaultObject;
 
+			if (s.Contains('\0'))
+				return Errors.InvalidParameterErrorOccurred(1, "FileRecycleEmpty", s);
+
 			try
 			{
 #if LINUX
-				var result = RunCommand("gio", ["trash", "--empty"]);
-
-				if (!result.Succeeded)
+				if (s.Length > 0)
+					Internals.Linux.Trash.Empty(s);
+				else if (RunCommand("gio", ["trash", "--empty"]) is { Succeeded: false } result)
 					return Errors.OSErrorOccurred(new InvalidOperationException(result.ErrorMessage), "gio trash --empty failed.");
 #elif OSX
-				var trash = GetMacTrashPath();
-
-				if (Directory.Exists(trash))
-				{
-					foreach (var entry in Directory.EnumerateFileSystemEntries(trash))
-					{
-						if (Directory.Exists(entry))
-							Directory.Delete(entry, true);
-						else if (File.Exists(entry))
-							File.Delete(entry);
-					}
-				}
+				EmptyMacTrash(s);
 #elif WINDOWS
-				_ = WindowsAPI.SHEmptyRecycleBin(0, s != "" ? s : null, WindowsAPI.SHERB_NOCONFIRMATION | WindowsAPI.SHERB_NOPROGRESSUI | WindowsAPI.SHERB_NOSOUND);
+				var hr = WindowsAPI.SHEmptyRecycleBin(0, s != "" ? s : null, WindowsAPI.SHERB_NOCONFIRMATION | WindowsAPI.SHERB_NOPROGRESSUI | WindowsAPI.SHERB_NOSOUND);
+
+				// As in AutoHotkey, E_UNEXPECTED is not an error: it is what an already empty recycle bin reports.
+				if (hr < 0 && hr != unchecked((int)0x8000FFFF))
+					return Errors.OSErrorOccurred((long)(uint)hr, $"Error emptying recycle bin for drive {s}");
 #endif
 				return DefaultObject;
 			}
-			catch (Exception ex)
+			catch (Exception ex) when (ex is not KeysharpException)
 			{
 				return Errors.OSErrorOccurred(ex, $"Error emptying recycle bin for drive {s}");
 			}
 		}
 
 #if OSX
-		private static string GetMacTrashPath() => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".Trash");
+		// MonoMac has no binding for trashItemAtURL:resultingItemURL:error:.
+		[DllImport("/usr/lib/libobjc.A.dylib", EntryPoint = "objc_msgSend")]
+		[return: MarshalAs(UnmanagedType.I1)]
+		private static extern bool TrashItem(nint fileManager, nint selector, nint url, nint resultingUrl, out nint error);
 
-		private static void MovePathToMacTrash(string sourcePath)
+		private static void MoveToMacTrash(string path)
 		{
-			var trash = GetMacTrashPath();
-			Directory.CreateDirectory(trash);
-			var name = sourcePath.TrimEnd(dirSeparators);
-			name = Path.GetFileName(name);
+			using var pool = new Foundation.NSAutoreleasePool();
+			using var url = Foundation.NSUrl.FromFilename(path);
 
-			if (string.IsNullOrEmpty(name))
-				return;
+			if (!TrashItem(Foundation.NSFileManager.DefaultManager.Handle, MonoMac.ObjCRuntime.Selector.GetHandle("trashItemAtURL:resultingItemURL:error:"),
+						   url.Handle, 0, out var error))
+				throw new IOException(MonoMac.ObjCRuntime.Runtime.GetNSObject(error) is Foundation.NSError e ? e.LocalizedDescription : $"Could not move {path} to the trash.");
+		}
 
-			var baseName = Path.GetFileNameWithoutExtension(name);
-			var ext = Path.GetExtension(name);
-			var index = 0;
-			string destination;
-
-			do
+		private static void EmptyMacTrash(string volume)
+		{
+			using var pool = new Foundation.NSAutoreleasePool();
+			var manager = Foundation.NSFileManager.DefaultManager;
+			if (volume.Length == 0)
 			{
-				destination = index == 0
-					? Path.Combine(trash, name)
-					: Path.Combine(trash, $"{baseName} {index}{ext}");
-				index++;
+				Empty(null);
+				foreach (var mounted in manager.GetMountedVolumes(null, Foundation.NSVolumeEnumerationOptions.None) ?? [])
+					Empty(mounted);
 			}
-			while (File.Exists(destination) || Directory.Exists(destination));
+			else
+			{
+				_ = File.GetAttributes(volume);
+				using var url = Foundation.NSUrl.FromFilename(Path.GetFullPath(volume));
+				Empty(url);
+			}
 
-			if (File.Exists(sourcePath))
-				File.Move(sourcePath, destination);
-			else if (Directory.Exists(sourcePath))
-				Directory.Move(sourcePath, destination);
+			void Empty(Foundation.NSUrl volumeUrl)
+			{
+				using var trash = manager.GetUrl(Foundation.NSSearchPathDirectory.TrashDirectory, Foundation.NSSearchPathDomain.User, volumeUrl, false, out var lookupError);
+				if (trash == null)
+				{
+					var missing = lookupError?.Domain switch
+					{
+						"NSCocoaErrorDomain" => lookupError.Code is 4 or 260, // NSFileNoSuchFileError, NSFileReadNoSuchFileError
+						"NSPOSIXErrorDomain" => lookupError.Code is 2 or 20, // ENOENT, ENOTDIR
+						_ => lookupError == null,
+					};
+					if (!missing)
+						throw new IOException(lookupError.LocalizedDescription);
+					return;
+				}
+
+				var folder = new DirectoryInfo(trash.Path);
+				var attributes = folder.Attributes;
+				if ((int)attributes == -1 || (attributes & FileAttributes.ReparsePoint) != 0)
+					return;
+
+				foreach (var entry in folder.EnumerateFileSystemInfos())
+					if (!manager.Remove(entry.FullName, out var error))
+						throw new IOException(error?.LocalizedDescription ?? $"Could not remove {entry.FullName}.");
+			}
 		}
 #endif
 
@@ -1320,19 +1387,20 @@ namespace Keysharp.Builtins
 		{
 			ThreadAccessors.A_LastError = 0;
 
-			if (!attributes.CoerceString(out var attr) || !filePattern.CoerceString(out var file, A_LoopFileFullPath) || !mode.CoerceString(out var m))
+			if (!attributes.CoerceString(out var attr) || !CoerceFilePattern(filePattern, out var file) || !mode.CoerceString(out var m))
 				return DefaultObject;
 
-			var dodirs = m.Contains('d', StringComparison.OrdinalIgnoreCase);
-			var dofiles = m.Contains('f', StringComparison.OrdinalIgnoreCase);
-			var recurse = m.Contains('r', StringComparison.OrdinalIgnoreCase);
-			var failures = 0;
+			if (file.Length == 0)
+				return Errors.InvalidParameterErrorOccurred(2, "FileSetAttrib", file);
 
-			if (!dodirs && !dofiles)
-				dofiles = true;
+			if (!Conversions.TryParseLoopMode(m, out var dofiles, out var dodirs, out var recurse))
+				return DefaultObject;
 
 			// An invalid attribute letter is an error for the call, as in AHK, not a failure for each file.
-			_ = Conversions.ToFileAttribs(attr, FileAttributes.None);
+			if (!Conversions.TryParseFileAttribs(attr, out var masks))
+				return DefaultObject;
+
+			var failures = 0;
 
 			foreach (var item in MatchFiles(file, dofiles, dodirs, recurse))
 			{
@@ -1340,7 +1408,7 @@ namespace Keysharp.Builtins
 
 				try
 				{
-					var set = Conversions.ToFileAttribs(attr, item.Attributes);
+					var set = (item.Attributes & masks.Keep) ^ masks.Toggle;
 					File.SetAttributes(path, set);
 
 					if (set == FileAttributes.None)
@@ -1398,20 +1466,22 @@ namespace Keysharp.Builtins
 		{
 			ThreadAccessors.A_LastError = 0;
 
-			if (!yyyymmddhh24miss.CoerceString(out var timestamp) || !filePattern.CoerceString(out var file)
-					|| !whichTime.CoerceString(out var whichtime, "M") || !mode.CoerceString(out var m))
+			if (!yyyymmddhh24miss.CoerceString(out var timestamp) || !CoerceFilePattern(filePattern, out var file)
+					|| !whichTime.CoerceString(out var whichtime) || !mode.CoerceString(out var m))
 				return DefaultObject;
 
-			var dodirs = m.Contains('d', StringComparison.OrdinalIgnoreCase);
-			var dofiles = m.Contains('f', StringComparison.OrdinalIgnoreCase);
-			var recurse = m.Contains('r', StringComparison.OrdinalIgnoreCase);
+			if (file.Length == 0)
+				return Errors.InvalidParameterErrorOccurred(2, "FileSetTime", file);
+
+			if (!Conversions.TryParseLoopMode(m, out var dofiles, out var dodirs, out var recurse))
+				return DefaultObject;
+
+			var which = TimestampKind(whichtime);
+
+			if (which is not ('M' or 'C' or 'A'))
+				return Errors.ValueErrorOccurred($"Invalid WhichTime \"{whichtime}\". Expected M, C or A.", whichtime);
+
 			var failures = 0;
-
-			if (!dodirs && !dofiles)
-				dofiles = true;
-
-			if (file?.Length == 0)
-				file = A_LoopFileFullPath;
 
 			var time = timestamp.Length == 0 ? DateTime.Now : Conversions.ToDateTime(timestamp);
 
@@ -1420,46 +1490,34 @@ namespace Keysharp.Builtins
 
 			foreach (var item in MatchFiles(file, dofiles, dodirs, recurse))
 			{
-				var path = item.FullName;
+#if LINUX
+				// Linux keeps no settable creation time, and .NET would change the modification time in its place.
+				if (which == 'C')
+				{
+					failures++;
+					ThreadAccessors.A_LastError = 95; // EOPNOTSUPP
+					continue;
+				}
 
+#endif
 				try
 				{
-					var set = new DateTime();
-
-					switch (whichtime[0])
+					switch (which)
 					{
-						case 'm':
-						case 'M':
-							File.SetLastWriteTime(path, time);
-							set = File.GetLastWriteTime(path);
-							break;
-
-						case 'c':
-						case 'C':
-							File.SetCreationTime(path, time);
-							set = File.GetCreationTime(path);
-							break;
-
-						case 'a':
-						case 'A':
-							File.SetLastAccessTime(path, time);
-							set = File.GetLastAccessTime(path);
-							break;
-
-						default:
-							ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
-							return Errors.ErrorOccurred($"WhichTime value of {whichTime} was not m, c or a.");
+						case 'C': item.CreationTime = time; break;
+						case 'A': item.LastAccessTime = time; break;
+						default: item.LastWriteTime = time; break;
 					}
-
-					if (set != time)
-							failures++;
 				}
-				catch { failures++; }
+				catch (Exception ex)
+				{
+					ThreadAccessors.A_LastError = FileErrorCode(ex);
+					failures++;
+				}
 			}
 
 			if (failures != 0)
 			{
-				ThreadAccessors.A_LastError = Marshal.GetLastSystemError();
 				return Errors.ErrorOccurred($"Failed {failures} times setting file time.", null, failures);
 			}
 
@@ -1780,9 +1838,12 @@ namespace Keysharp.Builtins
 				{
 					if (!recurse)
 					{
-						// One attribute query, which also serves a bare name, a folder and a drive root, and reports a missing item as -1.
 						var item = new FileInfo(Path.GetFullPath(pattern));
-						return (int)item.Attributes == -1 ? [] : [item];
+						var attributes = item.Attributes;
+						if ((int)attributes == -1)
+							return [];
+						// DirectoryInfo opens a Windows directory with the backup semantics its time setters require.
+						return [(attributes & FileAttributes.Directory) != 0 ? new DirectoryInfo(item.FullName) : item];
 					}
 
 					files = dirs = true;
@@ -1820,61 +1881,282 @@ namespace Keysharp.Builtins
 		/// <returns>The full path of the newly created temporary file.</returns>
 		public static string FileCreateTemp() => Path.GetTempFileName();
 	}
-
 #if !WINDOWS
-	/// <summary>
-	/// Helper class to create and parse desktop-entry style shortcuts on non-Windows platforms.
-	/// </summary>
-	internal class ShortcutCreator
+	/// <summary>Freedesktop shortcuts on Linux and macOS.</summary>
+	internal static class DesktopEntry
 	{
-		private Dictionary<string, string> fields = new Dictionary<string, string>()
-		{
-			{ "Type", "Application" },
-			{ "Name", "" },
-			{ "Comment", "" },
-			{ "Icon", "" },
-			{ "Exec", "" },
-			{ "Path", "" },
-		};
+		private const string Group = "[Desktop Entry]";
+		// The characters for which the specification requires an Exec argument to be quoted.
+		private static readonly SearchValues<char> execReserved = SearchValues.Create(" \t\n\"'\\><~|&;$*?#()`");
 
-		internal ShortcutCreator()
+		internal static void Save(string target, string link, string workingDir, string args, string description, string icon, string type)
 		{
-		}
+			var temp = Path.Combine(Path.GetDirectoryName(link), Path.GetRandomFileName());
+			var created = false;
 
-		internal ShortcutCreator(string path)
-		{
-			var lines = File.ReadAllLines(path);
-
-			if (lines.Length > 0)
+			try
 			{
-				if (lines[0].StartsWith("[Desktop Entry]", StringComparison.OrdinalIgnoreCase))
+				if (type == "" && workingDir == "" && args == "" && description == "" && icon == "")
 				{
-					for (var i = 1; i < lines.Length; i++)
-					{
-						var splits = lines[i].Split('=', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-						if (splits.Length > 1)
-						{
-							Add(splits[0], splits[1]);
-						}
-					}
+					_ = File.CreateSymbolicLink(temp, Path.GetFullPath(target));
+					created = true;
 				}
+				else
+				{
+					var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write };
+					if (!OperatingSystem.IsWindows())
+					{
+						// The umask also applies when replacing an existing launcher.
+						const UnixFileMode permissions = (UnixFileMode)0x1ff;
+						var mode = new FileInfo(link) is { Exists: true, LinkTarget: null } existing ? existing.UnixFileMode & permissions : permissions;
+						options.UnixCreateMode = mode | UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute;
+					}
+					using var stream = new FileStream(temp, options);
+					created = true;
+					using var writer = new StreamWriter(stream);
+					Write(writer, target, link, workingDir, args, description, icon, type);
+				}
+
+				// Rename installs a complete shortcut without opening an existing link or modifying a hard-linked file.
+				File.Move(temp, link, overwrite: true);
+				created = false;
+			}
+			finally
+			{
+				if (created)
+					File.Delete(temp);
 			}
 		}
 
-		internal void Add(string name, string value)
+		internal static (string Target, string Args) ReadCommand(Dictionary<string, string> entry, bool includeArgs)
 		{
-			if (fields.ContainsKey(name))
-				fields[name] = value;
+			// Non-application entries may also supply their target through Exec.
+			using var exec = Arguments(entry.GetValueOrDefault("Exec", ""), desktop: true).GetEnumerator();
+			var target = exec.MoveNext() ? exec.Current : "";
+			if (entry.GetValueOrDefault("Type") == "Link" && entry.TryGetValue("URL", out var url))
+				target = Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.IsFile ? uri.LocalPath : url;
+			else if (entry.TryGetValue("X-Keysharp-Target", out var custom))
+				target = custom;
+
+			var args = "";
+			if (includeArgs && !entry.TryGetValue("X-Keysharp-Args", out args))
+				args = JoinArguments(exec);
+			return (target, args);
 		}
 
-		internal string Get(string name) => fields.TryGetValue(name, out var val) ? val : "";
-
-		internal void Save(string path) => File.WriteAllText(path, Write());
-
-		internal string Write()
+		/// <summary>The keys of the [Desktop Entry] group, with their values unescaped.</summary>
+		/// <exception cref="InvalidDataException">The file is not a desktop entry.</exception>
+		internal static Dictionary<string, string> Read(string path)
 		{
-			return "[Desktop Entry]" + Environment.NewLine + string.Join(Environment.NewLine, fields.Where(kv => kv.Value != "").Select(kv => $"{kv.Key}={kv.Value}"));
+			var values = new Dictionary<string, string>(StringComparer.Ordinal);
+			var inGroup = false;
+
+			foreach (var text in File.ReadLines(path))
+			{
+				var line = text.AsSpan().Trim(" \t");
+
+				if (line.IsEmpty || line[0] == '#')
+					continue;
+
+				// The specification makes [Desktop Entry] the first group, so anything before it means another format.
+				if (line[0] == '[' && inGroup)
+					break;
+
+				if (!inGroup && !line.SequenceEqual(Group))
+					throw new InvalidDataException($"{path} is not a desktop entry.");
+
+				inGroup = true;
+				var eq = line.IndexOf('=');
+
+				if (eq > 0)
+					_ = values.TryAdd(line[..eq].TrimEnd(" \t").ToString(), Unescape(line[(eq + 1)..].TrimStart(" \t")));
+			}
+
+			return inGroup ? values : throw new InvalidDataException($"{path} is not a desktop entry.");
+		}
+
+		private static void Write(StreamWriter writer, string target, string link, string workingDir, string args, string description, string icon, string type)
+		{
+			type = long.TryParse(type, out var kind) ? kind switch { 2 => "Link", 3 => "Directory", _ => "Application" }
+				: type.Length == 0 ? "Application" : type;
+
+			writer.WriteLine(Group);
+			Field("Type", type);
+			Field("Name", Path.GetFileNameWithoutExtension(link));
+			Field("Comment", description);
+			if (icon.Length != 0)
+				Field("Icon", Path.GetFullPath(icon));
+
+			if (type == "Application")
+			{
+				var exec = AppendExecArgument(new StringBuilder(), Path.GetFullPath(target));
+				foreach (var arg in Arguments(args, desktop: false))
+					_ = AppendExecArgument(exec.Append(' '), arg);
+				Field("Exec", exec.ToString());
+				Field("Path", workingDir);
+			}
+			else
+			{
+				if (type == "Link")
+					Field("URL", Uri.TryCreate(target, UriKind.Absolute, out var uri) ? uri.AbsoluteUri : new Uri(Path.GetFullPath(target)).AbsoluteUri);
+				else
+					Field("X-Keysharp-Target", Path.GetFullPath(target));
+
+				// Exec and Path are application keys.
+				Field("X-Keysharp-Args", args);
+				Field("X-Keysharp-WorkingDirectory", workingDir);
+			}
+
+			void Field(string key, string value)
+			{
+				if (value.Length == 0)
+					return;
+				writer.Write(key);
+				writer.Write('=');
+				writer.WriteLine(Escape(value));
+			}
+		}
+
+		// Desktop Exec accepts shell-style quotes and escapes. Script Args follows ProcessStartInfo.Arguments on Unix.
+		private static IEnumerable<string> Arguments(string text, bool desktop)
+		{
+			var arg = new StringBuilder();
+			var i = 0;
+			while (i < text.Length)
+			{
+				if (IsSeparator(text[i]))
+				{
+					i++;
+					continue;
+				}
+
+				var quote = '\0';
+				while (i < text.Length && (quote != '\0' || !IsSeparator(text[i])))
+				{
+					var c = text[i++];
+					if (!desktop && c == '\\')
+					{
+						var start = i - 1;
+						while (i < text.Length && text[i] == '\\')
+							i++;
+						var count = i - start;
+						var beforeQuote = i < text.Length && text[i] == '"';
+						_ = arg.Append('\\', beforeQuote ? count / 2 : count);
+						if (beforeQuote && count % 2 != 0)
+							_ = arg.Append(text[i++]);
+					}
+					else if (quote == '\0' && (c == '"' || desktop && c == '\''))
+						quote = c;
+					else if (quote != '\0' && c == quote)
+					{
+						if (!desktop && i < text.Length && text[i] == '"')
+							_ = arg.Append(text[i++]);
+						else
+							quote = '\0';
+					}
+					else if (desktop && i < text.Length && IsExecEscape(c, text[i], quote))
+						_ = arg.Append(text[i++]);
+					else
+						_ = arg.Append(c);
+				}
+				yield return arg.ToString();
+				_ = arg.Clear();
+			}
+
+			bool IsSeparator(char c) => c is ' ' or '\t' || desktop && c == '\n';
+
+			static bool IsExecEscape(char c, char next, char quote) => c switch
+			{
+				'%' => next == '%',
+				'\\' => quote == '\0' || quote == '"' && next is '"' or '`' or '$' or '\\',
+				_ => false,
+			};
+		}
+
+		private static string JoinArguments(IEnumerator<string> args)
+		{
+			var result = new StringBuilder();
+			while (args.MoveNext())
+			{
+				if (result.Length != 0)
+					_ = result.Append(' ');
+				var arg = args.Current;
+				if (arg.Length > 0 && !arg.Any(c => char.IsWhiteSpace(c) || c == '"'))
+				{
+					_ = result.Append(arg);
+					continue;
+				}
+
+				// Backslashes double before the closing quote or an embedded quote.
+				_ = result.Append('"');
+				var slashes = 0;
+				foreach (var c in arg)
+				{
+					if (c == '\\')
+					{
+						slashes++;
+						continue;
+					}
+					_ = result.Append('\\', c == '"' ? slashes * 2 + 1 : slashes).Append(c);
+					slashes = 0;
+				}
+				_ = result.Append('\\', slashes * 2).Append('"');
+			}
+			return result.ToString();
+		}
+
+		private static StringBuilder AppendExecArgument(StringBuilder sb, string arg)
+		{
+			if (arg.Length != 0 && arg.AsSpan().IndexOfAny(execReserved) < 0)
+				return sb.Append(arg.Replace("%", "%%"));
+
+			_ = sb.Append('"');
+			foreach (var c in arg)
+			{
+				if (c == '%')
+					_ = sb.Append('%');
+				else if (c is '"' or '`' or '$' or '\\')
+					_ = sb.Append('\\');
+
+				_ = sb.Append(c);
+			}
+
+			return sb.Append('"');
+		}
+
+		private static string Escape(string value)
+		{
+			if (!value.StartsWith(' ') && !value.EndsWith(' ') && value.AsSpan().IndexOfAny("\\\n\t\r") < 0)
+				return value;
+
+			var escaped = value.Replace("\\", @"\\").Replace("\n", @"\n").Replace("\t", @"\t").Replace("\r", @"\r");
+			// Escaping the outermost space protects the entire run from trimming.
+			if (escaped.StartsWith(' '))
+				escaped = string.Concat(@"\s", escaped.AsSpan(1));
+			if (escaped.EndsWith(' '))
+				escaped = string.Concat(escaped.AsSpan(0, escaped.Length - 1), @"\s");
+			return escaped;
+		}
+
+		private static string Unescape(ReadOnlySpan<char> value)
+		{
+			if (value.IndexOf('\\') < 0)
+				return value.ToString();
+
+			var sb = new StringBuilder(value.Length);
+
+			for (var i = 0; i < value.Length; i++)
+			{
+				var c = value[i];
+
+				// An unknown escape is kept as written.
+				if (c == '\\' && i + 1 < value.Length && value[i + 1] is 's' or 'n' or 't' or 'r' or '\\')
+					c = value[++i] switch { 's' => ' ', 'n' => '\n', 't' => '\t', 'r' => '\r', _ => '\\' };
+
+				_ = sb.Append(c);
+			}
+
+			return sb.ToString();
 		}
 	}
 #endif

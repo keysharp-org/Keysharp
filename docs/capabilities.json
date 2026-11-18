@@ -5279,7 +5279,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Windows creates .lnk files. Linux and macOS create symbolic links or freedesktop .desktop launchers; Windows-only icon-number, hotkey, and run-state metadata is not represented, and macOS aliases are not created.",
+                     "notes":  "Windows creates .lnk files. Linux/macOS create symlinks or Desktop Entries, replacing existing links without modifying their targets. Windows-only icon numbers, hotkeys and run states, and macOS aliases, are unsupported.",
                      "tested-by":  "file-filecreateshortcut.ahk"
                  },
                  {
@@ -5345,7 +5345,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Windows reads .lnk metadata and reports a blank icon number when the shortcut has no icon location. Linux and macOS read symbolic links or freedesktop .desktop launchers; Windows-only icon-number and run-state metadata is unavailable, and argument extraction from .desktop Exec fields is approximate.",
+                     "notes":  "Windows reads .lnk metadata. Linux/macOS read symlinks (including dangling links) and Desktop Entries, returning Exec arguments in Windows command-line form and Type as OutType. Link entries return URLs or local paths. Other files raise OSError.",
                      "tested-by":  "file-filegetshortcut.ahk"
                  },
                  {
@@ -5378,7 +5378,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Retrieves the datetime stamp of a file or folder.",
+                     "notes":  "Returns a file/folder timestamp. Blank WhichTime selects M; missing paths raise OSError.",
                      "tested-by":  "file-filegettime.ahk"
                  },
                  {
@@ -5389,7 +5389,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Retrieves the version of a file. Version metadata availability differs by platform file formats.",
+                     "notes":  "Returns a.b.c.d or raises OSError if absent. Windows reads version resources; Linux/macOS read .NET file versions. macOS also reads bundle versions from Info.plist.",
                      "tested-by":  "file-filegetversion.ahk"
                  },
                  {
@@ -5645,7 +5645,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "partial",
-                     "notes":  "Windows uses the recycle bin and Linux uses the freedesktop Trash through GIO. macOS currently moves only to the user ~/.Trash folder, without per-volume trash or Finder Put Back metadata.",
+                     "notes":  "Uses Windows recycle bins, Linux GIO and macOS per-volume system trash. macOS behavior is unverified.",
                      "tested-by":  "file-filerecycle.ahk"
                  },
                  {
@@ -5656,7 +5656,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "partial",
-                     "notes":  "Windows empties the recycle bin and Linux empties the freedesktop Trash through GIO. Linux requires the gio tool, GVfs trash backend and a session D-Bus connection; these are optional feature prerequisites installed separately (libglib2.0-bin and gvfs on Debian/Ubuntu). macOS currently empties only the user ~/.Trash folder, not per-volume trash folders.",
+                     "notes":  "Windows empties recycle bins. On Linux/macOS, a path selects its volume's user trash; omission selects all volumes. Missing paths raise OSError. Linux's all-volume form requires gio, GVfs and session D-Bus; macOS is unverified.",
                      "tested-by":  "file-filerecycleempty.ahk"
                  },
                  {
@@ -5678,7 +5678,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Changes the attributes of one or more files or folders. Wildcards are supported.",
+                     "notes":  "Changes file/folder attributes. Mode accepts F/V, D/K and R, spaces and tabs; other characters raise ValueError.",
                      "tested-by":  "file-filesetattrib.ahk"
                  },
                  {
@@ -5686,10 +5686,10 @@
                      "feature":  "FileSetTime()",
                      "syntax":  "FileSetTime(\"20200101131415\", \"./DirCopy2/file1.txt\", \u0027m\u0027)",
                      "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
                      "macos":  "full",
-                     "notes":  "Changes the datetime stamp of one or more files or folders. Wildcards are supported.",
+                     "notes":  "Changes file/folder timestamps, with wildcards. Blank WhichTime selects M; invalid letters raise ValueError. Linux cannot set creation time (C); each matching item counts as a failure. Mode accepts F/V, D/K and R, spaces and tabs.",
                      "tested-by":  "file-filesettime.ahk"
                  },
                  {
@@ -7851,7 +7851,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Language/runtime capability."
+                     "notes":  "Enumerates matching files/folders. Mode accepts F/V, D/K and R, spaces and tabs; other characters raise ValueError.",
+                     "tested-by":  "flow-loop-files.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -7882,8 +7883,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Lists files and folders at a location, matching a specified pattern, optionally recursing.",
-                     "tested-by":  "ControlTests/listview_bug_report.ahk"
+                     "notes":  "Enumerates matching files/folders. Mode accepts F/V, D/K and R, spaces and tabs; other characters raise ValueError.",
+                     "tested-by":  "flow-loop-files.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -7893,8 +7894,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Enumerates files/folders matching a pattern.",
-                     "tested-by":  "ControlTests/listview_bug_report.ahk"
+                     "notes":  "Enumerates matching files/folders. Mode accepts F/V, D/K and R, spaces and tabs; other characters raise ValueError.",
+                     "tested-by":  "flow-loop-files.ahk"
                  },
                  {
                      "category":  "Flow/Expressions",
@@ -7926,7 +7927,7 @@
                      "linux_x11":  "unsupported",
                      "linux_wayland":  "unsupported",
                      "macos":  "unsupported",
-                     "notes":  "Reads through registry keys and values, optionally recursive. Additionally supports HKEY_PERFORMANCE_DATA, and an accessor A_LoopRegValue to get the values. Supports data types except the following, which will return UNKNOWN: REG_LINK, REG_RESOURCE_LIST, REG_FULL_RESOURCE_DESCRIPTOR, REG_RESOURCE_REQUIREMENTS_LIST, REG_DWORD_BIG_ENDIAN.",
+                     "notes":  "Reads through registry keys and values, optionally recursive. Additionally supports HKEY_PERFORMANCE_DATA, and an accessor A_LoopRegValue to get the values. Supports data types except the following, which will return UNKNOWN: REG_LINK, REG_RESOURCE_LIST, REG_FULL_RESOURCE_DESCRIPTOR, REG_RESOURCE_REQUIREMENTS_LIST, REG_DWORD_BIG_ENDIAN. Mode rejects characters outside K/V/R/D/F, spaces and tabs.",
                      "tested-by":  "flow-loop-reg.ahk"
                  },
                  {
