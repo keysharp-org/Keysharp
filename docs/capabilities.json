@@ -5995,8 +5995,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Adds a control to the GUI. The ActiveX and Custom control types are Win32-only and raise a ValueError on Linux and macOS, where a ListView view other than Report (+Icon, +IconSmall, +Tile, +List) raises UnsupportedError and keeps the Report view if continued. Adding a WebView on Linux fails unless WebKitGTK is installed. UpDown attaches to a preceding Edit; horizontal arrows are Windows-only. Windows supports -Theme for native-painted controls; other platforms ignore it.",
-                     "tested-by":  "ControlTests/control_add_delete_item.ahk"
+                     "notes":  "Adds a control to the GUI. The ActiveX and Custom control types are Win32-only and raise a ValueError on Linux and macOS, where a ListView view other than Report (+Icon, +IconSmall, +Tile, +List) raises UnsupportedError and keeps the Report view if continued. Adding a WebView on Linux fails unless WebKitGTK is installed. UpDown attaches to a preceding Edit; horizontal arrows are Windows-only. Windows supports -Theme for native-painted controls; other platforms ignore it. Tab positions use GUI client coordinates. On Windows, Progress uses native rendering until color or Smooth options require classic rendering. Linux and macOS draw Progress controls directly.",
+                     "tested-by":  "GuiTests.GuiWindow"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -6119,7 +6119,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Gets the control position and size."
+                     "notes":  "Gets the control position and size. Coordinates are relative to the GUI client area, including controls in tabs.",
+                     "tested-by":  "GuiTests.WindowFunctions"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -6179,7 +6180,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Registers a control event callback."
+                     "notes":  "Registers a control event callback. On Windows, Click/DoubleClick handlers enable mouse hit testing on Text and Picture controls.",
+                     "tested-by":  "GuiTests.WindowFunctions"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -6211,7 +6213,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Sets options for the control. On Linux and macOS, changing a ListView to a view other than Report (+Icon, +IconSmall, +Tile, +List) raises UnsupportedError and keeps the Report view if continued. Raw Win32 style options (+0x..., +E0x...) have no portable equivalent and are ignored, as is +/-Theme, as in AutoHotkey."
+                     "notes":  "Sets options for the control. On Linux and macOS, changing a ListView to a view other than Report (+Icon, +IconSmall, +Tile, +List) raises UnsupportedError and keeps the Report view if continued. Raw Win32 style options (+0x..., +E0x...) have no portable equivalent and are ignored, as is +/-Theme, as in AutoHotkey. Progress color, Smooth and range options can be changed after creation.",
+                     "tested-by":  "GuiTests.GuiWindow"
                  },
                  {
                      "category":  "Windowing/GUI",

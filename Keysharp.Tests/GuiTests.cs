@@ -6,6 +6,36 @@ public class GuiTests : TestRunner
 	private const string MsgBoxTitle = "this is a sample title";
 
 #if WINDOWS
+
+	[TestCase(false), TestCase(true), Category("Gui"), Apartment(ApartmentState.STA)]
+	public void GroupBoxCaptionRepaint(bool imageBackground)
+	{
+		using var tile = new Bitmap(2, 2);
+		tile.SetPixel(0, 0, Color.Blue);
+		tile.SetPixel(1, 0, Color.Lime);
+		tile.SetPixel(0, 1, Color.Yellow);
+		tile.SetPixel(1, 1, Color.White);
+		using var parent = new System.Windows.Forms.Panel { Size = new Size(240, 120), BackColor = Color.Blue };
+		if (imageBackground)
+			parent.BackgroundImage = tile;
+		using var group = new KeysharpGroupBox { Bounds = new Rectangle(7, 9, 180, 80), BackColor = Color.Red, Text = "A much longer caption to clear" };
+		parent.Controls.Add(group);
+		using var actual = new Bitmap(group.Width, group.Height);
+		using var expected = new Bitmap(group.Width, group.Height);
+		using (var graphics = Graphics.FromImage(actual)) graphics.Clear(Color.Magenta);
+		using (var graphics = Graphics.FromImage(expected)) graphics.Clear(Color.Magenta);
+
+		group.DrawToBitmap(actual, group.ClientRectangle);
+		group.Text = "Short";
+		group.DrawToBitmap(actual, group.ClientRectangle);
+		group.DrawToBitmap(expected, group.ClientRectangle);
+		for (var y = 0; y < group.Font.Height; y++)
+			for (var x = 0; x < group.Width; x++)
+				Assert.That(actual.GetPixel(x, y), Is.EqualTo(expected.GetPixel(x, y)), $"caption pixel {x},{y}");
+		Assert.That(actual.GetPixel(group.Width - 3, 0).ToArgb(),
+			Is.EqualTo((imageBackground ? tile.GetPixel((group.Left + group.Width - 3) % 2, group.Top % 2) : Color.Blue).ToArgb()));
+	}
+
 	[TestCase(0), TestCase(1), TestCase(2), Category("Gui"), Apartment(ApartmentState.STA)]
 	public void HwndCriterionDoesNotWaitForUi(int getterKind)
 	{
@@ -1914,7 +1944,7 @@ public class GuiTests : TestRunner
 			Assert.That(button.Ctrl.Handle, Is.EqualTo(buttonHwnd), "a moved control keeps its window");
 			Assert.That(WindowsAPI.GetParent(buttonHwnd), Is.EqualTo(gui.form.ContentContainer.Handle));
 			Assert.That(gui.form.ContentContainer.Top, Is.EqualTo(menu.MenuStrip.Bottom), "the content starts below the menu bar");
-			Assert.Less(gui.form.ContentContainer.Controls.GetChildIndex(edit.Ctrl), gui.form.ContentContainer.Controls.GetChildIndex(button.Ctrl), "the Z order is kept");
+			Assert.Less(gui.form.ContentContainer.Controls.GetChildIndex(button.Ctrl), gui.form.ContentContainer.Controls.GetChildIndex(edit.Ctrl), "the Z order is kept");
 
 			var y = new VarRef(null);
 			_ = button.GetPos(null, y, null, null);

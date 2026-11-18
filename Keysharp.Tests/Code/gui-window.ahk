@@ -668,6 +668,51 @@ buddyUpDown.Value := 5
 AssertEq(buddyEdit.Value, "5", A_LineNumber)
 buddyGui.Destroy()
 
+; A Section inside a radio-group panel stays relative to its enclosing GroupBox.
+sectionGui := Gui("-DPIScale")
+sectionBox := sectionGui.AddGroupBox("x100 y80 w240 h160")
+sectionGui.UseGroup(sectionBox)
+sectionRadio := sectionGui.AddRadio("x30 y40 w80 h20 Section", "First")
+sectionNext := sectionGui.AddRadio("xs ys+25 w80 h20", "Second")
+sectionRadio.GetPos(&sectionX, &sectionY)
+sectionNext.GetPos(&nextX, &nextY)
+AssertEq(nextX, sectionX, A_LineNumber)
+AssertEq(nextY, sectionY + 25, A_LineNumber)
+sectionGui.Destroy()
+
+#if LINUX || OSX
+; Range changes and assignments clamp the progress value.
+rangeGui := Gui()
+rangeBar := rangeGui.AddProgress("w100 Range150-200", 175)
+AssertEq(rangeBar.Value, 175, A_LineNumber)
+rangeBar.Opt("Range0-50")
+AssertEq(rangeBar.Value, 50, A_LineNumber)
+rangeBar.Value := 10
+rangeBar.Opt("Range20-100")
+AssertEq(rangeBar.Value, 20, A_LineNumber)
+rangeBar.Opt("cRed")
+rangeBar.Value := 200
+AssertEq(rangeBar.Value, 100, A_LineNumber)
+rangeGui.Destroy()
+
+; Tab headers can shift controls at first show; relative positions and the next control remain consistent.
+tabGui := Gui("-DPIScale")
+coordinateTab := tabGui.AddTab3("x10 y10 w220 h160", ["Page"])
+pageFirst := tabGui.AddText("x30 y50 w60 h20", "First")
+pageNext := tabGui.AddText("xp+15 yp+25 w60 h20", "Next")
+tabGui.Show("NoActivate")
+pageFirst.GetPos(&pageX, &pageY)
+pageNext.GetPos(&pageNextX, &pageNextY)
+AssertEq(pageNextX - pageX, 15, A_LineNumber)
+AssertEq(pageNextY - pageY, 25, A_LineNumber)
+coordinateTab.UseTab()
+afterPage := tabGui.AddText("xp yp+30 w60 h20", "After")
+afterPage.GetPos(&afterX, &afterY)
+AssertEq(afterX, pageNextX, A_LineNumber)
+AssertEq(afterY, pageNextY + 30, A_LineNumber)
+tabGui.Destroy()
+#endif
+
 ; Theme is a control option as well as a window one, and the window's sets the default for controls added after
 ; it. On Windows -Theme takes the visual style off the control; elsewhere it is accepted and ignored.
 themeGui := Gui("-Theme")
@@ -679,6 +724,41 @@ AssertEq(DllCall("uxtheme\GetWindowTheme", "Ptr", themeSlider.Hwnd, "Ptr"), 0, A
 AssertEq(themeSlider.Type, "Slider", A_LineNumber)
 #endif
 themeGui.Destroy()
+
+#if WINDOWS
+; A Progress keeps its visual style, and ignores the window's text color, until c, Background or Smooth asks for
+; something the style cannot show. It then draws in the classic style, with the static edge that brings, in the
+; colors it was given. Opt does the same later and the style does not come back, as in AutoHotkey.
+#CSharp
+public static long ProgressDefaultColor(bool Background) =>
+    System.Windows.Forms.Application.IsDarkModeEnabled
+        ? (uint)System.Drawing.ColorTranslator.ToWin32(Background ? System.Drawing.SystemColors.Window : System.Drawing.SystemColors.Highlight)
+        : 0xFF000000L;
+#EndCSharp
+PBM_GETBKCOLOR := 0x40E, PBM_GETBARCOLOR := 0x40F, CLR_DEFAULT := 0xFF000000, WS_EX_STATICEDGE := 0x20000
+barDefault := ProgressDefaultColor(false), backDefault := ProgressDefaultColor(true)
+progressGui := Gui()
+progressGui.SetFont("cGreen")
+plainBar := progressGui.AddProgress("w100", 50)
+colorBar := progressGui.AddProgress("w100 cRed BackgroundBlue", 50)
+smoothBar := progressGui.AddProgress("w100 Smooth", 50)
+progressGui.Show("NoActivate")
+AssertEq(SendMessage(PBM_GETBARCOLOR, 0, 0, plainBar), barDefault, A_LineNumber)
+AssertEq(ControlGetExStyle(plainBar) & WS_EX_STATICEDGE, barDefault == CLR_DEFAULT ? 0 : WS_EX_STATICEDGE, A_LineNumber)
+AssertEq(SendMessage(PBM_GETBARCOLOR, 0, 0, colorBar), 0x0000FF, A_LineNumber)
+AssertEq(SendMessage(PBM_GETBKCOLOR, 0, 0, colorBar), 0xFF0000, A_LineNumber)
+AssertEq(ControlGetExStyle(colorBar) & WS_EX_STATICEDGE, WS_EX_STATICEDGE, A_LineNumber)
+AssertEq(SendMessage(PBM_GETBARCOLOR, 0, 0, smoothBar), barDefault, A_LineNumber)
+AssertEq(ControlGetExStyle(smoothBar) & WS_EX_STATICEDGE, WS_EX_STATICEDGE, A_LineNumber)
+plainBar.Opt("cRed")
+AssertEq(SendMessage(PBM_GETBARCOLOR, 0, 0, plainBar), 0x0000FF, A_LineNumber)
+AssertEq(ControlGetExStyle(plainBar) & WS_EX_STATICEDGE, WS_EX_STATICEDGE, A_LineNumber)
+colorBar.Opt("cDefault BackgroundDefault")
+AssertEq(SendMessage(PBM_GETBARCOLOR, 0, 0, colorBar), barDefault, A_LineNumber)
+AssertEq(SendMessage(PBM_GETBKCOLOR, 0, 0, colorBar), backDefault, A_LineNumber)
+AssertEq(ControlGetExStyle(colorBar) & WS_EX_STATICEDGE, WS_EX_STATICEDGE, A_LineNumber)
+progressGui.Destroy()
+#endif
 
 ; Type is AutoHotkey's name for the control type, whichever spelling was given to Add, and Opt still applies the
 ; options of that type.

@@ -1182,22 +1182,21 @@ namespace Keysharp.Internals.Images
 		}
 
 		/// <summary>
-		/// Copies the bitmap a handle names. On Windows a 32bpp DIB section, the kind LoadPicture and Image.ToBitmap
-		/// hand out, is read with its premultiplied alpha, unless no pixel has any: GDI drawing leaves the alpha bytes
-		/// zero, so such a section is opaque. Any other bitmap goes through FromHbitmap, which reads no alpha.
+		/// Copies the bitmap a handle names. On Windows a 32bpp bitmap, whether a DIB section like those LoadPicture
+		/// and Image.ToBitmap hand out or a compatible bitmap such as CopyImage makes, is read with its premultiplied
+		/// alpha, unless no pixel has any: GDI drawing leaves the alpha bytes zero, so such a bitmap is opaque. Any
+		/// other bitmap goes through FromHbitmap, which reads no alpha.
 		/// </summary>
 		internal static Bitmap GetBitmapFromHBitmap(nint nativeHBitmap)
 		{
 #if WINDOWS
-			var size = Marshal.SizeOf<DIBSECTION>();
-
-			if (WindowsAPI.GetObject(nativeHBitmap, size, out var dib) == size && dib.bmBitsPixel == 32 && dib.bmBits != 0)
+			//A DIB section fills the whole structure, and a compatible bitmap only its leading BITMAP part.
+			if (WindowsAPI.GetObject(nativeHBitmap, Marshal.SizeOf<DIBSECTION>(), out var dib) > 0 && dib.bmBitsPixel == 32)
 			{
 				int w = dib.bmWidth, h = dib.bmHeight;
-				_ = WindowsAPI.GdiFlush();//GDI drawing into the section may still be batched.
-				var format = HasAlpha(dib.bmBits, w * h) ? PixelFormat.Format32bppPArgb : PixelFormat.Format32bppRgb;
-				using var pixels = new Bitmap(w, h, format);
+				_ = WindowsAPI.GdiFlush();//GDI drawing into a section may still be batched.
 				var rect = new Rectangle(0, 0, w, h);
+				using var pixels = new Bitmap(w, h, PixelFormat.Format32bppPArgb);
 				var dc = WindowsAPI.CreateCompatibleDC(0);
 
 				if (dc == 0)
@@ -1210,12 +1209,14 @@ namespace Keysharp.Internals.Images
 					{
 						biSize = Marshal.SizeOf<BITMAPINFOHEADER>(), biWidth = w, biHeight = -h, biPlanes = 1, biBitCount = 32
 					};
-					var data = pixels.LockBits(rect, ImageLockMode.WriteOnly, format);
+					var data = pixels.LockBits(rect, ImageLockMode.ReadWrite, PixelFormat.Format32bppPArgb);
 
 					try
 					{
 						if (WindowsAPI.GetDIBits(dc, nativeHBitmap, 0, (uint)h, data.Scan0, ref header, 0 /* DIB_RGB_COLORS */) != h)
 							throw new Win32Exception();
+
+						MakeOpaqueUnlessAlpha(data.Scan0, w * h);
 					}
 					finally { pixels.UnlockBits(data); }
 
@@ -1232,15 +1233,16 @@ namespace Keysharp.Internals.Images
 		}
 
 #if WINDOWS
-		private static unsafe bool HasAlpha(nint bits, int pixels)
+		private static unsafe void MakeOpaqueUnlessAlpha(nint bits, int count)
 		{
-			var pixel = (uint*)bits;
+			var pixels = new Span<uint>((void*)bits, count);
 
-			for (var i = 0; i < pixels; i++)
-				if (pixel[i] >> 24 != 0)
-					return true;
+			foreach (var pixel in pixels)
+				if (pixel >> 24 != 0)
+					return;
 
-			return false;
+			foreach (ref var pixel in pixels)
+				pixel |= 0xFF000000;
 		}
 
 		/// <summary>

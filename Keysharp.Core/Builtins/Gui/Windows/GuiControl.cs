@@ -692,6 +692,14 @@ namespace Keysharp.Builtins
 				{
 					if (opts.smooth.HasValue)
 						pb.Style = opts.smooth.IsTrue() ? ProgressBarStyle.Continuous : ProgressBarStyle.Blocks;
+
+					if (opts.nudlow.HasValue)
+						pb.Minimum = opts.nudlow.Value;
+
+					if (opts.nudhigh.HasValue)
+						pb.Maximum = opts.nudhigh.Value;
+
+					pb.ApplyOptions(opts.c, opts.bgcolor);
 				}
 				else if (_control is KeysharpTabControl tc)
 				{

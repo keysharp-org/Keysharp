@@ -162,6 +162,16 @@ namespace Keysharp.Builtins
 				if (KeysharpForm.CheckedHandler(callback, g.form, addRemove, EventArgCount(e), out var i) is not { } del)
 					return DefaultObject;
 
+#if WINDOWS
+				if (i != 0 && e is "click" or "doubleclick")
+				{
+					if (_control is KeysharpLabel label)
+						label.EnableNotify();
+					else if (_control is KeysharpPictureBox picture)
+						picture.EnableNotify();
+				}
+
+#endif
 				if (this is WebView wv && WebView.IsWebViewEvent(e))
 				{
 					wv.ModifyEventHandlers(e, del, i);

@@ -23,7 +23,7 @@ Jump directly to:
 
 Windows has the best feature implementation rate and very high AutoHotkey v2 compatibility. The largest differences are:
 * Object destruction logic, which happens non-deterministically due to C# garbage collection
-* GUI rendering, because WinForms is used as the backend. WinForms uses lazy initialization which means for example that GUIs render blank before they've been showed. Additionally WinForms has some differences concerning Z-ordering of controls and label rendering.
+* GUI rendering, because WinForms is used as the backend. WinForms uses lazy initialization which means for example that GUIs render blank before they've been showed. Additionally WinForms has some differences concerning label rendering.
 
 ### Installing on Windows
 * Download and run the Keysharp installer from the [Releases](https://github.com/keysharp-org/Keysharp/releases) page.
@@ -601,6 +601,7 @@ Controlling another application needs **Automation** permission, granted per tar
 * The size and positioning of some GUI components will be slightly different than AutoHotkey because WinForms uses different defaults.
 	+ There is an additional positioning option `xc` and `yc` which position the control relative to the container. For example inside a tab `xc+10` would position the control 10 pixels from the left side of the tab control.
 	+ GroupBoxes can be used as containers by calling `GuiObj.UseGroup(GroupBox)`, and to exit the group call `GuiObj.UseGroup()`.
+* On Windows, control z-order follows creation order, with the first control on top. Text and Picture controls pass clicks through unless they have `SS_NOTIFY`; GroupBox controls always pass clicks through. Some native classes and styles still differ from AutoHotkey.
 * The class name for statusbar/statusstrip objects created by Keysharp is "WindowsForms10.Window.8.app.0.2b89eaa_r3_ad1". However, for accessing a statusbar created by another, non .NET program, the class name is still "msctls_statusbar321".
 * Menu items, whether shown or not, have no impact on threading.
 * Using the class name with `ClassNN` on .NET controls gives long, version specific names such as "WindowsForms10.Window.8.app.0.2b89eaa_r3_ad1" for a statusbar/statusstrip.
@@ -1535,7 +1536,7 @@ CLR objects and types expose `OnEvent(EventName, Callback, AddRemove := 1)` with
 		+ On Windows, `-Theme` removes visual styles from controls Windows draws itself, while `Button`, `CheckBox`, `Radio` and `GroupBox` keep their themed look. On Linux and macOS the option is accepted and ignored.
 		+ `Gui.Flash()` sets the urgency hint on X11 and bounces the Dock icon once on macOS; it has no effect on Wayland.
 		+ For slider events, the second parameter passed to the event handler will always be `0` because it's not possible to retrieve the method by which the slider was moved in C#.
-		+ Only `Tab3` is supported, no older tab functionality is present.
+		+ Only `Tab3` is supported. Coordinates inside tabs use the window's client area. Tab contents do not contribute to the extents used for automatic placement outside the tab. On Linux and macOS, showing a tab can shift controls added before its frame and header were measured.
 		+ When adding a `ListView`, the `Count` option is not supported because C# can't preallocate memory for a `ListView`.
 	+ Removed/reduced functions:
 		+ `LoadPicture()` does not accept a `GDI+` argument as an option.

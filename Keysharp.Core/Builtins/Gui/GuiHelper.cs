@@ -117,7 +117,8 @@ namespace Keysharp.Builtins
 			// WinForms controls mostly don't respond to window messages, so handle some of them here
 			switch (m.Msg)
 			{
-				case WindowsAPI.PBM_SETBKCOLOR or WindowsAPI.EM_SETBKGNDCOLOR:
+				//A progress bar takes its colors natively.
+				case WindowsAPI.PBM_SETBKCOLOR or WindowsAPI.EM_SETBKGNDCOLOR when control is not KeysharpProgressBar:
 					int colorValue = m.LParam.ToInt32();
 					Color requestedColor = Color.FromArgb(
 											   (colorValue & 0xFF),

@@ -1104,15 +1104,17 @@ candygui := Gui("-DPIScale +E0x02080000", "Candy Progress")
 candygui.OnEvent("Close", CloseCandy)
 candygui.BackColor := "FFCC00"
 
-CandyProgressBar := candygui.Add("Progress", "xc+15 yc+30 w436 h36 Smooth BackgroundSilver")
+; WS_EX_COMPOSITED (0x02000000) paints controls bottom to top, and the first control created is the top one, as in
+; AutoHotkey, so the text and the pictures are created before the bar they overlay.
+CandyText := candygui.Add("Text" ,"xc+15 yc+30 w436 h40 Center Middle BackgroundTrans")
+CandyText.SetFont("cFFFFFF")
 
 ; These currently don't work on linux.
 Icon1 := candygui.Add("Picture", "xc+15  yc+30 w18  h36 BackgroundTrans", A_ScriptDir . A_DirSeparator . "Icon1.png")
 Icon2 := candygui.Add("Picture", "xc+33  yc+30 w400 h36 BackgroundTrans", A_ScriptDir . A_DirSeparator . "Icon2.png")
 Icon3 := candygui.Add("Picture", "xc+433 yc+30 w18  h36 BackgroundTrans", A_ScriptDir . A_DirSeparator . "Icon3.png")
 
-CandyText := candygui.Add("Text" ,"xc+15 yc+30 w436 h40 Center Middle BackgroundTrans")
-CandyText.SetFont("cFFFFFF")
+CandyProgressBar := candygui.Add("Progress", "xc+15 yc+30 w436 h36 Smooth BackgroundSilver")
 
 CandyTimerFunc := CandyTimer
 

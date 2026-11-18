@@ -15,6 +15,28 @@ namespace Keysharp.Builtins
 		}
 	}
 
+	//The radio-group container must not clip its siblings or intercept clicks between its buttons.
+	internal sealed class KeysharpRadioPanel : Panel
+	{
+		protected override CreateParams CreateParams
+		{
+			get
+			{
+				var cp = base.CreateParams;
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
+				return cp;
+			}
+		}
+
+		protected override void WndProc(ref Message m)
+		{
+			if (m.Msg == WindowsAPI.WM_NCHITTEST)
+				m.Result = WindowsAPI.HTTRANSPARENT;
+			else
+				base.WndProc(ref m);
+		}
+	}
+
 	public class KeysharpButton : Button
 	{
 		private readonly int addStyle, removeStyle;
@@ -25,6 +47,8 @@ namespace Keysharp.Builtins
 			get
 			{
 				var cp = base.CreateParams;
+				//Allow later siblings to paint over earlier controls, as in AutoHotkey.
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= addStyle;
 				cp.Style &= ~removeStyle;
 				cp.ExStyle |= addExStyle;
@@ -63,6 +87,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				var cp = base.CreateParams;
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= addStyle;
 				cp.Style &= ~removeStyle;
 				cp.ExStyle |= addExStyle;
@@ -109,6 +134,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				var cp = base.CreateParams;
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= addStyle;
 				cp.Style &= ~removeStyle;
 				cp.ExStyle |= addExStyle;
@@ -142,6 +168,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				var cp = base.CreateParams;
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= addStyle;
 				cp.Style &= ~removeStyle;
 				cp.ExStyle |= addExStyle;
@@ -286,6 +313,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				var cp = base.CreateParams;
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= addStyle;
 				cp.Style &= ~removeStyle;
 				cp.ExStyle |= addExStyle;
@@ -328,6 +356,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				var cp = base.CreateParams;
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= addStyle;
 				cp.Style &= ~removeStyle;
 				cp.ExStyle |= addExStyle;
@@ -344,10 +373,72 @@ namespace Keysharp.Builtins
 			removeExStyle = _removeExStyle;
 		}
 
+		protected override void OnPaintBackground(PaintEventArgs e)
+		{
+			//A group holding its controls as children paints its whole client area, which no other control shares.
+			if (HasChildren)
+			{
+				base.OnPaintBackground(e);
+				return;
+			}
+
+			if (Parent is { } parent)
+			{
+				var state = e.Graphics.Save();
+				try
+				{
+					e.Graphics.SetClip(new Rectangle(0, 0, Width, Font.Height), CombineMode.Intersect);
+					e.Graphics.TranslateTransform(-Left, -Top);
+					using var background = new PaintEventArgs(e.Graphics, new Rectangle(Left, Top, Width, Font.Height));
+					InvokePaintBackground(parent, background);
+				}
+				finally { e.Graphics.Restore(state); }
+			}
+
+			//As with BS_GROUPBOX, only the caption gets a background, so the controls inside the box keep what they
+			//painted and the window's background shows elsewhere. GroupBoxRenderer indents the caption by 8 pixels.
+			if (BackColor.A == 255 && !string.IsNullOrEmpty(Text))
+			{
+				const int indent = 8;
+				var width = TextRenderer.MeasureText(e.Graphics, Text, Font).Width;
+				using var brush = new SolidBrush(BackColor);
+				e.Graphics.FillRectangle(brush, RightToLeft == RightToLeft.Yes ? Width - indent - width : indent, 0, width, Font.Height);
+			}
+		}
+
 		protected override void WndProc(ref Message m)
 		{
-			if (!GuiHelper.CallMessageHandler(this, ref m))
+			if (GuiHelper.CallMessageHandler(this, ref m))
+				return;
+
+			//As BS_GROUPBOX does, so that a click reaches the parent or a control beneath the box.
+			if (m.Msg == WindowsAPI.WM_NCHITTEST)
+				m.Result = WindowsAPI.HTTRANSPARENT;
+			else
 				base.WndProc(ref m);
+		}
+	}
+
+	//Text and Picture pass clicks through until a script enables SS_NOTIFY, directly or through OnEvent.
+	internal static class StaticNotify
+	{
+		internal static bool PassClick(Control control, ref Message m)
+		{
+			if (m.Msg != WindowsAPI.WM_NCHITTEST || (WindowsAPI.GetWindowLongPtr(control.Handle, WindowsAPI.GWL_STYLE) & WindowsAPI.SS_NOTIFY) != 0)
+				return false;
+
+			m.Result = WindowsAPI.HTTRANSPARENT;
+			return true;
+		}
+
+		/// <summary>Adds SS_NOTIFY to the control's window; its CreateParams adds it to any window made later.</summary>
+		internal static void Apply(Control control)
+		{
+			if (control.IsHandleCreated)
+			{
+				var handle = control.Handle;
+				_ = WindowsAPI.SetWindowLongPtr(handle, WindowsAPI.GWL_STYLE, WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_STYLE) | WindowsAPI.SS_NOTIFY);
+			}
 		}
 	}
 
@@ -356,18 +447,30 @@ namespace Keysharp.Builtins
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 		private readonly bool transparentStatic;
+		private bool notify;
 
 		protected override CreateParams CreateParams
 		{
 			get
 			{
 				var cp = base.CreateParams;
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= addStyle;
 				cp.Style &= ~removeStyle;
+
+				if (notify)
+					cp.Style |= WindowsAPI.SS_NOTIFY;
+
 				cp.ExStyle |= addExStyle;
 				cp.ExStyle &= ~removeExStyle;
 				return cp;
 			}
+		}
+
+		internal void EnableNotify()
+		{
+			notify = true;
+			StaticNotify.Apply(this);
 		}
 
 		public KeysharpLabel(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
@@ -408,7 +511,7 @@ namespace Keysharp.Builtins
 
 		protected override void WndProc(ref Message m)
 		{
-			if (!GuiHelper.CallMessageHandler(this, ref m))
+			if (!GuiHelper.CallMessageHandler(this, ref m) && !StaticNotify.PassClick(this, ref m))
 				base.WndProc(ref m);
 		}
 	}
@@ -424,6 +527,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				var cp = base.CreateParams;
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= addStyle;
 				cp.Style &= ~removeStyle;
 				cp.ExStyle |= addExStyle;
@@ -483,6 +587,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				var cp = base.CreateParams;
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= addStyle;
 				cp.Style &= ~removeStyle;
 				cp.ExStyle |= addExStyle;
@@ -519,6 +624,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				var cp = base.CreateParams;
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= addStyle;
 				cp.Style &= ~removeStyle;
 				cp.ExStyle |= addExStyle;
@@ -671,6 +777,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				var cp = base.CreateParams;
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= addStyle;
 				cp.Style &= ~removeStyle;
 				cp.ExStyle |= addExStyle;
@@ -704,6 +811,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				var cp = base.CreateParams;
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= addStyle;
 				cp.Style &= ~removeStyle;
 				cp.ExStyle |= addExStyle;
@@ -752,6 +860,7 @@ namespace Keysharp.Builtins
 			{
 				var cp = base.CreateParams;
 				cp.ClassName = "msctls_updown32";
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= UDS_SETBUDDYINT | UDS_ALIGNRIGHT | UDS_ARROWKEYS | addStyle;
 				cp.Style &= ~removeStyle;
 				//The buddy is linked by message, since UDS_AUTOBUDDY takes whichever window precedes this one in the
@@ -937,11 +1046,14 @@ namespace Keysharp.Builtins
 		internal static void Strip(Control control)
 		{
 			//A re-created window comes back themed.
-			control.HandleCreated += (_, _) => _ = SetWindowTheme(control.Handle, "", "");
+			control.HandleCreated += (_, _) => StripWindow(control.Handle);
 
 			if (control.IsHandleCreated)
-				_ = SetWindowTheme(control.Handle, "", "");
+				StripWindow(control.Handle);
 		}
+
+		/// <summary>Takes the theme off a window once, for a control which decides that each time its window is made.</summary>
+		internal static void StripWindow(nint handle) => _ = SetWindowTheme(handle, "", "");
 	}
 
 	/// <summary>
@@ -953,6 +1065,7 @@ namespace Keysharp.Builtins
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 		private readonly InterpolationMode interpolationMode = InterpolationMode.NearestNeighbor;
+		private bool notify;
 
 		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
 		public string Filename { get; private set; }
@@ -962,12 +1075,23 @@ namespace Keysharp.Builtins
 			get
 			{
 				var cp = base.CreateParams;
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= addStyle;
 				cp.Style &= ~removeStyle;
+
+				if (notify)
+					cp.Style |= WindowsAPI.SS_NOTIFY;
+
 				cp.ExStyle |= addExStyle;
 				cp.ExStyle &= ~removeExStyle;
 				return cp;
 			}
+		}
+
+		internal void EnableNotify()
+		{
+			notify = true;
+			StaticNotify.Apply(this);
 		}
 
 		public KeysharpPictureBox(string filename, int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
@@ -994,21 +1118,18 @@ namespace Keysharp.Builtins
 
 		protected override void WndProc(ref Message m)
 		{
-			if (!GuiHelper.CallMessageHandler(this, ref m))
+			if (!GuiHelper.CallMessageHandler(this, ref m) && !StaticNotify.PassClick(this, ref m))
 				base.WndProc(ref m);
 		}
 	}
 
-	/// <summary>
-	/// Derivation to allow for custom colors.
-	/// Gotten from: https://stackoverflow.com/questions/778678/how-to-change-the-color-of-progressbar-in-c-sharp-net-3-5
-	/// and: https://stackoverflow.com/questions/15795205/how-to-make-a-vertical-progress-bar
-	/// </summary>
+	/// <summary>A native progress bar, themed until a color or Smooth requires the classic style.</summary>
 	public class KeysharpProgressBar : ProgressBar
 	{
-		private readonly bool customColors = false;
-		private readonly int addStyle, removeStyle;
-		private readonly int addExStyle, removeExStyle;
+		private const int CLR_DEFAULT = unchecked((int)0xFF000000), PBM_SETBARCOLOR = 0x0409;
+		private readonly int addStyle, removeStyle, addExStyle, removeExStyle;
+		private Color? barColor, backgroundColor;
+		private bool classic, dark, changingTheme;
 
 		internal int AddStyle => addStyle;
 
@@ -1017,6 +1138,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				var cp = base.CreateParams;
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= addStyle;
 				cp.Style &= ~removeStyle;
 				cp.ExStyle |= addExStyle;
@@ -1025,84 +1147,95 @@ namespace Keysharp.Builtins
 			}
 		}
 
-		public KeysharpProgressBar(bool _customColors, int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
+		public KeysharpProgressBar(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
 			addStyle = _addStyle;
 			addExStyle = _addExStyle;
 			removeStyle = _removeStyle;
 			removeExStyle = _removeExStyle;
-			customColors = _customColors;
-			SetStyle(ControlStyles.UserPaint, customColors);
-			SetStyle(ControlStyles.OptimizedDoubleBuffer, true);
 		}
 
-		protected override void OnPaint(PaintEventArgs e)
+		internal void ApplyOptions(Color? color, Color? background)
 		{
-			if (customColors)
+			if (color.HasValue)
+				barColor = color.Value == DefaultForeColor ? null : color;
+			if (background.HasValue)
+				backgroundColor = background.Value == DefaultBackColor ? null : background;
+
+			// AutoHotkey keeps the classic style after a color or Smooth option is reset.
+			classic |= barColor.HasValue || backgroundColor.HasValue || Style == ProgressBarStyle.Continuous;
+			if (IsHandleCreated)
 			{
-				const int inset = 1;
-
-				var rect = new Rectangle(0, 0, Width, Height);
-				var scaleFactor = ((double)Value - Minimum) / ((double)Maximum - Minimum);
-				var vert = (AddStyle & 0x04) == 0x04;
-
-				if (ProgressBarRenderer.IsSupported)
-				{
-					if (vert)
-						ProgressBarRenderer.DrawVerticalBar(e.Graphics, rect);
-					else
-						ProgressBarRenderer.DrawHorizontalBar(e.Graphics, rect);
-				}
-
-				var bx = 0;
-				var by = 0;
-				var bw = 0;
-				var bh = 0;
-				var fy = inset;
-
-				if (vert)
-				{
-					rect.Width -= inset * 2;
-					rect.Height = (int)((rect.Height - inset) * scaleFactor);
-					fy = Height - rect.Height - inset;
-					bx = inset;
-					by = inset;
-					bw = rect.Width;
-					bh = fy;
-				}
-				else
-				{
-					rect.Width = (int)((rect.Width - inset) * scaleFactor);
-					rect.Height -= inset * 2;
-					bx = rect.Width + inset;
-					by = inset;
-					bw = Width - rect.Width - inset * 2;
-					bh = rect.Height;
-				}
-
-				if (rect.Width < 0)
-					rect.Width = 0;
-
-				if (rect.Height < 0)
-					rect.Height = 0;
-
-				using var brush = new SolidBrush(ForeColor);
-				e.Graphics.FillRectangle(brush, inset, fy, rect.Width, rect.Height);
-
-				if (bw > 0 && bh > 0)
-				{
-					using var bkgBrush = new SolidBrush(BackColor);
-					e.Graphics.FillRectangle(bkgBrush, bx, by, bw, bh);
-				}
+				StripTheme();
+				RestoreColors();
 			}
-			else
-				base.OnPaint(e);
+		}
+
+		protected override void OnHandleCreated(EventArgs e)
+		{
+			dark = Application.IsDarkModeEnabled;
+			classic |= Style == ProgressBarStyle.Continuous;
+			// Strip before WinForms sets the position, avoiding a themed animation over overlapping controls.
+			StripTheme();
+			base.OnHandleCreated(e);
+			// WinForms registers its own color reset in OnHandleCreated; restore our options after it.
+			SystemEvents.UserPreferenceChanged += RestoreColors;
+			RestoreColors();
+		}
+
+		protected override void OnHandleDestroyed(EventArgs e)
+		{
+			SystemEvents.UserPreferenceChanged -= RestoreColors;
+			base.OnHandleDestroyed(e);
+		}
+
+		protected override void OnForeColorChanged(EventArgs e)
+		{
+			base.OnForeColorChanged(e);
+			RestoreColors();
+		}
+
+		protected override void OnBackColorChanged(EventArgs e)
+		{
+			base.OnBackColorChanged(e);
+			RestoreColors();
+		}
+
+		private void RestoreColors(object sender, UserPreferenceChangedEventArgs e) => RestoreColors();
+
+		// Progress colors come from its own options, rather than the Gui's inherited text and background colors.
+		private void RestoreColors()
+		{
+			if (!IsHandleCreated)
+				return;
+
+			var bar = barColor ?? (dark ? SystemColors.Highlight : (Color?)null);
+			var back = backgroundColor ?? (dark ? SystemColors.Window : (Color?)null);
+			_ = WindowsAPI.SendMessage(Handle, PBM_SETBARCOLOR, 0, bar is { } b ? ColorTranslator.ToWin32(b) : CLR_DEFAULT);
+			_ = WindowsAPI.SendMessage(Handle, WindowsAPI.PBM_SETBKCOLOR, 0, back is { } k ? ColorTranslator.ToWin32(k) : CLR_DEFAULT);
+		}
+
+		private void StripTheme()
+		{
+			if ((!classic && !dark) || changingTheme)
+				return;
+
+			changingTheme = true;
+			try { ControlTheme.StripWindow(Handle); }
+			finally { changingTheme = false; }
 		}
 
 		protected override void WndProc(ref Message m)
 		{
-			if (!GuiHelper.CallMessageHandler(this, ref m))
-				base.WndProc(ref m);
+			if (GuiHelper.CallMessageHandler(this, ref m))
+				return;
+
+			base.WndProc(ref m);
+			if (m.Msg == (int)WindowsAPI.WM_THEMECHANGED && !changingTheme)
+			{
+				StripTheme();
+				RestoreColors();
+			}
 		}
 	}
 
@@ -1116,6 +1249,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				var cp = base.CreateParams;
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= addStyle;
 				cp.Style &= ~removeStyle;
 				cp.ExStyle |= addExStyle;
@@ -1176,6 +1310,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				var cp = base.CreateParams;
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= addStyle;
 				cp.Style &= ~removeStyle;
 				cp.ExStyle |= addExStyle;
@@ -1230,6 +1365,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				var cp = base.CreateParams;
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= addStyle;
 				cp.Style &= ~removeStyle;
 				cp.ExStyle |= addExStyle;
@@ -1450,6 +1586,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				var cp = base.CreateParams;
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= addStyle;
 				cp.Style &= ~removeStyle;
 				cp.ExStyle |= addExStyle;
@@ -1483,6 +1620,7 @@ namespace Keysharp.Builtins
 			get
 			{
 				var cp = base.CreateParams;
+				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
 				cp.Style |= addStyle;
 				cp.Style &= ~removeStyle;
 				cp.ExStyle |= addExStyle;

@@ -306,6 +306,7 @@ namespace Keysharp.Internals.Os.Windows
 		internal const int ES_NUMBER = 0x2000;
 		internal const int CBS_AUTOHSCROLL = 0x0040;
 		internal const int BS_NOTIFY = 0x4000;
+		internal const int SS_NOTIFY = 0x0100;
 		internal const uint TBM_GETTHUMBRECT = WM_USER + 25;
 		internal const uint TBM_SETTHUMBLENGTH = WM_USER + 27;
 		internal const uint TBM_SETTIPSIDE = WM_USER + 31;

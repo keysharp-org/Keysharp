@@ -361,6 +361,91 @@ ControlGetPos(&directX, &directY, , , "Inner", nested)
 AssertEq(directX, innerX + 7, A_LineNumber)
 AssertEq(directY, innerY + 5, A_LineNumber)
 
+; Positions in a tab are the window's client coordinates, as in AutoHotkey, and a control is placed against the one
+; added last anywhere in the window, also after UseTab. The controls of a Tab3 don't count towards the extents an
+; X without a Y goes below. The same checks pass under AutoHotkey.
+tabs := Gui("-DPIScale")
+tabs.MarginX := 10, tabs.MarginY := 6
+tabs.AddButton("x10 y10 w80 h24", "Before")
+tabbed := tabs.AddTab3("x10 y50 w300 h250", ["One", "Two"])
+firstOnPage := tabs.AddText(, "first")
+Pos(ctrl) {
+	ctrl.GetPos(&x, &y, &w, &h)
+	return x "," y
+}
+AssertEq(Pos(tabs.AddButton("x100 y200 w60 h24 Section")), "100,200", A_LineNumber)
+AssertEq(Pos(tabs.AddEdit("xp yp+30 w50 h20")), "100,230", A_LineNumber)
+AssertEq(Pos(tabs.AddButton("x+10 yp w60 h24")), "160,230", A_LineNumber)
+AssertEq(Pos(tabs.AddButton("xs w60 h24")), "100,260", A_LineNumber)
+AssertEq(Pos(tabs.AddButton("xm ym w60 h24")), "10,6", A_LineNumber)
+AssertEq(Pos(tabs.AddButton("x150 w60 h24")), "150,306", A_LineNumber)
+tabbed.UseTab(2)
+secondOnPage := tabs.AddText(, "second")
+AssertEq(Pos(secondOnPage), Pos(firstOnPage), A_LineNumber)
+tabbed.UseTab()
+secondOnPage.GetPos(&secondX, &secondY, , &secondH)
+AssertEq(Pos(tabs.AddButton("w60 h24")), secondX "," (secondY + secondH + 6), A_LineNumber)
+tabs.Destroy()
+
+; Controls keep the z-order they were created in, the first on top, so they are listed and numbered in that order.
+stack := Gui()
+under := stack.AddText("x10 y10 w100 h40", "Under")
+over := stack.AddEdit("x20 y20 w60 h20")
+frame := stack.AddGroupBox("x10 y60 w200 h80", "Frame")
+inside := stack.AddButton("x30 y85 w80 h30", "Inside")
+stack.Show("NoActivate w300 h160")
+hwnds := WinGetControlsHwnd(stack)
+names := WinGetControls(stack)
+for i, ctrl in [under, over, frame, inside] {
+	AssertEq(hwnds[i], ctrl.Hwnd, A_LineNumber)
+	AssertEq(ControlGetClassNN(ctrl), names[i], A_LineNumber)
+}
+second := stack.AddEdit("x120 y20 w60 h20")
+AssertEq(ControlGetClassNN(second), WinGetClass(over) "2", A_LineNumber)
+
+; A Text without SS_NOTIFY and a GroupBox let the mouse through to what is beneath them, such as the Edit over the Text
+; and the Button inside the box. A Click handler adds SS_NOTIFY, as in AutoHotkey, and removing it keeps the style.
+WM_NCHITTEST := 0x84, HTTRANSPARENT := -1, HTCLIENT := 1, SS_NOTIFY := 0x100
+ScreenPoint(ctrl, dx := -1, dy := -1) {
+	WinGetClientPos(&originX, &originY, , , ctrl.Gui)
+	ControlGetPos(&x, &y, &w, &h, ctrl)
+	return ((originX + x + (dx < 0 ? w // 2 : dx)) & 0xFFFF) | (((originY + y + (dy < 0 ? h // 2 : dy)) & 0xFFFF) << 16)
+}
+HitTest(ctrl) => SendMessage(WM_NCHITTEST, 0, ScreenPoint(ctrl), ctrl)
+AssertEq(HitTest(under), HTTRANSPARENT, A_LineNumber)
+AssertEq(HitTest(frame), HTTRANSPARENT, A_LineNumber)
+AssertEq(HitTest(over), HTCLIENT, A_LineNumber)
+AssertEq(HitTest(inside), HTCLIENT, A_LineNumber)
+OnUnderClick(*) {
+}
+under.OnEvent("Click", OnUnderClick)
+Assert(ControlGetStyle(under) & SS_NOTIFY, A_LineNumber)
+AssertEq(HitTest(under), HTCLIENT, A_LineNumber)
+under.OnEvent("Click", OnUnderClick, 0)
+Assert(ControlGetStyle(under) & SS_NOTIFY, A_LineNumber)
+
+; A right-click which passes through a Text still names it to the ContextMenu event, as the window finds the control
+; under the point, also in a window with a menu bar.
+menuTarget := ""
+OnStackMenu(guiObj, ctrl, *) {
+	global menuTarget
+	menuTarget := ctrl
+}
+stack.OnEvent("ContextMenu", OnStackMenu)
+stackMenu := Menu()
+stackMenu.Add("Item", OnOpen)
+stackBar := MenuBar()
+stackBar.Add("File", stackMenu)
+stack.MenuBar := stackBar
+label := stack.AddText("x220 y10 w70 h20", "Label")
+holder := DllCall("GetParent", "Ptr", label.Hwnd, "Ptr")
+SendMessage(0x7B, holder, ScreenPoint(label, 5, 5), holder)   ; WM_CONTEXTMENU
+menuStart := A_TickCount
+while menuTarget == "" && A_TickCount - menuStart < 2000
+	Sleep 10
+AssertEq(menuTarget, label, A_LineNumber)
+stack.Destroy()
+
 ; The process path is a drive path, which ahk_exe matches in full.
 path := WinGetProcessPath(nested)
 AssertEq(path, ProcessGetPath(), A_LineNumber)

@@ -352,11 +352,11 @@ namespace Keysharp.Builtins
 			}
 		}
 
-		//AHK's mSectionX/mSectionY and mMaxExtentRightSection/DownSection, kept as one rectangle per
-		//container: positions here are container-relative (a Tab3 page is its own space, see the tab
-		//display area note in AddControl), so a single running rectangle would mix coordinate spaces
-		//whenever UseTab changes containers.
+		//Sections use GUI coordinates, or GroupBox coordinates when UseGroup selects a container.
 		private readonly Dictionary<Forms.Control, Rectangle> sections = [];
+
+		//AHK's previous control: the last one added anywhere in the window other than a status bar.
+		private Forms.Control prevControl;
 
 		internal StatusStrip StatusStrip { get; set; }
 
@@ -1362,8 +1362,7 @@ namespace Keysharp.Builtins
 
 					bool smooth = opts.smooth.IsTrue();
 
-					var prg = new KeysharpProgressBar(smooth || opts.bgcolor.HasValue || opts.c != Forms.Control.DefaultForeColor,
-													  opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
+					var prg = new KeysharpProgressBar(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 					{
 						Font = Conversions.ConvertFont(form.Font)
 					};
@@ -1387,6 +1386,7 @@ namespace Keysharp.Builtins
 #endif
 
 #if WINDOWS
+					prg.ApplyOptions(opts.c, opts.bgcolor);
 
 					if (opts.vertical && opts.width == int.MinValue && opts.height == int.MinValue)
 					{
@@ -1664,10 +1664,25 @@ namespace Keysharp.Builtins
 				lastControl = LastControl;//Will retrieve the last control in the LastContainer we just assigned.
 			}
 
-			//Both read here because adding a Tab3 moves LastContainer on to its first page mid-add: the
-			//section, like lastControl, belongs to the container this control lands in.
+			//Both read here because adding a Tab3 moves LastContainer on to its first page mid-add.
 			var placementContainer = LastContainer;
-			Rectangle? section = placementContainer != null && sections.TryGetValue(placementContainer, out var sect) ? sect : null;
+			var sectionContainer = SectionContainer(placementContainer);
+			var sectionOffset = LocationIn(placementContainer, sectionContainer);
+			Rectangle? section = sections.TryGetValue(sectionContainer, out var sect)
+				? sect with { X = sect.X - sectionOffset.X, Y = sect.Y - sectionOffset.Y }
+				: null;
+			//Relative positions use the last control added, even across tab pages.
+			var refControl = prevControl is { IsDisposed: false } ? prevControl : lastControl;
+
+			//Outside a radio group or GroupBox container, position against the container itself.
+			for (var outer = refControl?.GetLogicalParent(); outer != null && outer != form; outer = outer.GetLogicalParent())
+				if ((outer is KeysharpGroupBox || outer is Panel and not TabPage) && !IsWithin(placementContainer, outer))
+					refControl = outer;
+
+			//An XC or YC position, which AutoHotkey lacks, keeps to the container for the other coordinate as well.
+			if (refControl is KeysharpGroupBox && IsWithin(placementContainer, refControl)
+				|| opts.xpos == GuiOptions.Positioning.Container || opts.ypos == GuiOptions.Positioning.Container)
+				refControl = lastControl;
 			var isNewRadioGroup = ctrl is KeysharpRadioButton && (lastControl == null || lastControl is not KeysharpRadioButton || opts.group);
 			var isTabControl = ctrl is KeysharpTabControl;
 			var rbContainer = lastControl?.GetLogicalParent() ?? LastContainer;
@@ -1683,9 +1698,19 @@ namespace Keysharp.Builtins
 				&& lastControl.Dock == DockStyle.None
 				&& section == null
 				&& ((!ySpecified && opts.xpos == GuiOptions.Positioning.Section) || (!xSpecified && opts.ypos == GuiOptions.Positioning.Section));
-			(Forms.Control right, Forms.Control bottom) rbContainerMost = needsContainerMostForPositioning && rbContainer != null
-				? rbContainer.RightBottomMost()
-				: (null, null);
+			//Measure before attaching the new control so it does not count itself.
+			var extent = Point.Empty;
+			if (needsContainerMostForPositioning)
+			{
+				if (sectionContainer == form && opts.xpos != GuiOptions.Positioning.Container && opts.ypos != GuiOptions.Positioning.Container)
+					extent = WindowExtent(placementContainer);
+				else if (rbContainer != null)
+				{
+					var (right, bottom) = rbContainer.RightBottomMost();
+					extent = new Point(right == null ? 0 : right.GetLocation().X + right.GetSize().Width,
+									   bottom == null ? 0 : bottom.GetLocation().Y + bottom.GetSize().Height);
+				}
+			}
 			(Forms.Control right, Forms.Control bottom) lastControlParentMost = needsLastParentMostForPositioning && lastControl?.Parent != null
 				? lastControl.Parent.RightBottomMost()
 				: (null, null);
@@ -1697,7 +1722,11 @@ namespace Keysharp.Builtins
 			// Attach before sizing so PreferredSize/GetPreferredSize doesn't access unattached widgets.
 			if (isNewRadioGroup)
 			{
+#if WINDOWS
+				radioGroupPanel = new KeysharpRadioPanel();
+#else
 				radioGroupPanel = new Panel();
+#endif
 				LastContainer.TagAndAdd(radioGroupPanel);
 				radioGroupPanel.TagAndAdd(holder);
 			}
@@ -1715,16 +1744,16 @@ namespace Keysharp.Builtins
 			var heightAuto = opts.height == -1 && opts.hp == int.MinValue;
 
 			int lcLeft = 0, lcTop = 0, lcBottom = 0, lcRight = 0, lcWidth = 0, lcHeight = 0;
-			if (lastControl != null)
+			if (refControl != null)
 			{
-				var lcLoc = lastControl.GetLocation();
-				var lcSize = lastControl.GetSize();
+				var lcLoc = LocationIn(refControl, placementContainer);
+				var lcSize = refControl.GetSize();
 
 				//An attached UpDown and its Edit are placed against as one control, keeping the UpDown's top and
 				//height, as in AutoHotkey.
-				if (lastControl is KeysharpUpDown { Buddy: { } lcBuddy })
+				if (refControl is KeysharpUpDown { Buddy: { } lcBuddy })
 				{
-					var buddyLeft = lcBuddy.GetLocation().X;
+					var buddyLeft = LocationIn(lcBuddy, placementContainer).X;
 					var left = Math.Min(lcLoc.X, buddyLeft);
 					lcSize = new Size(Math.Max(lcLoc.X + lcSize.Width, buddyLeft + lcBuddy.GetSize().Width) - left, lcSize.Height);
 					lcLoc = new Point(left, lcLoc.Y);
@@ -1743,7 +1772,7 @@ namespace Keysharp.Builtins
 
 			if (opts.wp != int.MinValue)
 			{
-				w = lastControl != null ? lcWidth + opts.wp * dpiscale : 0.0;
+				w = refControl != null ? lcWidth + opts.wp * dpiscale : 0.0;
 			}
 			else if (opts.width != int.MinValue)
 			{
@@ -1796,7 +1825,7 @@ namespace Keysharp.Builtins
 
 			if (hpSpecified)
 			{
-				finalHeight = lastControl != null ? lcHeight + (int)(opts.hp * dpiscale) : 0;
+				finalHeight = refControl != null ? lcHeight + (int)(opts.hp * dpiscale) : 0;
 			}
 			else
 			{
@@ -2020,29 +2049,12 @@ namespace Keysharp.Builtins
 			var xoffset = (double)lcLeft;
 			var yoffset = (double)lcTop;
 
-			//Absolute (Xn/Yn) and Margin (XM/YM) coordinates are measured from the control's "parent window".
-			//For Tab3 sub-controls that parent window is the tab dialog that fills the tab's display area
-			//(see the AHK docs, Tab Remarks -> Parent window), not the outer GUI window. So when the control
-			//lives inside a tab page, resolve these coordinates against the tab page's content origin rather
-			//than the form's top-left; otherwise the tab's content inset (which is larger on Mac/Linux than on
-			//Windows) would push such controls outside the tab area. pwx/pwy stay 0 when not inside a tab.
-			double pwx = 0.0, pwy = 0.0;
-
+			//Absolute (Xn/Yn) and Margin (XM/YM) coordinates are the window's client coordinates, as in AutoHotkey,
+			//including for a control in a tab page, so they are taken into the container's own.
 			if (opts.xpos == GuiOptions.Positioning.Absolute || opts.ypos == GuiOptions.Positioning.Absolute
 				|| opts.xpos == GuiOptions.Positioning.Margin || opts.ypos == GuiOptions.Positioning.Margin)
 			{
-				Point p = LastContainer?.GetLocationRelativeToForm() ?? Point.Empty;
-
-				var parentWindow = LastContainer;
-				while (parentWindow != null && parentWindow is not TabPage)
-					parentWindow = parentWindow.GetLogicalParent();
-
-				if (parentWindow is TabPage)
-				{
-					Point pw = parentWindow.GetLocationRelativeToForm();
-					pwx = pw.X;
-					pwy = pw.Y;
-				}
+				var p = WindowOrigin(LastContainer);
 
 				if (opts.xpos == GuiOptions.Positioning.Absolute || opts.xpos == GuiOptions.Positioning.Margin)
 					xoffset = p.X;
@@ -2051,13 +2063,13 @@ namespace Keysharp.Builtins
 			}
 
 			if (opts.xpos == GuiOptions.Positioning.Absolute)
-				xoffset = (opts.x * dpiscale) + pwx - xoffset;
+				xoffset = (opts.x * dpiscale) - xoffset;
 			else if (opts.xpos == GuiOptions.Positioning.PreviousBottomRight)
 				xoffset += lcWidth + (opts.x * dpiscale);
 			else if (opts.xpos == GuiOptions.Positioning.PreviousTopLeft)
 				xoffset += opts.x * dpiscale;
 			else if (opts.xpos == GuiOptions.Positioning.Margin)
-				xoffset = form.Margin.Left + (opts.x * dpiscale) + pwx - xoffset;
+				xoffset = form.Margin.Left + (opts.x * dpiscale) - xoffset;
 			else if (opts.xpos == GuiOptions.Positioning.Section)
 				xoffset = (section?.X ?? 0) + (opts.x * dpiscale);
 			else if (opts.xpos == GuiOptions.Positioning.Container)
@@ -2066,13 +2078,13 @@ namespace Keysharp.Builtins
 				xoffset = int.MinValue;
 
 			if (opts.ypos == GuiOptions.Positioning.Absolute)
-				yoffset = (opts.y * dpiscale) + pwy - yoffset;
+				yoffset = (opts.y * dpiscale) - yoffset;
 			else if (opts.ypos == GuiOptions.Positioning.PreviousBottomRight)
 				yoffset += lcHeight + (opts.y * dpiscale);
 			else if (opts.ypos == GuiOptions.Positioning.PreviousTopLeft)
 				yoffset += opts.y * dpiscale;
 			else if (opts.ypos == GuiOptions.Positioning.Margin)
-				yoffset = form.Margin.Top + (opts.y * dpiscale) + pwy - yoffset;
+				yoffset = form.Margin.Top + (opts.y * dpiscale) - yoffset;
 			else if (opts.ypos == GuiOptions.Positioning.Section)
 				yoffset = (section?.Y ?? 0) + (opts.y * dpiscale);
 			else if (opts.ypos == GuiOptions.Positioning.Container)
@@ -2088,12 +2100,7 @@ namespace Keysharp.Builtins
 				else if (opts.xpos == GuiOptions.Positioning.PreviousBottomRight || opts.xpos == GuiOptions.Positioning.PreviousTopLeft)//X+n or XP+nonzero (Already checked for xp == 0 above): Same as the previous control's top edge (YP).
 					yoffset = lcTop;
 				else if ((opts.xpos == GuiOptions.Positioning.Absolute || opts.xpos == GuiOptions.Positioning.Container || opts.xpos == GuiOptions.Positioning.Margin) && needsContainerMostForPositioning)//Xn or XM: Beneath all previous controls (maximum Y extent plus margin).
-				{
-					var (right, bottom) = rbContainerMost;//Get the bottom-most control in the current container.
-					var bLoc = bottom?.GetLocation() ?? Point.Empty;
-					var bSize = bottom?.GetSize() ?? Size.Empty;
-					yoffset = bLoc.Y + bSize.Height + form.Margin.Top;
-				}
+					yoffset = extent.Y + form.Margin.Top;
 				else if (opts.xpos == GuiOptions.Positioning.Section && needsSectionMostForPositioning)//XS: Beneath all previous controls since the most recent use of the Section option.
 				{
 					yoffset = section.Value.Bottom + form.Margin.Top;
@@ -2106,12 +2113,7 @@ namespace Keysharp.Builtins
 				else if (opts.ypos == GuiOptions.Positioning.PreviousBottomRight || opts.ypos == GuiOptions.Positioning.PreviousTopLeft)//Y+n or YP+nonzero (Already checked for yp == 0 above): Same as the previous control's left edge (XP).
 					xoffset = lcLeft;
 				else if ((opts.ypos == GuiOptions.Positioning.Absolute || opts.ypos == GuiOptions.Positioning.Container || opts.ypos == GuiOptions.Positioning.Margin) && needsContainerMostForPositioning)//Yn or YM: To the right of all previous controls (maximum X extent plus margin).
-				{
-					var (right, bottom) = rbContainerMost;//Get the right-most control in the current container.
-					var rLoc = right?.GetLocation() ?? Point.Empty;
-					var rSize = right?.GetSize() ?? Size.Empty;
-					xoffset = rLoc.X + rSize.Width + form.Margin.Left;
-				}
+					xoffset = extent.X + form.Margin.Left;
 				else if (opts.ypos == GuiOptions.Positioning.Section && needsSectionMostForPositioning)//YS: To the right of all previous controls since the most recent use of the Section option.
 				{
 					xoffset = section.Value.Right + form.Margin.Left;
@@ -2131,13 +2133,18 @@ namespace Keysharp.Builtins
 			else if (loc.X != int.MinValue && loc.Y != int.MinValue)//If both x and y were specified, that takes precedence over everything else.
 			{
 			}
-			else if (lastControl != null && lastControl.Dock == DockStyle.None && loc.X == int.MinValue && loc.Y == int.MinValue)
+			//The first control of a tab page starts at the page's corner plus the window's margins, as in AutoHotkey.
+			else if (lastControl == null && placementContainer is TabPage && loc.X == int.MinValue && loc.Y == int.MinValue)
+				loc = new Point(form.Margin.Left, form.Margin.Top);
+			else if (lastControl != null && refControl.Dock == DockStyle.None && loc.X == int.MinValue && loc.Y == int.MinValue)
 			{
 				var deadspace = 0;
-				if (IsTextLike(ctrl) && IsTextLike(lastControl)
-					&& lastControl.GetLogicalParent() == ctrl.GetLogicalParent())
+				//AutoHotkey's GUI_CTL_VERTICAL_DEADSPACE, which keeps a Text below another in line with a taller
+				//control added to its right later.
+				if (IsTextLike(ctrl) && IsTextLike(refControl)
+					&& refControl.GetLogicalParent() == ctrl.GetLogicalParent())
 				{
-					deadspace = Convert.ToInt32(4 * dpiscale);
+					deadspace = Convert.ToInt32(8 * dpiscale);
 				}
 				loc = new Point(lcLeft, lcTop + lcHeight + form.Margin.Bottom + deadspace);
 			}
@@ -2305,22 +2312,24 @@ namespace Keysharp.Builtins
 					partc.AdjustSize(dpiscale, new Size(int.MinValue, int.MinValue));
 			}
 
-			//The Section option starts a new section, as does the first control in a container; later ones
+			//The Section option starts a new section, as does the first control in a section container; later ones
 			//only widen the extents XS/YS measure against - the corner never moves. Updated after positioning
 			//so a control carrying both Section and XS/YS uses the previous section and starts the new one.
 			//A status bar takes no part, matching AHK's carve-out.
-			if (ctrl is not KeysharpStatusStrip && placementContainer != null)
+			if (ctrl is not KeysharpStatusStrip)
 			{
-				var bounds = new Rectangle(ctrl.GetLocation(), ctrl.GetSize());
+				var bounds = new Rectangle(LocationIn(ctrl, sectionContainer), ctrl.GetSize());
 
-				if (!opts.section && sections.TryGetValue(placementContainer, out var grown))
+				if (!opts.section && sections.TryGetValue(sectionContainer, out var grown))
 				{
 					grown.Width = Math.Max(grown.Width, bounds.Right - grown.X);
 					grown.Height = Math.Max(grown.Height, bounds.Bottom - grown.Y);
-					sections[placementContainer] = grown;
+					sections[sectionContainer] = grown;
 				}
 				else
-					sections[placementContainer] = bounds;
+					sections[sectionContainer] = bounds;
+
+				prevControl = ctrl;
 			}
 
 			//Applied only once the control has been measured and placed: a hidden widget measures as zero, so
@@ -2363,6 +2372,58 @@ namespace Keysharp.Builtins
 			}
 #endif
 			bool IsTextLike(Forms.Control control) => control is KeysharpLabel || control is KeysharpLinkLabel;
+		}
+
+		//Sections belong to the window, except inside a GroupBox used as a container.
+		private Forms.Control SectionContainer(Forms.Control container) => container switch
+		{
+			KeysharpGroupBox => container,
+			Panel and not TabPage when container.GetLogicalParent() is { } parent => SectionContainer(parent),
+			_ => form
+		};
+
+		private static bool IsWithin(Forms.Control control, Forms.Control container)
+		{
+			for (; control != null; control = control.GetLogicalParent())
+				if (control == container)
+					return true;
+
+			return false;
+		}
+
+		private Point WindowOrigin(Forms.Control container) =>
+			container == null || container == form ? Point.Empty : container.GetLocationRelativeToForm();
+
+		private Point LocationIn(Forms.Control control, Forms.Control container)
+		{
+			if (control.GetLogicalParent() == container)
+				return control.GetLocation();
+
+			var at = control.GetLocationRelativeToForm();
+			var origin = WindowOrigin(container);
+			return new Point(at.X - origin.X, at.Y - origin.Y);
+		}
+
+		//Tab pages clip their children, so only the tab itself contributes to the window's extents.
+		private Point WindowExtent(Forms.Control container)
+		{
+			int right = 0, bottom = 0;
+
+			foreach (Control holder in controls.Values)
+			{
+				var c = holder.Ctrl;
+
+				if (c.IsDisposed || c is KeysharpStatusStrip || c.FindParent<KeysharpTabControl>() != null || !IsWithin(c, form))
+					continue;
+
+				var at = LocationIn(c, form);
+				var size = c.GetSize();
+				right = Math.Max(right, at.X + size.Width);
+				bottom = Math.Max(bottom, at.Y + size.Height);
+			}
+
+			var origin = WindowOrigin(container);
+			return new Point(right - origin.X, bottom - origin.Y);
 		}
 
 		[RequiresUIThread]

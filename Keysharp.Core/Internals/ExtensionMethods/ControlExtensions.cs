@@ -478,18 +478,13 @@ namespace System.Windows.Forms
 					var controlScreen = control.PointToScreen(Point.Empty);
 					var formScreen = form.PointToScreen(Point.Empty);
 
-					//Measured from the CONTENT, not the toplevel widget: the menu bar and toolbars pack above it
-					//and client-side decorations sit outside it, so measuring from the window reports every
-					//control short by that inset. Client coordinates exclude the menu, as Win32's do.
-					//Equal origins carry no correction to make: the toolkit answers with the toplevel's own for
-					//a control it has not placed yet, and a form without content has nothing to anchor on.
-					if (controlScreen != formScreen && form.Content is Control content)
+					//Client coordinates exclude menus and decorations. Unplaced widgets may report the
+					//form's origin; fall back to their stored positions in that case.
+					if (controlScreen != formScreen)
 					{
-						var contentScreen = content.PointToScreen(Point.Empty);
-						return new Point(Convert.ToInt32(controlScreen.X - contentScreen.X), Convert.ToInt32(controlScreen.Y - contentScreen.Y));
+						var origin = form.Content is Control content ? content.PointToScreen(Point.Empty) : formScreen;
+						return new Point(Convert.ToInt32(controlScreen.X - origin.X), Convert.ToInt32(controlScreen.Y - origin.Y));
 					}
-
-					return new Point(Convert.ToInt32(controlScreen.X - formScreen.X), Convert.ToInt32(controlScreen.Y - formScreen.Y));
 				}
 				catch
 				{
@@ -499,11 +494,6 @@ namespace System.Windows.Forms
 
 			Point p = control.GetLocation();
 			Control parent = control.Parent;
-
-#if !WINDOWS
-			if (form != null)
-				p.Offset(form.Margin.Left, form.Margin.Top);
-#endif
 
 			// This is done like this because Control.PointToScreen and similar functions
 			// apparently don't always work correctly if the Form is hidden.
@@ -685,7 +675,6 @@ namespace System.Windows.Forms
 			var children = control.GetLayoutContainer().Controls;
 			add.Tag = new GuiTag { Index = children.Count };
 			children.Add(add);
-			children.SetChildIndex(add, 0);//Required for proper Z ordering so that this control is on top.
 			HFontCache.Inherit(control, add);
 #else
 			add.Tag = new GuiTag { Index = GetChildCount(control) };
@@ -719,8 +708,9 @@ namespace System.Windows.Forms
 				tag.Index = childIndex;
 			}
 #if WINDOWS
+			//Appended last, so it is at the bottom of the z-order and the first control stays on top, as in AutoHotkey.
+			//Controls don't clip their siblings, so a later control still paints over an earlier one it overlaps.
 			children.Add(add.Ctrl);
-			children.SetChildIndex(add.Ctrl, 0);//Required for proper Z ordering so that this control is on top.
 			HFontCache.Inherit(control, add.Ctrl);
 #else
 			AddChildControl(control, add.Ctrl);

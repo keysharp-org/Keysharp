@@ -438,9 +438,16 @@ namespace Keysharp.Builtins
 			Volatile.Write(ref cachedHwnd, Handle.ToInt64());
 			base.OnHandleCreated(e);
 
+			//Set accelerator visibility before the first paint to avoid repainting overlapped labels.
+			if (!SystemInformation.MenuAccessKeysUnderlined)
+				_ = WindowsAPI.SendMessage(Handle, WM_CHANGEUISTATE, (nint)(UIS_SET | (UISF_HIDEACCEL << 16)), 0);
+
 			if (roundedCorners)
 				ApplyRoundedCorners(true);
 		}
+
+		private const uint WM_CHANGEUISTATE = 0x0127;
+		private const int UIS_SET = 1, UISF_HIDEACCEL = 0x2;
 
 		// Windows destroys an owned or child window along with its owner or parent, sending it no WM_CLOSE for Destroy to
 		// act on, so the Gui is let go of here, as AHK's GuiWindowProc lets it go on WM_DESTROY. The form is disposed once
@@ -554,12 +561,15 @@ namespace Keysharp.Builtins
 				if (PointToClient(screenPoint).Y < 0)
 					return false;
 
-				//A click the window receives itself, as on a disabled control, goes to the control under it.
-				if (hwnd == Handle)
+				//A click the window receives itself, as on a disabled control or on a Text or Picture which lets clicks
+				//through, goes to the control under it, and so does a click on a panel or tab page holding controls.
+				if (hwnd == Handle || Forms.Control.FromHandle(hwnd) is { } holder && holder.GetGuiControl() == null && holder is not MenuStrip)
 				{
 					var pah = new PointAndHwnd(screenPoint);
-					Platform.Window.ChildFindPoint(Handle, pah);
-					hwnd = pah.hwndFound;
+					Platform.Window.ChildFindPoint(hwnd, pah);
+
+					if (pah.hwndFound != 0 || hwnd == Handle)
+						hwnd = pah.hwndFound;
 				}
 			}
 			else

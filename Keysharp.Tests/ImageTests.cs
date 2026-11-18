@@ -74,9 +74,10 @@ public class ImageTests : TestRunner
 
 #if WINDOWS
 
-	[TestCase(true, true), TestCase(true, false), TestCase(false, true), TestCase(false, false)]
+	[TestCase(true, true, false), TestCase(true, false, false), TestCase(false, true, false), TestCase(false, false, false)]
+	[TestCase(true, true, true), TestCase(false, false, true)]
 	[Category("Image"), Category("Internal"), Category("Curated")]
-	public void BitmapHandleOrientation(bool topDown, bool hasAlpha)
+	public void BitmapHandleOrientation(bool topDown, bool hasAlpha, bool compatible)
 	{
 		const int width = 2, height = 3;
 		var colors = new uint[] { 0xFFFF0000u, 0xFF00FF00u, 0xFF0000FFu, 0xFFFFFF00u, 0xFFFF00FFu, 0xFF00FFFFu };
@@ -104,6 +105,13 @@ public class ImageTests : TestRunner
 		try
 		{
 			Marshal.Copy(pixels, 0, bits, pixels.Length);
+			if (compatible)
+			{
+				var copy = CopyImage(handle, 0, 0, 0, 0);
+				Assert.That(copy, Is.Not.Zero);
+				_ = WindowsAPI.DeleteObject(handle);
+				handle = copy;
+			}
 			using var bitmap = ImageHelper.GetBitmapFromHBitmap(handle);
 
 			for (var y = 0; y < height; y++)
@@ -122,6 +130,9 @@ public class ImageTests : TestRunner
 			_ = WindowsAPI.DeleteObject(handle);
 		}
 	}
+
+	[DllImport("user32", SetLastError = true)]
+	private static extern nint CopyImage(nint image, uint type, int width, int height, uint flags);
 
 	[TestCase(1), TestCase(-1), Category("Image"), Category("Internal")]
 	public void RegionalClearStride(int direction)

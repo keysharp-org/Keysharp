@@ -1397,96 +1397,108 @@ namespace Keysharp.Builtins
 
 	public class KeysharpProgressBar : Drawable
 	{
-		private readonly bool customColors = false;
-		private readonly int addStyle;
 		private int minimum;
 		private int maximum = 100;
 		private int value;
-		private Color barColor;
-		private bool hasBarColor;
+		private Color? barColor, backgroundColor;
 		private ProgressBarStyle style = ProgressBarStyle.Blocks;
 
-		internal int AddStyle => addStyle;
+		internal int AddStyle { get; }
+
 		public int Minimum
 		{
 			get => minimum;
 			set
 			{
 				minimum = value;
-				if (maximum < minimum)
-					maximum = minimum;
-				Value = this.value;
+				maximum = Math.Max(maximum, minimum);
+				Sync();
 			}
 		}
+
 		public int Maximum
 		{
 			get => maximum;
 			set
 			{
 				maximum = value;
-				if (minimum > maximum)
-					minimum = maximum;
-				Value = this.value;
+				minimum = Math.Min(minimum, maximum);
+				Sync();
 			}
 		}
+
 		public int Value
 		{
 			get => value;
 			set
 			{
-				var clamped = Math.Min(Maximum, Math.Max(Minimum, value));
+				var clamped = Math.Clamp(value, minimum, maximum);
 				if (clamped == this.value)
 					return;
 				this.value = clamped;
-				Invalidate();
+				Sync();
 			}
 		}
+
 		public new ProgressBarStyle Style
 		{
 			get => style;
 			set
 			{
-				if (style == value)
-					return;
 				style = value;
+
 				Invalidate();
 			}
 		}
+
+		/// <summary>The bar's color, where the default text color selects the system's highlight.</summary>
 		public Color BarColor
 		{
-			get => barColor;
+			get => barColor ?? SystemColors.Highlight;
 			set
 			{
-				barColor = value;
-				hasBarColor = true;
+				barColor = value == Eto.Forms.Control.DefaultForeColor ? null : value;
+
 				Invalidate();
 			}
 		}
 
-		public KeysharpProgressBar(bool _customColors, int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
+		//A default background uses the system's control color.
+		public override Color BackgroundColor
 		{
-			addStyle = _addStyle;
-			customColors = _customColors;
-			Paint += KeysharpProgressBar_Paint;
+			get => backgroundColor ?? SystemColors.ControlBackground;
+			set
+			{
+				backgroundColor = value == Eto.Forms.Control.DefaultBackColor ? null : value;
+
+				Invalidate();
+			}
 		}
 
-		private void KeysharpProgressBar_Paint(object sender, PaintEventArgs e)
+		public KeysharpProgressBar(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
+		{
+			AddStyle = _addStyle;
+
+			Paint += Progress_Paint;
+		}
+
+		private void Sync()
+		{
+			value = Math.Clamp(value, minimum, maximum);
+			Invalidate();
+		}
+
+		private void Progress_Paint(object sender, PaintEventArgs e)
 		{
 			var rect = new Rectangle(0, 0, Width, Height);
 			if (rect.Width <= 0 || rect.Height <= 0)
 				return;
 
-			var background = BackgroundColor;
-			if (background.A <= 0)
-				background = SystemColors.ControlBackground;
-
-			var fillColor = hasBarColor ? barColor : SystemColors.Highlight;
-			using (var backgroundBrush = new SolidBrush(background))
+			using (var backgroundBrush = new SolidBrush(BackgroundColor))
 				e.Graphics.FillRectangle(backgroundBrush, rect);
 
-			var range = Maximum - Minimum;
-			var percent = range > 0 ? (double)(value - Minimum) / range : 0.0;
-			percent = Math.Min(1.0, Math.Max(0.0, percent));
+			var range = (long)maximum - minimum;
+			var percent = range > 0 ? (value - (long)minimum) / (double)range : 0.0;
 
 			const int inset = 1;
 			var innerWidth = Math.Max(0, rect.Width - inset * 2);
@@ -1496,13 +1508,13 @@ namespace Keysharp.Builtins
 			{
 				var filledHeight = Convert.ToInt32(innerHeight * percent);
 				var fillRect = new Rectangle(rect.Left + inset, rect.Bottom - inset - filledHeight, innerWidth, filledHeight);
-				DrawFill(e.Graphics, fillRect, fillColor, Style, true);
+				DrawFill(e.Graphics, fillRect, BarColor, Style, true);
 			}
 			else
 			{
 				var filledWidth = Convert.ToInt32(innerWidth * percent);
 				var fillRect = new Rectangle(rect.Left + inset, rect.Top + inset, filledWidth, innerHeight);
-				DrawFill(e.Graphics, fillRect, fillColor, Style, false);
+				DrawFill(e.Graphics, fillRect, BarColor, Style, false);
 			}
 
 			using (var borderPen = new Pen(SystemColors.ControlText))
