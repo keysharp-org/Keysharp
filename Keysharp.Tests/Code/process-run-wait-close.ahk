@@ -57,7 +57,9 @@ AssertEq(pid, "", A_LineNumber)
 	sleeperPrefix := sleeperName = "coreutils" ? "--coreutils-prog=sleep " : sleeperName = "busybox" ? "sleep " : ""
 #endif
 
-	; Priority is not raised here: only root can raise it above normal.
+	; Priority is only lowered here: only root can raise it above normal.
+	AssertEq(ProcessSetPriority("B", pid), pid, A_LineNumber)
+
 	if (ProcessExist(pid) != 0)
 	{
 		AssertEq(ProcessWaitClose(pid, 0), pid, A_LineNumber)
@@ -105,6 +107,9 @@ RunWait(sleeper, "", "Hide", &runWaitPid, sleeperArgs)
 SetTimer(RecordPidDuringWait, 0)
 Assert(runWaitPid > 0, A_LineNumber)
 AssertEq(pidDuringWait, runWaitPid, A_LineNumber)
+; Once it has exited, the process is no longer found.
+Throws(() => ProcessSetPriority("N", runWaitPid), A_LineNumber, TargetError)
+Throws(() => ProcessGetPath(runWaitPid), A_LineNumber, TargetError)
 
 ; A name-based close wait serves timers and waits for every matching process.
 waitDir := A_Temp "/keysharp-process-wait-" ProcessExist()
@@ -173,5 +178,6 @@ finally
 }
 
 Throws(() => ProcessGetName("no such process.exe"), A_LineNumber, TargetError)
+Throws(() => ProcessSetPriority("N", "no such process.exe"), A_LineNumber, TargetError)
 
 FileAppend "pass", "*"

@@ -724,31 +724,13 @@ namespace Keysharp.Builtins
 											   object winText = null,
 											   object excludeTitle = null,
 											   object excludeText = null) =>
-		SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win ? ProcessImageOrError(win, true) : "";
+		SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win ? win.ProcessImageOrError(true) : "";
 
 		public static string WinGetProcessPath(object winTitle = null,
 											   object winText = null,
 											   object excludeTitle = null,
 											   object excludeText = null) =>
-		SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win ? ProcessImageOrError(win, false) : "";
-
-		// A process the window search could not query only fails to match there, but reading its name raises. The search
-		// may have read the name already, so the lookup is repeated for its error.
-		internal static string ProcessImageOrError(WindowInfoBase win, bool nameOnly)
-		{
-			var image = nameOnly ? win.ProcessName : win.Path;
-
-			if (image.Length != 0)
-				return image;
-
-#if WINDOWS
-			_ = Processes.GetProcessImage((uint)win.PID, nameOnly);
-			return (string)Errors.OSErrorOccurred(new Win32Exception(Marshal.GetLastWin32Error()), "", "");
-#else
-			// A PID of 0 means the backend does not report the owner, as with foreign Wayland toplevels, so there is no image to read.
-			return win.PID <= 0 ? "" : (string)Errors.OSErrorOccurredWithMessage($"Could not read the executable of process {win.PID}.", "");
-#endif
-		}
+		SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win ? win.ProcessImageOrError(false) : "";
 
 		public static long WinGetStyle(object winTitle = null,
 									   object winText = null,
@@ -759,8 +741,20 @@ namespace Keysharp.Builtins
 		public static string WinGetText(object winTitle = null,
 										object winText = null,
 										object excludeTitle = null,
-										object excludeText = null) =>
-		string.Join(Keyword_Linefeed, SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is WindowInfoBase win ? win.Text : [""]);
+										object excludeText = null)
+		{
+			if (SearchWindow(winTitle, winText, excludeTitle, excludeText, true) is not WindowInfoBase win)
+				return "";
+
+			// The slow read also retrieves the contents of Edit controls in other processes.
+			var sb = new StringBuilder();
+
+			foreach (var text in win.GetText(ThreadAccessors.A_DetectHiddenText, fast: false))
+				if (!string.IsNullOrEmpty(text))
+					_ = sb.Append(text).Append(Keyword_Linefeed);
+
+			return sb.ToString();
+		}
 
 		public static string WinGetTitle(object winTitle = null,
 										 object winText = null,

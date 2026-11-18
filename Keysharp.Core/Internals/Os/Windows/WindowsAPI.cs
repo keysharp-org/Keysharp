@@ -1651,23 +1651,17 @@ namespace Keysharp.Internals.Os.Windows
 
 		internal static string GetWindowTextTimeout(nint hwnd, uint timeout)
 		{
-			_ = SendMessageTimeout(hwnd, WM_GETTEXTLENGTH, 0, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, timeout, out var length);
+			if (SendMessageTimeout(hwnd, WM_GETTEXTLENGTH, 0, 0, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, timeout, out var length) == 0
+					|| length <= 0 || length >= System.Array.MaxLength)
+				return "";
 
-			if (length == 0)
-				return DefaultErrorString;
+			var buffer = new char[(int)length + 1];
 
-			var val = length.ToInt32();
+			if (SendMessageTimeout(hwnd, WM_GETTEXT, buffer.Length, buffer, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, timeout, out var copied) == 0
+					|| copied <= 0 || copied >= buffer.Length)
+				return "";
 
-			if (val == 0)
-				return DefaultErrorString;
-
-			var buffer = new char[val + 1];  // leave room for null-terminator
-			nint ptr = 0;
-
-			if (SendMessageTimeout(hwnd, WM_GETTEXT, buffer.Length, buffer, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, timeout, out ptr) == 0)
-				return DefaultErrorString;
-
-			return new string(buffer, 0, unchecked((int)ptr));
+			return new string(buffer, 0, (int)copied);
 		}
 
 		internal static bool ControlSetTab(nint hwnd, int tabIndex)

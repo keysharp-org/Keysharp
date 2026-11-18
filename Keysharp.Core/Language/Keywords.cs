@@ -183,7 +183,6 @@ namespace Keysharp.Language
 		internal const string Join = "join";
 		internal const string Keyword_A = "a";
 		internal const string Keyword_Abort = "abort";
-		internal const string Keyword_AboveNormal = "abovenormal";
 		internal const string Keyword_Abs = "abs";
 		internal const string Keyword_Acos = "acos";
 		internal const string Keyword_ActiveX = "activex";
@@ -218,7 +217,6 @@ namespace Keysharp.Language
 		internal const string Keyword_BackgroundTrans = "backgroundtrans";
 		internal const string Keyword_BackSpaceS = "B";
 		internal const string Keyword_Bcc = "bcc";
-		internal const string Keyword_BelowNormal = "belownormal";
 		internal const string Keyword_Between = "between";
 		internal const string Keyword_BitAnd = "bitand";
 		internal const string Keyword_BitNot = "bitnot";
@@ -325,7 +323,6 @@ namespace Keysharp.Language
 		internal const string Keyword_Hex = "hex";
 		internal const string Keyword_Hidden = "hidden";
 		internal const string Keyword_Hide = "hide";
-		internal const string Keyword_High = "high";
 		internal const string Keyword_HKCC = "hkcc";
 		internal const string Keyword_HKCR = "hkcr";
 		internal const string Keyword_HKCU = "hkcu";
@@ -399,7 +396,6 @@ namespace Keysharp.Language
 		internal const string Keyword_Log = "log";
 		internal const string Keyword_Logoff = "logoff";
 		internal const string Keyword_LongDate = "longdate";
-		internal const string Keyword_Low = "low";
 		internal const string Keyword_Lower = "lower";
 		internal const string Keyword_Lowercase = "lowercase";
 		internal const string Keyword_LTrim = "ltrim";
@@ -441,7 +437,6 @@ namespace Keysharp.Language
 		internal const string Keyword_NoMainWindow = "nomainwindow";
 		internal const string Keyword_None = "none";
 		internal const string Keyword_Norm = "norm";
-		internal const string Keyword_Normal = "normal";
 		internal const string Keyword_NoSort = "nosort";
 		internal const string Keyword_NoSortHdr = "nosorthdr";
 		internal const string Keyword_NoStandard = "nostandard";
@@ -479,7 +474,6 @@ namespace Keysharp.Language
 		internal const string Keyword_Raw = "raw";
 		internal const string Keyword_Read = "read";
 		internal const string Keyword_Readonly = "readonly";
-		internal const string Keyword_Realtime = "realtime";
 		internal const string Keyword_Redraw = "redraw";
 		internal const string Keyword_Reg_Binary = "reg_binary";
 		internal const string Keyword_Reg_Dword = "reg_dword";

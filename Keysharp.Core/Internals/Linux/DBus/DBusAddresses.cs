@@ -13,9 +13,6 @@ namespace Keysharp.Internals.DBus
 	/// </summary>
 	internal static class DBusAddresses
 	{
-		[DllImport("libc", SetLastError = false)]
-		private static extern uint getuid();
-
 		internal static string For(DBusBus bus) => bus == DBusBus.System ? System : Session;
 
 		internal static string Session
@@ -23,7 +20,7 @@ namespace Keysharp.Internals.DBus
 			get
 			{
 				var env = Environment.GetEnvironmentVariable("DBUS_SESSION_BUS_ADDRESS");
-				return !string.IsNullOrEmpty(env) ? env : $"unix:path=/run/user/{getuid()}/bus";
+				return !string.IsNullOrEmpty(env) ? env : $"unix:path=/run/user/{Platform.Process.UserId()}/bus";
 			}
 		}
 

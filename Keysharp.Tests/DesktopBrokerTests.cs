@@ -211,7 +211,7 @@ public class DesktopBrokerTests
 		var backend = new DesktopBackend("generic", "generic Wayland");
 		Assert.That(backend.TryParseWindowList(Encoding.UTF8.GetBytes(json), out var windows), Is.True);
 		Assert.That(windows, Has.Count.EqualTo(1));
-		Assert.That(Keysharp.Builtins.WindowX.ProcessImageOrError(windows[0], nameOnly), Is.Empty);
+		Assert.That(windows[0].ProcessImageOrError(nameOnly), Is.Empty);
 	}
 
 	[TestCase("generic", "focused")]
@@ -273,12 +273,14 @@ public class DesktopBrokerTests
 		Assert.That(DesktopWindowParser.TrySingle(Encoding.UTF8.GetBytes(json),
 			id => new nint(long.Parse(id, CultureInfo.InvariantCulture)), out var window), Is.True);
 
-        using (Assert.EnterMultipleScope())
-        {
-			Assert.That(window.ParentWindow, Is.SameAs(window.ParentWindow));
-			Assert.That(window.ParentWindow.Handle, Is.EqualTo(new nint(24)));
-			Assert.That(window.NonChildParentWindow, Is.SameAs(window.NonChildParentWindow));
-			Assert.That(window.NonChildParentWindow.Handle, Is.EqualTo(new nint(42)));
+		var parent = window.ParentWindow;
+		var topLevel = window.NonChildParentWindow;
+		using (Assert.EnterMultipleScope())
+		{
+			Assert.That(window.ParentWindow, Is.SameAs(parent));
+			Assert.That(parent.Handle, Is.EqualTo(new nint(24)));
+			Assert.That(window.NonChildParentWindow, Is.SameAs(topLevel));
+			Assert.That(topLevel.Handle, Is.EqualTo(new nint(42)));
 		}
 	}
 

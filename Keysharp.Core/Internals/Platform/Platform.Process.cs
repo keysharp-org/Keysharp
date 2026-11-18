@@ -208,6 +208,50 @@ namespace Keysharp.Internals
 				}
 			}
 
+			/// <summary>
+			/// The process's executable path or, with <paramref name="nameOnly"/>, its file name. Empty when the process
+			/// cannot be queried, with the reason in the last Win32 error.
+			/// </summary>
+			internal static unsafe string GetProcessImage(uint pid, bool nameOnly)
+			{
+				var hProc = WindowsAPI.OpenProcess(ProcessAccessTypes.PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+
+				if (hProc == 0)
+					return "";
+
+				try
+				{
+					Span<char> path = stackalloc char[1024];
+					while (true)
+					{
+						var length = (uint)path.Length;
+						fixed (char* buffer = path)
+						{
+							// The faster device-path query suffices when only the file name is needed.
+							if (nameOnly)
+								length = WindowsAPI.GetProcessImageFileName(hProc, buffer, length);
+							else if (!WindowsAPI.QueryFullProcessImageName(hProc, 0, buffer, ref length))
+								length = 0;
+						}
+
+						if (length != 0)
+						{
+							var image = path[..(int)length];
+							return (nameOnly ? Path.GetFileName(image) : image).ToString();
+						}
+
+						if (Marshal.GetLastPInvokeError() != 122 || path.Length == 32768) // ERROR_INSUFFICIENT_BUFFER
+							return "";
+
+						path = new char[32768];
+					}
+				}
+				finally
+				{
+					_ = WindowsAPI.CloseHandle(hProc);
+				}
+			}
+
 			public static uint CurrentThreadId() => Os.Windows.WindowsAPI.GetCurrentThreadId();
 
 			public static bool DestroyIcon(nint icon) => Os.Windows.WindowsAPI.DestroyIcon(icon);
@@ -244,37 +288,18 @@ namespace Keysharp.Internals
 			[LibraryImport("libproc.dylib", EntryPoint = "proc_listallpids")]
 			private static unsafe partial int ProcListAllPids(int* buffer, int bufferSize);
 
-			[LibraryImport("libproc.dylib", EntryPoint = "proc_pidpath")]
+			[LibraryImport("libproc.dylib", EntryPoint = "proc_pidpath", SetLastError = true)]
 			private static unsafe partial int ProcPidPath(int pid, byte* buffer, uint bufferSize);
 
-			internal static unsafe int FindByExecutableName(string name)
+			private static unsafe ArraySegment<int> GetProcessIds()
 			{
-				const int pathMaxSize = 4096; // PROC_PIDPATHINFO_MAXSIZE
 				// Called without a buffer it reports the count, so the margin covers processes started since.
 				var pids = new int[Math.Max(0, ProcListAllPids(null, 0)) + 64];
-				int count;
-
 				fixed (int* buffer = pids)
-					count = Math.Min(ProcListAllPids(buffer, pids.Length * sizeof(int)), pids.Length);
-
-				var path = stackalloc byte[pathMaxSize];
-				Span<char> chars = stackalloc char[pathMaxSize];
-
-				for (var i = 0; i < count; i++)
 				{
-					var length = ProcPidPath(pids[i], path, pathMaxSize);
-
-					// A process that has exited, or one we may not inspect, reports no path.
-					if (length <= 0)
-						continue;
-
-					var written = Encoding.UTF8.GetChars(new ReadOnlySpan<byte>(path, length), chars);
-
-					if (Path.GetFileName(chars[..written]).Equals(name, StringComparison.OrdinalIgnoreCase))
-						return pids[i];
+					var count = ProcListAllPids(buffer, pids.Length * sizeof(int));
+					return new(pids, 0, Math.Clamp(count, 0, pids.Length));
 				}
-
-				return 0;
 			}
 
 			[LibraryImport("libSystem.dylib")]
@@ -309,37 +334,14 @@ namespace Keysharp.Internals
 				throw new InvalidDataException("The process status has no parent process ID.");
 			}
 
-			[LibraryImport("libc", EntryPoint = "readlink", StringMarshalling = StringMarshalling.Utf8)]
+			[LibraryImport("libc", EntryPoint = "readlink", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
 			private static unsafe partial nint ReadLink(string path, byte* buffer, nint bufferSize);
 
-			// The comm name is no substitute: it is truncated to 15 characters, and a process can change it with
-			// prctl, as coreutils' multicall binary does.
-			internal static unsafe int FindByExecutableName(string name)
+			private static IEnumerable<int> GetProcessIds()
 			{
-				const int pathMaxSize = 4096; // PATH_MAX
-				var path = stackalloc byte[pathMaxSize];
-				Span<char> chars = stackalloc char[pathMaxSize];
-
 				foreach (var dir in Directory.EnumerateDirectories("/proc"))
-				{
-					if (!int.TryParse(Path.GetFileName(dir.AsSpan()), NumberStyles.None, CultureInfo.InvariantCulture, out var pid))
-						continue;
-
-					// Another user's process denies access, and a kernel thread or an exited process has no link.
-					// readlink reports those by its result where File.ResolveLinkTarget throws, and a debugger logs
-					// every one of those throws.
-					var length = (int)ReadLink($"{dir}/exe", path, pathMaxSize);
-
-					if (length <= 0)
-						continue;
-
-					var written = Encoding.UTF8.GetChars(new ReadOnlySpan<byte>(path, length), chars);
-
-					if (Path.GetFileName(chars[..written]).Equals(name, StringComparison.OrdinalIgnoreCase))
-						return pid;
-				}
-
-				return 0;
+					if (int.TryParse(Path.GetFileName(dir.AsSpan()), NumberStyles.None, CultureInfo.InvariantCulture, out var pid))
+						yield return pid;
 			}
 
 			public static uint CurrentThreadId() => (uint)Keysharp.Internals.Window.Linux.X11.Xlib.gettid();
@@ -348,6 +350,52 @@ namespace Keysharp.Internals
 #endif
 
 #if !WINDOWS
+			private const int ProcessPathCapacity = 4096; // PATH_MAX on Linux and PROC_PIDPATHINFO_MAXSIZE on macOS.
+
+			internal static unsafe int FindByExecutableName(string name)
+			{
+				var path = stackalloc byte[ProcessPathCapacity];
+				Span<char> chars = stackalloc char[ProcessPathCapacity];
+				foreach (var pid in GetProcessIds())
+				{
+					var leaf = ReadProcessImage((uint)pid, true, path);
+					if (leaf.IsEmpty)
+						continue;
+
+					var written = Encoding.UTF8.GetChars(leaf, chars);
+					if (MemoryExtensions.Equals(chars[..written], name, StringComparison.OrdinalIgnoreCase))
+						return pid;
+				}
+				return 0;
+			}
+
+			internal static unsafe string GetProcessImage(uint pid, bool nameOnly)
+			{
+				var path = stackalloc byte[ProcessPathCapacity];
+				var image = ReadProcessImage(pid, nameOnly, path);
+				return image.IsEmpty ? "" : Encoding.UTF8.GetString(image);
+			}
+
+			private static unsafe ReadOnlySpan<byte> ReadProcessImage(uint pid, bool nameOnly, byte* path)
+			{
+#if OSX
+				var length = ProcPidPath((int)pid, path, ProcessPathCapacity);
+#else
+				// The comm name is truncated and a process can change it without changing its executable.
+				var length = (int)ReadLink($"/proc/{pid}/exe", path, ProcessPathCapacity);
+				if (length == ProcessPathCapacity)
+				{
+					Marshal.SetLastPInvokeError(36); // ENAMETOOLONG
+					return [];
+				}
+#endif
+				if (length <= 0)
+					return [];
+
+				var image = new ReadOnlySpan<byte>(path, length);
+				return nameOnly ? image[(image.LastIndexOf((byte)'/') + 1)..] : image;
+			}
+
 			[LibraryImport("libc", EntryPoint = "kill", SetLastError = true)]
 			private static partial int PosixKill(int pid, int signal);
 
@@ -359,6 +407,12 @@ namespace Keysharp.Internals
 				// Signal zero checks existence; EPERM means the process exists but belongs to another user.
 				return PosixKill(pid, 0) == 0 || Marshal.GetLastPInvokeError() == 1;
 			}
+
+			[LibraryImport("libc", EntryPoint = "getuid")]
+			internal static partial uint UserId();
+
+			[LibraryImport("libc", EntryPoint = "geteuid")]
+			internal static partial uint EffectiveUserId();
 #endif
 		}
 	}

@@ -22,27 +22,30 @@ namespace Keysharp.Internals
 			return control != null;
 		}
 
-		private static IReadOnlyList<nint> OwnChildHandles(Control root)
+		private static void VisitOwnChildren(Control root, bool detectHidden, Action<Control> visit)
 		{
-			var handles = new List<nint>();
+			if (!detectHidden)
+				for (var ancestor = root; ancestor != null; ancestor = ancestor.Parent)
+					if (!ancestor.HitTestable)
+						return;
+
 			var seen = new HashSet<Control>();
 
 			void AddChildren(Control control)
 			{
 				foreach (var child in control.VisualControls)
 				{
-					if (!seen.Add(child))
+					if (!seen.Add(child) || (!detectHidden && !child.HitTestable))
 						continue;
 
-					if (child is not Layout && child.Handle != 0)
-						handles.Add(child.Handle);
+					if (child is not Layout)
+						visit(child);
 
 					AddChildren(child);
 				}
 			}
 
 			AddChildren(root);
-			return handles;
 		}
 #endif
 
@@ -113,7 +116,14 @@ namespace Keysharp.Internals
 					if (control is MainWindow window)
 						window.EnsureDebugUi();
 
-					return OwnChildHandles(control);
+					var handles = new List<nint>();
+					VisitOwnChildren(control, true, child =>
+					{
+						var handle = child.Handle;
+						if (handle != 0)
+							handles.Add(handle);
+					});
+					return handles;
 				}, true);
 				return true;
 			}
@@ -140,8 +150,20 @@ namespace Keysharp.Internals
 #if !WINDOWS
 			if (TryOwnControl(h, out var control))
 			{
-				var value = control.CheckedInvoke(() => control.Text, true);
-				text = string.IsNullOrEmpty(value) ? [] : [value];
+				text = control.CheckedInvoke(() =>
+				{
+					var lines = new List<string>();
+
+					VisitOwnChildren(control, detectHidden, child =>
+					{
+						var value = child.Text;
+
+						if (!string.IsNullOrEmpty(value))
+							lines.Add(value);
+					});
+
+					return lines;
+				}, true);
 				return true;
 			}
 #endif

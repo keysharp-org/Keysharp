@@ -1219,6 +1219,16 @@ public class GuiTests : TestRunner
 	}
 
 #if WINDOWS
+	[Test, Category("Internal")]
+	public void WindowProcessImageLookupFailure()
+	{
+		// A window can disappear after it matches the search and before its owner is queried.
+		using var scope = Keysharp.Runtime.Flow.EnterTry();
+		var error = Assert.Throws<KeysharpException>(() => new WindowInfo(0).ProcessImageOrError(false));
+		Assert.That(error.UserError, Is.InstanceOf<OSError>());
+		Assert.That(((OSError)error.UserError).Number, Is.Positive);
+	}
+
 	// The whole zero-copy design rests on one property: GDI+ drawing through the Bitmap and GDI reading
 	// through the DC address the same memory. If that ever stopped holding, presents would silently show
 	// stale frames rather than fail, so assert it directly.

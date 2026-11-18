@@ -85,7 +85,7 @@ namespace Keysharp.Internals.Scripting
 			return Path.Combine(local, "Keysharp", "Scripts", session.ToString(CultureInfo.InvariantCulture));
 #elif LINUX
 			var runtime = Environment.GetEnvironmentVariable("XDG_RUNTIME_DIR");
-			return string.IsNullOrEmpty(runtime) ? Path.Combine(Path.GetTempPath(), $"keysharp-{Keysharp.Internals.Window.Linux.X11.Xlib.geteuid()}")
+			return string.IsNullOrEmpty(runtime) ? Path.Combine(Path.GetTempPath(), $"keysharp-{Platform.Process.EffectiveUserId()}")
 				   : Path.Combine(runtime, "keysharp");
 #else
 			// macOS gives each user a temporary folder of their own.

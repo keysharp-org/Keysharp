@@ -552,10 +552,8 @@ namespace Keysharp.Builtins
 		{
 			get
 			{
-#if LINUX
-				return Xlib.geteuid() == 0;
-#elif OSX
-				return string.Equals(Environment.UserName, "root", StringComparison.Ordinal);
+#if LINUX || OSX
+				return Platform.Process.EffectiveUserId() == 0;
 #elif WINDOWS
 				using var id = WindowsIdentity.GetCurrent();
 				return new WindowsPrincipal(id).IsInRole(WindowsBuiltInRole.Administrator);

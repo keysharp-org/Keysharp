@@ -62,8 +62,6 @@ namespace Keysharp.Internals.Window.Unix
 
 		internal override long Style => control != null ? EtoWindowStyles.For(control) : 0L;
 
-		internal override List<string> GetText(bool detectHidden, bool fast) => control?.Text is string s && !string.IsNullOrEmpty(s) ? [s] : [];
-
 		internal override string Title => control?.Text ?? string.Empty;
 
 		internal override object Transparency => null;

@@ -168,7 +168,7 @@ Status legend:
 | A_Index | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The current loop iteration. Outside a loop it is a value of the current pseudo-thread, 0 when it starts, which a script may assign. |
 | A_InitialWorkingDir | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
 | A_Is64bitOS | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
-| A_IsAdmin | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable. |
+| A_IsAdmin | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Reports whether the process is elevated on Windows or has effective user ID 0 on Linux and macOS. |
 | A_IsCompiled | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | True if the program is running as a compiled executable, else false if it's running as a script passed to Keysharp.exe. |
 | A_IsCritical | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns 1 if the script is in critical priority mode, else 0. |
 | A_IsPaused | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in variable indicating whether the current script/thread is paused. |
@@ -917,7 +917,7 @@ Status legend:
 | ProcessGetName() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The ProcessGetName and ProcessGetPath functions return the name or path of the specified process. |
 | ProcessGetParent() | 🟢 Full | 🟢 Full | 🟢 Full | ⚪ Unknown | Returns the parent PID of the selected process, or of the script process if omitted. Throws TargetError if the process is missing and OSError if the parent cannot be queried. The macOS implementation is not yet runtime-verified. |
 | ProcessGetPath() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The ProcessGetName and ProcessGetPath functions return the name or path of the specified process. |
-| ProcessSetPriority() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Changes the priority level of the first matching process. |
+| ProcessSetPriority() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The first letter of Level selects the priority, ignoring case. Raises TargetError if no process matches and OSError if its priority cannot be changed. |
 | ProcessWait() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Waits for the specified process to exist. |
 | ProcessWaitClose() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Waits for all matching processes to close. |
 | PropertyError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
@@ -1120,7 +1120,7 @@ Status legend:
 | WinGetProcessName() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | Returns the name of the process that owns the specified window. Empty when its PID is unavailable, including foreign windows on COSMIC and generic wlroots Wayland sessions. |
 | WinGetProcessPath() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | Returns the executable path of the process that owns the specified window. Empty when its PID is unavailable, including foreign windows on COSMIC and generic wlroots Wayland sessions, or the process path cannot be read. |
 | WinGetStyle() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Retrieves the style of the specified window. No non-Windows platform has a real Win32 style word, so for a script-owned window the toolkit state is projected onto the WS_* bits scripts actually test: WS_CAPTION/WS_POPUP from the border style, WS_SYSMENU, WS_THICKFRAME, WS_MINIMIZEBOX and WS_MAXIMIZEBOX from the frame buttons, plus WS_VISIBLE, WS_DISABLED, WS_MINIMIZE and WS_MAXIMIZE from the window state. Foreign windows expose no native Win32 style word: X11 and Wayland report WS_CAPTION from decoration state, and macOS returns 0. |
-| WinGetText | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Retrieves the text from a window. On X11 the text is gathered by walking the X window tree and reading each child's WM_NAME, so a modern GTK or Qt application - whose widgets are drawn client-side and are not X windows - yields little or nothing. Wayland exposes no window text at all and returns empty; macOS reads it through the Accessibility API. |
+| WinGetText | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Script-owned GUIs return descendant text in enumeration order, excluding the title; DetectHiddenText controls effective visibility. Foreign X11 windows expose child WM_NAME text, which often omits GTK/Qt widgets; Wayland exposes no foreign control text, and macOS currently returns the foreign window title. |
 | WinGetTitle() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟡 Partial | The WinGetTitle function retrieves the title of the specified window. |
 | WinGetTransColor() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Retrieves the transparency colour key of the specified window. No non-Windows backend implements a per-colour transparency key; X11, Wayland and macOS always return 0. |
 | WinGetTransparent() | 🟢 Full | 🟢 Full | 🟡 Partial | 🟢 Full | The WinGetTransparent function returns the degree of transparency of the specified window. |

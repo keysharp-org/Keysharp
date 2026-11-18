@@ -1770,7 +1770,7 @@ namespace Keysharp.Internals.Audio
 		}
 
 		private static string ProcessNameOrEmpty(uint processId)
-			=> Path.GetFileNameWithoutExtension(Keysharp.Builtins.Processes.GetProcessImage(processId, true));
+			=> Path.GetFileNameWithoutExtension(Platform.Process.GetProcessImage(processId, true));
 
 		/// <summary>
 		/// Resolves a session id back to its live control, which the caller owns and must release. The id is exact:

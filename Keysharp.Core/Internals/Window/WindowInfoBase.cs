@@ -155,7 +155,6 @@ namespace Keysharp.Internals.Window
 
 		private List<string> textCache;
 		private bool textCacheHidden, textCacheFast;
-		internal List<string> Text => GetText(ThreadAccessors.A_DetectHiddenText, ThreadAccessors.A_TitleMatchModeSpeed);
 		internal virtual List<string> GetText(bool detectHidden, bool fast)
 		{
 			if (textCache != null && textCacheHidden == detectHidden && textCacheFast == fast)
@@ -304,6 +303,24 @@ namespace Keysharp.Internals.Window
 				   : string.Equals(ProcessName, criterion, StringComparison.OrdinalIgnoreCase);
 		}
 
+		internal string ProcessImageOrError(bool nameOnly)
+		{
+			var image = nameOnly ? ProcessName : Path;
+
+			if (image.Length != 0)
+				return image;
+
+			var pid = PID;
+#if LINUX
+			// Linux window managers can omit the owner PID.
+			if (pid <= 0)
+				return "";
+#endif
+			// A failed search lookup caches an empty string. Read again to report the actual OS error.
+			image = GetProcessImage((uint)pid, nameOnly);
+			return image.Length != 0 ? image : (string)Errors.OSErrorOccurred((long)Marshal.GetLastPInvokeError(), "", DefaultErrorString);
+		}
+
 		private string QueryProcessImage(bool nameOnly)
 		{
 			var pid = PID;
@@ -311,21 +328,7 @@ namespace Keysharp.Internals.Window
 			if (pid <= 0)
 				return "";
 
-#if WINDOWS
-			return Processes.GetProcessImage((uint)pid, nameOnly);
-#else
-			try
-			{
-				//MainModule is slow, since it enumerates the process's modules.
-				using var proc = Process.GetProcessById((int)pid);
-				using var module = proc.MainModule;
-				return nameOnly ? module.ModuleName : module.FileName;
-			}
-			catch
-			{
-				return "";
-			}
-#endif
+			return GetProcessImage((uint)pid, nameOnly);
 		}
 
 		private static bool ClassMatches(string className, string criterion, long titleMatchMode)

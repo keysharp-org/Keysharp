@@ -145,7 +145,11 @@ for soundError in soundErrors
 AssertEq(soundComponent.Calls, 4, A_LineNumber)
 #endif
 
-for bad in ["Nromal", "Nonsense", "Normal,High", "", 1]
+; As in AutoHotkey, only the first letter of the level is checked, so these reach the process lookup.
+for good in ["Normal,High", "below"]
+    Throws(() => ProcessSetPriority(good, "keysharp-enum-test-no-such-process.exe"), A_LineNumber, TargetError)
+
+for bad in ["Xyz", " Normal", "", 1]
     Throws(() => ProcessSetPriority(bad, "keysharp-enum-test-no-such-process.exe"), A_LineNumber, ValueError)
 
 #if WINDOWS

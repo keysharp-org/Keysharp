@@ -1962,7 +1962,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Built-in variable."
+                     "notes":  "Reports whether the process is elevated on Windows or has effective user ID 0 on Linux and macOS."
                  },
                  {
                      "category":  "Environment/System",
@@ -9559,8 +9559,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Changes the priority level of the first matching process.",
-                     "tested-by":  "external-dllcall.ahk"
+                     "notes":  "The first letter of Level selects the priority, ignoring case. Raises TargetError if no process matches and OSError if its priority cannot be changed.",
+                     "tested-by":  "ProcessTests.ProcessRunWaitClose; finite-inputs.ahk"
                  },
                  {
                      "category":  "Core Language",
@@ -11509,7 +11509,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Retrieves the text from a window. On X11 the text is gathered by walking the X window tree and reading each child\u0027s WM_NAME, so a modern GTK or Qt application - whose widgets are drawn client-side and are not X windows - yields little or nothing. Wayland exposes no window text at all and returns empty; macOS reads it through the Accessibility API."
+                     "notes":  "Script-owned GUIs return descendant text in enumeration order, excluding the title; DetectHiddenText controls effective visibility. Foreign X11 windows expose child WM_NAME text, which often omits GTK/Qt widgets; Wayland exposes no foreign control text, and macOS currently returns the foreign window title.",
+                     "tested-by":  "window-functions.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",

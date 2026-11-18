@@ -154,6 +154,9 @@ namespace Keysharp.Builtins
 		///     AboveNormal(or A)<br/>
 		///     High(or H)<br/>
 		///     Realtime(or R)<br/>
+		/// As in AutoHotkey, only the first character is checked, case-insensitively, so "Below" means BelowNormal.
+		/// Any other first character, or an empty string, throws a ValueError.
+		/// </param>
 		/// <param name="pidOrName">
 		/// Specify either a number (the PID) or a process name:<br/>
 		/// PID: The Process ID, which is a number that uniquely identifies one specific process<br/>
@@ -165,20 +168,20 @@ namespace Keysharp.Builtins
 		/// Since a name might match multiple running processes, only the first process will be operated upon.<br/>
 		/// The name is not case-sensitive.
 		/// </param>
-		/// <returns>Returns the Process ID (PID) of the specified process. If a matching process is not found or cannot be manipulated, zero is returned.</returns>
+		/// <returns>The Process ID (PID) of the specified process. Throws a TargetError if the process could not be found, or an OSError if its priority could not be changed.</returns>
 		public static long ProcessSetPriority(object level, [UserDeclaredName("PIDOrName")] object pidOrName = null)
 		{
 			if (!level.CoerceString(out var lvl) || !pidOrName.CoerceString(out var name))
 				return 0L;
 
-			ProcessPriorityClass? priority = lvl.ToLowerInvariant() switch
+			ProcessPriorityClass? priority = (lvl.Length == 0 ? '\0' : char.ToUpperInvariant(lvl[0])) switch
 			{
-				"l" or Keyword_Low => ProcessPriorityClass.Idle,
-				"b" or Keyword_BelowNormal => ProcessPriorityClass.BelowNormal,
-				"n" or Keyword_Normal => ProcessPriorityClass.Normal,
-				"a" or Keyword_AboveNormal => ProcessPriorityClass.AboveNormal,
-				"h" or Keyword_High => ProcessPriorityClass.High,
-				"r" or Keyword_Realtime => ProcessPriorityClass.RealTime,
+				'L' => ProcessPriorityClass.Idle,
+				'B' => ProcessPriorityClass.BelowNormal,
+				'N' => ProcessPriorityClass.Normal,
+				'A' => ProcessPriorityClass.AboveNormal,
+				'H' => ProcessPriorityClass.High,
+				'R' => ProcessPriorityClass.RealTime,
 				_ => null
 			};
 
@@ -188,17 +191,24 @@ namespace Keysharp.Builtins
 				return 0;
 			}
 
-			using (var proc = string.IsNullOrEmpty(name) ? Process.GetCurrentProcess() : FindProcess(name))
+			using var proc = string.IsNullOrEmpty(name) ? Process.GetCurrentProcess() : FindProcess(name);
+
+			if (proc == null)
+				return (long)Errors.TargetErrorOccurred($"The specified process {name} was not found", DefaultErrorLong);
+
+			try
 			{
-				if (proc != null)
-				{
-					proc.PriorityClass = priority.Value;
-
-					return proc.Id;
-				}
+				proc.PriorityClass = priority.Value;
+				return proc.Id;
 			}
-
-			return 0;
+			catch (Win32Exception ex)
+			{
+				return (long)Errors.OSErrorOccurred(ex, "", DefaultErrorLong);
+			}
+			catch (InvalidOperationException) // It exited after the lookup.
+			{
+				return (long)Errors.TargetErrorOccurred($"The specified process {name} was not found", DefaultErrorLong);
+			}
 		}
 
 		/// <summary>
@@ -423,18 +433,13 @@ namespace Keysharp.Builtins
 			if (!pidOrName.CoerceString(out var name))
 				return "";
 
-			using var proc = string.IsNullOrEmpty(name) ? Process.GetCurrentProcess() : FindProcess(name);
+			var pid = name.Length == 0 ? Environment.ProcessId : FindProcessId(name);
 
-			if (proc == null)
-				return (string)Errors.TargetErrorOccurred($"The specified process {pidOrName} was not found");
+			if (pid == 0)
+				return (string)Errors.TargetErrorOccurred($"The specified process {name} was not found", DefaultErrorString);
 
-#if WINDOWS
-			var result = GetProcessImage((uint)proc.Id, nameOnly);
-			return result.Length != 0 ? result : (string)Errors.OSErrorOccurred(new Win32Exception(Marshal.GetLastWin32Error()), "", DefaultErrorString);
-#else
-			using var module = proc.MainModule;
-			return nameOnly ? module.ModuleName : module.FileName;
-#endif
+			var result = GetProcessImage((uint)pid, nameOnly);
+			return result.Length != 0 ? result : (string)Errors.OSErrorOccurred((long)Marshal.GetLastPInvokeError(), "", DefaultErrorString);
 		}
 
 		/// <summary>
@@ -481,40 +486,6 @@ namespace Keysharp.Builtins
 				Keysharp.Internals.Flow.Sleep(remaining < 0 ? ProcessPollInterval : Math.Min(remaining, ProcessPollInterval));
 			}
 		}
-
-#if WINDOWS
-		/// <summary>
-		/// The process's executable path or, with <paramref name="nameOnly"/>, its file name. Empty when the process
-		/// cannot be queried, with the reason in the last Win32 error.
-		/// </summary>
-		internal static unsafe string GetProcessImage(uint pid, bool nameOnly)
-		{
-			var hProc = WindowsAPI.OpenProcess(ProcessAccessTypes.PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
-
-			if (hProc == 0)
-				return "";
-
-			try
-			{
-				const int capacity = 1024;
-				var buf = stackalloc char[capacity];
-
-				// GetProcessImageFileName is the faster call, but it gives a device path, so only the name can use it.
-				if (nameOnly)
-				{
-					var path = new ReadOnlySpan<char>(buf, (int)WindowsAPI.GetProcessImageFileName(hProc, buf, capacity));
-					return path[(path.LastIndexOf('\\') + 1)..].ToString();
-				}
-
-				var size = (uint)capacity;
-				return WindowsAPI.QueryFullProcessImageName(hProc, 0, buf, ref size) ? new string(buf, 0, (int)size) : "";
-			}
-			finally
-			{
-				_ = WindowsAPI.CloseHandle(hProc);
-			}
-		}
-#endif
 
 #if !WINDOWS
 		private static bool IsUrlTarget(string target)

@@ -695,7 +695,7 @@ public class RunnerTests : TestRunner
 		Assert.That(CompileDaemonSecurity.ReadCommandLine(process.Handle), Is.EqualTo(Marshal.PtrToStringUni(GetCommandLineW())));
 		Assert.IsTrue(CompileDaemonSecurity.HasDaemonArguments("dotnet \"C:\\Keysharp.dll\" --daemon", "dotnet.exe", "C:\\Keysharp.dll"));
 		Assert.That(CompileDaemonSecurity.HasDaemonArguments("dotnet \"C:\\Other.dll\" --daemon", "dotnet.exe", "C:\\Keysharp.dll"), Is.False);
-		var image = Processes.GetProcessImage((uint)process.Id, false);
+		var image = Keysharp.Internals.Platform.Process.GetProcessImage((uint)process.Id, false);
 		Assert.That(image, Is.Not.Empty);
 		Assert.That(CompileDaemonSecurity.HasImage(process.Handle, image), Is.True);
 		Assert.That(CompileDaemonSecurity.HasImage(process.Handle, image.ToUpperInvariant()), Is.True);
