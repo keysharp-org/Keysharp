@@ -142,8 +142,9 @@ namespace Keysharp.Builtins
 		/// Returns the volume serial number of the specified drive.
 		/// </summary>
 		/// <param name="drive">The drive letter followed by a colon and an optional backslash, or a UNC name such as "\server1\share1".</param>
-		/// <returns>The drive's volume serial number.</returns>
-		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if the drive could not be accessed.</exception>
+		/// <returns>The drive's volume serial number. On Linux and macOS it is taken from the file system's UUID.</returns>
+		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if the drive could not be accessed, or on Linux
+		/// and macOS if its file system has no UUID.</exception>
 		public static object DriveGetSerial(object drive)
 		{
 			if (!drive.CoerceString(out var text))
@@ -228,7 +229,8 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="drive">The drive letter optionally followed by a colon or a colon and backslash.</param>
 		/// <exception cref="ValueError">On Windows, a <see cref="ValueError"/> exception is thrown if drive is not a drive letter.</exception>
-		/// <exception cref="OSError">On Windows, an <see cref="OSError"/> exception is thrown if the drive could not be locked.</exception>
+		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if the drive could not be locked.</exception>
+		/// <exception cref="UnsupportedError">An <see cref="UnsupportedError"/> exception is thrown on macOS.</exception>
 		public static object DriveLock(object drive)
 		{
 			if (!drive.CoerceString(out var text))
@@ -278,7 +280,8 @@ namespace Keysharp.Builtins
 		/// </summary>
 		/// <param name="drive">The drive letter optionally followed by a colon or a colon and backslash.</param>
 		/// <exception cref="ValueError">On Windows, a <see cref="ValueError"/> exception is thrown if drive is not a drive letter.</exception>
-		/// <exception cref="OSError">On Windows, an <see cref="OSError"/> exception is thrown if the drive could not be unlocked.</exception>
+		/// <exception cref="OSError">An <see cref="OSError"/> exception is thrown if the drive could not be unlocked.</exception>
+		/// <exception cref="UnsupportedError">An <see cref="UnsupportedError"/> exception is thrown on macOS.</exception>
 		public static object DriveUnlock(object drive)
 		{
 			if (!drive.CoerceString(out var text))

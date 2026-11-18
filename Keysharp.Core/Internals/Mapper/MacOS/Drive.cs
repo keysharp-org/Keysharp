@@ -1,89 +1,96 @@
-using Keysharp.Builtins;
 #if OSX
+using Keysharp.Builtins;
+using Keysharp.Internals.AppleEvents;
+using MonoMac.Foundation;
 
 namespace Keysharp.Internals.Mapper.MacOS
 {
 	/// <summary>
 	/// Concrete implementation of Drive for the macOS platform.
 	/// </summary>
-	internal class Drive : UnixDriveBase
+	internal partial class Drive : UnixDriveBase
 	{
-		// Escapes characters that would otherwise let a volume name break out of the double-quoted
-		// argument when interpolated into a bash -c command string.
-		private static string EscapeForBashDoubleQuotes(string s) =>
-			s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("`", "\\`").Replace("$", "\\$");
+		private const string diskutil = "/usr/sbin/diskutil";
+		private const string discRecording = "/System/Library/Frameworks/DiscRecording.framework/DiscRecording";
+
+		[LibraryImport(discRecording)]
+		private static partial nint DRDeviceCopyDeviceForBSDName(nint name);
+
+		[LibraryImport(discRecording)]
+		private static partial int DRDeviceCloseTray(nint device);
 
 		protected override long SerialNumber
 		{
 			get
 			{
-				if ($"diskutil info \"{EscapeForBashDoubleQuotes(drive.Name)}\" | grep \"Volume UUID\"".Bash(out var output) != 0)
-					return 0L;
+				var uuid = DiskProperty("VolumeUUID");
 
-				if (!string.IsNullOrEmpty(output))
-				{
-					var components = output.Split(':');
+				if (uuid is { Length: >= 8 } && uint.TryParse(uuid.AsSpan(0, 8), NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var serial))
+					return serial;
 
-					if (components.Length >= 2)
-					{
-						var uuid = components[1].Trim().Replace("-", "");
-
-						if (uuid.Length >= 8 && long.TryParse(uuid.AsSpan(0, 8), System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out var l))
-							return l;
-					}
-				}
-
-				return 0L;
-			}
-		}
-
-		internal override string StatusCD
-		{
-			get
-			{
-				Diagnostics.Debug.WriteLine($"Obtaining the status of the CD/DVD drive is not supported on macOS.");
-				return DefaultObject;
+				throw new IOException($"The volume at {drive.Name} has no UUID to take a serial number from.");
 			}
 		}
 
 		internal Drive(string path)
 			: base(path) { }
 
-		internal override void Eject()
+		internal override void Eject() => RunOnDrive("eject", () =>
 		{
-			if (!HasDrive)
+			if (path == null)
+				_ = DriveCommand("/usr/bin/drutil", ["-drive", "1", "tray", "eject"]);
+			else
+				_ = DriveCommand(diskutil, ["eject", path]);
+		});
+
+		internal override void Lock() => _ = Errors.UnsupportedErrorOccurred("DriveLock is not supported on macOS.");
+
+		internal override void Retract() => RunOnDrive("retract", () =>
+		{
+			if (path == null)
+			{
+				_ = DriveCommand("/usr/bin/drutil", ["-drive", "1", "tray", "close"]);
 				return;
+			}
 
-			if ($"diskutil eject \"{EscapeForBashDoubleQuotes(drive.Name)}\"".Bash() != 0)
-				Diagnostics.Debug.WriteLine($"Drive.Eject failed for {drive.Name}");
-		}
+			// drutil can select a drive by index or product name only. DiscRecording accepts the exact BSD disk.
+			var disk = DiskProperty("ParentWholeDisk", "DeviceIdentifier") ?? throw new IOException($"No disk found for {path}.");
+			using var name = new NSString(disk);
+			var device = DRDeviceCopyDeviceForBSDName(name.Handle);
 
-		internal override void Lock()
+			if (device == 0)
+				throw new IOException($"{path} does not identify an optical drive.");
+
+			try
+			{
+				var status = DRDeviceCloseTray(device);
+
+				if (status != 0)
+					throw new IOException($"DiscRecording could not close the tray of {path} (OSStatus {status}).");
+			}
+			finally { CF.CFRelease(device); }
+		});
+
+		private string DiskProperty(string key, string fallbackKey = null)
 		{
-			Diagnostics.Debug.WriteLine($"Locking the eject ability of a drive is not supported on macOS.");
+			var output = DriveCommand(diskutil, ["info", "-plist", drive.Name], 5000);
+			using var pool = new NSAutoreleasePool();
+			using var data = NSData.FromString(output);
+			var format = NSPropertyListFormat.Xml;
+			using var plist = NSPropertyListSerialization.PropertyListWithData(data, ref format, out var error);
+
+			using (error)
+			{
+				if (plist is not NSDictionary dict)
+					throw new IOException(error?.LocalizedDescription ?? "Invalid diskutil property list.");
+
+				return dict[key]?.ToString() ?? (fallbackKey == null ? null : dict[fallbackKey]?.ToString());
+			}
 		}
 
-		internal override void Retract()
-		{
-			if (!HasDrive)
-				return;
+		protected override void WriteLabel(string label) => _ = DriveCommand(diskutil, ["renameVolume", drive.Name, label]);
 
-			if ("drutil tray close".Bash() != 0)
-				Diagnostics.Debug.WriteLine($"Drive.Retract failed for {drive.Name}");
-		}
-
-		protected override void WriteLabel(string label)
-		{
-			var result = RunCommand("/usr/sbin/diskutil", ["renameVolume", drive.Name, label]);
-
-			if (!result.Succeeded)
-				throw new IOException(result.ErrorMessage);
-		}
-
-		internal override void UnLock()
-		{
-			Diagnostics.Debug.WriteLine($"Unlocking the eject ability of a drive is not supported on macOS.");
-		}
+		internal override void UnLock() => _ = Errors.UnsupportedErrorOccurred("DriveUnlock is not supported on macOS.");
 	}
 }
 #endif

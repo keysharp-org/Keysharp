@@ -1,9 +1,9 @@
+#ErrorStdOut
+#Warn All, StdOut
 #NoTrayIcon
 #Include <assert>
 
-val := SysGet(80)
-
-Assert(val > 0, A_LineNumber)
+AssertEq(SysGet(80), MonitorGetCount(), A_LineNumber)
 
 val := SysGet(0)
 
@@ -22,5 +22,34 @@ Assert(val > 0, A_LineNumber)
 val := SysGet(19)
 
 Assert(val > 0, A_LineNumber)
+
+AssertEq(SysGet(1), A_ScreenHeight, A_LineNumber)
+
+; SM_CXFULLSCREEN/SM_CYFULLSCREEN fit the primary work area; Windows also takes the caption height off
+; the height, and its SM_CXMAXIMIZED/SM_CYMAXIMIZED add the window frame.
+MonitorGetWorkArea(MonitorGetPrimary(), &left, &top, &right, &bottom)
+Assert(SysGet(16) > 0 && SysGet(16) <= right - left, A_LineNumber)
+Assert(SysGet(17) > 0 && SysGet(17) <= bottom - top, A_LineNumber)
+Assert(SysGet(61) >= SysGet(16), A_LineNumber)
+Assert(SysGet(62) >= SysGet(17), A_LineNumber)
+
+#if LINUX || OSX
+; SM_REMOTESESSION and SM_REMOTECONTROL report an SSH session by its SSH_TTY variable.
+sshTty := EnvGet("SSH_TTY")
+try
+{
+	EnvSet("SSH_TTY", "/dev/pts/9")
+	AssertEq(SysGet(0x1000) " " SysGet(0x2001), "1 1", A_LineNumber)
+	EnvSet("SSH_TTY")
+	AssertEq(SysGet(0x1000) " " SysGet(0x2001), "0 0", A_LineNumber)
+}
+finally
+	EnvSet("SSH_TTY", sshTty == "" ? unset : sshTty)
+#endif
+
+#if OSX
+safeBoot := SysGet(67)
+Assert(safeBoot == 0 || safeBoot == 1, A_LineNumber)
+#endif
 
 FileAppend "pass", "*"

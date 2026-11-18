@@ -467,20 +467,20 @@ Status legend:
 | DotNet.RegExMatch() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Runs a .NET regex match and returns match details. |
 | DotNet.RegExReplace() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Runs a .NET regex replace. |
 | Download() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Downloads a resource to a file over http, https or ftp, streamed rather than buffered, waiting while pumping so timers and the GUI stay alive. Only the *0 cache flag is supported. An FTP login is anonymous unless the URL carries userinfo credentials, and a directory URL saves the server LIST output. A gopher URL raises a ValueError. |
-| DriveEject() | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | Ejects or retracts the tray of the specified CD/DVD drive. |
+| DriveEject() | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | Ejects a drive; failures raise OSError. An omitted drive uses the Linux eject default or first macOS optical drive. |
 | DriveGetCapacity() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the total capacity of the drive which contains the specified path, in megabytes. |
 | DriveGetFileSystem() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the type of the specified drive's file system. |
 | DriveGetLabel() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the volume label of the specified drive. |
 | DriveGetList() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns drive letters on Windows and semicolon-separated drive paths on Linux/macOS. An omitted type lists every drive. Filters are case-insensitive; an empty or unknown explicit filter raises ValueError. |
-| DriveGetSerial() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the volume serial number of the specified drive. |
+| DriveGetSerial() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the volume serial. Linux and macOS use the file system UUID; a missing UUID raises OSError. |
 | DriveGetSpaceFree() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The DriveGetSpaceFree function returns the free disk space of the drive which contains the specified path, in megabytes. |
 | DriveGetStatus() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the status of the drive which contains the specified path. |
 | DriveGetStatusCD() | 🟢 Full | 🔴 Unsupported | 🔴 Unsupported | 🔴 Unsupported | Retrieves CD/DVD media playback status through Windows MCI. Linux has no media-playback-status backend, and the feature is permanently unsupported on macOS. |
 | DriveGetType() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Returns the type of the drive which contains the specified path. |
-| DriveLock() | 🟢 Full | 🟢 Full | 🟢 Full | 🔴 Unsupported | Prevents media ejection. Linux uses the eject utility; eject locking is permanently unsupported on macOS. |
-| DriveRetract() | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | The DriveEject and DriveRetract functions eject or retract the tray of the specified CD/DVD drive. DriveEject can also eject a removable drive. |
+| DriveLock() | 🟢 Full | 🟢 Full | 🟢 Full | 🔴 Unsupported | Prevents ejection using eject on Linux; macOS raises UnsupportedError. |
+| DriveRetract() | 🟢 Full | 🟢 Full | 🟢 Full | 🟡 Partial | Closes an optical tray, using the same default as DriveEject. Failures raise OSError; macOS hardware operation is unverified. |
 | DriveSetLabel() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Changes a volume label. Windows uses SetVolumeLabel, Linux dispatches to the installed filesystem-specific label utility, and macOS uses diskutil renameVolume. Unix operations can require elevated privileges; filesystem/backend coverage needs manual verification. |
-| DriveUnlock() | 🟢 Full | 🟢 Full | 🟢 Full | 🔴 Unsupported | Restores media ejection. Linux uses the eject utility; eject locking is permanently unsupported on macOS. |
+| DriveUnlock() | 🟢 Full | 🟢 Full | 🟢 Full | 🔴 Unsupported | Restores ejection using eject on Linux; macOS raises UnsupportedError. |
 | Edit() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Opens the script, or the file named by the optional argument, in a text editor rather than the extension's handler. |
 | EditGetCurrentCol() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The EditGetCurrentCol function returns the column number in an edit control where the caret resides. |
 | EditGetCurrentLine() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The EditGetCurrentLine function returns the line number in an edit control where the caret resides. |
@@ -1035,7 +1035,7 @@ Status legend:
 | super | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Keyword that accesses base-class methods and properties. |
 | Suspend() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Suspend function disables or enables all or selected hotkeys and hotstrings. |
 | Switch | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Selects one case branch based on a value/expression. |
-| SysGet() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Gets system information. Linux and macOS implement monitor dimensions and count, the virtual screen (76-79, as Monitor.VirtualScreen), mouse presence and buttons, network state and selected session metrics; any other metric raises UnsupportedError. |
+| SysGet() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Linux and macOS support monitor, virtual-screen (76-79), mouse, network and selected session metrics; others raise UnsupportedError. macOS metric 67 reports safe boot. |
 | SysGetIPAddresses() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The SysGetIPAddresses function returns an array of the system's IPv4 addresses. |
 | Tan() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the tangent of a number. |
 | Tanh() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the hyperbolic tangent of a number. |

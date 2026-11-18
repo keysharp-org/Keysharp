@@ -40,7 +40,7 @@ namespace Keysharp.Builtins
 	/// <summary>
 	/// Public interface for environment-related functions.
 	/// </summary>
-	public static class Env
+	public static partial class Env
 	{
 
 		/// <summary>
@@ -310,12 +310,7 @@ namespace Keysharp.Builtins
 		/// <returns>This function returns the value of the specified system property.</returns>
 		public static object SysGet(object property)
 		{
-#if !WINDOWS
-			SystemMetric sm;
-
-			if (property is Keysharp.Internals.Os.SystemMetric en)
-				sm = en;
-			else
+			if (property is not SystemMetric sm)
 			{
 				if (!property.CoerceInt(out var propertyInt))
 					return DefaultObject;
@@ -323,31 +318,27 @@ namespace Keysharp.Builtins
 				sm = (SystemMetric)propertyInt;
 			}
 
-			var (screenWidth, screenHeight) = Monitor.GetPrimaryScreenSize();
-			var (workWidth, workHeight) = Monitor.GetPrimaryWorkAreaSize();
-
+#if WINDOWS
+			return (long)WindowsAPI.GetSystemMetrics(sm);
+#else
 			switch (sm)
 			{
 				case SystemMetric.SM_CMONITORS:
 					return Monitor.MonitorGetCount();
 
 				case SystemMetric.SM_CXSCREEN:
-					return screenWidth;
+					return Monitor.GetPrimaryScreenSize().Width;
 
 				case SystemMetric.SM_CYSCREEN:
-					return screenHeight;
+					return Monitor.GetPrimaryScreenSize().Height;
 
 				case SystemMetric.SM_CXFULLSCREEN:
-					return workWidth;
+				case SystemMetric.SM_CXMAXIMIZED:
+					return Monitor.GetPrimaryWorkAreaSize().Width;
 
 				case SystemMetric.SM_CYFULLSCREEN:
-					return workHeight;
-
-				case SystemMetric.SM_CXMAXIMIZED:
-					return workWidth;
-
 				case SystemMetric.SM_CYMAXIMIZED:
-					return workHeight;
+					return Monitor.GetPrimaryWorkAreaSize().Height;
 
 				case SystemMetric.SM_MOUSEPRESENT:
 					return 1L;
@@ -363,16 +354,18 @@ namespace Keysharp.Builtins
 
 				case SystemMetric.SM_CLEANBOOT:
 				{
-					_ = "last reboot".Bash(out var bootsOutput);
-					var boots = bootsOutput.SplitLines().ToList();
+#if OSX
+					nuint size = sizeof(int);
 
-					if (boots.Count > 0)
-					{
-						if (boots[0].Contains("recovery", StringComparison.OrdinalIgnoreCase))
-							return NetworkUp() ? 2L : (object)1L;
-					}
+					if (SysctlInt("kern.safeboot", out var safeBoot, ref size, 0, 0) != 0)
+						return Errors.OSErrorOccurred(new Win32Exception(Marshal.GetLastPInvokeError()), "Error querying safe boot state.");
 
-					return 0L;
+					return safeBoot != 0 ? 1L : 0L;
+#else
+					var boot = RunCommand("last", ["-n", "1", "reboot"]);
+					return boot.Succeeded && boot.StandardOutput.Contains("recovery", StringComparison.OrdinalIgnoreCase)
+						? (NetworkUp() ? 2L : 1L) : 0L;
+#endif
 				}
 
 				case SystemMetric.SM_MOUSEWHEELPRESENT:
@@ -380,14 +373,12 @@ namespace Keysharp.Builtins
 						&& wheelOut.Contains("button wheel", StringComparison.OrdinalIgnoreCase) ? 1L : 0L;
 
 				case SystemMetric.SM_REMOTESESSION:
-					return "echo $SSH_TTY".Bash(out var sshOut1) == 0 && sshOut1 != "" ? 1L : 0L;
+				case SystemMetric.SM_REMOTECONTROL:
+					return !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SSH_TTY")) ? 1L : 0L;
 
 				case SystemMetric.SM_SHUTTINGDOWN:
-					return "systemctl is-system-running".Bash(out var systemStateOut) == 0
-						&& systemStateOut.Contains("stopping", StringComparison.OrdinalIgnoreCase) ? 1L : 0L;
-
-				case SystemMetric.SM_REMOTECONTROL:
-					return "echo $SSH_TTY".Bash(out var sshOut2) == 0 && sshOut2 != "" ? 1L : 0L;
+					// systemctl also exits nonzero for the stopping state.
+					return RunCommand("systemctl", ["is-system-running"]).StandardOutput.AsSpan().Trim().SequenceEqual("stopping") ? 1L : 0L;
 
 				case SystemMetric.SM_XVIRTUALSCREEN:
 					return (long)Platform.Screen.GetVirtualScreenBounds().X;
@@ -404,19 +395,13 @@ namespace Keysharp.Builtins
 				default:
 					return Errors.UnsupportedErrorOccurred($"SysGet({sm}) has no equivalent on this platform.");
 			}
-#elif WINDOWS
-
-			if (property is SystemMetric en)
-				return (long)WindowsAPI.GetSystemMetrics(en);
-
-			if (!property.CoerceInt(out var propertyInt))
-				return DefaultObject;
-
-			return (long)WindowsAPI.GetSystemMetrics((SystemMetric)propertyInt);
-#else
-			return 0L;
 #endif
 		}
+
+#if OSX
+		[LibraryImport("/usr/lib/libSystem.B.dylib", EntryPoint = "sysctlbyname", StringMarshalling = StringMarshalling.Utf8, SetLastError = true)]
+		private static partial int SysctlInt(string name, out int value, ref nuint size, nint newValue, nuint newSize);
+#endif
 
 		internal static byte[] ExtractClipboardAllBytes(object data, long size = long.MinValue)
 		{

@@ -1,10 +1,9 @@
-using Keysharp.Builtins;
 #if LINUX
 
 namespace Keysharp.Internals.Mapper.Linux
 {
 	/// <summary>
-	/// Concrete implementation of Drive for the linux platfrom.
+	/// Drive queries and media controls for Linux.
 	/// </summary>
 	internal class Drive : UnixDriveBase
 	{
@@ -12,103 +11,93 @@ namespace Keysharp.Internals.Mapper.Linux
 		{
 			get
 			{
-				if ($"udevadm info --query=property --name={drive.Name} | grep ID_SERIAL_SHORT".Bash(out var serial) != 0)
-					return 0L;
+				var (number, device) = MountSource();
+				// The device number resolves /dev/root. Btrfs uses an anonymous number and supplies the device by name.
+				var sysPath = "/sys/dev/block/" + number;
+				var target = Directory.Exists(sysPath) ? "--path=" + sysPath
+					: device.StartsWith("/dev/", StringComparison.Ordinal) ? "--name=" + device : null;
 
-				if (!string.IsNullOrEmpty(serial))
+				if (target != null)
 				{
-					var components = serial.Split('=');
+					var properties = DriveCommand("udevadm", ["info", "--query=property", target], 5000);
 
-					if (components.Length >= 2)
-					{
-						_ = components[1].TryCoerceLong(out var value);
-						return value;
-					}
+					if (ParseVolumeSerial(properties) is { } serial)
+						return serial;
 				}
 
-				return 0L;
+				throw new IOException($"The file system on {device} has no UUID to take a serial number from.");
 			}
 		}
 
-		internal override string StatusCD
+		// blkid reports FAT serials as XXXX-XXXX and the full 64-bit NTFS serial. Windows exposes its low 32 bits.
+		private static long? ParseVolumeSerial(string properties)
 		{
-			get
+			string uuid = null;
+			var ntfs = false;
+
+			foreach (var line in properties.AsSpan().EnumerateLines())
 			{
-				Diagnostics.Debug.WriteLine($"Obtaining the status of the CD/DVD drive is not supported on linux.");
-				return DefaultObject;
+				if (line is "ID_FS_TYPE=ntfs")
+					ntfs = true;
+				else if (line.StartsWith("ID_FS_UUID=", StringComparison.Ordinal))
+					uuid = line["ID_FS_UUID=".Length..].ToString();
 			}
+
+			if (uuid == null)
+				return null;
+
+			var hex = uuid.Replace("-", "");
+			var digits = ntfs && hex.Length == 16 ? hex.AsSpan(8) : hex.AsSpan(0, Math.Min(hex.Length, 8));
+			return digits.Length == 8 && uint.TryParse(digits, NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var serial)
+				? serial : null;
 		}
 
 		internal Drive(string path)
 			: base(path) { }
 
-		internal override void Eject()
+		internal override void Eject() => RunEject("eject");
+
+		internal override void Lock() => RunEject("lock", "-i", "1");
+
+		internal override void Retract() => RunEject("retract", "-t");
+
+		internal override void UnLock() => RunEject("unlock", "-i", "0");
+
+		private void RunEject(string what, params string[] options) =>
+			RunOnDrive(what, () => DriveCommand("eject", path == null ? options : [.. options, "--", path]));
+
+		// The device number and source of the file system that holds the path. --nofsroot leaves out the [/dir]
+		// findmnt otherwise adds to the source for a bind mount or a btrfs subvolume.
+		private (string Number, string Source) MountSource()
 		{
-			if (!HasDrive)
-				return;
+			var output = DriveCommand("findmnt", ["--noheadings", "--nofsroot", "--output", "MAJ:MIN,SOURCE", "--target", drive.Name], 5000);
+			var line = output.AsSpan().Trim();
+			line = line[(line.LastIndexOf('\n') + 1)..].Trim();
+			var gap = line.IndexOfAny(' ', '\t');
 
-			if ($"eject {drive.Name}".Bash() != 0)
-				Diagnostics.Debug.WriteLine($"Drive.Eject failed for {drive.Name}");
-		}
+			if (gap < 0)
+				throw new IOException($"findmnt found no file system for {drive.Name}.");
 
-		internal override void Lock()
-		{
-			if (!HasDrive)
-				return;
-
-			if ($"eject -i 1 {drive.Name}".Bash() != 0)
-				Diagnostics.Debug.WriteLine($"Drive.Lock failed for {drive.Name}");
-		}
-
-		internal override void Retract()
-		{
-			if (!HasDrive)
-				return;
-
-			if ($"eject -t {drive.Name}".Bash() != 0)
-				Diagnostics.Debug.WriteLine($"Drive.Retract failed for {drive.Name}");
+			return (line[..gap].ToString(), line[gap..].Trim().ToString());
 		}
 
 		protected override void WriteLabel(string label)
 		{
-			// DriveInfo.Name is normally a mount point on Linux. Label utilities generally
-			// need the backing block device, so resolve it through findmnt first.
-			var lookup = RunCommand("findmnt", ["--noheadings", "--output", "SOURCE", "--target", drive.Name], 5000);
-
-			if (!lookup.Succeeded)
-				throw new IOException($"Could not resolve the block device for {drive.Name}: {lookup.ErrorMessage}");
-			if (string.IsNullOrWhiteSpace(lookup.StandardOutput))
-				throw new IOException($"findmnt returned no block device for {drive.Name}.");
-
-			var source = lookup.StandardOutput.Trim();
+			var source = MountSource().Source;
 			var format = drive.DriveFormat.ToLowerInvariant();
-			(string FileName, string[] Arguments)? command = format switch
+			// Older fatlabel versions expect two arguments and reject "--".
+			(string FileName, string[] Arguments) command = format switch
 			{
 				"ext2" or "ext3" or "ext4" => ("e2label", [source, label]),
-				"btrfs" => ("btrfs", ["filesystem", "label", drive.Name, label]),
+				"btrfs" => ("btrfs", ["filesystem", "label", "--", drive.Name, label]),
 				"xfs" => ("xfs_admin", ["-L", label, source]),
-				"vfat" or "fat" or "fat32" or "msdos" => ("fatlabel", [source, label]),
-				"ntfs" or "ntfs3" => ("ntfslabel", [source, label]),
-				"exfat" => ("exfatlabel", [source, label]),
-				_ => null
+				"vfat" or "fat" or "fat32" or "msdos" => ("fatlabel", label.StartsWith('-') ? ["--", source, label] : [source, label]),
+				"ntfs" or "ntfs3" => ("ntfslabel", ["--", source, label]),
+				"exfat" => ("exfatlabel", ["--", source, label]),
+				_ => throw new PlatformNotSupportedException($"Changing a {format} volume label is not supported on Linux.")
 			};
 
-			if (command == null)
-				throw new PlatformNotSupportedException($"Changing a {drive.DriveFormat} volume label is not supported on Linux.");
-
-			var result = RunCommand(command.Value.FileName, command.Value.Arguments);
-
-			if (!result.Succeeded)
-				throw new IOException(result.ErrorMessage);
-		}
-
-		internal override void UnLock()
-		{
-			if (!HasDrive)
-				return;
-
-			if ($"eject -i 0 {drive.Name}".Bash() != 0)
-				Diagnostics.Debug.WriteLine($"Drive.UnLock failed for {drive.Name}");
+			_ = DriveCommand(command.FileName, command.Arguments);
 		}
 	}
 }

@@ -16,12 +16,23 @@
 #elif OSX
 	val := DriveGetStatus("/")
 	missing := "/keysharp-missing-volume-" A_TickCount
+
+	Throws(() => DriveEject(missing), A_LineNumber, OSError)
+	Throws(() => DriveRetract(missing), A_LineNumber, OSError)
+	Throws(() => DriveLock("/"), A_LineNumber, UnsupportedError)
+	Throws(() => DriveUnlock("/"), A_LineNumber, UnsupportedError)
 #else
 	val := DriveGetStatus("/dev") ; /dev seems to work better than /dev/sda on VMs.
 	missing := "/keysharp-missing-volume-" A_TickCount
 
 	Throws(() => DriveLock(""), A_LineNumber, OSError)
 	Throws(() => DriveUnlock(""), A_LineNumber, OSError)
+
+	; The eject tool's failure is raised, not ignored.
+	Throws(() => DriveEject(missing), A_LineNumber, OSError)
+	Throws(() => DriveRetract(missing), A_LineNumber, OSError)
+	Throws(() => DriveLock(missing), A_LineNumber, OSError)
+	Throws(() => DriveUnlock(missing), A_LineNumber, OSError)
 #endif
 
 AssertEq(val, "Ready", A_LineNumber)

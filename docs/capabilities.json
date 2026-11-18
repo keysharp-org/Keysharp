@@ -4898,7 +4898,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "partial",
-                     "notes":  "Ejects or retracts the tray of the specified CD/DVD drive."
+                     "notes":  "Ejects a drive; failures raise OSError. An omitted drive uses the Linux eject default or first macOS optical drive.",
+                     "tested-by":  "drive-getstatus.ahk (error handling)"
                  },
                  {
                      "category":  "Core Language",
@@ -4952,7 +4953,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Returns the volume serial number of the specified drive.",
+                     "notes":  "Returns the volume serial. Linux and macOS use the file system UUID; a missing UUID raises OSError.",
                      "tested-by":  "drive-getserial.ahk"
                  },
                  {
@@ -5006,7 +5007,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "unsupported",
-                     "notes":  "Prevents media ejection. Linux uses the eject utility; eject locking is permanently unsupported on macOS."
+                     "notes":  "Prevents ejection using eject on Linux; macOS raises UnsupportedError."
                  },
                  {
                      "category":  "Core Language",
@@ -5016,7 +5017,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "partial",
-                     "notes":  "The DriveEject and DriveRetract functions eject or retract the tray of the specified CD/DVD drive. DriveEject can also eject a removable drive."
+                     "notes":  "Closes an optical tray, using the same default as DriveEject. Failures raise OSError; macOS hardware operation is unverified.",
+                     "tested-by":  "drive-getstatus.ahk (error handling)"
                  },
                  {
                      "category":  "Core Language",
@@ -5037,7 +5039,7 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "unsupported",
-                     "notes":  "Restores media ejection. Linux uses the eject utility; eject locking is permanently unsupported on macOS."
+                     "notes":  "Restores ejection using eject on Linux; macOS raises UnsupportedError."
                  },
                  {
                      "category":  "Automation",
@@ -10833,7 +10835,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Gets system information. Linux and macOS implement monitor dimensions and count, the virtual screen (76-79, as Monitor.VirtualScreen), mouse presence and buttons, network state and selected session metrics; any other metric raises UnsupportedError.",
+                     "notes":  "Linux and macOS support monitor, virtual-screen (76-79), mouse, network and selected session metrics; others raise UnsupportedError. macOS metric 67 reports safe boot.",
                      "tested-by":  "env-sysget.ahk"
                  },
                  {

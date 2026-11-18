@@ -15,6 +15,7 @@ namespace Keysharp.Internals.Mapper
 		internal override object Serial => Query(_ => SerialNumber, "serial number");
 		// The caller's available bytes rather than the volume's, which leaves out blocks reserved for root.
 		internal override object SpaceFree => Query(static d => d.AvailableFreeSpace / (1024 * 1024), "free space");
+		internal override string StatusCD => DefaultObject;
 
 		// As in AutoHotkey, a status is reported for every path and no error is raised.
 		internal override string Status
@@ -48,54 +49,39 @@ namespace Keysharp.Internals.Mapper
 			}
 		}
 
-		// Null when the drive was omitted and the machine has no removable drive, after the error is raised.
-		protected DriveInfo drive => info ??= path != null ? new DriveInfo(path) : DefaultRemovableDrive();
+		protected DriveInfo drive => info ??= new DriveInfo(path);
 
-		// The actions check this first: it raises the script's error for a path DriveInfo rejects, such as an empty one.
-		protected bool HasDrive
-		{
-			get
-			{
-				try
-				{
-					return drive != null;
-				}
-				catch (ArgumentException ex)
-				{
-					_ = Errors.OSErrorOccurred(ex, $"Failed to access drive {path}.");
-					return false;
-				}
-			}
-		}
-
+		/// <summary>The volume serial, raising an exception when the volume has none or the query fails.</summary>
 		protected abstract long SerialNumber { get; }
 
 		internal UnixDriveBase(string path)
 			: base(path) { }
 
-		internal override void SetLabel(string label)
+		protected static string DriveCommand(string fileName, string[] arguments, int timeoutMs = -1)
+		{
+			var result = RunCommand(fileName, arguments, timeoutMs);
+			return result.Succeeded ? result.StandardOutput : throw new IOException($"{Path.GetFileName(fileName)}: {result.ErrorMessage}");
+		}
+
+		protected void RunOnDrive(string what, Action action)
 		{
 			try
 			{
-				WriteLabel(label);
+				// Only an omitted path selects the default device.
+				if (path == "")
+					throw new ArgumentException("The drive path is empty.");
+
+				action();
 			}
-			catch (Exception ex)
+			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
 			{
-				_ = Errors.OSErrorOccurred(ex, $"Failed to change the volume label for {path}.");
+				_ = Errors.OSErrorOccurred(ex, $"Failed to {what} drive {path}.");
 			}
 		}
+
+		internal override void SetLabel(string label) => RunOnDrive("label", () => WriteLabel(label));
 
 		protected abstract void WriteLabel(string label);
-
-		private static DriveInfo DefaultRemovableDrive()
-		{
-			foreach (var candidate in DriveInfo.GetDrives())
-				if (candidate.DriveType is DriveType.CDRom or DriveType.Removable)
-					return candidate;
-
-			_ = Errors.ErrorOccurred("Failed to find any CDROM or DVD drives.");
-			return null;
-		}
 
 		private object Query(Func<DriveInfo, object> read, string what)
 		{
@@ -103,7 +89,7 @@ namespace Keysharp.Internals.Mapper
 			{
 				return read(drive);
 			}
-			catch (Exception ex)
+			catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
 			{
 				return QueryFailed(ex, what);
 			}
