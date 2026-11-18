@@ -155,18 +155,7 @@ namespace Keysharp.Builtins
 		private const string postMessageShim =
 			"window.eto = { postMessage: function(m) { window.chrome.webview.postMessage(String(m)); } };";
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		/// <summary>The Edge-backed control, or null when WebView2 is unavailable for any reason.</summary>
 		internal static KeysharpEdgeWebView TryCreate(int addStyle, int addExStyle, int removeStyle, int removeExStyle)

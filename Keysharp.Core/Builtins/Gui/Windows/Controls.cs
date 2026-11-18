@@ -4,10 +4,35 @@ using Label = System.Windows.Forms.Label;
 namespace Keysharp.Builtins
 {
 	/// <summary>
+	/// The window styles of a Gui's controls, set in CreateParams since WinForms makes a window again from those.
+	/// </summary>
+	internal static class CreateParamsExtensions
+	{
+		/// <summary>
+		/// Removes the selected clipping styles before the script's explicit styles are applied.
+		/// </summary>
+		internal static CreateParams Unclipped(this CreateParams cp, int clipStyles = WindowsAPI.WS_CLIPSIBLINGS)
+		{
+			cp.Style &= ~clipStyles;
+			return cp;
+		}
+
+		/// <summary>Adds and removes the styles given in a control's options.</summary>
+		internal static CreateParams WithStyles(this CreateParams cp, int addStyle, int removeStyle, int addExStyle, int removeExStyle)
+		{
+			cp.Style = (cp.Style | addStyle) & ~removeStyle;
+			cp.ExStyle = (cp.ExStyle | addExStyle) & ~removeExStyle;
+			return cp;
+		}
+	}
+
+	/// <summary>
 	/// Holds the controls of a Gui which has a menu bar; see <see cref="KeysharpForm.ContentContainer"/>.
 	/// </summary>
 	internal sealed class KeysharpContentPanel : Panel
 	{
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped(WindowsAPI.WS_CLIPCHILDREN);
+
 		protected override void WndProc(ref Message m)
 		{
 			if (!this.TryForwardContextMenu(ref m))
@@ -15,18 +40,16 @@ namespace Keysharp.Builtins
 		}
 	}
 
-	//The radio-group container must not clip its siblings or intercept clicks between its buttons.
+	//A tab page represents the child dialog AutoHotkey uses for a Tab3.
+	internal sealed class KeysharpTabPage(string text) : TabPage(text)
+	{
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped(WindowsAPI.WS_CLIPCHILDREN);
+	}
+
+	//The radio-group container must not clip its controls or intercept clicks between its buttons.
 	internal sealed class KeysharpRadioPanel : Panel
 	{
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped(WindowsAPI.WS_CLIPSIBLINGS | WindowsAPI.WS_CLIPCHILDREN);
 
 		protected override void WndProc(ref Message m)
 		{
@@ -42,20 +65,7 @@ namespace Keysharp.Builtins
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				//Allow later siblings to paint over earlier controls, as in AutoHotkey.
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped().WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		public KeysharpButton(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
@@ -82,19 +92,7 @@ namespace Keysharp.Builtins
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped().WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		protected override bool ShowFocusCues => false;
 
@@ -129,19 +127,7 @@ namespace Keysharp.Builtins
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped(WindowsAPI.WS_CLIPSIBLINGS | WindowsAPI.WS_CLIPCHILDREN).WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		public KeysharpComboBox(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
@@ -163,19 +149,7 @@ namespace Keysharp.Builtins
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped().WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		public KeysharpDateTimePicker(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
@@ -221,12 +195,7 @@ namespace Keysharp.Builtins
 			{
 				var cp = base.CreateParams;
 				cp.ClassName = className;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;//AHK custom controls allow siblings to paint over them unless explicitly clipped.
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
+				return cp.Unclipped().WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 			}
 		}
 
@@ -308,19 +277,7 @@ namespace Keysharp.Builtins
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped().WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		public KeysharpTextBox(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
@@ -351,19 +308,8 @@ namespace Keysharp.Builtins
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams =>
+			base.CreateParams.Unclipped(WindowsAPI.WS_CLIPSIBLINGS | WindowsAPI.WS_CLIPCHILDREN).WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		public KeysharpGroupBox(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
@@ -382,21 +328,7 @@ namespace Keysharp.Builtins
 				return;
 			}
 
-			if (Parent is { } parent)
-			{
-				var state = e.Graphics.Save();
-				try
-				{
-					e.Graphics.SetClip(new Rectangle(0, 0, Width, Font.Height), CombineMode.Intersect);
-					e.Graphics.TranslateTransform(-Left, -Top);
-					using var background = new PaintEventArgs(e.Graphics, new Rectangle(Left, Top, Width, Font.Height));
-					InvokePaintBackground(parent, background);
-				}
-				finally { e.Graphics.Restore(state); }
-			}
-
-			//As with BS_GROUPBOX, only the caption gets a background, so the controls inside the box keep what they
-			//painted and the window's background shows elsewhere. GroupBoxRenderer indents the caption by 8 pixels.
+			//An explicit background color belongs to the caption; the interior follows the parent.
 			if (BackColor.A == 255 && !string.IsNullOrEmpty(Text))
 			{
 				const int indent = 8;
@@ -406,91 +338,54 @@ namespace Keysharp.Builtins
 			}
 		}
 
+		public override string Text
+		{
+			get => base.Text;
+			set
+			{
+				//GroupBox restores WM_SETREDRAW only after TextChanged has run.
+				base.Text = value;
+				if (!HasChildren && Parent is Control parent)
+					parent.Invalidate(new Rectangle(Left, Top, Width, Font.Height), true);
+			}
+		}
+
 		protected override void WndProc(ref Message m)
 		{
-			if (GuiHelper.CallMessageHandler(this, ref m))
-				return;
-
-			//As BS_GROUPBOX does, so that a click reaches the parent or a control beneath the box.
-			if (m.Msg == WindowsAPI.WM_NCHITTEST)
-				m.Result = WindowsAPI.HTTRANSPARENT;
-			else
+			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
-		}
-	}
-
-	//Text and Picture pass clicks through until a script enables SS_NOTIFY, directly or through OnEvent.
-	internal static class StaticNotify
-	{
-		internal static bool PassClick(Control control, ref Message m)
-		{
-			if (m.Msg != WindowsAPI.WM_NCHITTEST || (WindowsAPI.GetWindowLongPtr(control.Handle, WindowsAPI.GWL_STYLE) & WindowsAPI.SS_NOTIFY) != 0)
-				return false;
-
-			m.Result = WindowsAPI.HTTRANSPARENT;
-			return true;
-		}
-
-		/// <summary>Adds SS_NOTIFY to the control's window; its CreateParams adds it to any window made later.</summary>
-		internal static void Apply(Control control)
-		{
-			if (control.IsHandleCreated)
-			{
-				var handle = control.Handle;
-				_ = WindowsAPI.SetWindowLongPtr(handle, WindowsAPI.GWL_STYLE, WindowsAPI.GetWindowLongPtr(handle, WindowsAPI.GWL_STYLE) | WindowsAPI.SS_NOTIFY);
-			}
 		}
 	}
 
 	public class KeysharpLabel : Label
 	{
-		private readonly int addStyle, removeStyle;
+		private int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
-		private readonly bool transparentStatic;
-		private bool notify;
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped().WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
-				if (notify)
-					cp.Style |= WindowsAPI.SS_NOTIFY;
-
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
-
+		/// <summary>Adds SS_NOTIFY for good, as AutoHotkey does once the script handles a Click or DoubleClick.</summary>
 		internal void EnableNotify()
 		{
-			notify = true;
-			StaticNotify.Apply(this);
+			addStyle |= WindowsAPI.SS_NOTIFY;
+			removeStyle &= ~WindowsAPI.SS_NOTIFY;
+
+			if (IsHandleCreated)
+				_ = WindowsAPI.SetWindowLongPtr(Handle, WindowsAPI.GWL_STYLE, WindowsAPI.GetWindowLongPtr(Handle, WindowsAPI.GWL_STYLE) | WindowsAPI.SS_NOTIFY);
 		}
 
 		public KeysharpLabel(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
 			addStyle = _addStyle;
-			// +BackgroundTrans statics must show whatever is painted *behind* them, including sibling controls
-			// (e.g. a percent caption over a progress bar). AHK does this with WS_EX_TRANSPARENT statics: the
-			// control paints no background, so the controls drawn before it show through, and it invalidates the
-			// parent region on each caption change so the previous text doesn't smear. WinForms'
-			// SupportsTransparentBackColor only composites the parent's *own* background, not sibling controls, so
-			// a progress bar behind the label would be hidden; and DrawToBitmap-compositing the siblings cannot
-			// capture a native progress bar's fill. So keep the WS_EX_TRANSPARENT exstyle (Opaque + no double
-			// buffering, like AHK) and clear the old caption by invalidating the region behind us on text change.
+			//BackgroundTrans must expose siblings, including native progress bars.
+			//WinForms transparency only composites the parent background, so use backgroundless
+			//WS_EX_TRANSPARENT painting and erase old captions through the parent.
 			addExStyle = _addExStyle;
 			removeStyle = _removeStyle;
 			removeExStyle = _removeExStyle;
 
 			if ((_addExStyle & 0x20) == 0x20)
 			{
-				transparentStatic = true;
 				SetStyle(ControlStyles.Opaque, true);
 				SetStyle(ControlStyles.OptimizedDoubleBuffer, false);
 			}
@@ -500,9 +395,8 @@ namespace Keysharp.Builtins
 		{
 			base.OnTextChanged(e);
 
-			// The WS_EX_TRANSPARENT static paints no background, so repaint the region behind us (parent +
-			// siblings) to erase the previous caption, then redraw our new caption on top.
-			if (transparentStatic && Parent is Control p)
+			//A backgroundless label needs the parent and siblings repainted to erase its previous caption.
+			if (GetStyle(ControlStyles.Opaque) && Parent is Control p)
 			{
 				p.Invalidate(new Rectangle(Location, Size), true);
 				Invalidate();
@@ -511,7 +405,7 @@ namespace Keysharp.Builtins
 
 		protected override void WndProc(ref Message m)
 		{
-			if (!GuiHelper.CallMessageHandler(this, ref m) && !StaticNotify.PassClick(this, ref m))
+			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
 	}
@@ -522,19 +416,7 @@ namespace Keysharp.Builtins
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped().WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		public KeysharpLinkLabel(string text, int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
@@ -582,19 +464,7 @@ namespace Keysharp.Builtins
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped().WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		public KeysharpListBox(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
@@ -619,19 +489,7 @@ namespace Keysharp.Builtins
 
 		internal int SmallImageCount => SmallImageList?.Images.Count ?? WindowsAPI.ImageList_GetImageCount(nativeImageLists[1]);
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped(WindowsAPI.WS_CLIPSIBLINGS | WindowsAPI.WS_CLIPCHILDREN).WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		public KeysharpListView(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
@@ -772,19 +630,7 @@ namespace Keysharp.Builtins
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped().WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		public KeysharpMonthCalendar(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
@@ -806,19 +652,7 @@ namespace Keysharp.Builtins
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped(WindowsAPI.WS_CLIPSIBLINGS | WindowsAPI.WS_CLIPCHILDREN).WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		public KeysharpNumericUpDown(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
@@ -860,14 +694,11 @@ namespace Keysharp.Builtins
 			{
 				var cp = base.CreateParams;
 				cp.ClassName = "msctls_updown32";
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= UDS_SETBUDDYINT | UDS_ALIGNRIGHT | UDS_ARROWKEYS | addStyle;
-				cp.Style &= ~removeStyle;
+				cp.Style |= UDS_SETBUDDYINT | UDS_ALIGNRIGHT | UDS_ARROWKEYS;
+				_ = cp.Unclipped().WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 				//The buddy is linked by message, since UDS_AUTOBUDDY takes whichever window precedes this one in the
 				//z-order.
 				cp.Style &= ~UDS_AUTOBUDDY;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
 				return cp;
 			}
 		}
@@ -1062,36 +893,23 @@ namespace Keysharp.Builtins
 	/// </summary>
 	public class KeysharpPictureBox : PictureBox
 	{
-		private readonly int addStyle, removeStyle;
+		private int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 		private readonly InterpolationMode interpolationMode = InterpolationMode.NearestNeighbor;
-		private bool notify;
 
 		[DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
 		public string Filename { get; private set; }
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped().WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
-				if (notify)
-					cp.Style |= WindowsAPI.SS_NOTIFY;
-
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
-
+		/// <summary>Adds SS_NOTIFY for good, as AutoHotkey does once the script handles a Click or DoubleClick.</summary>
 		internal void EnableNotify()
 		{
-			notify = true;
-			StaticNotify.Apply(this);
+			addStyle |= WindowsAPI.SS_NOTIFY;
+			removeStyle &= ~WindowsAPI.SS_NOTIFY;
+
+			if (IsHandleCreated)
+				_ = WindowsAPI.SetWindowLongPtr(Handle, WindowsAPI.GWL_STYLE, WindowsAPI.GetWindowLongPtr(Handle, WindowsAPI.GWL_STYLE) | WindowsAPI.SS_NOTIFY);
 		}
 
 		public KeysharpPictureBox(string filename, int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
@@ -1118,7 +936,7 @@ namespace Keysharp.Builtins
 
 		protected override void WndProc(ref Message m)
 		{
-			if (!GuiHelper.CallMessageHandler(this, ref m) && !StaticNotify.PassClick(this, ref m))
+			if (!GuiHelper.CallMessageHandler(this, ref m))
 				base.WndProc(ref m);
 		}
 	}
@@ -1133,19 +951,7 @@ namespace Keysharp.Builtins
 
 		internal int AddStyle => addStyle;
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped().WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		public KeysharpProgressBar(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
@@ -1244,19 +1050,7 @@ namespace Keysharp.Builtins
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped().WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		public KeysharpRadioButton(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
@@ -1305,19 +1099,7 @@ namespace Keysharp.Builtins
 			_ => text
 		};
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped().WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		public KeysharpRichEdit(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
@@ -1360,19 +1142,7 @@ namespace Keysharp.Builtins
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped().WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		public KeysharpStatusStrip(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
@@ -1384,8 +1154,21 @@ namespace Keysharp.Builtins
 
 		protected override void WndProc(ref Message m)
 		{
-			if (!GuiHelper.CallMessageHandler(this, ref m))
+			if (GuiHelper.CallMessageHandler(this, ref m))
+				return;
+
+			if (m.Msg != 0x02E2) //WM_DPICHANGED_BEFOREPARENT
+			{
 				base.WndProc(ref m);
+				return;
+			}
+
+			//WinForms can skip RescaleConstantsForDpi when the font already matches the new DPI.
+			var oldDpi = DeviceDpi;
+			var previous = ImageScalingSize;
+			base.WndProc(ref m);
+			if (oldDpi != DeviceDpi)
+				ImageScalingSize = this.GetGuiControl()?.dpiResize == false ? previous : Gui.ScaleForDpi(previous, oldDpi, DeviceDpi);
 		}
 	}
 
@@ -1395,18 +1178,9 @@ namespace Keysharp.Builtins
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		//Keep the tab's sibling clipping while allowing invalidation to reach its layout pages.
+		protected override CreateParams CreateParams =>
+			base.CreateParams.Unclipped(WindowsAPI.WS_CLIPCHILDREN).WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		public KeysharpTabControl(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
@@ -1581,19 +1355,7 @@ namespace Keysharp.Builtins
 			set => base.Value = inverted ? Maximum - value + Minimum : value;
 		}
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped().WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		public KeysharpTrackBar(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
@@ -1615,19 +1377,7 @@ namespace Keysharp.Builtins
 		private readonly int addStyle, removeStyle;
 		private readonly int addExStyle, removeExStyle;
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped().WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		public KeysharpTreeView(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{

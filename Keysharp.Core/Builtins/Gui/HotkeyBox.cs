@@ -79,15 +79,7 @@ namespace Keysharp.Builtins
 		}
 
 #if WINDOWS
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style &= ~WindowsAPI.WS_CLIPSIBLINGS;//See KeysharpButton.
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.Unclipped();
 
 		protected override void WndProc(ref Message m)
 		{

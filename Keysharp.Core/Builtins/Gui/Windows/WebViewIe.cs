@@ -19,18 +19,7 @@ namespace Keysharp.Builtins
 		//The id of the element PrimeScriptEngine adds, which also records that a document has been primed.
 		private const string engineMarkerId = "__keysharp_script_engine__";
 
-		protected override CreateParams CreateParams
-		{
-			get
-			{
-				var cp = base.CreateParams;
-				cp.Style |= addStyle;
-				cp.Style &= ~removeStyle;
-				cp.ExStyle |= addExStyle;
-				cp.ExStyle &= ~removeExStyle;
-				return cp;
-			}
-		}
+		protected override CreateParams CreateParams => base.CreateParams.WithStyles(addStyle, removeStyle, addExStyle, removeExStyle);
 
 		public KeysharpIeWebView(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{

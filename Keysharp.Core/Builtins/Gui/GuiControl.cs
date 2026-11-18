@@ -293,7 +293,8 @@ namespace Keysharp.Builtins
 			/// previously registered ones, -1 to call it before them, or 0 to unregister it.</param>
 			/// <remarks>
 			/// Off Windows there is no native message queue, so only the input messages EtoMessageSource
-			/// synthesizes are ever delivered here; see OnMessage() for that set.
+			/// synthesizes, and those SendMessage and PostMessage address to this control, are ever delivered
+			/// here; see OnMessage() for the first set.
 			/// </remarks>
 			[RequiresUIThread]
 			public object OnMessage(object msgNumber, object callback, object addRemove = null)

@@ -313,6 +313,7 @@ namespace Keysharp.Builtins
 				var font = FromNative(control.Font, null);
 				font.fontOptions.color = FontOptions.Opaque(control.ForeColor);
 #if WINDOWS
+				font.fontOptions.size = Math.Round(control.Font.Size / control.FontDpiScale(), 3);
 				font.fontOptions.quality = HFontCache.GetQuality(control);
 #endif
 

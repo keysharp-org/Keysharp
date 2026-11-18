@@ -457,6 +457,9 @@ namespace System.Windows.Forms
 			control.Parent?.EnsureHandle();
 			_ = control.Handle;
 		}
+
+		/// <summary>The scale from script font sizes at system DPI to the control's native font size.</summary>
+		internal static double FontDpiScale(this Control control) => (double)control.DeviceDpi / Accessors.A_ScreenDPI;
 #endif
 
 		/// <summary>
@@ -559,6 +562,9 @@ namespace System.Windows.Forms
 		/// <param name="options">The font options.</param>
 		internal static void SetFont(this Control control, FontOptions options)
 		{
+#if WINDOWS
+			options.size *= control.FontDpiScale();
+#endif
 			control.Font = Keysharp.Internals.Strings.Conversions.ApplyFont(control.Font, options);
 #if WINDOWS
 			HFontCache.SetQuality(control, options.quality);

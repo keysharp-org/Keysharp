@@ -4371,7 +4371,7 @@
                      "linux_wayland":  "partial",
                      "macos":  "partial",
                      "notes":  "The ControlGetFocus function retrieves which control of the target window has keyboard focus, if any.",
-                     "tested-by":  "ControlTests/control_get_focus.ahk"
+                     "tested-by":  "ControlTests/control_get_focus.ahk; external-onmessage.ahk"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -5944,8 +5944,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "The Gui object provides an interface to create a window, add controls, modify the window, and retrieve information about the window. Such windows can be used as data entry forms or custom user interfaces.",
-                     "tested-by":  "ControlTests/control_add_delete_item.ahk"
+                     "notes":  "Creates GUI windows and controls. On Windows, a GroupBox shares its container's background; its Background option colors only the caption. UseGroup makes its background fill the interior.",
+                     "tested-by":  "ControlTests/control_add_delete_item.ahk; window-functions.ahk; GuiTests.GroupBoxSiblingBackground; GuiTests.GroupBoxNestedBackground"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -9260,7 +9260,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "Windows monitors the hidden main window, GUIs, controls and tray events. Linux/macOS synthesize toolkit messages from the script's own GUI, including WM_MOUSELEAVE with zero wParam/lParam. Native leave delivery is verified on X11 under Xvfb; Wayland and macOS delivery remain unverified. Menu interception verified on Linux X11, unverified on Wayland/macOS.",
+                     "notes":  "Windows monitors the main window, GUIs, controls and tray events. Linux/macOS synthesize GUI and menu messages and deliver SendMessage/PostMessage to script-owned windows and controls. Explicit delivery, native WM_MOUSELEAVE and menu interception are verified on X11; Wayland and macOS are unverified.",
                      "tested-by":  "MessageFilterTests.cs; ExternalTests.OnMessage; external-onmessage.ahk; BuiltInVarsTests.PropsMenuCommands; props-menu-commands.ahk; MessageFilterTests.TrayNotifications; MessageFilterTests.TrayActivations; MessageFilterTests.EtoMouseLeave"
                  },
                  {
@@ -9400,11 +9400,11 @@
                      "feature":  "PostMessage()",
                      "syntax":  "",
                      "windows":  "full",
-                     "linux_x11":  "full",
-                     "linux_wayland":  "full",
-                     "macos":  "full",
-                     "notes":  "The PostMessage function places a message in the message queue of a window or control.",
-                     "tested-by":  "external-onmessage.ahk"
+                     "linux_x11":  "partial",
+                     "linux_wayland":  "partial",
+                     "macos":  "partial",
+                     "notes":  "On Linux/macOS, posts to script-owned windows and controls run in UI-loop order with SendMessage's monitor callbacks and default processing; destroyed targets are skipped. Foreign windows accept only WM_CLOSE. Verified on Linux X11; Wayland and macOS unverified.",
+                     "tested-by":  "external-onmessage.ahk; ExternalTests.OnMessage"
                  },
                  {
                      "category":  "Core Language",
@@ -10165,8 +10165,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The SendMessage function sends a message to a window or control and waits for acknowledgement.",
-                     "tested-by":  "external-onmessage.ahk"
+                     "notes":  "On Linux/macOS, script-owned windows and controls receive monitor callbacks, window close, WM_GETTEXTLENGTH and multiline-edit selection/scrolling messages. Foreign windows accept only WM_CLOSE. Verified on Linux X11; Wayland and macOS unverified.",
+                     "tested-by":  "external-onmessage.ahk; ExternalTests.OnMessage"
                  },
                  {
                      "category":  "Input/Automation",
@@ -10535,8 +10535,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Shows an icon in a part and returns its icon handle, which the part owns, and off Windows, where there is no icon handle, returns 0.",
-                     "tested-by":  "gui-window.ahk"
+                     "notes":  "Shows an icon in a part and returns its icon handle, which the part owns, and off Windows, where there is no icon handle, returns 0. Windows icon sizing follows DPIResize during monitor changes.",
+                     "tested-by":  "gui-window.ahk; GuiTests.DpiStatusBarIcons"
                  },
                  {
                      "category":  "Windowing/GUI",

@@ -1449,11 +1449,7 @@ namespace Keysharp.Builtins
 			set
 			{
 				style = value;
-
-				if (value == ProgressBarStyle.Continuous)
-					UseClassic();
-
-				Content?.Invalidate();
+				Sync(value == ProgressBarStyle.Continuous);
 			}
 		}
 
@@ -1464,11 +1460,7 @@ namespace Keysharp.Builtins
 			set
 			{
 				barColor = value == Eto.Forms.Control.DefaultForeColor ? null : value;
-
-				if (barColor.HasValue)
-					UseClassic();
-
-				Content?.Invalidate();
+				Sync(barColor.HasValue);
 			}
 		}
 
@@ -1479,11 +1471,7 @@ namespace Keysharp.Builtins
 			set
 			{
 				backgroundColor = value == Eto.Forms.Control.DefaultBackColor ? null : value;
-
-				if (backgroundColor.HasValue)
-					UseClassic();
-
-				Content?.Invalidate();
+				Sync(backgroundColor.HasValue);
 			}
 		}
 
@@ -1493,32 +1481,29 @@ namespace Keysharp.Builtins
 
 			//The toolkit's bar has no vertical form.
 			if ((AddStyle & 0x04) == 0x04)
-				UseClassic();
+				Sync(true);
 			else
 				Content = new ProgressBar { MaxValue = 10000 };
 		}
 
 		//Like AutoHotkey's removal of the theme, the classic bar stays once it has been needed.
-		private void UseClassic()
+		private void Sync(bool needsClassic = false)
 		{
-			if (Content is Drawable)
-				return;
+			if (needsClassic && Content is not Drawable)
+			{
+				var previous = Content;
+				var classic = new Drawable();
+				classic.Paint += Classic_Paint;
+				Content = classic;
+				previous?.Dispose();
+			}
 
-			var previous = Content;
-			var classic = new Drawable();
-			classic.Paint += Classic_Paint;
-			Content = classic;
-			previous?.Dispose();
-		}
-
-		private void Sync()
-		{
 			value = Math.Clamp(value, minimum, maximum);
 			if (Content is ProgressBar native)
 				// Eto backends interpret nonzero minima differently, so use a normalized range.
 				native.Value = maximum == minimum ? 0 : (int)((long)native.MaxValue * (value - (long)minimum) / (maximum - (long)minimum));
 			else
-				Content.Invalidate();
+				Content?.Invalidate();
 		}
 
 		private void Classic_Paint(object sender, PaintEventArgs e)

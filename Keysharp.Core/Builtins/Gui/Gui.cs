@@ -477,7 +477,7 @@ namespace Keysharp.Builtins
 			//AHK's defaults, 1.25 and 0.75 times the font's point size, taken as it takes them from the font's pixel
 			//height: that follows the monitor's DPI even for a -DPIScale Gui, and the margins with it.
 #if WINDOWS
-			var em = Math.Round(form.Font.SizeInPoints * form.DeviceDpi / 72.0, MidpointRounding.AwayFromZero);
+			var em = Math.Round(form.Font.SizeInPoints * Accessors.A_ScreenDPI / 72.0, MidpointRounding.AwayFromZero);
 #else
 			var em = Math.Round(form.Font.Size * 96 / 72.0, MidpointRounding.AwayFromZero);
 #endif
@@ -560,7 +560,20 @@ namespace Keysharp.Builtins
 			var dpiscale = DpiScale;
 			var dpiinv = 1.0 / dpiscale;
 			var opts = ParseOpt(type, textStr, optionsStr);
+			var rowsSpecified = opts.rows != float.MinValue;
+			var heightSpecified = opts.height != int.MinValue;
+			var hpSpecified = opts.hp != int.MinValue;
 			Forms.Control ctrl = null;
+			var hasDropDown = false;
+			var controlFont = form.Font;
+#if WINDOWS
+			//New controls start at system DPI; WinForms scales their fonts when their handles are created.
+			var fontScale = form.FontDpiScale();
+			if (fontScale != 1.0)
+				controlFont = new System.Drawing.Font(controlFont.FontFamily,
+					(float)(controlFont.Size / fontScale), controlFont.Style,
+					controlFont.Unit, controlFont.GdiCharSet, controlFont.GdiVerticalFont);
+#endif
 
 			switch (type)
 			{
@@ -575,7 +588,7 @@ namespace Keysharp.Builtins
 
 					var lbl = new KeysharpLabel(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 					{
-						Font = Conversions.ConvertFont(form.Font),
+						Font = controlFont,
 #if !WINDOWS
 						Wrap = !opts.wordwrap.HasValue || opts.wordwrap.Value ? Forms.WrapMode.Word : Forms.WrapMode.None,
 #endif
@@ -606,7 +619,7 @@ namespace Keysharp.Builtins
 						Multiline = ml,
 						ReadOnly = opts.rdonly ?? false,
 						WordWrap = ml,
-						Font = Conversions.ConvertFont(form.Font)
+						Font = controlFont
 					};
 
 					if (opts.limit != int.MinValue)
@@ -660,7 +673,7 @@ namespace Keysharp.Builtins
 							AcceptsReturn = opts.wantreturn ?? true,
 							ReadOnly = opts.rdonly ?? false,
 							Wrap = true,
-							Font = form.Font,
+							Font = controlFont,
 							IsNumeric = numeric,
 							CharacterCasing = casing
 						};
@@ -669,7 +682,7 @@ namespace Keysharp.Builtins
 						var ptxt = new KeysharpPasswordBox(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 						{
 							ReadOnly = opts.rdonly ?? false,
-							Font = form.Font,
+							Font = controlFont,
 							IsNumeric = numeric,
 							CharacterCasing = casing
 						};
@@ -688,7 +701,7 @@ namespace Keysharp.Builtins
 						var txt = new KeysharpTextBox(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 						{
 							ReadOnly = opts.rdonly ?? false,
-							Font = form.Font,
+							Font = controlFont,
 							IsNumeric = numeric,
 							CharacterCasing = casing
 						};
@@ -723,7 +736,7 @@ namespace Keysharp.Builtins
 					{
 						AcceptsTab = opts.wanttab ?? false,
 						ReadOnly = opts.rdonly ?? false,
-						Font = Conversions.ConvertFont(form.Font)
+						Font = controlFont
 					};
 #if WINDOWS
 					txt.Multiline = ml;
@@ -812,7 +825,7 @@ namespace Keysharp.Builtins
 					var nud = new KeysharpNumericUpDown(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 					{
 						Increment = opts.nudinc ?? 1,
-						Font = form.Font
+						Font = controlFont
 					};
 #if WINDOWS
 					//Eto's stepper shows decimal digits on the right and no thousands separator.
@@ -856,7 +869,7 @@ namespace Keysharp.Builtins
 					opts.addstyle |= 0x20;
 					var pic = new KeysharpPictureBox(textStr, opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 					{
-						Font = Conversions.ConvertFont(form.Font)
+						Font = controlFont
 					};//Attempt to support transparency.
 
 					if (opts.width < 0 && opts.height < 0)
@@ -880,7 +893,7 @@ namespace Keysharp.Builtins
 					{
 						Name = textStr,
 						AutoSize = opts.width == int.MinValue && opts.wp == int.MinValue && opts.height == int.MinValue && opts.hp == int.MinValue,
-						Font = Conversions.ConvertFont(form.Font)
+						Font = controlFont
 					};
 #if WINDOWS
 					if (opts.btndef.IsTrue())
@@ -896,7 +909,7 @@ namespace Keysharp.Builtins
 					var chk = new KeysharpCheckBox(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 					{
 						ThreeState = opts.check3,
-						Font = Conversions.ConvertFont(form.Font)
+						Font = controlFont
 					};
 
 					if (opts.ischecked.HasValue)
@@ -938,7 +951,7 @@ namespace Keysharp.Builtins
 #endif
 					rad.AutoSize = true;
 					rad.Text = textStr;
-					rad.Font = Conversions.ConvertFont(form.Font);
+					rad.Font = controlFont;
 					ctrl = rad;
 					holder = new Radio(this, ctrl, typeo);
 				}
@@ -955,7 +968,7 @@ namespace Keysharp.Builtins
 					{
 						ddl = new KeysharpComboBox(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 						{
-							Font = Conversions.ConvertFont(form.Font)
+							Font = controlFont
 						};
 						ddl.DropDownStyle = ComboBoxStyle.DropDownList;
 					}
@@ -967,7 +980,7 @@ namespace Keysharp.Builtins
 
 						ddl = new KeysharpComboBox(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 						{
-							Font = Conversions.ConvertFont(form.Font)
+							Font = controlFont
 						};
 						ddl.DropDownStyle = opts.cmbsimple.IsTrue() ? ComboBoxStyle.Simple : ComboBoxStyle.DropDown;
 					}
@@ -997,14 +1010,13 @@ namespace Keysharp.Builtins
 
 					if (opts.choose.Any())
 						ddl.SelectedIndex = opts.choose[0];
+					hasDropDown = ddl.DropDownStyle != ComboBoxStyle.Simple;
 #if WINDOWS
-					ddl.IntegralHeight = true;
+					//Changing IntegralHeight recreates the handle, so choose it before native font scaling.
+					ddl.IntegralHeight = !rowsSpecified && (!hasDropDown || !heightSpecified || opts.height == -1 || hpSpecified);
 
-					if (opts.rows != float.MinValue)
-					{
-						ddl.IntegralHeight = false;
+					if (rowsSpecified)
 						ddl.MaxDropDownItems = (int)opts.rows;
-					}
 #endif
 
 					ctrl = ddl;
@@ -1024,7 +1036,7 @@ namespace Keysharp.Builtins
 					{
 						SelectionMode = opts.multiline.IsTrue() ? SelectionMode.MultiExtended : SelectionMode.One,
 						Sorted = opts.sort.IsTrue(),//Unsure how to make incremental search work.
-						Font = Conversions.ConvertFont(form.Font)
+						Font = controlFont
 					};
 
 					if (al != null)
@@ -1076,7 +1088,7 @@ namespace Keysharp.Builtins
 					//There is no way to preallocate memory with the "Count" option, so that is ignored.
 					var lv = new KeysharpListView(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 					{
-						Font = Conversions.ConvertFont(form.Font)
+						Font = controlFont
 					};
 					if (al != null)
 					{
@@ -1158,7 +1170,7 @@ namespace Keysharp.Builtins
 					if (tv.LabelEdit && !opts.wantf2.IsFalse())//Note that checking !IsFalse() is not the same as IsTrue().
 						tv.KeyDown += Tv_Lv_KeyDown;
 #endif
-					tv.Font = Conversions.ConvertFont(form.Font);
+					tv.Font = controlFont;
 
 					if (opts.ilid != long.MinValue && ImageLists.IL_Get(opts.ilid) is ImageList il)
 						tv.ImageList = il;
@@ -1172,7 +1184,7 @@ namespace Keysharp.Builtins
 				{
 					var linklabel = new KeysharpLinkLabel(textStr, opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 					{
-						Font = Conversions.ConvertFont(form.Font)
+						Font = controlFont
 					};
 					ctrl = linklabel;
 					holder = new Link(this, ctrl, typeo);
@@ -1183,7 +1195,7 @@ namespace Keysharp.Builtins
 				{
 					var hk = new HotkeyBox()
 					{
-						Font = Conversions.ConvertFont(form.Font)
+						Font = controlFont
 					};
 
 					if (opts.limit != int.MinValue)
@@ -1201,7 +1213,7 @@ namespace Keysharp.Builtins
 				{
 					var dtp = new KeysharpDateTimePicker(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 					{
-						Font = Conversions.ConvertFont(form.Font)
+						Font = controlFont
 					};
 					dtp.SetFormat(textStr);
 
@@ -1257,7 +1269,7 @@ namespace Keysharp.Builtins
 				{
 					var cal = new KeysharpMonthCalendar(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 					{
-						Font = Conversions.ConvertFont(form.Font)
+						Font = controlFont
 					};
 
 					if (opts.dtlow != System.DateTime.MinValue)//This causes a crash when you scroll past it.
@@ -1302,7 +1314,7 @@ namespace Keysharp.Builtins
 					var slider = new KeysharpTrackBar(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 					{
 						Orientation = opts.vertical ? Orientation.Vertical : Orientation.Horizontal,
-						Font = Conversions.ConvertFont(form.Font)
+						Font = controlFont
 					};
 
 					if (opts.nudlow.HasValue && opts.nudhigh.HasValue)
@@ -1364,7 +1376,7 @@ namespace Keysharp.Builtins
 
 					var prg = new KeysharpProgressBar(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 					{
-						Font = Conversions.ConvertFont(form.Font)
+						Font = controlFont
 					};
 					prg.Style = smooth ? ProgressBarStyle.Continuous : ProgressBarStyle.Blocks;
 
@@ -1404,7 +1416,7 @@ namespace Keysharp.Builtins
 				{
 					ctrl = new KeysharpGroupBox(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 					{
-						Font = Conversions.ConvertFont(form.Font)
+						Font = controlFont
 					};
 					holder = new GroupBox(this, ctrl, typeo);
 				}
@@ -1416,7 +1428,7 @@ namespace Keysharp.Builtins
 				{
 					var kstc = new KeysharpTabControl(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 					{
-						Font = Conversions.ConvertFont(form.Font)
+						Font = controlFont
 					};//This will also support image lists just like TreeView for setting icons on tabs, instead of using SendMessage().
 					if (al != null)
 					{
@@ -1424,7 +1436,7 @@ namespace Keysharp.Builtins
 							return DefaultObject;
 
 #if WINDOWS
-						kstc.TabPages.AddRange(items.Select(x => new TabPage(x)).ToArray());
+						kstc.TabPages.AddRange(items.Select(x => new KeysharpTabPage(x)).ToArray());
 #else
 						var pages = items
 							.Select(pageText => new TabPage
@@ -1475,24 +1487,22 @@ namespace Keysharp.Builtins
 				{
 					var ss = new KeysharpStatusStrip(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle)
 					{
-						Font = Conversions.ConvertFont(form.Font)
+						Font = controlFont
 					};
 					StatusStrip = ss;
 #if WINDOWS
 					ss.AutoSize = false;
-					ss.ImageScalingSize = new Size(Convert.ToInt32(28 * dpiscale), Convert.ToInt32(28 * dpiscale));
 					ss.Dock = DockStyle.Bottom;//Docking must be used and must be on the bottom. Don't ever set form.AutoSize = true with this, they are incompatible.
 					ss.SizingGrip = false;
 #endif
 					if (opts.bgcolor.HasValue)
 						ss.BackColor = opts.bgcolor.Value;
 
-					//A StatusBar always has its one part, as in AutoHotkey, so SetText reaches part 1 with no text given.
+					//A StatusBar always has part 1 so SetText works without initial text; the part inherits the bar's font.
 					_ = ss.Items.Add(new KeysharpToolStripStatusLabel(textStr)
 					{
 						AutoSize = true,
-						Name = $"AutoToolStripLabel{ss.Items.Count}",
-						Font = Conversions.ConvertFont(form.Font)
+						Name = $"AutoToolStripLabel{ss.Items.Count}"
 					});
 #if !WINDOWS
 					ss.UpdateItems();
@@ -1508,7 +1518,7 @@ namespace Keysharp.Builtins
 				{
 					var ax = new KeysharpActiveX(textStr)
 					{
-						Font = Conversions.ConvertFont(form.Font)
+						Font = controlFont
 					};
 					ctrl = ax;
 					holder = new ActiveX(this, ctrl, typeo);
@@ -1529,7 +1539,7 @@ namespace Keysharp.Builtins
 #else
 						web = new KeysharpWebView(opts.addstyle, opts.addexstyle, opts.remstyle, opts.remexstyle);
 #endif
-						web.Font = Conversions.ConvertFont(form.Font);
+						web.Font = controlFont;
 					}
 #if WINDOWS
 					catch (Exception ex)
@@ -1736,6 +1746,12 @@ namespace Keysharp.Builtins
 				sizingParent.TagAndAdd(holder);
 			}
 
+#if WINDOWS
+			//Create after parenting and before measuring, so WinForms applies the window's font DPI.
+			ctrl.EnsureHandle();
+			if (ctrl is KeysharpStatusStrip statusStrip)
+				statusStrip.ImageScalingSize = new Size(Convert.ToInt32(28 * dpiscale), Convert.ToInt32(28 * dpiscale));
+#endif
 			var fontpixels = GetFontPixels(ctrl.Font);// * dpiinv;
 			var scaledPref = (double)ctrl.PreferredSize.Width;
 			int finalWidth = -1, finalHeight = -1;
@@ -1819,9 +1835,6 @@ namespace Keysharp.Builtins
 			}
 
 			int r = 0;
-			var rowsSpecified = opts.rows != float.MinValue;
-			var heightSpecified = opts.height != int.MinValue;
-			var hpSpecified = opts.hp != int.MinValue;
 
 			if (hpSpecified)
 			{
@@ -1837,14 +1850,13 @@ namespace Keysharp.Builtins
 				{
 					if (opts.height != -1)
 					{
-						if (ctrl is KeysharpComboBox cmb && cmb.DropDownStyle != ComboBoxStyle.Simple)
+						if (ctrl is KeysharpComboBox cmb && hasDropDown)
 						{
 							var baseHeight = cmb.PreferredSize.Height;
 #if WINDOWS
 							var combinedHeight = Convert.ToInt32(dpiscale * opts.height);
 							var minDropHeight = GetComboMinDropHeight(cmb);
 							var dropHeight = Math.Max(minDropHeight, combinedHeight - baseHeight);
-							cmb.IntegralHeight = false;
 							cmb.DropDownHeight = dropHeight;
 #endif
 							finalHeight = baseHeight;
@@ -1903,11 +1915,8 @@ namespace Keysharp.Builtins
 						{
 							var rowCount = Math.Max(r, 1);
 							cmb.MaxDropDownItems = rowCount;
-							if (cmb.DropDownStyle != ComboBoxStyle.Simple)
-							{
-								cmb.IntegralHeight = false;
+							if (hasDropDown)
 								cmb.DropDownHeight = GetComboDropHeight(cmb, rowCount);
-							}
 						}
 #endif
 					}
@@ -2245,8 +2254,6 @@ namespace Keysharp.Builtins
 			ctrl.SetLocation(loc);
 			holder.dpiResize = opts.dpiresize ?? defaultDpiResize;
 #if WINDOWS
-			ctrl.EnsureHandle();//Only now that it has its parent, whose window its notifications are to reach.
-
 			//AutoHotkey strips the theme once, at creation. Off Windows the option is accepted and ignored, since the
 			//toolkit draws every control in the desktop theme.
 			if (!(opts.theme ?? useTheme))
@@ -2685,7 +2692,8 @@ namespace Keysharp.Builtins
 		/// previously registered ones, -1 to call it before them, or 0 to unregister it.</param>
 		/// <remarks>
 		/// Off Windows there is no native message queue, so only the input messages EtoMessageSource
-		/// synthesizes from the toolkit's own events are ever delivered here; see OnMessage() for that set.
+		/// synthesizes from the toolkit's own events, and those SendMessage and PostMessage address to this
+		/// window, are ever delivered here; see OnMessage() for the first set.
 		/// </remarks>
 		[RequiresUIThread]
 		public object OnMessage(object msgNumber, object callback, object addRemove = null)
@@ -3058,10 +3066,12 @@ namespace Keysharp.Builtins
 		}
 
 #if WINDOWS
-		//Scales a stored pixel measurement from oldDpi to newDpi, rounding the way Win32's MulDiv does.
-		private static int ScaleForDpi(int value, int oldDpi, int newDpi) => (int)(((long)value * newDpi + oldDpi / 2) / oldDpi);
+		//Scales a stored pixel measurement from oldDpi to newDpi, rounding the way Win32's MulDiv does. A size limit of
+		//int.MaxValue stands for none.
+		private static int ScaleForDpi(int value, int oldDpi, int newDpi) =>
+			value == int.MaxValue ? value : (int)(((long)value * newDpi + Math.Sign(value) * (oldDpi / 2)) / oldDpi);
 
-		private static Size ScaleForDpi(Size size, int oldDpi, int newDpi) =>
+		internal static Size ScaleForDpi(Size size, int oldDpi, int newDpi) =>
 			new (ScaleForDpi(size.Width, oldDpi, newDpi), ScaleForDpi(size.Height, oldDpi, newDpi));
 
 		/// <summary>
@@ -3105,6 +3115,9 @@ namespace Keysharp.Builtins
 			if (holder == null || holder.dpiResize)
 			{
 				var bounds = ctrl.Bounds;
+				//Scale constraints before bounds so the old limits do not clamp the new size.
+				ctrl.MinimumSize = ScaleForDpi(ctrl.MinimumSize, oldDpi, newDpi);
+				ctrl.MaximumSize = ScaleForDpi(ctrl.MaximumSize, oldDpi, newDpi);
 				//Width and height are scaled from the original extents rather than from the already-rounded
 				//position so that repeated transitions don't accumulate drift.
 				ctrl.Bounds = new Rectangle(ScaleForDpi(bounds.X, oldDpi, newDpi), ScaleForDpi(bounds.Y, oldDpi, newDpi),

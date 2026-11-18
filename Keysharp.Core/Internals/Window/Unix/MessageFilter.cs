@@ -26,11 +26,8 @@ namespace Keysharp.Internals.Window.Unix
 			script = associatedScript;
 		}
 
-		/// <summary>
-		/// Runs the monitors inline, since a queued monitor returns too late to claim the message. A_EventInfo is
-		/// the tick count, as for a message the Windows pre-filter took off the queue.
-		/// </summary>
-		internal bool CallEventHandlers(ref Message m)
+		//Sent messages carry 0; posted messages carry their post time; other events use the current tick count.
+		internal bool CallEventHandlers(ref Message m, long? eventInfo = null, bool posted = false)
 		{
 			if (script.IsDisposed || !script.GuiData.onMessageHandlers.TryGetValue(m.Msg, out var monitor))
 				return false;
@@ -41,8 +38,13 @@ namespace Keysharp.Internals.Window.Unix
 			//windows a click landed in, which a control handle would never match.
 			long hwnd = TopLevelOf(m.HWnd);
 			object[] args = [m.WParam.ToInt64(), m.LParam.ToInt64(), (long)m.Msg, m.HWnd.ToInt64()];
+			var time = eventInfo ?? A_TickCount;
+			long reply;
 
-			if (!monitor.TryExecuteEmergency(script, args, A_TickCount, hwnd, out var reply))
+			//As on Windows, high posted messages wait until the script can be interrupted.
+			if (!(posted && m.Msg >= WindowsAPI.WM_HOTKEY
+					? monitor.TryExecuteBeforeDispatch(script, args, time, hwnd, out reply)
+					: monitor.TryExecuteEmergency(script, args, time, hwnd, out reply)))
 				return false;
 
 			m.Result = (nint)reply;

@@ -289,8 +289,15 @@ public partial class ExternalTests : TestRunner
 		Assert.That(elements[2], Is.SameAs(outer));
 	}
 
-	[Test, Category("External")]
-	public void OnMessage() => Assert.IsTrue(TestScript("external-onmessage", false));
-
 #endif
+
+	[Test, Category("External"), NonParallelizable]
+#if WINDOWS
+	[Apartment(ApartmentState.STA)]
+#endif
+	public void OnMessage()
+	{
+		SkipIfUiInitializationBlocked("Messages to the script's own windows need a live GUI application.");
+		Assert.IsTrue(TestScript("external-onmessage", false));
+	}
 }

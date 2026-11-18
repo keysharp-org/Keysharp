@@ -1151,6 +1151,10 @@ namespace Keysharp.Internals.Os.Windows
 		[return: MarshalAs(UnmanagedType.Bool)]
 		internal static partial bool AdjustWindowRect(ref RECT lpRect, uint dwStyle, [MarshalAs(UnmanagedType.Bool)] bool bMenu);
 
+		[LibraryImport(user32, EntryPoint = "AdjustWindowRectExForDpi")]
+		[return: MarshalAs(UnmanagedType.Bool)]
+		internal static partial bool AdjustWindowRectExForDpi(ref RECT lpRect, uint dwStyle, [MarshalAs(UnmanagedType.Bool)] bool bMenu, uint dwExStyle, uint dpi);
+
 		// PW_CLIENTONLY (0x1) renders only the client area (no title bar / borders); PW_RENDERFULLCONTENT
 		// (0x2) renders DirectComposition/hardware-accelerated content too, so the capture works for
 		// modern (UWP, Chromium, etc.) windows, not just GDI ones.

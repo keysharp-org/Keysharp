@@ -29,7 +29,7 @@ namespace Keysharp.Internals.Window.Windows
 			{
 				// Only a message PreFilterMessage took off the queue carries a post time.
 				object eventInfo = buffered ? WindowsAPI.GetMessageTime() : 0L;
-				buffered = buffered && m.Msg > 0x0311;
+				buffered = buffered && m.Msg >= WindowsAPI.WM_HOTKEY;
 				long hwnd = m.HWnd;
 				hwnd = WindowsAPI.GetNonChildParent((nint)hwnd);
 				object[] args = [m.WParam.ToInt64(), m.LParam.ToInt64(), (long)m.Msg, m.HWnd.ToInt64()];

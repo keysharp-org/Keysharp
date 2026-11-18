@@ -7,16 +7,40 @@ public class GuiTests : TestRunner
 
 #if WINDOWS
 
-	[TestCase(false), TestCase(true), Category("Gui"), Apartment(ApartmentState.STA)]
-	public void GroupBoxCaptionRepaint(bool imageBackground)
+	private static void PrintClient(System.Windows.Forms.Control control, Graphics graphics)
+	{
+		var dc = graphics.GetHdc();
+		try { _ = WindowsAPI.SendMessage(control.Handle, 0x0318, dc, (nint)0x0C); }
+		finally { graphics.ReleaseHdc(dc); }
+	}
+
+	private static void PaintFromParent(System.Windows.Forms.Control control, Bitmap bitmap)
+	{
+		var parent = control.Parent;
+		using var background = new Bitmap(parent.Width, parent.Height);
+		parent.DrawToBitmap(background, parent.ClientRectangle);
+		using var graphics = Graphics.FromImage(bitmap);
+		graphics.DrawImageUnscaled(background, -control.Left, -control.Top);
+	}
+
+	private static void SimulateDpi(System.Windows.Forms.Control control, int dpi)
+	{
+		// WinForms accepts a test DPI in wParam without changing the display settings.
+		_ = WindowsAPI.SendMessage(control.Handle, 0x02E2, (nint)dpi, (nint)0);
+		Assert.That(control.DeviceDpi, Is.EqualTo(dpi));
+	}
+
+	[TestCase(0), TestCase(1), TestCase(2), Category("Gui"), Apartment(ApartmentState.STA)]
+	public void GroupBoxCaptionRepaint(int background)
 	{
 		using var tile = new Bitmap(2, 2);
 		tile.SetPixel(0, 0, Color.Blue);
 		tile.SetPixel(1, 0, Color.Lime);
 		tile.SetPixel(0, 1, Color.Yellow);
 		tile.SetPixel(1, 1, Color.White);
-		using var parent = new System.Windows.Forms.Panel { Size = new Size(240, 120), BackColor = Color.Blue };
-		if (imageBackground)
+		var color = background == 0 ? Color.White : background == 1 ? Color.FromArgb(32, 32, 32) : Color.Blue;
+		using var parent = new KeysharpContentPanel { Size = new Size(240, 120), BackColor = color };
+		if (background == 2)
 			parent.BackgroundImage = tile;
 		using var group = new KeysharpGroupBox { Bounds = new Rectangle(7, 9, 180, 80), BackColor = Color.Red, Text = "A much longer caption to clear" };
 		parent.Controls.Add(group);
@@ -25,15 +49,91 @@ public class GuiTests : TestRunner
 		using (var graphics = Graphics.FromImage(actual)) graphics.Clear(Color.Magenta);
 		using (var graphics = Graphics.FromImage(expected)) graphics.Clear(Color.Magenta);
 
-		group.DrawToBitmap(actual, group.ClientRectangle);
+		parent.CreateControl();
+		PaintFromParent(group, actual);
+		var invalidated = false;
+		parent.Invalidated += (_, _) => invalidated = true;
 		group.Text = "Short";
-		group.DrawToBitmap(actual, group.ClientRectangle);
-		group.DrawToBitmap(expected, group.ClientRectangle);
+		Assert.IsTrue(invalidated, "caption changes must erase the old parent background");
+		PaintFromParent(group, actual);
+		PaintFromParent(group, expected);
 		for (var y = 0; y < group.Font.Height; y++)
 			for (var x = 0; x < group.Width; x++)
 				Assert.That(actual.GetPixel(x, y), Is.EqualTo(expected.GetPixel(x, y)), $"caption pixel {x},{y}");
-		Assert.That(actual.GetPixel(group.Width - 3, 0).ToArgb(),
-			Is.EqualTo((imageBackground ? tile.GetPixel((group.Left + group.Width - 3) % 2, group.Top % 2) : Color.Blue).ToArgb()));
+		foreach (var point in new[] { new Point(group.Width - 3, 0), new Point(group.Width / 2, group.Height / 2) })
+			Assert.That(actual.GetPixel(point.X, point.Y).ToArgb(),
+				Is.EqualTo((background == 2 ? tile.GetPixel((group.Left + point.X) % 2, (group.Top + point.Y) % 2) : color).ToArgb()));
+	}
+
+	[TestCase(false), TestCase(true), Category("Gui"), Apartment(ApartmentState.STA)]
+	public void GroupBoxSiblingBackground(bool dark)
+	{
+		var color = dark ? Color.FromArgb(32, 32, 32) : Color.White;
+		using var parent = new KeysharpContentPanel { Size = new Size(240, 120), BackColor = color };
+		using var group = new KeysharpGroupBox { Bounds = new Rectangle(7, 9, 180, 80), Text = "Group" };
+		using var opaque = new KeysharpLabel { Bounds = new Rectangle(27, 39, 40, 20), BackColor = Color.Red };
+		using var transparent = new KeysharpLabel(0, 0x20)
+		{
+			Bounds = new Rectangle(87, 39, 70, 20), BackColor = Color.Transparent,
+			ForeColor = dark ? Color.White : Color.Black, Text = "Text"
+		};
+		using var uncreated = new KeysharpLabel(0, 0x20) { Bounds = new Rectangle(40, 55, 30, 12) };
+		parent.Controls.AddRange([group, opaque, transparent, uncreated]);
+		parent.CreateControl();
+		using var bitmap = new Bitmap(group.Width, group.Height);
+		PaintFromParent(group, bitmap);
+		typeof(System.Windows.Forms.Control).GetMethod("DestroyHandle", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(uncreated, null);
+		Assert.IsFalse(uncreated.IsHandleCreated);
+		Assert.That(WindowsAPI.GetWindowLongPtr(transparent.Handle, WindowsAPI.GWL_EXSTYLE).ToInt64() & 0x20, Is.Not.Zero);
+		Assert.That(transparent.Visible, Is.True);
+		var invalidated = false;
+		transparent.Invalidated += (_, _) => invalidated = true;
+		using (var graphics = Graphics.FromImage(bitmap)) PrintClient(group, graphics);
+		Assert.IsFalse(invalidated, "painting must not invalidate sibling controls");
+		Assert.IsFalse(uncreated.IsHandleCreated, "painting must not create a sibling window");
+		Assert.That(bitmap.GetPixel(30, 40).ToArgb(), Is.EqualTo(Color.Red.ToArgb()), "opaque sibling pixels");
+		Assert.That(bitmap.GetPixel(transparent.Right - group.Left - 1, transparent.Bottom - group.Top - 1).ToArgb(), Is.EqualTo(color.ToArgb()), "transparent sibling background");
+	}
+
+	[TestCase(0, false), TestCase(0, true), TestCase(1, false), TestCase(1, true), TestCase(2, false), TestCase(2, true)]
+	[Category("Gui"), Apartment(ApartmentState.STA)]
+	public void GroupBoxNestedBackground(int background, bool reverse)
+	{
+		using var tile = new Bitmap(2, 2);
+		tile.SetPixel(0, 0, Color.Blue);
+		tile.SetPixel(1, 0, Color.Lime);
+		tile.SetPixel(0, 1, Color.Yellow);
+		tile.SetPixel(1, 1, Color.White);
+		var color = background == 0 ? Color.White : Color.FromArgb(32, 32, 32);
+		using var parent = new KeysharpContentPanel { Size = new Size(240, 160), BackColor = color };
+		if (background == 2)
+			parent.BackgroundImage = tile;
+		using var outer = new KeysharpGroupBox { Bounds = new Rectangle(7, 9, 210, 140), BackColor = Color.Red, Text = "Outer" };
+		using var middle = new KeysharpGroupBox { Bounds = new Rectangle(27, 39, 170, 95), BackColor = Color.Red, Text = "Middle" };
+		using var inner = new KeysharpGroupBox { Bounds = new Rectangle(47, 69, 130, 50), BackColor = Color.Red, Text = "Inner" };
+		KeysharpGroupBox[] groups = [outer, middle, inner];
+		parent.Controls.AddRange(reverse ? groups.Reverse().ToArray() : groups);
+		parent.CreateControl();
+		var content = inner.DisplayRectangle;
+		var sample = new Point(inner.Left + content.Left + content.Width / 2, inner.Top + content.Top + content.Height / 2);
+		var frame = new Point(inner.Left + inner.Width / 2, inner.Top + 1);
+		var expected = background == 2 ? tile.GetPixel(sample.X % 2, sample.Y % 2) : color;
+		foreach (var group in groups)
+		{
+			using var bitmap = new Bitmap(group.Width, group.Height);
+			using (var graphics = Graphics.FromImage(bitmap)) graphics.Clear(Color.Magenta);
+			for (var repaint = 0; repaint < 2; repaint++)
+			{
+				bitmap.SetPixel(sample.X - group.Left, sample.Y - group.Top, Color.Magenta);
+				PaintFromParent(group, bitmap);
+				if (group == outer)
+					bitmap.SetPixel(frame.X - group.Left, frame.Y - group.Top, Color.Cyan);
+				using (var graphics = Graphics.FromImage(bitmap)) PrintClient(group, graphics);
+				Assert.That(bitmap.GetPixel(sample.X - group.Left, sample.Y - group.Top).ToArgb(), Is.EqualTo(expected.ToArgb()), "nested interior");
+				if (group == outer)
+					Assert.That(bitmap.GetPixel(frame.X - group.Left, frame.Y - group.Top).ToArgb(), Is.EqualTo(Color.Cyan.ToArgb()), "nested frame");
+			}
+		}
 	}
 
 	[TestCase(0), TestCase(1), TestCase(2), Category("Gui"), Apartment(ApartmentState.STA)]
@@ -1456,6 +1556,162 @@ public class GuiTests : TestRunner
 		{
 			_ = gui.Destroy();
 		}
+	}
+
+	[Test, Category("Gui"), Apartment(ApartmentState.STA)]
+	public void DpiFontRoundTrip()
+	{
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+
+		try
+		{
+			_ = gui.SetFont("s10", FontFamily.GenericSansSerif.Name);
+			var control = (Gui.Control)gui.Add("Text", "w100 h30", "DPI");
+			var dpi = control.Ctrl.DeviceDpi * 2;
+			SimulateDpi(control.Ctrl, dpi);
+			Assert.That(((Ks.Font)control.Font).Size, Is.EqualTo(10d).Within(0.001));
+
+			_ = control.SetFont("s14");
+			var nativeSize = 14d * dpi / Accessors.A_ScreenDPI;
+			Assert.That(control.Ctrl.Font.Size, Is.EqualTo(nativeSize).Within(0.001));
+			_ = control.SetFont("s14");
+			Assert.That(control.Ctrl.Font.Size, Is.EqualTo(nativeSize).Within(0.001));
+			_ = control.SetFont("italic");
+			Assert.That(control.Ctrl.Font.Size, Is.EqualTo(nativeSize).Within(0.001));
+			var font = (Ks.Font)control.Font;
+			Assert.That(font.Size, Is.EqualTo(14d).Within(0.001));
+			Assert.That(font.Italic, Is.EqualTo(true));
+		}
+		finally { _ = gui.Destroy(); }
+	}
+
+	[TestCase("DDL", "r5"), TestCase("ComboBox", "h200"), Category("Gui"), Apartment(ApartmentState.STA)]
+	public void ComboBoxDropDownCreation(string type, string options)
+	{
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+
+		try
+		{
+			var creations = 0;
+			gui.form.ControlAdded += (_, e) =>
+			{
+				if (e.Control is System.Windows.Forms.ComboBox combo)
+				{
+					creations += combo.IsHandleCreated ? 1 : 0;
+					combo.HandleCreated += (_, _) => creations++;
+				}
+			};
+			var control = (Gui.Control)gui.Add(type, options, new Keysharp.Builtins.Array(["one", "two", "three"]));
+			var combo = (System.Windows.Forms.ComboBox)control.Ctrl;
+			Assert.That(creations, Is.EqualTo(1), "drop-down sizing must keep its first native handle");
+			Assert.IsFalse(combo.IntegralHeight);
+			if (options == "r5")
+			{
+				Assert.That(combo.MaxDropDownItems, Is.EqualTo(5));
+				Assert.That(combo.DropDownHeight, Is.GreaterThanOrEqualTo(combo.ItemHeight * 5));
+			}
+			else
+				Assert.That(combo.DropDownHeight + combo.Height, Is.EqualTo(Convert.ToInt32(200 * gui.DpiScale)).Within(1),
+					"native closed-field height rounding");
+		}
+		finally { _ = gui.Destroy(); }
+	}
+
+	[TestCase(true, true), TestCase(true, false), TestCase(false, true), TestCase(false, false)]
+	[Category("Gui"), Apartment(ApartmentState.STA)]
+	public void DpiStatusBarIcons(bool resize, bool scale)
+	{
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+
+		try
+		{
+			if (!scale)
+				_ = gui.Opt("-DPIScale");
+			var control = (Gui.Control)gui.Add("StatusBar", resize ? "" : "-DPIResize");
+			Assert.That(control.dpiResize, Is.EqualTo(resize));
+			var strip = (KeysharpStatusStrip)control.Ctrl;
+			var dpi = strip.DeviceDpi;
+			var pixels = Convert.ToInt32(28 * gui.DpiScale);
+			Assert.That(strip.ImageScalingSize, Is.EqualTo(new Size(pixels, pixels)));
+			foreach (var nextDpi in new[] { dpi == 144 ? 192 : 144, dpi })
+			{
+				SimulateDpi(strip, nextDpi);
+				if (resize)
+					pixels = (int)Math.Round((double)pixels * nextDpi / dpi, MidpointRounding.AwayFromZero);
+				Assert.That(strip.ImageScalingSize, Is.EqualTo(new Size(pixels, pixels)));
+				dpi = nextDpi;
+			}
+		}
+		finally { _ = gui.Destroy(); }
+	}
+
+	[Test, Category("Gui"), Apartment(ApartmentState.STA)]
+	public void DpiScaledSizeKeepsScrollbars()
+	{
+		using var form = new KeysharpForm { ClientSize = new Size(600, 400), AutoScroll = true };
+		_ = form.Handle;
+		form.AutoScrollMinSize = new Size(1200, 800);
+		form.PerformLayout();
+		var style = WindowsAPI.GetWindowLongPtr(form.Handle, WindowsAPI.GWL_STYLE).ToInt64();
+		Assert.That(style & WindowsAPI.WS_VSCROLL, Is.Not.Zero);
+		Assert.That(style & WindowsAPI.WS_HSCROLL, Is.Not.Zero);
+
+		var original = form.Size;
+		var nativeFrame = new Size(form.Width - form.ClientSize.Width, form.Height - form.ClientSize.Height);
+		var dpi = form.DeviceDpi;
+		var exStyle = (uint)WindowsAPI.GetWindowLongPtr(form.Handle, WindowsAPI.GWL_EXSTYLE);
+		var method = typeof(KeysharpForm).GetMethod("OnGetDpiScaledSize", BindingFlags.Instance | BindingFlags.NonPublic);
+		foreach (var nextDpi in new[] { dpi == 144 ? 192 : 144, dpi })
+		{
+			var viewport = form.ClientSize;
+			object[] args = [dpi, nextDpi, Size.Empty];
+			Assert.That(method.Invoke(form, args), Is.EqualTo(true));
+			var outer = (Size)args[2];
+			var frame = new RECT();
+			Assert.IsTrue(WindowsAPI.AdjustWindowRectExForDpi(ref frame, (uint)style, false, exStyle, (uint)nextDpi));
+			var client = new Size(outer.Width - (frame.Right - frame.Left) - SystemInformation.GetVerticalScrollBarWidthForDpi(nextDpi),
+				outer.Height - (frame.Bottom - frame.Top) - SystemInformation.GetHorizontalScrollBarHeightForDpi(nextDpi));
+			var ratio = (double)nextDpi / dpi;
+			Assert.That(client, Is.EqualTo(new Size((int)Math.Round(viewport.Width * ratio, MidpointRounding.AwayFromZero),
+				(int)Math.Round(viewport.Height * ratio, MidpointRounding.AwayFromZero))), "visible viewport scales independently of the scrollbars");
+			//The display DPI stays fixed; resize with its existing native frame and scrollbars.
+			form.Size = new Size(client.Width + nativeFrame.Width, client.Height + nativeFrame.Height);
+			Assert.That(form.ClientSize, Is.EqualTo(client));
+			dpi = nextDpi;
+		}
+		Assert.That(form.Width, Is.EqualTo(original.Width).Within(1));
+		Assert.That(form.Height, Is.EqualTo(original.Height).Within(1));
+	}
+
+	[TestCase(true), TestCase(false), Category("Gui"), Apartment(ApartmentState.STA)]
+	public void DpiTextConstraints(bool width)
+	{
+		var gui = new Gui(System.Array.Empty<object>());
+		_ = gui.__New();
+
+		try
+		{
+			var control = (Gui.Control)gui.Add("Text", "w100 h30", "one two");
+			control.Ctrl.AutoSize = false;
+			control.Ctrl.MinimumSize = width ? new Size(100, 0) : new Size(0, 30);
+			control.Ctrl.MaximumSize = width ? new Size(100, int.MaxValue) : new Size(int.MaxValue, 30);
+			var minimum = control.Ctrl.MinimumSize;
+			Assert.That(width ? minimum.Width : minimum.Height, Is.GreaterThan(0));
+			var original = new Rectangle(-10, -20, width ? minimum.Width : 100, width ? 30 : minimum.Height);
+			control.Ctrl.Bounds = original;
+
+			gui.RescaleForDpi(96, 192);
+			Assert.That(control.Ctrl.Bounds, Is.EqualTo(new Rectangle(original.X * 2, original.Y * 2, original.Width * 2, original.Height * 2)));
+			Assert.That(control.Ctrl.MinimumSize, Is.EqualTo(new Size(minimum.Width * 2, minimum.Height * 2)));
+			Assert.That(width ? control.Ctrl.MaximumSize.Height : control.Ctrl.MaximumSize.Width, Is.EqualTo(int.MaxValue));
+			gui.RescaleForDpi(192, 96);
+			Assert.That(control.Ctrl.Bounds, Is.EqualTo(original));
+			Assert.That(control.Ctrl.MinimumSize, Is.EqualTo(minimum));
+		}
+		finally { _ = gui.Destroy(); }
 	}
 
 	[Test, Category("Gui")]

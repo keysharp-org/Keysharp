@@ -103,7 +103,7 @@ namespace Keysharp.Internals.Window.Unix
 		/// </para>
 		/// </summary>
 		private static bool MotionWanted(Forms.Control control)
-			=> OwningScript(control)?.GuiData.onMessageHandlers.ContainsKey(WindowsAPI.WM_MOUSEMOVE) == true
+			=> OwningForm(control)?.OwnerScript.GuiData.onMessageHandlers.ContainsKey(WindowsAPI.WM_MOUSEMOVE) == true
 			   || OwningGui(control)?.HasWindowMessageHandler(WindowsAPI.WM_MOUSEMOVE) == true
 			   || control.GetGuiControl()?.HasWindowMessageHandler(WindowsAPI.WM_MOUSEMOVE) == true;
 
@@ -313,16 +313,6 @@ namespace Keysharp.Internals.Window.Unix
 		/// <returns>True when a monitor claimed the message, meaning default processing must be suppressed.</returns>
 		private static bool Dispatch(Forms.Control control, int msg, nint wparam, nint lparam)
 		{
-			var script = OwningScript(control);
-
-			if (script == null || script.IsDisposed)
-				return false;
-
-			var filter = script.msgFilter;
-
-			if (filter == null)
-				return false;
-
 			var m = new Message
 			{
 				HWnd = control.Handle,
@@ -331,7 +321,20 @@ namespace Keysharp.Internals.Window.Unix
 				LParam = lparam,
 				Result = 0
 			};
-			return filter.CallEventHandlers(ref m) || InvokeOwnerHandlers(control, ref m);
+			return Deliver(control, ref m, A_TickCount, posted: false, includeGlobalMonitors: true);
+		}
+
+		//Sent control messages bypass global monitors, as Windows dispatches them directly to the control.
+		internal static bool Deliver(Forms.Control control, ref Message m, long eventInfo, bool posted, bool includeGlobalMonitors)
+		{
+			var owner = OwningForm(control);
+			var script = owner?.OwnerScript;
+
+			if (script == null || script.IsDisposed || script.msgFilter is not MessageFilter filter)
+				return false;
+
+			return (includeGlobalMonitors && filter.CallEventHandlers(ref m, eventInfo, posted))
+				   || (!script.IsDisposed && !control.IsDisposed && owner.CachedHwnd != 0 && InvokeOwnerHandlers(control, ref m));
 		}
 
 		/// <summary>
@@ -357,11 +360,11 @@ namespace Keysharp.Internals.Window.Unix
 			return null;
 		}
 
-		private static Script OwningScript(Forms.Control control)
+		private static KeysharpForm OwningForm(Forms.Control control)
 		{
 			for (var parent = control; parent != null; parent = parent.Parent)
 				if (parent is KeysharpForm form)
-					return form.OwnerScript;
+					return form;
 
 			return null;
 		}

@@ -76,6 +76,9 @@ namespace Keysharp.Builtins
 
 				Controls.Add(strip);
 				strip.SendToBack();//Docked first, so that the panel fills what is left below it.
+				//Pin the menu font before handle creation so WinForms scales it with the window.
+				strip.Font = strip.Font;
+				strip.EnsureHandle();
 			}
 
 			ResumeLayout();
@@ -117,6 +120,10 @@ namespace Keysharp.Builtins
 					cp.ExStyle &= ~WindowsAPI.WS_EX_APPWINDOW;
 
 				//cp.ExStyle |= 0x02000000; // Add WS_EX_COMPOSITED
+				//Script GUIs repaint beneath their controls, as AutoHotkey does.
+				if (this is not MainWindow)
+					cp.Style &= ~WindowsAPI.WS_CLIPCHILDREN;
+
 				cp.Style |= addStyle;
 				cp.ExStyle |= addExStyle;
 				cp.Style &= ~removeStyle;
@@ -231,8 +238,8 @@ namespace Keysharp.Builtins
 			//changes), so WinForms must not scale as well: it would fight the raw pixels a "-DPIScale" GUI supplies,
 			//and it rescales every child unconditionally, which cannot honor a per-control "-DPIResize".
 			AutoScaleMode = AutoScaleMode.None;
-			//See Gui.Show() for where the remainder of the properties get set, such as scaling values.
-			StartPosition = FormStartPosition.CenterScreen;
+			//Gui.Show positions the window; initial layout must not depend on the mouse's monitor.
+			StartPosition = FormStartPosition.Manual;
 			KeyPreview = true;
 			DoubleBuffered = true;
 			SetStyle(ControlStyles.StandardClick, true);
@@ -785,10 +792,28 @@ namespace Keysharp.Builtins
 		}
 
 #if WINDOWS
+		//Scale the client area independently of the nonclient frame to match the controls' DPI scaling.
+		protected override bool OnGetDpiScaledSize(int deviceDpiOld, int deviceDpiNew, ref Size desiredSize)
+		{
+			var client = Gui.ScaleForDpi(ClientSize, deviceDpiOld, deviceDpiNew);
+			var rect = new RECT { Right = client.Width, Bottom = client.Height };
+			var style = (uint)WindowsAPI.GetWindowLongPtr(Handle, WindowsAPI.GWL_STYLE);
+			var exStyle = (uint)WindowsAPI.GetWindowLongPtr(Handle, WindowsAPI.GWL_EXSTYLE);
+
+			if (!WindowsAPI.AdjustWindowRectExForDpi(ref rect, style, false, exStyle, (uint)deviceDpiNew))
+				return false;
+
+			//AdjustWindowRectExForDpi excludes scrollbars, which ClientSize also leaves out.
+			var scrollWidth = (style & WindowsAPI.WS_VSCROLL) != 0 ? SystemInformation.GetVerticalScrollBarWidthForDpi(deviceDpiNew) : 0;
+			var scrollHeight = (style & WindowsAPI.WS_HSCROLL) != 0 ? SystemInformation.GetHorizontalScrollBarHeightForDpi(deviceDpiNew) : 0;
+			desiredSize = new Size(rect.Right - rect.Left + scrollWidth, rect.Bottom - rect.Top + scrollHeight);
+			return true;
+		}
+
 		private void Form_DpiChanged(object sender, DpiChangedEventArgs e)
 		{
-			//Only the controls are re-laid out here; the window itself is left to WinForms, which applies the
-			//suggested rectangle once this returns.
+			//Only the controls are re-laid out here; WinForms scales their fonts and applies the window rectangle Windows
+			//suggests once this returns.
 			if (Tag is WeakReference<Gui> wrg && wrg.TryGetTarget(out var g))
 				g.RescaleForDpi(e.DeviceDpiOld, e.DeviceDpiNew);
 

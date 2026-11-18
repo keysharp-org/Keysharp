@@ -131,6 +131,14 @@ namespace Keysharp.Builtins
 					m.Result = new nint(colorValue);
 					return true;
 
+				//AutoHotkey's Text and Picture are static controls, which let a click through to what is beneath them unless
+				//they have SS_NOTIFY, and its GroupBox always does, so that they take no clicks from the controls drawn over
+				//them or inside the box.
+				case WindowsAPI.WM_NCHITTEST when control is KeysharpGroupBox
+					|| control is KeysharpLabel or KeysharpPictureBox && (WindowsAPI.GetWindowLongPtr(m.HWnd, WindowsAPI.GWL_STYLE) & WindowsAPI.SS_NOTIFY) == 0:
+					m.Result = WindowsAPI.HTTRANSPARENT;
+					return true;
+
 				case WindowsAPI.STM_SETIMAGE:
 					control.BackgroundImage = Image.FromHbitmap(m.LParam);
 					return true;

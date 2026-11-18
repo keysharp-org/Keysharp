@@ -79,15 +79,6 @@ namespace Keysharp.Internals.Strings
 			return DateTime.MinValue;
 		}
 
-		internal static Font ConvertFont(Font font)
-		{
-#if WINDOWS
-			return font;
-#else
-			return font;
-#endif
-		}
-
 		// AHK font sizes follow the Windows convention (points at a 96 DPI baseline). macOS renders points at
 		// a 72 DPI baseline, so the same nominal size appears smaller; scale by 96/72 and round to the nearest
 		// whole point so macOS GUIs match the other platforms visually. No-op on Windows/Linux (96 DPI). This

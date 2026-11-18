@@ -298,6 +298,21 @@ ctl.SetFont(Font("s15", guiFamily))
 Check("control SetFont object name", ctl.Font.Name, guiFamily)
 Check("control SetFont object size", ctl.Font.Size, 15)
 
+progress := g.AddProgress("cRed BackgroundSilver", 50)
+Check("progress initial text color", progress.Font.Color, "FF0000")
+Check("progress initial background", progress.BackColor, "C0C0C0")
+progress.SetFont("cLime")
+progress.BackColor := "Blue"
+Check("progress assigned text color", progress.Font.Color, "00FF00")
+Check("progress assigned background", progress.BackColor, "0000FF")
+#if WINDOWS
+; Native color requests may match the control's public property value.
+SendMessage(0x0409, 0, 0x00FF00, progress) ; PBM_SETBARCOLOR
+Check("progress native bar color", SendMessage(0x040F, 0, 0, progress), 0x00FF00)
+SendMessage(0x2001, 0, 0xFF0000, progress) ; PBM_SETBKCOLOR
+Check("progress native background color", SendMessage(0x040E, 0, 0, progress), 0xFF0000)
+#endif
+
 ; Repeated FontHandle reads reuse the GUI's native font until the font itself changes.
 g.SetFont("s12 norm", guiFamily)
 handle := g.FontHandle

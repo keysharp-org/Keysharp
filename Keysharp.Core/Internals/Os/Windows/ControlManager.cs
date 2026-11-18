@@ -1261,8 +1261,8 @@ namespace Keysharp.Internals.Os.Windows
 		internal override long SendMessage(uint msg, object wparam, object lparam, object ctrl, object title, object text, object excludeTitle, object excludeText, int timeout)
 		{
 			long ret;
-			Reflections.TryGetPtrProperty(wparam, out var waddr);
-			var wptr = new nint(waddr);
+			if (!CoerceMessageParam(wparam, out var wptr))
+				return DefaultErrorLong;
 			var item = ctrl != null
 					   ? WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText)
 					   : WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true);
@@ -1272,7 +1272,7 @@ namespace Keysharp.Internals.Os.Windows
 
 			var thehandle = item.Handle;
 
-			if (lparam is string s)
+			if (lparam is string s && s.Length != 0)
 			{
 				var sendresult = 0L;
 				nint result = 0;
@@ -1297,8 +1297,8 @@ namespace Keysharp.Internals.Os.Windows
 			}
 			else
 			{
-				Reflections.TryGetPtrProperty(lparam, out var laddr);
-				var lptr = new nint(laddr);
+				if (!CoerceMessageParam(lparam, out var lptr))
+					return DefaultErrorLong;
 
 				if (WindowsAPI.SendMessageTimeout(thehandle, (uint)msg, wptr, lptr, SendMessageTimeoutFlags.SMTO_ABORTIFHUNG, (uint)timeout, out var result) == 0)
 					return (long)Errors.OSErrorOccurred("", $"Could not send message with values msg: {msg}, lparam: {lparam}, wparam: {wparam} to control in window with criteria: title: {title}, text: {text}, exclude title: {excludeTitle}, exclude text: {excludeText}", DefaultErrorLong);

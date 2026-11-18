@@ -240,6 +240,40 @@ namespace Keysharp.Internals.Os
 
 		internal abstract long SendMessage(uint msg, object wparam, object lparam, object ctrl, object title, object text, object excludeTitle, object excludeText, int timeout);
 
+		/// <summary>Accepts an integer or an object's integer Ptr without truncating floats.</summary>
+		internal static bool CoerceMessageParam(object value, out nint param)
+		{
+			if (value is string { Length: 0 })
+				value = 0L;
+
+			if (value is IPointable pointable)
+				value = pointable.Ptr;
+			else if (value is Any)
+			{
+				var pointer = Script.GetPropertyValueOrNull(value, "Ptr");
+
+				if (pointer == null)
+				{
+					param = 0;
+					_ = Errors.MissingPropertyErrorOccurred(value, "Ptr");
+					return false;
+				}
+
+				if (pointer is not (long or bool))
+				{
+					param = 0;
+					_ = Errors.ExpectedTypeErrorOccurred("Integer", pointer);
+					return false;
+				}
+
+				value = pointer;
+			}
+
+			var ok = value.CoerceLong(out var number, 0L, false);
+			param = (nint)number;
+			return ok;
+		}
+
 		private static void ShowHideHelper(bool val, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
 			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is WindowInfoBase item)

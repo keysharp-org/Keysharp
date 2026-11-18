@@ -224,6 +224,51 @@ Throws(() => ControlSendText("a", lb), A_LineNumber, UnsupportedError)
 #endif
 
 #if WINDOWS
+; A composite control's repaint preserves its native children when the GUI background changes.
+paintGui := Gui("+AlwaysOnTop")
+try {
+	paintGui.BackColor := "White"
+	paintList := paintGui.AddListView("x10 y10 w300 r2", [""])
+	paintCombo := paintGui.AddComboBox("x10 y100 w200", ["Choice"])
+	paintNumber := paintGui.AddUpDown("x220 y100 w90 -16", 42)
+	paintGui.Show("NoActivate x20 y20 w330 h150")
+	WinRedraw(paintGui)
+	Sleep 50
+	paintHeader := SendMessage(0x101F, 0, 0, paintList)   ; LVM_GETHEADER
+	paintComboEdit := DllCall("GetWindow", "Ptr", paintCombo.Hwnd, "UInt", 5, "Ptr")   ; GW_CHILD
+	paintNumberEdit := DllCall("GetWindow", "Ptr", paintNumber.Hwnd, "UInt", 5, "Ptr")
+	while paintNumberEdit && !InStr(WinGetClass(paintNumberEdit), "EDIT")
+		paintNumberEdit := DllCall("GetWindow", "Ptr", paintNumberEdit, "UInt", 2, "Ptr")   ; GW_HWNDNEXT
+	paintChildren := [paintHeader, paintComboEdit, paintNumberEdit]
+	paintColors := []
+	for paintChild in paintChildren {
+		Assert(paintChild != 0, A_LineNumber)
+		paintColors.Push(_ChildPixel(paintChild))
+		Assert(paintColors[-1] != 0xFFFFFFFF && paintColors[-1] != 0x0000FF, A_LineNumber)
+	}
+	for redraw in [false, true] {
+		if redraw
+			WinRedraw(paintGui)
+		else
+			paintGui.BackColor := "Red"
+		Sleep 50
+		for paintIndex, paintChild in paintChildren
+			AssertEq(_ChildPixel(paintChild), paintColors[paintIndex], A_LineNumber)
+	}
+} finally paintGui.Destroy()
+
+_ChildPixel(_Hwnd) {
+	if !_Hwnd
+		return 0xFFFFFFFF
+	_rect := Buffer(16, 0)
+	DllCall("GetClientRect", "Ptr", _Hwnd, "Ptr", _rect)
+	_dc := DllCall("GetDC", "Ptr", _Hwnd, "Ptr")
+	if !_dc
+		return 0xFFFFFFFF
+	try return DllCall("gdi32\GetPixel", "Ptr", _dc, "Int", 6, "Int", NumGet(_rect, 12, "Int") // 2, "UInt")
+	finally DllCall("ReleaseDC", "Ptr", _Hwnd, "Ptr", _dc)
+}
+
 ; "xN yN" clicks that point of the window, here in the fourth row, rather than the middle of the control there.
 ControlGetPos(&lbX, &lbY, , , lb)
 rowHeight := SendMessage(0x1A1, 0, 0, lb)   ; LB_GETITEMHEIGHT
@@ -369,6 +414,12 @@ tabs.MarginX := 10, tabs.MarginY := 6
 tabs.AddButton("x10 y10 w80 h24", "Before")
 tabbed := tabs.AddTab3("x10 y50 w300 h250", ["One", "Two"])
 firstOnPage := tabs.AddText(, "first")
+; Layout containers let the window background paint beneath their children.
+WS_CLIPCHILDREN := 0x02000000
+AssertEq(WinGetStyle(tabs) & WS_CLIPCHILDREN, 0, A_LineNumber)
+AssertEq(ControlGetStyle(tabbed) & WS_CLIPCHILDREN, 0, A_LineNumber)
+page := DllCall("GetParent", "Ptr", firstOnPage.Hwnd, "Ptr")
+AssertEq(WinGetStyle(page) & WS_CLIPCHILDREN, 0, A_LineNumber)
 Pos(ctrl) {
 	ctrl.GetPos(&x, &y, &w, &h)
 	return x "," y
@@ -394,6 +445,8 @@ over := stack.AddEdit("x20 y20 w60 h20")
 frame := stack.AddGroupBox("x10 y60 w200 h80", "Frame")
 inside := stack.AddButton("x30 y85 w80 h30", "Inside")
 stack.Show("NoActivate w300 h160")
+AssertEq(ControlGetStyle(frame) & WS_CLIPCHILDREN, 0, A_LineNumber)
+Assert(ControlGetStyle(over) & WS_CLIPCHILDREN, A_LineNumber)
 hwnds := WinGetControlsHwnd(stack)
 names := WinGetControls(stack)
 for i, ctrl in [under, over, frame, inside] {
@@ -439,6 +492,7 @@ stackBar.Add("File", stackMenu)
 stack.MenuBar := stackBar
 label := stack.AddText("x220 y10 w70 h20", "Label")
 holder := DllCall("GetParent", "Ptr", label.Hwnd, "Ptr")
+AssertEq(WinGetStyle(holder) & WS_CLIPCHILDREN, 0, A_LineNumber)
 SendMessage(0x7B, holder, ScreenPoint(label, 5, 5), holder)   ; WM_CONTEXTMENU
 menuStart := A_TickCount
 while menuTarget == "" && A_TickCount - menuStart < 2000

@@ -279,7 +279,9 @@ namespace Keysharp.Builtins
 			if (!winText.CoerceString(out var text) || !excludeTitle.CoerceString(out var exTitle) || !excludeText.CoerceString(out var exText))
 				return DefaultObject;
 
-			if (!msgNumber.CoerceLong(out var msg) || !wParam.CoerceInt(out var wp) || !lParam.CoerceInt(out var lp))
+			if (!msgNumber.CoerceLong(out var msg)
+					|| !ControlManagerBase.CoerceMessageParam(wParam, out var wp)
+					|| !ControlManagerBase.CoerceMessageParam(lParam, out var lp))
 				return DefaultObject;
 
 			Platform.Control.PostMessage(

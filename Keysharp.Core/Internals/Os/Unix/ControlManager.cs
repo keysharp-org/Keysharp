@@ -386,16 +386,11 @@ namespace Keysharp.Internals.Os.Unix
 
 		internal override long ControlGetFocus(object title, object text, object excludeTitle, object excludeText)
 		{
-			if (WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true) is WindowInfoBase item)
-			{
-				if (Control.FromHandle(item.Handle) is Form form)
-				{
-					if (form.ActiveControl != null)
-						return form.ActiveControl.Handle.ToInt64();
-				}
-			}
-
-			return 0L;
+			//A form found by handle bypasses the UI-thread dispatch Gui members get, and a RealThread can get here.
+			return WindowSearch.SearchWindow(title, text, excludeTitle, excludeText, true) is WindowInfoBase item
+				   && Control.FromHandle(item.Handle) is Form form
+				   ? form.CheckedInvoke(() => form.ActiveControl?.Handle.ToInt64() ?? 0L, false)
+				   : 0L;
 		}
 
 		internal override long ControlGetIndex(object ctrl, object title, object text, object excludeTitle, object excludeText)
@@ -742,111 +737,154 @@ namespace Keysharp.Internals.Os.Unix
 
 		internal override void PostMessage(uint msg, nint wparam, nint lparam, object ctrl, object title, object text, object excludeTitle, object excludeText)
 		{
-			_ = TryDispatchWindowMessage(msg, wparam, lparam, ctrl, title, text, excludeTitle, excludeText, true);
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is not WindowInfoBase item)
+				return;
+
+			var handle = item.Handle;
+
+			if (Control.FromHandle(handle) is not Control control)
+			{
+				_ = SendToForeignWindow(handle, msg);
+				return;
+			}
+
+			var script = Script.TheScript;
+			var postedAt = A_TickCount;
+			void Deliver() => _ = DeliverOwnMessage(script, control, handle, msg, wparam, lparam, postedAt, true);
+#if LINUX
+			//AsyncInvoke (GtkSharp's Application.Invoke) runs at a higher priority than GTK's
+			//layout finalization, so it can fire before freshly-changed text is laid out (e.g. a
+			//scroll-to-end would land one line short). A default-priority idle runs after layout.
+			_ = GLib.Idle.Add(() => { Deliver(); return false; });
+#else
+			script.PostToUIThread(Deliver);
+#endif
 		}
 
 		internal override long SendMessage(uint msg, object wparam, object lparam, object ctrl, object title, object text, object excludeTitle, object excludeText, int timeout)
 		{
-			if (!wparam.CoerceInt(out var wp) || !lparam.CoerceInt(out var lp))
+			if (!CoerceMessageParam(wparam, out var wp) || !CoerceMessageParam(lparam, out var lp))
+				return DefaultErrorLong;
+
+			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is not WindowInfoBase item)
 				return 0L;
 
-			return TryDispatchWindowMessage(msg, wp, lp, ctrl, title, text, excludeTitle, excludeText, false) ? 1L : 0L;
+			var handle = item.Handle;
+
+			if (Control.FromHandle(handle) is not Control control)
+				return SendToForeignWindow(handle, msg);
+
+			var script = Script.TheScript;
+			long Deliver() => DeliverOwnMessage(script, control, handle, msg, wp, lp, 0L, false);
+			return script.IsOnMainThread ? Deliver() : SendFromOtherThread(script, Deliver, timeout);
 		}
 
-		private static bool TryDispatchWindowMessage(uint msg, nint wparam, nint lparam, object ctrl, object title, object text, object excludeTitle, object excludeText, bool post)
+		//Off Windows another program's window takes no message, but WM_CLOSE still asks it to close, as WinClose does.
+		private static long SendToForeignWindow(nint handle, uint msg)
 		{
-			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText, false) is not ControlInfo item)
-				return false;
+			if (msg == WindowsAPI.WM_CLOSE)
+				_ = Platform.Window.TryClose(handle);
 
-			var action = CreateWindowMessageAction(item.Control, msg, wparam, lparam);
-
-			if (action == null)
-				return false;
-
-			if (post)
-#if LINUX
-				//AsyncInvoke (GtkSharp's Application.Invoke) runs at a higher priority than GTK's
-				//layout finalization, so it can fire before freshly-changed text is laid out (e.g. a
-				//scroll-to-end would land one line short). A default-priority idle runs after layout.
-				_ = GLib.Idle.Add(() => { action(); return false; });
-#else
-				Application.Instance.AsyncInvoke(action);
-#endif
-			else
-				InvokeWindowMessageAction(action);
-
-			return true;
+			return 0L;
 		}
 
-		private static Action CreateWindowMessageAction(Control control, uint msg, nint wparam, nint lparam) =>
-			msg switch
+		private static long SendFromOtherThread(Script script, Func<long> deliver, int timeout)
+		{
+			var done = new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
+			//Teardown can discard the UI post, so its scheduler must release the sender's wait.
+			using var pending = script.MainEventScheduler?.RegisterPendingCallback(() => done.TrySetResult(DefaultErrorLong));
+
+			if (pending == null)
+				return DefaultErrorLong;
+
+			script.PostToUIThread(() =>
 			{
-				(uint)WindowsAPI.WM_VSCROLL => CreateTextAreaScrollAction(control, wparam),
-				(uint)WindowsAPI.EM_SCROLLCARET => CreateTextAreaScrollCaretAction(control),
-				(uint)WindowsAPI.EM_SETSEL => CreateTextAreaSetSelAction(control, wparam, lparam),
-				_ => null
+				try { _ = done.TrySetResult(deliver()); }
+				catch (Exception ex) { _ = done.TrySetException(ex); }
+			});
+
+			if (!Keysharp.Internals.Flow.WaitForCompletion(done.Task, timeout == 0 ? Timeout.Infinite : Math.Max(0, timeout)))
+				return (long)Errors.TimeoutErrorOccurred($"The window did not answer the message within {timeout} ms.", DefaultErrorLong);
+
+			return done.Task.GetAwaiter().GetResult();
+		}
+
+		//Only the original target may receive queued delivery; its handle could have been reused.
+		private static long DeliverOwnMessage(Script script, Control control, nint handle, uint msg, nint wparam, nint lparam, long eventInfo, bool posted)
+		{
+			if (script.IsDisposed || !ReferenceEquals(Control.FromHandle(handle), control))
+				return 0L;
+
+			var m = new Message
+			{
+				HWnd = handle,
+				Msg = unchecked((int)msg),
+				WParam = wparam,
+				LParam = lparam
 			};
 
-		//EM_SETSEL(start, end): select a character range. The two documented special cases are honoured
-		//because scripts rely on them: start == -1 deselects and parks the caret at the current end, and
-		//end == -1 selects to the end of the text.
-		//Eto's Range<int> is INCLUSIVE (see ScrollTextAreaToOffset), so an exclusive [start, end)
-		//becomes Range(start, end - 1), and an empty selection becomes Range(caret, caret - 1).
-		private static Action CreateTextAreaSetSelAction(Control control, nint wparam, nint lparam)
-		{
-			if (control is not TextArea area)
-				return null;
+			if (EtoMessageSource.Deliver(control, ref m, eventInfo, posted, includeGlobalMonitors: posted || control is KeysharpForm))
+				return m.Result;
 
-			var start = (int)wparam.ToInt64();
-			var end = (int)lparam.ToInt64();
-
-			return () =>
-			{
-				var len = area.Text?.Length ?? 0;
-
-				if (start == -1)//Deselect; caret stays where the selection ended.
-				{
-					var caret = Math.Clamp(area.CaretIndex, 0, len);
-					area.Selection = new Range<int>(caret, caret - 1);
-					return;
-				}
-
-				var from = Math.Clamp(start, 0, len);
-				var to = end == -1 ? len : Math.Clamp(end, 0, len);
-
-				if (to < from)
-					(from, to) = (to, from);
-
-				area.Selection = new Range<int>(from, to - 1);
-			};
+			return !script.IsDisposed && ReferenceEquals(Control.FromHandle(handle), control)
+				   ? DefaultWindowProcedure(control, handle, msg, wparam, lparam)
+				   : 0L;
 		}
 
-		private static Action CreateTextAreaScrollAction(Control control, nint wparam)
+		//Toolkit equivalents of the supported default window procedures.
+		private static long DefaultWindowProcedure(Control control, nint handle, uint msg, nint wparam, nint lparam)
 		{
-			if (control is not TextArea area)
-				return null;
-
-			var cmd = unchecked((int)(wparam.ToInt64() & 0xFFFF));//WM_VSCROLL packs the scroll command in the low word.
-
-			return cmd switch
+			switch (msg)
 			{
-				WindowsAPI.SB_TOP => area.ScrollToStart,
-				WindowsAPI.SB_BOTTOM => () => ScrollTextAreaToEnd(area),
-				_ => null
-			};
+				case WindowsAPI.WM_CLOSE when control is Form:
+					_ = Platform.Window.TryClose(handle);
+					break;
+
+				//The length of the text ControlGetText reads, which keeps the toolkit's line breaks.
+				case WindowsAPI.WM_GETTEXTLENGTH:
+					return control.Text?.Length ?? 0;
+
+				//The scroll command is in the low word.
+				case WindowsAPI.WM_VSCROLL when control is TextArea area:
+					switch (unchecked((int)(wparam.ToInt64() & 0xFFFF)))
+					{
+						case WindowsAPI.SB_TOP: area.ScrollToStart(); break;
+						case WindowsAPI.SB_BOTTOM: area.ScrollToEnd(); break;
+					}
+
+					break;
+
+				case WindowsAPI.EM_SCROLLCARET when control is TextArea area:
+					ScrollTextAreaToOffset(area, area.CaretIndex);
+					return 1L;
+
+				case WindowsAPI.EM_SETSEL when control is TextArea area:
+					SetTextAreaSelection(area, (int)wparam.ToInt64(), (int)lparam.ToInt64());
+					break;
+			}
+
+			return 0L;
 		}
 
-		private static Action CreateTextAreaScrollCaretAction(Control control) =>
-			control is TextArea area ? () => ScrollTextAreaToOffset(area, area.CaretIndex) : null;
-
-		private static void InvokeWindowMessageAction(Action action)
+		//Eto ranges include their end; EM_SETSEL uses an exclusive end and -1 for deselect/select-to-end.
+		private static void SetTextAreaSelection(TextArea area, int start, int end)
 		{
-			var app = Application.Instance;
+			var len = area.Text?.Length ?? 0;
 
-			if (app.IsUIThread)
-				action();
-			else
-				app.Invoke(action);
+			if (start == -1)//Deselect; caret stays where the selection ended.
+			{
+				var caret = Math.Clamp(area.CaretIndex, 0, len);
+				area.Selection = new Range<int>(caret, caret - 1);
+				return;
+			}
+
+			var from = Math.Clamp(start, 0, len);
+			var to = end == -1 ? len : Math.Clamp(end, 0, len);
+
+			if (to < from)
+				(from, to) = (to, from);
+
+			area.Selection = new Range<int>(from, to - 1);
 		}
 
 		private static void ScrollTextAreaToOffset(TextArea area, int offset)
@@ -854,11 +892,6 @@ namespace Keysharp.Internals.Os.Unix
 			//Eto's TextArea.ScrollTo scrolls to offset (range.Start + range.Length()), and Range<int>.Length()
 			//is inclusive (End - Start + 1). End = Start - 1 targets exactly Start, and maps to NSRange(Start, 0).
 			area.ScrollTo(new Range<int>(offset, offset - 1));
-		}
-
-		private static void ScrollTextAreaToEnd(TextArea area)
-		{
-			area.ScrollToEnd();
 		}
 
 		private static void DropdownHelper(bool val, object ctrl, object title, object text, object excludeTitle, object excludeText)

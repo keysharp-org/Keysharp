@@ -121,6 +121,11 @@ namespace Keysharp.Internals.UI.Unix
 #endif
 			_ = this.Handle;
 			beenShown = true;
+
+			//Realizing changes the handle on X11, and A_ScriptHwnd is read after this, so the main window's Gui is
+			//registered again under the handle scripts will look it up by.
+			if (OwnerScript.mainWindowGui is { } gui)
+				Register(gui);
 		}
 
 		private void BuildUi()

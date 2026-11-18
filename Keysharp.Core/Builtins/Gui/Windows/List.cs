@@ -7,7 +7,7 @@ namespace Keysharp.Builtins
 		public partial class List
 		{
 			private partial void AddTabs(KeysharpTabControl tc, string[] texts) =>
-				tc.TabPages.AddRange(texts.Select(x => new TabPage(x ?? "")).ToArray());
+				tc.TabPages.AddRange(texts.Select(x => new KeysharpTabPage(x ?? "")).ToArray());
 
 			private partial void RemoveTab(KeysharpTabControl tc, int index)
 			{

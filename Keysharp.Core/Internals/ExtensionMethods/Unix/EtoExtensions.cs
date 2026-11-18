@@ -147,9 +147,6 @@ namespace Eto.Forms
             if (root == null)
                 return null;
 
-            if (root.HasFocus)
-                return root;
-
             foreach (var child in root.VisualControls)
             {
                 var focused = FindFocusedControl(child);
@@ -157,7 +154,8 @@ namespace Eto.Forms
                     return focused;
             }
 
-            return null;
+            //Window focus reports activation; only a focused child is the active control.
+            return root is not Window && root.HasFocus ? root : null;
         }
 
 		extension(Eto.Forms.Control)
