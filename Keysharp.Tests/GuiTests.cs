@@ -1355,6 +1355,20 @@ public class GuiTests : TestRunner
 		SkipIfUiInitializationBlocked("External menus require a native AppKit application and existing Accessibility grants.");
 		Assert.That(TestScript("mac-external-menu", false), Is.True);
 	}
+
+	[Test, Category("Gui"), NonParallelizable]
+	public void OwnedControlSend()
+	{
+		SkipIfUiInitializationBlocked("ControlSend requires script-owned AppKit controls.");
+		Assert.That(TestScript("mac-control-send-owned", false), Is.True);
+	}
+
+	[Test, Category("Gui"), NonParallelizable]
+	public void ExternalControlSend()
+	{
+		SkipIfUiInitializationBlocked("External input requires a native AppKit application and existing Accessibility grants.");
+		Assert.That(TestScript("mac-control-send-external", false), Is.True);
+	}
 #endif
 
 #if WINDOWS

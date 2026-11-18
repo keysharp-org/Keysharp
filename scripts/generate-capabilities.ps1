@@ -44,7 +44,8 @@ function BuildTableLines($inputRows) {
 		$feature = EscapeMdCell([string]$row.feature)
 		$notes = EscapeMdCell([string]$row.notes)
 		$scriptOwnedControlOnly = [string]$row.feature -match '^Control.*\(\)$'
-		$out.Add("| $feature | $(StatusIcon $row.windows) | $(StatusIcon $row.linux_x11 $scriptOwnedControlOnly) | $(StatusIcon $row.linux_wayland $scriptOwnedControlOnly) | $(StatusIcon $row.macos $scriptOwnedControlOnly) | $notes |")
+		$macOwnedControlOnly = $scriptOwnedControlOnly -and ($row.feature -notin @('ControlSend()', 'ControlSendText()'))
+		$out.Add("| $feature | $(StatusIcon $row.windows) | $(StatusIcon $row.linux_x11 $scriptOwnedControlOnly) | $(StatusIcon $row.linux_wayland $scriptOwnedControlOnly) | $(StatusIcon $row.macos $macOwnedControlOnly) | $notes |")
 	}
 	return $out
 }

@@ -148,6 +148,9 @@ namespace Keysharp.Internals.Input.MacOS
 		internal static partial void CGEventPost(uint tap, nint cgEvent);
 
 		[LibraryImport(ApplicationServices)]
+		private static partial void CGEventPostToPid(int pid, nint cgEvent);
+
+		[LibraryImport(ApplicationServices)]
 		private static partial void CGEventSetSource(nint cgEvent, nint source);
 
 		[LibraryImport(ApplicationServices)]
@@ -547,21 +550,21 @@ namespace Keysharp.Internals.Input.MacOS
 		}
 
 		internal static bool PostKeyboard(uint vk, bool keyDown, long extraInfo, uint modifiersLR,
-			bool autoRepeat = false, bool? capsLockOn = null, uint scanCode = 0)
-		{
-			var ev = CreateKeyboardEvent(vk, keyDown, extraInfo, modifiersLR, autoRepeat, capsLockOn, scanCode);
-			return PostAndRelease(ev);
-		}
+			bool autoRepeat = false, bool? capsLockOn = null, uint scanCode = 0, int? pid = null)
+			=> PostAndRelease(CreateKeyboardEvent(vk, keyDown, extraInfo, modifiersLR, autoRepeat, capsLockOn, scanCode), pid);
 
-		internal static void PostUnicodeText(ReadOnlySpan<char> text, long extraInfo)
+		internal static void PostUnicodeText(ReadOnlySpan<char> text, long extraInfo, int? pid = null)
 		{
 			if (text.IsEmpty)
 				return;
 
+			var source = SharedEventSource();
 			for (var offset = 0; offset < text.Length;)
 			{
 				var length = NextUnicodeScalarLength(text[offset..]);
-				PostUnicodeChunk(text.Slice(offset, length), extraInfo);
+				var chunk = text.Slice(offset, length);
+				PostUnicodeEvent(pid, source, chunk, extraInfo, true);
+				PostUnicodeEvent(pid, source, chunk, extraInfo, false);
 				offset += length;
 			}
 		}
@@ -590,17 +593,10 @@ namespace Keysharp.Internals.Input.MacOS
 			return length != 0;
 		}
 
-		private static void PostUnicodeChunk(ReadOnlySpan<char> text, long extraInfo)
-		{
-			var source = SharedEventSource();
-			PostUnicodeEvent(source, text, extraInfo, true);
-			PostUnicodeEvent(source, text, extraInfo, false);
-		}
-
-		private static void PostUnicodeEvent(nint source, ReadOnlySpan<char> text, long extraInfo, bool down)
+		private static void PostUnicodeEvent(int? pid, nint source, ReadOnlySpan<char> text, long extraInfo, bool down)
 		{
 			var ev = CreateUnicodeEvent(source, text, extraInfo, down);
-			if (!PostAndRelease(ev))
+			if (!PostAndRelease(ev, pid))
 				throw new InvalidOperationException("Core Graphics could not create a Unicode keyboard event.");
 		}
 
@@ -722,14 +718,24 @@ namespace Keysharp.Internals.Input.MacOS
 			return PostAndRelease(ev);
 		}
 
-		private static bool PostAndRelease(nint ev)
+		private static bool PostAndRelease(nint ev, int? pid = null)
 		{
 			if (ev == nint.Zero)
 				return false;
 
-			try { CGEventPost(kCGHIDEventTap, ev); }
+			try
+			{
+				if (pid is { } target)
+				{
+					if (target <= 0)
+						return false;
+					CGEventPostToPid(target, ev);
+				}
+				else
+					CGEventPost(kCGHIDEventTap, ev);
+				return true;
+			}
 			finally { CFRelease(ev); }
-			return true;
 		}
 
 		internal static uint MouseMoveType(MouseButton draggingButton) => draggingButton switch

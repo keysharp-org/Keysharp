@@ -522,17 +522,45 @@ namespace Keysharp.Internals.Os.Unix
 			WindowInfoBase.DoControlDelay();
 		}
 
-		/// <summary>
-		/// On Linux the script's own windows take keys as GTK events; on macOS the script's own Edits take text.
-		/// No way tells which X11 clients accept synthetic keys.
-		/// </summary>
 		private static void ControlSendHelper(string str, object ctrl, object title, object text, object excludeTitle, object excludeText, SendRawModes mode)
 		{
+#if OSX
+			if (!WindowSearch.TrySearchControl(ctrl, title, text, excludeTitle, excludeText, out var item, out var target))
+				return;
+
+			var script = Script.TheScript;
+			var sender = (MacKeyboardMouseSender)script.HookThread.kbdMsSender;
+			if (item != null && Control.FromHandle(item.Handle) is Control)
+			{
+				sender.SendToTarget(str, mode, item.Handle);
+				return;
+			}
+
+			if (target == null || item == null && Control.FromHandle(target.Handle) != null
+				|| !MacNativeWindows.TryGetWindowInfo(target.Handle, out var native))
+			{
+				if (!script.IsTearingDown)
+					_ = Errors.TargetErrorOccurred("Could not find the target window or control.", title, text, excludeTitle, excludeText);
+				return;
+			}
+
+			if (native.OwnerPid == Environment.ProcessId)
+			{
+				_ = Errors.UnsupportedErrorOccurred("ControlSend requires a script-owned toolkit control or another application's window.");
+				return;
+			}
+
+			using var inputTarget = MacAccessibility.ResolveInputTarget(native, item == null ? ctrl as string : null);
+			if (inputTarget == null || str.Length == 0)
+				return;
+
+			script.Permissions.EnsureInputControl(operation: "ControlSend");
+			sender.SendToTarget(str, mode, target.Handle, inputTarget);
+#else
 			if (WindowSearch.SearchControl(ctrl, title, text, excludeTitle, excludeText) is not WindowInfoBase item)
 				return;
 
 			var own = Control.FromHandle(item.Handle);
-#if LINUX
 			if (own != null)
 			{
 				Script.TheScript.HookThread.kbdMsSender.SendKeys(str, mode, SendModes.Event, item.Handle);
@@ -542,19 +570,6 @@ namespace Keysharp.Internals.Os.Unix
 			_ = Errors.UnsupportedErrorOccurred(mode == SendRawModes.RawText
 				? "ControlSendText cannot send text to another program's window on Linux."
 				: "ControlSend cannot send keys to another program's window on Linux.");
-#else
-			if (mode == SendRawModes.RawText && own is TextBox or TextArea or PasswordBox)
-			{
-				//A read-only Edit ignores typing.
-				if (own is not (TextBox { ReadOnly: true } or TextArea { ReadOnly: true } or PasswordBox { ReadOnly: true }))
-					ReplaceSelection((TextControl)own, str);
-
-				return;
-			}
-
-			_ = Errors.UnsupportedErrorOccurred(mode == SendRawModes.RawText
-				? "ControlSendText on macOS reaches only the script's own Edit controls."
-				: "ControlSend cannot send keys on macOS.");
 #endif
 		}
 

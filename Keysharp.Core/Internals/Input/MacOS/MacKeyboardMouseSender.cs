@@ -285,6 +285,11 @@ namespace Keysharp.Internals.Input.MacOS
 		internal override void SetModifierLRState(uint modifiersLRnew, uint modifiersLRnow, nint targetWindow,
 			bool disguiseDownWinAlt, bool disguiseUpWinAlt, long extraInfo = KeyIgnoreAllExceptModifier)
 		{
+			if (targetWindow != 0 && targetSend is { } target)
+			{
+				target.Modifiers = modifiersLRnew;
+				return;
+			}
 			// Seed the native event stream from the sender's synchronous prediction. Each modifier event posted
 			// by base updates this field before the next event is created, independently of WindowServer timing.
 			keyboardState.SetModifiers(modifiersLRnow);

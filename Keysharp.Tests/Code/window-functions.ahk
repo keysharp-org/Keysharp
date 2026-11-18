@@ -218,9 +218,17 @@ ControlSendText("3", numericPassword)
 Assert(_WaitForText(numericPassword, "3"), A_LineNumber)
 SetKeyDelay savedKeyDelay
 #elif OSX
-; macOS types ControlSendText into the script's own Edits only, and sends keys nowhere.
-Throws(() => ControlSend("a", typed), A_LineNumber, UnsupportedError)
-Throws(() => ControlSendText("a", lb), A_LineNumber, UnsupportedError)
+macKeys := g.AddEdit("x170 y+10 w150")
+ControlSend("ab{Left}C{End}{Shift down}d{Shift up}", macKeys)
+Assert(_WaitForText(macKeys, "aCbD"), A_LineNumber)
+ControlFocus(macKeys)
+ControlSendText("λ😀{Left}", , g)
+Assert(_WaitForText(macKeys, "aCbDλ😀{Left}"), A_LineNumber)
+macKeys.Opt("+ReadOnly")
+ControlSendText("ignored", , g)
+ControlSendText(".", typed)
+Assert(_WaitForText(typed, "hello world."), A_LineNumber)
+AssertEq(macKeys.Value, "aCbDλ😀{Left}", A_LineNumber)
 #endif
 
 #if WINDOWS

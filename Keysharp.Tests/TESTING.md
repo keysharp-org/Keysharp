@@ -85,6 +85,14 @@ dotnet test Keysharp.Tests/Keysharp.Tests.csproj -c Debug \
   --filter 'FullyQualifiedName~MacFinderTests'
 ```
 
+Run `mac-external-menu.ahk`, `mac-control-send-owned.ahk`, and `mac-control-send-external.ahk` through the built macOS app so AppKit uses the main thread:
+
+```sh
+KEYSHARP_DAEMON=0 bin/Debug/net10.0/Keysharp.app/Contents/MacOS/Keysharp Keysharp.Tests/Code/mac-control-send-owned.ahk
+```
+
+The external fixtures require existing Accessibility grants and use disposable children with 30-second watchdogs. Use an outer timeout for unattended runs. All three belong to the `Gui` category, excluded by normal macOS settings.
+
 On Windows in a restricted sandbox, run tests through `scripts/test-sandbox.ps1` from the repository root:
 
 ```powershell
