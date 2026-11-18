@@ -94,7 +94,7 @@ namespace Keysharp.Compilation.Syntax
 			foreach (var import in module.AllImports.OrderBy(item => item.SourceOrder))
 			{
 				if (import.IsNameless) continue;
-				ActivateErrorStdOutBefore(module.Body, import.SourceOrder);
+				ActivateErrorStdOutBefore(module.FirstErrorStdOutSourceOrder, import.SourceOrder);
 				var source = ImportSource(import);
 				if (source == null)
 					Diag($"{NodeAnchor(import)}#Import: module not found: {import.Module}");
@@ -463,16 +463,14 @@ namespace Keysharp.Compilation.Syntax
 		private ClassDeclarationSyntax AddBindingMetadata(ClassDeclarationSyntax declaration, ModInfo module)
 		{
 			if (module == null) return declaration;
-			foreach (var (name, target) in module.Bindings)
-			{
-				// What the module declares is its fields and properties, so only inline C#'s functions and classes need naming.
-				var declared = module.OwnBindings.ContainsKey(name);
-				if (!declared || target is { Inline: true, Storage: ModuleBindingKind.Function or ModuleBindingKind.Class })
-					declaration = declaration.AddAttributeLists(Attr("Keysharp.Runtime.ModuleBinding", [Str(name), BindingOwner(target),
-						target.Member == null ? Null : Str(target.Member), BindingKind(target.Storage),
-						.. declared ? new[] { SyntaxFactory.LiteralExpression(SyntaxKind.TrueLiteralExpression) } : []]));
-			}
-			return declaration;
+			// What the module declares is its fields and properties, so only inline C#'s functions and classes need naming.
+			var groups = module.Bindings
+				.Select(binding => (Name: binding.Key, Target: binding.Value, Declared: module.OwnBindings.ContainsKey(binding.Key)))
+				.Where(binding => !binding.Declared || binding.Target is { Inline: true, Storage: ModuleBindingKind.Function or ModuleBindingKind.Class })
+				.GroupBy(binding => (binding.Target.Owner, binding.Target.Storage, binding.Declared));
+			return declaration.AddAttributeLists([.. groups.Select(group => Attr("Keysharp.Runtime.ModuleBindings",
+				[BindingOwner(group.First().Target), BindingKind(group.Key.Storage), BoolLit(group.Key.Declared),
+				.. group.SelectMany(binding => new[] { Str(binding.Name), binding.Target.Member == null ? Null : Str(binding.Target.Member) })]))]);
 		}
 	}
 }

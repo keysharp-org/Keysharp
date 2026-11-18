@@ -14,6 +14,40 @@ public partial class ModuleTests : TestRunner
 	[Test, Category("Module")]
 	public void Export() => Assert.IsTrue(TestScript("module-export", false));
 
+	[Test, Category("Module"), Category("Internal")]
+	public void BindingMetadata()
+	{
+		BindingMetadataSource.first = 11L;
+		BindingMetadataSource.second = 22L;
+		BindingMetadataSource.Value = 33L;
+		var type = typeof(BindingMetadataModule);
+
+		Assert.That(s.Vars.GetVariable(type, "firstalias"), Is.EqualTo(11L));
+		Assert.That(s.Vars.GetVariable(type, "SecondAlias"), Is.EqualTo(22L));
+		Assert.That(s.Vars.GetVariable(type, "PropertyAlias"), Is.EqualTo(33L));
+		Assert.IsTrue(s.Vars.HasVariable(type, "ClassAlias"));
+		Assert.That(s.Vars.DeclaredNames(type), Is.EqualTo(new[] { "DeclaredAlias" }));
+
+		s.Vars.SetVariable(type, "FirstAlias", 44L);
+		Assert.That(BindingMetadataSource.first, Is.EqualTo(44L));
+		s.Vars.SetVariable(type, "PropertyAlias", 55L);
+		Assert.That(BindingMetadataSource.Value, Is.EqualTo(55L));
+	}
+
+	private static class BindingMetadataSource
+	{
+		public static object first;
+		public static object second;
+		public static object Value { get; set; }
+	}
+
+	[ModuleBindings(typeof(BindingMetadataSource), ModuleBindingKind.Field, false,
+		"FirstAlias", nameof(BindingMetadataSource.first), "SecondAlias", nameof(BindingMetadataSource.second))]
+	[ModuleBindings(typeof(BindingMetadataSource), ModuleBindingKind.Property, false, "PropertyAlias", nameof(BindingMetadataSource.Value))]
+	[ModuleBindings(typeof(Array), ModuleBindingKind.Class, false, "ClassAlias", null)]
+	[ModuleBindings(typeof(BindingMetadataSource), ModuleBindingKind.Field, true, "DeclaredAlias", nameof(BindingMetadataSource.second))]
+	private sealed class BindingMetadataModule : Keysharp.Runtime.Module { }
+
 	[Test, Category("Module")]
 	public void Extends() => Assert.IsTrue(TestScript("module-extends", false));
 

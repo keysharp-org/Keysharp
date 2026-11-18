@@ -124,11 +124,15 @@ namespace Keysharp.Runtime
 						Variables[Script.GetUserDeclaredName(method) ?? method.Name] = ResolveMember(type, method.Name, ModuleBindingKind.Function);
 				}
 
-				foreach (var alias in type.GetCustomAttributes<ModuleBindingAttribute>())
+				foreach (var bindings in type.GetCustomAttributes<ModuleBindingsAttribute>())
 				{
-					if (string.IsNullOrEmpty(alias.Name) || alias.Owner == null)
-						throw new InvalidOperationException($"Invalid module binding on {type.FullName}.");
-					Variables[alias.Name] = ResolveMember(alias.Owner, alias.Member, alias.Kind);
+					var pairs = bindings.NameMemberPairs;
+					for (var i = 0; i < pairs.Length; i += 2)
+					{
+						if (string.IsNullOrEmpty(pairs[i]) || bindings.Owner == null)
+							throw new InvalidOperationException($"Invalid module binding on {type.FullName}.");
+						Variables[pairs[i]] = ResolveMember(bindings.Owner, pairs[i + 1], bindings.Kind);
+					}
 				}
 			}
 		}
@@ -246,8 +250,9 @@ namespace Keysharp.Runtime
 		internal string[] DeclaredNames(Type type)
 		{
 			var names = type == typeof(Ahk) ? script.ReflectionsData.GlobalNames.Concat(ahkModuleType.Value != null ? DeclaredNames(ahkModuleType.Value) : [])
-				: GetModule(type).Variables.Keys.Except(type.GetCustomAttributes<ModuleBindingAttribute>()
-					.Where(binding => !binding.Declared).Select(binding => binding.Name), StringComparer.OrdinalIgnoreCase);
+				: GetModule(type).Variables.Keys.Except(type.GetCustomAttributes<ModuleBindingsAttribute>()
+					.Where(bindings => !bindings.Declared).SelectMany(bindings => bindings.NameMemberPairs.Where((_, i) => (i & 1) == 0)),
+					StringComparer.OrdinalIgnoreCase);
 			return [.. names.Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)];
 		}
 

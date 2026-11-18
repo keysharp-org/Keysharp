@@ -254,7 +254,6 @@ namespace Keysharp.Compilation.Syntax
 
 		//Scratch lists are declared here and reused to avoid allocating a new list for every call that uses them.
 		private readonly List<DirectiveStmt> _scratchManifestDirectives = new();
-		private readonly List<DirectiveStmt> _scratchErrorStdOutBeforeDirectives = new();
 		private readonly List<ParameterSyntax> _scratchPropertyAll = new ();
 		private readonly List<ParameterSyntax> _scratchParameterList = new();
 		private readonly ObjectStackPool<List<MemberDeclarationSyntax>> _scratchListMembers = new(() => [], item => item.Clear());
@@ -444,11 +443,14 @@ namespace Keysharp.Compilation.Syntax
 			public bool CompatSet;   // a #Requires set Compat, so a later one does not
 			public readonly HashSet<string> GlobalDeclarations = new(StringComparer.OrdinalIgnoreCase);   // named by a global declaration at any depth
 			public List<Stmt> Body = new();
+			public readonly List<DirectiveStmt> BodyDirectives = new();
+			public readonly List<DeclStmt> GlobalDeclarationStatements = new();
 			// Top-level and control-flow imports bind in the module; callable/class imports retain their lexical scope.
 			public List<ImportDirective> ModuleBindings = new();
 			// EVERY import in the module regardless of nesting (top-level, control-flow, function/class/switch/hotkey
 			// bodies) — drives file loading and execution order, which stay eager and scope-blind. Superset of the above.
 			public List<ImportDirective> AllImports = new();
+			public long FirstErrorStdOutSourceOrder = long.MaxValue;
 			public Dictionary<string, ExportK> Exports = new(StringComparer.OrdinalIgnoreCase);
 			public HashSet<string> DirectVariables = new(StringComparer.OrdinalIgnoreCase);
 			public HashSet<string> InlineMembers;
@@ -503,7 +505,7 @@ namespace Keysharp.Compilation.Syntax
 
 		// AHK processes `#import` directives at load time regardless of nesting, so an import inside a block / if / loop
 		// (e.g. `if true { #import "M" { X as Y } }`) still binds at module scope. Recursively lift those out. This
-		// covers only CONTROL FLOW — an import inside a function/class body is lexically scoped (see CollectStatements).
+		// covers only CONTROL FLOW — an import inside a function/class body is lexically scoped (see CollectModuleStatements).
 		private static void CollectNestedImports(Stmt s, List<ImportDirective> into) =>
 			VisitScope(s, statement =>
 			{
@@ -556,17 +558,14 @@ namespace Keysharp.Compilation.Syntax
 			CollectSpellings(m.Body, null, spellings);
 			foreach (var name in assigned) Declare(spellings.TryGetValue(name, out var spelling) ? spelling : name);
 			// A global declaration in a function declares the module's variable as one at the top level does.
-			var declarations = new List<DeclStmt>();
-			foreach (var s in m.Body) CollectStatements(s, declarations);
-			foreach (var d in declarations)
-				if (d.Keyword == "global")
-					foreach (var item in d.Items)
-						if (DeclItemName(item) is { } name)
-						{
-							Declare(name);
-							// As AutoHotkey's FindOrAddVar does while the script loads, before any import resolves.
-							if (!IsBuiltinVariable(name)) m.GlobalDeclarations.Add(name);
-						}
+			foreach (var declaration in m.GlobalDeclarationStatements)
+				foreach (var item in declaration.Items)
+					if (DeclItemName(item) is { } name)
+					{
+						Declare(name);
+						// As AutoHotkey's FindOrAddVar does while the script loads, before any import resolves.
+						if (!IsBuiltinVariable(name)) m.GlobalDeclarations.Add(name);
+					}
 		}
 
 		private static bool IsBuiltinVariable(string name) => Script.TheScript.ReflectionsData.flatPublicStaticProperties.ContainsKey(name);
@@ -669,7 +668,7 @@ namespace Keysharp.Compilation.Syntax
 				var importMembers = EmitBoundImports(m);
 				foreach (var export in m.Exports)
 					if (export.Value == ExportK.Variable) EnsureGlobalField(export.Key);
-				var (members, auto) = LowerProgramBody(m.Body);
+				var (members, auto) = LowerProgramBody(m);
 				if (Diagnostics.Count > 0) return null;
 				// The module's own labels, as LowerProgramBody leaves them.
 				moduleClasses[m] = BuildModuleClass(m, _fieldDecls, members, _pendingLambdas,
@@ -857,8 +856,9 @@ namespace Keysharp.Compilation.Syntax
 		};
 
 		// Registers declarations and lowers a module's members and auto-execute statements after imports are bound.
-		private (List<MemberDeclarationSyntax> members, List<StatementSyntax> auto) LowerProgramBody(List<Stmt> body)
+		private (List<MemberDeclarationSyntax> members, List<StatementSyntax> auto) LowerProgramBody(ModInfo module)
 		{
+			var body = module.Body;
 			foreach (var s in body)
 			{
 				// Named hotkey and hotstring callbacks are module functions too.
@@ -920,9 +920,7 @@ namespace Keysharp.Compilation.Syntax
 				_scopeKeptTemps.Clear();
 				_pendingScopeFuncs.Clear();
 			}
-			var registrationDirectives = new List<DirectiveStmt>();
-			foreach (var statement in body)
-				CollectStatements(statement, registrationDirectives);
+			var registrationDirectives = module.BodyDirectives;
 			var activeErrorStdOut = _errorStdOutActive;
 			var errorStdOutBeforeDirective = activeErrorStdOut;
 			foreach (var directive in registrationDirectives.OrderBy(directive => directive.SourceOrder))
@@ -2034,9 +2032,14 @@ namespace Keysharp.Compilation.Syntax
 			foreach (var stmt in body ?? emptyStmts)
 				CollectStatements(stmt, _scratchManifestDirectives);
 
+			ApplyManifestDirectives(_scratchManifestDirectives);
+		}
+
+		private void ApplyManifestDirectives(List<DirectiveStmt> directives)
+		{
 			var active = _errorStdOutActive;
 
-			foreach (var directive in _scratchManifestDirectives.OrderBy(directive => directive.SourceOrder))
+			foreach (var directive in directives.OrderBy(directive => directive.SourceOrder))
 				if (StringComparer.OrdinalIgnoreCase.Equals(directive.Name, "ErrorStdOut"))
 					_errorStdOutActive = true;
 				else if (IsCanonicalManifestDirective(directive))
@@ -2045,16 +2048,17 @@ namespace Keysharp.Compilation.Syntax
 			_errorStdOutActive = active;
 		}
 
-		private void ActivateErrorStdOutBefore(List<Stmt> body, long sourceOrder)
+		// An #ErrorStdOut at any depth applies to what follows it in source order.
+		private void ActivateErrorStdOutBefore(long firstErrorStdOut, long sourceOrder) =>
+			_errorStdOutActive |= firstErrorStdOut < sourceOrder;
+
+		private static long FirstErrorStdOut(List<Stmt> body)
 		{
-			_scratchErrorStdOutBeforeDirectives.Clear();
-
+			var directives = new List<DirectiveStmt>();
 			foreach (var stmt in body ?? emptyStmts)
-				CollectStatements(stmt, _scratchErrorStdOutBeforeDirectives);
-
-			if (_scratchErrorStdOutBeforeDirectives.Any(directive => directive.SourceOrder < sourceOrder
-					&& StringComparer.OrdinalIgnoreCase.Equals(directive.Name, "ErrorStdOut")))
-				_errorStdOutActive = true;
+				CollectStatements(stmt, directives);
+			return directives.Where(directive => StringComparer.OrdinalIgnoreCase.Equals(directive.Name, "ErrorStdOut"))
+				.Select(directive => directive.SourceOrder).DefaultIfEmpty(long.MaxValue).Min();
 		}
 
 		private static bool IsCanonicalManifestDirective(DirectiveStmt directive) =>
@@ -2215,12 +2219,13 @@ namespace Keysharp.Compilation.Syntax
 		{
 			var afterModule = false;
 			var active = _errorStdOutActive;
+			var firstErrorStdOut = FirstErrorStdOut(body);
 
 			foreach (var s in body)
 			{
 				if (s is AppDirective app)
 				{
-					ActivateErrorStdOutBefore(body, app.SourceOrder);
+					ActivateErrorStdOutBefore(firstErrorStdOut, app.SourceOrder);
 					_ = _appSeen.Add(app);
 
 					if (afterModule)
@@ -3303,13 +3308,14 @@ namespace Keysharp.Compilation.Syntax
 		private void PrescanPackageDirectives(List<Stmt> body)
 		{
 			var active = _errorStdOutActive;
+			var firstErrorStdOut = FirstErrorStdOut(body);
 
 			foreach (var s in body)
 			{
 				if (s is not DirectiveStmt d || !StringComparer.OrdinalIgnoreCase.Equals(d.Name, "Package"))
 					continue;
 
-				ActivateErrorStdOutBefore(body, d.SourceOrder);
+				ActivateErrorStdOutBefore(firstErrorStdOut, d.SourceOrder);
 
 				var args = (d.Args ?? "").Trim();
 

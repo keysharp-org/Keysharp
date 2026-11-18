@@ -158,6 +158,24 @@ public class ScriptingComponentTests : TestRunner
 			File.WriteAllText(dependency, "value := (\n");
 			Assert.IsTrue(CompileImport("#ErrorStdOut\n#Import \"Routing\"\n").ErrorStdOut);
 			Assert.That(CompileImport("#Import \"Routing\"\n#ErrorStdOut\n").ErrorStdOut, Is.False);
+
+			const string nestedRouting = "SetRouting() {\n#ErrorStdOut\n}\n";
+			const string missingImport = "#Import \"MissingRoutingImport.ahk\"\n";
+			const string module = "#Module Routed\n";
+
+			void AssertMissingImport(string source, bool routesToStdOut)
+			{
+				var result = CompileImport(source);
+				Assert.That(result.Success, Is.False);
+				Assert.That(result.ErrorText, Does.Contain("module not found: MissingRoutingImport.ahk"));
+				Assert.That(result.ErrorStdOut, Is.EqualTo(routesToStdOut), source);
+			}
+
+			AssertMissingImport(module + nestedRouting + missingImport, true);
+			AssertMissingImport(module + missingImport + nestedRouting, false);
+
+			File.WriteAllText(dependency, "#Module __Main:Routed\n" + missingImport);
+			AssertMissingImport("#Import \"Routing\"\n" + module + nestedRouting, true);
 		}
 		finally
 		{

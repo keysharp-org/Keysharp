@@ -118,7 +118,7 @@ namespace Keysharp.Compilation.Syntax
 				? "a built-in module cannot be a parent: " + segments[0] : null;
 			if (error != null)
 			{
-				ActivateErrorStdOutBefore(body, directive.SourceOrder);
+				ActivateErrorStdOutBefore(FirstErrorStdOut(body), directive.SourceOrder);
 				Diag(NodeAnchor(directive) + error);
 				return null;
 			}
@@ -177,21 +177,21 @@ namespace Keysharp.Compilation.Syntax
 				: modules[inclusion] = _includeParents[inclusion] < 0 ? group.Root : ModuleOf(_includeParents[inclusion]);
 			// Each change of module clears the criterion, as AutoHotkey's CloseCurrentModule does, which also runs before an
 			// imported file loads. The reset takes the statement's place in load order, ahead of what the statement registers.
-			static DirectiveStmt ClearHotIf(Stmt at) => new("HotIf", "")
+			static void ClearHotIf(ModInfo module, Stmt at) => AddModuleStatement(module, new DirectiveStmt("HotIf", "")
 			{
 				Line = at.Line, Column = at.Column, File = at.File, SourceOrder = at.SourceOrder, Inclusion = at.Inclusion
-			};
-			if (group != _mainGroup && body.Count > 0) current.Body.Add(ClearHotIf(body[0]));
+			});
+			if (group != _mainGroup && body.Count > 0) ClearHotIf(current, body[0]);
 
 			foreach (var statement in body)
 			{
 				if (ModuleOf(statement.Inclusion) is var opened && opened != current)
-					(current = opened).Body.Add(ClearHotIf(statement));
+					ClearHotIf(current = opened, statement);
 				if (statement is DirectiveStmt directive && StringComparer.OrdinalIgnoreCase.Equals(directive.Name, "Module"))
 				{
 					var next = DeclareModule(directive, body, group, mods) ?? current;
 					if (next != current)
-						(current = next).Body.Add(ClearHotIf(directive));
+						ClearHotIf(current = next, directive);
 					modules[directive.Inclusion] = current;
 					if (current.Compat == null) modes[directive.Inclusion] = current.Compat = group.Root.Compat;
 				}
@@ -202,9 +202,8 @@ namespace Keysharp.Compilation.Syntax
 				}
 				else
 				{
-					current.Body.Add(statement);
+					AddModuleStatement(current, statement);
 					CollectNestedImports(statement, current.ModuleBindings);
-					CollectStatements(statement, current.AllImports);
 					if (RequiresMode(statement) is { } required)
 					{
 						modes[statement.Inclusion] = required;
@@ -217,6 +216,28 @@ namespace Keysharp.Compilation.Syntax
 			return mods;
 		}
 
+		private static void AddModuleStatement(ModInfo module, Stmt statement)
+		{
+			module.Body.Add(statement);
+			CollectModuleStatements(statement, module);
+		}
+
+		private static void CollectModuleStatements(Node node, ModInfo module)
+		{
+			if (node == null) return;
+			if (node is DirectiveStmt directive)
+			{
+				module.BodyDirectives.Add(directive);
+				if (directive is ImportDirective import) module.AllImports.Add(import);
+				else if (StringComparer.OrdinalIgnoreCase.Equals(directive.Name, "ErrorStdOut"))
+					module.FirstErrorStdOutSourceOrder = Math.Min(module.FirstErrorStdOutSourceOrder, directive.SourceOrder);
+			}
+			else if (node is DeclStmt { Keyword: "global" } declaration)
+				module.GlobalDeclarationStatements.Add(declaration);
+
+			foreach (var child in AstChildren.Of(node)) CollectModuleStatements(child, module);
+		}
+
 		private void LoadFileModules(List<ModInfo> mods, List<ModInfo> pending = null)
 		{
 			// AutoHotkey resolves the last declared module first, finishing each file's imports before the next import.
@@ -224,7 +245,7 @@ namespace Keysharp.Compilation.Syntax
 				foreach (var import in module.AllImports.OrderBy(item => item.SourceOrder).ToArray())
 				{
 					if (_importModules.ContainsKey(import)) continue;
-					ActivateErrorStdOutBefore(module.Body, import.SourceOrder);
+					ActivateErrorStdOutBefore(module.FirstErrorStdOutSourceOrder, import.SourceOrder);
 					var (path, segments) = SplitModuleSpecifier(import.Module);
 					// A nested path resolves only where a nested child exists, which an AutoHotkey script cannot declare, so what
 					// it writes reaches its file.
@@ -260,7 +281,7 @@ namespace Keysharp.Compilation.Syntax
 									foreach (var discovered in discoveredModules)
 									{
 										if (!mods.Contains(discovered)) mods.Add(discovered);
-										PrescanManifestDirectives(discovered.Body);
+										ApplyManifestDirectives(discovered.BodyDirectives);
 									}
 									LoadFileModules(mods, discoveredModules);
 								}
