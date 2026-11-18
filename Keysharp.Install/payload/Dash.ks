@@ -216,7 +216,12 @@ Dash.MarginX := 0
 Dash.MarginY := 0
 Dash.OnEvent("Close", (*) => ExitApp())
 Dash.OnEvent("Escape", (*) => ExitApp())
-Pic := Dash.AddPicture("x0 y0 w" W " h" H)
+PictureOptions := "x0 y0 w" W " h" H
+#if WINDOWS
+; SS_NOTIFY keeps the Picture in the native hit test so it receives mouse messages.
+PictureOptions .= " +0x100"
+#endif
+Pic := Dash.AddPicture(PictureOptions)
 ; Mouse events retain brief taps and the original client coordinates.
 Pic.OnMessage(0x0201, ClickCard)
 Pic.OnMessage(0x0200, HoverCard)
