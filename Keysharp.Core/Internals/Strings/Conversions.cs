@@ -453,7 +453,12 @@ namespace Keysharp.Internals.Strings
 			var decoration = FontDecoration.None;
 			if (underline) decoration |= FontDecoration.Underline;
 			if (strike) decoration |= FontDecoration.Strikethrough;
-			if (!Eto.Platform.Instance.CreateShared<Fonts.IHandler>().FontFamilyAvailable(family)) family = current.name;
+			if (!Eto.Platform.Instance.CreateShared<Fonts.IHandler>().FontFamilyAvailable(family)
+#if OSX
+				&& !string.Equals(family, SystemFonts.Default().FamilyName, StringComparison.OrdinalIgnoreCase)
+#endif
+			)
+				family = current.name;
 			result = new Font(family, size, style, decoration);
 #endif
 			return result;

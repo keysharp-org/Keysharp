@@ -19,10 +19,13 @@ namespace Keysharp.Internals
 	internal static class OverlayCanvasSizing
 	{
 		internal static PixelSize FromEtoScreen(ScreenRect bounds)
+			=> FromScale(bounds, EtoScreenScale(bounds));
+
+		internal static double EtoScreenScale(ScreenRect bounds)
 		{
 			var screen = Forms.Screen.FromRectangle(new RectangleF(bounds.X, bounds.Y,
 				Math.Max(1, bounds.Width), Math.Max(1, bounds.Height))) ?? Forms.Screen.PrimaryScreen;
-			return FromScale(bounds, ScaleFactor.Normalize(screen?.LogicalPixelSize ?? 1f));
+			return ScaleFactor.Normalize(screen?.LogicalPixelSize ?? 1f);
 		}
 
 		internal static PixelSize FromScale(ScreenRect bounds, double scale)
@@ -182,7 +185,7 @@ namespace Keysharp.Internals
 #else
 					// The layer follows the window, and the compositor scales the frame, in device pixels, to it.
 					if (image != null)
-						frames.Present(image, imageLayer, opacity);
+						frames.Present(image, imageLayer, opacity, OverlayCanvasSizing.EtoScreenScale(bounds));
 
 					shownW = bounds.Width;
 					shownH = bounds.Height;
@@ -243,7 +246,20 @@ namespace Keysharp.Internals
 				if (form != null)
 				{
 					var windowBounds = ToToolkitBounds(bounds);
+#if OSX
+					var scale = OverlayCanvasSizing.EtoScreenScale(bounds);
+					CATransaction.Begin();
+					try
+					{
+						CATransaction.DisableActions = true;
+						imageLayer.ContentsScale = scale;
+					}
+					finally { CATransaction.Commit(); }
+#endif
 					form.Location = new Point(windowBounds.X, windowBounds.Y);
+#if OSX
+					CATransaction.Flush();
+#endif
 #if LINUX
 					// The setter above is a no-op on Wayland (see Show), so re-assert through the compositor. Moves
 					// coalesce per form, so a drag collapses to the latest position rather than one trip per frame.
@@ -371,7 +387,11 @@ namespace Keysharp.Internals
 			try
 			{
 				if (form.ControlObject is MonoMac.AppKit.NSWindow nsw)
+				{
 					nsw.AcceptsMouseMovedEvents = true;
+					// A window shadow would add a blurred halo around the canvas's transparent edges.
+					nsw.HasShadow = false;
+				}
 			}
 			catch { }
 #endif

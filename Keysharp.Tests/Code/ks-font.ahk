@@ -3,6 +3,7 @@
 #Warn All, StdOut
 #Warn Experimental, Off
 #import KS { Font, Image }
+#Include <assert>
 
 #CSharp
 public static string FontTestCulture(string name)
@@ -28,34 +29,13 @@ public static string FontTestGtkTheme(string name)
 #EndCSharp
 #endif
 
-failed := 0
-report := ""
-
 Check(label, actual, expected)
 {
-	global failed
 	if (actual != expected)
-	{
-		failed++
-		global report
-		report .= " [" label ": got <" actual "> want <" expected ">]"
-	}
+		AssertEq(actual, expected, label)
 }
 
-Rejects(label, fn)
-{
-	global failed
-	try
-	{
-		fn()
-		failed++
-		global report
-		report .= " [" label ": expected a throw]"
-	}
-	catch
-	{
-	}
-}
+Rejects(label, fn) => Throws(fn, label)
 
 ; ---- construction takes SetFont's two arguments, in SetFont's order ------------------------------
 f := Font("s12 bold italic cRed", "Consolas")
@@ -164,10 +144,12 @@ Check("Monospace has a name", Font.Monospace.Name != "", true)
 
 ; Exists answers for a real family and a made-up one.
 Check("Exists(UiDefault)", Font.Exists(Font.UiDefault.Name), true)
+Check("Exists(UiDefault) ignores case", Font.Exists(StrLower(Font.UiDefault.Name)), true)
 Check("Exists(nonsense)", Font.Exists("No Such Family At All"), false)
 Check("Exists('')", Font.Exists(""), false)
 Check("Families is an Array", Font.Families is Array, true)
 Check("Families is populated", Font.Families.Length > 0, true)
+Check("Families includes UiDefault", Font.Families.FindIndex((family, *) => family = Font.UiDefault.Name) > 0, true)
 
 #if LINUX
 ; A desktop theme can retain a family that was removed from the machine.
@@ -222,18 +204,28 @@ mf.Italic := true
 Check("subclass inherits setters", mf.Options, "s14 italic")
 
 ; ---- Gui.Font / Gui.Control.Font round-trip ------------------------------------------------------
+#if OSX
+; GUI sizes round to whole native points after macOS's 96/72 scaling.
+guiSize14 := 14.25
+guiSize16 := 15.75
+guiSize20 := 20.25
+#else
+guiSize14 := 14
+guiSize16 := 16
+guiSize20 := 20
+#endif
 guiFamily := Font.UiDefault.Name
 controlFamily := Font.Monospace.Name
 g := Gui()
 g.SetFont("s14 bold", guiFamily)
 gf := g.Font
 Check("gui name", gf.Name, guiFamily)
-Check("gui size", gf.Size, 14)
+Check("gui size", gf.Size, guiSize14)
 Check("gui bold", gf.Bold, true)
 
 ; Reading returns a detached copy: mutating it must not touch the Gui.
 gf.Size := 40
-Check("snapshot detached", g.Font.Size, 14)
+Check("snapshot detached", g.Font.Size, guiSize14)
 
 ; Assigning applies it.
 gf2 := g.Font
@@ -248,7 +240,7 @@ Check("assigned name kept", g.Font.Name, guiFamily)
 g.SetFont("s20 bold italic", controlFamily)
 g.Font := Font(, guiFamily)
 Check("family-only name", g.Font.Name, guiFamily)
-Check("family-only size kept", g.Font.Size, 20)
+Check("family-only size kept", g.Font.Size, guiSize20)
 Check("family-only bold kept", g.Font.Bold, true)
 Check("family-only italic kept", g.Font.Italic, true)
 
@@ -265,7 +257,7 @@ Check("partial preserves strike", g.Font.Strike, true)
 g.SetFont("norm s12", guiFamily)
 g.Font := Font("s20 bold", "No Such Family At All")
 Check("missing family preserves current name", g.Font.Name, guiFamily)
-Check("missing family applies size", g.Font.Size, 20)
+Check("missing family applies size", g.Font.Size, guiSize20)
 Check("missing family applies bold", g.Font.Bold, true)
 
 g.SetFont(Font("s18 bold", controlFamily))
@@ -285,7 +277,7 @@ ctl := g.Add("Text", "w120", "probe")
 ctl.Font := Font("s16 italic cBlue", controlFamily)
 cf := ctl.Font
 Check("ctl name", cf.Name, controlFamily)
-Check("ctl size", cf.Size, 16)
+Check("ctl size", cf.Size, guiSize16)
 Check("ctl italic", cf.Italic, true)
 Check("ctl color", cf.Color, "0000FF")
 ctl.SetFont("bold italic underline strike")
@@ -294,6 +286,15 @@ Check("control partial clears italic", ctl.Font.Italic, false)
 Check("control partial preserves bold", ctl.Font.Bold, true)
 Check("control partial preserves underline", ctl.Font.Underline, true)
 Check("control partial preserves strike", ctl.Font.Strike, true)
+ctl.Font := Font(, guiFamily)
+Check("control family-only name", ctl.Font.Name, guiFamily)
+Check("control family-only size kept", ctl.Font.Size, guiSize16)
+Check("control family-only bold kept", ctl.Font.Bold, true)
+Check("control family-only italic kept", ctl.Font.Italic, false)
+Check("control family-only underline kept", ctl.Font.Underline, true)
+Check("control family-only strike kept", ctl.Font.Strike, true)
+Check("control family-only color kept", ctl.Font.Color, "0000FF")
+ctl.SetFont("", controlFamily)
 ctl.SetFont(Font("s15", guiFamily))
 Check("control SetFont object name", ctl.Font.Name, guiFamily)
 Check("control SetFont object size", ctl.Font.Size, 15)
@@ -406,9 +407,5 @@ Check("FontHandle released with GUI", DllCall("gdi32\GetObjectW", "Ptr", lastHan
 #else
 g.Destroy()
 #endif
-
-; This file reports value diffs rather than line numbers, so it writes its own accumulated failure text.
-if (failed != 0)
-	FileAppend("fail: " failed " check(s):" report, "*")
 
 FileAppend "pass", "*"

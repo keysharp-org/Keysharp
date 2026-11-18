@@ -81,6 +81,21 @@ public class MacInputTests
 		Assert.IsFalse(hidden.VisibleOnScreen);
 	}
 
+	[Test]
+	public void ForeignClientGeometry()
+	{
+		var bounds = new Rectangle(100, 100, 640, 480);
+		var window = new MacWindowInfo(new MacNativeWindow(42, int.MaxValue, "App", "Window", bounds, true, 1), false);
+		foreach (var client in new[] { false, true })
+		{
+			Assert.That(WindowCoords.TryGetCoordBounds(window, client, out var geometry), Is.True);
+			Assert.That(geometry, Is.EqualTo(bounds), "Foreign Client and Window geometry use the same rectangle.");
+		}
+
+		var origin = window.ClientToScreen();
+		Assert.That((origin.X, origin.Y), Is.EqualTo((bounds.X, bounds.Y)));
+	}
+
 	[Test, Category("Input")]
 	public void InjectedMetadata()
 	{

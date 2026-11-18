@@ -7,11 +7,14 @@ namespace Keysharp.Builtins
 		{
 			private readonly CoordModeType[] modes = new CoordModeType[5];
 			private nint hwnd;
+			private WeakReference<KeysharpForm> ownedWindow;
 			private bool initialized;
 			private int released;
 
 			internal nint Handle => hwnd;
 			internal bool IsReleased => Volatile.Read(ref released) != 0;
+			internal bool IsReferenceWindowAlive => ownedWindow == null
+				|| ownedWindow.TryGetTarget(out var window) && window.CachedHwnd == hwnd.ToInt64();
 
 			public CoordWindow(params object[] Args) : this()
 			{
@@ -35,6 +38,9 @@ namespace Keysharp.Builtins
 					return Errors.TargetErrorOccurred(WinTitle, WinText, ExcludeTitle, ExcludeText);
 
 				hwnd = window.Handle;
+				// A native ID can outlive its owned window or be reused for another one.
+				if (Forms.Control.FromHandle(hwnd) is KeysharpForm form && form.CachedHwnd == hwnd.ToInt64())
+					ownedWindow = new(form);
 				var tv = Script.TheScript.Threads.CurrentThread;
 				tv.coordWindows?.RemoveAll(static reference => !reference.TryGetTarget(out var scope) || scope.IsReleased);
 				(tv.coordWindows ??= []).Add(new(this));

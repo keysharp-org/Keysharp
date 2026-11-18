@@ -112,6 +112,11 @@ public class EnvTests : TestRunner
 	[Test, Category("Env"), NonParallelizable]
 	public void EnvUpdate() => Assert.IsTrue(TestScript("env-envupdate", true));
 
+#if OSX
+	[Test, Category("Env"), NonParallelizable]
+	public void SysGetInput() => Assert.IsTrue(TestScript("env-sysget-input", true));
+#endif
+
 	[Test, Category("Env"), Category("UI"), NonParallelizable]
 	public void SysGet()
 	{

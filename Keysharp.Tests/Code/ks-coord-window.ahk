@@ -156,6 +156,12 @@ try {
     Assert(CoordWindow.Current == Orphan, A_LineNumber)
     AssertEq(Orphan.Hwnd, SelectedHandle, A_LineNumber)
     KeptX := "unchanged X", KeptY := "unchanged Y"
+    CoordMode("Mouse", "Window")
+    Throws(() => MouseGetPos(&ThrowX, &ThrowY), A_LineNumber, TargetError)
+    CoordMode("Mouse", "Screen")
+    MouseGetPos(&ScreenX, &ScreenY)
+    Assert(ScreenX is Integer && ScreenY is Integer, A_LineNumber)
+    CoordMode("Mouse", "Client")
     Throws(() => MouseGetPos(&ThrowX, &ThrowY), A_LineNumber, TargetError)
     Throws(() => PixelGetColor(0, 0), A_LineNumber, TargetError)
     Throws(() => PixelSearch(&ThrowX, &ThrowY, 0, 0, 1, 1, 0), A_LineNumber, TargetError)

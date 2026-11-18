@@ -72,6 +72,27 @@ public class ImageTests : TestRunner
 		Assert.That((uint)snapshot.GetPixel(1, 1).ToArgb(), Is.EqualTo(expected));
 	}
 
+#if OSX
+	[Test, Category("Image"), Category("Internal"), Category("Curated")]
+	public void MacOverlayFrameDensity()
+	{
+		using var bitmap = new Bitmap(2, 2, PixelFormat.Format32bppRgba);
+		using var layer = MonoMac.CoreAnimation.CALayer.Create();
+		var frames = new MacOverlayFrames();
+
+		try
+		{
+			foreach (var scale in new[] { 2.0, 1.0, 2.0 })
+			{
+				frames.Present(bitmap, layer, 255, scale);
+				Assert.That((double)layer.ContentsScale, Is.EqualTo(scale),
+					"The hosted layer must follow the target display's density even when reusing a frame.");
+			}
+		}
+		finally { frames.Reset(); }
+	}
+#endif
+
 #if WINDOWS
 
 	[TestCase(true, true, false), TestCase(true, false, false), TestCase(false, true, false), TestCase(false, false, false)]

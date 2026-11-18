@@ -27,12 +27,11 @@ touch core subsystems, so care is needed.
 
 ## Features that need a non-Windows implementation
 
-- [ ] **Mouse button swap (logical → physical) on Linux and macOS.**
+- [ ] **Mouse button swap (logical → physical) on Linux.**
   `keysharp-desktop` exposes the X11 pointer map, but
-  `LinuxKeyboardMouseSender.MouseButtonsSwapped` and
-  `MacKeyboardMouseSenderBase.MouseButtonsSwapped` still return false. Their desktop-specific
-  primary-button settings need to be mapped without double-swapping input that the compositor
-  already remaps.
+  the native Linux sender still needs its desktop-specific primary-button setting. It must be
+  mapped without double-swapping input that the compositor already remaps. macOS reads the HID
+  setting and keeps Quartz's logical button events unchanged.
 
 - [ ] **Joystick backend on macOS needs a first run.** `Internals/Input/MacOS/MacJoystick.cs`
   reads HID joysticks and gamepads through IOKit's HID manager and feeds the shared polling in

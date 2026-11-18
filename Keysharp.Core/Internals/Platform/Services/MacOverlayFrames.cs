@@ -61,7 +61,7 @@ namespace Keysharp.Internals
 		private static partial void SetLayerContents(nint layer, nint selector, nint contents);
 
 		/// <summary>Copies <paramref name="canvas"/> into a free surface and shows it on <paramref name="layer"/>.</summary>
-		internal unsafe void Present(Bitmap canvas, CALayer layer, byte opacity)
+		internal unsafe void Present(Bitmap canvas, CALayer layer, byte opacity, double scale)
 		{
 			using var pixels = canvas.Lock();
 
@@ -110,6 +110,8 @@ namespace Keysharp.Internals
 			CATransaction.Begin();
 			// A hosted layer would otherwise animate each change of contents and opacity.
 			CATransaction.DisableActions = true;
+			// AppKit does not manage the backing density of a layer-hosting view.
+			layer.ContentsScale = ScaleFactor.Normalize(scale);
 			SetLayerContents(layer.Handle, setContents, ring[current]);
 			layer.Opacity = opacity / 255f;
 			CATransaction.Commit();

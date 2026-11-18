@@ -51,9 +51,9 @@ namespace Keysharp.Internals.Window
 			if (mode == CoordModeType.Screen)
 				return true;
 
-			window = WindowQuery.CreateWindow(scope.Handle);
+			window = scope.IsReferenceWindowAlive ? WindowQuery.CreateWindow(scope.Handle) : null;
 
-			if (!window.Exists || window.IsIconic)
+			if (window == null || !window.Exists || window.IsIconic)
 			{
 				_ = Errors.TargetErrorOccurred("The coordinate window does not exist or is minimized.", (long)scope.Handle, null);
 				return false;

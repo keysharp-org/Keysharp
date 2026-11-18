@@ -426,6 +426,10 @@ namespace Keysharp.Builtins
 #else
 					foreach (var fam in Eto.Drawing.Fonts.AvailableFontFamilies)
 						_ = set.Add(fam.Name);
+#if OSX
+					// AppKit's system family is usable but absent from its public family enumeration.
+					_ = set.Add(SystemFonts.Default().FamilyName);
+#endif
 
 #endif
 				}

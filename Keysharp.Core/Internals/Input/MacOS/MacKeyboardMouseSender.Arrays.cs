@@ -34,7 +34,9 @@ namespace Keysharp.Internals.Input.MacOS
 		// scalar (e.g. emoji) while sending in Event mode; see SendUnicodeChar.
 		private char pendingHighSurrogate;
 
-		internal override bool MouseButtonsSwapped => false;
+		internal override bool MouseButtonsSwapped => MacSystemSettings.MouseButtonsSwapped();
+		// Quartz receives primary/secondary events after HID has applied the physical button mapping.
+		protected override bool SendsLogicalMouseButtons => true;
 
 		#region Input array recording
 

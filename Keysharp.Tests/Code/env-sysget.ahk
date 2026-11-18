@@ -47,9 +47,4 @@ finally
 	EnvSet("SSH_TTY", sshTty == "" ? unset : sshTty)
 #endif
 
-#if OSX
-safeBoot := SysGet(67)
-Assert(safeBoot == 0 || safeBoot == 1, A_LineNumber)
-#endif
-
 FileAppend "pass", "*"

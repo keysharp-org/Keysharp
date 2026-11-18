@@ -369,16 +369,24 @@ namespace Keysharp.Builtins
 				}
 
 				case SystemMetric.SM_MOUSEWHEELPRESENT:
+#if OSX
+					return MacSystemSettings.MouseWheelPresent() ? 1L : 0L;
+#else
 					return "xinput --list --long".Bash(out var wheelOut) == 0
 						&& wheelOut.Contains("button wheel", StringComparison.OrdinalIgnoreCase) ? 1L : 0L;
+#endif
 
 				case SystemMetric.SM_REMOTESESSION:
 				case SystemMetric.SM_REMOTECONTROL:
 					return !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("SSH_TTY")) ? 1L : 0L;
 
 				case SystemMetric.SM_SHUTTINGDOWN:
+#if OSX
+					return Errors.UnsupportedErrorOccurred("SysGet(8192) is unavailable on macOS: the current session's shutdown state cannot be queried.");
+#else
 					// systemctl also exits nonzero for the stopping state.
 					return RunCommand("systemctl", ["is-system-running"]).StandardOutput.AsSpan().Trim().SequenceEqual("stopping") ? 1L : 0L;
+#endif
 
 				case SystemMetric.SM_XVIRTUALSCREEN:
 					return (long)Platform.Screen.GetVirtualScreenBounds().X;
@@ -555,19 +563,8 @@ namespace Keysharp.Builtins
 
 		/// <summary>
 		/// Whether the primary and secondary mouse buttons are swapped, for <c>SysGet(SM_SWAPBUTTON)</c>.
-		/// <para>
-		/// This defers to the active <see cref="KeyboardMouseSender"/>'s own answer rather than probing the system
-		/// separately, so the value a script reads always matches the one the send path acts on. The two used to be
-		/// independent: this method shelled out to <c>xinput list</c> plus one <c>xinput get-button-map</c> per device
-		/// while the sender read <c>XGetPointerMapping</c>, so they could disagree on X11 (different device sets), the
-		/// shell-out saw only XWayland devices on a Wayland session, and every call spawned 2+N processes.
-		/// </para>
-		/// <para>
-		/// Per-backend accuracy is therefore whatever the sender reports: X11 reads the pointer map, while the native
-		/// Wayland/input service and macOS senders currently answer false unconditionally. That is a pre-existing gap rather
-		/// than a regression here — consolidating removes a second, differently-wrong answer, and closing the
-		/// remaining one belongs in the senders, where the send path picks it up at the same time.
-		/// </para>
+		/// The sender supplies the live setting. X11 reads its pointer map, macOS reads the HID button mode,
+		/// and the native Wayland/input service currently reports false.
 		/// </summary>
 		/// <returns>Whether the mouse buttons are swapped; false before any sender has been created.</returns>
 		internal static bool MouseButtonsSwapped()

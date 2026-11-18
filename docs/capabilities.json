@@ -3717,8 +3717,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "full",
                      "macos":  "full",
-                     "notes":  "Clicks, holds, releases, wheels, or moves the mouse through the platform input backend and requires InputControl. Wayland requires a supported compositor input backend or keysharp-input; macOS maps InputControl to Accessibility.",
-                     "tested-by":  "ControlTests/control_add_delete_item.ahk"
+                     "notes":  "Clicks, holds, releases, wheels, or moves the mouse through the platform input backend and requires InputControl. Wayland requires a supported compositor input backend or keysharp-input; macOS maps InputControl to Accessibility and sends logical primary/secondary Quartz events without applying the physical button mapping a second time.",
+                     "tested-by":  "ControlTests/control_add_delete_item.ahk; MacSystemTests.LogicalMouseButtons"
                  },
                  {
                      "category":  "Input/Automation",
@@ -5765,9 +5765,9 @@
                      "windows":  "partial",
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
-                     "macos":  "unknown",
-                     "notes":  "Optional font attributes and system font selections. Linux resolves unavailable GTK theme fonts through Pango substitution. GUI/image weights map to normal or bold; Windows RichEdit preserves numeric weights. Windows applies quality to GUI fonts and image text, Linux and macOS ignore it, and per-range RichEdit formatting rejects non-default quality everywhere. Unspecified attributes follow reference.md's compatibility-mode rule; Options remains a valid empty string.",
-                     "tested-by":  "ks-font.ahk; MiscTests.OptionalMetadata"
+                     "macos":  "partial",
+                     "notes":  "Optional font attributes and system font selections. Linux resolves unavailable GTK theme fonts through Pango substitution. macOS includes its native system family in Families and Exists; GUI font sizes round to whole native points after 96/72 scaling. GUI/image weights map to normal or bold; Windows RichEdit preserves numeric weights. Windows applies quality to GUI fonts and image text, Linux and macOS ignore it, and per-range RichEdit formatting rejects non-default quality everywhere. Unspecified attributes follow reference.md's compatibility-mode rule; Options remains a valid empty string.",
+                     "tested-by":  "ks-font.ahk; MiscTests.KsFont; MiscTests.OptionalMetadata"
                  },
                  {
                      "category":  "Keysharp Module (Ks)",
@@ -8922,8 +8922,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Retrieves the current mouse position and, optionally, the window and control beneath it. Cursor coordinates are not permission-gated. Requesting a window or control output requires WindowMonitoring and returns blank when there is no corresponding target. On macOS, the window output for a GUI owned by this script matches Gui.Hwnd; windows owned by other processes use their window-server ID (CGWindowID).",
-                     "tested-by":  "ControlTests/control_get_focus.ahk"
+                     "notes":  "Retrieves the current mouse position and, optionally, the window and control beneath it. Cursor coordinates are not permission-gated. Requesting a window or control output requires WindowMonitoring and returns blank when there is no corresponding target. On macOS, the window output for a GUI owned by this script matches Gui.Hwnd; windows owned by other processes use their window-server ID (CGWindowID). Client coordinates are exact for script-owned macOS GUIs; foreign windows treat Client as Window and use the outer frame origin.",
+                     "tested-by":  "ControlTests/control_get_focus.ahk; MacInputTests.ForeignClientGeometry"
                  },
                  {
                      "category":  "Input/Automation",
@@ -10839,8 +10839,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Linux and macOS support monitor, virtual-screen (76-79), mouse, network and selected session metrics; others raise UnsupportedError. macOS metric 67 reports safe boot.",
-                     "tested-by":  "env-sysget.ahk"
+                     "notes":  "Linux and macOS support monitor, virtual-screen (76-79), mouse, network and selected session metrics; others raise UnsupportedError. macOS reads primary-button mode (23) and vertical-wheel hardware (75) through IOKit and safe boot (67) through sysctl. Trackpad gestures do not imply a hardware wheel. macOS shutdown state (8192) is unavailable and raises UnsupportedError.",
+                     "tested-by":  "env-sysget.ahk; env-sysget-input.ahk; EnvTests.SysGetInput; MacSystemTests.LogicalMouseButtons"
                  },
                  {
                      "category":  "Environment/System",
@@ -11360,8 +11360,8 @@
                      "linux_x11":  "full",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Retrieves the specified window\u0027s client-area position and size. On Wayland, a script-owned Gui can derive client coordinates from known frame or surface geometry and its toolkit content bounds even when the compositor omits the client rectangle. A matched window whose client geometry cannot be determined raises UnsupportedError. A window that does not match raises TargetError.",
-                     "tested-by":  "gui-window-from-point.ahk; control-coordinates.ahk; GuiTests.WaylandSurfaceOrigin"
+                     "notes":  "Retrieves the specified window's client-area position and size. On Wayland, a script-owned Gui can derive client coordinates from known frame or surface geometry and its toolkit content bounds even when the compositor omits the client rectangle. macOS provides exact client geometry for script-owned GUIs; foreign windows treat Client as Window, so this function returns their outer frame rectangle. A matched window whose client geometry cannot be determined raises UnsupportedError. A window that does not match raises TargetError.",
+                     "tested-by":  "gui-window-from-point.ahk; control-coordinates.ahk; GuiTests.WaylandSurfaceOrigin; MacInputTests.ForeignClientGeometry"
                  },
                  {
                      "category":  "Windowing/GUI",
@@ -12076,8 +12076,8 @@
                      "windows":  "full",
                      "linux_x11":  "unknown",
                      "linux_wayland":  "unknown",
-                     "macos":  "unknown",
-                     "notes":  "Pseudo-thread window coordinate scope with Client defaults, nesting and Current/Hwnd inspection. Ends through using, __Delete, collection or thread exit.",
+                     "macos":  "partial",
+                     "notes":  "Pseudo-thread window coordinate scope with Client defaults, nesting and Current/Hwnd inspection. Ends through using, __Delete, collection or thread exit. A destroyed owned Gui invalidates its scope immediately. macOS provides exact Client coordinates for script-owned GUIs; foreign windows treat Client as Window and use the outer frame origin.",
                      "tested-by":  "ks-coord-window.ahk; MiscTests.KsCoordWindow; CoordWindowTests; mouse-delta.ahk"
                  },
                  {

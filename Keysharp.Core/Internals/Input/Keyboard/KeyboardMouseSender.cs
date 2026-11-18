@@ -190,6 +190,8 @@ namespace Keysharp.Internals.Input.Keyboard
 		}
 
 		internal abstract bool MouseButtonsSwapped { get; }
+		// Backends that send physical buttons need the system mapping.
+		protected virtual bool SendsLogicalMouseButtons => false;
 
 		// libuiohook's IEventSimulator takes Int16 screen coordinates. Truncate toward zero (matching the
 		// previous (short) cast) but clamp to the Int16 range first, so coordinates on a very large or
@@ -694,9 +696,7 @@ namespace Keysharp.Internals.Input.Keyboard
 
 			// MSDN: If [eventFlags] is not MOUSEEVENTF_WHEEL, MOUSEEVENTF_XDOWN, or MOUSEEVENTF_XUP, then [eventData]
 			// should be zero.
-			// v2.0: Always translate logical buttons into physical ones.  Which physical button it becomes depends
-			// on whether the mouse buttons are swapped via the Control Panel.
-			if ((vk == VK_LBUTTON || vk == VK_RBUTTON) && sendMode != SendModes.Play && MouseButtonsSwapped)
+			if ((vk is VK_LBUTTON or VK_RBUTTON) && sendMode != SendModes.Play && !SendsLogicalMouseButtons && MouseButtonsSwapped)
 				vk = (vk == VK_LBUTTON) ? VK_RBUTTON : VK_LBUTTON;
 
 			switch (vk)
@@ -791,10 +791,7 @@ namespace Keysharp.Internals.Input.Keyboard
 			// User can easily increase the speed if there's any problem:
 			//if (aSpeed < 2)
 			//  aSpeed = 2;
-			// v2.0: Always translate logical buttons into physical ones.  Which physical button it becomes depends
-			// on whether the mouse buttons are swapped via the Control Panel.  Note that journal playback doesn't
-			// need the swap because every aspect of it is "logical".
-			if ((vk == VK_LBUTTON || vk == VK_RBUTTON) && sendMode != SendModes.Play && MouseButtonsSwapped)
+			if ((vk is VK_LBUTTON or VK_RBUTTON) && sendMode != SendModes.Play && !SendsLogicalMouseButtons && MouseButtonsSwapped)
 				vk = (vk == VK_LBUTTON) ? VK_RBUTTON : VK_LBUTTON;
 
 			// MSDN: If [event_flags] is not MOUSEEVENTF_WHEEL, [MOUSEEVENTF_HWHEEL,] MOUSEEVENTF_XDOWN,
