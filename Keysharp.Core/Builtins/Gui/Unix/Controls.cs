@@ -1395,7 +1395,10 @@ namespace Keysharp.Builtins
 		}
 	}
 
-	public class KeysharpProgressBar : Drawable
+	/// <summary>
+	/// Uses the toolkit's bar until a color, Smooth or Vertical option requires classic drawing.
+	/// </summary>
+	public class KeysharpProgressBar : Panel
 	{
 		private int minimum;
 		private int maximum = 100;
@@ -1447,7 +1450,10 @@ namespace Keysharp.Builtins
 			{
 				style = value;
 
-				Invalidate();
+				if (value == ProgressBarStyle.Continuous)
+					UseClassic();
+
+				Content?.Invalidate();
 			}
 		}
 
@@ -1459,11 +1465,14 @@ namespace Keysharp.Builtins
 			{
 				barColor = value == Eto.Forms.Control.DefaultForeColor ? null : value;
 
-				Invalidate();
+				if (barColor.HasValue)
+					UseClassic();
+
+				Content?.Invalidate();
 			}
 		}
 
-		//A default background uses the system's control color.
+		//The Background option, which colors the classic bar rather than the panel holding it.
 		public override Color BackgroundColor
 		{
 			get => backgroundColor ?? SystemColors.ControlBackground;
@@ -1471,7 +1480,10 @@ namespace Keysharp.Builtins
 			{
 				backgroundColor = value == Eto.Forms.Control.DefaultBackColor ? null : value;
 
-				Invalidate();
+				if (backgroundColor.HasValue)
+					UseClassic();
+
+				Content?.Invalidate();
 			}
 		}
 
@@ -1479,18 +1491,40 @@ namespace Keysharp.Builtins
 		{
 			AddStyle = _addStyle;
 
-			Paint += Progress_Paint;
+			//The toolkit's bar has no vertical form.
+			if ((AddStyle & 0x04) == 0x04)
+				UseClassic();
+			else
+				Content = new ProgressBar { MaxValue = 10000 };
+		}
+
+		//Like AutoHotkey's removal of the theme, the classic bar stays once it has been needed.
+		private void UseClassic()
+		{
+			if (Content is Drawable)
+				return;
+
+			var previous = Content;
+			var classic = new Drawable();
+			classic.Paint += Classic_Paint;
+			Content = classic;
+			previous?.Dispose();
 		}
 
 		private void Sync()
 		{
 			value = Math.Clamp(value, minimum, maximum);
-			Invalidate();
+			if (Content is ProgressBar native)
+				// Eto backends interpret nonzero minima differently, so use a normalized range.
+				native.Value = maximum == minimum ? 0 : (int)((long)native.MaxValue * (value - (long)minimum) / (maximum - (long)minimum));
+			else
+				Content.Invalidate();
 		}
 
-		private void Progress_Paint(object sender, PaintEventArgs e)
+		private void Classic_Paint(object sender, PaintEventArgs e)
 		{
-			var rect = new Rectangle(0, 0, Width, Height);
+			var canvas = (Drawable)sender;
+			var rect = new Rectangle(0, 0, canvas.Width, canvas.Height);
 			if (rect.Width <= 0 || rect.Height <= 0)
 				return;
 

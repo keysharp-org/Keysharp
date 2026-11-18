@@ -5995,7 +5995,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Adds a control to the GUI. The ActiveX and Custom control types are Win32-only and raise a ValueError on Linux and macOS, where a ListView view other than Report (+Icon, +IconSmall, +Tile, +List) raises UnsupportedError and keeps the Report view if continued. Adding a WebView on Linux fails unless WebKitGTK is installed. UpDown attaches to a preceding Edit; horizontal arrows are Windows-only. Windows supports -Theme for native-painted controls; other platforms ignore it. Tab positions use GUI client coordinates. On Windows, Progress uses native rendering until color or Smooth options require classic rendering. Linux and macOS draw Progress controls directly.",
+                     "notes":  "Adds a control to the GUI. The ActiveX and Custom control types are Win32-only and raise a ValueError on Linux and macOS, where a ListView view other than Report (+Icon, +IconSmall, +Tile, +List) raises UnsupportedError and keeps the Report view if continued. Adding a WebView on Linux fails unless WebKitGTK is installed. UpDown attaches to a preceding Edit; horizontal arrows are Windows-only. Windows supports -Theme for native-painted controls; other platforms ignore it. Tab positions use GUI client coordinates. Progress uses native rendering until color or Smooth options require classic rendering (also Vertical off Windows).",
                      "tested-by":  "GuiTests.GuiWindow"
                  },
                  {
