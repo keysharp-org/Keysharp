@@ -3207,9 +3207,10 @@ class AtSpi {
             gap := 10
             this.TVContext.Move(,,Width-TVContextX-10, filterY - TVContextY - gap)
             this.LVProps.GetPos(&LVPropsX, &LVPropsY, &LVPropsWidth, &LVPropsHeight)
-            lvPropsHeight := bottomY - LVPropsY - 45
+            this.ButCapture.GetPos(,,, &buttonH)
+            lvPropsHeight := bottomY - LVPropsY - buttonH - gap
             this.LVProps.Move(,,,lvPropsHeight)
-            this.ButCapture.Move(, LVPropsY + lvPropsHeight + 10)
+            this.ButCapture.Move(, LVPropsY + lvPropsHeight + gap)
         }
 
         ButCapture_Click(GuiCtrlObj?, Info?) {

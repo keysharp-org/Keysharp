@@ -1681,7 +1681,7 @@ namespace Keysharp.Builtins
 				Spacing = 0,
 				Items =
 				{
-					new StackLayoutItem(new Panel { BackgroundColor = Colors.Gray, Height = 1 }, true),
+					new StackLayoutItem(new Panel { BackgroundColor = Colors.Gray, Height = 1 }, false),
 					new StackLayoutItem(body, true)
 				}
 			};

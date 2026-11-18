@@ -2505,9 +2505,10 @@ class Ax {
             gap := 10
             this.TVElement.Move(,, Width-TVElementX-10, filterY-TVElementY-gap)
             this.LVProps.GetPos(&LVPropsX, &LVPropsY, &LVPropsWidth, &LVPropsHeight)
-            lvPropsHeight := bottomY - LVPropsY - 45
+            this.ButCapture.GetPos(,,, &buttonH)
+            lvPropsHeight := bottomY - LVPropsY - buttonH - gap
             this.LVProps.Move(,,, lvPropsHeight)
-            this.ButCapture.Move(, LVPropsY + lvPropsHeight + 10)
+            this.ButCapture.Move(, LVPropsY + lvPropsHeight + gap)
         }
 
         ButCapture_Click(GuiCtrlObj?, Info?) {
