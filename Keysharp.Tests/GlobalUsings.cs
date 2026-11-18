@@ -32,6 +32,7 @@ global using global::System.Threading.Tasks;
 #else
 	global using global::Eto.Drawing;
 	global using global::Eto.Forms;
+	global using FormWindowState = Eto.Forms.WindowState;
 #endif
 
 //Our usings
@@ -126,7 +127,6 @@ global using Struct = Keysharp.Builtins.Struct;
 //Third party
 #if LINUX
 	global using DBusMessage = Tmds.DBus.Protocol.Message;
-	global using FormWindowState = Eto.Forms.WindowState;
 #elif OSX
 	global using AppKit = MonoMac.AppKit;
 #endif
