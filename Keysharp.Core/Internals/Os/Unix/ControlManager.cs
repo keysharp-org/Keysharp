@@ -732,6 +732,40 @@ namespace Keysharp.Internals.Os.Unix
 							_ = Errors.ValueErrorOccurred($"Could not find menu.", $"{title}, {text}, {menu}, {sub1}, {sub2}, {sub3}, {sub4}, {sub5}, {sub6}, {excludeTitle}, {excludeText}");
 					}
 				}
+#if OSX
+				else
+				{
+					if (!MacNativeWindows.TryGetWindowInfo(win.Handle, out var native))
+					{
+						_ = Errors.TargetErrorOccurred(title, text, excludeTitle, excludeText);
+						return;
+					}
+					if (native.OwnerPid == Environment.ProcessId)
+						return;
+
+					List<string> path = [];
+					foreach (var part in new[] { menu, sub1, sub2, sub3, sub4, sub5, sub6 })
+					{
+						if (!part.CoerceString(out var step))
+							return;
+						if (step.Length > 0 || path.Count == 0)
+							path.Add(step);
+					}
+
+					if (path[0].Length == 0)
+					{
+						_ = Errors.ValueErrorOccurred("Could not find menu.", menu);
+						return;
+					}
+					if (!MacAccessibility.TrySelectMenuItem(native, path, out var invalidPath, out var failure))
+					{
+						if (invalidPath)
+							_ = Errors.ValueErrorOccurred(failure, string.Join(" > ", path));
+						else
+							_ = Errors.OSErrorOccurredWithMessage($"MenuSelect failed: {failure}");
+					}
+				}
+#endif
 			}
 		}
 

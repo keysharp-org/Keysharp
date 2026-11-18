@@ -8397,8 +8397,8 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "The MenuSelect function invokes a menu item from the menu bar of the specified window. Like the Control functions, on Linux and macOS it can only reach menus of windows created by this script, not those of other applications.",
-                     "tested-by":  "Gui/guitest.ks"
+                     "notes":  "Invokes a menu command by caption prefix or 1-based position. Linux reaches script-owned GUI menus. macOS also reaches other applications through Accessibility; the target window identifies the owning application's menu bar. Missing, disabled or incomplete paths raise ValueError; failed Accessibility reads and rejected native actions raise OSError. Native action timeouts return normally without confirming command completion and are not retried.",
+                     "tested-by":  "window-functions.ahk; mac-external-menu.ahk; MenuSelectionTests"
                  },
                  {
                      "category":  "Errors",

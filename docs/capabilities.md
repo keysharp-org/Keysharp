@@ -833,7 +833,7 @@ Status legend:
 | Menu.Uncheck() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Unchecks a menu item. |
 | MenuBar() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The Menu/MenuBar object provides an interface to create and modify a menu or menu bar, add and modify menu items, and retrieve information about the menu or menu bar. |
 | MenuFromHandle() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | The MenuFromHandle function retrieves the Menu or MenuBar object corresponding to a Win32 menu handle. |
-| MenuSelect() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | The MenuSelect function invokes a menu item from the menu bar of the specified window. Like the Control functions, on Linux and macOS it can only reach menus of windows created by this script, not those of other applications. |
+| MenuSelect() | 🟢 Full | 🟡 Partial | 🟡 Partial | 🟡 Partial | Invokes a menu command by caption prefix or 1-based position. Linux reaches script-owned GUI menus. macOS also reaches other applications through Accessibility; the target window identifies the owning application's menu bar. Missing, disabled or incomplete paths raise ValueError; failed Accessibility reads and rejected native actions raise OSError. Native action timeouts return normally without confirming command completion and are not retried. |
 | MethodError | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Built-in error class. |
 | Min() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the smaller of two numbers. If either is not numeric, the empty string is returned. The smaller value of an array is computed if one is passed in. |
 | Mod() | 🟢 Full | 🟢 Full | 🟢 Full | 🟢 Full | Computes the remainder when the first number is divided by the second number. Throws an exception if the second number is 0. |

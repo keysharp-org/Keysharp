@@ -1348,6 +1348,15 @@ public class GuiTests : TestRunner
 		Assert.IsTrue(TestScript("window-functions", false));
 	}
 
+#if OSX
+	[Test, Category("Gui"), NonParallelizable]
+	public void ExternalMenuSelect()
+	{
+		SkipIfUiInitializationBlocked("External menus require a native AppKit application and existing Accessibility grants.");
+		Assert.That(TestScript("mac-external-menu", false), Is.True);
+	}
+#endif
+
 #if WINDOWS
 	[Test, Category("Internal")]
 	public void WindowProcessImageLookupFailure()

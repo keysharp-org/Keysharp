@@ -3,6 +3,19 @@ namespace Keysharp.Internals.Os
 {
 	internal abstract class ControlManagerBase
 	{
+		internal static bool TryParseMenuPosition(string selector, out int index)
+		{
+			if (!string.IsNullOrEmpty(selector) && selector.EndsWith('&')
+				&& int.TryParse(selector.AsSpan().Trim('&'), out var position) && position > 0)
+			{
+				index = position - 1;
+				return true;
+			}
+
+			index = -1;
+			return false;
+		}
+
 		/// <summary>
 		/// The item a MenuSelect path names, or null in <paramref name="menuItem"/> when there is none. False when
 		/// an error was raised and the script continued it, and the caller then returns at once without raising
@@ -11,36 +24,7 @@ namespace Keysharp.Internals.Os
 		internal static bool TryGetMenuItem(MenuStrip strip, out ToolStripMenuItem menuItem, params object[] items)
 		{
 			menuItem = null;
-
-			if (!items[0].CoerceString(out var topLevel))
-				return false;
-
-			//First get the top level menu.
-			if (topLevel.EndsWith('&') && int.TryParse(topLevel.AsSpan().Trim('&'), out var n) && n > 0)
-			{
-				n--;
-
-				if (n < strip.Items.Count)
-					menuItem = strip.Items[n] as ToolStripMenuItem;
-				else
-				{
-					_ = Errors.ValueErrorOccurred($"Index {n + 1} was outside the menu length of {strip.Items.Count}.", topLevel);
-					return false;
-				}
-			}
-			else
-			{
-				foreach (ToolStripItem tempItem in strip.Items)
-				{
-					if (MenuMatchHelper(tempItem.Text, topLevel))
-					{
-						menuItem = tempItem as ToolStripMenuItem;
-						break;
-					}
-				}
-			}
-
-			for (var i = 1; i < items.Length && menuItem != null; i++)
+			for (var i = 0; i < items.Length; i++)
 			{
 				if (!items[i].CoerceString(out var item))
 				{
@@ -48,39 +32,31 @@ namespace Keysharp.Internals.Os
 					return false;
 				}
 
-				if (item.Length == 0)
+				if (i > 0 && item.Length == 0)
 					continue;
 
-				if (item.EndsWith('&') && int.TryParse(item.AsSpan().Trim('&'), out n) && n > 0)
+				var candidates = i == 0 ? strip.Items : menuItem.DropDownItems;
+				menuItem = null;
+				if (TryParseMenuPosition(item, out var n))
 				{
-					n--;
-
-					if (n < menuItem.DropDownItems.Count)
+					if (n >= candidates.Count)
 					{
-						menuItem = menuItem.DropDownItems[n] as ToolStripMenuItem;
-						continue;
-					}
-					else
-					{
-						_ = Errors.ValueErrorOccurred($"Index {n + 1} was outside the menu length of {menuItem.DropDownItems.Count}.", item);
-						menuItem = null;
+						_ = Errors.ValueErrorOccurred($"Index {n + 1} was outside the menu length of {candidates.Count}.", item);
 						return false;
 					}
+					menuItem = candidates[n] as ToolStripMenuItem;
 				}
 				else
-				{
-					var parent = menuItem;
-					menuItem = null;
-
-					foreach (ToolStripItem tempItem in parent.DropDownItems)
+					foreach (ToolStripItem candidate in candidates)
 					{
-						if (MenuMatchHelper(tempItem.Text, item))
+						if (MenuMatchHelper(candidate.Text, item))
 						{
-							menuItem = tempItem as ToolStripMenuItem;
+							menuItem = candidate as ToolStripMenuItem;
 							break;
 						}
 					}
-				}
+				if (menuItem == null)
+					break;
 			}
 
 			return true;
