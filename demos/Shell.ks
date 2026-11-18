@@ -159,10 +159,17 @@ class Shell {
     static Render() {
         this.title := this.pending.title
         local title := this.title
-        ; Clone the caller's rows and append a shared "reopen" row so every card teaches the same
-        ; Ctrl+Alt+Shift+S chord. Cloning avoids mutating the caller's array across repeated Show() calls.
+        ; Clone the caller's rows before appending the shared reopen shortcut.
         local lines := this.pending.lines.Clone()
         lines.Push(["Ctrl+Alt+Shift+S", "Reopen this card"])
+#if OSX
+        for i, shortcut in lines {
+            local label := RegExReplace(shortcut[1], "\bCtrl\b", "Control")
+            label := RegExReplace(label, "\bAlt\b", "Option")
+            label := RegExReplace(label, "\b(Super/Win/Cmd|Super|Win|Cmd)\b", "Command")
+            lines[i] := [label, shortcut[2]]
+        }
+#endif
         local pad := 16, rowH := 29, pillH := 22, pillPad := 9, colGap := 14, cbSize := 15
         ; Gui.SetFont-style options + one family name, the same two-argument convention as Gui.SetFont.
         local fontName := "Arial"

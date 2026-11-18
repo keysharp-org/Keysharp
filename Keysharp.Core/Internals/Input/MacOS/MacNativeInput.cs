@@ -66,6 +66,16 @@ namespace Keysharp.Internals.Input.MacOS
 		internal const ulong kCGEventFlagMaskAlternate = 1UL << 19;
 		internal const ulong kCGEventFlagMaskCommand = 1UL << 20;
 
+		// IOLLEvent.h device-dependent flags identify the side of a physical modifier.
+		internal const ulong NX_DEVICELCTLKEYMASK = 0x00000001;
+		internal const ulong NX_DEVICELSHIFTKEYMASK = 0x00000002;
+		internal const ulong NX_DEVICERSHIFTKEYMASK = 0x00000004;
+		internal const ulong NX_DEVICELCMDKEYMASK = 0x00000008;
+		internal const ulong NX_DEVICERCMDKEYMASK = 0x00000010;
+		internal const ulong NX_DEVICELALTKEYMASK = 0x00000020;
+		internal const ulong NX_DEVICERALTKEYMASK = 0x00000040;
+		internal const ulong NX_DEVICERCTLKEYMASK = 0x00002000;
+
 		// sourceUserData is the only application-owned field which survives a CGEventPost round-trip.
 		// Give all Keysharp events a private signature and keep the original AHK extra-info value in a
 		// signed 36-bit payload. Presence of a layout-derived Unicode string is not event identity: Quartz

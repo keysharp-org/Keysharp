@@ -322,7 +322,7 @@ public class MacInputTests
 	[Test, Category("Input")]
 	public void SystemKeyHookInput()
 	{
-		var hook = new SystemKeyHook(script);
+		var hook = new KeyboardEventHook(script);
 		var blocked = script.KeyboardData.blockInput;
 		script.KeyboardData.blockInput = true;
 		try
@@ -360,6 +360,68 @@ public class MacInputTests
 				}
 		}
 		finally { script.KeyboardData.blockInput = blocked; }
+	}
+
+	[TestCase(VK_LSHIFT, VK_RSHIFT, MacNativeInput.kCGEventFlagMaskShift,
+		MacNativeInput.NX_DEVICELSHIFTKEYMASK, MacNativeInput.NX_DEVICERSHIFTKEYMASK)]
+	[TestCase(VK_LCONTROL, VK_RCONTROL, MacNativeInput.kCGEventFlagMaskControl,
+		MacNativeInput.NX_DEVICELCTLKEYMASK, MacNativeInput.NX_DEVICERCTLKEYMASK)]
+	[TestCase(VK_LMENU, VK_RMENU, MacNativeInput.kCGEventFlagMaskAlternate,
+		MacNativeInput.NX_DEVICELALTKEYMASK, MacNativeInput.NX_DEVICERALTKEYMASK)]
+	[TestCase(VK_LWIN, VK_RWIN, MacNativeInput.kCGEventFlagMaskCommand,
+		MacNativeInput.NX_DEVICELCMDKEYMASK, MacNativeInput.NX_DEVICERCMDKEYMASK)]
+	[Category("Input")]
+	public void PhysicalModifierEvents(uint left, uint right, ulong aggregate, ulong leftFlag, ulong rightFlag)
+	{
+		var blocked = script.KeyboardData.blockInput;
+		script.KeyboardData.blockInput = true;
+		try
+		{
+			foreach (var (first, second, firstFlag, secondFlag) in new[]
+				{ (left, right, leftFlag, rightFlag), (right, left, rightFlag, leftFlag) })
+			{
+				var hook = new KeyboardEventHook(script);
+				var firstMask = ModifierLRMaskFromVK(first);
+				var secondMask = ModifierLRMaskFromVK(second);
+				Observe(first, aggregate | firstFlag, firstMask);
+				Observe(second, aggregate | firstFlag | secondFlag, firstMask | secondMask);
+				Observe(first, aggregate | secondFlag, secondMask);
+				Observe(second, 0, 0);
+				Observe(second, aggregate | secondFlag, secondMask);
+				Observe(second, aggregate | secondFlag, secondMask);
+				Observe(second, 0, 0);
+				Observe(first, 0, firstMask, MacNativeInput.kCGEventKeyDown);
+				Observe(first, 0, 0, MacNativeInput.kCGEventKeyUp);
+
+				void Observe(uint vk, ulong flags, uint expected, uint type = MacNativeInput.kCGEventFlagsChanged)
+				{
+					Assert.IsTrue(KeyCodes.TryMapVkToMacCode(vk, out var keyCode));
+					var ev = MacNativeInput.CGEventCreateKeyboardEvent(nint.Zero, (ushort)keyCode,
+						type != MacNativeInput.kCGEventKeyUp);
+					try
+					{
+						Assert.AreNotEqual(nint.Zero, ev);
+						MacNativeInput.CGEventSetFlags(ev, flags);
+						MacNativeInput.CGEventSetIntegerValueField(ev, MacNativeInput.kCGEventSourceUserData, 0);
+						MacNativeInput.CGEventSetIntegerValueField(ev, MacNativeInput.kCGEventSourceUnixProcessID, 0);
+						MacNativeInput.CGEventSetIntegerValueField(ev, MacNativeInput.kCGEventSourceStateID,
+							MacNativeInput.kCGEventSourceStateHIDSystemState);
+						Assert.IsTrue(hook.ProcessNativeKeyboardEvent(type, ev));
+						Assert.AreEqual(expected, hook.ObservedModifiers, $"VK {vk:X}, flags {flags:X}, event {type}");
+					}
+					finally { if (ev != nint.Zero) MacNativeInput.CFRelease(ev); }
+				}
+			}
+		}
+		finally { script.KeyboardData.blockInput = blocked; }
+	}
+
+	[Test, Category("Input")]
+	public void ModifierFlagsFallback()
+	{
+		Assert.IsNull(MacKeyboardState.PhysicalModifierDown(VK_LSHIFT, MacNativeInput.kCGEventFlagMaskShift));
+		Assert.IsNull(MacKeyboardState.PhysicalModifierDown(VK_RSHIFT, MacNativeInput.kCGEventFlagMaskShift));
+		Assert.IsNull(MacKeyboardState.PhysicalModifierDown(VK_CAPITAL, MacNativeInput.kCGEventFlagMaskAlphaShift));
 	}
 
 	[Test, Category("Input")]
@@ -1463,9 +1525,10 @@ public class MacInputTests
 		Assert.AreEqual(0, resyncCount);
 	}
 
-	private sealed class SystemKeyHook : MacHookThread
+	private sealed class KeyboardEventHook : MacHookThread
 	{
-		internal SystemKeyHook(Script owner) : base(owner, "System key test") => activeHooks = HookType.Keyboard;
+		internal KeyboardEventHook(Script owner) : base(owner, "Native keyboard event test") => activeHooks = HookType.Keyboard;
+		internal uint ObservedModifiers => keyboardState.ObservedModifiers;
 	}
 
 	private static void AssertMetadata(nint ev, long expectedExtraInfo, MacNativeInput.InjectedEventKind expectedKind)

@@ -273,6 +273,26 @@ namespace Keysharp.Internals.Input.MacOS
 			catch { return false; }
 		}
 
+		internal static bool? PhysicalModifierDown(uint vk, ulong flags)
+		{
+			var (key, other) = vk switch
+			{
+				VK_LSHIFT => (MacNativeInput.NX_DEVICELSHIFTKEYMASK, MacNativeInput.NX_DEVICERSHIFTKEYMASK),
+				VK_RSHIFT => (MacNativeInput.NX_DEVICERSHIFTKEYMASK, MacNativeInput.NX_DEVICELSHIFTKEYMASK),
+				VK_LCONTROL => (MacNativeInput.NX_DEVICELCTLKEYMASK, MacNativeInput.NX_DEVICERCTLKEYMASK),
+				VK_RCONTROL => (MacNativeInput.NX_DEVICERCTLKEYMASK, MacNativeInput.NX_DEVICELCTLKEYMASK),
+				VK_LMENU => (MacNativeInput.NX_DEVICELALTKEYMASK, MacNativeInput.NX_DEVICERALTKEYMASK),
+				VK_RMENU => (MacNativeInput.NX_DEVICERALTKEYMASK, MacNativeInput.NX_DEVICELALTKEYMASK),
+				VK_LWIN => (MacNativeInput.NX_DEVICELCMDKEYMASK, MacNativeInput.NX_DEVICERCMDKEYMASK),
+				VK_RWIN => (MacNativeInput.NX_DEVICERCMDKEYMASK, MacNativeInput.NX_DEVICELCMDKEYMASK),
+				_ => (0UL, 0UL)
+			};
+			// Event flags describe this transition; a live key-state query can already reflect a later one.
+			if (key != 0 && ((flags & (key | other)) != 0 || (flags & AggregateFlag(vk)) == 0))
+				return (flags & key) != 0;
+			return null;
+		}
+
 		private static ulong AggregateFlag(uint vk) => vk switch
 		{
 			VK_LSHIFT or VK_RSHIFT => MacNativeInput.kCGEventFlagMaskShift,
