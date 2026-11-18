@@ -92,6 +92,7 @@ public class ObjectPointerTests : TestRunner
 		CollectFinalizers();
 		Assert.That(reference.IsAlive, Is.True);
 		Assert.That(saved.Deletes, Is.Zero);
+		context.WaitForPosts(1);
 		context.DrainAll();
 		AssertResurrectedObject(saved, pointer);
 		saved.Owner = null;
