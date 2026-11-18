@@ -1929,6 +1929,8 @@ namespace Keysharp.Builtins
 					{
 #if WINDOWS
 						finalHeight = tv.ItemHeight * r - tv.Margin.Bottom;//For some reason, TreeView doesn't appear to need to have DPI scaling applied, and also is a bit too large, so we subtract the margin.
+#elif LINUX
+						finalHeight = tv.HeightForRows(r);
 #else
 						finalHeight = fontRows;
 #endif
@@ -1939,7 +1941,11 @@ namespace Keysharp.Builtins
 					}
 					else if (ctrl is KeysharpListView lv)
 					{
+#if LINUX
+						finalHeight = lv.HeightForRows(r);
+#else
 						finalHeight = defheight + lv.Margin.Top + lv.Margin.Bottom;//ListView doesn't have an ItemHeight property, so attempt to compute it here.
+#endif
 					}
 					else if (ctrl is KeysharpTabControl tc2)
 					{

@@ -1,6 +1,9 @@
 using Keysharp.Builtins;
 #if !WINDOWS
 using System.Xml.Linq;
+#if LINUX
+using Eto.GtkSharp;
+#endif
 
 namespace Eto.Forms
 {
@@ -157,6 +160,34 @@ namespace Eto.Forms
             //Window focus reports activation; only a focused child is the active control.
             return root is not Window && root.HasFocus ? root : null;
         }
+
+#if LINUX
+        private static Gtk.TreeView Tree(this Grid grid) => (Gtk.TreeView)((Gtk.ScrolledWindow)grid.ToNative()).Child;
+
+        /// <summary>The height that shows the given number of text rows below the header, as the R option asks.</summary>
+        internal static int HeightForRows(this Grid grid, int rows)
+        {
+            var tree = grid.Tree();
+            var header = 0;
+
+            if (tree.HeadersVisible)
+                foreach (var column in tree.Columns)
+                {
+                    column.Button.GetPreferredHeight(out _, out var height);
+                    header = Math.Max(header, height);
+                }
+
+            //The rows have no cells to measure before the tree is shown. A text cell is a line of the font with
+            //GtkCellRendererText's default padding of 2 above and below. The style has the font before the tree's
+            //Pango context does.
+            using var layout = tree.CreatePangoLayout("Xygj");
+            layout.FontDescription = tree.GetFont();
+            layout.GetPixelSize(out _, out var line);
+            var separator = (int)tree.StyleGetProperty("vertical-separator");
+            var frame = tree.Parent.StyleContext.GetBorder(Gtk.StateFlags.Normal);
+            return rows * (line + 4 + separator) + header + frame.Top + frame.Bottom;
+        }
+#endif
 
 		extension(Eto.Forms.Control)
 		{
@@ -538,7 +569,14 @@ namespace Eto.Forms
                         case CommonControl common: common.Font = value; break;
                         case GroupBox group: group.Font = value; break;
                         case KeysharpLinkLabel link: link.Font = value; break;
-                        default: control.Properties["Font"] = value; break;
+                        default:
+                            control.Properties["Font"] = value;
+#if LINUX
+                            //A grid has no font of its own, so its tree takes it, and the header inherits it from there.
+                            if (control is Grid grid)
+                                grid.Tree().SetFont(value.ToPango());
+#endif
+                            break;
                     }
                 }
             }
