@@ -2808,12 +2808,7 @@ namespace Keysharp.Builtins
 		private bool ApplyBooleanOption(ReadOnlySpan<char> option, bool add)
 		{
 			if (option.Equals("AlwaysOnTop", StringComparison.OrdinalIgnoreCase))
-			{
-				// AlwaysOnTop in Windows is handled with an ExStyle.
-#if !WINDOWS
-				form.TopMost = add;
-#endif
-			}
+				form.SetAlwaysOnTop(add);
 			else if (option.Equals("AppMenu", StringComparison.OrdinalIgnoreCase))
 			{
 				// macOS: controls whether the standard application menu bar (App/Edit/Window — the source of
@@ -4343,16 +4338,12 @@ namespace Keysharp.Builtins
 		private static void Opt(string options, ref int addStyle, ref int addExStyle, ref int removeStyle, ref int removeExStyle)
 		{
 #if WINDOWS
-			var tempbool = false;
-
 			// These are raw Win32 WS_/WS_EX_ style bits (e.g. +E0x8) with no portable equivalent, so this method is
 			// a no-op on non-Windows; portable window attributes are expressed through Eto's typed properties
 			// rather than raw style numbers.
 			foreach (var raw in Options.ParseOptions(options ?? ""))
 			{
-				// An option with no leading +/- means + (add), per AHK. Normalize so the sign-aware checks below see an
-				// explicit sign; otherwise a no-sign flag like "AlwaysOnTop" parses as false (empty suffix => default) and
-				// is never applied — leaving the window non-topmost.
+				//Unsigned style options add their bits, as in AutoHotkey.
 				var split = (raw.Length > 0 && raw[0] != '+' && raw[0] != '-') ? "+" + raw : raw;
 				var str = split.Substring(1);
 
@@ -4375,13 +4366,6 @@ namespace Keysharp.Builtins
 					else if (Options.TryParse(split, "+", ref temp))
 					{
 						addStyle |= temp;
-					}
-					else if (Options.TryParse(split, "AlwaysOnTop", ref tempbool, StringComparison.OrdinalIgnoreCase, true, false))
-					{
-						if (tempbool)
-							addExStyle |= 0x00000008;
-						else
-							addExStyle &= ~0x00000008;
 					}
 					else if (Options.TryParse(split, "", ref temp))
 					{

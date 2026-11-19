@@ -6514,7 +6514,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "partial",
-                     "notes":  "Sets options for the window. Raw Win32 style and extended-style options (+0x..., +E0x...) have no portable equivalent and are ignored on Linux and macOS; the named options are honoured through the toolkit's own properties. Theme sets the default for new Windows controls; other platforms ignore it. +Round rounds the window's outer corners, on Windows 11 only. On Linux and macOS, +Parent and -Parent act as +Owner and -Owner.",
+                     "notes":  "Sets window options, including +/-AlwaysOnTop after Show without activation. Raw Win32 style and extended-style options (+0x..., +E0x...) have no portable equivalent and are ignored on Linux and macOS; the named options are honoured through the toolkit's own properties. Theme sets the default for new Windows controls; other platforms ignore it. +Round rounds the window's outer corners, on Windows 11 only. On Linux and macOS, +Parent and -Parent act as +Owner and -Owner.",
                      "tested-by":  "ControlTests/picture_tests.ahk"
                  },
                  {
