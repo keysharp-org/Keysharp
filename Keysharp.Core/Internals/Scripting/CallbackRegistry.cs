@@ -339,8 +339,11 @@ namespace Keysharp.Internals.Scripting
 		/// <param name="args">The parameters to pass to each event handler.</param>
 		/// <returns>The result of the last event handler that was called.</returns>
 		internal object InvokeWindowMessageHandlers(params object[] args)
+			=> InvokeWindowMessageHandlers(false, args);
+
+		internal object InvokeWindowMessageHandlers(bool skipUninterruptible, params object[] args)
 		{
-			_ = InvokeHandlers(args, skipUninterruptible: false, allowEmergencyOverflow: false, CallbackStop.NonEmpty, out var result);
+			_ = InvokeHandlers(args, skipUninterruptible, allowEmergencyOverflow: false, CallbackStop.NonEmpty, out var result);
 			return result;
 		}
 
@@ -402,6 +405,11 @@ namespace Keysharp.Internals.Scripting
 				try
 				{
 					var tv = thread.ThreadVariables;
+
+					//Synchronous GUI monitors can interrupt a protected caller, but keep their own normal startup window.
+					if (skipUninterruptible && !allowEmergencyOverflow)
+						tv.ApplyUninterruptibleStartupWindow();
+
 					tv.eventInfo = oldEventInfo;
 					tv.hwndLastUsed = 0L;
 

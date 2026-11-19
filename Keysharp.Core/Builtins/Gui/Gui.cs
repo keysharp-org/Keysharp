@@ -2747,7 +2747,7 @@ namespace Keysharp.Builtins
 			if (messageHandlers == null || !messageHandlers.TryGetValue(m.Msg, out var handler))
 				return false;
 
-			var result = handler?.InvokeWindowMessageHandlers(this, m.WParam.ToInt64(), m.LParam.ToInt64(), (long)m.Msg);
+			var result = handler?.InvokeWindowMessageHandlers(skipUninterruptible: true, this, m.WParam.ToInt64(), m.LParam.ToInt64(), (long)m.Msg);
 
 			//"Claimed" must be the same test the chain broke on, so reuse that predicate rather than restating
 			//it: a NON-EMPTY return claims the message (an explicit 0 replies 0 and suppresses default

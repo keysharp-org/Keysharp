@@ -6191,7 +6191,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "Registers Callback(GuiCtrlObj, wParam, lParam, Msg) for a window message the control receives, ahead of WM_COMMAND/WM_NOTIFY reflection and default processing; a non-empty return, 0 included, is the reply and ends the message's processing. Off Windows only the script's own synthesized GUI input messages are delivered, after the global monitors. WM_MOUSELEAVE reports toolkit pointer exit with zero wParam/lParam; native leave delivery is verified on X11 under Xvfb; Wayland and macOS delivery remain unverified.",
+                     "notes":  "Runs before default processing even when the caller is uninterruptible; non-empty returns (0 included) claim messages. Thread and priority limits apply. Off Windows, input messages are synthesized; Wayland mouse-leave and macOS delivery remain unverified.",
                      "tested-by":  "GuiTests.MessageHandlers; MessageFilterTests.EtoMouseLeave"
                  },
                  {
@@ -6503,7 +6503,7 @@
                      "linux_x11":  "partial",
                      "linux_wayland":  "partial",
                      "macos":  "unknown",
-                     "notes":  "Registers Callback(GuiObj, wParam, lParam, Msg) for a window message the GUI receives, ahead of the default window procedure; a non-empty return, 0 included, is the reply and ends the message's processing. Off Windows only the script's own synthesized GUI input messages are delivered, after the global monitors. WM_MOUSELEAVE reports toolkit pointer exit with zero wParam/lParam; native leave delivery is verified on X11 under Xvfb; Wayland and macOS delivery remain unverified.",
+                     "notes":  "Runs before default processing even when the caller is uninterruptible; non-empty returns (0 included) claim messages. Thread and priority limits apply. Windows background clicks support captionless dragging. Off Windows, input messages are synthesized; Wayland mouse-leave and macOS delivery remain unverified.",
                      "tested-by":  "GuiTests.MessageHandlers; MessageFilterTests.EtoMouseLeave"
                  },
                  {

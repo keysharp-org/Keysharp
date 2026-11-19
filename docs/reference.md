@@ -606,6 +606,8 @@ Controlling another application needs **Automation** permission, granted per tar
 	+ There is an additional positioning option `xc` and `yc` which position the control relative to the container. For example inside a tab `xc+10` would position the control 10 pixels from the left side of the tab control.
 	+ GroupBoxes can be used as containers by calling `GuiObj.UseGroup(GroupBox)`, and to exit the group call `GuiObj.UseGroup()`. On Windows, this also fills the interior with the GroupBox's background; otherwise the color applies only to its caption.
 * On Windows, control z-order follows creation order, with the first control on top. Text and Picture controls pass clicks through unless they have `SS_NOTIFY`; GroupBox controls always pass clicks through. Some native classes and styles still differ from AutoHotkey.
+* Windows GUI backgrounds do not capture the mouse automatically, allowing captionless dragging.
+* GUI `OnMessage` callbacks can interrupt `Critical` and startup protection, subject to thread and priority limits.
 * The class name for statusbar/statusstrip objects created by Keysharp is "WindowsForms10.Window.8.app.0.2b89eaa_r3_ad1". However, for accessing a statusbar created by another, non .NET program, the class name is still "msctls_statusbar321".
 * Menu items, whether shown or not, have no impact on threading.
 * Using the class name with `ClassNN` on .NET controls gives long, version specific names such as "WindowsForms10.Window.8.app.0.2b89eaa_r3_ad1" for a statusbar/statusstrip.

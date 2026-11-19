@@ -198,7 +198,19 @@ namespace Keysharp.Builtins
 			if (beenConstructed && m.Msg == WindowsAPI.WM_CONTEXTMENU && OnContextMenu(ref m))
 				return;
 
+			//Native dialogs do not capture background clicks. WinForms' automatic capture would undo a
+			//monitor's ReleaseCapture before its posted WM_NCLBUTTONDOWN can start a captionless drag.
+			var releaseCapture = this is not MainWindow && m.Msg is
+				(WindowsAPI.WM_LBUTTONDOWN or WindowsAPI.WM_LBUTTONDBLCLK
+				or WindowsAPI.WM_RBUTTONDOWN or WindowsAPI.WM_RBUTTONDBLCLK
+				or WindowsAPI.WM_MBUTTONDOWN or WindowsAPI.WM_MBUTTONDBLCLK
+				or WindowsAPI.WM_XBUTTONDOWN or WindowsAPI.WM_XBUTTONDBLCLK)
+				&& !Capture;
+
 			base.WndProc(ref m);
+
+			if (releaseCapture && !IsDisposed && Capture)
+				Capture = false;
 		}
 
 		[Browsable(false)]

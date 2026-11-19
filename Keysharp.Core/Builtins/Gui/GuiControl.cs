@@ -353,7 +353,7 @@ namespace Keysharp.Builtins
 				//to the reflection/default handling in the caller.
 				if (messageHandlers != null && messageHandlers.TryGetValue(m.Msg, out var msgHandler))
 				{
-					var msgResult = msgHandler?.InvokeWindowMessageHandlers(this, m.WParam.ToInt64(), m.LParam.ToInt64(), (long)m.Msg);
+					var msgResult = msgHandler?.InvokeWindowMessageHandlers(skipUninterruptible: true, this, m.WParam.ToInt64(), m.LParam.ToInt64(), (long)m.Msg);
 
 					if (CallbackStop.NonEmpty(msgResult))
 					{
