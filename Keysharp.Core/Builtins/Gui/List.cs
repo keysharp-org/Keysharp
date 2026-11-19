@@ -232,6 +232,18 @@ namespace Keysharp.Builtins
 		[RequiresUIThread]
 		public partial class Tab
 		{
+			private bool layoutFinished;
+
+			internal void AdjustSize(Gui gui)
+			{
+				((KeysharpTabControl)Ctrl).AdjustSize(gui.DpiScale, requestedSize);
+				//Only the first autosize changes the reference for later relative positions.
+				if (!layoutFinished && (requestedSize.Width == int.MinValue || requestedSize.Height == int.MinValue)
+					&& gui.prevControl?.FindParent<KeysharpTabControl>() == Ctrl)
+					gui.prevControl = Ctrl;
+				layoutFinished = true;
+			}
+
 			/// <summary>
 			/// Makes later Gui.Add calls place their controls on a tab of this control, chosen by 1-based number or
 			/// by name, or after the control when the tab is omitted, 0 or "".
@@ -269,7 +281,7 @@ namespace Keysharp.Builtins
 				}
 				else
 				{
-					tc.AdjustSize(g.DpiScale, requestedSize);
+					AdjustSize(g);
 					g.LastContainer = tc.GetLogicalParent();
 				}
 

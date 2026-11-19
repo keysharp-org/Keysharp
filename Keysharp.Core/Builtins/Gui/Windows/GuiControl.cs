@@ -394,6 +394,10 @@ namespace Keysharp.Builtins
 				if (_y != long.MinValue)
 					_control.Top = Convert.ToInt32(_y * scale - offset.Y);
 
+				//A Text otherwise keeps fitting its caption, which overrides the size given here.
+				if ((w != long.MinValue || h != long.MinValue) && _control is KeysharpLabel label)
+					label.FixSize();
+
 				if (w != long.MinValue)
 					_control.Width = Convert.ToInt32(w * scale);
 

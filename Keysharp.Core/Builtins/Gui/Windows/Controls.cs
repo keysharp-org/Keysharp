@@ -374,6 +374,18 @@ namespace Keysharp.Builtins
 				_ = WindowsAPI.SetWindowLongPtr(Handle, WindowsAPI.GWL_STYLE, WindowsAPI.GetWindowLongPtr(Handle, WindowsAPI.GWL_STYLE) | WindowsAPI.SS_NOTIFY);
 		}
 
+		/// <summary>
+		/// Stops the label fitting its caption and records its present size, which caption changes would otherwise
+		/// replace with the last one set through WinForms.
+		/// </summary>
+		internal void FixSize()
+		{
+			var bounds = Bounds;
+			AutoSize = false;
+			MinimumSize = MaximumSize = Size.Empty;
+			SetBoundsCore(bounds.X, bounds.Y, bounds.Width, bounds.Height, BoundsSpecified.Size);
+		}
+
 		public KeysharpLabel(int _addStyle = 0, int _addExStyle = 0, int _removeStyle = 0, int _removeExStyle = 0)
 		{
 			addStyle = _addStyle;
@@ -391,22 +403,38 @@ namespace Keysharp.Builtins
 			}
 		}
 
-		protected override void OnTextChanged(EventArgs e)
+		/// <summary>
+		/// Paints the parent first when the label is backgroundless, since only the parent erases the previous
+		/// caption; painting the label alone draws the new caption over it.
+		/// </summary>
+		public override void Refresh()
 		{
-			base.OnTextChanged(e);
-
-			//A backgroundless label needs the parent and siblings repainted to erase its previous caption.
 			if (GetStyle(ControlStyles.Opaque) && Parent is Control p)
 			{
-				p.Invalidate(new Rectangle(Location, Size), true);
-				Invalidate();
+				p.Invalidate(Bounds, true);
+				p.Update();
+				Update();
 			}
+			else
+				base.Refresh();
 		}
 
 		protected override void WndProc(ref Message m)
 		{
-			if (!GuiHelper.CallMessageHandler(this, ref m))
-				base.WndProc(ref m);
+			if (GuiHelper.CallMessageHandler(this, ref m))
+				return;
+
+			base.WndProc(ref m);
+
+			//Repainted here rather than in OnTextChanged, which an attached UpDown writing its position does not
+			//raise. A backgroundless label needs the parent and siblings repainted to erase its previous caption.
+			if (m.Msg == WindowsAPI.WM_SETTEXT)
+			{
+				if (GetStyle(ControlStyles.Opaque) && Parent is Control p)
+					p.Invalidate(Bounds, true);
+
+				Invalidate();
+			}
 		}
 	}
 
@@ -671,8 +699,8 @@ namespace Keysharp.Builtins
 	}
 
 	/// <summary>
-	/// The native up-down control an UpDown becomes when it attaches to the Edit added just before it. With
-	/// UDS_SETBUDDYINT its position is the number in the Edit, so the two always agree.
+	/// The native up-down control an UpDown becomes when it attaches to an Edit or Text control. With
+	/// UDS_SETBUDDYINT its position is the number in the buddy, so the two always agree.
 	/// </summary>
 	public class KeysharpUpDown : Control
 	{
@@ -749,7 +777,7 @@ namespace Keysharp.Builtins
 			{
 				position = value;
 
-				//The control keeps the position inside the range and writes it to the Edit.
+				//The control keeps the position inside the range and writes it to the buddy.
 				if (attached)
 					_ = Send(UDM_SETPOS32, 0, value);
 			}
@@ -777,12 +805,24 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Links the control to its Edit, which moves it to the Edit's edge and narrows the Edit to make room, and
-		/// writes the starting position into the Edit. Called once the control has its parent and window.
+		/// Links the buddy and writes the starting position. Content-sized buddies keep their width beside the arrows.
 		/// </summary>
-		internal void Attach()
+		internal void Attach(bool keepBuddyWidth)
 		{
+			//Freeze the label before native sizing, then record the resulting bounds.
+			var label = Buddy as KeysharpLabel;
+			label?.FixSize();
 			_ = Send(UDM_SETBUDDY, Buddy.Handle, 0);
+
+			if (keepBuddyWidth)
+			{
+				if ((removeStyle & UDS_ALIGNRIGHT) == 0)
+					Left += Width;
+
+				Buddy.Width += Width;
+			}
+
+			label?.FixSize();
 			attached = true;
 			ApplyState();
 			_ = Send(UDM_SETPOS32, 0, position);
@@ -1196,33 +1236,6 @@ namespace Keysharp.Builtins
 			//SetStyle(ControlStyles.DoubleBuffer, true);
 			//SetStyle(ControlStyles.ResizeRedraw, true);
 			//SetStyle(ControlStyles.SupportsTransparentBackColor, true);
-		}
-
-		internal void AdjustSize(double dpiscale, Size requestedSize)
-		{
-			if (requestedSize.Width != int.MinValue && requestedSize.Height != int.MinValue)
-			{
-				Width = requestedSize.Width;
-				Height = requestedSize.Height;
-				return;
-			}
-
-			var tempw = 0.0;
-			var temph = 0.0;
-
-			foreach (TabPage tp in TabPages)
-			{
-				(Control right, Control bottom) rb = tp.RightBottomMost();
-
-				if (rb.right != null)
-					tempw = Math.Max(tempw, this.TabWidth() + rb.right.Right + (tp.Margin.Right + Margin.Right));
-
-				if (rb.bottom != null)
-					temph = Math.Max(temph, this.TabHeight() + rb.bottom.Bottom + (tp.Margin.Bottom + (Margin.Bottom * dpiscale)));
-			}
-
-			Width  = requestedSize.Width == int.MinValue ? Convert.ToInt32(tempw) : requestedSize.Width;
-			Height = requestedSize.Height == int.MinValue ? Convert.ToInt32(temph) : requestedSize.Height;
 		}
 
 		internal void SetColor(Color color)

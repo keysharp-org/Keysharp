@@ -1244,8 +1244,8 @@ namespace Keysharp.Builtins
 	}
 
 	/// <summary>
-	/// The stepper an UpDown becomes when it attaches to the Edit added just before it. The toolkit's stepper only
-	/// reports clicks, so the number lives in the Edit's text, where UDS_SETBUDDYINT keeps it on Windows.
+	/// The stepper an UpDown becomes when it attaches to an Edit or Text control. The toolkit's stepper only
+	/// reports clicks, so the number lives in the buddy's text, where UDS_SETBUDDYINT keeps it on Windows.
 	/// </summary>
 	public class KeysharpUpDown : Stepper
 	{
@@ -1293,10 +1293,9 @@ namespace Keysharp.Builtins
 		}
 
 		/// <summary>
-		/// Moves the stepper to the Edit's edge and narrows the Edit to make room, as the Windows control does when
-		/// it is given a buddy, then writes the starting position into the Edit. Called once both are placed.
+		/// Links the buddy and writes the starting position. Content-sized buddies keep their width beside the arrows.
 		/// </summary>
-		internal void Attach()
+		internal void Attach(bool keepBuddyWidth)
 		{
 			var location = Buddy.GetLocation();
 			var size = Buddy.GetSize();
@@ -1308,9 +1307,10 @@ namespace Keysharp.Builtins
 				Buddy.SetLocation(new Point(location.X + width, location.Y));
 			}
 			else
-				this.SetLocation(new Point(location.X + size.Width - width, location.Y));
+				this.SetLocation(new Point(location.X + size.Width - (keepBuddyWidth ? 0 : width), location.Y));
 
-			Buddy.SetSize(new Size(Math.Max(size.Width - width, 0), size.Height));
+			//Fix both dimensions so caption changes cannot resize the buddy.
+			Buddy.SetSize(new Size(keepBuddyWidth ? size.Width : Math.Max(size.Width - width, 0), size.Height));
 			this.SetSize(new Size(width, size.Height));
 			attached = true;
 			Value = position;
@@ -1850,36 +1850,6 @@ namespace Keysharp.Builtins
 			// back to a single literal "&" - matching Windows and keeping the text matchable by UseTab/FindTab.
 			return (text ?? "").Replace("&&", "&").Replace("&", "&&");
 #endif
-		}
-
-		internal void AdjustSize(double dpiscale, Size requestedSize)
-		{
-			if (requestedSize.Width != int.MinValue && requestedSize.Height != int.MinValue)
-			{
-				Width = requestedSize.Width;
-				Height = requestedSize.Height;
-				return;
-			}
-
-			var tempw = 0.0;
-			var temph = 0.0;
-
-			foreach (TabPage tp in Pages)
-			{
-				(Control right, Control bottom) rb = tp.RightBottomMost();
-
-				if (rb.right != null)
-					tempw = Math.Max(tempw, this.TabWidth() + rb.right.Right + (tp.Margin.Right + this.Margin.Right));
-
-				if (rb.bottom != null)
-					temph = Math.Max(temph, this.TabHeight() + rb.bottom.Bottom + (tp.Margin.Bottom + (this.Margin.Bottom * dpiscale)));
-			}
-
-			var newSize = new Size(
-				requestedSize.Width == int.MinValue ? Convert.ToInt32(tempw) : requestedSize.Width,
-				requestedSize.Height == int.MinValue ? Convert.ToInt32(temph) : requestedSize.Height);
-
-			this.SetSize(newSize);
 		}
 
 		internal void SetColor(Color color)

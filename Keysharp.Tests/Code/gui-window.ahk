@@ -668,6 +668,114 @@ buddyUpDown.Value := 5
 AssertEq(buddyEdit.Value, "5", A_LineNumber)
 buddyGui.Destroy()
 
+; A Text is an UpDown's buddy as an Edit is, and makes room for the arrows within an explicit width.
+textBuddyGui := Gui("-DPIScale")
+textBuddy := textBuddyGui.AddText("x30 y40 w80", "35")
+textSpinner := textBuddyGui.AddUpDown("Range1-100", 35)
+textBuddy.GetPos(,, &beforeWidth, &beforeHeight)
+textSpinner.GetPos(&spinnerX, &spinnerY, &spinnerWidth, &spinnerHeight)
+AssertEq(spinnerY, 40, A_LineNumber)
+AssertEq(spinnerHeight, beforeHeight, A_LineNumber)
+Assert(spinnerX >= 30 && spinnerX + spinnerWidth <= 110, A_LineNumber)
+textSpinner.Value := 42
+AssertEq(textBuddy.Text, "42", A_LineNumber)
+textBuddyGui.AddText("x+15", "Height").GetPos(&x, &y)
+AssertEq(x, spinnerX + spinnerWidth + 15, A_LineNumber)
+AssertEq(y, spinnerY, A_LineNumber)
+textBuddyGui.Show("Hide")
+textBuddy.GetPos(,, &width, &height)
+AssertEq(width, beforeWidth, A_LineNumber)
+AssertEq(height, beforeHeight, A_LineNumber)
+textSpinner.GetPos(&x, &y)
+AssertEq(x, spinnerX, A_LineNumber)
+AssertEq(y, spinnerY, A_LineNumber)
+AssertEq(textBuddy.Text, "42", A_LineNumber)
+textBuddy.Text := "7"
+textBuddy.GetPos(,, &width)
+AssertEq(width, beforeWidth, A_LineNumber)
+AssertEq(textSpinner.Value, 7, A_LineNumber)
+
+; Moving a Text sets an explicit width, so its arrows fit inside that width.
+textBuddy := textBuddyGui.AddText("x30 y100 w80 h20", "35")
+textBuddy.Move(,, 120)
+textSpinner := textBuddyGui.AddUpDown("Range1-100", 35)
+textSpinner.GetPos(&spinnerX, &spinnerY, &spinnerWidth, &spinnerHeight)
+AssertEq(spinnerY, 100, A_LineNumber)
+AssertEq(spinnerHeight, 20, A_LineNumber)
+Assert(spinnerX >= 30 && spinnerX + spinnerWidth <= 150, A_LineNumber)
+textBuddyGui.Destroy()
+
+; Both an omitted width and one widened for its caption leave room for arrows beside the Text.
+contentBuddyGui := Gui("-DPIScale")
+for options in ["", "w10"] {
+	for side in ["", "Left"] {
+		contentBuddy := contentBuddyGui.AddText(options, "12345")
+		contentBuddy.GetPos(, &beforeY, &beforeWidth, &beforeHeight)
+		contentSpinner := contentBuddyGui.AddUpDown("Range1-99999 0x80 " side, 12345)
+		contentBuddy.GetPos(&x,, &width)
+		contentSpinner.GetPos(&spinnerX, &spinnerY,, &spinnerHeight)
+		AssertEq(width, beforeWidth, A_LineNumber)
+		AssertEq(spinnerY, beforeY, A_LineNumber)
+		AssertEq(spinnerHeight, beforeHeight, A_LineNumber)
+		Assert(side = "Left" ? spinnerX < x : spinnerX > x, A_LineNumber)
+		contentSpinner.Value := 67890
+		AssertEq(contentBuddy.Text, "67890", A_LineNumber)
+	}
+}
+; Move sizes a Text outright, whether its width was explicit or came from its caption.
+fittedText := contentBuddyGui.AddText(, "fitted")
+pinnedText := contentBuddyGui.AddText("w80", "pinned")
+fittedText.Move(,, 140), pinnedText.Move(,, 140)
+fittedText.GetPos(,, &fittedWidth), pinnedText.GetPos(,, &pinnedWidth)
+AssertEq(fittedWidth "|" pinnedWidth, "140|140", A_LineNumber)
+contentBuddyGui.Destroy()
+
+; The first X+/Y+ control on each tab page is relative to the display area's corner.
+relativeTabGui := Gui("-DPIScale")
+; A tab with no controls to fit keeps its size.
+emptyTab := relativeTabGui.AddTab3(, ["Page"])
+emptyTab.GetPos(,, &beforeWidth, &beforeHeight)
+Assert(beforeWidth > 0 && beforeHeight > 0, A_LineNumber)
+emptyTab.UseTab()
+emptyTab.GetPos(,, &width, &height)
+AssertEq(width, beforeWidth, A_LineNumber)
+AssertEq(height, beforeHeight, A_LineNumber)
+
+relativeTabGui.MarginX := 15, relativeTabGui.MarginY := 10
+relativeTab := relativeTabGui.AddTab3("x20 y30 w400", ["First", "Second", "Third", "Fourth"])
+relativeTabGui.AddText("w40 h20", "Origin").GetPos(&originX, &originY)
+for index, position in [["x+30 y+35", 15, 25], ["x+25", 10, 0], ["y+25", 0, 15]] {
+	relativeTab.UseTab(index + 1)
+	relativeTabGui.AddText(position[1] " w40 h20", "Offset").GetPos(&x, &y)
+	AssertEq(x, originX + position[2], A_LineNumber)
+	AssertEq(y, originY + position[3], A_LineNumber)
+}
+relativeTab.UseTab()
+relativeTab.GetPos(&beforeX, &beforeY,, &beforeHeight)
+relativeTabGui.AddText("xp y+10 w40 h20", "After").GetPos(&x, &y)
+AssertEq(x, beforeX, A_LineNumber)
+AssertEq(y, beforeY + beforeHeight + 10, A_LineNumber)
+relativeTab.UseTab()
+relativeTabGui.AddText("xp y+10 w40 h20", "Repeated").GetPos(&beforeX, &beforeY)
+AssertEq(beforeX, x, A_LineNumber)
+AssertEq(beforeY, y + 30, A_LineNumber)
+relativeTabGui.Destroy()
+
+; Neither a fixed-size tab nor one already autosized by Show replaces a later child's position.
+for shownFirst in [false, true] {
+	tabGui := Gui("-DPIScale")
+	tab := tabGui.AddTab3("x20 y30 w400" (shownFirst ? "" : " h240"), ["Page"])
+	tabGui.AddText("x50 y80 w40 h20", "First")
+	if shownFirst
+		tabGui.Show("Hide")
+	tabGui.AddText("x70 y120 w40 h20", "Reference")
+	tab.UseTab()
+	tabGui.AddText("xp yp+30 w40 h20", "After").GetPos(&x, &y)
+	AssertEq(x, 70, A_LineNumber)
+	AssertEq(y, 150, A_LineNumber)
+	tabGui.Destroy()
+}
+
 ; A Section inside a radio-group panel stays relative to its enclosing GroupBox.
 sectionGui := Gui("-DPIScale")
 sectionBox := sectionGui.AddGroupBox("x100 y80 w240 h160")

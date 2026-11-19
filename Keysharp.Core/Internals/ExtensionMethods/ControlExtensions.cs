@@ -308,6 +308,32 @@ namespace System.Windows.Forms
 			return parents;
 		}
 
+		internal static void AdjustSize(this KeysharpTabControl control, double dpiscale, Size requestedSize)
+		{
+			if (requestedSize.Width != int.MinValue && requestedSize.Height != int.MinValue)
+			{
+				control.SetSize(requestedSize);
+				return;
+			}
+
+			var width = 0.0;
+			var height = 0.0;
+			foreach (TabPage page in control.TabPages)
+			{
+				var (right, bottom) = page.RightBottomMost();
+				if (right != null)
+					width = Math.Max(width, control.TabWidth() + right.Right + page.Margin.Right + control.Margin.Right);
+				if (bottom != null)
+					height = Math.Max(height, control.TabHeight() + bottom.Bottom + page.Margin.Bottom + control.Margin.Bottom * dpiscale);
+			}
+
+			//Empty pages retain the tab's existing size.
+			var size = control.GetSize();
+			control.SetSize(new Size(
+				requestedSize.Width != int.MinValue ? requestedSize.Width : width > 0 ? Convert.ToInt32(width) : size.Width,
+				requestedSize.Height != int.MinValue ? requestedSize.Height : height > 0 ? Convert.ToInt32(height) : size.Height));
+		}
+
 		/// <summary>
 		/// Finds the first tab within a <see cref="TabControl"/> whose text matches text.<br/>
 		/// The search is case insensitive.

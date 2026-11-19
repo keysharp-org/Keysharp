@@ -787,12 +787,12 @@ namespace Keysharp.Builtins
 				case Keyword_UpDown:
 				{
 					//AutoHotkey gives an UpDown UDS_AUTOBUDDY (0x10) unless -16 or Horz takes it away, so it attaches to
-					//the control added before it. Only an Edit is attached to here: after anything else, or without
+					//the control added before it. Edit and Text controls can be buddies; after anything else, or without
 					//0x10, the UpDown is a self-contained number box instead of AutoHotkey's bare arrows.
 					const int UDS_WRAP = 0x01, UDS_ALIGNRIGHT = 0x04, UDS_ALIGNLEFT = 0x08, UDS_AUTOBUDDY = 0x10, UDS_HORZ = 0x40;
 					var autoBuddy = (opts.remstyle & UDS_AUTOBUDDY) == 0 && (!opts.nudhorz || (opts.addstyle & UDS_AUTOBUDDY) != 0);
 
-					if (autoBuddy && LastControl is Forms.Control buddy && buddy.GetGuiControl() is Edit)
+					if (autoBuddy && LastControl is Forms.Control buddy && buddy.GetGuiControl() is Edit or Text)
 					{
 						if (opts.wordwrap == true)
 							opts.addstyle |= UDS_WRAP;
@@ -1695,6 +1695,7 @@ namespace Keysharp.Builtins
 				refControl = lastControl;
 			var isNewRadioGroup = ctrl is KeysharpRadioButton && (lastControl == null || lastControl is not KeysharpRadioButton || opts.group);
 			var isTabControl = ctrl is KeysharpTabControl;
+			var firstOnTabPage = lastControl == null && placementContainer is TabPage;
 			var rbContainer = lastControl?.GetLogicalParent() ?? LastContainer;
 			bool xSpecified = opts.xpos != GuiOptions.Positioning.None;
 			bool ySpecified = opts.ypos != GuiOptions.Positioning.None;
@@ -2059,6 +2060,8 @@ namespace Keysharp.Builtins
 				if (finalWidth < 0) finalWidth = actualSize.Width;
 				if (finalHeight < 0) finalHeight = actualSize.Height;
 			}
+			if (holder is Text textControl)
+				textControl.widthFromContents = finalWidth > holder.requestedSize.Width;
 			Point loc;
 
 			var xoffset = (double)lcLeft;
@@ -2080,7 +2083,7 @@ namespace Keysharp.Builtins
 			if (opts.xpos == GuiOptions.Positioning.Absolute)
 				xoffset = (opts.x * dpiscale) - xoffset;
 			else if (opts.xpos == GuiOptions.Positioning.PreviousBottomRight)
-				xoffset += lcWidth + (opts.x * dpiscale);
+				xoffset = firstOnTabPage ? opts.x * dpiscale : xoffset + lcWidth + (opts.x * dpiscale);
 			else if (opts.xpos == GuiOptions.Positioning.PreviousTopLeft)
 				xoffset += opts.x * dpiscale;
 			else if (opts.xpos == GuiOptions.Positioning.Margin)
@@ -2095,7 +2098,7 @@ namespace Keysharp.Builtins
 			if (opts.ypos == GuiOptions.Positioning.Absolute)
 				yoffset = (opts.y * dpiscale) - yoffset;
 			else if (opts.ypos == GuiOptions.Positioning.PreviousBottomRight)
-				yoffset += lcHeight + (opts.y * dpiscale);
+				yoffset = firstOnTabPage ? opts.y * dpiscale : yoffset + lcHeight + (opts.y * dpiscale);
 			else if (opts.ypos == GuiOptions.Positioning.PreviousTopLeft)
 				yoffset += opts.y * dpiscale;
 			else if (opts.ypos == GuiOptions.Positioning.Margin)
@@ -2113,7 +2116,7 @@ namespace Keysharp.Builtins
 				if (opts.xpos == GuiOptions.Positioning.PreviousTopLeft && opts.x == 0)//XP or XP+0: Below the previous control (bottom edge plus margin).
 					yoffset = lcBottom + form.Margin.Top;
 				else if (opts.xpos == GuiOptions.Positioning.PreviousBottomRight || opts.xpos == GuiOptions.Positioning.PreviousTopLeft)//X+n or XP+nonzero (Already checked for xp == 0 above): Same as the previous control's top edge (YP).
-					yoffset = lcTop;
+					yoffset = firstOnTabPage && opts.xpos == GuiOptions.Positioning.PreviousBottomRight ? form.Margin.Top : lcTop;
 				else if ((opts.xpos == GuiOptions.Positioning.Absolute || opts.xpos == GuiOptions.Positioning.Container || opts.xpos == GuiOptions.Positioning.Margin) && needsContainerMostForPositioning)//Xn or XM: Beneath all previous controls (maximum Y extent plus margin).
 					yoffset = extent.Y + form.Margin.Top;
 				else if (opts.xpos == GuiOptions.Positioning.Section && needsSectionMostForPositioning)//XS: Beneath all previous controls since the most recent use of the Section option.
@@ -2126,7 +2129,7 @@ namespace Keysharp.Builtins
 				if (opts.ypos == GuiOptions.Positioning.PreviousTopLeft && opts.y == 0)//YP or YP+0: To the right of the previous control (right edge plus margin)..
 					xoffset = lcRight + form.Margin.Left;
 				else if (opts.ypos == GuiOptions.Positioning.PreviousBottomRight || opts.ypos == GuiOptions.Positioning.PreviousTopLeft)//Y+n or YP+nonzero (Already checked for yp == 0 above): Same as the previous control's left edge (XP).
-					xoffset = lcLeft;
+					xoffset = firstOnTabPage && opts.ypos == GuiOptions.Positioning.PreviousBottomRight ? form.Margin.Left : lcLeft;
 				else if ((opts.ypos == GuiOptions.Positioning.Absolute || opts.ypos == GuiOptions.Positioning.Container || opts.ypos == GuiOptions.Positioning.Margin) && needsContainerMostForPositioning)//Yn or YM: To the right of all previous controls (maximum X extent plus margin).
 					xoffset = extent.X + form.Margin.Left;
 				else if (opts.ypos == GuiOptions.Positioning.Section && needsSectionMostForPositioning)//YS: To the right of all previous controls since the most recent use of the Section option.
@@ -2149,7 +2152,7 @@ namespace Keysharp.Builtins
 			{
 			}
 			//The first control of a tab page starts at the page's corner plus the window's margins, as in AutoHotkey.
-			else if (lastControl == null && placementContainer is TabPage && loc.X == int.MinValue && loc.Y == int.MinValue)
+			else if (firstOnTabPage && loc.X == int.MinValue && loc.Y == int.MinValue)
 				loc = new Point(form.Margin.Left, form.Margin.Top);
 			else if (lastControl != null && refControl.Dock == DockStyle.None && loc.X == int.MinValue && loc.Y == int.MinValue)
 			{
@@ -2279,7 +2282,7 @@ namespace Keysharp.Builtins
 
 				try
 				{
-					attachedUpDown.Attach();
+					attachedUpDown.Attach(buddyHolder is Text { widthFromContents: true });
 				}
 				finally
 				{
@@ -4392,14 +4395,9 @@ namespace Keysharp.Builtins
 
 		private void ResizeTabControls()
 		{
-			if (controls.Count == 0)
-				return;
-
-			var dpiscale = DpiScale;
-
 			foreach (var val in controls.Values)
-				if (val is Gui.Control gc && gc.Ctrl is KeysharpTabControl ktc)
-					ktc.AdjustSize(dpiscale, gc.requestedSize);
+				if (val is Tab tab)
+					tab.AdjustSize(this);
 		}
 
 		[RequiresUIThread]
@@ -4581,6 +4579,8 @@ namespace Keysharp.Builtins
 
 		public class Text : Gui.Control
 		{
+			internal bool widthFromContents;
+
 			public Text(params object[] args) : base(args) { }
 			protected Text() { }
 		}
